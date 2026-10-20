@@ -71,3 +71,24 @@ Workspace invitation URLs are bearer secrets. The raw invitation token is never 
 - Admins cannot grant or manage a role above their own role.
 - Removing a member revokes that member's browser sessions scoped to the workspace.
 - Open unauthenticated self-registration is intentionally not enabled before email-verification and billing-abuse controls exist.
+
+
+## Billing and entitlement boundary
+
+Billing state cannot be modified by tenant-scoped admins. Plan catalog changes, manual subscription assignments and normalized billing events require the global control credential.
+
+SaaS quota enforcement is server-side and transaction-bound:
+
+- device limits are enforced again when an enrollment actually consumes a device slot;
+- pending invitations reserve member capacity;
+- direct member creation and invitation acceptance serialize on the organization row;
+- tenant API-token creation serializes on the same organization row;
+- subscription/event state changes take that organization lock as well.
+
+This prevents concurrent allocation requests from oversubscribing the last available slot.
+
+A non-entitled or `past_due`/canceled organization keeps its existing resources but cannot allocate new billable resources. This avoids destructive billing side effects while still enforcing the commercial boundary.
+
+Normalized billing events are stored without raw webhook bodies or payment credentials. Event idempotency is keyed by `provider + event_id`. A replay with the same normalized payload is a no-op; reusing the same event id with different normalized data is rejected as `billing_event_conflict`.
+
+The internal normalized-event API is not a substitute for provider webhook verification. Any Paddle, Stripe or other adapter must verify the provider's signature and map trusted provider identifiers to an organization before calling the internal billing event layer.
