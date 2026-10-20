@@ -48,9 +48,11 @@ const invitationAcceptIpRateLimit = new FixedWindowRateLimiter();
 const invitationAcceptTokenRateLimit = new FixedWindowRateLimiter();
 const signupIpRateLimit = new FixedWindowRateLimiter();
 const signupEmailRateLimit = new FixedWindowRateLimiter();
-const signupVerifyRateLimit = new FixedWindowRateLimiter();
+const signupVerifyIpRateLimit = new FixedWindowRateLimiter();
+const signupVerifyTokenRateLimit = new FixedWindowRateLimiter();
 const resetIpRateLimit = new FixedWindowRateLimiter();
 const resetEmailRateLimit = new FixedWindowRateLimiter();
+const resetConfirmIpRateLimit = new FixedWindowRateLimiter();
 const resetTokenRateLimit = new FixedWindowRateLimiter();
 const trustProxyHeaders = /^(1|true|yes)$/i.test(String(process.env.TRUST_PROXY_HEADERS || ""));
 
@@ -363,13 +365,18 @@ const server = http.createServer(async (req, res) => {
         token: z.string().min(40).max(200),
         password: z.string().min(12).max(256),
       }).parse(await readJson(req));
-      const rate = signupVerifyRateLimit.hit(
-        `${remoteKey(req)}:${sha256(body.token)}`,
+      const verifyIp = remoteKey(req);
+      const ipRate = signupVerifyIpRateLimit.hit(verifyIp, 60, 15 * 60_000);
+      const tokenRate = signupVerifyTokenRateLimit.hit(
+        `${verifyIp}:${sha256(body.token)}`,
         15,
         15 * 60_000,
       );
-      if (!rate.allowed) {
-        res.setHeader("Retry-After", String(rate.retryAfterSeconds));
+      if (!ipRate.allowed || !tokenRate.allowed) {
+        res.setHeader(
+          "Retry-After",
+          String(Math.max(ipRate.retryAfterSeconds, tokenRate.retryAfterSeconds)),
+        );
         return void json(res, 429, { error: "rate_limited" });
       }
       if (!body.token.startsWith("wrsv_")) {
@@ -581,13 +588,18 @@ const server = http.createServer(async (req, res) => {
         token: z.string().min(40).max(200),
         newPassword: z.string().min(12).max(256),
       }).parse(await readJson(req));
-      const rate = resetTokenRateLimit.hit(
-        `${remoteKey(req)}:${sha256(body.token)}`,
+      const resetIp = remoteKey(req);
+      const ipRate = resetConfirmIpRateLimit.hit(resetIp, 30, 15 * 60_000);
+      const tokenRate = resetTokenRateLimit.hit(
+        `${resetIp}:${sha256(body.token)}`,
         12,
         15 * 60_000,
       );
-      if (!rate.allowed) {
-        res.setHeader("Retry-After", String(rate.retryAfterSeconds));
+      if (!ipRate.allowed || !tokenRate.allowed) {
+        res.setHeader(
+          "Retry-After",
+          String(Math.max(ipRate.retryAfterSeconds, tokenRate.retryAfterSeconds)),
+        );
         return void json(res, 429, { error: "rate_limited" });
       }
       if (!body.token.startsWith("wrrp_")) {
