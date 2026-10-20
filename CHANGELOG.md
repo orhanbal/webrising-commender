@@ -11,6 +11,11 @@
 - Added member role updates/removal with serialized last-owner protection and scoped session revocation.
 - Added web-console management for members, invitations and tenant API tokens.
 - Device presence now becomes online only after the current agent socket completes its hello handshake, eliminating first-command readiness races.
+- Added self-hosted vs SaaS deployment modes with self-hosted unlimited core allocations.
+- Added provider-neutral billing plans, organization subscriptions, usage snapshots and Access-console plan visibility.
+- Added transaction-serialized quotas for device enrollment, member seats/pending invitations and tenant API tokens.
+- Added idempotent normalized billing events with payload-collision rejection and provider-bound subscription state.
+- Added SaaS CI coverage for billing-required, quota-exceeded and past-due allocation gates.
 
 ## 0.1.0 - Unreleased
 
