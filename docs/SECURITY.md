@@ -75,7 +75,7 @@ Workspace invitation URLs are bearer secrets. The raw invitation token is never 
 
 ## Billing and entitlement boundary
 
-Billing state cannot be modified by tenant-scoped admins. Plan catalog changes, manual subscription assignments and normalized billing events require the global control credential.
+Billing state cannot be modified by tenant-scoped admins. Plan catalog changes, manual subscription assignments and normalized billing events require the global control credential. Manual assignments are deliberately provider-neutral: provider/customer/subscription identifiers can enter durable state only after a provider-specific adapter has verified and normalized an event.
 
 SaaS quota enforcement is server-side and transaction-bound:
 
