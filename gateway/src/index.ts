@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
+import type { PoolClient } from "pg";
 import { consumeApproval } from "./approvals.js";
 import { authenticateRequest, newApiToken, roleAtLeast, verifyBrowserCsrf, type Principal, type Role } from "./auth.js";
 import {
@@ -16,6 +17,15 @@ import {
   normalizeEmail,
   verifyPassword,
 } from "./browser-auth.js";
+import {
+  allocationDecision,
+  applyNormalizedBillingEvent,
+  billingSnapshot,
+  deploymentMode,
+  upsertBillingPlan,
+  upsertSubscription,
+  type AllocationResource,
+} from "./billing.js";
 import { db, housekeeping, migrate, ready } from "./db.js";
 import { handleMcp } from "./mcp.js";
 import { actionRisk, parseAgentAction } from "./protocol.js";
@@ -107,6 +117,23 @@ async function auditControl(
 function requireRole(principal: Principal, role: Role, res: ServerResponse) {
   if (roleAtLeast(principal, role)) return true;
   json(res, 403, { error: "forbidden", requiredRole: role });
+  return false;
+}
+
+async function requireCapacity(
+  organizationId: string,
+  resource: AllocationResource,
+  res: ServerResponse,
+  queryable: typeof db | PoolClient = db,
+) {
+  const decision = await allocationDecision(organizationId, resource, queryable);
+  if (decision.allowed) return true;
+  json(res, decision.reason === "billing_required" ? 402 : 409, {
+    error: decision.reason,
+    resource: decision.resource,
+    used: decision.used,
+    limit: decision.limit,
+  });
   return false;
 }
 
