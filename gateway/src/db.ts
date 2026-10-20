@@ -22,6 +22,19 @@ export async function migrate() {
       created_at timestamptz not null default now()
     );
 
+    create table if not exists api_tokens (
+      id uuid primary key default gen_random_uuid(),
+      organization_id uuid not null references organizations(id) on delete cascade,
+      name text not null,
+      role text not null check (role in ('viewer','operator','admin','owner')),
+      token_hash text not null unique,
+      created_by text not null,
+      last_used_at timestamptz,
+      revoked_at timestamptz,
+      created_at timestamptz not null default now()
+    );
+    create index if not exists api_tokens_org_idx on api_tokens(organization_id);
+
     create table if not exists devices (
       id uuid primary key,
       organization_id uuid not null references organizations(id) on delete cascade,

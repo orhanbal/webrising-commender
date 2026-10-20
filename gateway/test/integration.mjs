@@ -179,5 +179,65 @@ const audit = await jsonFetch("/api/audit?limit=20", { headers: authHeaders });
 assert.ok(audit.items.some((item) => item.tool === "process_exec" && item.outcome === "denied"));
 assert.ok(audit.items.some((item) => item.tool === "process_exec" && item.outcome === "success"));
 
+const tenantOrg = await jsonFetch("/api/organizations", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({ name: "CI Tenant" }),
+});
+assert.match(tenantOrg.item.id, /^[0-9a-f-]{36}$/i);
+
+const tenantToken = await jsonFetch("/api/tokens", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    name: "CI Tenant Operator",
+    role: "operator",
+    organizationId: tenantOrg.item.id,
+  }),
+});
+assert.match(tenantToken.token, /^wrc_/);
+
+const tenantHeaders = {
+  Authorization: `Bearer ${tenantToken.token}`,
+  "Content-Type": "application/json",
+};
+const tenantMeResponse = await fetch(base + "/api/auth/me", { headers: tenantHeaders });
+assert.equal(tenantMeResponse.status, 200);
+const tenantMe = await tenantMeResponse.json();
+assert.equal(tenantMe.organizationId, tenantOrg.item.id);
+assert.equal(tenantMe.role, "operator");
+assert.equal(tenantMe.global, false);
+
+const tenantDevicesResponse = await fetch(base + "/api/devices", { headers: tenantHeaders });
+assert.equal(tenantDevicesResponse.status, 200);
+const tenantDevices = await tenantDevicesResponse.json();
+assert.deepEqual(tenantDevices.items, []);
+
+const tenantPairingResponse = await fetch(base + "/api/pairing", {
+  method: "POST",
+  headers: tenantHeaders,
+  body: "{}",
+});
+assert.equal(tenantPairingResponse.status, 201);
+
+const viewerToken = await jsonFetch("/api/tokens", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    name: "CI Tenant Viewer",
+    role: "viewer",
+    organizationId: tenantOrg.item.id,
+  }),
+});
+const viewerPairingResponse = await fetch(base + "/api/pairing", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${viewerToken.token}`,
+    "Content-Type": "application/json",
+  },
+  body: "{}",
+});
+assert.equal(viewerPairingResponse.status, 403);
+
 socket.close();
 console.log("integration: ok");

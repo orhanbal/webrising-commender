@@ -6,12 +6,13 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
 import { consumeApproval } from "./approvals.js";
-import { db, defaultOrganizationId, migrate, ready } from "./db.js";
+import { authenticateAuthorization, newApiToken, roleAtLeast, type Principal, type Role } from "./auth.js";
+import { db, migrate, ready } from "./db.js";
 import { handleMcp } from "./mcp.js";
 import { actionRisk, type AgentAction } from "./protocol.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { AgentHub } from "./relay.js";
-import { isControlAuthorized, issueApproval, randomToken, redact, sha256 } from "./security.js";
+import { issueApproval, randomToken, redact, sha256 } from "./security.js";
 
 const host = process.env.HOST || "0.0.0.0";
 const port = Number(process.env.PORT || 8787);
@@ -48,28 +49,28 @@ async function readJson(req: IncomingMessage) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-function authorized(req: IncomingMessage, res: ServerResponse) {
-  if (isControlAuthorized(req.headers.authorization)) return true;
-  json(res, 401, { error: "unauthorized" });
-  return false;
-}
-
 function remoteKey(req: IncomingMessage) {
   return req.socket.remoteAddress || "unknown";
 }
 
 async function auditControl(
+  principal: Principal,
   deviceId: string | null,
   tool: string,
   risk: string,
   outcome: string,
   detail = "",
 ) {
-  const orgId = await defaultOrganizationId();
   await db.query(
-    "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,'control-api',$2,$3,$4,$5,$6)",
-    [orgId, deviceId, tool, risk, outcome, detail],
+    "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,$2,$3,$4,$5,$6,$7)",
+    [principal.organizationId, principal.actor, deviceId, tool, risk, outcome, detail],
   );
+}
+
+function requireRole(principal: Principal, role: Role, res: ServerResponse) {
+  if (roleAtLeast(principal, role)) return true;
+  json(res, 403, { error: "forbidden", requiredRole: role });
+  return false;
 }
 
 async function serveConsole(res: ServerResponse) {
@@ -154,18 +155,91 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    let principal: Principal | null = null;
     if (url.pathname.startsWith("/api/") || url.pathname === "/mcp") {
-      if (!authorized(req, res)) return;
+      principal = await authenticateAuthorization(req.headers.authorization);
+      if (!principal) return void json(res, 401, { error: "unauthorized" });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/auth/me") {
+      return void json(res, 200, {
+        organizationId: principal!.organizationId,
+        actor: principal!.actor,
+        role: principal!.role,
+        global: principal!.global,
+      });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/organizations") {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const result = await db.query("select id,name,created_at from organizations order by created_at asc");
+      return void json(res, 200, { items: result.rows });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/organizations") {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const body = z.object({ name: z.string().trim().min(2).max(120) }).parse(await readJson(req));
+      const created = await db.query(
+        "insert into organizations(name) values($1) returning id,name,created_at",
+        [body.name],
+      );
+      return void json(res, 201, { item: created.rows[0] });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/tokens") {
+      if (!requireRole(principal!, "admin", res)) return;
+      const result = await db.query(
+        "select id,name,role,last_used_at,revoked_at,created_at from api_tokens where organization_id=$1 order by created_at desc",
+        [principal!.organizationId],
+      );
+      return void json(res, 200, { items: result.rows });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/tokens") {
+      if (!requireRole(principal!, "admin", res)) return;
+      const body = z.object({
+        name: z.string().trim().min(2).max(120),
+        role: z.enum(["viewer","operator","admin","owner"]).default("operator"),
+        organizationId: z.string().uuid().optional(),
+      }).parse(await readJson(req));
+
+      const organizationId =
+        principal!.global && body.organizationId ? body.organizationId : principal!.organizationId;
+      if (!principal!.global && organizationId !== principal!.organizationId) {
+        return void json(res, 403, { error: "forbidden" });
+      }
+      const org = await db.query("select 1 from organizations where id=$1", [organizationId]);
+      if (!org.rowCount) return void json(res, 404, { error: "organization_not_found" });
+
+      const rawToken = newApiToken();
+      const created = await db.query(
+        "insert into api_tokens(organization_id,name,role,token_hash,created_by) values($1,$2,$3,$4,$5) returning id,name,role,created_at",
+        [organizationId, body.name, body.role, sha256(rawToken), principal!.actor],
+      );
+      return void json(res, 201, { item: created.rows[0], token: rawToken });
+    }
+
+    const tokenRevokeMatch = url.pathname.match(/^\/api\/tokens\/([0-9a-f-]{36})\/revoke$/i);
+    if (req.method === "POST" && tokenRevokeMatch) {
+      if (!requireRole(principal!, "admin", res)) return;
+      const tokenId = tokenRevokeMatch[1]!;
+      const revoked = await db.query(
+        "update api_tokens set revoked_at=coalesce(revoked_at,now()) where id=$1 and organization_id=$2 returning id,revoked_at",
+        [tokenId, principal!.organizationId],
+      );
+      if (!revoked.rowCount) return void json(res, 404, { error: "token_not_found" });
+      return void json(res, 200, { ok: true, item: revoked.rows[0] });
     }
 
     if (req.method === "POST" && url.pathname === "/api/pairing") {
+      if (!requireRole(principal!, "operator", res)) return;
       const rate = pairingRateLimit.hit(remoteKey(req), 30, 60_000);
       if (!rate.allowed) {
         res.setHeader("Retry-After", String(rate.retryAfterSeconds));
         return void json(res, 429, { error: "rate_limited" });
       }
 
-      const orgId = await defaultOrganizationId();
+      const orgId = principal!.organizationId;
       await db.query("delete from pairing_codes where expires_at < now() or used_at is not null");
       const code = randomToken(24);
       await db.query(
@@ -176,7 +250,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/devices") {
-      const orgId = await defaultOrganizationId();
+      if (!requireRole(principal!, "viewer", res)) return;
+      const orgId = principal!.organizationId;
       const result = await db.query(
         "select id,name,hostname,platform,agent_version,capabilities,last_seen_at,created_at,revoked_at from devices where organization_id=$1 order by created_at desc",
         [orgId],
@@ -186,8 +261,9 @@ const server = http.createServer(async (req, res) => {
 
     const disconnectMatch = url.pathname.match(/^\/api\/devices\/([0-9a-f-]{36})\/disconnect$/i);
     if (req.method === "POST" && disconnectMatch) {
+      if (!requireRole(principal!, "operator", res)) return;
       const deviceId = disconnectMatch[1]!;
-      const orgId = await defaultOrganizationId();
+      const orgId = principal!.organizationId;
       const exists = await db.query(
         "select 1 from devices where id=$1 and organization_id=$2 and revoked_at is null",
         [deviceId, orgId],
@@ -199,39 +275,42 @@ const server = http.createServer(async (req, res) => {
 
     const deviceMatch = url.pathname.match(/^\/api\/devices\/([0-9a-f-]{36})$/i);
     if (req.method === "PATCH" && deviceMatch) {
+      if (!requireRole(principal!, "admin", res)) return;
       const deviceId = deviceMatch[1]!;
       const body = z.object({ name: z.string().trim().min(1).max(120) }).parse(await readJson(req));
-      const orgId = await defaultOrganizationId();
+      const orgId = principal!.organizationId;
       const updated = await db.query(
         "update devices set name=$3 where id=$1 and organization_id=$2 and revoked_at is null returning id,name",
         [deviceId, orgId, body.name],
       );
       if (!updated.rowCount) return void json(res, 404, { error: "device_not_found" });
-      await auditControl(deviceId, "device.rename", "medium", "success", JSON.stringify({ name: body.name }));
+      await auditControl(principal!, deviceId, "device.rename", "medium", "success", JSON.stringify({ name: body.name }));
       return void json(res, 200, { item: updated.rows[0] });
     }
 
     const revokeMatch = url.pathname.match(/^\/api\/devices\/([0-9a-f-]{36})\/revoke$/i);
     if (req.method === "POST" && revokeMatch) {
+      if (!requireRole(principal!, "admin", res)) return;
       const deviceId = revokeMatch[1]!;
-      const orgId = await defaultOrganizationId();
+      const orgId = principal!.organizationId;
       const revoked = await db.query(
         "update devices set revoked_at=coalesce(revoked_at,now()) where id=$1 and organization_id=$2 returning id,revoked_at",
         [deviceId, orgId],
       );
       if (!revoked.rowCount) return void json(res, 404, { error: "device_not_found" });
       hub.disconnect(deviceId);
-      await auditControl(deviceId, "device.revoke", "high", "success");
+      await auditControl(principal!, deviceId, "device.revoke", "high", "success");
       return void json(res, 200, { ok: true, item: revoked.rows[0] });
     }
 
     if (req.method === "POST" && url.pathname === "/api/approvals") {
+      if (!requireRole(principal!, "operator", res)) return;
       const body = z.object({
         deviceId: z.string().uuid(),
         action: z.string().min(2).max(80),
         ttlSeconds: z.number().int().min(15).max(600).optional(),
       }).parse(await readJson(req));
-      const orgId = await defaultOrganizationId();
+      const orgId = principal!.organizationId;
       const exists = await db.query("select 1 from devices where id=$1 and organization_id=$2 and revoked_at is null", [body.deviceId, orgId]);
       if (!exists.rowCount) return void json(res, 404, { error: "device_not_found" });
 
@@ -250,7 +329,7 @@ const server = http.createServer(async (req, res) => {
         "insert into approvals(organization_id,device_id,action,nonce,expires_at) values($1,$2,$3,$4,to_timestamp($5))",
         [orgId, body.deviceId, body.action, claim.nonce, claim.exp],
       );
-      await auditControl(body.deviceId, "approval.issue", "high", "success", JSON.stringify({ action: body.action }));
+      await auditControl(principal!, body.deviceId, "approval.issue", "high", "success", JSON.stringify({ action: body.action }));
       return void json(res, 201, { approvalToken: token, expiresAt: new Date(claim.exp * 1000).toISOString() });
     }
 
@@ -263,7 +342,7 @@ const server = http.createServer(async (req, res) => {
       const action = body.action as AgentAction;
       if (typeof action.kind !== "string") return void json(res, 400, { error: "invalid_action" });
 
-      const orgId = await defaultOrganizationId();
+      const orgId = principal!.organizationId;
       const exists = await db.query(
         "select 1 from devices where id=$1 and organization_id=$2 and revoked_at is null",
         [body.deviceId, orgId],
@@ -277,26 +356,30 @@ const server = http.createServer(async (req, res) => {
         return void json(res, 400, { error: "invalid_action" });
       }
 
+      const neededRole = risk === "low" ? "viewer" : "operator";
+      if (!requireRole(principal!, neededRole, res)) return;
+
       if (risk === "high" && !(await consumeApproval(body.approvalToken, body.deviceId, action.kind))) {
-        await auditControl(body.deviceId, `direct.${action.kind}`, risk, "denied", "missing_or_invalid_approval");
+        await auditControl(principal!, body.deviceId, `direct.${action.kind}`, risk, "denied", "missing_or_invalid_approval");
         return void json(res, 403, { error: "approval_required", action: action.kind });
       }
       try {
         const data = await hub.request(body.deviceId, action, body.approvalToken);
-        await auditControl(body.deviceId, `direct.${action.kind}`, risk, "success", redact({ kind: action.kind }));
+        await auditControl(principal!, body.deviceId, `direct.${action.kind}`, risk, "success", redact({ kind: action.kind }));
         return void json(res, 200, { ok: true, data });
       } catch (error) {
         const detail = redact(error instanceof Error ? error.message : error);
-        await auditControl(body.deviceId, `direct.${action.kind}`, risk, "error", detail);
+        await auditControl(principal!, body.deviceId, `direct.${action.kind}`, risk, "error", detail);
         return void json(res, 502, { ok: false, error: detail });
       }
     }
 
     if (req.method === "GET" && url.pathname === "/api/audit") {
+      if (!requireRole(principal!, "admin", res)) return;
       const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit") || 100)));
       const result = await db.query(
-        "select id,actor,device_id,tool,risk,outcome,detail,created_at from audit_logs order by created_at desc limit $1",
-        [limit],
+        "select id,actor,device_id,tool,risk,outcome,detail,created_at from audit_logs where organization_id=$1 order by created_at desc limit $2",
+        [principal!.organizationId, limit],
       );
       return void json(res, 200, { items: result.rows });
     }
@@ -304,10 +387,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/mcp") {
       const payload = await readJson(req);
       if (Array.isArray(payload)) {
-        const results = (await Promise.all(payload.map((item) => handleMcp(item, hub)))).filter(Boolean);
+        const results = (await Promise.all(payload.map((item) => handleMcp(item, hub, principal!)))).filter(Boolean);
         return void json(res, 200, results);
       }
-      const result = await handleMcp(payload, hub);
+      const result = await handleMcp(payload, hub, principal!);
       if (result === null) {
         res.writeHead(202);
         res.end();

@@ -1,5 +1,6 @@
 import { consumeApproval } from "./approvals.js";
-import { db, defaultOrganizationId } from "./db.js";
+import { roleAtLeast, type Principal } from "./auth.js";
+import { db } from "./db.js";
 import { actionRisk, type AgentAction } from "./protocol.js";
 import type { AgentHub } from "./relay.js";
 import { redact } from "./security.js";
@@ -141,7 +142,7 @@ function toolResult(data: unknown, isError = false) {
   };
 }
 
-export async function handleMcp(request: JsonRpcRequest, hub: AgentHub) {
+export async function handleMcp(request: JsonRpcRequest, hub: AgentHub, principal: Principal) {
   if (request.method === "initialize") {
     return ok(request.id, {
       protocolVersion: "2025-06-18",
@@ -156,7 +157,7 @@ export async function handleMcp(request: JsonRpcRequest, hub: AgentHub) {
 
   const name = String(request.params?.name || "");
   const args = request.params?.arguments || {};
-  const orgId = await defaultOrganizationId();
+  const orgId = principal.organizationId;
 
   if (name === "devices_list") {
     const result = await db.query(
@@ -188,25 +189,38 @@ export async function handleMcp(request: JsonRpcRequest, hub: AgentHub) {
   }
 
   const risk = actionRisk(action.kind);
+  const requiredRole = risk === "low" ? "viewer" : "operator";
+  if (!roleAtLeast(principal, requiredRole)) {
+    return ok(request.id, toolResult({ error: "forbidden", required_role: requiredRole }, true));
+  }
+
   const approvalToken = typeof args.approval_token === "string" ? args.approval_token : undefined;
   if (risk === "high" && !(await consumeApproval(approvalToken, deviceId, action.kind))) {
-    await audit(orgId, deviceId, name, risk, "denied", "missing_or_invalid_approval");
+    await audit(orgId, principal.actor, deviceId, name, risk, "denied", "missing_or_invalid_approval");
     return ok(request.id, toolResult({ error: "approval_required", action: action.kind }, true));
   }
 
   try {
     const data = await hub.request(deviceId, action, approvalToken);
-    await audit(orgId, deviceId, name, risk, "success", redact({ kind: action.kind }));
+    await audit(orgId, principal.actor, deviceId, name, risk, "success", redact({ kind: action.kind }));
     return ok(request.id, toolResult(data));
   } catch (error) {
-    await audit(orgId, deviceId, name, risk, "error", redact(error instanceof Error ? error.message : error));
+    await audit(orgId, principal.actor, deviceId, name, risk, "error", redact(error instanceof Error ? error.message : error));
     return ok(request.id, toolResult({ error: error instanceof Error ? error.message : "request_failed" }, true));
   }
 }
 
-async function audit(orgId: string, deviceId: string, toolName: string, risk: string, outcome: string, detail: string) {
+async function audit(
+  orgId: string,
+  actor: string,
+  deviceId: string,
+  toolName: string,
+  risk: string,
+  outcome: string,
+  detail: string,
+) {
   await db.query(
-    "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,'mcp-control',$2,$3,$4,$5,$6)",
-    [orgId, deviceId, toolName, risk, outcome, detail],
+    "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,$2,$3,$4,$5,$6,$7)",
+    [orgId, actor, deviceId, toolName, risk, outcome, detail],
   );
 }
