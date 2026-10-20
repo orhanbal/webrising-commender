@@ -30,7 +30,6 @@ use tokio_tungstenite::{
     },
 };
 use tracing::{error, info, warn};
-use uuid::Uuid;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
