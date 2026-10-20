@@ -68,6 +68,8 @@ The local agent always initiates outbound connections. No inbound port is requir
 - Windows install/remove service scripts.
 - Linux systemd install/remove scripts.
 - No silent persistence installation.
+- Verified backup/restore tooling for the supported Compose deployment.
+- A repeatable restart/network soak runner for real-device acceptance.
 
 ## 4. Security model
 

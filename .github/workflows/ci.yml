@@ -48,6 +48,11 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: Validate operations scripts
+        run: |
+          bash -n ../scripts/backup-compose.sh
+          bash -n ../scripts/restore-compose.sh
+          node --check ../scripts/soak-restart.mjs
 
   integration:
     runs-on: ubuntu-latest
@@ -199,6 +204,33 @@ jobs:
         run: |
           curl -fsS http://127.0.0.1:8787/health | grep -q '"status":"ok"'
           curl -fsS http://127.0.0.1:8787/ | grep -q 'WebRising Commender'
+      - name: Verify backup and destructive restore
+        run: |
+          curl -fsS -X POST http://127.0.0.1:8787/api/organizations \
+            -H "Authorization: Bearer $CONTROL_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"name":"CI Backup Marker"}' >/dev/null
+
+          rm -rf /tmp/commender-backups
+          BACKUP_RETENTION_DAYS=0 bash scripts/backup-compose.sh /tmp/commender-backups
+          archive="$(ls -1t /tmp/commender-backups/commender-*.dump | head -n1)"
+          test -s "$archive"
+          test -s "$archive.sha256"
+          test -s "$archive.manifest"
+
+          docker compose exec -T postgres psql -U commender -d commender -v ON_ERROR_STOP=1 \
+            -c "delete from organizations where name='CI Backup Marker';" >/dev/null
+
+          if curl -fsS http://127.0.0.1:8787/api/organizations \
+            -H "Authorization: Bearer $CONTROL_API_KEY" | grep -q 'CI Backup Marker'; then
+            echo "marker deletion failed" >&2
+            exit 1
+          fi
+
+          COMMANDER_RESTORE_CONFIRM=RESTORE bash scripts/restore-compose.sh "$archive"
+
+          curl -fsS http://127.0.0.1:8787/api/organizations \
+            -H "Authorization: Bearer $CONTROL_API_KEY" | grep -q 'CI Backup Marker'
       - name: Inspect containers on failure
         if: failure()
         run: |

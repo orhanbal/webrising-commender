@@ -37,6 +37,8 @@ CI exercises:
 - local SMTP email verification, token+password activation, encrypted-at-rest outbox, password reset/session revocation and unknown-account response parity
 - installer syntax
 - native Windows service install/start/stop/remove lifecycle
+- PostgreSQL custom-format backup checksum validation and destructive Compose restore round trip
+- operations script syntax including the gateway/device restart soak runner
 
 ## External acceptance still required
 

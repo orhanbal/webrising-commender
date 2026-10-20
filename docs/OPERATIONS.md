@@ -5,15 +5,72 @@
 - `GET /health/live`: process liveness only.
 - `GET /health`: PostgreSQL readiness.
 
-## Backup
+## Backup and restore
 
-The gateway keeps durable state in PostgreSQL. Back up the database volume or use `pg_dump`.
+Durable control-plane state lives in PostgreSQL. The repository includes a verified Compose backup path:
 
 ```bash
-docker compose exec -T postgres pg_dump -U commender -d commender > commender-backup.sql
+bash scripts/backup-compose.sh ./backups
 ```
 
-Device tokens are not recoverable from database hashes. Existing agents continue to authenticate after restore only if their device rows are preserved.
+The script:
+
+- runs `pg_dump --format=custom` inside the existing PostgreSQL container;
+- writes with `umask 077`;
+- rejects empty output;
+- validates the archive with `pg_restore --list` before publishing it;
+- writes a SHA-256 sidecar and manifest;
+- optionally prunes old archives with `BACKUP_RETENTION_DAYS` (default 14).
+
+Restore is deliberately destructive and requires an explicit acknowledgement:
+
+```bash
+COMMANDER_RESTORE_CONFIRM=RESTORE \
+  bash scripts/restore-compose.sh ./backups/commender-YYYYMMDDTHHMMSSZ.dump
+```
+
+Restore validates the checksum/archive **before** stopping the gateway. It then stops the gateway, terminates DB sessions, recreates the database, restores with `--exit-on-error`, and starts the gateway only after a successful restore. If restore fails, the gateway intentionally remains stopped so a partial database is not served.
+
+CI exercises a real round trip on a clean Compose stack: create marker data → backup → delete marker → destructive restore → verify marker through the API.
+
+Important boundaries:
+
+- Database backups contain hashed device credentials and encrypted mail-outbox rows, so protect the archive as sensitive operational data.
+- `MAIL_OUTBOX_KEY`, `CONTROL_API_KEY`, `APPROVAL_SIGNING_SECRET`, SMTP credentials and the agent-side raw device tokens are not recoverable from database hashes/ciphertext alone. Back up runtime secrets separately.
+- Existing agents continue to authenticate after restore only if their device rows and the corresponding agent-side raw credentials are preserved.
+- Do not commit backup archives. The repository ignores `/backups/`.
+
+## Gateway reconnect / task soak
+
+For a real enrolled device, use the first-party soak runner:
+
+```bash
+CONTROL_API_KEY=... \
+DEVICE_ID=<device-uuid> \
+SOAK_ITERATIONS=20 \
+node scripts/soak-restart.mjs
+```
+
+Default mode runs `docker compose restart gateway` each iteration, waits for gateway health, waits for the same device to return online, and performs a low-risk `system_info` request.
+
+To verify a persistent task across all restarts:
+
+```bash
+SOAK_TASK_COMMAND='sleep 1800' \
+CONTROL_API_KEY=... DEVICE_ID=... \
+node scripts/soak-restart.mjs
+```
+
+The runner obtains exact-operation approvals for task start/cancel and checks `task_status` after every gateway restart.
+
+For a real network interruption instead of a Compose restart:
+
+```bash
+SOAK_RESTART_MODE=manual CONTROL_API_KEY=... DEVICE_ID=... \
+node scripts/soak-restart.mjs
+```
+
+Manual mode waits until the device/gateway interruption is observed, then waits for recovery. It does not manipulate host networking itself.
 
 ## Secret rotation
 

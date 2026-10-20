@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added verified PostgreSQL Compose backup/restore tooling with custom-format archive validation, SHA-256 sidecars, retention and fail-closed restore behavior.
+- Added a dependency-free gateway restart/manual-network soak runner that verifies device reconnect, low-risk requests and optional persistent-task rediscovery.
+- Added CI backup → mutation → destructive restore → API verification acceptance.
 - Added SaaS-only verified public signup with pending activation and password-confirmed email verification.
 - Added password-reset request/confirm flows with one-time hash-only tokens and full browser-session revocation.
 - Added a dependency-free SMTP/STARTTLS client and AES-256-GCM encrypted persistent mail outbox with bounded retries/dead-letter handling.

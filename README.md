@@ -104,6 +104,8 @@ The agent initiates the connection. Controlled devices do not need an inbound fi
 - macOS LaunchAgent installer/uninstaller
 - GitHub Actions for Rust, TypeScript, clean Compose boot, real-agent E2E and Windows service lifecycle
 - tagged release workflow with Linux x64, Windows x64, universal macOS binaries and SHA-256 checksums
+- verified PostgreSQL Compose backup/restore scripts with checksum/manifest and CI round-trip acceptance
+- first-party gateway restart/network-interruption soak runner for enrolled devices and persistent tasks
 
 ## Risk model
 
