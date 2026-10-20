@@ -1090,6 +1090,33 @@ const pastDueBilling = await jsonFetch(
 assert.equal(pastDueBilling.entitled, false);
 assert.equal(pastDueBilling.reason, "billing_required");
 
+const sameTimeConflictResponse = await fetch(base + "/api/admin/billing/events", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    ...normalizedEvent,
+    eventId: "evt-ci-same-time",
+    eventType: "subscription.same_time_conflict",
+    occurredAt: "2026-10-20T21:00:00.000Z",
+    subscription: {
+      ...normalizedEvent.subscription,
+      status: "active",
+    },
+  }),
+});
+assert.equal(sameTimeConflictResponse.status, 409);
+const sameTimeConflict = await sameTimeConflictResponse.json();
+assert.equal(sameTimeConflict.error, "billing_event_order_conflict");
+assert.equal(sameTimeConflict.orderConflict, true);
+assert.equal(sameTimeConflict.applied, false);
+
+const billingAfterOrderConflict = await jsonFetch(
+  `/api/admin/organizations/${eventOrg.item.id}/billing`,
+  { headers: authHeaders },
+);
+assert.equal(billingAfterOrderConflict.subscription.status, "past_due");
+assert.equal(billingAfterOrderConflict.subscription.providerEventId, "evt-ci-002");
+
 const staleEvent = await jsonFetch("/api/admin/billing/events", {
   method: "POST",
   headers: authHeaders,
