@@ -1,4 +1,5 @@
 use crate::{
+    approval,
     fs_ops,
     policy::PathPolicy,
     process_ops,
@@ -16,9 +17,13 @@ pub async fn execute(
     tasks: &TaskManager,
     action: AgentAction,
     approval_token: Option<&str>,
+    approval_key: &str,
+    device_id: &str,
 ) -> Result<Value> {
-    if action.risk() == Risk::High && approval_token.is_none() {
-        return Err(anyhow!("approval token required for high-risk action"));
+    if action.risk() == Risk::High {
+        let token = approval_token
+            .ok_or_else(|| anyhow!("approval token required for high-risk action"))?;
+        approval::verify(token, approval_key, device_id, action.kind_name())?;
     }
 
     match action {
