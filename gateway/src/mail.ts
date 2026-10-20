@@ -4,7 +4,6 @@ import os from "node:os";
 import tls from "node:tls";
 import type { PoolClient } from "pg";
 import { db } from "./db.js";
-import { redact } from "./security.js";
 
 export type MailKind = "email_verification" | "password_reset";
 export type MailDeliveryMode = "disabled" | "outbox" | "smtp";
@@ -32,6 +31,12 @@ export type OutboundMail = {
 
 type SmtpSocket = net.Socket | tls.TLSSocket;
 type Queryable = typeof db | PoolClient;
+
+function safeMailError(value: unknown) {
+  return String(value ?? "")
+    .replace(/((?:password|secret|token|authorization)\s*[=:]\s*)[^\s,;]+/gi, "$1[redacted]")
+    .slice(0, 1000);
+}
 
 function enumEnv<T extends string>(value: string | undefined, allowed: readonly T[], fallback: T): T {
   const normalized = String(value ?? fallback).trim().toLowerCase() as T;
@@ -352,7 +357,7 @@ export async function deliverOutboxOnce(config = smtpConfigFromEnv()) {
         [
           row.id,
           retrySeconds,
-          redact(error instanceof Error ? error.message : String(error)).slice(0, 1000),
+          safeMailError(error instanceof Error ? error.message : String(error)),
         ],
       );
       failed += 1;
@@ -373,7 +378,7 @@ export function startMailWorker() {
       await deliverOutboxOnce(config);
     } catch (error) {
       process.stderr.write(
-        `mail worker failed: ${redact(error instanceof Error ? error.message : String(error))}\n`,
+        `mail worker failed: ${safeMailError(error instanceof Error ? error.message : String(error))}\n`,
       );
     } finally {
       busy = false;
