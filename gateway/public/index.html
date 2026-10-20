@@ -58,6 +58,7 @@
         <button class="tab" data-tab="command">Command</button>
         <button class="tab" data-tab="tasks">Tasks</button>
         <button class="tab" data-tab="terminal">Terminal</button>
+        <button class="tab" data-tab="approvals">Approvals</button>
         <button class="tab" data-tab="audit">Audit</button>
       </div>
 
@@ -104,6 +105,11 @@
         <div class="row" style="margin-top:10px"><input id="terminalInput" style="flex:1" placeholder="Type command and press Enter"><button id="termSend">Send</button></div>
       </section>
 
+      <section id="pane-approvals" class="card pane">
+        <div class="row" style="justify-content:space-between"><div><h2>Pending AI approvals</h2><p class="hint">Review the exact operation requested by an operator/MCP client. Approval is one-time and tied to these parameters.</p></div><button id="loadApprovals">Refresh</button></div>
+        <div style="overflow:auto"><table class="audit"><thead><tr><th>Requested</th><th>Actor</th><th>Device</th><th>Operation</th><th>Expires</th><th>Decision</th></tr></thead><tbody id="approvalBody"></tbody></table></div>
+      </section>
+
       <section id="pane-audit" class="card pane">
         <div class="row" style="justify-content:space-between"><h2>Audit log</h2><button id="loadAudit">Refresh</button></div>
         <div style="overflow:auto"><table class="audit"><thead><tr><th>Time</th><th>Actor</th><th>Device</th><th>Tool</th><th>Risk</th><th>Outcome</th><th>Detail</th></tr></thead><tbody id="auditBody"></tbody></table></div>
@@ -143,7 +149,7 @@ $("rename").onclick=async()=>{try{const d=needDevice(false);await api("/api/devi
 $("disconnect").onclick=async()=>{try{const d=needDevice();await api("/api/devices/"+d.id+"/disconnect",{method:"POST",body:"{}"});setTimeout(loadDevices,1200)}catch(e){showError(e)}}
 $("revoke").onclick=async()=>{try{const d=needDevice(false);if(!confirm("Revoke "+d.name+"? The agent must be re-enrolled to reconnect."))return;await api("/api/devices/"+d.id+"/revoke",{method:"POST",body:"{}"});await loadDevices();await loadAudit()}catch(e){showError(e)}}
 
-document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b));document.querySelectorAll(".pane").forEach(p=>p.classList.remove("active"));$("pane-"+b.dataset.tab).classList.add("active");if(b.dataset.tab==="audit")loadAudit()});
+document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b));document.querySelectorAll(".pane").forEach(p=>p.classList.remove("active"));$("pane-"+b.dataset.tab).classList.add("active");if(b.dataset.tab==="audit")loadAudit();if(b.dataset.tab==="approvals")loadApprovals()});
 
 $("loadSystem").onclick=async()=>{try{const data=await deviceRequest({kind:"system_info"});$("systemInfo").innerHTML=Object.entries(data).map(([k,v])=>'<div class="kv"><span>'+escapeHtml(k)+'</span><span>'+escapeHtml(typeof v==="object"?JSON.stringify(v):v)+'</span></div>').join("")}catch(e){showError(e)}}
 
@@ -165,6 +171,10 @@ $("termStart").onclick=async()=>{try{if(terminalSession)throw new Error("Termina
 $("termSend").onclick=async()=>{try{if(!terminalSession)throw new Error("Start a terminal first.");const value=$("terminalInput").value+"\n";await deviceRequest({kind:"terminal_input",sessionId:terminalSession,dataBase64:toBase64(value)});$("terminalInput").value="";setTimeout(pollTerminal,150)}catch(e){showError(e)}}
 $("terminalInput").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();$("termSend").click()}})
 $("termStop").onclick=async()=>{try{if(!terminalSession)return;await deviceRequest({kind:"terminal_stop",sessionId:terminalSession},true);clearInterval(terminalTimer);terminalTimer=null;terminalSession=null;$("terminalOutput").textContent+="\n[terminal stopped]"}catch(e){showError(e)}}
+
+async function loadApprovals(){if(!$("key").value)return;try{const j=await api("/api/approval-requests?status=pending&limit=100");$("approvalBody").innerHTML=j.items.length?j.items.map(x=>'<tr><td>'+escapeHtml(new Date(x.created_at).toLocaleString())+'</td><td>'+escapeHtml(x.requested_by)+'</td><td>'+escapeHtml(x.device_id)+'</td><td><b>'+escapeHtml(x.action_kind)+'</b><pre style="max-height:180px;margin:7px 0 0">'+escapeHtml(JSON.stringify(x.action,null,2))+'</pre></td><td>'+escapeHtml(new Date(x.expires_at).toLocaleString())+'</td><td><div class="row"><button data-approval="'+x.id+'" data-decision="approve">Approve</button><button class="danger" data-approval="'+x.id+'" data-decision="deny">Deny</button></div></td></tr>').join(""):'<tr><td colspan="6" class="hint">No pending approval requests.</td></tr>';document.querySelectorAll("[data-approval]").forEach(button=>button.onclick=()=>decideApproval(button.dataset.approval,button.dataset.decision))}catch(e){showError(e)}}
+async function decideApproval(id,decision){try{const verb=decision==="approve"?"Approve":"Deny";if(!confirm(verb+" this exact AI operation?"))return;await api("/api/approval-requests/"+id+"/"+decision,{method:"POST",body:"{}"});await loadApprovals();await loadAudit()}catch(e){showError(e)}}
+$("loadApprovals").onclick=loadApprovals;
 
 async function loadAudit(){if(!$("key").value)return;try{const j=await api("/api/audit?limit=100");$("auditBody").innerHTML=j.items.map(x=>'<tr><td>'+escapeHtml(new Date(x.created_at).toLocaleString())+'</td><td>'+escapeHtml(x.actor)+'</td><td>'+escapeHtml(x.device_id||"")+'</td><td>'+escapeHtml(x.tool)+'</td><td>'+escapeHtml(x.risk)+'</td><td>'+escapeHtml(x.outcome)+'</td><td>'+escapeHtml(x.detail)+'</td></tr>').join("")}catch(e){showError(e)}}
 $("loadAudit").onclick=loadAudit;
