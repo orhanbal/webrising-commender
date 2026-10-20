@@ -53,7 +53,7 @@ enum Command {
     Enroll {
         #[arg(long)]
         control_url: String,
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         pairing_code: String,
         #[arg(long)]
         name: Option<String>,
