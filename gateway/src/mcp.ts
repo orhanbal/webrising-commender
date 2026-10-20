@@ -1,9 +1,10 @@
+import { consumeApprovedRequest, ensureApprovalRequest } from "./approval-requests.js";
 import { consumeApproval } from "./approvals.js";
 import { roleAtLeast, type Principal } from "./auth.js";
 import { db } from "./db.js";
 import { actionRisk, type AgentAction } from "./protocol.js";
 import type { AgentHub } from "./relay.js";
-import { redact } from "./security.js";
+import { issueApproval, redact } from "./security.js";
 
 type JsonRpcRequest = { jsonrpc?: string; id?: string | number | null; method?: string; params?: any };
 
@@ -194,10 +195,71 @@ export async function handleMcp(request: JsonRpcRequest, hub: AgentHub, principa
     return ok(request.id, toolResult({ error: "forbidden", required_role: requiredRole }, true));
   }
 
-  const approvalToken = typeof args.approval_token === "string" ? args.approval_token : undefined;
-  if (risk === "high" && !(await consumeApproval(approvalToken, deviceId, action))) {
-    await audit(orgId, principal.actor, deviceId, name, risk, "denied", "missing_or_invalid_approval");
-    return ok(request.id, toolResult({ error: "approval_required", action: action.kind }, true));
+  let approvalToken = typeof args.approval_token === "string" ? args.approval_token : undefined;
+  if (risk === "high") {
+    if (approvalToken) {
+      if (!(await consumeApproval(approvalToken, deviceId, action))) {
+        await audit(
+          orgId,
+          principal.actor,
+          deviceId,
+          name,
+          risk,
+          "denied",
+          "missing_or_invalid_approval",
+        );
+        return ok(request.id, toolResult({ error: "approval_required", action: action.kind }, true));
+      }
+    } else {
+      const approvedRequestId = await consumeApprovedRequest(
+        orgId,
+        principal.actor,
+        deviceId,
+        action,
+      );
+
+      if (approvedRequestId) {
+        approvalToken = issueApproval(deviceId, action, 60).token;
+        await audit(
+          orgId,
+          principal.actor,
+          deviceId,
+          name,
+          risk,
+          "approval_consumed",
+          JSON.stringify({ approvalRequestId: approvedRequestId }),
+        );
+      } else {
+        const pending = await ensureApprovalRequest(
+          orgId,
+          principal.actor,
+          deviceId,
+          action,
+        );
+        await audit(
+          orgId,
+          principal.actor,
+          deviceId,
+          name,
+          risk,
+          "approval_pending",
+          JSON.stringify({ approvalRequestId: pending.id }),
+        );
+        return ok(
+          request.id,
+          toolResult(
+            {
+              error: "approval_required",
+              action: action.kind,
+              approval_request_id: pending.id,
+              approval_expires_at: pending.expires_at,
+              message: "An admin or owner must approve this exact operation before retrying.",
+            },
+            true,
+          ),
+        );
+      }
+    }
   }
 
   try {
