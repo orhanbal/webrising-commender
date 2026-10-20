@@ -312,41 +312,48 @@ export async function upsertSubscription(input: SubscriptionInput, queryable: Qu
     throw Object.assign(new Error("organization_not_found"), { status: 404 });
   }
 
-  const result = await queryable.query(
-    `insert into organization_subscriptions(
-         organization_id,plan_key,status,provider,external_customer_id,external_subscription_id,
-         current_period_end,cancel_at_period_end,provider_event_at,provider_event_id,updated_at
-       )
-       values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())
-       on conflict(organization_id)
-       do update set
-         plan_key=excluded.plan_key,
-         status=excluded.status,
-         provider=excluded.provider,
-         external_customer_id=excluded.external_customer_id,
-         external_subscription_id=excluded.external_subscription_id,
-         current_period_end=excluded.current_period_end,
-         cancel_at_period_end=excluded.cancel_at_period_end,
-         provider_event_at=excluded.provider_event_at,
-         provider_event_id=excluded.provider_event_id,
-         updated_at=now()
-       returning organization_id,plan_key,status,provider,external_customer_id,
-                 external_subscription_id,current_period_end,cancel_at_period_end,
-                 provider_event_at,provider_event_id,created_at,updated_at`,
-    [
-      input.organizationId,
-      input.planKey,
-      input.status,
-      input.provider ?? null,
-      input.externalCustomerId ?? null,
-      input.externalSubscriptionId ?? null,
-      input.currentPeriodEnd ?? null,
-      input.cancelAtPeriodEnd ?? false,
-      input.providerEventAt ?? null,
-      input.providerEventId ?? null,
-    ],
-  );
-  return result.rows[0];
+  try {
+    const result = await queryable.query(
+      `insert into organization_subscriptions(
+           organization_id,plan_key,status,provider,external_customer_id,external_subscription_id,
+           current_period_end,cancel_at_period_end,provider_event_at,provider_event_id,updated_at
+         )
+         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())
+         on conflict(organization_id)
+         do update set
+           plan_key=excluded.plan_key,
+           status=excluded.status,
+           provider=excluded.provider,
+           external_customer_id=excluded.external_customer_id,
+           external_subscription_id=excluded.external_subscription_id,
+           current_period_end=excluded.current_period_end,
+           cancel_at_period_end=excluded.cancel_at_period_end,
+           provider_event_at=excluded.provider_event_at,
+           provider_event_id=excluded.provider_event_id,
+           updated_at=now()
+         returning organization_id,plan_key,status,provider,external_customer_id,
+                   external_subscription_id,current_period_end,cancel_at_period_end,
+                   provider_event_at,provider_event_id,created_at,updated_at`,
+      [
+        input.organizationId,
+        input.planKey,
+        input.status,
+        input.provider ?? null,
+        input.externalCustomerId ?? null,
+        input.externalSubscriptionId ?? null,
+        input.currentPeriodEnd ?? null,
+        input.cancelAtPeriodEnd ?? false,
+        input.providerEventAt ?? null,
+        input.providerEventId ?? null,
+      ],
+    );
+    return result.rows[0];
+  } catch (error: any) {
+    if (error?.code === "23505") {
+      throw Object.assign(new Error("billing_subscription_conflict"), { status: 409 });
+    }
+    throw error;
+  }
 }
 
 export async function applyNormalizedBillingEvent(event: NormalizedBillingEvent) {
