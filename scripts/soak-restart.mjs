@@ -4,9 +4,18 @@ import { spawnSync } from "node:child_process";
 const base = String(process.env.COMMANDER_CONTROL_URL || "http://127.0.0.1:8787").replace(/\/$/, "");
 const apiKey = process.env.CONTROL_API_KEY;
 const deviceId = process.env.DEVICE_ID;
-const iterations = Math.max(1, Math.min(1000, Number(process.env.SOAK_ITERATIONS || 10)));
-const timeoutMs = Math.max(10_000, Math.min(15 * 60_000, Number(process.env.SOAK_TIMEOUT_MS || 120_000)));
-const intervalMs = Math.max(250, Math.min(10_000, Number(process.env.SOAK_POLL_MS || 1000)));
+
+function boundedInt(name, fallback, min, max) {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isFinite(value)) {
+    throw new Error(`${name} must be a finite number`);
+  }
+  return Math.min(max, Math.max(min, Math.floor(value)));
+}
+
+const iterations = boundedInt("SOAK_ITERATIONS", 10, 1, 1000);
+const timeoutMs = boundedInt("SOAK_TIMEOUT_MS", 120_000, 10_000, 15 * 60_000);
+const intervalMs = boundedInt("SOAK_POLL_MS", 1000, 250, 10_000);
 const mode = String(process.env.SOAK_RESTART_MODE || "compose").toLowerCase();
 const taskCommand = String(process.env.SOAK_TASK_COMMAND || "").trim();
 
