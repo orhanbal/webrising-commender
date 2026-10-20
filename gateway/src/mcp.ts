@@ -32,6 +32,36 @@ const tools = [
     ["path"],
   ),
   tool(
+    "fs_move",
+    "Move or rename a file/directory inside the agent allowlisted roots. Destination must not already exist.",
+    { source: str(), destination: str() },
+    ["source", "destination"],
+  ),
+  tool(
+    "fs_tree",
+    "Recursively list a bounded directory tree without following symlinks.",
+    { path: str(), max_depth: integer(), max_entries: integer() },
+    ["path"],
+  ),
+  tool(
+    "fs_search",
+    "Search file and directory names recursively inside an allowlisted root.",
+    { path: str(), query: str(), max_results: integer() },
+    ["path", "query"],
+  ),
+  tool(
+    "text_search",
+    "Search literal text recursively in bounded UTF-8 files inside an allowlisted root.",
+    { path: str(), query: str(), case_sensitive: bool(), max_results: integer() },
+    ["path", "query"],
+  ),
+  tool(
+    "fs_replace",
+    "Perform a guarded UTF-8 search/replace edit. By default the search must match exactly once.",
+    { path: str(), search: str(), replace: str(), replace_all: bool() },
+    ["path", "search", "replace"],
+  ),
+  tool(
     "process_exec",
     "Execute a shell command. HIGH risk. Omit approval_token to create a human approval request, then retry after approval.",
     { command: str(), cwd: str(), timeout_ms: integer(), approval_token: str() },
@@ -63,6 +93,11 @@ const tools = [
     ["task_id"],
   ),
   tool(
+    "task_list",
+    "List retained persistent background tasks so a reconnected AI client can recover task ids.",
+    {},
+  ),
+  tool(
     "terminal_start",
     "Start a persistent PTY session. HIGH risk; omit approval_token to request human approval.",
     { shell: str(), cwd: str(), cols: integer(), rows: integer(), approval_token: str() },
@@ -76,6 +111,11 @@ const tools = [
     "Stop a PTY session. HIGH risk; omit approval_token to request human approval.",
     { session_id: str(), approval_token: str() },
     ["session_id"],
+  ),
+  tool(
+    "terminal_list",
+    "List persistent PTY sessions, process ids and retained output sizes.",
+    {},
   ),
 ].map((entry) => {
   if (entry.name === "devices_list") return entry;
@@ -115,17 +155,24 @@ function actionFromTool(name: string, a: any): AgentAction {
     case "fs_write": return { kind: "fs_write", path: String(a.path), contentBase64: String(a.content_base64), createParents: Boolean(a.create_parents) };
     case "fs_mkdir": return { kind: "fs_mkdir", path: String(a.path), recursive: Boolean(a.recursive) };
     case "fs_delete": return { kind: "fs_delete", path: String(a.path), recursive: Boolean(a.recursive) };
+    case "fs_move": return { kind: "fs_move", source: String(a.source), destination: String(a.destination) };
+    case "fs_tree": return { kind: "fs_tree", path: String(a.path), ...(a.max_depth !== undefined ? { maxDepth: Number(a.max_depth) } : {}), ...(a.max_entries !== undefined ? { maxEntries: Number(a.max_entries) } : {}) };
+    case "fs_search": return { kind: "fs_search", path: String(a.path), query: String(a.query), ...(a.max_results !== undefined ? { maxResults: Number(a.max_results) } : {}) };
+    case "text_search": return { kind: "text_search", path: String(a.path), query: String(a.query), ...(a.case_sensitive !== undefined ? { caseSensitive: Boolean(a.case_sensitive) } : {}), ...(a.max_results !== undefined ? { maxResults: Number(a.max_results) } : {}) };
+    case "fs_replace": return { kind: "fs_replace", path: String(a.path), search: String(a.search), replace: String(a.replace), ...(a.replace_all !== undefined ? { replaceAll: Boolean(a.replace_all) } : {}) };
     case "process_exec": return { kind: "process_exec", command: String(a.command), ...(a.cwd ? { cwd: String(a.cwd) } : {}), ...(a.timeout_ms ? { timeoutMs: Number(a.timeout_ms) } : {}) };
     case "process_list": return { kind: "process_list" };
     case "process_kill": return { kind: "process_kill", pid: Number(a.pid) };
     case "task_start": return { kind: "task_start", command: String(a.command), ...(a.cwd ? { cwd: String(a.cwd) } : {}), ...(a.timeout_ms ? { timeoutMs: Number(a.timeout_ms) } : {}) };
     case "task_status": return { kind: "task_status", taskId: String(a.task_id) };
     case "task_cancel": return { kind: "task_cancel", taskId: String(a.task_id) };
+    case "task_list": return { kind: "task_list" };
     case "terminal_start": return { kind: "terminal_start", ...(a.shell ? { shell: String(a.shell) } : {}), ...(a.cwd ? { cwd: String(a.cwd) } : {}), ...(a.cols ? { cols: Number(a.cols) } : {}), ...(a.rows ? { rows: Number(a.rows) } : {}) };
     case "terminal_input": return { kind: "terminal_input", sessionId: String(a.session_id), dataBase64: String(a.data_base64) };
     case "terminal_read": return { kind: "terminal_read", sessionId: String(a.session_id), ...(a.max_bytes ? { maxBytes: Number(a.max_bytes) } : {}) };
     case "terminal_resize": return { kind: "terminal_resize", sessionId: String(a.session_id), cols: Number(a.cols), rows: Number(a.rows) };
     case "terminal_stop": return { kind: "terminal_stop", sessionId: String(a.session_id) };
+    case "terminal_list": return { kind: "terminal_list" };
     default: throw Object.assign(new Error("unknown-tool"), { code: "unknown_tool" });
   }
 }
