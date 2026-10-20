@@ -161,12 +161,12 @@
           <p id="workspaceTokenHint" class="hint hidden">API-token sessions are already scoped to one workspace. Sign in with a browser account to switch or create workspaces.</p>
         </div>
 
-        <div class="card" style="box-shadow:none">
+        <div class="card admin-access" style="box-shadow:none">
           <h3>Members</h3>
           <div style="overflow:auto"><table class="audit"><thead><tr><th>Email</th><th>Role</th><th>Last login</th><th>Since</th><th>Action</th></tr></thead><tbody id="memberBody"></tbody></table></div>
         </div>
 
-        <div class="card" style="box-shadow:none">
+        <div class="card admin-access" style="box-shadow:none">
           <h3>Invite member</h3>
           <div class="toolbar">
             <label><span class="label">Email</span><input id="inviteEmail" type="email" placeholder="member@example.com"></label>
@@ -177,7 +177,7 @@
           <div style="overflow:auto;margin-top:10px"><table class="audit"><thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Expires</th><th>Action</th></tr></thead><tbody id="invitationBody"></tbody></table></div>
         </div>
 
-        <div class="card" style="box-shadow:none">
+        <div class="card admin-access" style="box-shadow:none">
           <h3>Tenant API tokens</h3>
           <div class="toolbar">
             <label><span class="label">Token name</span><input id="tokenName" placeholder="CI, automation, ChatGPT…"></label>
@@ -242,6 +242,7 @@ async function loadOrganizations(){
   $("organizationSelect").value=currentIdentity.organizationId;
   const active=organizations.find(x=>x.id===currentIdentity.organizationId);
   $("organizationName").value=active?.name||"";
+  $("renameOrganization").disabled=currentIdentity.role!=="owner";
   $("orgState").textContent=active?(active.name+" · "+active.role):"workspace";
 }
 async function refreshIdentity(){
@@ -252,7 +253,9 @@ async function refreshIdentity(){
     $("authState").textContent=(me.email||me.actor)+" · "+me.role;
     $("authState").className="pill ok";
     const canManage=me.role==="admin"||me.role==="owner";
-    $("accessTab").classList.toggle("hidden",!canManage);
+    const canSeeAccess=me.authKind==="session"||canManage;
+    $("accessTab").classList.toggle("hidden",!canSeeAccess);
+    document.querySelectorAll(".admin-access").forEach(x=>x.classList.toggle("hidden",!canManage));
     await loadOrganizations();
     await loadDevices();
     if(canManage)await loadAudit();
@@ -337,10 +340,10 @@ async function loadTokens(){
 async function revokeToken(id){try{if(!confirm("Revoke this API token?"))return;await api("/api/tokens/"+id+"/revoke",{method:"POST",body:"{}"});await loadTokens();await loadAudit()}catch(e){showError(e)}}
 $("createToken").onclick=async()=>{try{const name=$("tokenName").value.trim();if(!name)throw new Error("Enter a token name.");const j=await api("/api/tokens",{method:"POST",body:JSON.stringify({name,role:$("tokenRole").value})});$("tokenOutput").classList.remove("hidden");$("tokenOutput").textContent="Copy now. This token is only returned once:\n"+j.token;$("tokenName").value="";await loadTokens();await loadAudit()}catch(e){showError(e)}}
 
-async function loadAccess(){try{if(!currentIdentity)throw new Error("Sign in first.");await loadOrganizations();await Promise.all([loadMembers(),loadInvitations(),loadTokens()])}catch(e){showError(e)}}
+async function loadAccess(){try{if(!currentIdentity)throw new Error("Sign in first.");await loadOrganizations();const canManage=currentIdentity.role==="admin"||currentIdentity.role==="owner";if(canManage)await Promise.all([loadMembers(),loadInvitations(),loadTokens()])}catch(e){showError(e)}}
 $("refreshAccess").onclick=loadAccess;
 $("switchOrganization").onclick=async()=>{try{const organizationId=$("organizationSelect").value;if(!organizationId||organizationId===currentIdentity?.organizationId)return;await api("/api/auth/switch-organization",{method:"POST",body:JSON.stringify({organizationId})});selected=null;syncSelection();await refreshIdentity();await loadAccess()}catch(e){showError(e)}}
-$("createOrganization").onclick=async()=>{try{const name=$("organizationName").value.trim()||prompt("New workspace name");if(!name)return;await api("/api/auth/organizations",{method:"POST",body:JSON.stringify({name})});selected=null;syncSelection();await refreshIdentity();await loadAccess()}catch(e){showError(e)}}
+$("createOrganization").onclick=async()=>{try{const name=prompt("New workspace name");if(!name?.trim())return;await api("/api/auth/organizations",{method:"POST",body:JSON.stringify({name:name.trim()})});selected=null;syncSelection();await refreshIdentity();await loadAccess()}catch(e){showError(e)}}
 $("renameOrganization").onclick=async()=>{try{const name=$("organizationName").value.trim();if(!name)throw new Error("Enter a workspace name.");await api("/api/organization",{method:"PATCH",body:JSON.stringify({name})});await refreshIdentity();await loadAccess()}catch(e){showError(e)}}
 
 async function loadInvitePreview(){
