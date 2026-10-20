@@ -32,7 +32,7 @@ export type ApprovalRequest = {
 export type ApprovalClaim = {
   deviceId: string;
   action: string;
-  request: ApprovalRequest;
+  request: unknown;
   exp: number;
   nonce: string;
 };
@@ -52,7 +52,11 @@ export function deviceApprovalKeyForAgent(deviceId: string) {
   return deriveDeviceApprovalKey(deviceId).toString("base64url");
 }
 
-export function issueApproval(deviceId: string, request: ApprovalRequest, ttlSeconds = 120) {
+export function issueApproval<T extends ApprovalRequest>(
+  deviceId: string,
+  request: T,
+  ttlSeconds = 120,
+) {
   const claim: ApprovalClaim = {
     deviceId,
     action: request.kind,
@@ -68,10 +72,10 @@ export function issueApproval(deviceId: string, request: ApprovalRequest, ttlSec
   return { token: `${payload}.${signature}`, claim };
 }
 
-export function verifyApprovalClaim(
+export function verifyApprovalClaim<T extends ApprovalRequest>(
   token: string | undefined | null,
   deviceId: string,
-  request: ApprovalRequest,
+  request: T,
 ): ApprovalClaim | null {
   if (!token) return null;
   const [payload, signature] = token.split(".");
@@ -106,10 +110,10 @@ export function verifyApprovalClaim(
   }
 }
 
-export function verifyApproval(
+export function verifyApproval<T extends ApprovalRequest>(
   token: string | undefined | null,
   deviceId: string,
-  request: ApprovalRequest,
+  request: T,
 ) {
   return verifyApprovalClaim(token, deviceId, request) !== null;
 }
