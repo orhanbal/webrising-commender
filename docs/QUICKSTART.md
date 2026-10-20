@@ -228,3 +228,48 @@ In SaaS mode:
 - existing resources remain intact when billing state changes;
 - pending invitations reserve member slots;
 - revoked/expired invitations, revoked tokens and revoked devices release their corresponding capacity.
+
+
+## First-party email verification and password reset
+
+No hosted email SDK or paid mail service is required. Commender includes a small SMTP client implemented with Node's built-in networking/TLS modules and a durable PostgreSQL outbox.
+
+Public signup is **off by default**. To enable it with your own SMTP server or local relay:
+
+```env
+PUBLIC_SIGNUP_ENABLED=true
+MAIL_DELIVERY_MODE=smtp
+MAIL_FROM=commender@example.com
+MAIL_FROM_NAME=WebRising Commender
+
+SMTP_HOST=127.0.0.1
+SMTP_PORT=25
+SMTP_SECURITY=plain
+SMTP_HELO=commender.example.com
+SMTP_USERNAME=
+SMTP_PASSWORD=
+SMTP_TLS_REJECT_UNAUTHORIZED=true
+SMTP_ALLOW_INSECURE_AUTH=false
+```
+
+Supported SMTP security modes:
+
+- `plain` — intended for a trusted localhost/LAN relay. Plaintext SMTP authentication is rejected on non-loopback hosts unless explicitly overridden.
+- `starttls` — connect normally and upgrade with STARTTLS.
+- `tls` — implicit TLS, normally port 465.
+
+For a local mail server that accepts mail from the gateway host without SMTP AUTH, leave `SMTP_USERNAME` and `SMTP_PASSWORD` empty.
+
+`MAIL_DELIVERY_MODE=outbox` queues mail into PostgreSQL but does not send it. This is useful for CI/development, not normal production signup.
+
+Flow:
+
+1. User chooses **Create account** in the console.
+2. Gateway stores only a scrypt password verifier and SHA-256 verifier of the email-verification token.
+3. Verification mail is queued.
+4. The mail link uses `#verify=<token>`; the token is posted to the API from browser JavaScript and is not part of the page request URL.
+5. Verification creates the user + owner workspace and opens a hardened browser session.
+6. **Forgot password** uses the same outbox/SMTP path with a one-hour single-use `#reset=<token>` link.
+7. Completing a reset revokes all existing browser sessions.
+
+Existing self-hosted installations do not need to enable public signup. The control-key browser-account bootstrap and workspace invitations continue to work without mail delivery.
