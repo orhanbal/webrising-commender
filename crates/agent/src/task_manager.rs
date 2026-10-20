@@ -68,7 +68,8 @@ impl TaskManager {
         let tasks = std::sync::Arc::clone(&self.tasks);
         let id_for_job = task_id.clone();
         let job = tokio::spawn(async move {
-            let outcome = process_ops::exec(&policy, &command, cwd.as_deref(), timeout_ms).await;
+            let outcome =
+                process_ops::exec_task(&policy, &command, cwd.as_deref(), timeout_ms).await;
 
             let mut map = tasks.lock().await;
             let Some(entry) = map.get_mut(&id_for_job) else {
