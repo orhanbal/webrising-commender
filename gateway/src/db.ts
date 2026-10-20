@@ -193,6 +193,12 @@ export async function migrate() {
     alter table billing_events
       add column if not exists disposition text not null default 'received';
 
+    alter table billing_events
+      drop constraint if exists billing_events_disposition_check;
+    alter table billing_events
+      add constraint billing_events_disposition_check
+      check (disposition in ('received','applied','stale','provider_mismatch','order_conflict'));
+
     create table if not exists audit_logs (
       id bigserial primary key,
       organization_id uuid references organizations(id) on delete set null,
