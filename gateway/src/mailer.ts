@@ -23,7 +23,12 @@ function boolEnv(name: string, fallback: boolean) {
 }
 
 export function smtpConfigured() {
-  return Boolean(process.env.SMTP_HOST && process.env.SMTP_FROM);
+  try {
+    smtpConfig();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function smtpConfig(): SmtpConfig {
