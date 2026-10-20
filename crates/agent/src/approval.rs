@@ -2,6 +2,9 @@ use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use hmac::{Hmac, Mac};
 use serde::Deserialize;
+use serde_json::Value;
+
+use crate::protocol::AgentAction;
 use sha2::Sha256;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -12,11 +15,17 @@ type HmacSha256 = Hmac<Sha256>;
 struct ApprovalClaim {
     device_id: String,
     action: String,
+    request: Value,
     exp: u64,
     nonce: String,
 }
 
-pub fn verify(token: &str, approval_key: &str, device_id: &str, action: &str) -> Result<()> {
+pub fn verify(
+    token: &str,
+    approval_key: &str,
+    device_id: &str,
+    action: &AgentAction,
+) -> Result<()> {
     let (payload, signature) = token
         .split_once('.')
         .ok_or_else(|| anyhow!("invalid approval token format"))?;
@@ -52,9 +61,16 @@ pub fn verify(token: &str, approval_key: &str, device_id: &str, action: &str) ->
     if claim.device_id != device_id {
         return Err(anyhow!("approval token is for another device"));
     }
-    if claim.action != action {
+    if claim.action != action.kind_name() {
         return Err(anyhow!("approval token is for another action"));
     }
+
+    let expected_request =
+        serde_json::to_value(action).context("cannot serialize action for approval verification")?;
+    if claim.request != expected_request {
+        return Err(anyhow!("approval token parameters do not match the requested operation"));
+    }
+
     if claim.exp < now {
         return Err(anyhow!("approval token has expired"));
     }
@@ -70,11 +86,12 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn token(key: &[u8], device_id: &str, action: &str, exp: u64) -> String {
+    fn token(key: &[u8], device_id: &str, action: &AgentAction, exp: u64) -> String {
         let payload = URL_SAFE_NO_PAD.encode(
             serde_json::to_vec(&json!({
                 "deviceId": device_id,
-                "action": action,
+                "action": action.kind_name(),
+                "request": serde_json::to_value(action).unwrap(),
                 "exp": exp,
                 "nonce": "0123456789abcdef"
             }))
@@ -96,9 +113,20 @@ mod tests {
             .as_secs()
             + 60;
 
-        let value = token(&key, "device-a", "process_exec", exp);
-        assert!(verify(&value, &key_text, "device-a", "process_exec").is_ok());
-        assert!(verify(&value, &key_text, "device-b", "process_exec").is_err());
-        assert!(verify(&value, &key_text, "device-a", "fs_delete").is_err());
+        let action = AgentAction::ProcessExec {
+            command: "echo approved".into(),
+            cwd: None,
+            timeout_ms: Some(30_000),
+        };
+        let value = token(&key, "device-a", &action, exp);
+        assert!(verify(&value, &key_text, "device-a", &action).is_ok());
+        assert!(verify(&value, &key_text, "device-b", &action).is_err());
+
+        let changed = AgentAction::ProcessExec {
+            command: "echo changed".into(),
+            cwd: None,
+            timeout_ms: Some(30_000),
+        };
+        assert!(verify(&value, &key_text, "device-a", &changed).is_err());
     }
 }
