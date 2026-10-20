@@ -272,12 +272,15 @@ const server = http.createServer(async (req, res) => {
         }
 
         await client.query(
-          "delete from pending_signups where lower(email)=lower($1)",
-          [email],
-        );
-        await client.query(
-          `insert into pending_signups(email,password_hash,workspace_name,token_hash,expires_at)
-           values($1,$2,$3,$4,now()+interval '24 hours')`,
+          `insert into pending_signups(email,password_hash,workspace_name,token_hash,expires_at,updated_at)
+           values($1,$2,$3,$4,now()+interval '24 hours',now())
+           on conflict (lower(email))
+           do update set
+             password_hash=excluded.password_hash,
+             workspace_name=excluded.workspace_name,
+             token_hash=excluded.token_hash,
+             expires_at=excluded.expires_at,
+             updated_at=now()`,
           [email, passwordHash, body.workspaceName, sha256(token)],
         );
         await client.query(
