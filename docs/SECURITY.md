@@ -22,7 +22,9 @@ A valid claim binds:
 - expiry
 - nonce
 
-The gateway signs the canonical claim with `APPROVAL_SIGNING_SECRET`. The agent receives the claim alongside the operation, and the gateway verifies the claim before dispatch. Future hardened releases may additionally provision a public verification key to the agent.
+The gateway derives a unique per-device approval verification key from `APPROVAL_SIGNING_SECRET` and the device id. Only the derived device key is provisioned during enrollment; the master signing secret never leaves the gateway.
+
+For HIGH-risk actions, the gateway validates and atomically consumes the one-time approval before dispatch. The native agent independently verifies the HMAC signature, device id, action and expiry before executing the operation. A compromised relay path therefore cannot turn an arbitrary string into local approval.
 
 ## Logging
 
