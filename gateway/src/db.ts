@@ -101,3 +101,22 @@ export async function ready() {
   const result = await db.query("select 1 as ok");
   return result.rowCount === 1;
 }
+
+function auditRetentionDays() {
+  const value = Number(process.env.AUDIT_RETENTION_DAYS ?? 90);
+  if (!Number.isFinite(value) || value < 0) return 90;
+  return Math.min(3650, Math.floor(value));
+}
+
+export async function housekeeping() {
+  await db.query("delete from pairing_codes where expires_at < now() or used_at < now() - interval '1 day'");
+  await db.query("delete from approvals where expires_at < now() - interval '1 day'");
+
+  const retentionDays = auditRetentionDays();
+  if (retentionDays > 0) {
+    await db.query(
+      "delete from audit_logs where created_at < now() - ($1::int * interval '1 day')",
+      [retentionDays],
+    );
+  }
+}
