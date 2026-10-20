@@ -74,11 +74,15 @@ function decryptPayload(row: {
   return parsed;
 }
 
-export async function enqueueMail(queryable: Queryable, input: MailPayload) {
+export async function enqueueMail(
+  queryable: Queryable,
+  input: MailPayload,
+  expiresInMinutes: number | null = null,
+) {
   const encrypted = encryptPayload(input);
   const result = await queryable.query<{ id: string }>(
-    "insert into mail_outbox(payload_ciphertext,payload_iv,payload_tag) values($1,$2,$3) returning id::text",
-    [encrypted.ciphertext, encrypted.iv, encrypted.tag],
+    "insert into mail_outbox(payload_ciphertext,payload_iv,payload_tag,expires_at) values($1,$2,$3,case when $4::int is null then null else now()+($4::int * interval '1 minute') end) returning id::text",
+    [encrypted.ciphertext, encrypted.iv, encrypted.tag, expiresInMinutes],
   );
   return result.rows[0]!.id;
 }
@@ -105,6 +109,7 @@ export async function drainMailOutbox(limit = 10) {
     "    from mail_outbox",
     "   where sent_at is null",
     "     and next_attempt_at<=now()",
+    "     and (expires_at is null or expires_at>now())",
     "     and (lease_until is null or lease_until<now())",
     "   order by created_at asc",
     "   limit $1",
