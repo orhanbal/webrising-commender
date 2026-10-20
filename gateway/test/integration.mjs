@@ -46,6 +46,21 @@ function toolText(response) {
   return JSON.parse(text);
 }
 
+async function waitFor(predicate, timeoutMs = 5000, intervalMs = 100) {
+  const deadline = Date.now() + timeoutMs;
+  let last;
+  while (Date.now() < deadline) {
+    try {
+      last = await predicate();
+      if (last) return last;
+    } catch (error) {
+      last = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error(`condition timeout; last=${last instanceof Error ? last.message : JSON.stringify(last)}`);
+}
+
 const health = await jsonFetch("/health");
 assert.equal(health.status, "ok");
 
@@ -151,6 +166,11 @@ await new Promise((resolve, reject) => {
   socket.once("error", reject);
 });
 
+const connectedDevices = await jsonFetch("/api/devices", { headers: authHeaders });
+const connectedDevice = connectedDevices.items.find((item) => item.id === enrolled.deviceId);
+assert.ok(connectedDevice);
+assert.equal(connectedDevice.online, false);
+
 socket.send(JSON.stringify({
   type: "hello",
   deviceId: enrolled.deviceId,
@@ -192,11 +212,11 @@ socket.on("message", (raw) => {
   }));
 });
 
-await new Promise((resolve) => setTimeout(resolve, 100));
-
-const devices = await jsonFetch("/api/devices", { headers: authHeaders });
-const device = devices.items.find((item) => item.id === enrolled.deviceId);
-assert.ok(device);
+const device = await waitFor(async () => {
+  const devices = await jsonFetch("/api/devices", { headers: authHeaders });
+  const item = devices.items.find((candidate) => candidate.id === enrolled.deviceId);
+  return item?.online ? item : null;
+});
 assert.equal(device.online, true);
 
 const initialized = await rpc(1, "initialize", {});
@@ -400,6 +420,225 @@ const switchedMe = await switchedMeResponse.json();
 assert.equal(switchedMe.organizationId, tenantOrg.item.id);
 assert.equal(switchedMe.role, "owner");
 
+const duplicateMemberInvitation = await fetch(base + "/api/invitations", {
+  method: "POST",
+  headers: {
+    Cookie: browserCookies,
+    "Content-Type": "application/json",
+    "X-CSRF-Token": browserLogin.csrfToken,
+  },
+  body: JSON.stringify({
+    email: "owner@example.test",
+    role: "operator",
+  }),
+});
+assert.equal(duplicateMemberInvitation.status, 409);
+assert.equal((await duplicateMemberInvitation.json()).error, "already_member");
+
+const memberInvitationResponse = await fetch(base + "/api/invitations", {
+  method: "POST",
+  headers: {
+    Cookie: browserCookies,
+    "Content-Type": "application/json",
+    "X-CSRF-Token": browserLogin.csrfToken,
+  },
+  body: JSON.stringify({
+    email: "member@example.test",
+    role: "operator",
+    ttlHours: 24,
+  }),
+});
+assert.equal(memberInvitationResponse.status, 201);
+const memberInvitation = await memberInvitationResponse.json();
+assert.match(memberInvitation.inviteToken, /^wrci_/);
+assert.match(memberInvitation.inviteUrl, /#invite=wrci_/);
+
+const invitationPreviewResponse = await fetch(base + "/api/invitations/preview", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ token: memberInvitation.inviteToken }),
+});
+assert.equal(invitationPreviewResponse.status, 200);
+const invitationPreview = await invitationPreviewResponse.json();
+assert.equal(invitationPreview.item.email, "member@example.test");
+assert.equal(invitationPreview.item.organizationId, tenantOrg.item.id);
+assert.equal(invitationPreview.item.role, "operator");
+assert.equal(invitationPreview.item.existingUser, false);
+
+const invitationAcceptResponse = await fetch(base + "/api/invitations/accept", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    token: memberInvitation.inviteToken,
+    password: "member-secure-password",
+  }),
+});
+assert.equal(invitationAcceptResponse.status, 200);
+const invitationAccept = await invitationAcceptResponse.json();
+assert.equal(invitationAccept.organizationId, tenantOrg.item.id);
+assert.equal(invitationAccept.role, "operator");
+const memberCookies = invitationAcceptResponse.headers.getSetCookie().map((value) => value.split(";")[0]).join("; ");
+
+const invitedMemberMeResponse = await fetch(base + "/api/auth/me", {
+  headers: { Cookie: memberCookies },
+});
+assert.equal(invitedMemberMeResponse.status, 200);
+const invitedMemberMe = await invitedMemberMeResponse.json();
+assert.equal(invitedMemberMe.email, "member@example.test");
+assert.equal(invitedMemberMe.role, "operator");
+
+const invitationReplayResponse = await fetch(base + "/api/invitations/accept", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    token: memberInvitation.inviteToken,
+    password: "member-secure-password",
+  }),
+});
+assert.equal(invitationReplayResponse.status, 400);
+assert.equal((await invitationReplayResponse.json()).error, "invalid_or_expired_invitation");
+
+const memberListResponse = await fetch(base + "/api/members", {
+  headers: { Cookie: browserCookies },
+});
+assert.equal(memberListResponse.status, 200);
+const memberList = await memberListResponse.json();
+const invitedMember = memberList.items.find((item) => item.email === "member@example.test");
+assert.ok(invitedMember);
+assert.equal(invitedMember.role, "operator");
+
+const lastOwnerDemotionResponse = await fetch(base + `/api/members/${browserMe.userId}`, {
+  method: "PATCH",
+  headers: {
+    Cookie: browserCookies,
+    "Content-Type": "application/json",
+    "X-CSRF-Token": browserLogin.csrfToken,
+  },
+  body: JSON.stringify({ role: "admin" }),
+});
+assert.equal(lastOwnerDemotionResponse.status, 409);
+assert.equal((await lastOwnerDemotionResponse.json()).error, "last_owner_required");
+
+const memberRoleUpdateResponse = await fetch(base + `/api/members/${invitedMember.id}`, {
+  method: "PATCH",
+  headers: {
+    Cookie: browserCookies,
+    "Content-Type": "application/json",
+    "X-CSRF-Token": browserLogin.csrfToken,
+  },
+  body: JSON.stringify({ role: "viewer" }),
+});
+assert.equal(memberRoleUpdateResponse.status, 200);
+assert.equal((await memberRoleUpdateResponse.json()).item.role, "viewer");
+
+const invitedMemberAfterRoleChange = await fetch(base + "/api/auth/me", {
+  headers: { Cookie: memberCookies },
+});
+assert.equal(invitedMemberAfterRoleChange.status, 200);
+assert.equal((await invitedMemberAfterRoleChange.json()).role, "viewer");
+
+const revokeInvitationResponse = await fetch(base + "/api/invitations", {
+  method: "POST",
+  headers: {
+    Cookie: browserCookies,
+    "Content-Type": "application/json",
+    "X-CSRF-Token": browserLogin.csrfToken,
+  },
+  body: JSON.stringify({
+    email: "revoked@example.test",
+    role: "viewer",
+  }),
+});
+assert.equal(revokeInvitationResponse.status, 201);
+const revokeInvitation = await revokeInvitationResponse.json();
+
+const revokeInvitationAction = await fetch(
+  base + `/api/invitations/${revokeInvitation.item.id}/revoke`,
+  {
+    method: "POST",
+    headers: {
+      Cookie: browserCookies,
+      "Content-Type": "application/json",
+      "X-CSRF-Token": browserLogin.csrfToken,
+    },
+    body: "{}",
+  },
+);
+assert.equal(revokeInvitationAction.status, 200);
+
+const revokedPreview = await fetch(base + "/api/invitations/preview", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ token: revokeInvitation.inviteToken }),
+});
+assert.equal(revokedPreview.status, 404);
+
+const memberRemovalResponse = await fetch(base + `/api/members/${invitedMember.id}`, {
+  method: "DELETE",
+  headers: {
+    Cookie: browserCookies,
+    "X-CSRF-Token": browserLogin.csrfToken,
+  },
+});
+assert.equal(memberRemovalResponse.status, 200);
+
+const removedMemberSession = await fetch(base + "/api/auth/me", {
+  headers: { Cookie: memberCookies },
+});
+assert.equal(removedMemberSession.status, 401);
+
+const browserWorkspaceResponse = await fetch(base + "/api/auth/organizations", {
+  method: "POST",
+  headers: {
+    Cookie: browserCookies,
+    "Content-Type": "application/json",
+    "X-CSRF-Token": browserLogin.csrfToken,
+  },
+  body: JSON.stringify({ name: "CI Browser Workspace" }),
+});
+assert.equal(browserWorkspaceResponse.status, 201);
+const browserWorkspace = await browserWorkspaceResponse.json();
+assert.equal(browserWorkspace.item.role, "owner");
+
+const renameWorkspaceResponse = await fetch(base + "/api/organization", {
+  method: "PATCH",
+  headers: {
+    Cookie: browserCookies,
+    "Content-Type": "application/json",
+    "X-CSRF-Token": browserLogin.csrfToken,
+  },
+  body: JSON.stringify({ name: "CI Browser Workspace Renamed" }),
+});
+assert.equal(renameWorkspaceResponse.status, 200);
+assert.equal((await renameWorkspaceResponse.json()).item.name, "CI Browser Workspace Renamed");
+
+const organizationsResponse = await fetch(base + "/api/auth/organizations", {
+  headers: { Cookie: browserCookies },
+});
+assert.equal(organizationsResponse.status, 200);
+const organizations = await organizationsResponse.json();
+assert.ok(organizations.items.some((item) => item.id === tenantOrg.item.id));
+assert.ok(organizations.items.some((item) => item.id === browserWorkspace.item.id));
+
+const switchBackResponse = await fetch(base + "/api/auth/switch-organization", {
+  method: "POST",
+  headers: {
+    Cookie: browserCookies,
+    "Content-Type": "application/json",
+    "X-CSRF-Token": browserLogin.csrfToken,
+  },
+  body: JSON.stringify({ organizationId: tenantOrg.item.id }),
+});
+assert.equal(switchBackResponse.status, 200);
+
+const invitationListResponse = await fetch(base + "/api/invitations", {
+  headers: { Cookie: browserCookies },
+});
+assert.equal(invitationListResponse.status, 200);
+const invitationList = await invitationListResponse.json();
+assert.ok(invitationList.items.some((item) => item.email === "member@example.test" && item.status === "accepted"));
+assert.ok(invitationList.items.some((item) => item.email === "revoked@example.test" && item.status === "revoked"));
+
 const tenantToken = await jsonFetch("/api/tokens", {
   method: "POST",
   headers: authHeaders,
@@ -467,13 +706,10 @@ const tenantAdminHeaders = {
   "Content-Type": "application/json",
 };
 
-const forbiddenOwnerMembershipChange = await fetch(base + "/api/members", {
-  method: "POST",
+const forbiddenOwnerMembershipChange = await fetch(base + `/api/members/${browserMe.userId}`, {
+  method: "PATCH",
   headers: tenantAdminHeaders,
-  body: JSON.stringify({
-    email: "owner@example.test",
-    role: "operator",
-  }),
+  body: JSON.stringify({ role: "operator" }),
 });
 assert.equal(forbiddenOwnerMembershipChange.status, 403);
 assert.equal((await forbiddenOwnerMembershipChange.json()).error, "cannot_manage_higher_role");
@@ -517,6 +753,79 @@ const forbiddenOwnerRevoke = await fetch(
   },
 );
 assert.equal(forbiddenOwnerRevoke.status, 403);
+
+const existingUserInviteOrg = await jsonFetch("/api/organizations", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({ name: "CI Existing User Invite" }),
+});
+const existingUserInviteOwnerToken = await jsonFetch("/api/tokens", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    name: "Existing Invite Bootstrap",
+    role: "owner",
+    organizationId: existingUserInviteOrg.item.id,
+  }),
+});
+const existingUserInviteHeaders = {
+  Authorization: `Bearer ${existingUserInviteOwnerToken.token}`,
+  "Content-Type": "application/json",
+};
+const existingUserInvitationResponse = await fetch(base + "/api/invitations", {
+  method: "POST",
+  headers: existingUserInviteHeaders,
+  body: JSON.stringify({
+    email: "owner@example.test",
+    role: "admin",
+  }),
+});
+assert.equal(existingUserInvitationResponse.status, 201);
+const existingUserInvitation = await existingUserInvitationResponse.json();
+
+const existingUserPreviewResponse = await fetch(base + "/api/invitations/preview", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ token: existingUserInvitation.inviteToken }),
+});
+assert.equal(existingUserPreviewResponse.status, 200);
+assert.equal((await existingUserPreviewResponse.json()).item.existingUser, true);
+
+const existingUserWrongPassword = await fetch(base + "/api/invitations/accept", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    token: existingUserInvitation.inviteToken,
+    password: "wrong-password-value",
+  }),
+});
+assert.equal(existingUserWrongPassword.status, 401);
+assert.equal((await existingUserWrongPassword.json()).error, "invalid_credentials");
+
+const existingUserAcceptResponse = await fetch(base + "/api/invitations/accept", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    token: existingUserInvitation.inviteToken,
+    password: "correct-horse-battery-staple",
+  }),
+});
+assert.equal(existingUserAcceptResponse.status, 200);
+const existingUserAccept = await existingUserAcceptResponse.json();
+assert.equal(existingUserAccept.userId, browserMe.userId);
+assert.equal(existingUserAccept.organizationId, existingUserInviteOrg.item.id);
+assert.equal(existingUserAccept.role, "admin");
+
+const forbiddenOwnerInvite = await fetch(base + "/api/invitations", {
+  method: "POST",
+  headers: tenantAdminHeaders,
+  body: JSON.stringify({
+    email: "future-owner@example.test",
+    role: "owner",
+  }),
+});
+assert.equal(forbiddenOwnerInvite.status, 403);
+assert.equal((await forbiddenOwnerInvite.json()).error, "cannot_grant_role");
 
 const browserLogoutResponse = await fetch(base + "/api/auth/logout", {
   method: "POST",

@@ -55,6 +55,22 @@ export async function migrate() {
     create index if not exists browser_sessions_user_idx on browser_sessions(user_id);
     create index if not exists browser_sessions_expiry_idx on browser_sessions(expires_at);
 
+    create table if not exists invitations (
+      id uuid primary key default gen_random_uuid(),
+      organization_id uuid not null references organizations(id) on delete cascade,
+      email text not null,
+      role text not null check (role in ('viewer','operator','admin','owner')),
+      token_hash text not null unique,
+      created_by text not null,
+      expires_at timestamptz not null,
+      accepted_at timestamptz,
+      revoked_at timestamptz,
+      created_at timestamptz not null default now()
+    );
+    create index if not exists invitations_org_idx on invitations(organization_id,created_at desc);
+    create index if not exists invitations_email_idx on invitations(lower(email));
+    create index if not exists invitations_expiry_idx on invitations(expires_at);
+
     create table if not exists api_tokens (
       id uuid primary key default gen_random_uuid(),
       organization_id uuid not null references organizations(id) on delete cascade,
@@ -164,6 +180,9 @@ export async function housekeeping() {
   await db.query("delete from approvals where expires_at < now() - interval '1 day'");
   await db.query(
     "delete from browser_sessions where expires_at < now() - interval '1 day' or revoked_at < now() - interval '1 day'",
+  );
+  await db.query(
+    "delete from invitations where (expires_at < now() - interval '7 days') or (accepted_at < now() - interval '30 days') or (revoked_at < now() - interval '30 days')",
   );
   await db.query(
     `update approval_requests

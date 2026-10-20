@@ -56,3 +56,18 @@ The web console supports first-class browser sessions in addition to control/API
 - Browser users receive organization-scoped RBAC from `organization_members`.
 - Password changes revoke the user's other browser sessions.
 - The global `CONTROL_API_KEY` remains a deployment/bootstrap credential and should not be used as a normal SaaS user login.
+
+
+## Invitations and membership safety
+
+Workspace invitation URLs are bearer secrets. The raw invitation token is never persisted; only its SHA-256 verifier is stored.
+
+- Invitation preview and acceptance endpoints are independently rate-limited.
+- Invitation links place the bearer token in the URL fragment (`#invite=...`), which browsers do not send in HTTP request URLs; preview sends the token in a POST body to avoid proxy/access-log leakage.
+- Invitations are single-use, expiring, and revocable.
+- Existing accounts must prove knowledge of their current password before an invitation can create a new membership.
+- New accounts are created only while consuming a valid invitation.
+- Membership role updates and removals serialize the workspace membership rows before enforcing the last-owner invariant.
+- Admins cannot grant or manage a role above their own role.
+- Removing a member revokes that member's browser sessions scoped to the workspace.
+- Open unauthenticated self-registration is intentionally not enabled before email-verification and billing-abuse controls exist.

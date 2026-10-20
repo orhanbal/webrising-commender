@@ -149,3 +149,24 @@ curl -X POST http://localhost:8787/api/users \
 ```
 
 After that, open the console and sign in with the browser account. The console uses an HttpOnly session cookie and CSRF protection; the control key no longer needs to be kept in the browser session.
+
+
+## Workspace onboarding and invitations
+
+Browser users can create additional workspaces from the **Access** tab. The current browser session becomes an `owner` of the new workspace.
+
+Admins and owners can create invitation links without any paid email dependency:
+
+1. Open **Access → Invite member**.
+2. Enter the email and role.
+3. Copy the one-time invitation URL.
+4. Deliver it through email, chat, or another trusted channel.
+
+Invitation secrets are returned only when created. The gateway stores only a SHA-256 verifier. Invitations expire automatically, can be revoked before use, and become unusable after acceptance.
+The invitation token is carried in the URL fragment (`#invite=...`) so it is not sent as part of the page request URL or exposed to ordinary reverse-proxy access logs.
+
+Existing users must enter their current account password when accepting an invitation. New users choose a password during acceptance.
+
+Member role changes and removals use the **Members** table. The gateway refuses any operation that would leave a workspace without an owner.
+
+Tenant API tokens are also managed from **Access**. Raw token values are returned once at creation and should be copied immediately.
