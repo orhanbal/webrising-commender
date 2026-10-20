@@ -105,8 +105,7 @@ export function mailDeliveryAvailable() {
 }
 
 function assertNoHeaderInjection(value: string, field: string) {
-  if (/[
-]/.test(value)) throw new Error(`invalid ${field}`);
+  if (value.includes("\r") || value.includes("\n")) throw new Error(`invalid ${field}`);
 }
 
 function validateAddress(value: string) {
