@@ -45,7 +45,7 @@ export type NormalizedBillingEvent = {
   eventId: string;
   eventType: string;
   organizationId: string;
-  subscription: Omit<SubscriptionInput, "organizationId">;
+  subscription: Omit<SubscriptionInput, "organizationId" | "provider">;
 };
 
 function count(value: string | number | null | undefined) {
@@ -326,8 +326,18 @@ export async function upsertSubscription(input: SubscriptionInput, queryable: Qu
 
 export async function applyNormalizedBillingEvent(event: NormalizedBillingEvent) {
   const client = await db.connect();
+  const payloadHash = sha256(JSON.stringify(event));
   try {
     await client.query("begin");
+    const organization = await client.query(
+      "select id from organizations where id=$1 for update",
+      [event.organizationId],
+    );
+    if (!organization.rowCount) {
+      await client.query("rollback");
+      throw Object.assign(new Error("organization_not_found"), { status: 404 });
+    }
+
     const inserted = await client.query(
       `insert into billing_events(
          provider,event_id,event_type,organization_id,payload_hash,normalized_event
@@ -340,13 +350,20 @@ export async function applyNormalizedBillingEvent(event: NormalizedBillingEvent)
         event.eventId,
         event.eventType,
         event.organizationId,
-        sha256(JSON.stringify(event)),
+        payloadHash,
         JSON.stringify(event),
       ],
     );
 
     if (!inserted.rows[0]) {
+      const existing = await client.query<{ payload_hash: string }>(
+        "select payload_hash from billing_events where provider=$1 and event_id=$2",
+        [event.provider, event.eventId],
+      );
       await client.query("rollback");
+      if (existing.rows[0]?.payload_hash !== payloadHash) {
+        throw Object.assign(new Error("billing_event_conflict"), { status: 409 });
+      }
       return { applied: false, duplicate: true };
     }
 
@@ -354,14 +371,16 @@ export async function applyNormalizedBillingEvent(event: NormalizedBillingEvent)
       {
         organizationId: event.organizationId,
         ...event.subscription,
-        provider: event.subscription.provider ?? event.provider,
+        provider: event.provider,
       },
       client,
     );
     await client.query("commit");
     return { applied: true, duplicate: false, subscription };
   } catch (error) {
-    await client.query("rollback");
+    try {
+      await client.query("rollback");
+    } catch {}
     throw error;
   } finally {
     client.release();
