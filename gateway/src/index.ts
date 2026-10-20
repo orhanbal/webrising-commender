@@ -303,27 +303,40 @@ const server = http.createServer(async (req, res) => {
           return void json(res, 400, { error: "invalid_or_expired_invitation" });
         }
 
-        const existing = await client.query<{ id: string; email: string; password_hash: string }>(
+        let existing = await client.query<{ id: string; email: string; password_hash: string }>(
           "select id,email,password_hash from users where lower(email)=lower($1) and disabled_at is null for update",
           [invite.email],
         );
         let userId: string;
         let email: string;
-        if (existing.rows[0]) {
+        if (!existing.rows[0]) {
+          const passwordHash = await hashPassword(body.password);
+          const created = await client.query<{ id: string; email: string }>(
+            "insert into users(email,password_hash) values($1,$2) on conflict do nothing returning id,email",
+            [normalizeEmail(invite.email), passwordHash],
+          );
+          if (created.rows[0]) {
+            userId = created.rows[0].id;
+            email = created.rows[0].email;
+          } else {
+            existing = await client.query<{ id: string; email: string; password_hash: string }>(
+              "select id,email,password_hash from users where lower(email)=lower($1) and disabled_at is null for update",
+              [invite.email],
+            );
+            if (!existing.rows[0] || !(await verifyPassword(body.password, existing.rows[0].password_hash))) {
+              await client.query("rollback");
+              return void json(res, 401, { error: "invalid_credentials" });
+            }
+            userId = existing.rows[0].id;
+            email = existing.rows[0].email;
+          }
+        } else {
           if (!(await verifyPassword(body.password, existing.rows[0].password_hash))) {
             await client.query("rollback");
             return void json(res, 401, { error: "invalid_credentials" });
           }
           userId = existing.rows[0].id;
           email = existing.rows[0].email;
-        } else {
-          const passwordHash = await hashPassword(body.password);
-          const created = await client.query<{ id: string; email: string }>(
-            "insert into users(email,password_hash) values($1,$2) returning id,email",
-            [normalizeEmail(invite.email), passwordHash],
-          );
-          userId = created.rows[0]!.id;
-          email = created.rows[0]!.email;
         }
 
         const currentMembership = await client.query<{ role: Role }>(
