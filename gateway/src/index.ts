@@ -732,6 +732,20 @@ const server = http.createServer(async (req, res) => {
         active: z.boolean().default(true),
       }).parse(await readJson(req));
       const item = await upsertBillingPlan(body);
+      await auditControl(
+        principal!,
+        null,
+        "billing.plan.upsert",
+        "high",
+        "success",
+        JSON.stringify({
+          key: body.key,
+          maxDevices: body.maxDevices,
+          maxMembers: body.maxMembers,
+          maxApiTokens: body.maxApiTokens,
+          active: body.active,
+        }),
+      );
       return void json(res, 200, { item });
     }
 
