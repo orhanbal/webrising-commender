@@ -160,12 +160,19 @@ export async function migrate() {
       external_subscription_id text,
       current_period_end timestamptz,
       cancel_at_period_end boolean not null default false,
+      provider_event_at timestamptz,
+      provider_event_id text,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
     create unique index if not exists organization_subscriptions_provider_uidx
       on organization_subscriptions(provider,external_subscription_id)
       where provider is not null and external_subscription_id is not null;
+
+    alter table organization_subscriptions
+      add column if not exists provider_event_at timestamptz;
+    alter table organization_subscriptions
+      add column if not exists provider_event_id text;
 
     create table if not exists billing_events (
       id bigserial primary key,
@@ -175,11 +182,16 @@ export async function migrate() {
       organization_id uuid not null references organizations(id) on delete cascade,
       payload_hash text not null,
       normalized_event jsonb not null,
+      disposition text not null default 'received'
+        check (disposition in ('received','applied','stale','provider_mismatch')),
       created_at timestamptz not null default now(),
       unique(provider,event_id)
     );
     create index if not exists billing_events_org_idx
       on billing_events(organization_id,created_at desc);
+
+    alter table billing_events
+      add column if not exists disposition text not null default 'received';
 
     create table if not exists audit_logs (
       id bigserial primary key,
