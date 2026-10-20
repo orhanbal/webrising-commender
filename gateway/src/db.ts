@@ -32,6 +32,25 @@ export async function migrate() {
     );
     create unique index if not exists users_email_lower_uidx on users(lower(email));
 
+    alter table users add column if not exists email_verified_at timestamptz;
+
+    create table if not exists auth_email_challenges (
+      id uuid primary key default gen_random_uuid(),
+      purpose text not null check (purpose in ('signup','password_reset')),
+      email text not null,
+      organization_name text,
+      password_hash text,
+      token_hash text not null unique,
+      expires_at timestamptz not null,
+      consumed_at timestamptz,
+      revoked_at timestamptz,
+      created_at timestamptz not null default now()
+    );
+    create index if not exists auth_email_challenges_email_idx
+      on auth_email_challenges(lower(email),purpose,created_at desc);
+    create index if not exists auth_email_challenges_expiry_idx
+      on auth_email_challenges(expires_at);
+
     create table if not exists organization_members (
       organization_id uuid not null references organizations(id) on delete cascade,
       user_id uuid not null references users(id) on delete cascade,
@@ -244,6 +263,9 @@ export async function housekeeping() {
   );
   await db.query(
     "delete from invitations where (expires_at < now() - interval '7 days') or (accepted_at < now() - interval '30 days') or (revoked_at < now() - interval '30 days')",
+  );
+  await db.query(
+    "delete from auth_email_challenges where expires_at < now() - interval '7 days' or consumed_at < now() - interval '30 days' or revoked_at < now() - interval '30 days'",
   );
   await db.query(
     `update approval_requests
