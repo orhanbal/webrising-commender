@@ -100,6 +100,11 @@ async function assignSubscription(organizationId, planKey = "ci-standard", statu
 const health = await jsonFetch("/health");
 assert.equal(health.status, "ok");
 
+const publicConfig = await jsonFetch("/api/public/config");
+assert.equal(publicConfig.deploymentMode, "saas");
+assert.equal(publicConfig.signupEnabled, true);
+assert.equal(publicConfig.passwordResetEnabled, true);
+
 const standardPlan = await jsonFetch("/api/admin/billing/plans", {
   method: "POST",
   headers: authHeaders,
@@ -170,6 +175,19 @@ assert.equal(
 );
 assert.ok(encryptedOutbox.rows[0].payload_nonce);
 assert.ok(encryptedOutbox.rows[0].payload_tag);
+
+const outboxStatus = await jsonFetch("/api/admin/mail/outbox?limit=10", {
+  headers: authHeaders,
+});
+assert.equal(outboxStatus.configured, true);
+assert.ok(outboxStatus.counts.sent >= 1);
+assert.equal("recipient_hash" in outboxStatus.items[0], false);
+assert.equal("payload_ciphertext" in outboxStatus.items[0], false);
+
+const invalidOutboxLimit = await jsonFetch("/api/admin/mail/outbox?limit=not-a-number", {
+  headers: authHeaders,
+});
+assert.ok(Array.isArray(invalidOutboxLimit.items));
 
 const wrongVerificationPassword = await fetch(base + "/api/auth/signup/verify", {
   method: "POST",
