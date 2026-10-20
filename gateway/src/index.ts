@@ -100,8 +100,9 @@ function remoteKey(req: IncomingMessage) {
   return req.socket.remoteAddress || "unknown";
 }
 
-async function auditControl(
+async function auditForOrganization(
   principal: Principal,
+  organizationId: string,
   deviceId: string | null,
   tool: string,
   risk: string,
@@ -110,7 +111,26 @@ async function auditControl(
 ) {
   await db.query(
     "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,$2,$3,$4,$5,$6,$7)",
-    [principal.organizationId, principal.actor, deviceId, tool, risk, outcome, detail],
+    [organizationId, principal.actor, deviceId, tool, risk, outcome, detail],
+  );
+}
+
+async function auditControl(
+  principal: Principal,
+  deviceId: string | null,
+  tool: string,
+  risk: string,
+  outcome: string,
+  detail = "",
+) {
+  await auditForOrganization(
+    principal,
+    principal.organizationId,
+    deviceId,
+    tool,
+    risk,
+    outcome,
+    detail,
   );
 }
 
@@ -667,6 +687,118 @@ const server = http.createServer(async (req, res) => {
         [body.name],
       );
       return void json(res, 201, { item: created.rows[0] });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/billing") {
+      if (!requireRole(principal!, "viewer", res)) return;
+      return void json(res, 200, await billingSnapshot(principal!.organizationId));
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/admin/billing/plans") {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const result = await db.query(
+        `select key,name,max_devices,max_members,max_api_tokens,metadata,active,created_at,updated_at
+           from billing_plans
+          order by created_at asc,key asc`,
+      );
+      return void json(res, 200, { mode: deploymentMode, items: result.rows });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/admin/billing/plans") {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const body = z.object({
+        key: z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9_-]{1,63}$/),
+        name: z.string().trim().min(2).max(120),
+        maxDevices: z.number().int().min(0).max(1_000_000).nullable().default(null),
+        maxMembers: z.number().int().min(0).max(1_000_000).nullable().default(null),
+        maxApiTokens: z.number().int().min(0).max(1_000_000).nullable().default(null),
+        metadata: z.record(z.string(), z.unknown()).default({}),
+        active: z.boolean().default(true),
+      }).parse(await readJson(req));
+      const item = await upsertBillingPlan(body);
+      return void json(res, 200, { item });
+    }
+
+    const adminBillingMatch = url.pathname.match(
+      /^\/api\/admin\/organizations\/([0-9a-f-]{36})\/billing$/i,
+    );
+    if (req.method === "GET" && adminBillingMatch) {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const organizationId = adminBillingMatch[1]!;
+      const exists = await db.query("select 1 from organizations where id=$1", [organizationId]);
+      if (!exists.rowCount) return void json(res, 404, { error: "organization_not_found" });
+      return void json(res, 200, await billingSnapshot(organizationId));
+    }
+
+    const subscriptionMatch = url.pathname.match(
+      /^\/api\/admin\/organizations\/([0-9a-f-]{36})\/subscription$/i,
+    );
+    if (req.method === "PUT" && subscriptionMatch) {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const organizationId = subscriptionMatch[1]!;
+      const body = z.object({
+        planKey: z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9_-]{1,63}$/),
+        status: z.enum(["trialing", "active", "past_due", "canceled"]),
+        provider: z.string().trim().min(1).max(80).nullable().optional(),
+        externalCustomerId: z.string().trim().min(1).max(255).nullable().optional(),
+        externalSubscriptionId: z.string().trim().min(1).max(255).nullable().optional(),
+        currentPeriodEnd: z.string().datetime({ offset: true }).nullable().optional(),
+        cancelAtPeriodEnd: z.boolean().default(false),
+      }).parse(await readJson(req));
+
+      const item = await upsertSubscription({
+        organizationId,
+        ...body,
+        provider: body.provider?.toLowerCase() ?? null,
+      });
+      await auditForOrganization(
+        principal!,
+        organizationId,
+        null,
+        "billing.subscription.upsert",
+        "high",
+        "success",
+        JSON.stringify({ planKey: body.planKey, status: body.status, provider: body.provider ?? null }),
+      );
+      return void json(res, 200, { item });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/admin/billing/events") {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const body = z.object({
+        provider: z.string().trim().min(1).max(80).transform((value) => value.toLowerCase()),
+        eventId: z.string().trim().min(1).max(255),
+        eventType: z.string().trim().min(1).max(120),
+        organizationId: z.string().uuid(),
+        subscription: z.object({
+          planKey: z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9_-]{1,63}$/),
+          status: z.enum(["trialing", "active", "past_due", "canceled"]),
+          provider: z.string().trim().min(1).max(80).nullable().optional(),
+          externalCustomerId: z.string().trim().min(1).max(255).nullable().optional(),
+          externalSubscriptionId: z.string().trim().min(1).max(255).nullable().optional(),
+          currentPeriodEnd: z.string().datetime({ offset: true }).nullable().optional(),
+          cancelAtPeriodEnd: z.boolean().default(false),
+        }),
+      }).parse(await readJson(req));
+      const result = await applyNormalizedBillingEvent(body);
+      if (result.applied) {
+        await auditForOrganization(
+          principal!,
+          body.organizationId,
+          null,
+          "billing.event.apply",
+          "high",
+          "success",
+          JSON.stringify({
+            provider: body.provider,
+            eventId: body.eventId,
+            eventType: body.eventType,
+            planKey: body.subscription.planKey,
+            status: body.subscription.status,
+          }),
+        );
+      }
+      return void json(res, 200, result);
     }
 
     if (req.method === "GET" && (url.pathname === "/api/users" || url.pathname === "/api/members")) {
