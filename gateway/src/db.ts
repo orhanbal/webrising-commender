@@ -71,6 +71,24 @@ export async function migrate() {
     );
     alter table approvals add column if not exists consumed_at timestamptz;
 
+    create table if not exists approval_requests (
+      id uuid primary key default gen_random_uuid(),
+      organization_id uuid not null references organizations(id) on delete cascade,
+      device_id uuid not null references devices(id) on delete cascade,
+      requested_by text not null,
+      action_kind text not null,
+      action jsonb not null,
+      status text not null default 'pending'
+        check (status in ('pending','approved','denied','consumed','expired')),
+      expires_at timestamptz not null,
+      decided_by text,
+      decided_at timestamptz,
+      consumed_at timestamptz,
+      created_at timestamptz not null default now()
+    );
+    create index if not exists approval_requests_org_status_idx
+      on approval_requests(organization_id,status,created_at desc);
+
     create table if not exists audit_logs (
       id bigserial primary key,
       organization_id uuid references organizations(id) on delete set null,
@@ -111,6 +129,12 @@ function auditRetentionDays() {
 export async function housekeeping() {
   await db.query("delete from pairing_codes where expires_at < now() or used_at < now() - interval '1 day'");
   await db.query("delete from approvals where expires_at < now() - interval '1 day'");
+  await db.query(
+    "update approval_requests set status='expired' where status in ('pending','approved') and expires_at<=now()",
+  );
+  await db.query(
+    "delete from approval_requests where created_at < now() - interval '30 days'",
+  );
 
   const retentionDays = auditRetentionDays();
   if (retentionDays > 0) {
