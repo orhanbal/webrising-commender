@@ -35,7 +35,7 @@
           <label><span class="label">Email</span><input id="loginEmail" type="email" autocomplete="username" placeholder="you@example.com"></label>
           <label><span class="label">Password</span><input id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••••••••"></label>
         </div>
-        <div class="row" style="margin-top:10px"><button id="loginButton">Sign in</button><button id="signupOpen" class="secondary">Create account</button><button id="resetOpen" class="secondary">Forgot password</button><button id="logoutButton" class="secondary">Sign out</button><span id="authState" class="pill">not signed in</span></div>
+        <div class="row" style="margin-top:10px"><button id="loginButton">Sign in</button><button id="signupOpen" class="secondary hidden">Create account</button><button id="resetOpen" class="secondary hidden">Forgot password</button><button id="logoutButton" class="secondary">Sign out</button><span id="authState" class="pill">not signed in</span></div>
         <p class="hint">Browser sessions use HttpOnly cookies. Passwords and session tokens are never stored in localStorage.</p>
       </div>
       <div>
@@ -267,11 +267,13 @@ function clearError(){$("globalError").textContent=""}
 function dateOrDash(value){return value?new Date(value).toLocaleString():"—"}
 function setText(id,value){$(id).textContent=String(value??"")}
 
-function apiError(body,status){if(body?.error==="quota_exceeded")return (body.resource||"resource")+" quota reached ("+body.used+"/"+body.limit+")";if(body?.error==="billing_required")return "This workspace needs an active SaaS entitlement before new resources can be created.";return body?.error||("HTTP "+status)}
+function apiError(body,status){if(body?.error==="quota_exceeded")return (body.resource||"resource")+" quota reached ("+body.used+"/"+body.limit+")";if(body?.error==="billing_required")return "This workspace needs an active SaaS entitlement before new resources can be created.";if(body?.error==="signup_disabled")return "Public signup is disabled on this deployment.";if(body?.error==="mail_not_configured")return "Email delivery is not configured on this deployment.";return body?.error||("HTTP "+status)}
 async function api(route,opts={}){const method=(opts.method||"GET").toUpperCase();const headers={...auth(),...(opts.headers||{})};if(!$("key").value.trim()&&!["GET","HEAD","OPTIONS"].includes(method)){const csrf=cookieValue("commender_csrf");if(csrf)headers["X-CSRF-Token"]=csrf}const r=await fetch(route,{credentials:"same-origin",...opts,headers});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(apiError(body,r.status));return body}
 async function deviceRequest(action,approve=false){const d=needDevice();let approvalToken;if(approve){const preview=JSON.stringify(action,null,2);if(!confirm("Approve this HIGH-risk operation?\n\n"+preview))throw new Error("Action canceled.");const a=await api("/api/approvals",{method:"POST",body:JSON.stringify({deviceId:d.id,action,ttlSeconds:120})});approvalToken=a.approvalToken}const r=await api("/api/device/request",{method:"POST",body:JSON.stringify({deviceId:d.id,action,...(approvalToken?{approvalToken}:{})})});return r.data}
 
 async function health(){try{const r=await fetch("/health");$("health").textContent=r.ok?"gateway healthy":"gateway degraded";$("health").className="pill "+(r.ok?"ok":"bad")}catch{$("health").textContent="gateway offline";$("health").className="pill bad"}}
+
+async function loadPublicConfig(){try{const r=await fetch("/api/public/config");const j=await r.json();$("signupOpen").classList.toggle("hidden",!j.signupEnabled);$("resetOpen").classList.toggle("hidden",!j.passwordResetEnabled)}catch{$("signupOpen").classList.add("hidden");$("resetOpen").classList.add("hidden")}}
 
 async function loadDevices(){try{clearError();const j=await api("/api/devices");if(selected){selected=j.items.find(x=>x.id===selected.id)||null}renderDevices(j.items);syncSelection()}catch(e){showError(e)}}
 function renderDevices(items){$("devices").innerHTML=items.length?items.map(d=>'<div class="device '+(selected?.id===d.id?'selected':'')+'" data-id="'+d.id+'"><b><span class="status '+(d.revoked_at?'revoked':d.online?'online':'')+'"></span>'+escapeHtml(d.name)+'</b><small>'+escapeHtml(d.hostname||d.platform||d.id)+'</small><div class="small">'+(d.revoked_at?'revoked':d.online?'online':'offline')+' · '+escapeHtml(d.agent_version||"agent unknown")+'</div></div>').join(""):'<p class="hint">No devices enrolled.</p>';document.querySelectorAll(".device").forEach(el=>el.onclick=()=>{selected=items.find(x=>x.id===el.dataset.id)||null;renderDevices(items);syncSelection()})}
@@ -456,7 +458,7 @@ $("acceptInvite").onclick=async()=>{try{const password=$("invitePassword").value
 async function loadAudit(){try{const j=await api("/api/audit?limit=100");$("auditBody").innerHTML=j.items.map(x=>'<tr><td>'+escapeHtml(new Date(x.created_at).toLocaleString())+'</td><td>'+escapeHtml(x.actor)+'</td><td>'+escapeHtml(x.device_id||"")+'</td><td>'+escapeHtml(x.tool)+'</td><td>'+escapeHtml(x.risk)+'</td><td>'+escapeHtml(x.outcome)+'</td><td>'+escapeHtml(x.detail)+'</td></tr>').join("")}catch(e){showError(e)}}
 $("loadAudit").onclick=loadAudit;
 
-health();setInterval(health,15000);prepareSignupVerification();preparePasswordReset();loadInvitePreview();refreshIdentity()
+health();setInterval(health,15000);loadPublicConfig();prepareSignupVerification();preparePasswordReset();loadInvitePreview();refreshIdentity()
 
 </script>
 </body>
