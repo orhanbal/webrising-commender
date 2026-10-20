@@ -82,7 +82,7 @@ export class AgentHub {
     }
 
     const requestId = crypto.randomUUID();
-    const message: GatewayMessage = { type: "request", requestId, action, approvalToken };
+    const message: GatewayMessage = {\n      type: "request",\n      requestId,\n      action,\n      ...(approvalToken !== undefined ? { approvalToken } : {}),\n    };
 
     return new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
