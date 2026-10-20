@@ -358,6 +358,80 @@ const server = http.createServer(async (req, res) => {
       return void json(res, 200, { ok: true, item: revoked.rows[0] });
     }
 
+    if (req.method === "GET" && url.pathname === "/api/approval-requests") {
+      if (!requireRole(principal!, "admin", res)) return;
+      const parsedStatus = z
+        .enum(["pending", "approved", "denied", "consumed", "expired"])
+        .safeParse(url.searchParams.get("status") || "pending");
+      if (!parsedStatus.success) {
+        return void json(res, 400, { error: "invalid_status" });
+      }
+      const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit") || 100)));
+      const result = await db.query(
+        `select id,device_id,requested_by,action_kind,action,status,expires_at,
+                decided_by,decided_at,consumed_at,created_at
+           from approval_requests
+          where organization_id=$1 and status=$2
+          order by created_at desc
+          limit $3`,
+        [principal!.organizationId, parsedStatus.data, limit],
+      );
+      return void json(res, 200, { items: result.rows });
+    }
+
+    const approvalDecisionMatch = url.pathname.match(
+      /^\/api\/approval-requests\/([0-9a-f-]{36})\/(approve|deny)$/i,
+    );
+    if (req.method === "POST" && approvalDecisionMatch) {
+      if (!requireRole(principal!, "admin", res)) return;
+      const requestId = approvalDecisionMatch[1]!;
+      const decision = approvalDecisionMatch[2]!.toLowerCase() as "approve" | "deny";
+      const nextStatus = decision === "approve" ? "approved" : "denied";
+
+      const updated = await db.query(
+        `update approval_requests
+            set status=$3,
+                decided_by=$4,
+                decided_at=now()
+          where id=$1
+            and organization_id=$2
+            and status='pending'
+            and expires_at>now()
+          returning id,device_id,requested_by,action_kind,action,status,expires_at,
+                    decided_by,decided_at,created_at`,
+        [requestId, principal!.organizationId, nextStatus, principal!.actor],
+      );
+
+      const item = updated.rows[0];
+      if (!item) {
+        const exists = await db.query(
+          "select status,expires_at from approval_requests where id=$1 and organization_id=$2",
+          [requestId, principal!.organizationId],
+        );
+        if (!exists.rowCount) {
+          return void json(res, 404, { error: "approval_request_not_found" });
+        }
+        return void json(res, 409, {
+          error: "approval_request_not_pending",
+          item: exists.rows[0],
+        });
+      }
+
+      await auditControl(
+        principal!,
+        item.device_id,
+        `approval_request.${decision}`,
+        "high",
+        "success",
+        JSON.stringify({
+          approvalRequestId: requestId,
+          action: item.action_kind,
+          requestedBy: item.requested_by,
+        }),
+      );
+      return void json(res, 200, { ok: true, item });
+    }
+
     if (req.method === "POST" && url.pathname === "/api/approvals") {
       if (!requireRole(principal!, "admin", res)) return;
       const body = z.object({
