@@ -1,3 +1,4 @@
+mod approval;
 mod config;
 mod fs_ops;
 mod ops;
@@ -162,6 +163,7 @@ async fn enroll(
     let config = AgentConfig {
         device_id: enrolled.device_id,
         device_token: enrolled.device_token,
+        approval_key: enrolled.approval_key,
         gateway_ws_url: enrolled.gateway_ws_url,
         control_url: control_url.trim_end_matches('/').to_owned(),
         name: name.unwrap_or_else(|| hostname.clone()),
@@ -304,6 +306,8 @@ async fn connected_loop(
                         let persistent_tasks = tasks.clone();
                         let active_map = Arc::clone(&active);
                         let id_for_task = request_id.clone();
+                        let approval_key = config.approval_key.clone();
+                        let device_id = config.device_id.clone();
 
                         let handle = tokio::spawn(async move {
                             let result = ops::execute(
@@ -312,6 +316,8 @@ async fn connected_loop(
                                 &persistent_tasks,
                                 action,
                                 approval_token.as_deref(),
+                                &approval_key,
+                                &device_id,
                             )
                             .await;
 
