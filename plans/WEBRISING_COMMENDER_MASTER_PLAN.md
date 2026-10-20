@@ -128,6 +128,8 @@ Windows service, systemd, Docker images, release artifacts.
 ### Phase 7 — SaaS
 Real user auth, organizations, RBAC, plans/billing, regional relays. This phase must not weaken self-hosted mode.
 
+Current milestone: organization-scoped browser users, salted scrypt password verifiers, hashed HttpOnly sessions, CSRF protection and session-aware RBAC are implemented. Plans/billing and regional relay orchestration remain.
+
 ## 7. Definition of done
 
 A release is accepted only when:
