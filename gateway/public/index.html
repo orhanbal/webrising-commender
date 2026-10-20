@@ -214,6 +214,8 @@ function parentPath(value){if(!value)return "";const normalized=value.replace(/[
 function needDevice(online=true){if(!selected)throw new Error("Select a device first.");if(selected.revoked_at)throw new Error("Device is revoked.");if(online&&!selected.online)throw new Error("Device is offline.");return selected}
 function showError(error){$("globalError").textContent=error instanceof Error?error.message:String(error)}
 function clearError(){$("globalError").textContent=""}
+function dateOrDash(value){return value?new Date(value).toLocaleString():"—"}
+function setText(id,value){$(id).textContent=String(value??"")}
 
 async function api(route,opts={}){const method=(opts.method||"GET").toUpperCase();const headers={...auth(),...(opts.headers||{})};if(!$("key").value.trim()&&!["GET","HEAD","OPTIONS"].includes(method)){const csrf=cookieValue("commender_csrf");if(csrf)headers["X-CSRF-Token"]=csrf}const r=await fetch(route,{credentials:"same-origin",...opts,headers});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(body.error||("HTTP "+r.status));return body}
 async function deviceRequest(action,approve=false){const d=needDevice();let approvalToken;if(approve){const preview=JSON.stringify(action,null,2);if(!confirm("Approve this HIGH-risk operation?\n\n"+preview))throw new Error("Action canceled.");const a=await api("/api/approvals",{method:"POST",body:JSON.stringify({deviceId:d.id,action,ttlSeconds:120})});approvalToken=a.approvalToken}const r=await api("/api/device/request",{method:"POST",body:JSON.stringify({deviceId:d.id,action,...(approvalToken?{approvalToken}:{})})});return r.data}
@@ -224,9 +226,48 @@ async function loadDevices(){try{clearError();const j=await api("/api/devices");
 function renderDevices(items){$("devices").innerHTML=items.length?items.map(d=>'<div class="device '+(selected?.id===d.id?'selected':'')+'" data-id="'+d.id+'"><b><span class="status '+(d.revoked_at?'revoked':d.online?'online':'')+'"></span>'+escapeHtml(d.name)+'</b><small>'+escapeHtml(d.hostname||d.platform||d.id)+'</small><div class="small">'+(d.revoked_at?'revoked':d.online?'online':'offline')+' · '+escapeHtml(d.agent_version||"agent unknown")+'</div></div>').join(""):'<p class="hint">No devices enrolled.</p>';document.querySelectorAll(".device").forEach(el=>el.onclick=()=>{selected=items.find(x=>x.id===el.dataset.id)||null;renderDevices(items);syncSelection()})}
 function syncSelection(){$("selection").textContent=selected?(selected.name+" · "+(selected.revoked_at?"revoked":selected.online?"online":"offline")):"no device selected";$("deviceName").value=selected?.name||""}
 
-async function refreshIdentity(){try{const me=await api("/api/auth/me");$("authState").textContent=(me.email||me.actor)+" · "+me.role;$("authState").className="pill ok";await loadDevices();if(me.role==="admin"||me.role==="owner")await loadAudit()}catch{$("authState").textContent="not signed in";$("authState").className="pill";if(!$("key").value.trim())$("devices").innerHTML='<p class="hint">Sign in or enter an API token.</p>'}}
+async function loadOrganizations(){
+  organizations=[];
+  if(currentIdentity?.authKind!=="session"){
+    $("workspaceBrowserControls").classList.add("hidden");
+    $("workspaceTokenHint").classList.remove("hidden");
+    $("orgState").textContent=currentIdentity?"workspace · "+currentIdentity.organizationId.slice(0,8):"no workspace";
+    return;
+  }
+  $("workspaceBrowserControls").classList.remove("hidden");
+  $("workspaceTokenHint").classList.add("hidden");
+  const j=await api("/api/auth/organizations");
+  organizations=j.items||[];
+  $("organizationSelect").innerHTML=organizations.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name)+' · '+escapeHtml(x.role)+'</option>').join("");
+  $("organizationSelect").value=currentIdentity.organizationId;
+  const active=organizations.find(x=>x.id===currentIdentity.organizationId);
+  $("organizationName").value=active?.name||"";
+  $("orgState").textContent=active?(active.name+" · "+active.role):"workspace";
+}
+async function refreshIdentity(){
+  try{
+    clearError();
+    const me=await api("/api/auth/me");
+    currentIdentity=me;
+    $("authState").textContent=(me.email||me.actor)+" · "+me.role;
+    $("authState").className="pill ok";
+    const canManage=me.role==="admin"||me.role==="owner";
+    $("accessTab").classList.toggle("hidden",!canManage);
+    await loadOrganizations();
+    await loadDevices();
+    if(canManage)await loadAudit();
+  }catch{
+    currentIdentity=null;
+    organizations=[];
+    $("authState").textContent="not signed in";
+    $("authState").className="pill";
+    $("orgState").textContent="no workspace";
+    $("accessTab").classList.add("hidden");
+    if(!$("key").value.trim())$("devices").innerHTML='<p class="hint">Sign in or enter an API token.</p>';
+  }
+}
 $("loginButton").onclick=async()=>{try{clearError();sessionStorage.removeItem("commender-key");$("key").value="";const r=await fetch("/api/auth/login",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("loginEmail").value.trim(),password:$("loginPassword").value})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(body.error||("HTTP "+r.status));$("loginPassword").value="";await refreshIdentity()}catch(e){showError(e)}}
-$("logoutButton").onclick=async()=>{try{await api("/api/auth/logout",{method:"POST",body:"{}"});selected=null;syncSelection();$("authState").textContent="not signed in";$("authState").className="pill";$("devices").innerHTML='<p class="hint">Sign in or enter an API token.</p>'}catch(e){showError(e)}}
+$("logoutButton").onclick=async()=>{try{if(currentIdentity)await api("/api/auth/logout",{method:"POST",body:"{}"});sessionStorage.removeItem("commender-key");$("key").value="";selected=null;currentIdentity=null;syncSelection();await refreshIdentity()}catch(e){showError(e)}}
 $("saveKey").onclick=()=>{sessionStorage.setItem("commender-key",$("key").value);refreshIdentity()}
 $("forgetKey").onclick=()=>{sessionStorage.removeItem("commender-key");$("key").value="";selected=null;syncSelection();refreshIdentity()}
 $("refreshDevices").onclick=loadDevices;
@@ -235,7 +276,7 @@ $("rename").onclick=async()=>{try{const d=needDevice(false);await api("/api/devi
 $("disconnect").onclick=async()=>{try{const d=needDevice();await api("/api/devices/"+d.id+"/disconnect",{method:"POST",body:"{}"});setTimeout(loadDevices,1200)}catch(e){showError(e)}}
 $("revoke").onclick=async()=>{try{const d=needDevice(false);if(!confirm("Revoke "+d.name+"? The agent must be re-enrolled to reconnect."))return;await api("/api/devices/"+d.id+"/revoke",{method:"POST",body:"{}"});await loadDevices();await loadAudit()}catch(e){showError(e)}}
 
-document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b));document.querySelectorAll(".pane").forEach(p=>p.classList.remove("active"));$("pane-"+b.dataset.tab).classList.add("active");if(b.dataset.tab==="audit")loadAudit();if(b.dataset.tab==="approvals")loadApprovals()});
+document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b));document.querySelectorAll(".pane").forEach(p=>p.classList.remove("active"));$("pane-"+b.dataset.tab).classList.add("active");if(b.dataset.tab==="audit")loadAudit();if(b.dataset.tab==="approvals")loadApprovals();if(b.dataset.tab==="access")loadAccess()});
 
 $("loadSystem").onclick=async()=>{try{const data=await deviceRequest({kind:"system_info"});$("systemInfo").innerHTML=Object.entries(data).map(([k,v])=>'<div class="kv"><span>'+escapeHtml(k)+'</span><span>'+escapeHtml(typeof v==="object"?JSON.stringify(v):v)+'</span></div>').join("")}catch(e){showError(e)}}
 
@@ -271,10 +312,65 @@ async function loadApprovals(){try{const j=await api("/api/approval-requests?sta
 async function decideApproval(id,decision){try{const verb=decision==="approve"?"Approve":"Deny";if(!confirm(verb+" this exact AI operation?"))return;await api("/api/approval-requests/"+id+"/"+decision,{method:"POST",body:"{}"});await loadApprovals();await loadAudit()}catch(e){showError(e)}}
 $("loadApprovals").onclick=loadApprovals;
 
+async function loadMembers(){
+  const j=await api("/api/members");
+  $("memberBody").innerHTML=j.items.length?j.items.map(x=>'<tr><td>'+escapeHtml(x.email)+'</td><td><select data-member-role="'+escapeHtml(x.id)+'"><option '+(x.role==="viewer"?"selected":"")+'>viewer</option><option '+(x.role==="operator"?"selected":"")+'>operator</option><option '+(x.role==="admin"?"selected":"")+'>admin</option><option '+(x.role==="owner"?"selected":"")+'>owner</option></select></td><td>'+escapeHtml(dateOrDash(x.last_login_at))+'</td><td>'+escapeHtml(dateOrDash(x.member_since))+'</td><td><div class="row"><button class="secondary" data-member-save="'+escapeHtml(x.id)+'">Save role</button><button class="danger" data-member-remove="'+escapeHtml(x.id)+'">Remove</button></div></td></tr>').join(""):'<tr><td colspan="5" class="hint">No members.</td></tr>';
+  document.querySelectorAll("[data-member-save]").forEach(b=>b.onclick=()=>updateMember(b.dataset.memberSave));
+  document.querySelectorAll("[data-member-remove]").forEach(b=>b.onclick=()=>removeMember(b.dataset.memberRemove));
+}
+async function updateMember(id){try{const role=document.querySelector('[data-member-role="'+CSS.escape(id)+'"]').value;await api("/api/members/"+id,{method:"PATCH",body:JSON.stringify({role})});await loadMembers();await loadAudit();if(id===currentIdentity?.userId)await refreshIdentity()}catch(e){showError(e)}}
+async function removeMember(id){try{if(!confirm("Remove this member from the current workspace?"))return;await api("/api/members/"+id,{method:"DELETE"});await loadMembers();await loadAudit();if(id===currentIdentity?.userId)await refreshIdentity()}catch(e){showError(e)}}
+
+async function loadInvitations(){
+  const j=await api("/api/invitations");
+  $("invitationBody").innerHTML=j.items.length?j.items.map(x=>'<tr><td>'+escapeHtml(x.email)+'</td><td>'+escapeHtml(x.role)+'</td><td>'+escapeHtml(x.status)+'</td><td>'+escapeHtml(dateOrDash(x.expires_at))+'</td><td>'+(x.status==="pending"?'<button class="danger" data-invite-revoke="'+escapeHtml(x.id)+'">Revoke</button>':'—')+'</td></tr>').join(""):'<tr><td colspan="5" class="hint">No invitations.</td></tr>';
+  document.querySelectorAll("[data-invite-revoke]").forEach(b=>b.onclick=()=>revokeInvitation(b.dataset.inviteRevoke));
+}
+async function revokeInvitation(id){try{if(!confirm("Revoke this invitation?"))return;await api("/api/invitations/"+id+"/revoke",{method:"POST",body:"{}"});await loadInvitations();await loadAudit()}catch(e){showError(e)}}
+$("createInvitation").onclick=async()=>{try{const email=$("inviteEmail").value.trim();if(!email)throw new Error("Enter an email address.");const j=await api("/api/invitations",{method:"POST",body:JSON.stringify({email,role:$("inviteRole").value,ttlHours:72})});$("inviteLinkOutput").classList.remove("hidden");$("inviteLinkOutput").textContent="Share this one-time invitation link:\n"+j.inviteUrl;try{await navigator.clipboard?.writeText(j.inviteUrl)}catch{}$("inviteEmail").value="";await loadInvitations();await loadAudit()}catch(e){showError(e)}}
+
+async function loadTokens(){
+  const j=await api("/api/tokens");
+  $("tokenBody").innerHTML=j.items.length?j.items.map(x=>'<tr><td>'+escapeHtml(x.name)+'</td><td>'+escapeHtml(x.role)+'</td><td>'+escapeHtml(dateOrDash(x.last_used_at))+'</td><td>'+escapeHtml(x.revoked_at?"revoked":"active")+'</td><td>'+(!x.revoked_at?'<button class="danger" data-token-revoke="'+escapeHtml(x.id)+'">Revoke</button>':'—')+'</td></tr>').join(""):'<tr><td colspan="5" class="hint">No API tokens.</td></tr>';
+  document.querySelectorAll("[data-token-revoke]").forEach(b=>b.onclick=()=>revokeToken(b.dataset.tokenRevoke));
+}
+async function revokeToken(id){try{if(!confirm("Revoke this API token?"))return;await api("/api/tokens/"+id+"/revoke",{method:"POST",body:"{}"});await loadTokens();await loadAudit()}catch(e){showError(e)}}
+$("createToken").onclick=async()=>{try{const name=$("tokenName").value.trim();if(!name)throw new Error("Enter a token name.");const j=await api("/api/tokens",{method:"POST",body:JSON.stringify({name,role:$("tokenRole").value})});$("tokenOutput").classList.remove("hidden");$("tokenOutput").textContent="Copy now. This token is only returned once:\n"+j.token;$("tokenName").value="";await loadTokens();await loadAudit()}catch(e){showError(e)}}
+
+async function loadAccess(){try{if(!currentIdentity)throw new Error("Sign in first.");await loadOrganizations();await Promise.all([loadMembers(),loadInvitations(),loadTokens()])}catch(e){showError(e)}}
+$("refreshAccess").onclick=loadAccess;
+$("switchOrganization").onclick=async()=>{try{const organizationId=$("organizationSelect").value;if(!organizationId||organizationId===currentIdentity?.organizationId)return;await api("/api/auth/switch-organization",{method:"POST",body:JSON.stringify({organizationId})});selected=null;syncSelection();await refreshIdentity();await loadAccess()}catch(e){showError(e)}}
+$("createOrganization").onclick=async()=>{try{const name=$("organizationName").value.trim()||prompt("New workspace name");if(!name)return;await api("/api/auth/organizations",{method:"POST",body:JSON.stringify({name})});selected=null;syncSelection();await refreshIdentity();await loadAccess()}catch(e){showError(e)}}
+$("renameOrganization").onclick=async()=>{try{const name=$("organizationName").value.trim();if(!name)throw new Error("Enter a workspace name.");await api("/api/organization",{method:"PATCH",body:JSON.stringify({name})});await refreshIdentity();await loadAccess()}catch(e){showError(e)}}
+
+async function loadInvitePreview(){
+  if(!invitationToken)return;
+  $("inviteCard").classList.remove("hidden");
+  try{
+    const r=await fetch("/api/invitations/preview?token="+encodeURIComponent(invitationToken),{credentials:"same-origin"});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(j.error||("HTTP "+r.status));
+    const x=j.item;
+    $("inviteSummary").textContent=x.email+" was invited to "+x.organizationName+" as "+x.role+".";
+    $("inviteStatus").textContent=x.role;
+    $("inviteStatus").className="pill ok";
+    $("invitePasswordLabel").textContent=x.existingUser?"Current account password":"Choose password";
+    $("invitePassword").autocomplete=x.existingUser?"current-password":"new-password";
+  }catch(e){
+    $("inviteSummary").textContent="This invitation is invalid, expired or already used.";
+    $("inviteStatus").textContent="invalid";
+    $("inviteStatus").className="pill bad";
+    $("acceptInvite").disabled=true;
+    $("inviteError").textContent=e.message||String(e);
+  }
+}
+$("acceptInvite").onclick=async()=>{try{const password=$("invitePassword").value;if(password.length<12)throw new Error("Password must be at least 12 characters.");const r=await fetch("/api/invitations/accept",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:invitationToken,password})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||("HTTP "+r.status));sessionStorage.removeItem("commender-key");$("key").value="";$("invitePassword").value="";invitationToken="";history.replaceState(null,"",location.pathname);$("inviteCard").classList.add("hidden");await refreshIdentity()}catch(e){$("inviteError").textContent=e.message||String(e)}}
+
 async function loadAudit(){try{const j=await api("/api/audit?limit=100");$("auditBody").innerHTML=j.items.map(x=>'<tr><td>'+escapeHtml(new Date(x.created_at).toLocaleString())+'</td><td>'+escapeHtml(x.actor)+'</td><td>'+escapeHtml(x.device_id||"")+'</td><td>'+escapeHtml(x.tool)+'</td><td>'+escapeHtml(x.risk)+'</td><td>'+escapeHtml(x.outcome)+'</td><td>'+escapeHtml(x.detail)+'</td></tr>').join("")}catch(e){showError(e)}}
 $("loadAudit").onclick=loadAudit;
 
-health();setInterval(health,15000);refreshIdentity()
+health();setInterval(health,15000);loadInvitePreview();refreshIdentity()
+
 </script>
 </body>
 </html>
