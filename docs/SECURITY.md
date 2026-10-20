@@ -94,3 +94,22 @@ Normalized billing events are stored without raw webhook bodies or payment crede
 Every normalized provider event must also carry a verified provider occurrence timestamp. Once a provider event has advanced an organization's subscription state, older events from that provider are retained in the event ledger but ignored for state mutation. A different event with the exact same occurrence time is treated as `billing_event_order_conflict` rather than guessed into an order; the adapter must reconcile against the provider's authoritative subscription snapshot. Events from a different provider are ignored while the subscription is bound to the current provider. This prevents delayed webhooks from rolling subscription state backward or a retired provider from overwriting the active provider.
 
 The internal normalized-event API is not a substitute for provider webhook verification. Any Paddle, Stripe or other adapter must verify the provider's signature and map trusted provider identifiers to an organization before calling the internal billing event layer.
+
+
+## Public signup, verification and password reset
+
+Public signup is disabled by default and becomes available only when `PUBLIC_SIGNUP_ENABLED=true` and a first-party mail delivery mode is configured.
+
+- Public signup never creates a login-capable account before email verification.
+- Signup passwords are converted to salted scrypt verifiers before pending registration state is stored.
+- Verification and password-reset bearer tokens are random, single-use, expiring values; PostgreSQL stores only SHA-256 verifiers.
+- Verification and reset links place tokens in URL fragments (`#verify=...`, `#reset=...`) so normal HTTP request URLs and reverse-proxy access logs do not receive the bearer secret.
+- Public endpoints are IP/account/token rate-limited.
+- Password-reset request responses do not disclose whether an account exists.
+- Successful password reset revokes every browser session for the user.
+- Accepting a trusted workspace invitation or creating a user through the authenticated admin API marks that address as verified and invalidates any older pending public-verification material.
+- Consumed/superseded auth mail bodies are scrubbed from the outbox.
+
+The built-in SMTP client uses Node's native `net`/`tls` modules. It supports local plaintext relay, STARTTLS and implicit TLS. SMTP credentials over plaintext are rejected for non-loopback hosts unless the operator explicitly enables `SMTP_ALLOW_INSECURE_AUTH=true`.
+
+`MAIL_DELIVERY_MODE=outbox` is intended for development/manual diagnostics: messages remain in PostgreSQL and are not delivered. Production public signup/reset should use `MAIL_DELIVERY_MODE=smtp` with the operator's own mail server or local relay.
