@@ -21,7 +21,13 @@ Device tokens are not recoverable from database hashes. Existing agents continue
 Change `CONTROL_API_KEY` and restart the gateway. Existing native agents are unaffected.
 
 ### Approval signing secret
-Changing `APPROVAL_SIGNING_SECRET` invalidates outstanding approval tokens. Device connectivity is unaffected.
+Changing `APPROVAL_SIGNING_SECRET` invalidates outstanding approval tokens **and changes the per-device approval verifier derived at enrollment**. Device WebSocket connectivity remains valid, but existing agents will reject new HIGH-risk approvals until they are re-enrolled with the new verifier.
+
+Treat signing-secret rotation as a coordinated security event:
+1. rotate the gateway secret,
+2. revoke stale pending approvals,
+3. re-enroll controlled devices,
+4. verify a HIGH-risk denial + approved operation on each device.
 
 ### Device credential
 Revoke the device row and re-enroll the device. Do not attempt to reconstruct the old token.
@@ -96,3 +102,20 @@ sudo COMMANDER_ALLOW_ROOT=1 ./scripts/install-linux.sh ./webrising-commender /ro
 ### macOS
 
 The provided installer creates a per-user LaunchAgent, so it naturally runs with that user's permissions.
+
+
+## Resource ceilings
+
+The native agent and gateway apply bounded-resource defaults:
+
+- filesystem read: 4 MiB hard maximum
+- filesystem write: 8 MiB decoded hard maximum
+- one-shot command output: 1 MiB per stdout/stderr stream
+- one-shot command timeout: 10 minutes maximum
+- persistent background task timeout: 24 hours maximum
+- concurrent persistent tasks: 16 per agent
+- concurrent PTY sessions: 32 per agent
+- PTY retained output: 1 MiB per session
+- gateway in-flight requests: 1024 total and 64 per device
+
+Reverse proxies should keep their own request-size, connection and rate limits enabled. Do not raise these ceilings casually; they are part of the denial-of-service boundary.
