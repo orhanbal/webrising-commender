@@ -62,7 +62,11 @@ export async function consumeApprovedRequest(
      )
      update approval_requests request
         set status='consumed',
-            consumed_at=now()
+            consumed_at=now(),
+            action=jsonb_build_object(
+              'kind', request.action_kind,
+              'redacted', true
+            )
        from candidate
       where request.id=candidate.id
         and request.status='approved'

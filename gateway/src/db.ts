@@ -130,7 +130,11 @@ export async function housekeeping() {
   await db.query("delete from pairing_codes where expires_at < now() or used_at < now() - interval '1 day'");
   await db.query("delete from approvals where expires_at < now() - interval '1 day'");
   await db.query(
-    "update approval_requests set status='expired' where status in ('pending','approved') and expires_at<=now()",
+    `update approval_requests
+        set status='expired',
+            action=jsonb_build_object('kind',action_kind,'redacted',true)
+      where status in ('pending','approved')
+        and expires_at<=now()`,
   );
   await db.query(
     "delete from approval_requests where created_at < now() - interval '30 days'",

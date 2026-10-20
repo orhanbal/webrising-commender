@@ -21,6 +21,7 @@ const bodyLimit = 2 * 1024 * 1024;
 const hub = new AgentHub();
 const enrollRateLimit = new FixedWindowRateLimiter();
 const pairingRateLimit = new FixedWindowRateLimiter();
+const trustProxyHeaders = /^(1|true|yes)$/i.test(String(process.env.TRUST_PROXY_HEADERS || ""));
 
 await migrate();
 await housekeeping();
@@ -32,14 +33,22 @@ const housekeepingTimer = setInterval(() => {
 }, 60 * 60 * 1000);
 housekeepingTimer.unref();
 
+function securityHeaders() {
+  return {
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+    "referrer-policy": "no-referrer",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+  };
+}
+
 function json(res: ServerResponse, status: number, value: unknown) {
   const body = JSON.stringify(value);
   res.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
     "content-length": Buffer.byteLength(body),
-    "cache-control": "no-store",
-    "x-content-type-options": "nosniff",
-    "x-frame-options": "DENY",
+    ...securityHeaders(),
   });
   res.end(body);
 }
@@ -58,6 +67,12 @@ async function readJson(req: IncomingMessage) {
 }
 
 function remoteKey(req: IncomingMessage) {
+  if (trustProxyHeaders) {
+    const forwarded = req.headers["x-forwarded-for"];
+    const value = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+    const client = value?.split(",")[0]?.trim();
+    if (client) return client;
+  }
   return req.socket.remoteAddress || "unknown";
 }
 
@@ -93,8 +108,8 @@ async function serveConsole(res: ServerResponse) {
       res.writeHead(200, {
         "content-type": "text/html; charset=utf-8",
         "content-length": body.length,
-        "cache-control": "no-store",
-        "x-content-type-options": "nosniff",
+        ...securityHeaders(),
+        "content-security-policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
       });
       res.end(body);
       return;
@@ -392,7 +407,12 @@ const server = http.createServer(async (req, res) => {
         `update approval_requests
             set status=$3,
                 decided_by=$4,
-                decided_at=now()
+                decided_at=now(),
+                action=case
+                  when $3='denied'
+                    then jsonb_build_object('kind',action_kind,'redacted',true)
+                  else action
+                end
           where id=$1
             and organization_id=$2
             and status='pending'
