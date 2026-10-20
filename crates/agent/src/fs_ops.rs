@@ -2,11 +2,7 @@ use crate::policy::PathPolicy;
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde_json::{json, Value};
-use std::{
-    fs,
-    io::Read,
-    path::Path,
-};
+use std::{fs, io::Read, path::Path};
 
 const DEFAULT_READ_MAX: usize = 1024 * 1024;
 const HARD_READ_MAX: usize = 4 * 1024 * 1024;
@@ -175,9 +171,7 @@ pub fn text_search(
     }
 
     let root = policy.resolve_existing(raw)?;
-    let result_limit = max_results
-        .unwrap_or(100)
-        .clamp(1, MAX_TEXT_SEARCH_RESULTS);
+    let result_limit = max_results.unwrap_or(100).clamp(1, MAX_TEXT_SEARCH_RESULTS);
     let needle = if case_sensitive {
         query.to_owned()
     } else {
@@ -346,9 +340,7 @@ pub fn replace_text(
 
     let metadata = fs::metadata(&path)?;
     if metadata.len() > HARD_READ_MAX as u64 {
-        return Err(anyhow!(
-            "file exceeds edit limit of {HARD_READ_MAX} bytes"
-        ));
+        return Err(anyhow!("file exceeds edit limit of {HARD_READ_MAX} bytes"));
     }
 
     let original = fs::read_to_string(&path).context("file is not valid UTF-8 text")?;

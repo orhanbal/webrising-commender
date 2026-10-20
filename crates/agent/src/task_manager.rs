@@ -41,7 +41,10 @@ impl TaskManager {
 
         {
             let tasks = self.tasks.lock().await;
-            let running = tasks.values().filter(|entry| entry.status == "running").count();
+            let running = tasks
+                .values()
+                .filter(|entry| entry.status == "running")
+                .count();
             if running >= MAX_RUNNING_TASKS {
                 return Err(anyhow!(
                     "too many running tasks; limit is {MAX_RUNNING_TASKS}"

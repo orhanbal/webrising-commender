@@ -16,15 +16,7 @@ pub async fn exec(
     cwd: Option<&str>,
     timeout_ms: Option<u64>,
 ) -> Result<Value> {
-    exec_with_timeout_bounds(
-        policy,
-        command,
-        cwd,
-        timeout_ms,
-        30_000,
-        10 * 60_000,
-    )
-    .await
+    exec_with_timeout_bounds(policy, command, cwd, timeout_ms, 30_000, 10 * 60_000).await
 }
 
 pub async fn exec_task(
