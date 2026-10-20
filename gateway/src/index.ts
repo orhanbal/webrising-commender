@@ -362,16 +362,20 @@ const server = http.createServer(async (req, res) => {
       if (!requireRole(principal!, "operator", res)) return;
       const body = z.object({
         deviceId: z.string().uuid(),
-        action: z.string().min(2).max(80),
+        action: z.record(z.string(), z.unknown()),
         ttlSeconds: z.number().int().min(15).max(600).optional(),
       }).parse(await readJson(req));
+      const approvalAction = body.action as AgentAction;
+      if (typeof approvalAction.kind !== "string") {
+        return void json(res, 400, { error: "invalid_action" });
+      }
       const orgId = principal!.organizationId;
       const exists = await db.query("select 1 from devices where id=$1 and organization_id=$2 and revoked_at is null", [body.deviceId, orgId]);
       if (!exists.rowCount) return void json(res, 404, { error: "device_not_found" });
 
       let approvalRisk;
       try {
-        approvalRisk = actionRisk(body.action);
+        approvalRisk = actionRisk(approvalAction.kind);
       } catch {
         return void json(res, 400, { error: "invalid_action" });
       }
@@ -379,12 +383,19 @@ const server = http.createServer(async (req, res) => {
         return void json(res, 400, { error: "approval_not_required" });
       }
 
-      const { token, claim } = issueApproval(body.deviceId, body.action, body.ttlSeconds);
+      const { token, claim } = issueApproval(body.deviceId, approvalAction, body.ttlSeconds);
       await db.query(
         "insert into approvals(organization_id,device_id,action,nonce,expires_at) values($1,$2,$3,$4,to_timestamp($5))",
-        [orgId, body.deviceId, body.action, claim.nonce, claim.exp],
+        [orgId, body.deviceId, approvalAction.kind, claim.nonce, claim.exp],
       );
-      await auditControl(principal!, body.deviceId, "approval.issue", "high", "success", JSON.stringify({ action: body.action }));
+      await auditControl(
+        principal!,
+        body.deviceId,
+        "approval.issue",
+        "high",
+        "success",
+        JSON.stringify({ action: approvalAction.kind }),
+      );
       return void json(res, 201, { approvalToken: token, expiresAt: new Date(claim.exp * 1000).toISOString() });
     }
 
@@ -414,7 +425,7 @@ const server = http.createServer(async (req, res) => {
       const neededRole = risk === "low" ? "viewer" : "operator";
       if (!requireRole(principal!, neededRole, res)) return;
 
-      if (risk === "high" && !(await consumeApproval(body.approvalToken, body.deviceId, action.kind))) {
+      if (risk === "high" && !(await consumeApproval(body.approvalToken, body.deviceId, action))) {
         await auditControl(principal!, body.deviceId, `direct.${action.kind}`, risk, "denied", "missing_or_invalid_approval");
         return void json(res, 403, { error: "approval_required", action: action.kind });
       }
