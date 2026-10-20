@@ -56,6 +56,12 @@ const tools = [
     ["path", "query"],
   ),
   tool(
+    "code_search",
+    "Search literal code/text recursively in bounded UTF-8 files. Alias of text_search for coding clients.",
+    { path: str(), query: str(), case_sensitive: bool(), max_results: integer() },
+    ["path", "query"],
+  ),
+  tool(
     "fs_replace",
     "Perform a guarded UTF-8 search/replace edit. By default the search must match exactly once.",
     { path: str(), search: str(), replace: str(), replace_all: bool() },
@@ -158,7 +164,8 @@ function actionFromTool(name: string, a: any): AgentAction {
     case "fs_move": return { kind: "fs_move", source: String(a.source), destination: String(a.destination) };
     case "fs_tree": return { kind: "fs_tree", path: String(a.path), ...(a.max_depth !== undefined ? { maxDepth: Number(a.max_depth) } : {}), ...(a.max_entries !== undefined ? { maxEntries: Number(a.max_entries) } : {}) };
     case "fs_search": return { kind: "fs_search", path: String(a.path), query: String(a.query), ...(a.max_results !== undefined ? { maxResults: Number(a.max_results) } : {}) };
-    case "text_search": return { kind: "text_search", path: String(a.path), query: String(a.query), ...(a.case_sensitive !== undefined ? { caseSensitive: Boolean(a.case_sensitive) } : {}), ...(a.max_results !== undefined ? { maxResults: Number(a.max_results) } : {}) };
+    case "text_search":
+    case "code_search": return { kind: "text_search", path: String(a.path), query: String(a.query), ...(a.case_sensitive !== undefined ? { caseSensitive: Boolean(a.case_sensitive) } : {}), ...(a.max_results !== undefined ? { maxResults: Number(a.max_results) } : {}) };
     case "fs_replace": return { kind: "fs_replace", path: String(a.path), search: String(a.search), replace: String(a.replace), ...(a.replace_all !== undefined ? { replaceAll: Boolean(a.replace_all) } : {}) };
     case "process_exec": return { kind: "process_exec", command: String(a.command), ...(a.cwd ? { cwd: String(a.cwd) } : {}), ...(a.timeout_ms ? { timeoutMs: Number(a.timeout_ms) } : {}) };
     case "process_list": return { kind: "process_list" };

@@ -135,6 +135,61 @@ try {
   assert.equal(read.encoding, "utf8");
   assert.equal(read.content, "hello-from-real-agent");
 
+  const tree = await tool(114, "fs_tree", {
+    device_id: deviceId,
+    path: tempRoot,
+    max_depth: 3,
+    max_entries: 100,
+  });
+  assert.ok(tree.items.some((item) => item.name === "hello.txt"));
+
+  const fileSearch = await tool(115, "fs_search", {
+    device_id: deviceId,
+    path: tempRoot,
+    query: "hello",
+    max_results: 20,
+  });
+  assert.ok(fileSearch.items.some((item) => item.path === filePath));
+
+  const codeSearch = await tool(116, "code_search", {
+    device_id: deviceId,
+    path: tempRoot,
+    query: "hello-from-real-agent",
+    max_results: 20,
+  });
+  assert.ok(codeSearch.items.some((item) => item.path === filePath && item.line === 1));
+
+  const replaced = await tool(117, "fs_replace", {
+    device_id: deviceId,
+    path: filePath,
+    search: "hello-from-real-agent",
+    replace: "hello-from-search-edit",
+  });
+  assert.equal(replaced.ok, true);
+  assert.equal(replaced.replacements, 1);
+
+  const readAfterReplace = await tool(118, "fs_read", {
+    device_id: deviceId,
+    path: filePath,
+  });
+  assert.equal(readAfterReplace.content, "hello-from-search-edit");
+
+  const movedPath = path.join(tempRoot, "moved.txt");
+  const moved = await tool(119, "fs_move", {
+    device_id: deviceId,
+    source: filePath,
+    destination: movedPath,
+  });
+  assert.equal(moved.ok, true);
+  assert.equal(fs.existsSync(filePath), false);
+  assert.equal(fs.existsSync(movedPath), true);
+
+  const readAfterMove = await tool(120, "fs_read", {
+    device_id: deviceId,
+    path: movedPath,
+  });
+  assert.equal(readAfterMove.content, "hello-from-search-edit");
+
   const execAction = {
     kind: "process_exec",
     command: "printf agent-process-ok",
@@ -168,6 +223,11 @@ try {
   });
   assert.equal(typeof started.sessionId, "string");
 
+  const terminals = await tool(121, "terminal_list", {
+    device_id: deviceId,
+  });
+  assert.ok(terminals.items.some((item) => item.sessionId === started.sessionId && item.running));
+
   await tool(106, "terminal_input", {
     device_id: deviceId,
     session_id: started.sessionId,
@@ -196,6 +256,11 @@ try {
   });
   assert.equal(stopped.ok, true);
 
+  const terminalsAfterStop = await tool(122, "terminal_list", {
+    device_id: deviceId,
+  });
+  assert.ok(!terminalsAfterStop.items.some((item) => item.sessionId === started.sessionId));
+
   const taskAction = {
     kind: "task_start",
     command: "sleep 1; printf PERSISTENT_TASK_OK",
@@ -223,6 +288,11 @@ try {
     return devices.items.some((item) => item.id === deviceId && item.online);
   }, 10000, 200);
 
+  const taskListAfterReconnect = await tool(123, "task_list", {
+    device_id: deviceId,
+  });
+  assert.ok(taskListAfterReconnect.items.some((item) => item.taskId === persistentTask.taskId));
+
   await waitFor(async () => {
     const status = await tool(110, "task_status", {
       device_id: deviceId,
@@ -240,17 +310,17 @@ try {
 
   const deleteToken = await approval(deviceId, {
     kind: "fs_delete",
-    path: filePath,
+    path: movedPath,
     recursive: false,
   });
   const deleted = await tool(112, "fs_delete", {
     device_id: deviceId,
-    path: filePath,
+    path: movedPath,
     recursive: false,
     approval_token: deleteToken,
   });
   assert.equal(deleted.ok, true);
-  assert.equal(fs.existsSync(filePath), false);
+  assert.equal(fs.existsSync(movedPath), false);
 
   await jsonFetch(`/api/devices/${deviceId}/disconnect`, {
     method: "POST",

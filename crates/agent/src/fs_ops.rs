@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use std::{
     fs,
     io::Read,
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 const DEFAULT_READ_MAX: usize = 1024 * 1024;
@@ -461,6 +461,3 @@ fn search_item(path: &Path, metadata: &fs::Metadata) -> Value {
 fn preview_line(line: &str) -> String {
     line.chars().take(500).collect()
 }
-
-#[allow(dead_code)]
-fn _path_buf_type_anchor(_: PathBuf) {}
