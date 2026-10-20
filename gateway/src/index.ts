@@ -769,9 +769,6 @@ const server = http.createServer(async (req, res) => {
       const body = z.object({
         planKey: z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9_-]{1,63}$/),
         status: z.enum(["trialing", "active", "past_due", "canceled"]),
-        provider: z.string().trim().min(1).max(80).nullable().optional(),
-        externalCustomerId: z.string().trim().min(1).max(255).nullable().optional(),
-        externalSubscriptionId: z.string().trim().min(1).max(255).nullable().optional(),
         currentPeriodEnd: z.string().datetime({ offset: true }).nullable().optional(),
         cancelAtPeriodEnd: z.boolean().default(false),
       }).parse(await readJson(req));
@@ -792,11 +789,13 @@ const server = http.createServer(async (req, res) => {
             organizationId,
             planKey: body.planKey,
             status: body.status,
-            provider: body.provider?.toLowerCase() ?? null,
-            externalCustomerId: body.externalCustomerId ?? null,
-            externalSubscriptionId: body.externalSubscriptionId ?? null,
+            provider: null,
+            externalCustomerId: null,
+            externalSubscriptionId: null,
             currentPeriodEnd: body.currentPeriodEnd ?? null,
             cancelAtPeriodEnd: body.cancelAtPeriodEnd,
+            providerEventAt: null,
+            providerEventId: null,
           },
           client,
         );
@@ -808,7 +807,7 @@ const server = http.createServer(async (req, res) => {
           "billing.subscription.upsert",
           "high",
           "success",
-          JSON.stringify({ planKey: body.planKey, status: body.status, provider: body.provider ?? null }),
+          JSON.stringify({ planKey: body.planKey, status: body.status, provider: null }),
         );
         return void json(res, 200, { item });
       } catch (error) {
