@@ -12,7 +12,7 @@ import { handleMcp } from "./mcp.js";
 import { actionRisk, type AgentAction } from "./protocol.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { AgentHub } from "./relay.js";
-import { issueApproval, randomToken, redact, sha256 } from "./security.js";
+import { deviceApprovalKeyForAgent, issueApproval, randomToken, redact, sha256 } from "./security.js";
 
 const host = process.env.HOST || "0.0.0.0";
 const port = Number(process.env.PORT || 8787);
@@ -146,7 +146,12 @@ const server = http.createServer(async (req, res) => {
         await client.query("commit");
 
         const wsUrl = publicBaseUrl.replace(/^http:/, "ws:").replace(/^https:/, "wss:") + "/agent";
-        return void json(res, 201, { deviceId, deviceToken: token, gatewayWsUrl: wsUrl });
+        return void json(res, 201, {
+          deviceId,
+          deviceToken: token,
+          approvalKey: deviceApprovalKeyForAgent(deviceId),
+          gatewayWsUrl: wsUrl,
+        });
       } catch (error) {
         await client.query("rollback");
         throw error;
