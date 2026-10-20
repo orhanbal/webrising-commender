@@ -76,6 +76,8 @@ jobs:
       HOST: 127.0.0.1
       PORT: 8787
       DEPLOYMENT_MODE: saas
+      PUBLIC_SIGNUP_ENABLED: "true"
+      MAIL_DELIVERY_MODE: outbox
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
