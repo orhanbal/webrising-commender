@@ -22,6 +22,39 @@ export async function migrate() {
       created_at timestamptz not null default now()
     );
 
+    create table if not exists users (
+      id uuid primary key default gen_random_uuid(),
+      email text not null,
+      password_hash text not null,
+      disabled_at timestamptz,
+      last_login_at timestamptz,
+      created_at timestamptz not null default now()
+    );
+    create unique index if not exists users_email_lower_uidx on users(lower(email));
+
+    create table if not exists organization_members (
+      organization_id uuid not null references organizations(id) on delete cascade,
+      user_id uuid not null references users(id) on delete cascade,
+      role text not null check (role in ('viewer','operator','admin','owner')),
+      created_at timestamptz not null default now(),
+      primary key (organization_id,user_id)
+    );
+    create index if not exists organization_members_user_idx on organization_members(user_id);
+
+    create table if not exists browser_sessions (
+      id uuid primary key default gen_random_uuid(),
+      user_id uuid not null references users(id) on delete cascade,
+      organization_id uuid not null references organizations(id) on delete cascade,
+      token_hash text not null unique,
+      csrf_hash text not null,
+      expires_at timestamptz not null,
+      last_seen_at timestamptz not null default now(),
+      revoked_at timestamptz,
+      created_at timestamptz not null default now()
+    );
+    create index if not exists browser_sessions_user_idx on browser_sessions(user_id);
+    create index if not exists browser_sessions_expiry_idx on browser_sessions(expires_at);
+
     create table if not exists api_tokens (
       id uuid primary key default gen_random_uuid(),
       organization_id uuid not null references organizations(id) on delete cascade,
@@ -129,6 +162,9 @@ function auditRetentionDays() {
 export async function housekeeping() {
   await db.query("delete from pairing_codes where expires_at < now() or used_at < now() - interval '1 day'");
   await db.query("delete from approvals where expires_at < now() - interval '1 day'");
+  await db.query(
+    "delete from browser_sessions where expires_at < now() - interval '1 day' or revoked_at < now() - interval '1 day'",
+  );
   await db.query(
     `update approval_requests
         set status='expired',

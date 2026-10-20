@@ -49,6 +49,71 @@ function toolText(response) {
 const health = await jsonFetch("/health");
 assert.equal(health.status, "ok");
 
+const browserUser = await jsonFetch("/api/users", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    email: "owner@example.test",
+    password: "correct-horse-battery-staple",
+    role: "owner",
+  }),
+});
+assert.equal(browserUser.item.email, "owner@example.test");
+assert.equal(browserUser.item.role, "owner");
+
+const badLoginResponse = await fetch(base + "/api/auth/login", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    email: "owner@example.test",
+    password: "wrong-password-value",
+  }),
+});
+assert.equal(badLoginResponse.status, 401);
+
+const browserLoginResponse = await fetch(base + "/api/auth/login", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    email: "owner@example.test",
+    password: "correct-horse-battery-staple",
+  }),
+});
+assert.equal(browserLoginResponse.status, 200);
+const browserLogin = await browserLoginResponse.json();
+assert.equal(browserLogin.authKind, "session");
+assert.match(browserLogin.csrfToken, /^wrcc_/);
+const browserCookies = browserLoginResponse.headers.getSetCookie().map((value) => value.split(";")[0]).join("; ");
+assert.match(browserCookies, /commender_session=wrcs_/);
+
+const browserMeResponse = await fetch(base + "/api/auth/me", {
+  headers: { Cookie: browserCookies },
+});
+assert.equal(browserMeResponse.status, 200);
+const browserMe = await browserMeResponse.json();
+assert.equal(browserMe.email, "owner@example.test");
+assert.equal(browserMe.role, "owner");
+assert.equal(browserMe.authKind, "session");
+
+const browserCsrfDenied = await fetch(base + "/api/pairing", {
+  method: "POST",
+  headers: { Cookie: browserCookies, "Content-Type": "application/json" },
+  body: "{}",
+});
+assert.equal(browserCsrfDenied.status, 403);
+assert.equal((await browserCsrfDenied.json()).error, "csrf_required");
+
+const browserPairing = await fetch(base + "/api/pairing", {
+  method: "POST",
+  headers: {
+    Cookie: browserCookies,
+    "Content-Type": "application/json",
+    "X-CSRF-Token": browserLogin.csrfToken,
+  },
+  body: "{}",
+});
+assert.equal(browserPairing.status, 201);
+
 const pairing = await jsonFetch("/api/pairing", {
   method: "POST",
   headers: authHeaders,
@@ -301,6 +366,40 @@ const tenantOrg = await jsonFetch("/api/organizations", {
 });
 assert.match(tenantOrg.item.id, /^[0-9a-f-]{36}$/i);
 
+const tenantMembership = await jsonFetch("/api/members", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    email: "owner@example.test",
+    role: "owner",
+    organizationId: tenantOrg.item.id,
+  }),
+});
+assert.equal(tenantMembership.item.organization_id, tenantOrg.item.id);
+assert.equal(tenantMembership.item.role, "owner");
+
+const switchedOrganizationResponse = await fetch(base + "/api/auth/switch-organization", {
+  method: "POST",
+  headers: {
+    Cookie: browserCookies,
+    "Content-Type": "application/json",
+    "X-CSRF-Token": browserLogin.csrfToken,
+  },
+  body: JSON.stringify({ organizationId: tenantOrg.item.id }),
+});
+assert.equal(switchedOrganizationResponse.status, 200);
+const switchedOrganization = await switchedOrganizationResponse.json();
+assert.equal(switchedOrganization.organizationId, tenantOrg.item.id);
+assert.equal(switchedOrganization.role, "owner");
+
+const switchedMeResponse = await fetch(base + "/api/auth/me", {
+  headers: { Cookie: browserCookies },
+});
+assert.equal(switchedMeResponse.status, 200);
+const switchedMe = await switchedMeResponse.json();
+assert.equal(switchedMe.organizationId, tenantOrg.item.id);
+assert.equal(switchedMe.role, "owner");
+
 const tenantToken = await jsonFetch("/api/tokens", {
   method: "POST",
   headers: authHeaders,
@@ -368,6 +467,17 @@ const tenantAdminHeaders = {
   "Content-Type": "application/json",
 };
 
+const forbiddenOwnerMembershipChange = await fetch(base + "/api/members", {
+  method: "POST",
+  headers: tenantAdminHeaders,
+  body: JSON.stringify({
+    email: "owner@example.test",
+    role: "operator",
+  }),
+});
+assert.equal(forbiddenOwnerMembershipChange.status, 403);
+assert.equal((await forbiddenOwnerMembershipChange.json()).error, "cannot_manage_higher_role");
+
 const forbiddenOwnerGrant = await fetch(base + "/api/tokens", {
   method: "POST",
   headers: tenantAdminHeaders,
@@ -407,6 +517,21 @@ const forbiddenOwnerRevoke = await fetch(
   },
 );
 assert.equal(forbiddenOwnerRevoke.status, 403);
+
+const browserLogoutResponse = await fetch(base + "/api/auth/logout", {
+  method: "POST",
+  headers: {
+    Cookie: browserCookies,
+    "Content-Type": "application/json",
+    "X-CSRF-Token": browserLogin.csrfToken,
+  },
+  body: "{}",
+});
+assert.equal(browserLogoutResponse.status, 200);
+const revokedBrowserSession = await fetch(base + "/api/auth/me", {
+  headers: { Cookie: browserCookies },
+});
+assert.equal(revokedBrowserSession.status, 401);
 
 socket.close();
 console.log("integration: ok");

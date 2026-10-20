@@ -6,7 +6,16 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
 import { consumeApproval } from "./approvals.js";
-import { authenticateAuthorization, newApiToken, roleAtLeast, type Principal, type Role } from "./auth.js";
+import { authenticateRequest, newApiToken, roleAtLeast, verifyBrowserCsrf, type Principal, type Role } from "./auth.js";
+import {
+  authCookies,
+  browserSessionSeconds,
+  clearAuthCookies,
+  hashPassword,
+  newBrowserSessionMaterial,
+  normalizeEmail,
+  verifyPassword,
+} from "./browser-auth.js";
 import { db, housekeeping, migrate, ready } from "./db.js";
 import { handleMcp } from "./mcp.js";
 import { actionRisk, parseAgentAction } from "./protocol.js";
@@ -21,6 +30,8 @@ const bodyLimit = 2 * 1024 * 1024;
 const hub = new AgentHub();
 const enrollRateLimit = new FixedWindowRateLimiter();
 const pairingRateLimit = new FixedWindowRateLimiter();
+const loginIpRateLimit = new FixedWindowRateLimiter();
+const loginAccountRateLimit = new FixedWindowRateLimiter();
 const trustProxyHeaders = /^(1|true|yes)$/i.test(String(process.env.TRUST_PROXY_HEADERS || ""));
 
 await migrate();
@@ -132,6 +143,82 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (req.method === "POST" && url.pathname === "/api/auth/login") {
+      const body = z.object({
+        email: z.string().trim().email().max(320),
+        password: z.string().min(12).max(256),
+        organizationId: z.string().uuid().optional(),
+      }).parse(await readJson(req));
+      const email = normalizeEmail(body.email);
+      const ip = remoteKey(req);
+      const ipRate = loginIpRateLimit.hit(ip, 60, 10 * 60_000);
+      const accountRate = loginAccountRateLimit.hit(`${ip}:${sha256(email)}`, 12, 10 * 60_000);
+      if (!ipRate.allowed || !accountRate.allowed) {
+        res.setHeader(
+          "Retry-After",
+          String(Math.max(ipRate.retryAfterSeconds, accountRate.retryAfterSeconds)),
+        );
+        return void json(res, 429, { error: "rate_limited" });
+      }
+
+      const account = await db.query<{
+        user_id: string;
+        email: string;
+        password_hash: string;
+        organization_id: string;
+        role: Role;
+      }>(
+        `select u.id as user_id,u.email,u.password_hash,m.organization_id,m.role
+           from users u
+           join organization_members m on m.user_id=u.id
+          where lower(u.email)=lower($1)
+            and u.disabled_at is null
+            and ($2::uuid is null or m.organization_id=$2)
+          order by case m.role when 'owner' then 40 when 'admin' then 30 when 'operator' then 20 else 10 end desc,
+                   m.created_at asc
+          limit 1`,
+        [email, body.organizationId ?? null],
+      );
+
+      const row = account.rows[0];
+      if (!row) {
+        await hashPassword(body.password);
+        return void json(res, 401, { error: "invalid_credentials" });
+      }
+      if (!(await verifyPassword(body.password, row.password_hash))) {
+        return void json(res, 401, { error: "invalid_credentials" });
+      }
+
+      const material = newBrowserSessionMaterial();
+      const maxAge = browserSessionSeconds();
+      const created = await db.query<{ id: string }>(
+        `insert into browser_sessions(user_id,organization_id,token_hash,csrf_hash,expires_at)
+         values($1,$2,$3,$4,now()+($5::int * interval '1 second'))
+         returning id`,
+        [row.user_id, row.organization_id, material.sessionHash, material.csrfHash, maxAge],
+      );
+      await db.query("update users set last_login_at=now() where id=$1", [row.user_id]);
+      await db.query(
+        "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,$2,null,'auth.login','low','success','browser session created')",
+        [row.organization_id, `user:${row.user_id}`],
+      );
+
+      res.setHeader(
+        "Set-Cookie",
+        authCookies(material.sessionToken, material.csrfToken, maxAge, publicBaseUrl.startsWith("https://")),
+      );
+      return void json(res, 200, {
+        userId: row.user_id,
+        email: row.email,
+        organizationId: row.organization_id,
+        role: row.role,
+        authKind: "session",
+        sessionId: created.rows[0]!.id,
+        csrfToken: material.csrfToken,
+        expiresInSeconds: maxAge,
+      });
+    }
+
     if (req.method === "POST" && url.pathname === "/api/agent/enroll") {
       const rate = enrollRateLimit.hit(remoteKey(req), 20, 10 * 60_000);
       if (!rate.allowed) {
@@ -185,8 +272,18 @@ const server = http.createServer(async (req, res) => {
 
     let principal: Principal | null = null;
     if (url.pathname.startsWith("/api/") || url.pathname === "/mcp") {
-      principal = await authenticateAuthorization(req.headers.authorization);
+      principal = await authenticateRequest(req.headers.authorization, req.headers.cookie);
       if (!principal) return void json(res, 401, { error: "unauthorized" });
+
+      const method = req.method || "GET";
+      if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+        const csrfHeader = Array.isArray(req.headers["x-csrf-token"])
+          ? req.headers["x-csrf-token"][0]
+          : req.headers["x-csrf-token"];
+        if (!verifyBrowserCsrf(principal, csrfHeader)) {
+          return void json(res, 403, { error: "csrf_required" });
+        }
+      }
     }
 
     if (req.method === "GET" && url.pathname === "/api/auth/me") {
@@ -195,6 +292,85 @@ const server = http.createServer(async (req, res) => {
         actor: principal!.actor,
         role: principal!.role,
         global: principal!.global,
+        authKind: principal!.authKind,
+        userId: principal!.userId ?? null,
+        email: principal!.email ?? null,
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/logout") {
+      if (principal!.authKind === "session" && principal!.sessionId) {
+        await db.query("update browser_sessions set revoked_at=coalesce(revoked_at,now()) where id=$1", [
+          principal!.sessionId,
+        ]);
+        await auditControl(principal!, null, "auth.logout", "low", "success");
+      }
+      res.setHeader("Set-Cookie", clearAuthCookies(publicBaseUrl.startsWith("https://")));
+      return void json(res, 200, { ok: true });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/change-password") {
+      if (principal!.authKind !== "session" || !principal!.userId || !principal!.sessionId) {
+        return void json(res, 400, { error: "browser_session_required" });
+      }
+      const body = z.object({
+        currentPassword: z.string().min(12).max(256),
+        newPassword: z.string().min(12).max(256),
+      }).parse(await readJson(req));
+      if (body.currentPassword === body.newPassword) {
+        return void json(res, 400, { error: "new_password_must_differ" });
+      }
+
+      const current = await db.query<{ password_hash: string }>(
+        "select password_hash from users where id=$1 and disabled_at is null",
+        [principal!.userId],
+      );
+      if (!current.rows[0] || !(await verifyPassword(body.currentPassword, current.rows[0].password_hash))) {
+        return void json(res, 401, { error: "invalid_credentials" });
+      }
+      const passwordHash = await hashPassword(body.newPassword);
+      await db.query("update users set password_hash=$2 where id=$1", [principal!.userId, passwordHash]);
+      await db.query(
+        "update browser_sessions set revoked_at=coalesce(revoked_at,now()) where user_id=$1 and id<>$2 and revoked_at is null",
+        [principal!.userId, principal!.sessionId],
+      );
+      await auditControl(principal!, null, "auth.change_password", "high", "success");
+      return void json(res, 200, { ok: true });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/auth/organizations") {
+      if (principal!.authKind !== "session" || !principal!.userId) {
+        return void json(res, 400, { error: "browser_session_required" });
+      }
+      const memberships = await db.query(
+        `select o.id,o.name,m.role,m.created_at
+           from organization_members m
+           join organizations o on o.id=m.organization_id
+          where m.user_id=$1
+          order by m.created_at asc`,
+        [principal!.userId],
+      );
+      return void json(res, 200, { items: memberships.rows });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/switch-organization") {
+      if (principal!.authKind !== "session" || !principal!.userId || !principal!.sessionId) {
+        return void json(res, 400, { error: "browser_session_required" });
+      }
+      const body = z.object({ organizationId: z.string().uuid() }).parse(await readJson(req));
+      const membership = await db.query<{ role: Role }>(
+        "select role from organization_members where organization_id=$1 and user_id=$2",
+        [body.organizationId, principal!.userId],
+      );
+      if (!membership.rows[0]) return void json(res, 403, { error: "membership_required" });
+      await db.query("update browser_sessions set organization_id=$2 where id=$1", [
+        principal!.sessionId,
+        body.organizationId,
+      ]);
+      return void json(res, 200, {
+        ok: true,
+        organizationId: body.organizationId,
+        role: membership.rows[0].role,
       });
     }
 
@@ -212,6 +388,140 @@ const server = http.createServer(async (req, res) => {
         [body.name],
       );
       return void json(res, 201, { item: created.rows[0] });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/users") {
+      if (!requireRole(principal!, "admin", res)) return;
+      const result = await db.query(
+        `select u.id,u.email,u.disabled_at,u.last_login_at,u.created_at,m.role,m.created_at as member_since
+           from organization_members m
+           join users u on u.id=m.user_id
+          where m.organization_id=$1
+          order by u.created_at asc`,
+        [principal!.organizationId],
+      );
+      return void json(res, 200, { items: result.rows });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/users") {
+      if (!requireRole(principal!, "admin", res)) return;
+      const body = z.object({
+        email: z.string().trim().email().max(320),
+        password: z.string().min(12).max(256),
+        role: z.enum(["viewer", "operator", "admin", "owner"]).default("operator"),
+        organizationId: z.string().uuid().optional(),
+      }).parse(await readJson(req));
+
+      if (!roleAtLeast(principal!, body.role)) {
+        return void json(res, 403, { error: "cannot_grant_role", requestedRole: body.role });
+      }
+      if (
+        body.organizationId &&
+        !principal!.global &&
+        body.organizationId !== principal!.organizationId
+      ) {
+        return void json(res, 403, { error: "forbidden" });
+      }
+
+      const organizationId = body.organizationId ?? principal!.organizationId;
+      const org = await db.query("select 1 from organizations where id=$1", [organizationId]);
+      if (!org.rowCount) return void json(res, 404, { error: "organization_not_found" });
+
+      const email = normalizeEmail(body.email);
+      const passwordHash = await hashPassword(body.password);
+      const client = await db.connect();
+      try {
+        await client.query("begin");
+        const created = await client.query<{ id: string; email: string; created_at: string }>(
+          "insert into users(email,password_hash) values($1,$2) returning id,email,created_at",
+          [email, passwordHash],
+        );
+        await client.query(
+          "insert into organization_members(organization_id,user_id,role) values($1,$2,$3)",
+          [organizationId, created.rows[0]!.id, body.role],
+        );
+        await client.query("commit");
+        await db.query(
+          "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,$2,null,'user.create','high','success',$3)",
+          [
+            organizationId,
+            principal!.actor,
+            JSON.stringify({ userId: created.rows[0]!.id, email, role: body.role }),
+          ],
+        );
+        return void json(res, 201, {
+          item: { ...created.rows[0], role: body.role, organizationId },
+        });
+      } catch (error: any) {
+        await client.query("rollback");
+        if (error?.code === "23505") return void json(res, 409, { error: "user_already_exists" });
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/members") {
+      if (!requireRole(principal!, "admin", res)) return;
+      const body = z.object({
+        email: z.string().trim().email().max(320),
+        role: z.enum(["viewer", "operator", "admin", "owner"]).default("operator"),
+        organizationId: z.string().uuid().optional(),
+      }).parse(await readJson(req));
+
+      if (!roleAtLeast(principal!, body.role)) {
+        return void json(res, 403, { error: "cannot_grant_role", requestedRole: body.role });
+      }
+      if (
+        body.organizationId &&
+        !principal!.global &&
+        body.organizationId !== principal!.organizationId
+      ) {
+        return void json(res, 403, { error: "forbidden" });
+      }
+
+      const organizationId = body.organizationId ?? principal!.organizationId;
+      const org = await db.query("select 1 from organizations where id=$1", [organizationId]);
+      if (!org.rowCount) return void json(res, 404, { error: "organization_not_found" });
+
+      const email = normalizeEmail(body.email);
+      const user = await db.query<{ id: string; email: string }>(
+        "select id,email from users where lower(email)=lower($1) and disabled_at is null",
+        [email],
+      );
+      if (!user.rows[0]) return void json(res, 404, { error: "user_not_found" });
+
+      const currentMembership = await db.query<{ role: Role }>(
+        "select role from organization_members where organization_id=$1 and user_id=$2",
+        [organizationId, user.rows[0].id],
+      );
+      if (
+        currentMembership.rows[0] &&
+        !roleAtLeast(principal!, currentMembership.rows[0].role)
+      ) {
+        return void json(res, 403, {
+          error: "cannot_manage_higher_role",
+          targetRole: currentMembership.rows[0].role,
+        });
+      }
+
+      const membership = await db.query(
+        `insert into organization_members(organization_id,user_id,role)
+         values($1,$2,$3)
+         on conflict (organization_id,user_id)
+         do update set role=excluded.role
+         returning organization_id,user_id,role,created_at`,
+        [organizationId, user.rows[0].id, body.role],
+      );
+      await db.query(
+        "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,$2,null,'member.upsert','high','success',$3)",
+        [
+          organizationId,
+          principal!.actor,
+          JSON.stringify({ userId: user.rows[0].id, email, role: body.role }),
+        ],
+      );
+      return void json(res, 200, { item: membership.rows[0] });
     }
 
     if (req.method === "GET" && url.pathname === "/api/tokens") {

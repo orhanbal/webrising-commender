@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Added organization-scoped browser users and memberships.
+- Added scrypt password verification, hashed HttpOnly browser sessions, CSRF protection and login throttling.
+- Added browser login/logout to the web console while preserving API-token and self-hosted control-key access.
+- Added browser-auth integration acceptance including CSRF denial and session revocation.
+
 ## 0.1.0 - Unreleased
 
 - Native Rust agent with outbound WebSocket reconnect loop.
