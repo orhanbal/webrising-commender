@@ -172,6 +172,17 @@ async function requireCapacity(
   return false;
 }
 
+function authFragmentLink(kind: "verify" | "reset", token: string) {
+  return `${publicBaseUrl}/#${kind}=${encodeURIComponent(token)}`;
+}
+
+function genericMailAccepted(res: ServerResponse) {
+  return json(res, 202, {
+    ok: true,
+    message: "If the address is eligible, instructions have been queued.",
+  });
+}
+
 async function serveConsole(res: ServerResponse) {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const candidates = [
@@ -208,6 +219,393 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (req.method === "GET" && url.pathname === "/api/auth/config") {
+      return void json(res, 200, {
+        publicSignupEnabled,
+        passwordResetEnabled: mailDeliveryAvailable(),
+        mailDeliveryMode,
+        deploymentMode,
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/signup") {
+      if (!publicSignupEnabled) {
+        return void json(res, 403, { error: "signup_disabled" });
+      }
+
+      const body = z.object({
+        email: z.string().trim().email().max(320),
+        password: z.string().min(12).max(256),
+        workspaceName: z.string().trim().min(2).max(120),
+      }).parse(await readJson(req));
+      const email = normalizeEmail(body.email);
+      const ip = remoteKey(req);
+      const ipRate = signupIpRateLimit.hit(ip, 30, 15 * 60_000);
+      const accountRate = signupAccountRateLimit.hit(`${ip}:${sha256(email)}`, 6, 15 * 60_000);
+      if (!ipRate.allowed || !accountRate.allowed) {
+        res.setHeader(
+          "Retry-After",
+          String(Math.max(ipRate.retryAfterSeconds, accountRate.retryAfterSeconds)),
+        );
+        return void json(res, 429, { error: "rate_limited" });
+      }
+
+      const existing = await db.query<{ id: string }>(
+        "select id from users where lower(email)=lower($1) and disabled_at is null limit 1",
+        [email],
+      );
+      if (existing.rows[0]) return void genericMailAccepted(res);
+
+      const passwordHash = await hashPassword(body.password);
+      const token = "wrce_" + randomToken(32);
+      const client = await db.connect();
+      try {
+        await client.query("begin");
+
+        const racedUser = await client.query<{ id: string }>(
+          "select id from users where lower(email)=lower($1) and disabled_at is null for update",
+          [email],
+        );
+        if (racedUser.rows[0]) {
+          await client.query("rollback");
+          return void genericMailAccepted(res);
+        }
+
+        await client.query(
+          "delete from pending_signups where lower(email)=lower($1)",
+          [email],
+        );
+        await client.query(
+          `insert into pending_signups(email,password_hash,workspace_name,token_hash,expires_at)
+           values($1,$2,$3,$4,now()+interval '24 hours')`,
+          [email, passwordHash, body.workspaceName, sha256(token)],
+        );
+        await client.query(
+          `update mail_outbox
+              set text_body=null,
+                  sent_at=coalesce(sent_at,now()),
+                  last_error='superseded'
+            where kind='email_verification'
+              and lower(to_email)=lower($1)
+              and sent_at is null`,
+          [email],
+        );
+        await queueMail(
+          {
+            kind: "email_verification",
+            to: email,
+            subject: "Verify your WebRising Commender account",
+            text: [
+              "A WebRising Commender account signup was requested for this email address.",
+              "",
+              "Verify the address and finish account creation:",
+              authFragmentLink("verify", token),
+              "",
+              "This link expires in 24 hours and can be used once.",
+              "If you did not request this signup, ignore this message.",
+            ].join("\n"),
+          },
+          client,
+        );
+        await client.query("commit");
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
+
+      return void genericMailAccepted(res);
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/signup/verify") {
+      const body = z.object({
+        token: z.string().min(40).max(200),
+      }).parse(await readJson(req));
+      if (!body.token.startsWith("wrce_")) {
+        return void json(res, 400, { error: "invalid_or_expired_verification" });
+      }
+      const rate = signupVerifyRateLimit.hit(
+        `${remoteKey(req)}:${sha256(body.token)}`,
+        12,
+        15 * 60_000,
+      );
+      if (!rate.allowed) {
+        res.setHeader("Retry-After", String(rate.retryAfterSeconds));
+        return void json(res, 429, { error: "rate_limited" });
+      }
+
+      const client = await db.connect();
+      let userId = "";
+      let email = "";
+      let organizationId = "";
+      try {
+        await client.query("begin");
+        const pending = await client.query<{
+          id: string;
+          email: string;
+          password_hash: string;
+          workspace_name: string;
+        }>(
+          `select id,email,password_hash,workspace_name
+             from pending_signups
+            where token_hash=$1
+              and expires_at>now()
+            for update`,
+          [sha256(body.token)],
+        );
+        const row = pending.rows[0];
+        if (!row) {
+          await client.query("rollback");
+          return void json(res, 400, { error: "invalid_or_expired_verification" });
+        }
+
+        const existing = await client.query<{ id: string }>(
+          "select id from users where lower(email)=lower($1) and disabled_at is null for update",
+          [row.email],
+        );
+        if (existing.rows[0]) {
+          await client.query("delete from pending_signups where id=$1", [row.id]);
+          await client.query("commit");
+          return void json(res, 409, { error: "account_already_exists" });
+        }
+
+        const createdUser = await client.query<{ id: string; email: string }>(
+          `insert into users(email,password_hash,email_verified_at)
+           values($1,$2,now())
+           returning id,email`,
+          [row.email, row.password_hash],
+        );
+        const organization = await client.query<{ id: string; name: string }>(
+          "insert into organizations(name) values($1) returning id,name",
+          [row.workspace_name],
+        );
+        await client.query(
+          "insert into organization_members(organization_id,user_id,role) values($1,$2,'owner')",
+          [organization.rows[0]!.id, createdUser.rows[0]!.id],
+        );
+        await client.query("delete from pending_signups where id=$1", [row.id]);
+        await client.query(
+          `update mail_outbox
+              set text_body=null,
+                  sent_at=coalesce(sent_at,now()),
+                  last_error=case when sent_at is null then 'verification_consumed' else last_error end
+            where kind='email_verification'
+              and lower(to_email)=lower($1)
+              and text_body is not null`,
+          [row.email],
+        );
+        await client.query("commit");
+
+        userId = createdUser.rows[0]!.id;
+        email = createdUser.rows[0]!.email;
+        organizationId = organization.rows[0]!.id;
+      } catch (error: any) {
+        await client.query("rollback");
+        if (error?.code === "23505") {
+          return void json(res, 409, { error: "account_already_exists" });
+        }
+        throw error;
+      } finally {
+        client.release();
+      }
+
+      const material = newBrowserSessionMaterial();
+      const maxAge = browserSessionSeconds();
+      const createdSession = await db.query<{ id: string }>(
+        `insert into browser_sessions(user_id,organization_id,token_hash,csrf_hash,expires_at)
+         values($1,$2,$3,$4,now()+($5::int * interval '1 second'))
+         returning id`,
+        [userId, organizationId, material.sessionHash, material.csrfHash, maxAge],
+      );
+      await db.query(
+        "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,$2,null,'auth.signup.verify','low','success','public signup verified')",
+        [organizationId, `user:${userId}`],
+      );
+
+      res.setHeader(
+        "Set-Cookie",
+        authCookies(material.sessionToken, material.csrfToken, maxAge, publicBaseUrl.startsWith("https://")),
+      );
+      return void json(res, 200, {
+        ok: true,
+        userId,
+        email,
+        organizationId,
+        role: "owner",
+        authKind: "session",
+        sessionId: createdSession.rows[0]!.id,
+        csrfToken: material.csrfToken,
+        expiresInSeconds: maxAge,
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/password-reset/request") {
+      if (!mailDeliveryAvailable()) {
+        return void json(res, 503, { error: "mail_delivery_unavailable" });
+      }
+      const body = z.object({
+        email: z.string().trim().email().max(320),
+      }).parse(await readJson(req));
+      const email = normalizeEmail(body.email);
+      const ip = remoteKey(req);
+      const ipRate = resetRequestIpRateLimit.hit(ip, 60, 15 * 60_000);
+      const accountRate = resetRequestAccountRateLimit.hit(
+        `${ip}:${sha256(email)}`,
+        6,
+        15 * 60_000,
+      );
+      if (!ipRate.allowed || !accountRate.allowed) {
+        res.setHeader(
+          "Retry-After",
+          String(Math.max(ipRate.retryAfterSeconds, accountRate.retryAfterSeconds)),
+        );
+        return void json(res, 429, { error: "rate_limited" });
+      }
+
+      const user = await db.query<{ id: string; email: string }>(
+        `select id,email
+           from users
+          where lower(email)=lower($1)
+            and disabled_at is null
+            and email_verified_at is not null
+          limit 1`,
+        [email],
+      );
+      if (!user.rows[0]) return void genericMailAccepted(res);
+
+      const token = "wrcp_" + randomToken(32);
+      const client = await db.connect();
+      try {
+        await client.query("begin");
+        await client.query(
+          `update auth_tokens
+              set consumed_at=coalesce(consumed_at,now())
+            where user_id=$1
+              and purpose='password_reset'
+              and consumed_at is null`,
+          [user.rows[0].id],
+        );
+        await client.query(
+          `insert into auth_tokens(user_id,purpose,token_hash,expires_at)
+           values($1,'password_reset',$2,now()+interval '1 hour')`,
+          [user.rows[0].id, sha256(token)],
+        );
+        await client.query(
+          `update mail_outbox
+              set text_body=null,
+                  sent_at=coalesce(sent_at,now()),
+                  last_error='superseded'
+            where kind='password_reset'
+              and lower(to_email)=lower($1)
+              and sent_at is null`,
+          [user.rows[0].email],
+        );
+        await queueMail(
+          {
+            kind: "password_reset",
+            to: user.rows[0].email,
+            subject: "Reset your WebRising Commender password",
+            text: [
+              "A password reset was requested for your WebRising Commender account.",
+              "",
+              "Set a new password:",
+              authFragmentLink("reset", token),
+              "",
+              "This link expires in 1 hour and can be used once.",
+              "If you did not request a password reset, ignore this message.",
+            ].join("\n"),
+          },
+          client,
+        );
+        await client.query("commit");
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
+
+      return void genericMailAccepted(res);
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/password-reset/confirm") {
+      const body = z.object({
+        token: z.string().min(40).max(200),
+        newPassword: z.string().min(12).max(256),
+      }).parse(await readJson(req));
+      if (!body.token.startsWith("wrcp_")) {
+        return void json(res, 400, { error: "invalid_or_expired_reset" });
+      }
+      const rate = resetConfirmRateLimit.hit(
+        `${remoteKey(req)}:${sha256(body.token)}`,
+        12,
+        15 * 60_000,
+      );
+      if (!rate.allowed) {
+        res.setHeader("Retry-After", String(rate.retryAfterSeconds));
+        return void json(res, 429, { error: "rate_limited" });
+      }
+
+      const passwordHash = await hashPassword(body.newPassword);
+      const client = await db.connect();
+      let resetUserId = "";
+      try {
+        await client.query("begin");
+        const tokenRow = await client.query<{ id: string; user_id: string }>(
+          `select t.id,t.user_id
+             from auth_tokens t
+             join users u on u.id=t.user_id
+            where t.token_hash=$1
+              and t.purpose='password_reset'
+              and t.consumed_at is null
+              and t.expires_at>now()
+              and u.disabled_at is null
+              and u.email_verified_at is not null
+            for update of t,u`,
+          [sha256(body.token)],
+        );
+        const row = tokenRow.rows[0];
+        if (!row) {
+          await client.query("rollback");
+          return void json(res, 400, { error: "invalid_or_expired_reset" });
+        }
+
+        await client.query("update users set password_hash=$2 where id=$1", [
+          row.user_id,
+          passwordHash,
+        ]);
+        await client.query(
+          `update auth_tokens
+              set consumed_at=coalesce(consumed_at,now())
+            where user_id=$1
+              and purpose='password_reset'
+              and consumed_at is null`,
+          [row.user_id],
+        );
+        await client.query(
+          "update browser_sessions set revoked_at=coalesce(revoked_at,now()) where user_id=$1 and revoked_at is null",
+          [row.user_id],
+        );
+        await client.query(
+          `insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail)
+           select organization_id,$2,null,'auth.password_reset','high','success','all browser sessions revoked'
+             from organization_members
+            where user_id=$1`,
+          [row.user_id, `user:${row.user_id}`],
+        );
+        await client.query("commit");
+        resetUserId = row.user_id;
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
+
+      return void json(res, 200, { ok: true, userId: resetUserId });
+    }
+
     if (req.method === "POST" && url.pathname === "/api/auth/login") {
       const body = z.object({
         email: z.string().trim().email().max(320),
@@ -238,6 +636,7 @@ const server = http.createServer(async (req, res) => {
            join organization_members m on m.user_id=u.id
           where lower(u.email)=lower($1)
             and u.disabled_at is null
+            and u.email_verified_at is not null
             and ($2::uuid is null or m.organization_id=$2)
           order by case m.role when 'owner' then 40 when 'admin' then 30 when 'operator' then 20 else 10 end desc,
                    m.created_at asc
