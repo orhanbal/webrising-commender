@@ -31,6 +31,7 @@ import { handleMcp } from "./mcp.js";
 import { actionRisk, parseAgentAction } from "./protocol.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { AgentHub } from "./relay.js";
+import { sendMail, smtpConfigured } from "./mailer.js";
 import { deviceApprovalKeyForAgent, issueApproval, randomToken, redact, sha256 } from "./security.js";
 
 const host = process.env.HOST || "0.0.0.0";
@@ -45,7 +46,16 @@ const loginAccountRateLimit = new FixedWindowRateLimiter();
 const invitationPreviewRateLimit = new FixedWindowRateLimiter();
 const invitationAcceptIpRateLimit = new FixedWindowRateLimiter();
 const invitationAcceptTokenRateLimit = new FixedWindowRateLimiter();
+const signupRequestRateLimit = new FixedWindowRateLimiter();
+const signupCompleteRateLimit = new FixedWindowRateLimiter();
+const passwordResetRequestRateLimit = new FixedWindowRateLimiter();
+const passwordResetCompleteRateLimit = new FixedWindowRateLimiter();
 const trustProxyHeaders = /^(1|true|yes)$/i.test(String(process.env.TRUST_PROXY_HEADERS || ""));
+const publicSignupEnabled = /^(1|true|yes|on)$/i.test(String(process.env.PUBLIC_SIGNUP_ENABLED || ""));
+const authEmailTokenMinutesRaw = Number(process.env.AUTH_EMAIL_TOKEN_MINUTES || 30);
+const authEmailTokenMinutes = Number.isFinite(authEmailTokenMinutesRaw)
+  ? Math.min(1440, Math.max(5, Math.floor(authEmailTokenMinutesRaw)))
+  : 30;
 
 await migrate();
 await housekeeping();
@@ -157,6 +167,43 @@ async function requireCapacity(
   return false;
 }
 
+function authLink(kind: "signup" | "reset", token: string) {
+  return publicBaseUrl + "/#" + kind + "=" + encodeURIComponent(token);
+}
+
+async function deliverAuthEmail(input: {
+  to: string;
+  purpose: "signup" | "password_reset";
+  token: string;
+  organizationName?: string | null;
+}) {
+  const signup = input.purpose === "signup";
+  const subject = signup
+    ? "Verify your WebRising Commender account"
+    : "Reset your WebRising Commender password";
+  const link = authLink(signup ? "signup" : "reset", input.token);
+  const text = signup
+    ? [
+        "Verify your WebRising Commender account.",
+        input.organizationName ? "Workspace: " + input.organizationName : "",
+        "",
+        link,
+        "",
+        "This link expires in " + authEmailTokenMinutes + " minutes.",
+        "If you did not request this account, ignore this message.",
+      ].filter(Boolean).join("\n")
+    : [
+        "Reset your WebRising Commender password.",
+        "",
+        link,
+        "",
+        "This link expires in " + authEmailTokenMinutes + " minutes.",
+        "If you did not request a password reset, ignore this message.",
+      ].join("\n");
+
+  await sendMail({ to: input.to, subject, text });
+}
+
 async function serveConsole(res: ServerResponse) {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const candidates = [
@@ -191,6 +238,295 @@ const server = http.createServer(async (req, res) => {
         status: databaseReady ? "ok" : "error",
         database: databaseReady ? "ok" : "error",
       });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/auth/capabilities") {
+      return void json(res, 200, {
+        publicSignupEnabled,
+        emailDeliveryConfigured: smtpConfigured(),
+        deploymentMode,
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/signup/request") {
+      if (!publicSignupEnabled || !smtpConfigured()) {
+        return void json(res, 503, { error: "signup_unavailable" });
+      }
+
+      const body = z.object({
+        email: z.string().trim().email().max(320),
+        password: z.string().min(12).max(256),
+        organizationName: z.string().trim().min(2).max(120),
+      }).parse(await readJson(req));
+      const email = normalizeEmail(body.email);
+      const ip = remoteKey(req);
+      const ipRate = signupRequestRateLimit.hit(ip, 20, 60 * 60_000);
+      const accountRate = signupRequestRateLimit.hit(ip + ":" + sha256(email), 5, 60 * 60_000);
+      if (!ipRate.allowed || !accountRate.allowed) {
+        res.setHeader("Retry-After", String(Math.max(ipRate.retryAfterSeconds, accountRate.retryAfterSeconds)));
+        return void json(res, 429, { error: "rate_limited" });
+      }
+
+      const passwordHash = await hashPassword(body.password);
+      const exists = await db.query("select 1 from users where lower(email)=lower($1)", [email]);
+      if (!exists.rowCount) {
+        const token = "wrcv_" + randomToken(32);
+        await db.query(
+          `update auth_email_challenges
+              set revoked_at=now()
+            where purpose='signup'
+              and lower(email)=lower($1)
+              and consumed_at is null
+              and revoked_at is null`,
+          [email],
+        );
+        const created = await db.query<{ id: string }>(
+          `insert into auth_email_challenges(
+             purpose,email,organization_name,password_hash,token_hash,expires_at
+           )
+           values('signup',$1,$2,$3,$4,now()+($5::int * interval '1 minute'))
+           returning id`,
+          [email, body.organizationName, passwordHash, sha256(token), authEmailTokenMinutes],
+        );
+        try {
+          await deliverAuthEmail({
+            to: email,
+            purpose: "signup",
+            token,
+            organizationName: body.organizationName,
+          });
+        } catch (error) {
+          await db.query("update auth_email_challenges set revoked_at=now() where id=$1", [
+            created.rows[0]!.id,
+          ]);
+          process.stderr.write(
+            "signup email delivery failed: " +
+              redact(error instanceof Error ? error.message : String(error)) +
+              "\n",
+          );
+        }
+      }
+      return void json(res, 202, { ok: true });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/signup/complete") {
+      const body = z.object({ token: z.string().min(40).max(200) }).parse(await readJson(req));
+      const rate = signupCompleteRateLimit.hit(
+        remoteKey(req) + ":" + sha256(body.token),
+        10,
+        15 * 60_000,
+      );
+      if (!rate.allowed) {
+        res.setHeader("Retry-After", String(rate.retryAfterSeconds));
+        return void json(res, 429, { error: "rate_limited" });
+      }
+      if (!body.token.startsWith("wrcv_")) {
+        return void json(res, 400, { error: "invalid_or_expired_verification" });
+      }
+
+      const client = await db.connect();
+      let userId = "";
+      let organizationId = "";
+      let email = "";
+      try {
+        await client.query("begin");
+        const challenge = await client.query<{
+          id: string;
+          email: string;
+          organization_name: string;
+          password_hash: string;
+        }>(
+          `select id,email,organization_name,password_hash
+             from auth_email_challenges
+            where purpose='signup'
+              and token_hash=$1
+              and consumed_at is null
+              and revoked_at is null
+              and expires_at>now()
+            for update`,
+          [sha256(body.token)],
+        );
+        const row = challenge.rows[0];
+        if (!row) {
+          await client.query("rollback");
+          return void json(res, 400, { error: "invalid_or_expired_verification" });
+        }
+
+        const existing = await client.query(
+          "select 1 from users where lower(email)=lower($1) for update",
+          [row.email],
+        );
+        if (existing.rowCount) {
+          await client.query("update auth_email_challenges set revoked_at=now() where id=$1", [row.id]);
+          await client.query("commit");
+          return void json(res, 409, { error: "account_already_exists" });
+        }
+
+        const organization = await client.query<{ id: string }>(
+          "insert into organizations(name) values($1) returning id",
+          [row.organization_name],
+        );
+        organizationId = organization.rows[0]!.id;
+        const user = await client.query<{ id: string; email: string }>(
+          `insert into users(email,password_hash,email_verified_at)
+           values($1,$2,now())
+           returning id,email`,
+          [row.email, row.password_hash],
+        );
+        userId = user.rows[0]!.id;
+        email = user.rows[0]!.email;
+        await client.query(
+          "insert into organization_members(organization_id,user_id,role) values($1,$2,'owner')",
+          [organizationId, userId],
+        );
+        await client.query("update auth_email_challenges set consumed_at=now() where id=$1", [row.id]);
+        await client.query("commit");
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
+
+      const material = newBrowserSessionMaterial();
+      const maxAge = browserSessionSeconds();
+      const session = await db.query<{ id: string }>(
+        `insert into browser_sessions(user_id,organization_id,token_hash,csrf_hash,expires_at)
+         values($1,$2,$3,$4,now()+($5::int * interval '1 second'))
+         returning id`,
+        [userId, organizationId, material.sessionHash, material.csrfHash, maxAge],
+      );
+      await db.query(
+        "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,$2,null,'auth.signup','medium','success',$3)",
+        [organizationId, "user:" + userId, JSON.stringify({ email })],
+      );
+      res.setHeader(
+        "Set-Cookie",
+        authCookies(material.sessionToken, material.csrfToken, maxAge, publicBaseUrl.startsWith("https://")),
+      );
+      return void json(res, 201, {
+        ok: true,
+        userId,
+        email,
+        organizationId,
+        role: "owner",
+        authKind: "session",
+        sessionId: session.rows[0]!.id,
+        csrfToken: material.csrfToken,
+        expiresInSeconds: maxAge,
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/password-reset/request") {
+      if (!smtpConfigured()) return void json(res, 202, { ok: true });
+      const body = z.object({ email: z.string().trim().email().max(320) }).parse(await readJson(req));
+      const email = normalizeEmail(body.email);
+      const ip = remoteKey(req);
+      const ipRate = passwordResetRequestRateLimit.hit(ip, 30, 60 * 60_000);
+      const accountRate = passwordResetRequestRateLimit.hit(ip + ":" + sha256(email), 5, 60 * 60_000);
+      if (!ipRate.allowed || !accountRate.allowed) {
+        res.setHeader("Retry-After", String(Math.max(ipRate.retryAfterSeconds, accountRate.retryAfterSeconds)));
+        return void json(res, 429, { error: "rate_limited" });
+      }
+
+      const user = await db.query<{ id: string }>(
+        "select id from users where lower(email)=lower($1) and disabled_at is null",
+        [email],
+      );
+      if (user.rows[0]) {
+        const token = "wrpr_" + randomToken(32);
+        await db.query(
+          `update auth_email_challenges
+              set revoked_at=now()
+            where purpose='password_reset'
+              and lower(email)=lower($1)
+              and consumed_at is null
+              and revoked_at is null`,
+          [email],
+        );
+        const created = await db.query<{ id: string }>(
+          `insert into auth_email_challenges(purpose,email,token_hash,expires_at)
+           values('password_reset',$1,$2,now()+($3::int * interval '1 minute'))
+           returning id`,
+          [email, sha256(token), authEmailTokenMinutes],
+        );
+        try {
+          await deliverAuthEmail({ to: email, purpose: "password_reset", token });
+        } catch (error) {
+          await db.query("update auth_email_challenges set revoked_at=now() where id=$1", [
+            created.rows[0]!.id,
+          ]);
+          process.stderr.write(
+            "password reset email delivery failed: " +
+              redact(error instanceof Error ? error.message : String(error)) +
+              "\n",
+          );
+        }
+      }
+      return void json(res, 202, { ok: true });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/password-reset/complete") {
+      const body = z.object({
+        token: z.string().min(40).max(200),
+        newPassword: z.string().min(12).max(256),
+      }).parse(await readJson(req));
+      const rate = passwordResetCompleteRateLimit.hit(
+        remoteKey(req) + ":" + sha256(body.token),
+        10,
+        15 * 60_000,
+      );
+      if (!rate.allowed) {
+        res.setHeader("Retry-After", String(rate.retryAfterSeconds));
+        return void json(res, 429, { error: "rate_limited" });
+      }
+      if (!body.token.startsWith("wrpr_")) {
+        return void json(res, 400, { error: "invalid_or_expired_reset" });
+      }
+
+      const passwordHash = await hashPassword(body.newPassword);
+      const client = await db.connect();
+      try {
+        await client.query("begin");
+        const challenge = await client.query<{ id: string; email: string }>(
+          `select id,email
+             from auth_email_challenges
+            where purpose='password_reset'
+              and token_hash=$1
+              and consumed_at is null
+              and revoked_at is null
+              and expires_at>now()
+            for update`,
+          [sha256(body.token)],
+        );
+        const row = challenge.rows[0];
+        if (!row) {
+          await client.query("rollback");
+          return void json(res, 400, { error: "invalid_or_expired_reset" });
+        }
+        const user = await client.query<{ id: string }>(
+          "select id from users where lower(email)=lower($1) and disabled_at is null for update",
+          [row.email],
+        );
+        if (!user.rows[0]) {
+          await client.query("update auth_email_challenges set revoked_at=now() where id=$1", [row.id]);
+          await client.query("commit");
+          return void json(res, 400, { error: "invalid_or_expired_reset" });
+        }
+        await client.query("update users set password_hash=$2 where id=$1", [user.rows[0].id, passwordHash]);
+        await client.query(
+          "update browser_sessions set revoked_at=coalesce(revoked_at,now()) where user_id=$1 and revoked_at is null",
+          [user.rows[0].id],
+        );
+        await client.query("update auth_email_challenges set consumed_at=now() where id=$1", [row.id]);
+        await client.query("commit");
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
+      return void json(res, 200, { ok: true });
     }
 
     if (req.method === "POST" && url.pathname === "/api/auth/login") {
