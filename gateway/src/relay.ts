@@ -77,7 +77,7 @@ export class AgentHub {
 
   request(deviceId: string, action: AgentAction, approvalToken?: string | null) {
     const socket = this.sockets.get(deviceId);
-    if (!socket || socket.readyState !== socket.OPEN) {
+    if (!socket || socket.readyState !== 1) {
       return Promise.reject(new Error("device-offline"));
     }
 
