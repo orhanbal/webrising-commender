@@ -399,14 +399,16 @@ export async function applyNormalizedBillingEvent(event: NormalizedBillingEvent)
         duplicate: true,
         stale: existing.rows[0]?.disposition === "stale",
         providerMismatch: existing.rows[0]?.disposition === "provider_mismatch",
+        orderConflict: existing.rows[0]?.disposition === "order_conflict",
       };
     }
 
     const current = await client.query<{
       provider: string | null;
       provider_event_at: string | null;
+      provider_event_id: string | null;
     }>(
-      `select provider,provider_event_at
+      `select provider,provider_event_at,provider_event_id
          from organization_subscriptions
         where organization_id=$1
         for update`,
@@ -428,12 +430,13 @@ export async function applyNormalizedBillingEvent(event: NormalizedBillingEvent)
         duplicate: false,
         stale: false,
         providerMismatch: true,
+        orderConflict: false,
       };
     }
 
     if (currentSubscription?.provider_event_at) {
       const currentEventAtMs = new Date(currentSubscription.provider_event_at).getTime();
-      if (Number.isFinite(currentEventAtMs) && occurredAtMs <= currentEventAtMs) {
+      if (Number.isFinite(currentEventAtMs) && occurredAtMs < currentEventAtMs) {
         await client.query(
           "update billing_events set disposition='stale' where id=$1::bigint",
           [inserted.rows[0].id],
@@ -444,6 +447,25 @@ export async function applyNormalizedBillingEvent(event: NormalizedBillingEvent)
           duplicate: false,
           stale: true,
           providerMismatch: false,
+          orderConflict: false,
+        };
+      }
+      if (
+        Number.isFinite(currentEventAtMs) &&
+        occurredAtMs === currentEventAtMs &&
+        currentSubscription.provider_event_id !== event.eventId
+      ) {
+        await client.query(
+          "update billing_events set disposition='order_conflict' where id=$1::bigint",
+          [inserted.rows[0].id],
+        );
+        await client.query("commit");
+        return {
+          applied: false,
+          duplicate: false,
+          stale: false,
+          providerMismatch: false,
+          orderConflict: true,
         };
       }
     }
@@ -468,6 +490,7 @@ export async function applyNormalizedBillingEvent(event: NormalizedBillingEvent)
       duplicate: false,
       stale: false,
       providerMismatch: false,
+      orderConflict: false,
       subscription,
     };
   } catch (error) {
