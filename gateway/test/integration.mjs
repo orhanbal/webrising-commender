@@ -27,6 +27,19 @@ async function rpc(id, method, params = undefined) {
   });
 }
 
+async function rpcAs(headers, id, method, params = undefined) {
+  const response = await fetch(base + "/mcp", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ jsonrpc: "2.0", id, method, ...(params === undefined ? {} : { params }) }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(`POST /mcp -> ${response.status}: ${JSON.stringify(body)}`);
+  }
+  return body;
+}
+
 function toolText(response) {
   const text = response?.result?.content?.[0]?.text;
   assert.equal(typeof text, "string");
@@ -167,6 +180,53 @@ const operatorApprovalResponse = await fetch(base + "/api/approvals", {
   }),
 });
 assert.equal(operatorApprovalResponse.status, 403);
+
+const operatorHeaders = {
+  Authorization: `Bearer ${defaultOperator.token}`,
+  "Content-Type": "application/json",
+};
+const humanActionArgs = {
+  device_id: enrolled.deviceId,
+  command: "echo human-approved",
+};
+const pendingForHuman = await rpcAs(operatorHeaders, 50, "tools/call", {
+  name: "process_exec",
+  arguments: humanActionArgs,
+});
+assert.equal(pendingForHuman.result.isError, true);
+const pendingPayload = toolText(pendingForHuman);
+assert.equal(pendingPayload.error, "approval_required");
+assert.match(pendingPayload.approval_request_id, /^[0-9a-f-]{36}$/i);
+
+const pendingList = await jsonFetch("/api/approval-requests?status=pending", {
+  headers: authHeaders,
+});
+assert.ok(pendingList.items.some((item) => item.id === pendingPayload.approval_request_id));
+
+const approvedRequest = await jsonFetch(
+  `/api/approval-requests/${pendingPayload.approval_request_id}/approve`,
+  {
+    method: "POST",
+    headers: authHeaders,
+    body: "{}",
+  },
+);
+assert.equal(approvedRequest.item.status, "approved");
+
+const humanApproved = await rpcAs(operatorHeaders, 51, "tools/call", {
+  name: "process_exec",
+  arguments: humanActionArgs,
+});
+const humanApprovedData = toolText(humanApproved);
+assert.equal(humanApprovedData.success, true);
+assert.equal(humanApprovedData.stdout, "approved");
+
+const humanGrantConsumed = await rpcAs(operatorHeaders, 52, "tools/call", {
+  name: "process_exec",
+  arguments: humanActionArgs,
+});
+assert.equal(humanGrantConsumed.result.isError, true);
+assert.equal(toolText(humanGrantConsumed).error, "approval_required");
 
 const tamperApproval = await jsonFetch("/api/approvals", {
   method: "POST",
