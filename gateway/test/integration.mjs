@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
+import pg from "pg";
 import WebSocket from "ws";
 
 const base = process.env.TEST_BASE_URL || "http://127.0.0.1:8787";
 const apiKey = process.env.CONTROL_API_KEY;
 if (!apiKey) throw new Error("CONTROL_API_KEY is required");
+if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
+const { Pool } = pg;
+const inspectionDb = new Pool({ connectionString: process.env.DATABASE_URL });
 
 const authHeaders = {
   Authorization: `Bearer ${apiKey}`,
@@ -61,6 +65,25 @@ async function waitFor(predicate, timeoutMs = 5000, intervalMs = 100) {
   throw new Error(`condition timeout; last=${last instanceof Error ? last.message : JSON.stringify(last)}`);
 }
 
+async function latestMail(kind, email) {
+  const result = await inspectionDb.query(
+    `select id,kind,to_email,subject,text_body,sent_at,last_error,created_at
+       from mail_outbox
+      where kind=$1 and lower(to_email)=lower($2)
+      order by created_at desc
+      limit 1`,
+    [kind, email],
+  );
+  return result.rows[0] || null;
+}
+
+function fragmentToken(text, name, prefix) {
+  assert.equal(typeof text, "string");
+  const match = text.match(new RegExp("#" + name + "=(" + prefix + "[A-Za-z0-9_-]+)"));
+  assert.ok(match, `missing #${name} token in mail body`);
+  return match[1];
+}
+
 async function assignSubscription(organizationId, planKey = "ci-standard", status = "active") {
   return jsonFetch(`/api/admin/organizations/${organizationId}/subscription`, {
     method: "PUT",
@@ -104,6 +127,153 @@ assert.equal(initialBilling.mode, "saas");
 assert.equal(initialBilling.entitled, true);
 assert.equal(initialBilling.plan.key, "ci-standard");
 assert.equal(initialBilling.usage.devices, 0);
+
+const publicAuthConfig = await jsonFetch("/api/auth/config");
+assert.equal(publicAuthConfig.publicSignupEnabled, true);
+assert.equal(publicAuthConfig.passwordResetEnabled, true);
+assert.equal(publicAuthConfig.mailDeliveryMode, "outbox");
+assert.equal(publicAuthConfig.deploymentMode, "saas");
+
+const unknownResetRequest = await fetch(base + "/api/auth/password-reset/request", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ email: "unknown@example.test" }),
+});
+assert.equal(unknownResetRequest.status, 202);
+assert.equal(await latestMail("password_reset", "unknown@example.test"), null);
+
+const signupResponse = await fetch(base + "/api/auth/signup", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    email: "signup@example.test",
+    password: "signup-initial-password",
+    workspaceName: "CI Public Signup",
+  }),
+});
+assert.equal(signupResponse.status, 202);
+
+const verificationMail = await latestMail("email_verification", "signup@example.test");
+assert.ok(verificationMail);
+assert.match(verificationMail.subject, /Verify/);
+const verificationToken = fragmentToken(verificationMail.text_body, "verify", "wrce_");
+
+const rawVerificationStored = await inspectionDb.query(
+  "select token_hash from pending_signups where lower(email)=lower($1)",
+  ["signup@example.test"],
+);
+assert.equal(rawVerificationStored.rowCount, 1);
+assert.notEqual(rawVerificationStored.rows[0].token_hash, verificationToken);
+
+const unverifiedLogin = await fetch(base + "/api/auth/login", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    email: "signup@example.test",
+    password: "signup-initial-password",
+  }),
+});
+assert.equal(unverifiedLogin.status, 401);
+
+const verifySignupResponse = await fetch(base + "/api/auth/signup/verify", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ token: verificationToken }),
+});
+assert.equal(verifySignupResponse.status, 200);
+const verifiedSignup = await verifySignupResponse.json();
+assert.equal(verifiedSignup.email, "signup@example.test");
+assert.equal(verifiedSignup.role, "owner");
+assert.match(verifiedSignup.organizationId, /^[0-9a-f-]{36}$/i);
+const signupCookies = verifySignupResponse.headers
+  .getSetCookie()
+  .map((value) => value.split(";")[0])
+  .join("; ");
+
+const consumedVerificationMail = await latestMail("email_verification", "signup@example.test");
+assert.equal(consumedVerificationMail.text_body, null);
+
+const verificationReplay = await fetch(base + "/api/auth/signup/verify", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ token: verificationToken }),
+});
+assert.equal(verificationReplay.status, 400);
+
+const signupMeResponse = await fetch(base + "/api/auth/me", {
+  headers: { Cookie: signupCookies },
+});
+assert.equal(signupMeResponse.status, 200);
+const signupMe = await signupMeResponse.json();
+assert.equal(signupMe.email, "signup@example.test");
+assert.equal(signupMe.organizationId, verifiedSignup.organizationId);
+
+const signupBillingResponse = await fetch(base + "/api/billing", {
+  headers: { Cookie: signupCookies },
+});
+assert.equal(signupBillingResponse.status, 200);
+const signupBilling = await signupBillingResponse.json();
+assert.equal(signupBilling.entitled, false);
+assert.equal(signupBilling.reason, "billing_required");
+
+const resetRequest = await fetch(base + "/api/auth/password-reset/request", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ email: "signup@example.test" }),
+});
+assert.equal(resetRequest.status, 202);
+
+const resetMail = await latestMail("password_reset", "signup@example.test");
+assert.ok(resetMail);
+const resetToken = fragmentToken(resetMail.text_body, "reset", "wrcp_");
+
+const resetConfirm = await fetch(base + "/api/auth/password-reset/confirm", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    token: resetToken,
+    newPassword: "signup-new-secure-password",
+  }),
+});
+assert.equal(resetConfirm.status, 200);
+
+const resetReplay = await fetch(base + "/api/auth/password-reset/confirm", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    token: resetToken,
+    newPassword: "another-secure-password",
+  }),
+});
+assert.equal(resetReplay.status, 400);
+
+const resetMailAfterUse = await latestMail("password_reset", "signup@example.test");
+assert.equal(resetMailAfterUse.text_body, null);
+
+const revokedSignupSession = await fetch(base + "/api/auth/me", {
+  headers: { Cookie: signupCookies },
+});
+assert.equal(revokedSignupSession.status, 401);
+
+const oldSignupPassword = await fetch(base + "/api/auth/login", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    email: "signup@example.test",
+    password: "signup-initial-password",
+  }),
+});
+assert.equal(oldSignupPassword.status, 401);
+
+const newSignupPassword = await fetch(base + "/api/auth/login", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    email: "signup@example.test",
+    password: "signup-new-secure-password",
+  }),
+});
+assert.equal(newSignupPassword.status, 200);
 
 const browserUser = await jsonFetch("/api/users", {
   method: "POST",
@@ -1222,4 +1392,5 @@ const revokedBrowserSession = await fetch(base + "/api/auth/me", {
 assert.equal(revokedBrowserSession.status, 401);
 
 socket.close();
+await inspectionDb.end();
 console.log("integration: ok");
