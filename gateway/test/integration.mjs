@@ -239,5 +239,59 @@ const viewerPairingResponse = await fetch(base + "/api/pairing", {
 });
 assert.equal(viewerPairingResponse.status, 403);
 
+const tenantAdminToken = await jsonFetch("/api/tokens", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    name: "CI Tenant Admin",
+    role: "admin",
+    organizationId: tenantOrg.item.id,
+  }),
+});
+const tenantAdminHeaders = {
+  Authorization: `Bearer ${tenantAdminToken.token}`,
+  "Content-Type": "application/json",
+};
+
+const forbiddenOwnerGrant = await fetch(base + "/api/tokens", {
+  method: "POST",
+  headers: tenantAdminHeaders,
+  body: JSON.stringify({
+    name: "Forbidden Owner",
+    role: "owner",
+  }),
+});
+assert.equal(forbiddenOwnerGrant.status, 403);
+
+const allowedOperatorGrant = await fetch(base + "/api/tokens", {
+  method: "POST",
+  headers: tenantAdminHeaders,
+  body: JSON.stringify({
+    name: "Allowed Operator",
+    role: "operator",
+  }),
+});
+assert.equal(allowedOperatorGrant.status, 201);
+
+const tenantOwnerToken = await jsonFetch("/api/tokens", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    name: "CI Tenant Owner",
+    role: "owner",
+    organizationId: tenantOrg.item.id,
+  }),
+});
+
+const forbiddenOwnerRevoke = await fetch(
+  base + `/api/tokens/${tenantOwnerToken.item.id}/revoke`,
+  {
+    method: "POST",
+    headers: tenantAdminHeaders,
+    body: "{}",
+  },
+);
+assert.equal(forbiddenOwnerRevoke.status, 403);
+
 socket.close();
 console.log("integration: ok");
