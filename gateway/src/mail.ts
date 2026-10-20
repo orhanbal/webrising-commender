@@ -52,9 +52,11 @@ function encryptionKey() {
 }
 
 export function mailConfigured() {
+  const security = String(process.env.SMTP_SECURITY || "starttls").trim().toLowerCase();
   return Boolean(
     String(process.env.SMTP_HOST || "").trim() &&
       String(process.env.SMTP_FROM || "").trim() &&
+      ["none", "starttls", "tls"].includes(security) &&
       encryptionKey(),
   );
 }
@@ -231,7 +233,7 @@ class SmtpConnection {
       const socket = tls.connect({
         host,
         port,
-        servername: host,
+        ...(net.isIP(host) ? {} : { servername: host }),
         rejectUnauthorized: boolEnv("SMTP_TLS_REJECT_UNAUTHORIZED", true),
       });
       await new Promise<void>((resolve, reject) => {
@@ -263,13 +265,14 @@ class SmtpConnection {
       current.removeAllListeners("data");
       current.removeAllListeners("timeout");
       current.removeAllListeners("error");
+      current.removeAllListeners("close");
       this.buffer = "";
       this.lines = [];
       this.lastError = null;
 
       const secure = tls.connect({
         socket: current as Socket,
-        servername: host,
+        ...(net.isIP(host) ? {} : { servername: host }),
         rejectUnauthorized: boolEnv("SMTP_TLS_REJECT_UNAUTHORIZED", true),
       });
       await new Promise<void>((resolve, reject) => {
