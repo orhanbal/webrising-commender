@@ -250,13 +250,13 @@ const server = http.createServer(async (req, res) => {
         return void json(res, 429, { error: "rate_limited" });
       }
 
+      const passwordHash = await hashPassword(body.password);
       const existing = await db.query<{ id: string }>(
         "select id from users where lower(email)=lower($1) and disabled_at is null limit 1",
         [email],
       );
       if (existing.rows[0]) return void genericMailAccepted(res);
 
-      const passwordHash = await hashPassword(body.password);
       const token = "wrce_" + randomToken(32);
       const client = await db.connect();
       try {
@@ -552,8 +552,8 @@ const server = http.createServer(async (req, res) => {
       let resetUserId = "";
       try {
         await client.query("begin");
-        const tokenRow = await client.query<{ id: string; user_id: string }>(
-          `select t.id,t.user_id
+        const tokenRow = await client.query<{ id: string; user_id: string; email: string }>(
+          `select t.id,t.user_id,u.email
              from auth_tokens t
              join users u on u.id=t.user_id
             where t.token_hash=$1
@@ -586,6 +586,16 @@ const server = http.createServer(async (req, res) => {
         await client.query(
           "update browser_sessions set revoked_at=coalesce(revoked_at,now()) where user_id=$1 and revoked_at is null",
           [row.user_id],
+        );
+        await client.query(
+          `update mail_outbox
+              set text_body=null,
+                  sent_at=coalesce(sent_at,now()),
+                  last_error=case when sent_at is null then 'reset_consumed' else last_error end
+            where kind='password_reset'
+              and lower(to_email)=lower($1)
+              and text_body is not null`,
+          [row.email],
         );
         await client.query(
           `insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail)
@@ -839,6 +849,17 @@ const server = http.createServer(async (req, res) => {
         await client.query(
           "update users set email_verified_at=coalesce(email_verified_at,now()),last_login_at=now() where id=$1",
           [userId],
+        );
+        await client.query("delete from pending_signups where lower(email)=lower($1)", [email]);
+        await client.query(
+          `update mail_outbox
+              set text_body=null,
+                  sent_at=coalesce(sent_at,now()),
+                  last_error=case when sent_at is null then 'verified_by_invitation' else last_error end
+            where kind='email_verification'
+              and lower(to_email)=lower($1)
+              and text_body is not null`,
+          [email],
         );
         await client.query("commit");
         acceptedUserId = userId;
@@ -1375,6 +1396,17 @@ const server = http.createServer(async (req, res) => {
         await client.query(
           "insert into organization_members(organization_id,user_id,role) values($1,$2,$3)",
           [organizationId, created.rows[0]!.id, body.role],
+        );
+        await client.query("delete from pending_signups where lower(email)=lower($1)", [email]);
+        await client.query(
+          `update mail_outbox
+              set text_body=null,
+                  sent_at=coalesce(sent_at,now()),
+                  last_error=case when sent_at is null then 'verified_by_admin' else last_error end
+            where kind='email_verification'
+              and lower(to_email)=lower($1)
+              and text_body is not null`,
+          [email],
         );
         await client.query("commit");
         await db.query(
