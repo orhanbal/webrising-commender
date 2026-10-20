@@ -92,7 +92,7 @@ test("first-party SMTP client completes a local relay conversation", async (t) =
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
   });
-  t.after(() => server.close());
+  t.after(() => new Promise((resolve) => server.close(resolve)));
 
   const address = server.address();
   assert.ok(address && typeof address === "object");
