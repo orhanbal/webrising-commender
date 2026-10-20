@@ -859,6 +859,18 @@ const server = http.createServer(async (req, res) => {
       const client = await db.connect();
       try {
         await client.query("begin");
+        const lockedOrganization = await client.query(
+          "select id from organizations where id=$1 for update",
+          [organizationId],
+        );
+        if (!lockedOrganization.rowCount) {
+          await client.query("rollback");
+          return void json(res, 404, { error: "organization_not_found" });
+        }
+        if (!(await requireCapacity(organizationId, "member", res, client))) {
+          await client.query("rollback");
+          return;
+        }
         const created = await client.query<{ id: string; email: string; created_at: string }>(
           "insert into users(email,password_hash) values($1,$2) returning id,email,created_at",
           [email, passwordHash],
@@ -908,52 +920,80 @@ const server = http.createServer(async (req, res) => {
       }
 
       const organizationId = body.organizationId ?? principal!.organizationId;
-      const org = await db.query("select 1 from organizations where id=$1", [organizationId]);
-      if (!org.rowCount) return void json(res, 404, { error: "organization_not_found" });
-
       const email = normalizeEmail(body.email);
-      const user = await db.query<{ id: string; email: string }>(
-        "select id,email from users where lower(email)=lower($1) and disabled_at is null",
-        [email],
-      );
-      if (!user.rows[0]) return void json(res, 404, { error: "user_not_found" });
+      const client = await db.connect();
+      try {
+        await client.query("begin");
+        const organization = await client.query(
+          "select id from organizations where id=$1 for update",
+          [organizationId],
+        );
+        if (!organization.rowCount) {
+          await client.query("rollback");
+          return void json(res, 404, { error: "organization_not_found" });
+        }
 
-      const currentMembership = await db.query<{ role: Role }>(
-        "select role from organization_members where organization_id=$1 and user_id=$2",
-        [organizationId, user.rows[0].id],
-      );
-      if (currentMembership.rows[0]) {
-        if (!roleAtLeast(principal!, currentMembership.rows[0].role)) {
-          return void json(res, 403, {
-            error: "cannot_manage_higher_role",
-            targetRole: currentMembership.rows[0].role,
+        const user = await client.query<{ id: string; email: string }>(
+          "select id,email from users where lower(email)=lower($1) and disabled_at is null",
+          [email],
+        );
+        if (!user.rows[0]) {
+          await client.query("rollback");
+          return void json(res, 404, { error: "user_not_found" });
+        }
+
+        const currentMembership = await client.query<{ role: Role }>(
+          "select role from organization_members where organization_id=$1 and user_id=$2",
+          [organizationId, user.rows[0].id],
+        );
+        if (currentMembership.rows[0]) {
+          await client.query("rollback");
+          if (!roleAtLeast(principal!, currentMembership.rows[0].role)) {
+            return void json(res, 403, {
+              error: "cannot_manage_higher_role",
+              targetRole: currentMembership.rows[0].role,
+            });
+          }
+          return void json(res, 409, {
+            error: "member_already_exists",
+            currentRole: currentMembership.rows[0].role,
           });
         }
-        return void json(res, 409, {
-          error: "member_already_exists",
-          currentRole: currentMembership.rows[0].role,
-        });
-      }
 
-      const membership = await db.query(
-        `insert into organization_members(organization_id,user_id,role)
-         values($1,$2,$3)
-         on conflict do nothing
-         returning organization_id,user_id,role,created_at`,
-        [organizationId, user.rows[0].id, body.role],
-      );
-      if (!membership.rows[0]) {
-        return void json(res, 409, { error: "member_already_exists" });
-      }
-      await db.query(
-        "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,$2,null,'member.upsert','high','success',$3)",
-        [
+        if (!(await requireCapacity(organizationId, "member", res, client))) {
+          await client.query("rollback");
+          return;
+        }
+
+        const membership = await client.query(
+          `insert into organization_members(organization_id,user_id,role)
+           values($1,$2,$3)
+           on conflict do nothing
+           returning organization_id,user_id,role,created_at`,
+          [organizationId, user.rows[0].id, body.role],
+        );
+        if (!membership.rows[0]) {
+          await client.query("rollback");
+          return void json(res, 409, { error: "member_already_exists" });
+        }
+
+        await client.query("commit");
+        await auditForOrganization(
+          principal!,
           organizationId,
-          principal!.actor,
+          null,
+          "member.create",
+          "high",
+          "success",
           JSON.stringify({ userId: user.rows[0].id, email, role: body.role }),
-        ],
-      );
-      return void json(res, 200, { item: membership.rows[0] });
+        );
+        return void json(res, 200, { item: membership.rows[0] });
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
     }
 
     if (req.method === "GET" && url.pathname === "/api/invitations") {
