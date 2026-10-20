@@ -46,6 +46,44 @@ pub async fn execute(
         AgentAction::FsDelete { path, recursive } => {
             fs_ops::delete(policy, &path, recursive.unwrap_or(false))
         }
+        AgentAction::FsMove {
+            source,
+            destination,
+        } => fs_ops::move_path(policy, &source, &destination),
+        AgentAction::FsTree {
+            path,
+            max_depth,
+            max_entries,
+        } => fs_ops::tree(policy, &path, max_depth, max_entries),
+        AgentAction::FsSearch {
+            path,
+            query,
+            max_results,
+        } => fs_ops::search(policy, &path, &query, max_results),
+        AgentAction::TextSearch {
+            path,
+            query,
+            case_sensitive,
+            max_results,
+        } => fs_ops::text_search(
+            policy,
+            &path,
+            &query,
+            case_sensitive.unwrap_or(false),
+            max_results,
+        ),
+        AgentAction::FsReplace {
+            path,
+            search,
+            replace,
+            replace_all,
+        } => fs_ops::replace_text(
+            policy,
+            &path,
+            &search,
+            &replace,
+            replace_all.unwrap_or(false),
+        ),
         AgentAction::ProcessExec {
             command,
             cwd,
@@ -60,6 +98,7 @@ pub async fn execute(
         } => tasks.start(policy.clone(), command, cwd, timeout_ms).await,
         AgentAction::TaskStatus { task_id } => tasks.status(&task_id).await,
         AgentAction::TaskCancel { task_id } => tasks.cancel(&task_id).await,
+        AgentAction::TaskList => tasks.list().await,
         AgentAction::TerminalStart {
             shell,
             cwd,
@@ -86,5 +125,6 @@ pub async fn execute(
             rows,
         } => terminals.resize(&session_id, cols, rows),
         AgentAction::TerminalStop { session_id } => terminals.stop(&session_id),
+        AgentAction::TerminalList => terminals.list(),
     }
 }
