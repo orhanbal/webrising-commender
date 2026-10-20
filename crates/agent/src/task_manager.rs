@@ -57,8 +57,7 @@ impl TaskManager {
         let tasks = std::sync::Arc::clone(&self.tasks);
         let id_for_job = task_id.clone();
         let job = tokio::spawn(async move {
-            let outcome =
-                process_ops::exec(&policy, &command, cwd.as_deref(), timeout_ms).await;
+            let outcome = process_ops::exec(&policy, &command, cwd.as_deref(), timeout_ms).await;
 
             let mut map = tasks.lock().await;
             let Some(entry) = map.get_mut(&id_for_job) else {
@@ -145,7 +144,12 @@ impl TaskManager {
         let mut finished: Vec<(String, u128)> = tasks
             .iter()
             .filter(|(_, entry)| entry.status != "running")
-            .map(|(id, entry)| (id.clone(), entry.finished_at_ms.unwrap_or(entry.created_at_ms)))
+            .map(|(id, entry)| {
+                (
+                    id.clone(),
+                    entry.finished_at_ms.unwrap_or(entry.created_at_ms),
+                )
+            })
             .collect();
         finished.sort_by_key(|(_, timestamp)| *timestamp);
 
