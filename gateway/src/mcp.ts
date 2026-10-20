@@ -48,7 +48,7 @@ const tools = [
     "task_start",
     "Start a persistent background command task. The task survives AI/gateway disconnects while the agent process remains alive. HIGH risk; omit approval_token to request human approval.",
     { command: str(), cwd: str(), timeout_ms: integer(), approval_token: str() },
-    ["command", "approval_token"],
+    ["command"],
   ),
   tool(
     "task_status",
