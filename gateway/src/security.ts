@@ -18,7 +18,7 @@ export function randomToken(bytes = 32) {
 }
 
 export function isControlAuthorized(header: string | undefined) {
-  if (!header?.startsWith("Bearer ")) return null;
+  if (!header?.startsWith("Bearer ")) return false;
   const supplied = Buffer.from(header.slice(7));
   const expected = Buffer.from(controlApiKey);
   return supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);

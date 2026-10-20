@@ -172,6 +172,14 @@ export async function handleMcp(request: JsonRpcRequest, hub: AgentHub) {
   const deviceId = String(args.device_id || "");
   if (!deviceId) return ok(request.id, toolResult({ error: "device_id_required" }, true));
 
+  const device = await db.query(
+    "select 1 from devices where id=$1 and organization_id=$2 and revoked_at is null",
+    [deviceId, orgId],
+  );
+  if (!device.rowCount) {
+    return ok(request.id, toolResult({ error: "device_not_found" }, true));
+  }
+
   let action: AgentAction;
   try {
     action = actionFromTool(name, args);

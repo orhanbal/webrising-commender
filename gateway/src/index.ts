@@ -9,6 +9,7 @@ import { consumeApproval } from "./approvals.js";
 import { db, defaultOrganizationId, migrate, ready } from "./db.js";
 import { handleMcp } from "./mcp.js";
 import { actionRisk, type AgentAction } from "./protocol.js";
+import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { AgentHub } from "./relay.js";
 import { isControlAuthorized, issueApproval, randomToken, redact, sha256 } from "./security.js";
 
@@ -17,6 +18,8 @@ const port = Number(process.env.PORT || 8787);
 const publicBaseUrl = String(process.env.PUBLIC_BASE_URL || `http://localhost:${port}`).replace(/\/$/, "");
 const bodyLimit = 2 * 1024 * 1024;
 const hub = new AgentHub();
+const enrollRateLimit = new FixedWindowRateLimiter();
+const pairingRateLimit = new FixedWindowRateLimiter();
 
 await migrate();
 
@@ -49,6 +52,24 @@ function authorized(req: IncomingMessage, res: ServerResponse) {
   if (isControlAuthorized(req.headers.authorization)) return true;
   json(res, 401, { error: "unauthorized" });
   return false;
+}
+
+function remoteKey(req: IncomingMessage) {
+  return req.socket.remoteAddress || "unknown";
+}
+
+async function auditControl(
+  deviceId: string | null,
+  tool: string,
+  risk: string,
+  outcome: string,
+  detail = "",
+) {
+  const orgId = await defaultOrganizationId();
+  await db.query(
+    "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,'control-api',$2,$3,$4,$5,$6)",
+    [orgId, deviceId, tool, risk, outcome, detail],
+  );
 }
 
 async function serveConsole(res: ServerResponse) {
@@ -88,6 +109,12 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && url.pathname === "/api/agent/enroll") {
+      const rate = enrollRateLimit.hit(remoteKey(req), 20, 10 * 60_000);
+      if (!rate.allowed) {
+        res.setHeader("Retry-After", String(rate.retryAfterSeconds));
+        return void json(res, 429, { error: "rate_limited" });
+      }
+
       const body = z.object({
         pairingCode: z.string().min(20).max(200),
         name: z.string().trim().min(1).max(120).optional(),
@@ -132,7 +159,14 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && url.pathname === "/api/pairing") {
+      const rate = pairingRateLimit.hit(remoteKey(req), 30, 60_000);
+      if (!rate.allowed) {
+        res.setHeader("Retry-After", String(rate.retryAfterSeconds));
+        return void json(res, 429, { error: "rate_limited" });
+      }
+
       const orgId = await defaultOrganizationId();
+      await db.query("delete from pairing_codes where expires_at < now() or used_at is not null");
       const code = randomToken(24);
       await db.query(
         "insert into pairing_codes(organization_id,code_hash,expires_at) values($1,$2,now()+interval '10 minutes')",
@@ -163,6 +197,34 @@ const server = http.createServer(async (req, res) => {
       return void json(res, 200, { ok: true, disconnected });
     }
 
+    const deviceMatch = url.pathname.match(/^\/api\/devices\/([0-9a-f-]{36})$/i);
+    if (req.method === "PATCH" && deviceMatch) {
+      const deviceId = deviceMatch[1]!;
+      const body = z.object({ name: z.string().trim().min(1).max(120) }).parse(await readJson(req));
+      const orgId = await defaultOrganizationId();
+      const updated = await db.query(
+        "update devices set name=$3 where id=$1 and organization_id=$2 and revoked_at is null returning id,name",
+        [deviceId, orgId, body.name],
+      );
+      if (!updated.rowCount) return void json(res, 404, { error: "device_not_found" });
+      await auditControl(deviceId, "device.rename", "medium", "success", JSON.stringify({ name: body.name }));
+      return void json(res, 200, { item: updated.rows[0] });
+    }
+
+    const revokeMatch = url.pathname.match(/^\/api\/devices\/([0-9a-f-]{36})\/revoke$/i);
+    if (req.method === "POST" && revokeMatch) {
+      const deviceId = revokeMatch[1]!;
+      const orgId = await defaultOrganizationId();
+      const revoked = await db.query(
+        "update devices set revoked_at=coalesce(revoked_at,now()) where id=$1 and organization_id=$2 returning id,revoked_at",
+        [deviceId, orgId],
+      );
+      if (!revoked.rowCount) return void json(res, 404, { error: "device_not_found" });
+      hub.disconnect(deviceId);
+      await auditControl(deviceId, "device.revoke", "high", "success");
+      return void json(res, 200, { ok: true, item: revoked.rows[0] });
+    }
+
     if (req.method === "POST" && url.pathname === "/api/approvals") {
       const body = z.object({
         deviceId: z.string().uuid(),
@@ -172,6 +234,17 @@ const server = http.createServer(async (req, res) => {
       const orgId = await defaultOrganizationId();
       const exists = await db.query("select 1 from devices where id=$1 and organization_id=$2 and revoked_at is null", [body.deviceId, orgId]);
       if (!exists.rowCount) return void json(res, 404, { error: "device_not_found" });
+
+      let approvalRisk;
+      try {
+        approvalRisk = actionRisk(body.action);
+      } catch {
+        return void json(res, 400, { error: "invalid_action" });
+      }
+      if (approvalRisk !== "high") {
+        return void json(res, 400, { error: "approval_not_required" });
+      }
+
       const { token, claim } = issueApproval(body.deviceId, body.action, body.ttlSeconds);
       await db.query(
         "insert into approvals(organization_id,device_id,action,nonce,expires_at) values($1,$2,$3,$4,to_timestamp($5))",
@@ -188,6 +261,13 @@ const server = http.createServer(async (req, res) => {
       }).parse(await readJson(req));
       const action = body.action as AgentAction;
       if (typeof action.kind !== "string") return void json(res, 400, { error: "invalid_action" });
+
+      const orgId = await defaultOrganizationId();
+      const exists = await db.query(
+        "select 1 from devices where id=$1 and organization_id=$2 and revoked_at is null",
+        [body.deviceId, orgId],
+      );
+      if (!exists.rowCount) return void json(res, 404, { error: "device_not_found" });
 
       let risk;
       try {
