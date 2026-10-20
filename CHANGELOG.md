@@ -15,6 +15,7 @@
 - Added provider-neutral billing plans, organization subscriptions, usage snapshots and Access-console plan visibility.
 - Added transaction-serialized quotas for device enrollment, member seats/pending invitations and tenant API tokens.
 - Added idempotent normalized billing events with payload-collision rejection and provider-bound subscription state.
+- Added provider event occurrence ordering, stale-event suppression, wrong-provider rejection, same-time order-conflict detection and provider subscription identity collision protection.
 - Added SaaS CI coverage for billing-required, quota-exceeded and past-due allocation gates.
 
 ## 0.1.0 - Unreleased
