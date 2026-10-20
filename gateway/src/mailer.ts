@@ -30,6 +30,7 @@ export function smtpConfig(): SmtpConfig {
   const host = String(process.env.SMTP_HOST || "").trim();
   const from = String(process.env.SMTP_FROM || "").trim();
   if (!host || !from) throw new Error("smtp_not_configured");
+  if (!/^[^\s<>@\r\n]+@[^\s<>@\r\n]+$/.test(from)) throw new Error("invalid_SMTP_FROM");
 
   const mode = String(process.env.SMTP_SECURE_MODE || "starttls").trim().toLowerCase();
   if (mode !== "plain" && mode !== "starttls" && mode !== "tls") {
@@ -42,6 +43,7 @@ export function smtpConfig(): SmtpConfig {
   const user = String(process.env.SMTP_USER || "").trim() || null;
   const password = process.env.SMTP_PASSWORD || null;
   if (Boolean(user) !== Boolean(password)) throw new Error("SMTP_USER_password_pair_required");
+  if (mode === "plain" && user) throw new Error("smtp_auth_requires_tls");
 
   const timeoutMs = Number(process.env.SMTP_TIMEOUT_MS || 10000);
   if (!Number.isFinite(timeoutMs) || timeoutMs < 1000 || timeoutMs > 120000) {
