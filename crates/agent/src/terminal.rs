@@ -35,10 +35,16 @@ impl TerminalManager {
         rows: u16,
     ) -> Result<Value> {
         {
-            let sessions = self
+            let mut sessions = self
                 .sessions
                 .lock()
                 .map_err(|_| anyhow!("terminal session lock poisoned"))?;
+            sessions.retain(|_, session| {
+                let Ok(mut child) = session.child.lock() else {
+                    return true;
+                };
+                !matches!(child.try_wait(), Ok(Some(_)))
+            });
             if sessions.len() >= MAX_SESSIONS {
                 return Err(anyhow!(
                     "too many terminal sessions; limit is {MAX_SESSIONS}"
@@ -104,6 +110,36 @@ impl TerminalManager {
             .insert(id.clone(), session);
 
         Ok(json!({ "sessionId": id }))
+    }
+
+    pub fn list(&self) -> Result<Value> {
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| anyhow!("terminal session lock poisoned"))?;
+        let mut items = Vec::with_capacity(sessions.len());
+
+        for (id, session) in sessions.iter() {
+            let buffered_bytes = session
+                .buffer
+                .lock()
+                .map_err(|_| anyhow!("terminal buffer lock poisoned"))?
+                .len();
+            let mut child = session
+                .child
+                .lock()
+                .map_err(|_| anyhow!("terminal child lock poisoned"))?;
+            let running = child.try_wait()?.is_none();
+
+            items.push(json!({
+                "sessionId": id,
+                "pid": child.process_id(),
+                "running": running,
+                "bufferedBytes": buffered_bytes
+            }));
+        }
+
+        Ok(json!({ "items": items }))
     }
 
     pub fn input(&self, id: &str, data_base64: &str) -> Result<Value> {
