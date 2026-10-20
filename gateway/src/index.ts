@@ -301,6 +301,7 @@ const server = http.createServer(async (req, res) => {
               token,
               organizationName: body.organizationName,
             }),
+            authEmailTokenMinutes,
           );
         }
         await client.query("commit");
@@ -460,6 +461,7 @@ const server = http.createServer(async (req, res) => {
             await enqueueMail(
               client,
               authEmailMessage({ to: email, purpose: "password_reset", token }),
+              authEmailTokenMinutes,
             );
           }
           await client.query("commit");
