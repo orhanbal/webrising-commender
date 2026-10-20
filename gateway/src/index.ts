@@ -270,43 +270,45 @@ const server = http.createServer(async (req, res) => {
       }
 
       const passwordHash = await hashPassword(body.password);
-      const exists = await db.query("select 1 from users where lower(email)=lower($1)", [email]);
-      if (!exists.rowCount) {
-        const token = "wrcv_" + randomToken(32);
-        await db.query(
-          `update auth_email_challenges
-              set revoked_at=now()
-            where purpose='signup'
-              and lower(email)=lower($1)
-              and consumed_at is null
-              and revoked_at is null`,
-          [email],
-        );
-        const created = await db.query<{ id: string }>(
-          `insert into auth_email_challenges(
-             purpose,email,organization_name,password_hash,token_hash,expires_at
-           )
-           values('signup',$1,$2,$3,$4,now()+($5::int * interval '1 minute'))
-           returning id`,
-          [email, body.organizationName, passwordHash, sha256(token), authEmailTokenMinutes],
-        );
-        try {
-          await deliverAuthEmail({
-            to: email,
-            purpose: "signup",
-            token,
-            organizationName: body.organizationName,
-          });
-        } catch (error) {
-          await db.query("update auth_email_challenges set revoked_at=now() where id=$1", [
-            created.rows[0]!.id,
-          ]);
-          process.stderr.write(
-            "signup email delivery failed: " +
-              redact(error instanceof Error ? error.message : String(error)) +
-              "\n",
+      const token = "wrcv_" + randomToken(32);
+      const client = await db.connect();
+      try {
+        await client.query("begin");
+        await client.query("select pg_advisory_xact_lock(hashtextextended($1,0))", [email]);
+        const exists = await client.query("select 1 from users where lower(email)=lower($1)", [email]);
+        if (!exists.rowCount) {
+          await client.query(
+            `update auth_email_challenges
+                set revoked_at=now()
+              where purpose='signup'
+                and lower(email)=lower($1)
+                and consumed_at is null
+                and revoked_at is null`,
+            [email],
+          );
+          await client.query(
+            `insert into auth_email_challenges(
+               purpose,email,organization_name,password_hash,token_hash,expires_at
+             )
+             values('signup',$1,$2,$3,$4,now()+($5::int * interval '1 minute'))`,
+            [email, body.organizationName, passwordHash, sha256(token), authEmailTokenMinutes],
+          );
+          await enqueueMail(
+            client,
+            authEmailMessage({
+              to: email,
+              purpose: "signup",
+              token,
+              organizationName: body.organizationName,
+            }),
           );
         }
+        await client.query("commit");
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
       }
       return void json(res, 202, { ok: true });
     }
@@ -420,7 +422,6 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && url.pathname === "/api/auth/password-reset/request") {
-      if (!smtpConfigured()) return void json(res, 202, { ok: true });
       const body = z.object({ email: z.string().trim().email().max(320) }).parse(await readJson(req));
       const email = normalizeEmail(body.email);
       const ip = remoteKey(req);
@@ -431,38 +432,42 @@ const server = http.createServer(async (req, res) => {
         return void json(res, 429, { error: "rate_limited" });
       }
 
-      const user = await db.query<{ id: string }>(
-        "select id from users where lower(email)=lower($1) and disabled_at is null",
-        [email],
-      );
-      if (user.rows[0]) {
+      if (smtpConfigured()) {
         const token = "wrpr_" + randomToken(32);
-        await db.query(
-          `update auth_email_challenges
-              set revoked_at=now()
-            where purpose='password_reset'
-              and lower(email)=lower($1)
-              and consumed_at is null
-              and revoked_at is null`,
-          [email],
-        );
-        const created = await db.query<{ id: string }>(
-          `insert into auth_email_challenges(purpose,email,token_hash,expires_at)
-           values('password_reset',$1,$2,now()+($3::int * interval '1 minute'))
-           returning id`,
-          [email, sha256(token), authEmailTokenMinutes],
-        );
+        const client = await db.connect();
         try {
-          await deliverAuthEmail({ to: email, purpose: "password_reset", token });
-        } catch (error) {
-          await db.query("update auth_email_challenges set revoked_at=now() where id=$1", [
-            created.rows[0]!.id,
-          ]);
-          process.stderr.write(
-            "password reset email delivery failed: " +
-              redact(error instanceof Error ? error.message : String(error)) +
-              "\n",
+          await client.query("begin");
+          await client.query("select pg_advisory_xact_lock(hashtextextended($1,0))", [email]);
+          const user = await client.query(
+            "select 1 from users where lower(email)=lower($1) and disabled_at is null",
+            [email],
           );
+          if (user.rowCount) {
+            await client.query(
+              `update auth_email_challenges
+                  set revoked_at=now()
+                where purpose='password_reset'
+                  and lower(email)=lower($1)
+                  and consumed_at is null
+                  and revoked_at is null`,
+              [email],
+            );
+            await client.query(
+              `insert into auth_email_challenges(purpose,email,token_hash,expires_at)
+               values('password_reset',$1,$2,now()+($3::int * interval '1 minute'))`,
+              [email, sha256(token), authEmailTokenMinutes],
+            );
+            await enqueueMail(
+              client,
+              authEmailMessage({ to: email, purpose: "password_reset", token }),
+            );
+          }
+          await client.query("commit");
+        } catch (error) {
+          await client.query("rollback");
+          throw error;
+        } finally {
+          client.release();
         }
       }
       return void json(res, 202, { ok: true });
