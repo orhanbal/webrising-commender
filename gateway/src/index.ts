@@ -30,7 +30,8 @@ const bodyLimit = 2 * 1024 * 1024;
 const hub = new AgentHub();
 const enrollRateLimit = new FixedWindowRateLimiter();
 const pairingRateLimit = new FixedWindowRateLimiter();
-const loginRateLimit = new FixedWindowRateLimiter();
+const loginIpRateLimit = new FixedWindowRateLimiter();
+const loginAccountRateLimit = new FixedWindowRateLimiter();
 const trustProxyHeaders = /^(1|true|yes)$/i.test(String(process.env.TRUST_PROXY_HEADERS || ""));
 
 await migrate();
@@ -143,18 +144,22 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && url.pathname === "/api/auth/login") {
-      const rate = loginRateLimit.hit(remoteKey(req), 12, 10 * 60_000);
-      if (!rate.allowed) {
-        res.setHeader("Retry-After", String(rate.retryAfterSeconds));
-        return void json(res, 429, { error: "rate_limited" });
-      }
-
       const body = z.object({
         email: z.string().trim().email().max(320),
         password: z.string().min(12).max(256),
         organizationId: z.string().uuid().optional(),
       }).parse(await readJson(req));
       const email = normalizeEmail(body.email);
+      const ip = remoteKey(req);
+      const ipRate = loginIpRateLimit.hit(ip, 60, 10 * 60_000);
+      const accountRate = loginAccountRateLimit.hit(`${ip}:${sha256(email)}`, 12, 10 * 60_000);
+      if (!ipRate.allowed || !accountRate.allowed) {
+        res.setHeader(
+          "Retry-After",
+          String(Math.max(ipRate.retryAfterSeconds, accountRate.retryAfterSeconds)),
+        );
+        return void json(res, 429, { error: "rate_limited" });
+      }
 
       const account = await db.query<{
         user_id: string;
@@ -454,6 +459,55 @@ const server = http.createServer(async (req, res) => {
       } finally {
         client.release();
       }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/members") {
+      if (!requireRole(principal!, "admin", res)) return;
+      const body = z.object({
+        email: z.string().trim().email().max(320),
+        role: z.enum(["viewer", "operator", "admin", "owner"]).default("operator"),
+        organizationId: z.string().uuid().optional(),
+      }).parse(await readJson(req));
+
+      if (!roleAtLeast(principal!, body.role)) {
+        return void json(res, 403, { error: "cannot_grant_role", requestedRole: body.role });
+      }
+      if (
+        body.organizationId &&
+        !principal!.global &&
+        body.organizationId !== principal!.organizationId
+      ) {
+        return void json(res, 403, { error: "forbidden" });
+      }
+
+      const organizationId = body.organizationId ?? principal!.organizationId;
+      const org = await db.query("select 1 from organizations where id=$1", [organizationId]);
+      if (!org.rowCount) return void json(res, 404, { error: "organization_not_found" });
+
+      const email = normalizeEmail(body.email);
+      const user = await db.query<{ id: string; email: string }>(
+        "select id,email from users where lower(email)=lower($1) and disabled_at is null",
+        [email],
+      );
+      if (!user.rows[0]) return void json(res, 404, { error: "user_not_found" });
+
+      const membership = await db.query(
+        `insert into organization_members(organization_id,user_id,role)
+         values($1,$2,$3)
+         on conflict (organization_id,user_id)
+         do update set role=excluded.role
+         returning organization_id,user_id,role,created_at`,
+        [organizationId, user.rows[0].id, body.role],
+      );
+      await db.query(
+        "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,$2,null,'member.upsert','high','success',$3)",
+        [
+          organizationId,
+          principal!.actor,
+          JSON.stringify({ userId: user.rows[0].id, email, role: body.role }),
+        ],
+      );
+      return void json(res, 200, { item: membership.rows[0] });
     }
 
     if (req.method === "GET" && url.pathname === "/api/tokens") {
