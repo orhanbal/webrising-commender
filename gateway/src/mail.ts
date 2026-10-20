@@ -163,6 +163,11 @@ class SmtpConnection {
       const waiters = this.waiters.splice(0);
       for (const wake of waiters) wake();
     });
+    socket.on("close", () => {
+      if (!this.lastError) this.lastError = new Error("smtp_connection_closed");
+      const waiters = this.waiters.splice(0);
+      for (const wake of waiters) wake();
+    });
     socket.on("data", (chunk) => {
       this.buffer += chunk.toString("utf8");
       while (true) {
