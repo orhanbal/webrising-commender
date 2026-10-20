@@ -32,6 +32,7 @@ const enrollRateLimit = new FixedWindowRateLimiter();
 const pairingRateLimit = new FixedWindowRateLimiter();
 const loginIpRateLimit = new FixedWindowRateLimiter();
 const loginAccountRateLimit = new FixedWindowRateLimiter();
+const invitationAcceptRateLimit = new FixedWindowRateLimiter();
 const trustProxyHeaders = /^(1|true|yes)$/i.test(String(process.env.TRUST_PROXY_HEADERS || ""));
 
 await migrate();
@@ -219,6 +220,178 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (req.method === "GET" && url.pathname === "/api/invitations/preview") {
+      const token = String(url.searchParams.get("token") || "");
+      if (!token.startsWith("wrci_") || token.length < 40 || token.length > 200) {
+        return void json(res, 404, { error: "invalid_or_expired_invitation" });
+      }
+      const result = await db.query<{
+        id: string;
+        email: string;
+        role: Role;
+        organization_id: string;
+        organization_name: string;
+        expires_at: string;
+        existing_user: boolean;
+      }>(
+        `select i.id,i.email,i.role,i.organization_id,o.name as organization_name,i.expires_at,
+                exists(select 1 from users u where lower(u.email)=lower(i.email) and u.disabled_at is null) as existing_user
+           from invitations i
+           join organizations o on o.id=i.organization_id
+          where i.token_hash=$1
+            and i.revoked_at is null
+            and i.accepted_at is null
+            and i.expires_at>now()
+          limit 1`,
+        [sha256(token)],
+      );
+      const item = result.rows[0];
+      if (!item) return void json(res, 404, { error: "invalid_or_expired_invitation" });
+      return void json(res, 200, {
+        item: {
+          id: item.id,
+          email: item.email,
+          role: item.role,
+          organizationId: item.organization_id,
+          organizationName: item.organization_name,
+          expiresAt: item.expires_at,
+          existingUser: item.existing_user,
+        },
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/invitations/accept") {
+      const body = z.object({
+        token: z.string().min(40).max(200),
+        password: z.string().min(12).max(256),
+      }).parse(await readJson(req));
+      const rate = invitationAcceptRateLimit.hit(
+        `${remoteKey(req)}:${sha256(body.token)}`,
+        10,
+        15 * 60_000,
+      );
+      if (!rate.allowed) {
+        res.setHeader("Retry-After", String(rate.retryAfterSeconds));
+        return void json(res, 429, { error: "rate_limited" });
+      }
+
+      const client = await db.connect();
+      let acceptedUserId = "";
+      let acceptedEmail = "";
+      let acceptedOrganizationId = "";
+      let acceptedRole: Role = "viewer";
+      try {
+        await client.query("begin");
+        const invitation = await client.query<{
+          id: string;
+          organization_id: string;
+          email: string;
+          role: Role;
+        }>(
+          `select id,organization_id,email,role
+             from invitations
+            where token_hash=$1
+              and revoked_at is null
+              and accepted_at is null
+              and expires_at>now()
+            for update`,
+          [sha256(body.token)],
+        );
+        const invite = invitation.rows[0];
+        if (!invite) {
+          await client.query("rollback");
+          return void json(res, 400, { error: "invalid_or_expired_invitation" });
+        }
+
+        const existing = await client.query<{ id: string; email: string; password_hash: string }>(
+          "select id,email,password_hash from users where lower(email)=lower($1) and disabled_at is null for update",
+          [invite.email],
+        );
+        let userId: string;
+        let email: string;
+        if (existing.rows[0]) {
+          if (!(await verifyPassword(body.password, existing.rows[0].password_hash))) {
+            await client.query("rollback");
+            return void json(res, 401, { error: "invalid_credentials" });
+          }
+          userId = existing.rows[0].id;
+          email = existing.rows[0].email;
+        } else {
+          const passwordHash = await hashPassword(body.password);
+          const created = await client.query<{ id: string; email: string }>(
+            "insert into users(email,password_hash) values($1,$2) returning id,email",
+            [normalizeEmail(invite.email), passwordHash],
+          );
+          userId = created.rows[0]!.id;
+          email = created.rows[0]!.email;
+        }
+
+        const currentMembership = await client.query<{ role: Role }>(
+          "select role from organization_members where organization_id=$1 and user_id=$2",
+          [invite.organization_id, userId],
+        );
+        if (currentMembership.rows[0]) {
+          acceptedRole = currentMembership.rows[0].role;
+        } else {
+          await client.query(
+            "insert into organization_members(organization_id,user_id,role) values($1,$2,$3)",
+            [invite.organization_id, userId, invite.role],
+          );
+          acceptedRole = invite.role;
+        }
+
+        await client.query("update invitations set accepted_at=now() where id=$1", [invite.id]);
+        await client.query("update users set last_login_at=now() where id=$1", [userId]);
+        await client.query("commit");
+        acceptedUserId = userId;
+        acceptedEmail = email;
+        acceptedOrganizationId = invite.organization_id;
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
+
+      const material = newBrowserSessionMaterial();
+      const maxAge = browserSessionSeconds();
+      const session = await db.query<{ id: string }>(
+        `insert into browser_sessions(user_id,organization_id,token_hash,csrf_hash,expires_at)
+         values($1,$2,$3,$4,now()+($5::int * interval '1 second'))
+         returning id`,
+        [
+          acceptedUserId,
+          acceptedOrganizationId,
+          material.sessionHash,
+          material.csrfHash,
+          maxAge,
+        ],
+      );
+      await db.query(
+        "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,$2,null,'invitation.accept','low','success',$3)",
+        [
+          acceptedOrganizationId,
+          `user:${acceptedUserId}`,
+          JSON.stringify({ email: acceptedEmail, role: acceptedRole }),
+        ],
+      );
+      res.setHeader(
+        "Set-Cookie",
+        authCookies(material.sessionToken, material.csrfToken, maxAge, publicBaseUrl.startsWith("https://")),
+      );
+      return void json(res, 200, {
+        ok: true,
+        userId: acceptedUserId,
+        email: acceptedEmail,
+        organizationId: acceptedOrganizationId,
+        role: acceptedRole,
+        authKind: "session",
+        sessionId: session.rows[0]!.id,
+        csrfToken: material.csrfToken,
+        expiresInSeconds: maxAge,
+      });
+    }
+
     if (req.method === "POST" && url.pathname === "/api/agent/enroll") {
       const rate = enrollRateLimit.hit(remoteKey(req), 20, 10 * 60_000);
       if (!rate.allowed) {
@@ -353,6 +526,40 @@ const server = http.createServer(async (req, res) => {
       return void json(res, 200, { items: memberships.rows });
     }
 
+    if (req.method === "POST" && url.pathname === "/api/auth/organizations") {
+      if (principal!.authKind !== "session" || !principal!.userId || !principal!.sessionId) {
+        return void json(res, 400, { error: "browser_session_required" });
+      }
+      const body = z.object({ name: z.string().trim().min(2).max(120) }).parse(await readJson(req));
+      const client = await db.connect();
+      try {
+        await client.query("begin");
+        const created = await client.query<{ id: string; name: string; created_at: string }>(
+          "insert into organizations(name) values($1) returning id,name,created_at",
+          [body.name],
+        );
+        await client.query(
+          "insert into organization_members(organization_id,user_id,role) values($1,$2,'owner')",
+          [created.rows[0]!.id, principal!.userId],
+        );
+        await client.query(
+          "update browser_sessions set organization_id=$2 where id=$1",
+          [principal!.sessionId, created.rows[0]!.id],
+        );
+        await client.query("commit");
+        await db.query(
+          "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,$2,null,'organization.create','high','success',$3)",
+          [created.rows[0]!.id, principal!.actor, JSON.stringify({ name: body.name })],
+        );
+        return void json(res, 201, { item: { ...created.rows[0], role: "owner" } });
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+
     if (req.method === "POST" && url.pathname === "/api/auth/switch-organization") {
       if (principal!.authKind !== "session" || !principal!.userId || !principal!.sessionId) {
         return void json(res, 400, { error: "browser_session_required" });
@@ -374,6 +581,25 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (req.method === "PATCH" && url.pathname === "/api/organization") {
+      if (!requireRole(principal!, "owner", res)) return;
+      const body = z.object({ name: z.string().trim().min(2).max(120) }).parse(await readJson(req));
+      const updated = await db.query(
+        "update organizations set name=$2 where id=$1 returning id,name,created_at",
+        [principal!.organizationId, body.name],
+      );
+      if (!updated.rows[0]) return void json(res, 404, { error: "organization_not_found" });
+      await auditControl(
+        principal!,
+        null,
+        "organization.rename",
+        "high",
+        "success",
+        JSON.stringify({ name: body.name }),
+      );
+      return void json(res, 200, { item: updated.rows[0] });
+    }
+
     if (req.method === "GET" && url.pathname === "/api/organizations") {
       if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
       const result = await db.query("select id,name,created_at from organizations order by created_at asc");
@@ -390,7 +616,7 @@ const server = http.createServer(async (req, res) => {
       return void json(res, 201, { item: created.rows[0] });
     }
 
-    if (req.method === "GET" && url.pathname === "/api/users") {
+    if (req.method === "GET" && (url.pathname === "/api/users" || url.pathname === "/api/members")) {
       if (!requireRole(principal!, "admin", res)) return;
       const result = await db.query(
         `select u.id,u.email,u.disabled_at,u.last_login_at,u.created_at,m.role,m.created_at as member_since
@@ -522,6 +748,198 @@ const server = http.createServer(async (req, res) => {
         ],
       );
       return void json(res, 200, { item: membership.rows[0] });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/invitations") {
+      if (!requireRole(principal!, "admin", res)) return;
+      const result = await db.query(
+        `select id,email,role,expires_at,accepted_at,revoked_at,created_at,created_by,
+                case
+                  when accepted_at is not null then 'accepted'
+                  when revoked_at is not null then 'revoked'
+                  when expires_at<=now() then 'expired'
+                  else 'pending'
+                end as status
+           from invitations
+          where organization_id=$1
+          order by created_at desc
+          limit 200`,
+        [principal!.organizationId],
+      );
+      return void json(res, 200, { items: result.rows });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/invitations") {
+      if (!requireRole(principal!, "admin", res)) return;
+      const body = z.object({
+        email: z.string().trim().email().max(320),
+        role: z.enum(["viewer", "operator", "admin", "owner"]).default("operator"),
+        ttlHours: z.number().int().min(1).max(168).default(72),
+      }).parse(await readJson(req));
+      if (!roleAtLeast(principal!, body.role)) {
+        return void json(res, 403, { error: "cannot_grant_role", requestedRole: body.role });
+      }
+
+      const email = normalizeEmail(body.email);
+      const existingMember = await db.query(
+        `select 1
+           from organization_members m
+           join users u on u.id=m.user_id
+          where m.organization_id=$1 and lower(u.email)=lower($2)`,
+        [principal!.organizationId, email],
+      );
+      if (existingMember.rowCount) return void json(res, 409, { error: "already_member" });
+
+      const token = "wrci_" + randomToken(32);
+      const client = await db.connect();
+      try {
+        await client.query("begin");
+        await client.query(
+          `update invitations
+              set revoked_at=now()
+            where organization_id=$1
+              and lower(email)=lower($2)
+              and accepted_at is null
+              and revoked_at is null`,
+          [principal!.organizationId, email],
+        );
+        const created = await client.query(
+          `insert into invitations(organization_id,email,role,token_hash,created_by,expires_at)
+           values($1,$2,$3,$4,$5,now()+($6::int * interval '1 hour'))
+           returning id,email,role,expires_at,created_at`,
+          [
+            principal!.organizationId,
+            email,
+            body.role,
+            sha256(token),
+            principal!.actor,
+            body.ttlHours,
+          ],
+        );
+        await client.query("commit");
+        await auditControl(
+          principal!,
+          null,
+          "invitation.create",
+          "medium",
+          "success",
+          JSON.stringify({ invitationId: created.rows[0]!.id, email, role: body.role }),
+        );
+        return void json(res, 201, {
+          item: created.rows[0],
+          inviteToken: token,
+          inviteUrl: `${publicBaseUrl}/?invite=${encodeURIComponent(token)}`,
+        });
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+
+    const invitationRevokeMatch = url.pathname.match(/^\/api\/invitations\/([0-9a-f-]{36})\/revoke$/i);
+    if (req.method === "POST" && invitationRevokeMatch) {
+      if (!requireRole(principal!, "admin", res)) return;
+      const invitationId = invitationRevokeMatch[1]!;
+      const target = await db.query<{ role: Role; accepted_at: string | null; revoked_at: string | null }>(
+        "select role,accepted_at,revoked_at from invitations where id=$1 and organization_id=$2",
+        [invitationId, principal!.organizationId],
+      );
+      const item = target.rows[0];
+      if (!item) return void json(res, 404, { error: "invitation_not_found" });
+      if (!roleAtLeast(principal!, item.role)) {
+        return void json(res, 403, { error: "cannot_manage_higher_role", targetRole: item.role });
+      }
+      if (item.accepted_at) return void json(res, 409, { error: "invitation_already_accepted" });
+      const revoked = await db.query(
+        "update invitations set revoked_at=coalesce(revoked_at,now()) where id=$1 and organization_id=$2 returning id,revoked_at",
+        [invitationId, principal!.organizationId],
+      );
+      await auditControl(
+        principal!,
+        null,
+        "invitation.revoke",
+        "medium",
+        "success",
+        JSON.stringify({ invitationId }),
+      );
+      return void json(res, 200, { ok: true, item: revoked.rows[0] });
+    }
+
+    const memberMatch = url.pathname.match(/^\/api\/members\/([0-9a-f-]{36})$/i);
+    if (memberMatch && (req.method === "PATCH" || req.method === "DELETE")) {
+      if (!requireRole(principal!, "admin", res)) return;
+      const userId = memberMatch[1]!;
+      const target = await db.query<{ role: Role; email: string }>(
+        `select m.role,u.email
+           from organization_members m
+           join users u on u.id=m.user_id
+          where m.organization_id=$1 and m.user_id=$2`,
+        [principal!.organizationId, userId],
+      );
+      const member = target.rows[0];
+      if (!member) return void json(res, 404, { error: "member_not_found" });
+      if (!roleAtLeast(principal!, member.role)) {
+        return void json(res, 403, { error: "cannot_manage_higher_role", targetRole: member.role });
+      }
+
+      const owners = async () => {
+        const count = await db.query<{ count: string }>(
+          "select count(*)::text as count from organization_members where organization_id=$1 and role='owner'",
+          [principal!.organizationId],
+        );
+        return Number(count.rows[0]?.count || 0);
+      };
+
+      if (req.method === "PATCH") {
+        const body = z.object({
+          role: z.enum(["viewer", "operator", "admin", "owner"]),
+        }).parse(await readJson(req));
+        if (!roleAtLeast(principal!, body.role)) {
+          return void json(res, 403, { error: "cannot_grant_role", requestedRole: body.role });
+        }
+        if (member.role === "owner" && body.role !== "owner" && (await owners()) <= 1) {
+          return void json(res, 409, { error: "last_owner_required" });
+        }
+        const updated = await db.query(
+          `update organization_members
+              set role=$3
+            where organization_id=$1 and user_id=$2
+            returning organization_id,user_id,role,created_at`,
+          [principal!.organizationId, userId, body.role],
+        );
+        await auditControl(
+          principal!,
+          null,
+          "member.role_update",
+          "high",
+          "success",
+          JSON.stringify({ userId, email: member.email, from: member.role, to: body.role }),
+        );
+        return void json(res, 200, { item: updated.rows[0] });
+      }
+
+      if (member.role === "owner" && (await owners()) <= 1) {
+        return void json(res, 409, { error: "last_owner_required" });
+      }
+      await db.query(
+        "delete from organization_members where organization_id=$1 and user_id=$2",
+        [principal!.organizationId, userId],
+      );
+      await db.query(
+        "update browser_sessions set revoked_at=coalesce(revoked_at,now()) where organization_id=$1 and user_id=$2 and revoked_at is null",
+        [principal!.organizationId, userId],
+      );
+      await auditControl(
+        principal!,
+        null,
+        "member.remove",
+        "high",
+        "success",
+        JSON.stringify({ userId, email: member.email, role: member.role }),
+      );
+      return void json(res, 200, { ok: true });
     }
 
     if (req.method === "GET" && url.pathname === "/api/tokens") {
