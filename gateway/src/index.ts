@@ -762,21 +762,44 @@ const server = http.createServer(async (req, res) => {
         cancelAtPeriodEnd: z.boolean().default(false),
       }).parse(await readJson(req));
 
-      const item = await upsertSubscription({
-        organizationId,
-        ...body,
-        provider: body.provider?.toLowerCase() ?? null,
-      });
-      await auditForOrganization(
-        principal!,
-        organizationId,
-        null,
-        "billing.subscription.upsert",
-        "high",
-        "success",
-        JSON.stringify({ planKey: body.planKey, status: body.status, provider: body.provider ?? null }),
-      );
-      return void json(res, 200, { item });
+      const client = await db.connect();
+      try {
+        await client.query("begin");
+        const organization = await client.query(
+          "select id from organizations where id=$1 for update",
+          [organizationId],
+        );
+        if (!organization.rowCount) {
+          await client.query("rollback");
+          return void json(res, 404, { error: "organization_not_found" });
+        }
+        const item = await upsertSubscription(
+          {
+            organizationId,
+            ...body,
+            provider: body.provider?.toLowerCase() ?? null,
+          },
+          client,
+        );
+        await client.query("commit");
+        await auditForOrganization(
+          principal!,
+          organizationId,
+          null,
+          "billing.subscription.upsert",
+          "high",
+          "success",
+          JSON.stringify({ planKey: body.planKey, status: body.status, provider: body.provider ?? null }),
+        );
+        return void json(res, 200, { item });
+      } catch (error) {
+        try {
+          await client.query("rollback");
+        } catch {}
+        throw error;
+      } finally {
+        client.release();
+      }
     }
 
     if (req.method === "POST" && url.pathname === "/api/admin/billing/events") {
@@ -789,7 +812,6 @@ const server = http.createServer(async (req, res) => {
         subscription: z.object({
           planKey: z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9_-]{1,63}$/),
           status: z.enum(["trialing", "active", "past_due", "canceled"]),
-          provider: z.string().trim().min(1).max(80).nullable().optional(),
           externalCustomerId: z.string().trim().min(1).max(255).nullable().optional(),
           externalSubscriptionId: z.string().trim().min(1).max(255).nullable().optional(),
           currentPeriodEnd: z.string().datetime({ offset: true }).nullable().optional(),
