@@ -17,7 +17,8 @@ pub enum GatewayMessage {
         request_id: String,
     },
     Ping {
-        timestamp: String,
+        #[serde(rename = "timestamp")]
+        _timestamp: String,
     },
 }
 
