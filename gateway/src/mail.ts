@@ -362,6 +362,7 @@ export async function deliverOutboxBatch(limit = 10) {
        select id
          from mail_outbox
         where sent_at is null
+          and failed_at is null
           and next_attempt_at<=now()
           and (locked_at is null or locked_at<now()-interval '10 minutes')
         order by created_at asc
@@ -391,17 +392,31 @@ export async function deliverOutboxBatch(limit = 10) {
       delivered += 1;
     } catch (error) {
       const attempts = row.attempts + 1;
+      const maxAttempts = intEnv("MAIL_MAX_ATTEMPTS", 12, 1, 100);
       const message = redact(error instanceof Error ? error.message : String(error)).slice(0, 500);
-      await db.query(
-        `update mail_outbox
-            set attempts=$3,
-                next_attempt_at=now()+($4::int*interval '1 second'),
-                locked_at=null,
-                locked_by=null,
-                last_error=$5
-          where id=$1::bigint and locked_by=$2`,
-        [row.id, workerId, attempts, retrySeconds(attempts), message],
-      );
+      if (attempts >= maxAttempts) {
+        await db.query(
+          `update mail_outbox
+              set attempts=$3,
+                  failed_at=now(),
+                  locked_at=null,
+                  locked_by=null,
+                  last_error=$4
+            where id=$1::bigint and locked_by=$2`,
+          [row.id, workerId, attempts, message],
+        );
+      } else {
+        await db.query(
+          `update mail_outbox
+              set attempts=$3,
+                  next_attempt_at=now()+($4::int*interval '1 second'),
+                  locked_at=null,
+                  locked_by=null,
+                  last_error=$5
+            where id=$1::bigint and locked_by=$2`,
+          [row.id, workerId, attempts, retrySeconds(attempts), message],
+        );
+      }
       failed += 1;
     }
   }
