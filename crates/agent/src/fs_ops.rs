@@ -2,7 +2,7 @@ use crate::policy::PathPolicy;
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde_json::{json, Value};
-use std::fs;
+use std::{fs, io::Read};
 
 const DEFAULT_READ_MAX: usize = 1024 * 1024;
 const HARD_READ_MAX: usize = 4 * 1024 * 1024;
@@ -49,7 +49,16 @@ pub fn read(policy: &PathPolicy, raw: &str, max_bytes: Option<usize>) -> Result<
     let limit = max_bytes
         .unwrap_or(DEFAULT_READ_MAX)
         .clamp(1, HARD_READ_MAX);
-    let bytes = fs::read(&path)?;
+    let metadata = fs::metadata(&path)?;
+    if metadata.len() > limit as u64 {
+        return Err(anyhow!("file exceeds read limit of {limit} bytes"));
+    }
+
+    let mut bytes = Vec::with_capacity((metadata.len() as usize).min(limit));
+    let mut file = fs::File::open(&path)?;
+    file.by_ref()
+        .take((limit + 1) as u64)
+        .read_to_end(&mut bytes)?;
     if bytes.len() > limit {
         return Err(anyhow!("file exceeds read limit of {limit} bytes"));
     }
