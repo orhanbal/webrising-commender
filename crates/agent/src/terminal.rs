@@ -13,7 +13,7 @@ use uuid::Uuid;
 const BUFFER_CAP: usize = 1024 * 1024;
 
 struct Session {
-    master: Box<dyn MasterPty + Send>,
+    master: Mutex<Box<dyn MasterPty + Send>>,
     writer: Mutex<Box<dyn Write + Send>>,
     child: Mutex<Box<dyn Child + Send + Sync>>,
     buffer: Arc<Mutex<VecDeque<u8>>>,
@@ -79,7 +79,7 @@ impl TerminalManager {
 
         let id = Uuid::new_v4().to_string();
         let session = Arc::new(Session {
-            master: pair.master,
+            master: Mutex::new(pair.master),
             writer: Mutex::new(writer),
             child: Mutex::new(child),
             buffer,
@@ -126,7 +126,11 @@ impl TerminalManager {
 
     pub fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<Value> {
         let session = self.get(id)?;
-        session.master.resize(PtySize {
+        session
+            .master
+            .lock()
+            .map_err(|_| anyhow!("terminal master lock poisoned"))?
+            .resize(PtySize {
             rows: rows.clamp(5, 300),
             cols: cols.clamp(10, 500),
             pixel_width: 0,
@@ -143,11 +147,11 @@ impl TerminalManager {
             .remove(id)
             .ok_or_else(|| anyhow!("terminal session not found"))?;
 
-        session
+        let mut child = session
             .child
             .lock()
-            .map_err(|_| anyhow!("terminal child lock poisoned"))?
-            .kill()?;
+            .map_err(|_| anyhow!("terminal child lock poisoned"))?;
+        child.kill()?;
 
         Ok(json!({ "ok": true }))
     }
