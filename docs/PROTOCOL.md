@@ -31,6 +31,9 @@ Transport: JSON messages over authenticated WebSocket.
 - `process_exec`
 - `process_list`
 - `process_kill`
+- `task_start`
+- `task_status`
+- `task_cancel`
 - `terminal_start`
 - `terminal_input`
 - `terminal_read`
@@ -38,3 +41,5 @@ Transport: JSON messages over authenticated WebSocket.
 - `terminal_stop`
 
 Every action has a deterministic risk classification shared by gateway and agent.
+
+For HIGH-risk actions, `approvalToken` is cryptographically bound to the complete `action` object. The gateway consumes the token once, and the native agent independently verifies that the received action exactly matches the signed approval claim.
