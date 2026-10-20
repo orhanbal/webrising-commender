@@ -37,6 +37,10 @@ CI exercises:
 - installer syntax
 - native Windows service install/start/stop/remove lifecycle
 
+## First-party operations
+
+PostgreSQL archive backup and checksum verification tooling added; production restore drill and off-host retention are still pending.
+
 ## External acceptance still required
 
 These require a real deployed gateway and real user-controlled machines rather than CI runners:

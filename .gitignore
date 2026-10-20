@@ -10,3 +10,5 @@ dist/
 coverage/
 .gateway-data/
 agent-config.json
+
+backups/

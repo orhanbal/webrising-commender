@@ -5,15 +5,18 @@
 - `GET /health/live`: process liveness only.
 - `GET /health`: PostgreSQL readiness.
 
-## Backup
+## Backup and recovery
 
-The gateway keeps durable state in PostgreSQL. Back up the database volume or use `pg_dump`.
+Use the first-party archive and checksum scripts. They require only Docker Compose, PostgreSQL tools inside the existing container, Bash and sha256sum.
 
 ```bash
-docker compose exec -T postgres pg_dump -U commender -d commender > commender-backup.sql
+bash scripts/backup-postgres.sh
+bash scripts/verify-backup.sh backups/commender-YYYYMMDDTHHMMSSZ.dump
 ```
 
-Device tokens are not recoverable from database hashes. Existing agents continue to authenticate after restore only if their device rows are preserved.
+Backups are private custom-format archives with SHA-256 sidecars. Store them off-host on access-controlled, encrypted storage; the scripts do not encrypt the files or provide a retention policy. Verify checksums before any recovery, and perform a test restore into a separate empty database before changing the production connection. Never overwrite the only live database as a first recovery step.
+
+Database backups preserve hashed device credentials and enrolled device rows, but not the external APPROVAL_SIGNING_SECRET. Keep that secret separately; changing it requires agent re-enrollment for high-risk approvals. Production restore/cutover remains an external acceptance gate.
 
 ## Secret rotation
 
