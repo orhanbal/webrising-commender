@@ -255,7 +255,12 @@ pub(crate) async fn run_until_shutdown(
 }
 
 async fn abort_active(active: &Arc<Mutex<HashMap<String, tokio::task::AbortHandle>>>) {
-    let handles: Vec<_> = active.lock().await.drain().map(|(_, handle)| handle).collect();
+    let handles: Vec<_> = active
+        .lock()
+        .await
+        .drain()
+        .map(|(_, handle)| handle)
+        .collect();
     for handle in handles {
         handle.abort();
     }
