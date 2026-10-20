@@ -117,7 +117,7 @@ const server = http.createServer(async (req, res) => {
 
       const body = z.object({
         pairingCode: z.string().min(20).max(200),
-        name: z.string().trim().min(1).max(120).optional(),
+        name: z.string().trim().min(1).max(120).nullish(),
         hostname: z.string().max(255).default(""),
         platform: z.string().max(100).default(""),
       }).parse(await readJson(req));
