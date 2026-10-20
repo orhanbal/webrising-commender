@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import net from "node:net";
 import os from "node:os";
 import tls from "node:tls";
+import type { PoolClient } from "pg";
 import { db } from "./db.js";
 import { redact } from "./security.js";
 
@@ -30,6 +31,7 @@ export type OutboundMail = {
 };
 
 type SmtpSocket = net.Socket | tls.TLSSocket;
+type Queryable = typeof db | PoolClient;
 
 function enumEnv<T extends string>(value: string | undefined, allowed: readonly T[], fallback: T): T {
   const normalized = String(value ?? fallback).trim().toLowerCase() as T;
@@ -274,11 +276,11 @@ export async function sendSmtpMail(config: SmtpConfig, mail: OutboundMail) {
   }
 }
 
-export async function queueMail(mail: OutboundMail) {
+export async function queueMail(mail: OutboundMail, queryable: Queryable = db) {
   if (!mailDeliveryAvailable()) throw new Error("mail_delivery_unavailable");
   validateAddress(mail.to);
   assertNoHeaderInjection(mail.subject, "subject");
-  await db.query(
+  await queryable.query(
     `insert into mail_outbox(kind,to_email,subject,text_body)
      values($1,$2,$3,$4)`,
     [mail.kind, mail.to, mail.subject, mail.text],
