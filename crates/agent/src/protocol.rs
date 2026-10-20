@@ -53,6 +53,32 @@ pub enum AgentAction {
         path: String,
         recursive: Option<bool>,
     },
+    FsMove {
+        source: String,
+        destination: String,
+    },
+    FsTree {
+        path: String,
+        max_depth: Option<usize>,
+        max_entries: Option<usize>,
+    },
+    FsSearch {
+        path: String,
+        query: String,
+        max_results: Option<usize>,
+    },
+    TextSearch {
+        path: String,
+        query: String,
+        case_sensitive: Option<bool>,
+        max_results: Option<usize>,
+    },
+    FsReplace {
+        path: String,
+        search: String,
+        replace: String,
+        replace_all: Option<bool>,
+    },
     ProcessExec {
         command: String,
         cwd: Option<String>,
@@ -73,6 +99,7 @@ pub enum AgentAction {
     TaskCancel {
         task_id: String,
     },
+    TaskList,
     TerminalStart {
         shell: Option<String>,
         cwd: Option<String>,
@@ -95,6 +122,7 @@ pub enum AgentAction {
     TerminalStop {
         session_id: String,
     },
+    TerminalList,
 }
 
 #[derive(Debug, Serialize)]
@@ -147,17 +175,24 @@ impl AgentAction {
             Self::FsWrite { .. } => "fs_write",
             Self::FsMkdir { .. } => "fs_mkdir",
             Self::FsDelete { .. } => "fs_delete",
+            Self::FsMove { .. } => "fs_move",
+            Self::FsTree { .. } => "fs_tree",
+            Self::FsSearch { .. } => "fs_search",
+            Self::TextSearch { .. } => "text_search",
+            Self::FsReplace { .. } => "fs_replace",
             Self::ProcessExec { .. } => "process_exec",
             Self::ProcessList => "process_list",
             Self::ProcessKill { .. } => "process_kill",
             Self::TaskStart { .. } => "task_start",
             Self::TaskStatus { .. } => "task_status",
             Self::TaskCancel { .. } => "task_cancel",
+            Self::TaskList => "task_list",
             Self::TerminalStart { .. } => "terminal_start",
             Self::TerminalInput { .. } => "terminal_input",
             Self::TerminalRead { .. } => "terminal_read",
             Self::TerminalResize { .. } => "terminal_resize",
             Self::TerminalStop { .. } => "terminal_stop",
+            Self::TerminalList => "terminal_list",
         }
     }
 
@@ -167,12 +202,19 @@ impl AgentAction {
             | Self::FsList { .. }
             | Self::FsStat { .. }
             | Self::FsRead { .. }
+            | Self::FsTree { .. }
+            | Self::FsSearch { .. }
+            | Self::TextSearch { .. }
             | Self::ProcessList
             | Self::TaskStatus { .. }
-            | Self::TerminalRead { .. } => Risk::Low,
+            | Self::TaskList
+            | Self::TerminalRead { .. }
+            | Self::TerminalList => Risk::Low,
 
             Self::FsWrite { .. }
             | Self::FsMkdir { .. }
+            | Self::FsMove { .. }
+            | Self::FsReplace { .. }
             | Self::TerminalInput { .. }
             | Self::TerminalResize { .. } => Risk::Medium,
 
