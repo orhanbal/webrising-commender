@@ -61,7 +61,7 @@ echo "Terminating database sessions..."
 docker compose exec -T postgres psql -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1   -c "select pg_terminate_backend(pid) from pg_stat_activity where datname='$DB_NAME' and pid<>pg_backend_pid();" >/dev/null
 
 echo "Recreating database $DB_NAME..."
-docker compose exec -T postgres dropdb --if-exists -U "$DB_USER" "$DB_NAME"
+docker compose exec -T postgres dropdb --if-exists --force -U "$DB_USER" "$DB_NAME"
 docker compose exec -T postgres createdb -U "$DB_USER" -O "$DB_USER" "$DB_NAME"
 
 echo "Restoring archive..."
