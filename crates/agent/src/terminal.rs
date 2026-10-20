@@ -11,6 +11,7 @@ use std::{
 use uuid::Uuid;
 
 const BUFFER_CAP: usize = 1024 * 1024;
+const MAX_SESSIONS: usize = 32;
 
 struct Session {
     master: Mutex<Box<dyn MasterPty + Send>>,
@@ -33,6 +34,18 @@ impl TerminalManager {
         cols: u16,
         rows: u16,
     ) -> Result<Value> {
+        {
+            let sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| anyhow!("terminal session lock poisoned"))?;
+            if sessions.len() >= MAX_SESSIONS {
+                return Err(anyhow!(
+                    "too many terminal sessions; limit is {MAX_SESSIONS}"
+                ));
+            }
+        }
+
         let pty = native_pty_system();
         let pair = pty.openpty(PtySize {
             rows: rows.clamp(5, 300),
