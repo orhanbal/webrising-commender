@@ -145,6 +145,19 @@ const server = http.createServer(async (req, res) => {
       return void json(res, 200, { items: result.rows.map((row) => ({ ...row, online: hub.isOnline(row.id) })) });
     }
 
+    const disconnectMatch = url.pathname.match(/^\/api\/devices\/([0-9a-f-]{36})\/disconnect$/i);
+    if (req.method === "POST" && disconnectMatch) {
+      const deviceId = disconnectMatch[1]!;
+      const orgId = await defaultOrganizationId();
+      const exists = await db.query(
+        "select 1 from devices where id=$1 and organization_id=$2 and revoked_at is null",
+        [deviceId, orgId],
+      );
+      if (!exists.rowCount) return void json(res, 404, { error: "device_not_found" });
+      const disconnected = hub.disconnect(deviceId);
+      return void json(res, 200, { ok: true, disconnected });
+    }
+
     if (req.method === "POST" && url.pathname === "/api/approvals") {
       const body = z.object({
         deviceId: z.string().uuid(),

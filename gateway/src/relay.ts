@@ -23,6 +23,14 @@ export class AgentHub {
     return [...this.sockets.keys()];
   }
 
+  disconnect(deviceId: string) {
+    const socket = this.sockets.get(deviceId);
+    if (!socket) return false;
+    this.sockets.delete(deviceId);
+    socket.close(4002, "operator-disconnect");
+    return true;
+  }
+
   async register(deviceId: string, socket: WebSocket) {
     const old = this.sockets.get(deviceId);
     if (old && old !== socket) old.close(4001, "replaced");
