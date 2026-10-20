@@ -9,6 +9,7 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 const MAX_RETAINED_TASKS: usize = 100;
+const MAX_RUNNING_TASKS: usize = 16;
 
 struct TaskEntry {
     status: &'static str,
@@ -37,6 +38,16 @@ impl TaskManager {
         }
 
         self.prune().await;
+
+        {
+            let tasks = self.tasks.lock().await;
+            let running = tasks.values().filter(|entry| entry.status == "running").count();
+            if running >= MAX_RUNNING_TASKS {
+                return Err(anyhow!(
+                    "too many running tasks; limit is {MAX_RUNNING_TASKS}"
+                ));
+            }
+        }
 
         let task_id = Uuid::new_v4().to_string();
         {
