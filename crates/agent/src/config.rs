@@ -10,6 +10,7 @@ use std::{
 pub struct AgentConfig {
     pub device_id: String,
     pub device_token: String,
+    pub approval_key: String,
     pub gateway_ws_url: String,
     pub control_url: String,
     pub name: String,
@@ -57,8 +58,10 @@ impl AgentConfig {
 
     pub fn masked_json(&self) -> Result<String> {
         let mut value = serde_json::to_value(self)?;
-        if let Some(token) = value.get_mut("deviceToken") {
-            *token = serde_json::Value::String("[REDACTED]".into());
+        for key in ["deviceToken", "approvalKey"] {
+            if let Some(secret) = value.get_mut(key) {
+                *secret = serde_json::Value::String("[REDACTED]".into());
+            }
         }
         Ok(serde_json::to_string_pretty(&value)?)
     }
