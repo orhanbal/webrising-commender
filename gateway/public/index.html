@@ -73,12 +73,19 @@
           <label><span class="label">Path</span><input id="filePath" placeholder="/home/user or C:\Users\Name"></label>
           <button id="fileList">List</button><button id="fileUp" class="secondary">Up</button><button id="newFolder" class="secondary">New folder</button>
         </div>
+        <div class="toolbar" style="margin-top:10px">
+          <label><span class="label">Discover</span><input id="fileQuery" placeholder="filename or literal text"></label>
+          <button id="fileNameSearch" class="secondary">Search names</button>
+          <button id="fileTextSearch" class="secondary">Search text</button>
+          <button id="fileTree" class="secondary">Tree</button>
+        </div>
+        <pre id="fileDiscoveryOutput" class="hidden" style="max-height:260px"></pre>
         <p class="hint">The native agent enforces its own allowlisted roots. The gateway cannot bypass them.</p>
         <div id="fileItems" class="file-list"><p class="hint" style="padding:10px">No directory loaded.</p></div>
         <div style="margin-top:12px">
           <label><span class="label">Selected text file</span><input id="selectedFile" readonly placeholder="Click a file"></label>
           <textarea id="fileContent" placeholder="UTF-8 file content"></textarea>
-          <div class="row"><button id="saveFile">Save file</button><button id="deleteFile" class="danger">Delete file</button></div>
+          <div class="row"><button id="saveFile">Save file</button><button id="moveFile" class="secondary">Move / rename</button><button id="replaceFile" class="secondary">Surgical replace</button><button id="deleteFile" class="danger">Delete file</button></div>
         </div>
       </section>
 
@@ -95,13 +102,14 @@
         <p class="hint">Tasks continue inside the agent when the AI client or gateway connection drops. They stop only if completed, canceled, timed out, or the agent process itself stops.</p>
         <label><span class="label">Working directory (optional)</span><input id="taskCwd"></label>
         <label><span class="label">Command</span><textarea id="taskCommand" placeholder="long-running-command"></textarea></label>
-        <div class="row"><button id="taskStart">Approve & start</button><input id="taskId" style="flex:1" placeholder="Task ID"><button id="taskStatus" class="secondary">Status</button><button id="taskCancel" class="danger">Approve & cancel</button></div>
+        <div class="row"><button id="taskStart">Approve & start</button><input id="taskId" style="flex:1" placeholder="Task ID"><button id="taskList" class="secondary">Discover tasks</button><button id="taskStatus" class="secondary">Status</button><button id="taskCancel" class="danger">Approve & cancel</button></div>
         <pre id="taskOutput">No task selected.</pre>
       </section>
 
       <section id="pane-terminal" class="card pane">
         <div class="row" style="justify-content:space-between"><h2>Persistent terminal</h2><div class="row"><button id="termStart">Approve & start</button><button id="termStop" class="danger">Approve & stop</button></div></div>
         <div id="terminalOutput" class="terminal">Terminal not started.</div>
+        <div class="row" style="margin-top:10px"><input id="terminalSessionId" style="flex:1" placeholder="Persistent session ID"><button id="termList" class="secondary">Discover sessions</button><button id="termAttach" class="secondary">Attach</button></div>
         <div class="row" style="margin-top:10px"><input id="terminalInput" style="flex:1" placeholder="Type command and press Enter"><button id="termSend">Send</button></div>
       </section>
 
@@ -155,22 +163,31 @@ $("loadSystem").onclick=async()=>{try{const data=await deviceRequest({kind:"syst
 
 async function listFiles(){try{const path=$("filePath").value.trim();const data=await deviceRequest({kind:"fs_list",path});$("filePath").value=data.path||path;$("fileItems").innerHTML=data.items.length?data.items.map(x=>'<div class="file" data-path="'+escapeHtml(x.path)+'" data-type="'+escapeHtml(x.type)+'"><span>'+(x.type==="directory"?"📁":"📄")+'</span><span>'+escapeHtml(x.name)+'</span><span class="meta">'+escapeHtml(x.size)+'</span></div>').join(""):'<p class="hint" style="padding:10px">Empty directory.</p>';document.querySelectorAll(".file").forEach(el=>el.onclick=()=>openEntry(el.dataset.path,el.dataset.type))}catch(e){showError(e)}}
 async function openEntry(path,type){if(type==="directory"){$("filePath").value=path;return listFiles()}try{const data=await deviceRequest({kind:"fs_read",path,maxBytes:1048576});const isText=data.encoding==="utf8";$("selectedFile").value=path;$("fileContent").value=isText?data.content:"[Binary file: "+data.size+" bytes]";$("fileContent").disabled=!isText;$("saveFile").disabled=!isText}catch(e){showError(e)}}
+function showDiscovery(data){$("fileDiscoveryOutput").classList.remove("hidden");$("fileDiscoveryOutput").textContent=JSON.stringify(data,null,2)}
+$("fileNameSearch").onclick=async()=>{try{const query=$("fileQuery").value.trim();if(!query)throw new Error("Enter a filename query.");showDiscovery(await deviceRequest({kind:"fs_search",path:$("filePath").value.trim(),query,maxResults:200}))}catch(e){showError(e)}}
+$("fileTextSearch").onclick=async()=>{try{const query=$("fileQuery").value;if(!query)throw new Error("Enter text to search.");showDiscovery(await deviceRequest({kind:"text_search",path:$("filePath").value.trim(),query,maxResults:200}))}catch(e){showError(e)}}
+$("fileTree").onclick=async()=>{try{showDiscovery(await deviceRequest({kind:"fs_tree",path:$("filePath").value.trim(),maxDepth:6,maxEntries:2000}))}catch(e){showError(e)}}
 $("fileList").onclick=listFiles;$("fileUp").onclick=()=>{$("filePath").value=parentPath($("filePath").value);listFiles()}
 $("newFolder").onclick=async()=>{try{const base=$("filePath").value.trim();const name=prompt("Folder name");if(!name)return;const sep=base.includes("\\")?"\\":"/";await deviceRequest({kind:"fs_mkdir",path:base.replace(/[\\/]+$/,"")+sep+name,recursive:false});await listFiles()}catch(e){showError(e)}}
 $("saveFile").onclick=async()=>{try{const path=$("selectedFile").value;if(!path)throw new Error("Select a text file.");if(!confirm("Save changes to "+path+"?"))return;await deviceRequest({kind:"fs_write",path,contentBase64:toBase64($("fileContent").value),createParents:false});await openEntry(path,"file")}catch(e){showError(e)}}
+$("moveFile").onclick=async()=>{try{const source=$("selectedFile").value;if(!source)throw new Error("Select a file.");const destination=prompt("New absolute path inside an allowed root:",source);if(!destination||destination===source)return;await deviceRequest({kind:"fs_move",source,destination});$("selectedFile").value=destination;await openEntry(destination,"file");$("filePath").value=parentPath(destination);await listFiles()}catch(e){showError(e)}}
+$("replaceFile").onclick=async()=>{try{const path=$("selectedFile").value;if(!path)throw new Error("Select a text file.");const search=prompt("Exact text to replace:");if(!search)return;const replace=prompt("Replacement text:");if(replace===null)return;const replaceAll=confirm("Replace every occurrence? Cancel means require exactly one match.");const result=await deviceRequest({kind:"fs_replace",path,search,replace,replaceAll});showDiscovery(result);await openEntry(path,"file")}catch(e){showError(e)}}
 $("deleteFile").onclick=async()=>{try{const path=$("selectedFile").value;if(!path)throw new Error("Select a file.");await deviceRequest({kind:"fs_delete",path,recursive:false},true);$("selectedFile").value="";$("fileContent").value="";$("fileContent").disabled=false;$("saveFile").disabled=false;await listFiles()}catch(e){showError(e)}}
 
 $("execute").onclick=async()=>{try{$("commandOutput").textContent="Running…";const action={kind:"process_exec",command:$("commandText").value,timeoutMs:30000};if($("commandCwd").value.trim())action.cwd=$("commandCwd").value.trim();const data=await deviceRequest(action,true);$("commandOutput").textContent=JSON.stringify(data,null,2);loadAudit()}catch(e){$("commandOutput").textContent=String(e.message||e);showError(e)}}
 
 $("taskStart").onclick=async()=>{try{const action={kind:"task_start",command:$("taskCommand").value,timeoutMs:600000};if($("taskCwd").value.trim())action.cwd=$("taskCwd").value.trim();const data=await deviceRequest(action,true);$("taskId").value=data.taskId;$("taskOutput").textContent=JSON.stringify(data,null,2)}catch(e){showError(e)}}
+$("taskList").onclick=async()=>{try{const data=await deviceRequest({kind:"task_list"});$("taskOutput").textContent=JSON.stringify(data,null,2)}catch(e){showError(e)}}
 $("taskStatus").onclick=async()=>{try{const data=await deviceRequest({kind:"task_status",taskId:$("taskId").value.trim()});$("taskOutput").textContent=JSON.stringify(data,null,2)}catch(e){showError(e)}}
 $("taskCancel").onclick=async()=>{try{const data=await deviceRequest({kind:"task_cancel",taskId:$("taskId").value.trim()},true);$("taskOutput").textContent=JSON.stringify(data,null,2)}catch(e){showError(e)}}
 
 async function pollTerminal(){if(!terminalSession)return;try{const d=await deviceRequest({kind:"terminal_read",sessionId:terminalSession,maxBytes:65536});if(d.text){$("terminalOutput").textContent+=d.text;$("terminalOutput").scrollTop=$("terminalOutput").scrollHeight}}catch(e){showError(e)}}
-$("termStart").onclick=async()=>{try{if(terminalSession)throw new Error("Terminal already started.");const d=await deviceRequest({kind:"terminal_start",cols:120,rows:30},true);terminalSession=d.sessionId;$("terminalOutput").textContent="";terminalTimer=setInterval(pollTerminal,700)}catch(e){showError(e)}}
+$("termStart").onclick=async()=>{try{if(terminalSession)throw new Error("Terminal already started.");const d=await deviceRequest({kind:"terminal_start",cols:120,rows:30},true);terminalSession=d.sessionId;$("terminalSessionId").value=terminalSession;$("terminalOutput").textContent="";terminalTimer=setInterval(pollTerminal,700)}catch(e){showError(e)}}
+$("termList").onclick=async()=>{try{const d=await deviceRequest({kind:"terminal_list"});$("terminalOutput").textContent=JSON.stringify(d,null,2)}catch(e){showError(e)}}
+$("termAttach").onclick=()=>{try{const id=$("terminalSessionId").value.trim();if(!id)throw new Error("Enter a session ID.");terminalSession=id;clearInterval(terminalTimer);terminalTimer=setInterval(pollTerminal,700);$("terminalOutput").textContent+="\n[attached "+id+"]\n";pollTerminal()}catch(e){showError(e)}}
 $("termSend").onclick=async()=>{try{if(!terminalSession)throw new Error("Start a terminal first.");const value=$("terminalInput").value+"\n";await deviceRequest({kind:"terminal_input",sessionId:terminalSession,dataBase64:toBase64(value)});$("terminalInput").value="";setTimeout(pollTerminal,150)}catch(e){showError(e)}}
 $("terminalInput").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();$("termSend").click()}})
-$("termStop").onclick=async()=>{try{if(!terminalSession)return;await deviceRequest({kind:"terminal_stop",sessionId:terminalSession},true);clearInterval(terminalTimer);terminalTimer=null;terminalSession=null;$("terminalOutput").textContent+="\n[terminal stopped]"}catch(e){showError(e)}}
+$("termStop").onclick=async()=>{try{if(!terminalSession)return;await deviceRequest({kind:"terminal_stop",sessionId:terminalSession},true);clearInterval(terminalTimer);terminalTimer=null;terminalSession=null;$("terminalSessionId").value="";$("terminalOutput").textContent+="\n[terminal stopped]"}catch(e){showError(e)}}
 
 async function loadApprovals(){if(!$("key").value)return;try{const j=await api("/api/approval-requests?status=pending&limit=100");$("approvalBody").innerHTML=j.items.length?j.items.map(x=>'<tr><td>'+escapeHtml(new Date(x.created_at).toLocaleString())+'</td><td>'+escapeHtml(x.requested_by)+'</td><td>'+escapeHtml(x.device_id)+'</td><td><b>'+escapeHtml(x.action_kind)+'</b><pre style="max-height:180px;margin:7px 0 0">'+escapeHtml(JSON.stringify(x.action,null,2))+'</pre></td><td>'+escapeHtml(new Date(x.expires_at).toLocaleString())+'</td><td><div class="row"><button data-approval="'+x.id+'" data-decision="approve">Approve</button><button class="danger" data-approval="'+x.id+'" data-decision="deny">Deny</button></div></td></tr>').join(""):'<tr><td colspan="6" class="hint">No pending approval requests.</td></tr>';document.querySelectorAll("[data-approval]").forEach(button=>button.onclick=()=>decideApproval(button.dataset.approval,button.dataset.decision))}catch(e){showError(e)}}
 async function decideApproval(id,decision){try{const verb=decision==="approve"?"Approve":"Deny";if(!confirm(verb+" this exact AI operation?"))return;await api("/api/approval-requests/"+id+"/"+decision,{method:"POST",body:"{}"});await loadApprovals();await loadAudit()}catch(e){showError(e)}}
