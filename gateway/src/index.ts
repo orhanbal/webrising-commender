@@ -27,6 +27,7 @@ import {
   type AllocationResource,
 } from "./billing.js";
 import { db, housekeeping, migrate, ready } from "./db.js";
+import { enqueueMail, mailConfigured, publicSignupEnabled, startMailWorker } from "./mail.js";
 import { handleMcp } from "./mcp.js";
 import { actionRisk, parseAgentAction } from "./protocol.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
@@ -45,10 +46,19 @@ const loginAccountRateLimit = new FixedWindowRateLimiter();
 const invitationPreviewRateLimit = new FixedWindowRateLimiter();
 const invitationAcceptIpRateLimit = new FixedWindowRateLimiter();
 const invitationAcceptTokenRateLimit = new FixedWindowRateLimiter();
+const signupIpRateLimit = new FixedWindowRateLimiter();
+const signupEmailRateLimit = new FixedWindowRateLimiter();
+const signupVerifyIpRateLimit = new FixedWindowRateLimiter();
+const signupVerifyTokenRateLimit = new FixedWindowRateLimiter();
+const resetIpRateLimit = new FixedWindowRateLimiter();
+const resetEmailRateLimit = new FixedWindowRateLimiter();
+const resetConfirmIpRateLimit = new FixedWindowRateLimiter();
+const resetTokenRateLimit = new FixedWindowRateLimiter();
 const trustProxyHeaders = /^(1|true|yes)$/i.test(String(process.env.TRUST_PROXY_HEADERS || ""));
 
 await migrate();
 await housekeeping();
+startMailWorker();
 
 const housekeepingTimer = setInterval(() => {
   void housekeeping().catch((error) => {
@@ -193,6 +203,17 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (req.method === "GET" && url.pathname === "/api/public/config") {
+      return void json(res, 200, {
+        deploymentMode,
+        signupEnabled:
+          deploymentMode === "saas" &&
+          publicSignupEnabled() &&
+          mailConfigured(),
+        passwordResetEnabled: mailConfigured(),
+      });
+    }
+
     if (req.method === "POST" && url.pathname === "/api/auth/login") {
       const body = z.object({
         email: z.string().trim().email().max(320),
@@ -223,6 +244,7 @@ const server = http.createServer(async (req, res) => {
            join organization_members m on m.user_id=u.id
           where lower(u.email)=lower($1)
             and u.disabled_at is null
+            and u.email_verified_at is not null
             and ($2::uuid is null or m.organization_id=$2)
           order by case m.role when 'owner' then 40 when 'admin' then 30 when 'operator' then 20 else 10 end desc,
                    m.created_at asc
@@ -267,6 +289,405 @@ const server = http.createServer(async (req, res) => {
         csrfToken: material.csrfToken,
         expiresInSeconds: maxAge,
       });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/signup") {
+      if (deploymentMode !== "saas" || !publicSignupEnabled()) {
+        return void json(res, 404, { error: "signup_disabled" });
+      }
+      if (!mailConfigured()) {
+        return void json(res, 503, { error: "mail_not_configured" });
+      }
+
+      const body = z.object({
+        email: z.string().trim().email().max(320),
+        password: z.string().min(12).max(256),
+        workspaceName: z.string().trim().min(2).max(120),
+      }).parse(await readJson(req));
+      const email = normalizeEmail(body.email);
+      const ip = remoteKey(req);
+      const ipRate = signupIpRateLimit.hit(ip, 30, 60 * 60_000);
+      const emailRate = signupEmailRateLimit.hit(sha256(email), 6, 60 * 60_000);
+      if (!ipRate.allowed || !emailRate.allowed) {
+        res.setHeader(
+          "Retry-After",
+          String(Math.max(ipRate.retryAfterSeconds, emailRate.retryAfterSeconds)),
+        );
+        return void json(res, 429, { error: "rate_limited" });
+      }
+
+      const passwordHash = await hashPassword(body.password);
+      const existing = await db.query(
+        "select 1 from users where lower(email)=lower($1) limit 1",
+        [email],
+      );
+      if (existing.rowCount) {
+        return void json(res, 202, { ok: true });
+      }
+
+      const token = "wrsv_" + randomToken(32);
+      const ttlHoursRaw = Number(process.env.SIGNUP_VERIFY_TTL_HOURS ?? 24);
+      const ttlHours = Number.isFinite(ttlHoursRaw)
+        ? Math.min(168, Math.max(1, Math.floor(ttlHoursRaw)))
+        : 24;
+      const verifyUrl = `${publicBaseUrl}/#verify=${encodeURIComponent(token)}`;
+
+      const client = await db.connect();
+      try {
+        await client.query("begin");
+        await client.query(
+          `insert into pending_signups(
+             email,password_hash,workspace_name,token_hash,expires_at,updated_at
+           )
+           values($1,$2,$3,$4,now()+($5::int*interval '1 hour'),now())
+           on conflict ((lower(email)))
+           do update set
+             password_hash=excluded.password_hash,
+             workspace_name=excluded.workspace_name,
+             token_hash=excluded.token_hash,
+             expires_at=excluded.expires_at,
+             consumed_at=null,
+             updated_at=now()`,
+          [email, passwordHash, body.workspaceName, sha256(token), ttlHours],
+        );
+        await enqueueMail(
+          {
+            to: email,
+            subject: "Verify your WebRising Commender account",
+            text:
+              `Verify your WebRising Commender account by opening this link:\n\n${verifyUrl}\n\n` +
+              `This link expires in ${ttlHours} hour(s). If you did not request this account, ignore this message.`,
+          },
+          client,
+        );
+        await client.query("commit");
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
+
+      return void json(res, 202, { ok: true });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/signup/verify") {
+      const body = z.object({
+        token: z.string().min(40).max(200),
+        password: z.string().min(12).max(256),
+      }).parse(await readJson(req));
+      const verifyIp = remoteKey(req);
+      const ipRate = signupVerifyIpRateLimit.hit(verifyIp, 60, 15 * 60_000);
+      const tokenRate = signupVerifyTokenRateLimit.hit(
+        `${verifyIp}:${sha256(body.token)}`,
+        15,
+        15 * 60_000,
+      );
+      if (!ipRate.allowed || !tokenRate.allowed) {
+        res.setHeader(
+          "Retry-After",
+          String(Math.max(ipRate.retryAfterSeconds, tokenRate.retryAfterSeconds)),
+        );
+        return void json(res, 429, { error: "rate_limited" });
+      }
+      if (!body.token.startsWith("wrsv_")) {
+        return void json(res, 400, { error: "invalid_or_expired_verification" });
+      }
+
+      const material = newBrowserSessionMaterial();
+      const maxAge = browserSessionSeconds();
+      const client = await db.connect();
+      let response:
+        | {
+            userId: string;
+            email: string;
+            organizationId: string;
+            role: "owner";
+            sessionId: string;
+          }
+        | null = null;
+      try {
+        await client.query("begin");
+        const pending = await client.query<{
+          id: string;
+          email: string;
+          password_hash: string;
+          workspace_name: string;
+        }>(
+          `select id,email,password_hash,workspace_name
+             from pending_signups
+            where token_hash=$1
+              and consumed_at is null
+              and expires_at>now()
+            for update`,
+          [sha256(body.token)],
+        );
+        const item = pending.rows[0];
+        if (!item) {
+          await client.query("rollback");
+          return void json(res, 400, { error: "invalid_or_expired_verification" });
+        }
+        if (!(await verifyPassword(body.password, item.password_hash))) {
+          await client.query("rollback");
+          return void json(res, 401, { error: "invalid_credentials" });
+        }
+
+        const exists = await client.query(
+          "select 1 from users where lower(email)=lower($1) limit 1",
+          [item.email],
+        );
+        if (exists.rowCount) {
+          await client.query("update pending_signups set consumed_at=now() where id=$1", [item.id]);
+          await client.query("commit");
+          return void json(res, 409, { error: "account_already_exists" });
+        }
+
+        const user = await client.query<{ id: string; email: string }>(
+          `insert into users(email,password_hash,email_verified_at)
+           values($1,$2,now())
+           returning id,email`,
+          [item.email, item.password_hash],
+        );
+        const organization = await client.query<{ id: string; name: string }>(
+          "insert into organizations(name) values($1) returning id,name",
+          [item.workspace_name],
+        );
+        await client.query(
+          "insert into organization_members(organization_id,user_id,role) values($1,$2,'owner')",
+          [organization.rows[0]!.id, user.rows[0]!.id],
+        );
+        const session = await client.query<{ id: string }>(
+          `insert into browser_sessions(
+             user_id,organization_id,token_hash,csrf_hash,expires_at
+           )
+           values($1,$2,$3,$4,now()+($5::int*interval '1 second'))
+           returning id`,
+          [
+            user.rows[0]!.id,
+            organization.rows[0]!.id,
+            material.sessionHash,
+            material.csrfHash,
+            maxAge,
+          ],
+        );
+        await client.query(
+          "update pending_signups set consumed_at=now() where id=$1",
+          [item.id],
+        );
+        await client.query(
+          `insert into audit_logs(
+             organization_id,actor,device_id,tool,risk,outcome,detail
+           )
+           values($1,$2,null,'auth.signup.verify','low','success',$3)`,
+          [
+            organization.rows[0]!.id,
+            `user:${user.rows[0]!.id}`,
+            JSON.stringify({ email: user.rows[0]!.email }),
+          ],
+        );
+        await client.query("commit");
+        response = {
+          userId: user.rows[0]!.id,
+          email: user.rows[0]!.email,
+          organizationId: organization.rows[0]!.id,
+          role: "owner",
+          sessionId: session.rows[0]!.id,
+        };
+      } catch (error: any) {
+        await client.query("rollback");
+        if (error?.code === "23505") {
+          return void json(res, 409, { error: "account_already_exists" });
+        }
+        throw error;
+      } finally {
+        client.release();
+      }
+
+      res.setHeader(
+        "Set-Cookie",
+        authCookies(
+          material.sessionToken,
+          material.csrfToken,
+          maxAge,
+          publicBaseUrl.startsWith("https://"),
+        ),
+      );
+      return void json(res, 200, {
+        ...response,
+        authKind: "session",
+        csrfToken: material.csrfToken,
+        expiresInSeconds: maxAge,
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/password-reset/request") {
+      if (!mailConfigured()) {
+        return void json(res, 503, { error: "mail_not_configured" });
+      }
+      const body = z.object({
+        email: z.string().trim().email().max(320),
+      }).parse(await readJson(req));
+      const email = normalizeEmail(body.email);
+      const ipRate = resetIpRateLimit.hit(remoteKey(req), 30, 60 * 60_000);
+      const emailRate = resetEmailRateLimit.hit(sha256(email), 6, 60 * 60_000);
+      if (!ipRate.allowed || !emailRate.allowed) {
+        res.setHeader(
+          "Retry-After",
+          String(Math.max(ipRate.retryAfterSeconds, emailRate.retryAfterSeconds)),
+        );
+        return void json(res, 429, { error: "rate_limited" });
+      }
+
+      const user = await db.query<{ id: string; email: string }>(
+        `select id,email
+           from users
+          where lower(email)=lower($1)
+            and disabled_at is null
+            and email_verified_at is not null
+          limit 1`,
+        [email],
+      );
+
+      if (user.rows[0]) {
+        const token = "wrrp_" + randomToken(32);
+        const ttlMinutesRaw = Number(process.env.PASSWORD_RESET_TTL_MINUTES ?? 60);
+        const ttlMinutes = Number.isFinite(ttlMinutesRaw)
+          ? Math.min(1440, Math.max(10, Math.floor(ttlMinutesRaw)))
+          : 60;
+        const resetUrl = `${publicBaseUrl}/#reset=${encodeURIComponent(token)}`;
+
+        const client = await db.connect();
+        try {
+          await client.query("begin");
+          await client.query(
+            `update auth_tokens
+                set consumed_at=coalesce(consumed_at,now())
+              where user_id=$1
+                and purpose='password_reset'
+                and consumed_at is null`,
+            [user.rows[0].id],
+          );
+          await client.query(
+            `insert into auth_tokens(user_id,purpose,token_hash,expires_at)
+             values($1,'password_reset',$2,now()+($3::int*interval '1 minute'))`,
+            [user.rows[0].id, sha256(token), ttlMinutes],
+          );
+          await enqueueMail(
+            {
+              to: user.rows[0].email,
+              subject: "Reset your WebRising Commender password",
+              text:
+                `Reset your WebRising Commender password by opening this link:\n\n${resetUrl}\n\n` +
+                `This link expires in ${ttlMinutes} minute(s). If you did not request a reset, ignore this message.`,
+            },
+            client,
+          );
+          await client.query("commit");
+        } catch (error) {
+          await client.query("rollback");
+          throw error;
+        } finally {
+          client.release();
+        }
+      }
+
+      return void json(res, 202, { ok: true });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/auth/password-reset/confirm") {
+      const body = z.object({
+        token: z.string().min(40).max(200),
+        newPassword: z.string().min(12).max(256),
+      }).parse(await readJson(req));
+      const resetIp = remoteKey(req);
+      const ipRate = resetConfirmIpRateLimit.hit(resetIp, 30, 15 * 60_000);
+      const tokenRate = resetTokenRateLimit.hit(
+        `${resetIp}:${sha256(body.token)}`,
+        12,
+        15 * 60_000,
+      );
+      if (!ipRate.allowed || !tokenRate.allowed) {
+        res.setHeader(
+          "Retry-After",
+          String(Math.max(ipRate.retryAfterSeconds, tokenRate.retryAfterSeconds)),
+        );
+        return void json(res, 429, { error: "rate_limited" });
+      }
+      if (!body.token.startsWith("wrrp_")) {
+        return void json(res, 400, { error: "invalid_or_expired_reset" });
+      }
+
+      const passwordHash = await hashPassword(body.newPassword);
+      const client = await db.connect();
+      try {
+        await client.query("begin");
+        const reset = await client.query<{ id: string; user_id: string }>(
+          `select id,user_id
+             from auth_tokens
+            where token_hash=$1
+              and purpose='password_reset'
+              and consumed_at is null
+              and expires_at>now()
+            for update`,
+          [sha256(body.token)],
+        );
+        const item = reset.rows[0];
+        if (!item) {
+          await client.query("rollback");
+          return void json(res, 400, { error: "invalid_or_expired_reset" });
+        }
+
+        const user = await client.query(
+          `select id
+             from users
+            where id=$1
+              and disabled_at is null
+              and email_verified_at is not null
+            for update`,
+          [item.user_id],
+        );
+        if (!user.rowCount) {
+          await client.query("rollback");
+          return void json(res, 400, { error: "invalid_or_expired_reset" });
+        }
+
+        await client.query("update users set password_hash=$2 where id=$1", [
+          item.user_id,
+          passwordHash,
+        ]);
+        await client.query(
+          `update auth_tokens
+              set consumed_at=coalesce(consumed_at,now())
+            where user_id=$1
+              and purpose='password_reset'
+              and consumed_at is null`,
+          [item.user_id],
+        );
+        await client.query(
+          `update browser_sessions
+              set revoked_at=coalesce(revoked_at,now())
+            where user_id=$1
+              and revoked_at is null`,
+          [item.user_id],
+        );
+        await client.query(
+          `insert into audit_logs(
+             organization_id,actor,device_id,tool,risk,outcome,detail
+           )
+           select organization_id,$2,null,'auth.password_reset','high','success','password reset completed'
+             from organization_members
+            where user_id=$1`,
+          [item.user_id, `user:${item.user_id}`],
+        );
+        await client.query("commit");
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
+
+      return void json(res, 200, { ok: true });
     }
 
     if (req.method === "POST" && url.pathname === "/api/invitations/preview") {
@@ -376,7 +797,7 @@ const server = http.createServer(async (req, res) => {
         if (!existing.rows[0]) {
           const passwordHash = await hashPassword(body.password);
           const created = await client.query<{ id: string; email: string }>(
-            "insert into users(email,password_hash) values($1,$2) on conflict do nothing returning id,email",
+            "insert into users(email,password_hash,email_verified_at) values($1,$2,now()) on conflict do nothing returning id,email",
             [normalizeEmail(invite.email), passwordHash],
           );
           if (created.rows[0]) {
@@ -596,6 +1017,10 @@ const server = http.createServer(async (req, res) => {
         "update browser_sessions set revoked_at=coalesce(revoked_at,now()) where user_id=$1 and id<>$2 and revoked_at is null",
         [principal!.userId, principal!.sessionId],
       );
+      await db.query(
+        "update auth_tokens set consumed_at=coalesce(consumed_at,now()) where user_id=$1 and purpose='password_reset' and consumed_at is null",
+        [principal!.userId],
+      );
       await auditControl(principal!, null, "auth.change_password", "high", "success");
       return void json(res, 200, { ok: true });
     }
@@ -708,6 +1133,63 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/billing") {
       if (!requireRole(principal!, "viewer", res)) return;
       return void json(res, 200, await billingSnapshot(principal!.organizationId));
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/admin/mail/outbox") {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const requestedLimit = Number(url.searchParams.get("limit") || 100);
+      const limit = Number.isFinite(requestedLimit)
+        ? Math.min(500, Math.max(1, Math.floor(requestedLimit)))
+        : 100;
+      const result = await db.query(
+        `select id::text,attempts,next_attempt_at,sent_at,failed_at,last_error,created_at
+           from mail_outbox
+          order by created_at desc
+          limit $1`,
+        [limit],
+      );
+      const counts = await db.query<{
+        pending: string;
+        sent: string;
+        failed: string;
+      }>(
+        `select
+           count(*) filter (where sent_at is null and failed_at is null)::text as pending,
+           count(*) filter (where sent_at is not null)::text as sent,
+           count(*) filter (where failed_at is not null)::text as failed
+         from mail_outbox`,
+      );
+      return void json(res, 200, {
+        configured: mailConfigured(),
+        counts: {
+          pending: Number(counts.rows[0]?.pending || 0),
+          sent: Number(counts.rows[0]?.sent || 0),
+          failed: Number(counts.rows[0]?.failed || 0),
+        },
+        items: result.rows,
+      });
+    }
+
+    const mailRetryMatch = url.pathname.match(
+      /^\/api\/admin\/mail\/outbox\/(\d+)\/retry$/,
+    );
+    if (req.method === "POST" && mailRetryMatch) {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const updated = await db.query(
+        `update mail_outbox
+            set failed_at=null,
+                attempts=0,
+                next_attempt_at=now(),
+                locked_at=null,
+                locked_by=null,
+                last_error=null
+          where id=$1::bigint
+            and sent_at is null
+          returning id::text,attempts,next_attempt_at,failed_at`,
+        [mailRetryMatch[1]],
+      );
+      if (!updated.rows[0]) return void json(res, 404, { error: "mail_outbox_item_not_found" });
+      return void json(res, 200, { ok: true, item: updated.rows[0] });
     }
 
     if (req.method === "GET" && url.pathname === "/api/admin/billing/plans") {
@@ -900,7 +1382,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && (url.pathname === "/api/users" || url.pathname === "/api/members")) {
       if (!requireRole(principal!, "admin", res)) return;
       const result = await db.query(
-        `select u.id,u.email,u.disabled_at,u.last_login_at,u.created_at,m.role,m.created_at as member_since
+        `select u.id,u.email,u.email_verified_at,u.disabled_at,u.last_login_at,u.created_at,m.role,m.created_at as member_since
            from organization_members m
            join users u on u.id=m.user_id
           where m.organization_id=$1
@@ -952,7 +1434,7 @@ const server = http.createServer(async (req, res) => {
           return;
         }
         const created = await client.query<{ id: string; email: string; created_at: string }>(
-          "insert into users(email,password_hash) values($1,$2) returning id,email,created_at",
+          "insert into users(email,password_hash,email_verified_at) values($1,$2,now()) returning id,email,created_at",
           [email, passwordHash],
         );
         await client.query(

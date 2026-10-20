@@ -228,3 +228,46 @@ In SaaS mode:
 - existing resources remain intact when billing state changes;
 - pending invitations reserve member slots;
 - revoked/expired invitations, revoked tokens and revoked devices release their corresponding capacity.
+
+
+## Local SMTP, verified signup and password reset
+
+Commender does not require a transactional-email SaaS. The gateway includes its own SMTP/STARTTLS client and an encrypted PostgreSQL outbox.
+
+Public signup is deliberately off by default and only operates in SaaS mode. Configure your own mail server:
+
+```env
+DEPLOYMENT_MODE=saas
+PUBLIC_SIGNUP_ENABLED=true
+
+SMTP_HOST=mail.example.com
+SMTP_PORT=587
+SMTP_SECURITY=starttls
+SMTP_HELO_NAME=commender.example.com
+SMTP_USERNAME=commender@example.com
+SMTP_PASSWORD=replace-me
+SMTP_FROM=WebRising Commender <commender@example.com>
+SMTP_TLS_REJECT_UNAUTHORIZED=true
+
+# 32 random bytes. Keep this outside the database backup.
+MAIL_OUTBOX_KEY=<64 hex characters from: openssl rand -hex 32>
+MAIL_DELIVERY_INTERVAL_MS=5000
+MAIL_DELIVERY_BATCH=10
+MAIL_MAX_ATTEMPTS=12
+```
+
+Signup flow:
+
+1. `POST /api/auth/signup` stores only a pending signup, not an active user/workspace.
+2. The verification token is hash-only in PostgreSQL; the mail payload is AES-256-GCM encrypted in the outbox.
+3. The email link carries the token in the URL fragment (`#verify=...`), so it is not sent in the initial HTTP request URL.
+4. Verification also requires the password chosen during signup. Only then are the user and first workspace created atomically.
+5. The verified user receives an HttpOnly browser session.
+
+Password reset uses the same local outbox. Reset requests return the same generic success response for existing and unknown addresses. A successful reset consumes all outstanding reset tokens and revokes every browser session for that user.
+
+`GET /api/public/config` tells the console whether signup/reset initiation is available without exposing SMTP details.
+
+Global-control operations can inspect delivery metadata only with `GET /api/admin/mail/outbox`; recipients, subjects and bodies are never returned. Failed dead-letter rows can be requeued with `POST /api/admin/mail/outbox/:id/retry`.
+
+**Backup note:** `MAIL_OUTBOX_KEY` is intentionally not stored in PostgreSQL. A database restore containing unsent outbox rows requires the same key. Store it in your normal secret backup process. Changing the key while rows are pending makes those encrypted payloads unreadable.

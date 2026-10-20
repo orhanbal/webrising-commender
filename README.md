@@ -71,6 +71,8 @@ The agent initiates the connection. Controlled devices do not need an inbound fi
 - authenticated WebSocket relay
 - MCP JSON-RPC endpoint
 - tenant-scoped API tokens with viewer/operator/admin/owner RBAC
+- verified browser signup and password reset through a first-party SMTP/STARTTLS client
+- AES-256-GCM encrypted persistent mail outbox with retry/dead-letter handling
 - one-time exact-operation approval tokens
 - human-in-the-loop approval queue for AI/MCP HIGH-risk actions
 - native device-side verification of signed HIGH-risk approvals
@@ -91,6 +93,7 @@ The agent initiates the connection. Controlled devices do not need an inbound fi
 - persistent terminal UI
 - human approval review/approve/deny queue
 - audit log
+- browser signup/email verification/password reset UX when enabled
 - device rename/reconnect/revoke
 
 ### Operations

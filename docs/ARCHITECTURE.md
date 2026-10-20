@@ -70,3 +70,23 @@ A downgrade, `past_due` state or cancellation never deletes existing devices, me
 
 Provider webhooks are expected to be signature-verified by a provider-specific adapter before they are converted to the normalized internal billing event contract. The normalized event ledger is idempotent on `provider + event_id` and rejects an event-id replay carrying a different payload.
 The normalized contract includes the provider's trusted occurrence time. Subscription rows retain the last applied provider event id/time; older events and events from a no-longer-bound provider are ledgered for audit but cannot mutate current entitlement state. Same-time different events are rejected as an ordering conflict so the adapter can reconcile from an authoritative provider snapshot instead of relying on an arbitrary tie-breaker.
+
+
+## First-party mail and account activation
+
+The gateway contains a dependency-free SMTP client built on Node's standard `net`, `tls` and `crypto` modules. No transactional-email SaaS is part of the runtime architecture.
+
+Account activation is split from durable identity creation:
+
+```text
+signup request
+  -> pending_signups (password verifier + hash-only email token)
+  -> encrypted mail_outbox
+  -> local SMTP/STARTTLS
+  -> token fragment + signup password
+  -> users + organization + owner membership + browser session (single transaction)
+```
+
+Password reset uses `auth_tokens` and the same encrypted outbox. Mail delivery workers claim rows with database locks, use retry/backoff, recover stale worker locks and move exhausted rows to dead-letter state.
+
+This design keeps mail delivery asynchronous: an SMTP outage does not require storing plaintext messages, and account/control-plane requests do not need to keep an SMTP socket open.
