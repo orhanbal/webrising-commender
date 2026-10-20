@@ -203,6 +203,17 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (req.method === "GET" && url.pathname === "/api/public/config") {
+      return void json(res, 200, {
+        deploymentMode,
+        signupEnabled:
+          deploymentMode === "saas" &&
+          publicSignupEnabled() &&
+          mailConfigured(),
+        passwordResetEnabled: mailConfigured(),
+      });
+    }
+
     if (req.method === "POST" && url.pathname === "/api/auth/login") {
       const body = z.object({
         email: z.string().trim().email().max(320),
@@ -1124,6 +1135,59 @@ const server = http.createServer(async (req, res) => {
       return void json(res, 200, await billingSnapshot(principal!.organizationId));
     }
 
+    if (req.method === "GET" && url.pathname === "/api/admin/mail/outbox") {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const limit = Math.min(500, Math.max(1, Number(url.searchParams.get("limit") || 100)));
+      const result = await db.query(
+        `select id::text,attempts,next_attempt_at,sent_at,failed_at,last_error,created_at
+           from mail_outbox
+          order by created_at desc
+          limit $1`,
+        [limit],
+      );
+      const counts = await db.query<{
+        pending: string;
+        sent: string;
+        failed: string;
+      }>(
+        `select
+           count(*) filter (where sent_at is null and failed_at is null)::text as pending,
+           count(*) filter (where sent_at is not null)::text as sent,
+           count(*) filter (where failed_at is not null)::text as failed
+         from mail_outbox`,
+      );
+      return void json(res, 200, {
+        configured: mailConfigured(),
+        counts: {
+          pending: Number(counts.rows[0]?.pending || 0),
+          sent: Number(counts.rows[0]?.sent || 0),
+          failed: Number(counts.rows[0]?.failed || 0),
+        },
+        items: result.rows,
+      });
+    }
+
+    const mailRetryMatch = url.pathname.match(
+      /^\/api\/admin\/mail\/outbox\/(\d+)\/retry$/,
+    );
+    if (req.method === "POST" && mailRetryMatch) {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const updated = await db.query(
+        `update mail_outbox
+            set failed_at=null,
+                next_attempt_at=now(),
+                locked_at=null,
+                locked_by=null,
+                last_error=null
+          where id=$1::bigint
+            and sent_at is null
+          returning id::text,attempts,next_attempt_at,failed_at`,
+        [mailRetryMatch[1]],
+      );
+      if (!updated.rows[0]) return void json(res, 404, { error: "mail_outbox_item_not_found" });
+      return void json(res, 200, { ok: true, item: updated.rows[0] });
+    }
+
     if (req.method === "GET" && url.pathname === "/api/admin/billing/plans") {
       if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
       const result = await db.query(
@@ -1314,7 +1378,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && (url.pathname === "/api/users" || url.pathname === "/api/members")) {
       if (!requireRole(principal!, "admin", res)) return;
       const result = await db.query(
-        `select u.id,u.email,u.disabled_at,u.last_login_at,u.created_at,m.role,m.created_at as member_since
+        `select u.id,u.email,u.email_verified_at,u.disabled_at,u.last_login_at,u.created_at,m.role,m.created_at as member_since
            from organization_members m
            join users u on u.id=m.user_id
           where m.organization_id=$1
