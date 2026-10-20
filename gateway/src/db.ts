@@ -26,11 +26,26 @@ export async function migrate() {
       id uuid primary key default gen_random_uuid(),
       email text not null,
       password_hash text not null,
+      email_verified_at timestamptz,
       disabled_at timestamptz,
       last_login_at timestamptz,
       created_at timestamptz not null default now()
     );
     create unique index if not exists users_email_lower_uidx on users(lower(email));
+
+    do $
+    begin
+      if not exists (
+        select 1
+          from information_schema.columns
+         where table_schema='public'
+           and table_name='users'
+           and column_name='email_verified_at'
+      ) then
+        alter table users add column email_verified_at timestamptz;
+        update users set email_verified_at=created_at where email_verified_at is null;
+      end if;
+    end $;
 
     create table if not exists organization_members (
       organization_id uuid not null references organizations(id) on delete cascade,
@@ -54,6 +69,50 @@ export async function migrate() {
     );
     create index if not exists browser_sessions_user_idx on browser_sessions(user_id);
     create index if not exists browser_sessions_expiry_idx on browser_sessions(expires_at);
+
+    create table if not exists pending_signups (
+      id uuid primary key default gen_random_uuid(),
+      email text not null,
+      password_hash text not null,
+      workspace_name text not null,
+      token_hash text not null unique,
+      expires_at timestamptz not null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create unique index if not exists pending_signups_email_lower_uidx
+      on pending_signups(lower(email));
+    create index if not exists pending_signups_expiry_idx
+      on pending_signups(expires_at);
+
+    create table if not exists auth_tokens (
+      id uuid primary key default gen_random_uuid(),
+      user_id uuid not null references users(id) on delete cascade,
+      purpose text not null check (purpose in ('password_reset')),
+      token_hash text not null unique,
+      expires_at timestamptz not null,
+      consumed_at timestamptz,
+      created_at timestamptz not null default now()
+    );
+    create index if not exists auth_tokens_user_purpose_idx
+      on auth_tokens(user_id,purpose,created_at desc);
+    create index if not exists auth_tokens_expiry_idx
+      on auth_tokens(expires_at);
+
+    create table if not exists mail_outbox (
+      id uuid primary key default gen_random_uuid(),
+      kind text not null check (kind in ('email_verification','password_reset')),
+      to_email text not null,
+      subject text not null,
+      text_body text,
+      attempts integer not null default 0,
+      available_at timestamptz not null default now(),
+      sent_at timestamptz,
+      last_error text,
+      created_at timestamptz not null default now()
+    );
+    create index if not exists mail_outbox_delivery_idx
+      on mail_outbox(sent_at,available_at,created_at);
 
     create table if not exists invitations (
       id uuid primary key default gen_random_uuid(),
@@ -244,6 +303,13 @@ export async function housekeeping() {
   );
   await db.query(
     "delete from invitations where (expires_at < now() - interval '7 days') or (accepted_at < now() - interval '30 days') or (revoked_at < now() - interval '30 days')",
+  );
+  await db.query("delete from pending_signups where expires_at < now() - interval '1 day'");
+  await db.query(
+    "delete from auth_tokens where expires_at < now() - interval '1 day' or consumed_at < now() - interval '1 day'",
+  );
+  await db.query(
+    "delete from mail_outbox where sent_at < now() - interval '1 day' or (sent_at is null and created_at < now() - interval '14 days')",
   );
   await db.query(
     `update approval_requests
