@@ -8,6 +8,8 @@ mod protocol;
 mod system_ops;
 mod task_manager;
 mod terminal;
+#[cfg(windows)]
+mod windows_service_host;
 
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};
@@ -23,7 +25,7 @@ use std::{
 };
 use task_manager::TaskManager;
 use terminal::TerminalManager;
-use tokio::sync::Mutex;
+use tokio::sync::{watch, Mutex};
 use tokio_tungstenite::{
     connect_async,
     tungstenite::{
@@ -62,6 +64,8 @@ enum Command {
         allowed_roots: Vec<PathBuf>,
     },
     Run,
+    #[cfg(windows)]
+    Service,
     PrintConfig,
     Doctor,
 }
@@ -101,6 +105,8 @@ async fn main() -> Result<()> {
             let config = AgentConfig::load(&config_path)?;
             run(config).await
         }
+        #[cfg(windows)]
+        Command::Service => windows_service_host::dispatch(config_path),
         Command::PrintConfig => {
             let config = AgentConfig::load(&config_path)?;
             println!("{}", config.masked_json()?);
@@ -180,6 +186,14 @@ async fn enroll(
 }
 
 async fn run(config: AgentConfig) -> Result<()> {
+    let (_shutdown_tx, shutdown_rx) = watch::channel(false);
+    run_until_shutdown(config, shutdown_rx).await
+}
+
+pub(crate) async fn run_until_shutdown(
+    config: AgentConfig,
+    mut shutdown: watch::Receiver<bool>,
+) -> Result<()> {
     let policy = Arc::new(PathPolicy::new(&config.allowed_roots)?);
     let terminals = TerminalManager::default();
     let tasks = TaskManager::default();
@@ -189,15 +203,27 @@ async fn run(config: AgentConfig) -> Result<()> {
 
     let mut backoff = Duration::from_secs(1);
     loop {
-        let connected = match connected_loop(
+        if *shutdown.borrow() {
+            abort_active(&active).await;
+            return Ok(());
+        }
+
+        let result = connected_loop(
             &config,
             Arc::clone(&policy),
             terminals.clone(),
             tasks.clone(),
             Arc::clone(&active),
+            shutdown.clone(),
         )
-        .await
-        {
+        .await;
+
+        if *shutdown.borrow() {
+            abort_active(&active).await;
+            return Ok(());
+        }
+
+        let connected = match result {
             Ok(()) => {
                 warn!("gateway connection closed");
                 true
@@ -212,10 +238,26 @@ async fn run(config: AgentConfig) -> Result<()> {
             backoff = Duration::from_secs(1);
         }
 
-        tokio::time::sleep(backoff).await;
+        tokio::select! {
+            _ = tokio::time::sleep(backoff) => {}
+            changed = shutdown.changed() => {
+                if changed.is_err() || *shutdown.borrow() {
+                    abort_active(&active).await;
+                    return Ok(());
+                }
+            }
+        }
+
         if !connected {
             backoff = std::cmp::min(backoff.saturating_mul(2), Duration::from_secs(30));
         }
+    }
+}
+
+async fn abort_active(active: &Arc<Mutex<HashMap<String, tokio::task::AbortHandle>>>) {
+    let handles: Vec<_> = active.lock().await.drain().map(|(_, handle)| handle).collect();
+    for handle in handles {
+        handle.abort();
     }
 }
 
@@ -225,6 +267,7 @@ async fn connected_loop(
     terminals: TerminalManager,
     tasks: TaskManager,
     active: Arc<Mutex<HashMap<String, tokio::task::AbortHandle>>>,
+    mut shutdown: watch::Receiver<bool>,
 ) -> Result<()> {
     let mut request = config.gateway_ws_url.clone().into_client_request()?;
     request.headers_mut().insert(
@@ -282,7 +325,20 @@ async fn connected_loop(
         }
     });
 
-    while let Some(message) = reader.next().await {
+    loop {
+        let message = tokio::select! {
+            changed = shutdown.changed() => {
+                if changed.is_err() || *shutdown.borrow() {
+                    break;
+                }
+                continue;
+            }
+            message = reader.next() => message,
+        };
+
+        let Some(message) = message else {
+            break;
+        };
         let message = message?;
         match message {
             Message::Text(text) => {
