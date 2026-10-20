@@ -10,7 +10,7 @@ mod terminal;
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};
 use config::{default_allowed_root, AgentConfig, EnrollmentResponse};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{Sink, SinkExt, StreamExt};
 use policy::PathPolicy;
 use protocol::{AgentError, AgentMessage, GatewayMessage};
 use std::{
@@ -170,17 +170,31 @@ async fn run(config: AgentConfig) -> Result<()> {
 
     let mut backoff = Duration::from_secs(1);
     loop {
-        match connected_loop(&config, Arc::clone(&policy), terminals.clone(), Arc::clone(&active)).await {
-            Ok(()) => warn!("gateway connection closed"),
-            Err(error) => warn!(%error, "gateway connection failed"),
+        let connected = match connected_loop(
+            &config,
+            Arc::clone(&policy),
+            terminals.clone(),
+            Arc::clone(&active),
+        )
+        .await
+        {
+            Ok(()) => {
+                warn!("gateway connection closed");
+                true
+            }
+            Err(error) => {
+                warn!(%error, "gateway connection failed");
+                false
+            }
+        };
+
+        if connected {
+            backoff = Duration::from_secs(1);
         }
 
         tokio::time::sleep(backoff).await;
-        backoff = std::cmp::min(backoff.saturating_mul(2), Duration::from_secs(30));
-
-        // A successful TCP/WebSocket session will reset this inside the next loop after hello.
-        if backoff > Duration::from_secs(30) {
-            backoff = Duration::from_secs(30);
+        if !connected {
+            backoff = std::cmp::min(backoff.saturating_mul(2), Duration::from_secs(30));
         }
     }
 }
@@ -322,7 +336,7 @@ async fn connected_loop(
 
 async fn send<S>(writer: &Arc<Mutex<S>>, message: AgentMessage) -> Result<()>
 where
-    S: SinkExt<Message> + Unpin,
+    S: Sink<Message> + Unpin,
     S::Error: std::error::Error + Send + Sync + 'static,
 {
     let payload = serde_json::to_string(&message)?;
