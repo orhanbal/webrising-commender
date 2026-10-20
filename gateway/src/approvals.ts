@@ -1,10 +1,10 @@
 import { db } from "./db.js";
 import { verifyApprovalClaim, type ApprovalRequest } from "./security.js";
 
-export async function consumeApproval(
+export async function consumeApproval<T extends ApprovalRequest>(
   token: string | undefined | null,
   deviceId: string,
-  request: ApprovalRequest,
+  request: T,
 ) {
   const claim = verifyApprovalClaim(token, deviceId, request);
   if (!claim) return false;
