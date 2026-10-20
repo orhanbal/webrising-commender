@@ -41,7 +41,7 @@ test("SMTP message formatting rejects header injection and dot-stuffs body lines
 });
 
 test("first-party SMTP client completes a local relay conversation", async (t) => {
-  const commands = [];
+  const commands: string[] = [];
   let messageData = "";
 
   const server = net.createServer((socket) => {
@@ -88,11 +88,15 @@ test("first-party SMTP client completes a local relay conversation", async (t) =
     });
   });
 
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
+    server.listen(0, "127.0.0.1", () => resolve());
   });
-  t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
+  t.after(() =>
+    new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    }),
+  );
 
   const address = server.address();
   assert.ok(address && typeof address === "object");
