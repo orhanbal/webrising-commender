@@ -309,6 +309,19 @@ export async function housekeeping() {
     "delete from auth_tokens where expires_at < now() - interval '1 day' or consumed_at < now() - interval '1 day'",
   );
   await db.query(
+    `update mail_outbox
+        set text_body=null,
+            sent_at=coalesce(sent_at,now()),
+            last_error='auth_token_expired'
+      where sent_at is null
+        and text_body is not null
+        and (
+          (kind='email_verification' and created_at < now() - interval '24 hours')
+          or
+          (kind='password_reset' and created_at < now() - interval '1 hour')
+        )`,
+  );
+  await db.query(
     "delete from mail_outbox where sent_at < now() - interval '1 day' or (sent_at is null and created_at < now() - interval '14 days')",
   );
   await db.query(
