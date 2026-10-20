@@ -39,8 +39,9 @@ The local agent always initiates outbound connections. No inbound port is requir
 - Allowed-root filesystem: list, stat, read, write, mkdir, delete.
 - Process: execute with timeout, list, kill.
 - Persistent PTY: start, input, read buffered output, resize, stop.
+- Persistent background tasks that survive AI/gateway reconnects while the agent process remains alive.
 - Local risk classification.
-- Approval-token verification delegated to gateway-issued authorization carried with requests.
+- Native verification of per-device, one-time approval claims bound to the exact HIGH-risk operation payload.
 - Output size caps.
 
 ### Gateway/control plane
@@ -72,9 +73,9 @@ The local agent always initiates outbound connections. No inbound port is requir
 
 Risk levels:
 
-- **LOW**: list devices, system info, file read/list/stat, process list, terminal read.
+- **LOW**: list devices, system info, file read/list/stat, process list, task status, terminal read.
 - **MEDIUM**: file write/mkdir, terminal input/resize.
-- **HIGH**: delete, process execution, process kill, terminal start/stop.
+- **HIGH**: delete, process execution, process kill, task start/cancel, terminal start/stop.
 
 Default policy:
 - LOW allowed after authenticated device routing.
@@ -83,7 +84,7 @@ Default policy:
 - Shell execution is never hidden or obfuscated.
 - Agent refuses paths outside allowlisted roots even if the gateway requests them.
 
-Approval tokens are short-lived HMAC-signed claims containing device id, action family, nonce and expiry.
+Approval tokens are short-lived, one-time HMAC-signed claims containing device id, action family, the exact operation payload, nonce and expiry. The gateway derives a separate approval key per device; the agent verifies the claim independently before HIGH-risk execution.
 
 ## 5. SaaS-ready domain model
 
