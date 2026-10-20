@@ -42,3 +42,17 @@ The redactor masks common bearer/API-key/password/token patterns in audit summar
 ## Service installation
 
 Install scripts are explicit. The agent does not silently install persistence or hide itself. Removal scripts are provided.
+
+
+## Browser authentication
+
+The web console supports first-class browser sessions in addition to control/API tokens.
+
+- Passwords are stored only as salted scrypt verifiers.
+- Browser session tokens are random and only their SHA-256 verifier is persisted.
+- The session cookie is HttpOnly, SameSite=Strict, and Secure when `PUBLIC_BASE_URL` is HTTPS.
+- Mutating cookie-authenticated requests require a per-session CSRF token.
+- Login attempts are rate-limited.
+- Browser users receive organization-scoped RBAC from `organization_members`.
+- Password changes revoke the user's other browser sessions.
+- The global `CONTROL_API_KEY` remains a deployment/bootstrap credential and should not be used as a normal SaaS user login.
