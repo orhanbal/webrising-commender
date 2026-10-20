@@ -363,6 +363,10 @@ const server = http.createServer(async (req, res) => {
           return void json(res, 400, { error: "invalid_or_expired_invitation" });
         }
 
+        await client.query("select id from organizations where id=$1 for update", [
+          invite.organization_id,
+        ]);
+
         let existing = await client.query<{ id: string; email: string; password_hash: string }>(
           "select id,email,password_hash from users where lower(email)=lower($1) and disabled_at is null for update",
           [invite.email],
@@ -406,6 +410,10 @@ const server = http.createServer(async (req, res) => {
         if (currentMembership.rows[0]) {
           acceptedRole = currentMembership.rows[0].role;
         } else {
+          if (!(await requireCapacity(invite.organization_id, "member_accept", res, client))) {
+            await client.query("rollback");
+            return;
+          }
           await client.query(
             "insert into organization_members(organization_id,user_id,role) values($1,$2,$3)",
             [invite.organization_id, userId, invite.role],
@@ -490,6 +498,14 @@ const server = http.createServer(async (req, res) => {
         if (!code) {
           await client.query("rollback");
           return void json(res, 400, { error: "invalid_or_expired_pairing_code" });
+        }
+
+        await client.query("select id from organizations where id=$1 for update", [
+          code.organization_id,
+        ]);
+        if (!(await requireCapacity(code.organization_id, "device", res, client))) {
+          await client.query("rollback");
+          return;
         }
 
         const deviceId = crypto.randomUUID();
