@@ -1067,6 +1067,32 @@ assert.equal(eventBilling.entitled, true);
 assert.equal(eventBilling.plan.key, "ci-event");
 assert.equal(eventBilling.subscription.provider, "ci-provider");
 
+const conflictingSubscriptionOrg = await jsonFetch("/api/organizations", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({ name: "CI Subscription Conflict Tenant" }),
+});
+const conflictingSubscriptionResponse = await fetch(
+  base + `/api/admin/organizations/${conflictingSubscriptionOrg.item.id}/subscription`,
+  {
+    method: "PUT",
+    headers: authHeaders,
+    body: JSON.stringify({
+      planKey: "ci-event",
+      status: "active",
+      provider: "ci-provider",
+      externalCustomerId: "ci-customer-conflict",
+      externalSubscriptionId: "ci-subscription-event",
+      cancelAtPeriodEnd: false,
+    }),
+  },
+);
+assert.equal(conflictingSubscriptionResponse.status, 409);
+assert.equal(
+  (await conflictingSubscriptionResponse.json()).error,
+  "billing_subscription_conflict",
+);
+
 const pastDueEvent = await jsonFetch("/api/admin/billing/events", {
   method: "POST",
   headers: authHeaders,
