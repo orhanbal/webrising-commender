@@ -5,24 +5,94 @@ import { sendMail, smtpConfigured } from "./mailer.js";
 
 type Queryable = typeof db | PoolClient;
 
-export async function enqueueMail(
-  queryable: Queryable,
-  input: { to: string; subject: string; text: string },
-) {
+type MailPayload = {
+  to: string;
+  subject: string;
+  text: string;
+};
+
+function outboxKey() {
+  const secret = String(
+    process.env.MAIL_OUTBOX_ENCRYPTION_SECRET ||
+      process.env.APPROVAL_SIGNING_SECRET ||
+      "",
+  );
+  if (secret.length < 32) {
+    throw new Error("MAIL_OUTBOX_ENCRYPTION_SECRET or APPROVAL_SIGNING_SECRET must be at least 32 characters");
+  }
+  return Buffer.from(
+    crypto.hkdfSync(
+      "sha256",
+      Buffer.from(secret, "utf8"),
+      Buffer.alloc(0),
+      Buffer.from("commender-mail-outbox-v1", "utf8"),
+      32,
+    ),
+  );
+}
+
+function encryptPayload(payload: MailPayload) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", outboxKey(), iv);
+  cipher.setAAD(Buffer.from("commender-mail-outbox-v1", "utf8"));
+  const ciphertext = Buffer.concat([
+    cipher.update(JSON.stringify(payload), "utf8"),
+    cipher.final(),
+  ]);
+  return {
+    ciphertext: ciphertext.toString("base64url"),
+    iv: iv.toString("base64url"),
+    tag: cipher.getAuthTag().toString("base64url"),
+  };
+}
+
+function decryptPayload(row: {
+  payload_ciphertext: string;
+  payload_iv: string;
+  payload_tag: string;
+}) {
+  const decipher = crypto.createDecipheriv(
+    "aes-256-gcm",
+    outboxKey(),
+    Buffer.from(row.payload_iv, "base64url"),
+  );
+  decipher.setAAD(Buffer.from("commender-mail-outbox-v1", "utf8"));
+  decipher.setAuthTag(Buffer.from(row.payload_tag, "base64url"));
+  const plaintext = Buffer.concat([
+    decipher.update(Buffer.from(row.payload_ciphertext, "base64url")),
+    decipher.final(),
+  ]).toString("utf8");
+  const parsed = JSON.parse(plaintext) as MailPayload;
+  if (
+    !parsed ||
+    typeof parsed.to !== "string" ||
+    typeof parsed.subject !== "string" ||
+    typeof parsed.text !== "string"
+  ) {
+    throw new Error("invalid_mail_outbox_payload");
+  }
+  return parsed;
+}
+
+export async function enqueueMail(queryable: Queryable, input: MailPayload) {
+  const encrypted = encryptPayload(input);
   const result = await queryable.query<{ id: string }>(
-    "insert into mail_outbox(to_address,subject,body_text) values($1,$2,$3) returning id::text",
-    [input.to, input.subject, input.text],
+    "insert into mail_outbox(payload_ciphertext,payload_iv,payload_tag) values($1,$2,$3) returning id::text",
+    [encrypted.ciphertext, encrypted.iv, encrypted.tag],
   );
   return result.rows[0]!.id;
 }
 
 function errorText(error: unknown) {
   const value = error instanceof Error ? error.message : String(error);
-  return value.replace(/[\\r\\n]+/g, " ").slice(0, 1000);
+  return value.replace(/[\r\n]+/g, " ").slice(0, 1000);
 }
 
 function retrySeconds(attempts: number) {
-  return Math.min(3600, Math.max(5, 5 * 2 ** Math.min(10, Math.max(0, attempts - 1))));
+  return Math.min(
+    3600,
+    Math.max(5, 5 * 2 ** Math.min(10, Math.max(0, attempts - 1))),
+  );
 }
 
 export async function drainMailOutbox(limit = 10) {
@@ -46,13 +116,13 @@ export async function drainMailOutbox(limit = 10) {
     "       attempts=attempts+1",
     "  from candidates c",
     " where m.id=c.id",
-    " returning m.id::text,m.to_address,m.subject,m.body_text,m.attempts",
-  ].join("\\n");
+    " returning m.id::text,m.payload_ciphertext,m.payload_iv,m.payload_tag,m.attempts",
+  ].join("\n");
   const claimed = await db.query<{
     id: string;
-    to_address: string;
-    subject: string;
-    body_text: string;
+    payload_ciphertext: string;
+    payload_iv: string;
+    payload_tag: string;
     attempts: number;
   }>(sql, [Math.max(1, Math.min(100, limit)), leaseToken]);
 
@@ -60,7 +130,8 @@ export async function drainMailOutbox(limit = 10) {
   let failed = 0;
   for (const item of claimed.rows) {
     try {
-      await sendMail({ to: item.to_address, subject: item.subject, text: item.body_text });
+      const payload = decryptPayload(item);
+      await sendMail(payload);
       await db.query(
         "update mail_outbox set sent_at=now(),lease_until=null,lease_token=null,last_error=null where id=$1::bigint and lease_token=$2",
         [item.id, leaseToken],
@@ -87,11 +158,12 @@ export function startMailOutboxWorker() {
     try {
       await drainMailOutbox();
     } catch (error) {
-      process.stderr.write("mail outbox worker failed: " + errorText(error) + "\\n");
+      process.stderr.write("mail outbox worker failed: " + errorText(error) + "\n");
     } finally {
       running = false;
     }
   };
+
   void tick();
   const timer = setInterval(() => void tick(), 2000);
   timer.unref();
