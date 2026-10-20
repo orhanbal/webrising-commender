@@ -278,6 +278,13 @@ export async function upsertBillingPlan(input: BillingPlanInput, queryable: Quer
 }
 
 export async function upsertSubscription(input: SubscriptionInput, queryable: Queryable = db) {
+  if (
+    !input.provider &&
+    (input.externalCustomerId || input.externalSubscriptionId)
+  ) {
+    throw Object.assign(new Error("billing_provider_required"), { status: 400 });
+  }
+
   const plan = await queryable.query<{ key: string; active: boolean }>(
     "select key,active from billing_plans where key=$1",
     [input.planKey],
