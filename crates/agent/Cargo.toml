@@ -28,3 +28,7 @@ tokio-tungstenite = { version = "0.28", features = ["rustls-tls-webpki-roots"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1.18", features = ["v4", "serde"] }
+
+
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.8.1"
