@@ -26,7 +26,8 @@ pub struct EnrollmentResponse {
 
 impl AgentConfig {
     pub fn default_path() -> Result<PathBuf> {
-        let base = dirs::config_dir().ok_or_else(|| anyhow!("cannot determine config directory"))?;
+        let base =
+            dirs::config_dir().ok_or_else(|| anyhow!("cannot determine config directory"))?;
         Ok(base.join("webrising-commender").join("agent.json"))
     }
 

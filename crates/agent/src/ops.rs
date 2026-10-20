@@ -28,7 +28,12 @@ pub async fn execute(
             path,
             content_base64,
             create_parents,
-        } => fs_ops::write(policy, &path, &content_base64, create_parents.unwrap_or(false)),
+        } => fs_ops::write(
+            policy,
+            &path,
+            &content_base64,
+            create_parents.unwrap_or(false),
+        ),
         AgentAction::FsMkdir { path, recursive } => {
             fs_ops::mkdir(policy, &path, recursive.unwrap_or(false))
         }

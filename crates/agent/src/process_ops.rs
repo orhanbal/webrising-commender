@@ -91,7 +91,9 @@ pub fn kill(pid: u32) -> Result<Value> {
         .process(Pid::from_u32(pid))
         .ok_or_else(|| anyhow!("process not found"))?;
 
-    let killed = process.kill_with(Signal::Term).unwrap_or_else(|| process.kill());
+    let killed = process
+        .kill_with(Signal::Term)
+        .unwrap_or_else(|| process.kill());
     if !killed {
         return Err(anyhow!("process could not be terminated"));
     }

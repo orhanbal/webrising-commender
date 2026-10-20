@@ -35,7 +35,11 @@ use uuid::Uuid;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Parser)]
-#[command(name = "webrising-commender", version, about = "WebRising Commender native agent")]
+#[command(
+    name = "webrising-commender",
+    version,
+    about = "WebRising Commender native agent"
+)]
 struct Cli {
     #[arg(long, global = true)]
     config: Option<PathBuf>,
@@ -81,7 +85,16 @@ async fn main() -> Result<()> {
             pairing_code,
             name,
             allowed_roots,
-        } => enroll(&config_path, &control_url, &pairing_code, name, allowed_roots).await,
+        } => {
+            enroll(
+                &config_path,
+                &control_url,
+                &pairing_code,
+                name,
+                allowed_roots,
+            )
+            .await
+        }
         Command::Run => {
             let config = AgentConfig::load(&config_path)?;
             run(config).await
@@ -166,7 +179,9 @@ async fn enroll(
 async fn run(config: AgentConfig) -> Result<()> {
     let policy = Arc::new(PathPolicy::new(&config.allowed_roots)?);
     let terminals = TerminalManager::default();
-    let active = Arc::new(Mutex::new(HashMap::<String, tokio::task::AbortHandle>::new()));
+    let active = Arc::new(Mutex::new(
+        HashMap::<String, tokio::task::AbortHandle>::new(),
+    ));
 
     let mut backoff = Duration::from_secs(1);
     loop {
@@ -225,7 +240,10 @@ async fn connected_loop(
         &writer,
         AgentMessage::Hello {
             device_id: config.device_id.clone(),
-            hostname: hostname::get().unwrap_or_default().to_string_lossy().to_string(),
+            hostname: hostname::get()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
             os: std::env::consts::OS.to_owned(),
             version: VERSION.to_owned(),
             capabilities: vec!["fs".into(), "process".into(), "pty".into(), "system".into()],
@@ -340,6 +358,10 @@ where
     S::Error: std::error::Error + Send + Sync + 'static,
 {
     let payload = serde_json::to_string(&message)?;
-    writer.lock().await.send(Message::Text(payload.into())).await?;
+    writer
+        .lock()
+        .await
+        .send(Message::Text(payload.into()))
+        .await?;
     Ok(())
 }

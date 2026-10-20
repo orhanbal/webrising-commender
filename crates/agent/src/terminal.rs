@@ -95,11 +95,16 @@ impl TerminalManager {
 
     pub fn input(&self, id: &str, data_base64: &str) -> Result<Value> {
         let session = self.get(id)?;
-        let data = STANDARD.decode(data_base64).context("invalid base64 terminal input")?;
+        let data = STANDARD
+            .decode(data_base64)
+            .context("invalid base64 terminal input")?;
         if data.len() > 256 * 1024 {
             return Err(anyhow!("terminal input too large"));
         }
-        let mut writer = session.writer.lock().map_err(|_| anyhow!("terminal writer lock poisoned"))?;
+        let mut writer = session
+            .writer
+            .lock()
+            .map_err(|_| anyhow!("terminal writer lock poisoned"))?;
         writer.write_all(&data)?;
         writer.flush()?;
         Ok(json!({ "ok": true, "bytes": data.len() }))
@@ -108,7 +113,10 @@ impl TerminalManager {
     pub fn read(&self, id: &str, max_bytes: usize) -> Result<Value> {
         let session = self.get(id)?;
         let max = max_bytes.clamp(1, 256 * 1024);
-        let mut queue = session.buffer.lock().map_err(|_| anyhow!("terminal buffer lock poisoned"))?;
+        let mut queue = session
+            .buffer
+            .lock()
+            .map_err(|_| anyhow!("terminal buffer lock poisoned"))?;
         let mut bytes = Vec::with_capacity(max.min(queue.len()));
         for _ in 0..max.min(queue.len()) {
             if let Some(byte) = queue.pop_front() {
@@ -131,11 +139,11 @@ impl TerminalManager {
             .lock()
             .map_err(|_| anyhow!("terminal master lock poisoned"))?
             .resize(PtySize {
-            rows: rows.clamp(5, 300),
-            cols: cols.clamp(10, 500),
-            pixel_width: 0,
-            pixel_height: 0,
-        })?;
+                rows: rows.clamp(5, 300),
+                cols: cols.clamp(10, 500),
+                pixel_width: 0,
+                pixel_height: 0,
+            })?;
         Ok(json!({ "ok": true }))
     }
 

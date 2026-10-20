@@ -85,7 +85,10 @@ impl PathPolicy {
 }
 
 fn reject_parent_components(path: &Path) -> Result<()> {
-    if path.components().any(|component| matches!(component, Component::ParentDir)) {
+    if path
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+    {
         return Err(anyhow!("parent traversal components are not allowed"));
     }
     Ok(())

@@ -46,7 +46,9 @@ pub fn read(policy: &PathPolicy, raw: &str, max_bytes: Option<usize>) -> Result<
         return Err(anyhow!("path is not a file"));
     }
 
-    let limit = max_bytes.unwrap_or(DEFAULT_READ_MAX).clamp(1, HARD_READ_MAX);
+    let limit = max_bytes
+        .unwrap_or(DEFAULT_READ_MAX)
+        .clamp(1, HARD_READ_MAX);
     let bytes = fs::read(&path)?;
     if bytes.len() > limit {
         return Err(anyhow!("file exceeds read limit of {limit} bytes"));
@@ -70,7 +72,9 @@ pub fn write(
         .decode(content_base64)
         .context("contentBase64 is not valid base64")?;
     if bytes.len() > HARD_WRITE_MAX {
-        return Err(anyhow!("write exceeds hard limit of {HARD_WRITE_MAX} bytes"));
+        return Err(anyhow!(
+            "write exceeds hard limit of {HARD_WRITE_MAX} bytes"
+        ));
     }
 
     if create_parents {
