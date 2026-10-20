@@ -152,3 +152,64 @@ jobs:
       - name: Print gateway log on failure
         if: failure()
         run: cat /tmp/commender-gateway.log || true
+
+  compose-smoke:
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_PASSWORD: ci-compose-postgres-password
+      CONTROL_API_KEY: ci-compose-control-key-012345678901234567890
+      APPROVAL_SIGNING_SECRET: ci-compose-approval-secret-0123456789012345
+      PUBLIC_BASE_URL: http://127.0.0.1:8787
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose model
+        run: docker compose config --quiet
+      - name: Start clean stack
+        run: docker compose up -d --build --wait
+      - name: Verify gateway health and console
+        run: |
+          curl -fsS http://127.0.0.1:8787/health | grep -q '"status":"ok"'
+          curl -fsS http://127.0.0.1:8787/ | grep -q 'WebRising Commender'
+      - name: Inspect containers on failure
+        if: failure()
+        run: |
+          docker compose ps -a || true
+          docker compose logs --no-color || true
+      - name: Stop clean stack
+        if: always()
+        run: docker compose down -v --remove-orphans
+
+  installer-syntax:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bash syntax
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          bash -n scripts/install-linux.sh
+          bash -n scripts/uninstall-linux.sh
+          bash -n scripts/install-macos.sh
+          bash -n scripts/uninstall-macos.sh
+      - name: PowerShell syntax
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'scripts/install-windows.ps1'),
+            [ref]$null,
+            [ref]$errors
+          )
+          if ($errors.Count -gt 0) { $errors | Format-List; exit 1 }
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'scripts/uninstall-windows.ps1'),
+            [ref]$null,
+            [ref]$errors
+          )
+          if ($errors.Count -gt 0) { $errors | Format-List; exit 1 }
