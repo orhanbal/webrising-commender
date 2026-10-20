@@ -9,7 +9,7 @@ import { consumeApproval } from "./approvals.js";
 import { authenticateAuthorization, newApiToken, roleAtLeast, type Principal, type Role } from "./auth.js";
 import { db, housekeeping, migrate, ready } from "./db.js";
 import { handleMcp } from "./mcp.js";
-import { actionRisk, parseAgentAction, type AgentAction } from "./protocol.js";
+import { actionRisk, parseAgentAction } from "./protocol.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { AgentHub } from "./relay.js";
 import { deviceApprovalKeyForAgent, issueApproval, randomToken, redact, sha256 } from "./security.js";
