@@ -135,3 +135,17 @@ For MCP callers, the safer human-in-the-loop flow is automatic:
 5. The gateway atomically consumes the approved request, creates a device-bound signed claim internally, and executes it once.
 
 An approved request cannot authorize a different operation or a replay.
+
+
+## Browser account bootstrap
+
+For a self-hosted installation, use the `CONTROL_API_KEY` once to create the first browser owner:
+
+```bash
+curl -X POST http://localhost:8787/api/users \
+  -H "Authorization: Bearer $CONTROL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"owner@example.com","password":"replace-with-a-long-password","role":"owner"}'
+```
+
+After that, open the console and sign in with the browser account. The console uses an HttpOnly session cookie and CSRF protection; the control key no longer needs to be kept in the browser session.
