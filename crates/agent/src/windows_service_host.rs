@@ -2,12 +2,7 @@
 
 use crate::{config::AgentConfig, run_until_shutdown};
 use anyhow::{anyhow, Context, Result};
-use std::{
-    ffi::OsString,
-    path::PathBuf,
-    sync::OnceLock,
-    time::Duration,
-};
+use std::{ffi::OsString, path::PathBuf, sync::OnceLock, time::Duration};
 use tokio::sync::watch;
 use windows_service::{
     define_windows_service,
@@ -52,9 +47,8 @@ fn run_service() -> Result<()> {
         }
     };
 
-    let status_handle =
-        service_control_handler::register(SERVICE_NAME, event_handler)
-            .context("failed to register Windows service control handler")?;
+    let status_handle = service_control_handler::register(SERVICE_NAME, event_handler)
+        .context("failed to register Windows service control handler")?;
 
     status_handle
         .set_service_status(status(ServiceState::Running, ServiceControlAccept::STOP))
