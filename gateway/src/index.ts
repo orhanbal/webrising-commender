@@ -208,11 +208,21 @@ const server = http.createServer(async (req, res) => {
         organizationId: z.string().uuid().optional(),
       }).parse(await readJson(req));
 
-      const organizationId =
-        principal!.global && body.organizationId ? body.organizationId : principal!.organizationId;
-      if (!principal!.global && organizationId !== principal!.organizationId) {
+      if (
+        body.organizationId &&
+        !principal!.global &&
+        body.organizationId !== principal!.organizationId
+      ) {
         return void json(res, 403, { error: "forbidden" });
       }
+      if (!roleAtLeast(principal!, body.role)) {
+        return void json(res, 403, {
+          error: "cannot_grant_role",
+          requestedRole: body.role,
+        });
+      }
+
+      const organizationId = body.organizationId ?? principal!.organizationId;
       const org = await db.query("select 1 from organizations where id=$1", [organizationId]);
       if (!org.rowCount) return void json(res, 404, { error: "organization_not_found" });
 
@@ -221,6 +231,18 @@ const server = http.createServer(async (req, res) => {
         "insert into api_tokens(organization_id,name,role,token_hash,created_by) values($1,$2,$3,$4,$5) returning id,name,role,created_at",
         [organizationId, body.name, body.role, sha256(rawToken), principal!.actor],
       );
+      await db.query(
+        "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,$2,null,'token.create','medium','success',$3)",
+        [
+          organizationId,
+          principal!.actor,
+          JSON.stringify({
+            tokenId: created.rows[0].id,
+            name: body.name,
+            role: body.role,
+          }),
+        ],
+      );
       return void json(res, 201, { item: created.rows[0], token: rawToken });
     }
 
@@ -228,11 +250,31 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && tokenRevokeMatch) {
       if (!requireRole(principal!, "admin", res)) return;
       const tokenId = tokenRevokeMatch[1]!;
-      const revoked = await db.query(
-        "update api_tokens set revoked_at=coalesce(revoked_at,now()) where id=$1 and organization_id=$2 returning id,revoked_at",
+      const target = await db.query<{ role: Role }>(
+        "select role from api_tokens where id=$1 and organization_id=$2",
         [tokenId, principal!.organizationId],
       );
-      if (!revoked.rowCount) return void json(res, 404, { error: "token_not_found" });
+      const targetToken = target.rows[0];
+      if (!targetToken) return void json(res, 404, { error: "token_not_found" });
+      if (!roleAtLeast(principal!, targetToken.role)) {
+        return void json(res, 403, {
+          error: "cannot_manage_higher_role",
+          targetRole: targetToken.role,
+        });
+      }
+
+      const revoked = await db.query(
+        "update api_tokens set revoked_at=coalesce(revoked_at,now()) where id=$1 and organization_id=$2 returning id,role,revoked_at",
+        [tokenId, principal!.organizationId],
+      );
+      await auditControl(
+        principal!,
+        null,
+        "token.revoke",
+        "high",
+        "success",
+        JSON.stringify({ tokenId, role: targetToken.role }),
+      );
       return void json(res, 200, { ok: true, item: revoked.rows[0] });
     }
 
