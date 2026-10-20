@@ -5,44 +5,171 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>WebRising Commender</title>
   <style>
-    :root{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:#e8ecf3;background:#0b1020}
-    *{box-sizing:border-box}body{margin:0}.shell{max-width:1120px;margin:auto;padding:36px 20px}
-    .top{display:flex;justify-content:space-between;gap:20px;align-items:center;margin-bottom:28px}
-    h1{font-size:28px;margin:0}p{color:#9aa7bd}.card{background:#121a2e;border:1px solid #26324c;border-radius:16px;padding:20px;margin:14px 0}
-    input,button{font:inherit;border-radius:10px;border:1px solid #33415e;padding:11px 13px}input{background:#0c1428;color:#fff;min-width:280px}
-    button{background:#3157d5;color:#fff;cursor:pointer}.muted{background:#1a2540}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-    .device{display:grid;grid-template-columns:1fr auto;gap:12px;padding:14px 0;border-top:1px solid #25314a}.device:first-child{border-top:0}
-    .pill{font-size:12px;border-radius:999px;padding:5px 9px;background:#27324b}.online{background:#164b3a;color:#a6f0d2}
-    code{word-break:break-all;color:#bfd0ff}.error{color:#ffb8b8}
+    :root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#eef3ff;background:#080d18;--bg:#080d18;--panel:#101827;--panel2:#151f31;--line:#26344f;--muted:#92a0b8;--blue:#5577ff;--green:#32c48d;--red:#ff6b7a;--amber:#f7bd5b}
+    *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#080d18,#0b1220 50%,#080d18);min-height:100vh}button,input,textarea{font:inherit}
+    .shell{max-width:1380px;margin:auto;padding:28px 20px 60px}.top{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:20px}
+    .brand h1{font-size:26px;margin:0}.brand p{margin:5px 0 0;color:var(--muted)}.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:6px 10px;font-size:12px;color:var(--muted)}.pill.ok{background:#12352b;color:#a9f1d5;border-color:#245843}.pill.bad{background:#351820;color:#ffc0c7;border-color:#5d2632}
+    .login,.card{background:rgba(16,24,39,.94);border:1px solid var(--line);border-radius:16px;box-shadow:0 16px 60px rgba(0,0,0,.2)}.login{padding:18px;margin-bottom:18px}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.grid{display:grid;grid-template-columns:300px 1fr;gap:16px}.sidebar,.workspace{min-width:0}.card{padding:18px;margin-bottom:14px}.card h2,.card h3{margin:0 0 14px}.card h2{font-size:16px}.card h3{font-size:14px}
+    input,textarea{width:100%;background:#0a1120;color:#eef3ff;border:1px solid #31405e;border-radius:10px;padding:10px 12px;outline:0}input:focus,textarea:focus{border-color:#617fff;box-shadow:0 0 0 3px rgba(85,119,255,.14)}textarea{resize:vertical;min-height:100px}
+    button{border:1px solid transparent;border-radius:10px;padding:10px 13px;background:var(--blue);color:#fff;cursor:pointer;font-weight:650}button.secondary{background:#1a263b;border-color:#30405e;color:#dbe5fb}button.danger{background:#3b1821;border-color:#652735;color:#ffc4ca}button:disabled{opacity:.5;cursor:not-allowed}
+    .device{border:1px solid transparent;border-radius:12px;padding:12px;margin:8px 0;background:#0c1423;cursor:pointer}.device:hover{border-color:#30405e}.device.selected{border-color:#5577ff;background:#111d36}.device b{display:block;margin-bottom:4px}.small,.device small{color:var(--muted);font-size:12px}.status{display:inline-block;width:8px;height:8px;border-radius:50%;background:#58657a;margin-right:6px}.status.online{background:var(--green)}.status.revoked{background:var(--red)}
+    .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}.tab{background:#151f31;color:#aebbd1;border-color:#26344f}.tab.active{background:#2545b8;color:#fff;border-color:#5577ff}.pane{display:none}.pane.active{display:block}
+    .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}.three{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.kv{display:grid;grid-template-columns:180px 1fr;gap:7px;font-size:13px;padding:7px 0;border-bottom:1px solid #1e2a40}.kv span:first-child{color:var(--muted)}
+    pre{background:#070c15;border:1px solid #26344f;border-radius:12px;padding:14px;overflow:auto;white-space:pre-wrap;word-break:break-word;max-height:420px;color:#cfe0ff}.file-list{max-height:360px;overflow:auto;border:1px solid #26344f;border-radius:10px}.file{display:grid;grid-template-columns:26px 1fr auto;gap:8px;align-items:center;padding:9px 10px;border-bottom:1px solid #1b263a;cursor:pointer}.file:last-child{border-bottom:0}.file:hover{background:#162138}.file .meta{color:var(--muted);font-size:11px}
+    .terminal{background:#05080d;color:#bfffdc;border:1px solid #25364a;border-radius:12px;padding:12px;height:330px;overflow:auto;white-space:pre-wrap;font:13px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace}.audit{width:100%;border-collapse:collapse;font-size:12px}.audit th,.audit td{padding:9px;border-bottom:1px solid #223049;text-align:left;vertical-align:top}.audit th{color:#9baac4}.error{color:#ff9ba7}.success{color:#8ce0bd}.hint{color:var(--muted);font-size:12px;line-height:1.5}.toolbar{display:flex;gap:8px;align-items:end;flex-wrap:wrap}.toolbar>label{flex:1 1 220px}.label{display:block;color:#aab7cc;font-size:12px;margin:0 0 6px}.hidden{display:none!important}
+    @media(max-width:900px){.grid{grid-template-columns:1fr}.two,.three{grid-template-columns:1fr}.sidebar{order:0}.workspace{order:1}.kv{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}}
   </style>
 </head>
 <body>
-  <main class="shell">
-    <div class="top"><div><h1>WebRising Commender</h1><p>Self-hosted control plane</p></div><span id="health" class="pill">checking…</span></div>
-    <section class="card">
-      <h2>Control API key</h2>
-      <div class="row"><input id="key" type="password" placeholder="CONTROL_API_KEY"><button id="save">Use key</button></div>
-      <p>The key stays in this browser tab's session storage.</p>
+<main class="shell">
+  <header class="top">
+    <div class="brand"><h1>WebRising Commender</h1><p>Secure AI-to-device control plane</p></div>
+    <div class="row"><span id="health" class="pill">gateway checking…</span><span id="selection" class="pill">no device selected</span></div>
+  </header>
+
+  <section class="login">
+    <div class="toolbar">
+      <label><span class="label">Control API key</span><input id="key" type="password" autocomplete="off" placeholder="CONTROL_API_KEY"></label>
+      <button id="saveKey">Connect</button><button id="forgetKey" class="secondary">Forget key</button>
+    </div>
+    <p class="hint">Stored only in this browser tab session. Device credentials never enter this console.</p>
+    <p id="globalError" class="error"></p>
+  </section>
+
+  <div class="grid">
+    <aside class="sidebar">
+      <section class="card">
+        <div class="row" style="justify-content:space-between"><h2>Devices</h2><button id="refreshDevices" class="secondary">Refresh</button></div>
+        <button id="pair" style="width:100%;margin-bottom:10px">Create pairing code</button>
+        <div id="pairing" class="hint"></div>
+        <div id="devices"><p class="hint">Enter your API key.</p></div>
+      </section>
+      <section class="card">
+        <h2>Selected device</h2>
+        <label><span class="label">Display name</span><input id="deviceName" placeholder="Device name"></label>
+        <div class="row" style="margin-top:10px"><button id="rename" class="secondary">Rename</button><button id="disconnect" class="secondary">Reconnect test</button><button id="revoke" class="danger">Revoke</button></div>
+      </section>
+    </aside>
+
+    <section class="workspace">
+      <div class="tabs">
+        <button class="tab active" data-tab="system">System</button>
+        <button class="tab" data-tab="files">Files</button>
+        <button class="tab" data-tab="command">Command</button>
+        <button class="tab" data-tab="tasks">Tasks</button>
+        <button class="tab" data-tab="terminal">Terminal</button>
+        <button class="tab" data-tab="audit">Audit</button>
+      </div>
+
+      <section id="pane-system" class="card pane active">
+        <div class="row" style="justify-content:space-between"><h2>System information</h2><button id="loadSystem">Refresh</button></div>
+        <div id="systemInfo"><p class="hint">Select an online device.</p></div>
+      </section>
+
+      <section id="pane-files" class="card pane">
+        <h2>Filesystem</h2>
+        <div class="toolbar">
+          <label><span class="label">Path</span><input id="filePath" placeholder="/home/user or C:\Users\Name"></label>
+          <button id="fileList">List</button><button id="fileUp" class="secondary">Up</button><button id="newFolder" class="secondary">New folder</button>
+        </div>
+        <p class="hint">The native agent enforces its own allowlisted roots. The gateway cannot bypass them.</p>
+        <div id="fileItems" class="file-list"><p class="hint" style="padding:10px">No directory loaded.</p></div>
+        <div style="margin-top:12px">
+          <label><span class="label">Selected text file</span><input id="selectedFile" readonly placeholder="Click a file"></label>
+          <textarea id="fileContent" placeholder="UTF-8 file content"></textarea>
+          <div class="row"><button id="saveFile">Save file</button><button id="deleteFile" class="danger">Delete file</button></div>
+        </div>
+      </section>
+
+      <section id="pane-command" class="card pane">
+        <h2>One-shot command</h2>
+        <label><span class="label">Working directory (optional; must be allowlisted)</span><input id="commandCwd"></label>
+        <label><span class="label">Command</span><textarea id="commandText" placeholder="git status"></textarea></label>
+        <div class="row"><button id="execute">Approve & execute</button></div>
+        <pre id="commandOutput">No command run.</pre>
+      </section>
+
+      <section id="pane-tasks" class="card pane">
+        <h2>Persistent background task</h2>
+        <p class="hint">Tasks continue inside the agent when the AI client or gateway connection drops. They stop only if completed, canceled, timed out, or the agent process itself stops.</p>
+        <label><span class="label">Working directory (optional)</span><input id="taskCwd"></label>
+        <label><span class="label">Command</span><textarea id="taskCommand" placeholder="long-running-command"></textarea></label>
+        <div class="row"><button id="taskStart">Approve & start</button><input id="taskId" style="flex:1" placeholder="Task ID"><button id="taskStatus" class="secondary">Status</button><button id="taskCancel" class="danger">Approve & cancel</button></div>
+        <pre id="taskOutput">No task selected.</pre>
+      </section>
+
+      <section id="pane-terminal" class="card pane">
+        <div class="row" style="justify-content:space-between"><h2>Persistent terminal</h2><div class="row"><button id="termStart">Approve & start</button><button id="termStop" class="danger">Approve & stop</button></div></div>
+        <div id="terminalOutput" class="terminal">Terminal not started.</div>
+        <div class="row" style="margin-top:10px"><input id="terminalInput" style="flex:1" placeholder="Type command and press Enter"><button id="termSend">Send</button></div>
+      </section>
+
+      <section id="pane-audit" class="card pane">
+        <div class="row" style="justify-content:space-between"><h2>Audit log</h2><button id="loadAudit">Refresh</button></div>
+        <div style="overflow:auto"><table class="audit"><thead><tr><th>Time</th><th>Actor</th><th>Device</th><th>Tool</th><th>Risk</th><th>Outcome</th><th>Detail</th></tr></thead><tbody id="auditBody"></tbody></table></div>
+      </section>
     </section>
-    <section class="card">
-      <div class="row"><button id="pair">Create pairing code</button><button id="refresh" class="muted">Refresh devices</button></div>
-      <p id="pairing"></p>
-    </section>
-    <section class="card"><h2>Devices</h2><div id="devices"><p>No data yet.</p></div></section>
-    <p id="error" class="error"></p>
-  </main>
+  </div>
+</main>
 <script>
 const $=id=>document.getElementById(id);
+let selected=null;
+let terminalSession=null;
+let terminalTimer=null;
+
 $("key").value=sessionStorage.getItem("commender-key")||"";
-function headers(){return {"Authorization":"Bearer "+$("key").value,"Content-Type":"application/json"}}
-async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{...headers(),...(opts.headers||{})}});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||r.statusText);return j}
-async function health(){try{const r=await fetch("/health");$("health").textContent=r.ok?"healthy":"degraded";$("health").className="pill "+(r.ok?"online":"")}catch{$("health").textContent="offline"}}
-async function devices(){try{const j=await api("/api/devices");$("devices").innerHTML=j.items.length?j.items.map(d=>'<div class="device"><div><b>'+escapeHtml(d.name)+'</b><p>'+escapeHtml(d.hostname||d.platform||d.id)+'</p><code>'+d.id+'</code></div><span class="pill '+(d.online?'online':'')+'">'+(d.online?'online':'offline')+'</span></div>').join(""):"<p>No enrolled devices.</p>";$("error").textContent=""}catch(e){$("error").textContent=e.message}}
-$("save").onclick=()=>{sessionStorage.setItem("commender-key",$("key").value);devices()}
-$("refresh").onclick=devices;
-$("pair").onclick=async()=>{try{const j=await api("/api/pairing",{method:"POST",body:"{}"});$("pairing").innerHTML='Pairing code (10 min): <code>'+j.pairingCode+'</code>'}catch(e){$("error").textContent=e.message}}
-function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
-health();if($("key").value)devices();setInterval(health,15000);
+const auth=()=>({"Authorization":"Bearer "+$("key").value,"Content-Type":"application/json"});
+const escapeHtml=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function toBase64(text){const bytes=new TextEncoder().encode(text);let binary="";for(const b of bytes)binary+=String.fromCharCode(b);return btoa(binary)}
+function parentPath(value){if(!value)return "";const normalized=value.replace(/[\\/]+$/,"");const i=Math.max(normalized.lastIndexOf("/"),normalized.lastIndexOf("\\"));if(i<0)return normalized;return normalized.slice(0,i)||normalized.slice(0,1)}
+function needDevice(online=true){if(!selected)throw new Error("Select a device first.");if(selected.revoked_at)throw new Error("Device is revoked.");if(online&&!selected.online)throw new Error("Device is offline.");return selected}
+function showError(error){$("globalError").textContent=error instanceof Error?error.message:String(error)}
+function clearError(){$("globalError").textContent=""}
+
+async function api(route,opts={}){const r=await fetch(route,{...opts,headers:{...auth(),...(opts.headers||{})}});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(body.error||("HTTP "+r.status));return body}
+async function deviceRequest(action,approve=false){const d=needDevice();let approvalToken;if(approve){if(!confirm("Approve high-risk action: "+action.kind+" ?"))throw new Error("Action canceled.");const a=await api("/api/approvals",{method:"POST",body:JSON.stringify({deviceId:d.id,action:action.kind,ttlSeconds:120})});approvalToken=a.approvalToken}const r=await api("/api/device/request",{method:"POST",body:JSON.stringify({deviceId:d.id,action,...(approvalToken?{approvalToken}:{})})});return r.data}
+
+async function health(){try{const r=await fetch("/health");$("health").textContent=r.ok?"gateway healthy":"gateway degraded";$("health").className="pill "+(r.ok?"ok":"bad")}catch{$("health").textContent="gateway offline";$("health").className="pill bad"}}
+
+async function loadDevices(){try{clearError();const j=await api("/api/devices");if(selected){selected=j.items.find(x=>x.id===selected.id)||null}renderDevices(j.items);syncSelection()}catch(e){showError(e)}}
+function renderDevices(items){$("devices").innerHTML=items.length?items.map(d=>'<div class="device '+(selected?.id===d.id?'selected':'')+'" data-id="'+d.id+'"><b><span class="status '+(d.revoked_at?'revoked':d.online?'online':'')+'"></span>'+escapeHtml(d.name)+'</b><small>'+escapeHtml(d.hostname||d.platform||d.id)+'</small><div class="small">'+(d.revoked_at?'revoked':d.online?'online':'offline')+' · '+escapeHtml(d.agent_version||"agent unknown")+'</div></div>').join(""):'<p class="hint">No devices enrolled.</p>';document.querySelectorAll(".device").forEach(el=>el.onclick=()=>{selected=items.find(x=>x.id===el.dataset.id)||null;renderDevices(items);syncSelection()})}
+function syncSelection(){$("selection").textContent=selected?(selected.name+" · "+(selected.revoked_at?"revoked":selected.online?"online":"offline")):"no device selected";$("deviceName").value=selected?.name||""}
+
+$("saveKey").onclick=()=>{sessionStorage.setItem("commender-key",$("key").value);loadDevices();loadAudit()}
+$("forgetKey").onclick=()=>{sessionStorage.removeItem("commender-key");$("key").value="";selected=null;syncSelection();$("devices").innerHTML='<p class="hint">Enter your API key.</p>'}
+$("refreshDevices").onclick=loadDevices;
+$("pair").onclick=async()=>{try{const j=await api("/api/pairing",{method:"POST",body:"{}"});$("pairing").innerHTML='Pairing code (10 min):<br><code>'+escapeHtml(j.pairingCode)+'</code>'}catch(e){showError(e)}}
+$("rename").onclick=async()=>{try{const d=needDevice(false);await api("/api/devices/"+d.id,{method:"PATCH",body:JSON.stringify({name:$("deviceName").value})});await loadDevices()}catch(e){showError(e)}}
+$("disconnect").onclick=async()=>{try{const d=needDevice();await api("/api/devices/"+d.id+"/disconnect",{method:"POST",body:"{}"});setTimeout(loadDevices,1200)}catch(e){showError(e)}}
+$("revoke").onclick=async()=>{try{const d=needDevice(false);if(!confirm("Revoke "+d.name+"? The agent must be re-enrolled to reconnect."))return;await api("/api/devices/"+d.id+"/revoke",{method:"POST",body:"{}"});await loadDevices();await loadAudit()}catch(e){showError(e)}}
+
+document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b));document.querySelectorAll(".pane").forEach(p=>p.classList.remove("active"));$("pane-"+b.dataset.tab).classList.add("active");if(b.dataset.tab==="audit")loadAudit()});
+
+$("loadSystem").onclick=async()=>{try{const data=await deviceRequest({kind:"system_info"});$("systemInfo").innerHTML=Object.entries(data).map(([k,v])=>'<div class="kv"><span>'+escapeHtml(k)+'</span><span>'+escapeHtml(typeof v==="object"?JSON.stringify(v):v)+'</span></div>').join("")}catch(e){showError(e)}}
+
+async function listFiles(){try{const path=$("filePath").value.trim();const data=await deviceRequest({kind:"fs_list",path});$("filePath").value=data.path||path;$("fileItems").innerHTML=data.items.length?data.items.map(x=>'<div class="file" data-path="'+escapeHtml(x.path)+'" data-type="'+escapeHtml(x.type)+'"><span>'+(x.type==="directory"?"📁":"📄")+'</span><span>'+escapeHtml(x.name)+'</span><span class="meta">'+escapeHtml(x.size)+'</span></div>').join(""):'<p class="hint" style="padding:10px">Empty directory.</p>';document.querySelectorAll(".file").forEach(el=>el.onclick=()=>openEntry(el.dataset.path,el.dataset.type))}catch(e){showError(e)}}
+async function openEntry(path,type){if(type==="directory"){$("filePath").value=path;return listFiles()}try{const data=await deviceRequest({kind:"fs_read",path,maxBytes:1048576});$("selectedFile").value=path;$("fileContent").value=data.encoding==="utf8"?data.content:"[Binary file: "+data.size+" bytes]";$("fileContent").disabled=data.encoding!=="utf8"}catch(e){showError(e)}}
+$("fileList").onclick=listFiles;$("fileUp").onclick=()=>{$("filePath").value=parentPath($("filePath").value);listFiles()}
+$("newFolder").onclick=async()=>{try{const base=$("filePath").value.trim();const name=prompt("Folder name");if(!name)return;const sep=base.includes("\\")?"\\":"/";await deviceRequest({kind:"fs_mkdir",path:base.replace(/[\\/]+$/,"")+sep+name,recursive:false});await listFiles()}catch(e){showError(e)}}
+$("saveFile").onclick=async()=>{try{const path=$("selectedFile").value;if(!path)throw new Error("Select a text file.");if(!confirm("Save changes to "+path+"?"))return;await deviceRequest({kind:"fs_write",path,contentBase64:toBase64($("fileContent").value),createParents:false});await openEntry(path,"file")}catch(e){showError(e)}}
+$("deleteFile").onclick=async()=>{try{const path=$("selectedFile").value;if(!path)throw new Error("Select a file.");await deviceRequest({kind:"fs_delete",path,recursive:false},true);$("selectedFile").value="";$("fileContent").value="";await listFiles()}catch(e){showError(e)}}
+
+$("execute").onclick=async()=>{try{$("commandOutput").textContent="Running…";const action={kind:"process_exec",command:$("commandText").value,timeoutMs:30000};if($("commandCwd").value.trim())action.cwd=$("commandCwd").value.trim();const data=await deviceRequest(action,true);$("commandOutput").textContent=JSON.stringify(data,null,2);loadAudit()}catch(e){$("commandOutput").textContent=String(e.message||e);showError(e)}}
+
+$("taskStart").onclick=async()=>{try{const action={kind:"task_start",command:$("taskCommand").value,timeoutMs:600000};if($("taskCwd").value.trim())action.cwd=$("taskCwd").value.trim();const data=await deviceRequest(action,true);$("taskId").value=data.taskId;$("taskOutput").textContent=JSON.stringify(data,null,2)}catch(e){showError(e)}}
+$("taskStatus").onclick=async()=>{try{const data=await deviceRequest({kind:"task_status",taskId:$("taskId").value.trim()});$("taskOutput").textContent=JSON.stringify(data,null,2)}catch(e){showError(e)}}
+$("taskCancel").onclick=async()=>{try{const data=await deviceRequest({kind:"task_cancel",taskId:$("taskId").value.trim()},true);$("taskOutput").textContent=JSON.stringify(data,null,2)}catch(e){showError(e)}}
+
+async function pollTerminal(){if(!terminalSession)return;try{const d=await deviceRequest({kind:"terminal_read",sessionId:terminalSession,maxBytes:65536});if(d.text){$("terminalOutput").textContent+=d.text;$("terminalOutput").scrollTop=$("terminalOutput").scrollHeight}}catch(e){showError(e)}}
+$("termStart").onclick=async()=>{try{if(terminalSession)throw new Error("Terminal already started.");const d=await deviceRequest({kind:"terminal_start",cols:120,rows:30},true);terminalSession=d.sessionId;$("terminalOutput").textContent="";terminalTimer=setInterval(pollTerminal,700)}catch(e){showError(e)}}
+$("termSend").onclick=async()=>{try{if(!terminalSession)throw new Error("Start a terminal first.");const value=$("terminalInput").value+"\n";await deviceRequest({kind:"terminal_input",sessionId:terminalSession,dataBase64:toBase64(value)});$("terminalInput").value="";setTimeout(pollTerminal,150)}catch(e){showError(e)}}
+$("terminalInput").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();$("termSend").click()}})
+$("termStop").onclick=async()=>{try{if(!terminalSession)return;await deviceRequest({kind:"terminal_stop",sessionId:terminalSession},true);clearInterval(terminalTimer);terminalTimer=null;terminalSession=null;$("terminalOutput").textContent+="\n[terminal stopped]"}catch(e){showError(e)}}
+
+async function loadAudit(){if(!$("key").value)return;try{const j=await api("/api/audit?limit=100");$("auditBody").innerHTML=j.items.map(x=>'<tr><td>'+escapeHtml(new Date(x.created_at).toLocaleString())+'</td><td>'+escapeHtml(x.actor)+'</td><td>'+escapeHtml(x.device_id||"")+'</td><td>'+escapeHtml(x.tool)+'</td><td>'+escapeHtml(x.risk)+'</td><td>'+escapeHtml(x.outcome)+'</td><td>'+escapeHtml(x.detail)+'</td></tr>').join("")}catch(e){showError(e)}}
+$("loadAudit").onclick=loadAudit;
+
+health();setInterval(health,15000);if($("key").value){loadDevices();loadAudit()}
 </script>
 </body>
 </html>

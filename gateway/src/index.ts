@@ -250,6 +250,7 @@ const server = http.createServer(async (req, res) => {
         "insert into approvals(organization_id,device_id,action,nonce,expires_at) values($1,$2,$3,$4,to_timestamp($5))",
         [orgId, body.deviceId, body.action, claim.nonce, claim.exp],
       );
+      await auditControl(body.deviceId, "approval.issue", "high", "success", JSON.stringify({ action: body.action }));
       return void json(res, 201, { approvalToken: token, expiresAt: new Date(claim.exp * 1000).toISOString() });
     }
 
@@ -277,13 +278,17 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (risk === "high" && !(await consumeApproval(body.approvalToken, body.deviceId, action.kind))) {
+        await auditControl(body.deviceId, `direct.${action.kind}`, risk, "denied", "missing_or_invalid_approval");
         return void json(res, 403, { error: "approval_required", action: action.kind });
       }
       try {
         const data = await hub.request(body.deviceId, action, body.approvalToken);
+        await auditControl(body.deviceId, `direct.${action.kind}`, risk, "success", redact({ kind: action.kind }));
         return void json(res, 200, { ok: true, data });
       } catch (error) {
-        return void json(res, 502, { ok: false, error: redact(error instanceof Error ? error.message : error) });
+        const detail = redact(error instanceof Error ? error.message : error);
+        await auditControl(body.deviceId, `direct.${action.kind}`, risk, "error", detail);
+        return void json(res, 502, { ok: false, error: detail });
       }
     }
 
