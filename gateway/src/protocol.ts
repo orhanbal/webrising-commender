@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export type Risk = "low" | "medium" | "high";
 
 export type AgentAction =
@@ -19,6 +21,93 @@ export type AgentAction =
   | { kind: "terminal_read"; sessionId: string; maxBytes?: number }
   | { kind: "terminal_resize"; sessionId: string; cols: number; rows: number }
   | { kind: "terminal_stop"; sessionId: string };
+
+const pathSchema = z.string().min(1).max(4096);
+const sessionIdSchema = z.string().uuid();
+const timeoutSchema = z.number().int().min(100).max(24 * 60 * 60 * 1000);
+
+export const agentActionSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("system_info") }).strict(),
+  z.object({ kind: z.literal("fs_list"), path: pathSchema }).strict(),
+  z.object({ kind: z.literal("fs_stat"), path: pathSchema }).strict(),
+  z.object({
+    kind: z.literal("fs_read"),
+    path: pathSchema,
+    maxBytes: z.number().int().min(1).max(4 * 1024 * 1024).optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("fs_write"),
+    path: pathSchema,
+    contentBase64: z.string().max(12 * 1024 * 1024),
+    createParents: z.boolean().optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("fs_mkdir"),
+    path: pathSchema,
+    recursive: z.boolean().optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("fs_delete"),
+    path: pathSchema,
+    recursive: z.boolean().optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("process_exec"),
+    command: z.string().min(1).max(32_000),
+    cwd: pathSchema.optional(),
+    timeoutMs: timeoutSchema.optional(),
+  }).strict(),
+  z.object({ kind: z.literal("process_list") }).strict(),
+  z.object({
+    kind: z.literal("process_kill"),
+    pid: z.number().int().positive(),
+  }).strict(),
+  z.object({
+    kind: z.literal("task_start"),
+    command: z.string().min(1).max(32_000),
+    cwd: pathSchema.optional(),
+    timeoutMs: timeoutSchema.optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("task_status"),
+    taskId: z.string().uuid(),
+  }).strict(),
+  z.object({
+    kind: z.literal("task_cancel"),
+    taskId: z.string().uuid(),
+  }).strict(),
+  z.object({
+    kind: z.literal("terminal_start"),
+    shell: z.string().min(1).max(1024).optional(),
+    cwd: pathSchema.optional(),
+    cols: z.number().int().min(10).max(500).optional(),
+    rows: z.number().int().min(5).max(300).optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("terminal_input"),
+    sessionId: sessionIdSchema,
+    dataBase64: z.string().max(512 * 1024),
+  }).strict(),
+  z.object({
+    kind: z.literal("terminal_read"),
+    sessionId: sessionIdSchema,
+    maxBytes: z.number().int().min(1).max(256 * 1024).optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("terminal_resize"),
+    sessionId: sessionIdSchema,
+    cols: z.number().int().min(10).max(500),
+    rows: z.number().int().min(5).max(300),
+  }).strict(),
+  z.object({
+    kind: z.literal("terminal_stop"),
+    sessionId: sessionIdSchema,
+  }).strict(),
+]);
+
+export function parseAgentAction(value: unknown): AgentAction {
+  return agentActionSchema.parse(value) as AgentAction;
+}
 
 export type GatewayMessage =
   | { type: "request"; requestId: string; action: AgentAction; approvalToken?: string | null }
