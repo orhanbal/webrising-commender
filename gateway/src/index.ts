@@ -1137,7 +1137,10 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname === "/api/admin/mail/outbox") {
       if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
-      const limit = Math.min(500, Math.max(1, Number(url.searchParams.get("limit") || 100)));
+      const requestedLimit = Number(url.searchParams.get("limit") || 100);
+      const limit = Number.isFinite(requestedLimit)
+        ? Math.min(500, Math.max(1, Math.floor(requestedLimit)))
+        : 100;
       const result = await db.query(
         `select id::text,attempts,next_attempt_at,sent_at,failed_at,last_error,created_at
            from mail_outbox
@@ -1175,6 +1178,7 @@ const server = http.createServer(async (req, res) => {
       const updated = await db.query(
         `update mail_outbox
             set failed_at=null,
+                attempts=0,
                 next_attempt_at=now(),
                 locked_at=null,
                 locked_by=null,
