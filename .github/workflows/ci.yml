@@ -76,6 +76,14 @@ jobs:
       HOST: 127.0.0.1
       PORT: 8787
       DEPLOYMENT_MODE: saas
+      PUBLIC_SIGNUP_ENABLED: "true"
+      AUTH_EMAIL_TOKEN_MINUTES: "30"
+      SMTP_HOST: 127.0.0.1
+      SMTP_PORT: "2525"
+      SMTP_SECURE_MODE: plain
+      SMTP_FROM: commender@example.test
+      SMTP_HELO: ci.local
+      SMTP_TIMEOUT_MS: "5000"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -87,6 +95,15 @@ jobs:
       - run: npm run build
       - name: Start gateway
         run: |
+          rm -f /tmp/commender-smtp.jsonl
+          node test/fake-smtp.mjs > /tmp/commender-smtp.log 2>&1 &
+          echo $! > /tmp/commender-smtp.pid
+          for i in {1..20}; do
+            if grep -q 'listening' /tmp/commender-smtp.log 2>/dev/null; then
+              break
+            fi
+            sleep 0.2
+          done
           node dist/index.js > /tmp/commender-gateway.log 2>&1 &
           echo $! > /tmp/commender-gateway.pid
           for i in {1..30}; do
@@ -101,7 +118,10 @@ jobs:
         run: npm run integration
       - name: Print gateway log on failure
         if: failure()
-        run: cat /tmp/commender-gateway.log || true
+        run: |
+          cat /tmp/commender-gateway.log || true
+          cat /tmp/commender-smtp.log || true
+          cat /tmp/commender-smtp.jsonl || true
 
   agent-e2e:
     runs-on: ubuntu-latest
