@@ -94,3 +94,21 @@ Normalized billing events are stored without raw webhook bodies or payment crede
 Every normalized provider event must also carry a verified provider occurrence timestamp. Once a provider event has advanced an organization's subscription state, older events from that provider are retained in the event ledger but ignored for state mutation. A different event with the exact same occurrence time is treated as `billing_event_order_conflict` rather than guessed into an order; the adapter must reconcile against the provider's authoritative subscription snapshot. Events from a different provider are ignored while the subscription is bound to the current provider. This prevents delayed webhooks from rolling subscription state backward or a retired provider from overwriting the active provider.
 
 The internal normalized-event API is not a substitute for provider webhook verification. Any Paddle, Stripe or other adapter must verify the provider's signature and map trusted provider identifiers to an organization before calling the internal billing event layer.
+
+
+## Email verification, reset and outbox security
+
+Public signup is available only when `DEPLOYMENT_MODE=saas`, `PUBLIC_SIGNUP_ENABLED=true`, and local SMTP/outbox encryption are configured.
+
+- A public signup remains in `pending_signups`; it does not create a user or organization before verification.
+- Verification requires both the one-time email token and the signup password. A mailbox link alone cannot activate an attacker-chosen password.
+- Verification/reset bearer tokens are stored only as SHA-256 verifiers and are carried in URL fragments, not page-request query strings.
+- Public signup, verification, reset request and reset confirmation each have independent IP/account/token rate limits.
+- Password reset responses do not reveal whether an account exists.
+- Reset completion revokes all active browser sessions and consumes every outstanding reset token for the user.
+- Existing bootstrap/admin/invitation-created accounts are marked verified by their trusted provisioning path; legacy users are marked verified during migration to avoid lockout.
+- Mail recipient, subject and body are encrypted together with AES-256-GCM before persistence. The outbox stores only a recipient hash plus ciphertext/nonce/tag.
+- The outbox key is a dedicated secret and is never stored in PostgreSQL.
+- SMTP STARTTLS/TLS certificate validation defaults to enabled. Disabling `SMTP_TLS_REJECT_UNAUTHORIZED` weakens transport authentication and is not recommended for production.
+- Delivery retries are bounded. Exhausted messages enter a dead-letter state instead of retrying forever.
+- Operational outbox APIs expose delivery metadata/errors only, never decrypted payloads or recipient addresses.
