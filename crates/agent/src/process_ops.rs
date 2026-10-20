@@ -1,9 +1,12 @@
 use crate::policy::PathPolicy;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use serde_json::{json, Value};
-use std::time::Duration;
+use std::{process::Stdio, time::Duration};
 use sysinfo::{Pid, ProcessesToUpdate, Signal, System};
-use tokio::process::Command;
+use tokio::{
+    io::{AsyncRead, AsyncReadExt},
+    process::Command,
+};
 
 const OUTPUT_LIMIT: usize = 1024 * 1024;
 
@@ -26,39 +29,65 @@ pub async fn exec(
     };
 
     #[cfg(windows)]
-    let mut child = {
+    let mut process = {
         let mut cmd = Command::new("cmd.exe");
         cmd.arg("/D").arg("/S").arg("/C").arg(command);
         cmd
     };
 
     #[cfg(not(windows))]
-    let mut child = {
+    let mut process = {
         let mut cmd = Command::new("/bin/sh");
         cmd.arg("-lc").arg(command);
         cmd
     };
 
     if let Some(dir) = workdir {
-        child.current_dir(dir);
+        process.current_dir(dir);
     }
-    child.kill_on_drop(true);
+    process
+        .kill_on_drop(true)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = process.spawn().context("failed to start command")?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow!("failed to capture process stdout"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| anyhow!("failed to capture process stderr"))?;
+
+    let stdout_task = tokio::spawn(read_capped(stdout, OUTPUT_LIMIT));
+    let stderr_task = tokio::spawn(read_capped(stderr, OUTPUT_LIMIT));
 
     let timeout = Duration::from_millis(timeout_ms.unwrap_or(30_000).clamp(100, 10 * 60_000));
-    let output = tokio::time::timeout(timeout, child.output())
-        .await
-        .map_err(|_| anyhow!("process execution timed out"))??;
+    let status = match tokio::time::timeout(timeout, child.wait()).await {
+        Ok(result) => result.context("failed while waiting for command")?,
+        Err(_) => {
+            let _ = child.kill().await;
+            stdout_task.abort();
+            stderr_task.abort();
+            return Err(anyhow!("process execution timed out"));
+        }
+    };
 
-    let stdout = cap(output.stdout);
-    let stderr = cap(output.stderr);
+    let stdout = stdout_task
+        .await
+        .map_err(|error| anyhow!("stdout capture task failed: {error}"))??;
+    let stderr = stderr_task
+        .await
+        .map_err(|error| anyhow!("stderr capture task failed: {error}"))??;
 
     Ok(json!({
-        "exitCode": output.status.code(),
-        "success": output.status.success(),
-        "stdout": String::from_utf8_lossy(&stdout),
-        "stderr": String::from_utf8_lossy(&stderr),
-        "stdoutTruncated": stdout.len() == OUTPUT_LIMIT,
-        "stderrTruncated": stderr.len() == OUTPUT_LIMIT
+        "exitCode": status.code(),
+        "success": status.success(),
+        "stdout": String::from_utf8_lossy(&stdout.data),
+        "stderr": String::from_utf8_lossy(&stderr.data),
+        "stdoutTruncated": stdout.truncated,
+        "stderrTruncated": stderr.truncated
     }))
 }
 
@@ -100,9 +129,54 @@ pub fn kill(pid: u32) -> Result<Value> {
     Ok(json!({ "ok": true, "pid": pid }))
 }
 
-fn cap(mut data: Vec<u8>) -> Vec<u8> {
-    if data.len() > OUTPUT_LIMIT {
-        data.truncate(OUTPUT_LIMIT);
+struct CapturedOutput {
+    data: Vec<u8>,
+    truncated: bool,
+}
+
+async fn read_capped<R>(mut reader: R, limit: usize) -> Result<CapturedOutput>
+where
+    R: AsyncRead + Unpin,
+{
+    let mut data = Vec::with_capacity(limit.min(64 * 1024));
+    let mut truncated = false;
+    let mut chunk = [0_u8; 8192];
+
+    loop {
+        let size = reader.read(&mut chunk).await?;
+        if size == 0 {
+            break;
+        }
+
+        let remaining = limit.saturating_sub(data.len());
+        let keep = remaining.min(size);
+        if keep > 0 {
+            data.extend_from_slice(&chunk[..keep]);
+        }
+        if keep < size {
+            truncated = true;
+        }
     }
-    data
+
+    Ok(CapturedOutput { data, truncated })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::AsyncWriteExt;
+
+    #[tokio::test]
+    async fn capture_is_bounded_and_marks_truncation() {
+        let (mut writer, reader) = tokio::io::duplex(64);
+        let write = tokio::spawn(async move {
+            writer.write_all(b"0123456789").await.unwrap();
+        });
+
+        let captured = read_capped(reader, 4).await.unwrap();
+        write.await.unwrap();
+
+        assert_eq!(captured.data, b"0123");
+        assert!(captured.truncated);
+    }
 }
