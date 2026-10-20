@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added SaaS-only verified public signup with pending activation and password-confirmed email verification.
+- Added password-reset request/confirm flows with one-time hash-only tokens and full browser-session revocation.
+- Added a dependency-free SMTP/STARTTLS client and AES-256-GCM encrypted persistent mail outbox with bounded retries/dead-letter handling.
+- Added safe mail-outbox operational status/retry APIs and console signup/reset/verification UX.
 - Added organization-scoped browser users and memberships.
 - Added scrypt password verification, hashed HttpOnly browser sessions, CSRF protection and login throttling.
 - Added browser login/logout to the web console while preserving API-token and self-hosted control-key access.
