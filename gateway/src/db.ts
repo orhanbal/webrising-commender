@@ -183,7 +183,7 @@ export async function migrate() {
       payload_hash text not null,
       normalized_event jsonb not null,
       disposition text not null default 'received'
-        check (disposition in ('received','applied','stale','provider_mismatch')),
+        check (disposition in ('received','applied','stale','provider_mismatch','order_conflict')),
       created_at timestamptz not null default now(),
       unique(provider,event_id)
     );
