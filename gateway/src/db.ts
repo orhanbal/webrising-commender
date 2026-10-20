@@ -51,6 +51,27 @@ export async function migrate() {
     create index if not exists auth_email_challenges_expiry_idx
       on auth_email_challenges(expires_at);
 
+    create unique index if not exists auth_email_challenges_active_uidx
+      on auth_email_challenges(purpose,lower(email))
+      where consumed_at is null and revoked_at is null;
+
+    create table if not exists mail_outbox (
+      id bigserial primary key,
+      to_address text not null,
+      subject text not null,
+      body_text text not null,
+      attempts integer not null default 0,
+      next_attempt_at timestamptz not null default now(),
+      lease_until timestamptz,
+      lease_token uuid,
+      sent_at timestamptz,
+      last_error text,
+      created_at timestamptz not null default now()
+    );
+    create index if not exists mail_outbox_due_idx
+      on mail_outbox(next_attempt_at,created_at)
+      where sent_at is null;
+
     create table if not exists organization_members (
       organization_id uuid not null references organizations(id) on delete cascade,
       user_id uuid not null references users(id) on delete cascade,
@@ -266,6 +287,9 @@ export async function housekeeping() {
   );
   await db.query(
     "delete from auth_email_challenges where expires_at < now() - interval '7 days' or consumed_at < now() - interval '30 days' or revoked_at < now() - interval '30 days'",
+  );
+  await db.query(
+    "delete from mail_outbox where sent_at < now() - interval '30 days'",
   );
   await db.query(
     `update approval_requests
