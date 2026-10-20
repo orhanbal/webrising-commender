@@ -3,6 +3,9 @@ import type WebSocket from "ws";
 import { db } from "./db.js";
 import type { AgentAction, AgentMessage, GatewayMessage } from "./protocol.js";
 
+const MAX_PENDING_TOTAL = 1024;
+const MAX_PENDING_PER_DEVICE = 64;
+
 type Pending = {
   deviceId: string;
   resolve: (value: unknown) => void;
@@ -84,6 +87,18 @@ export class AgentHub {
   }
 
   request(deviceId: string, action: AgentAction, approvalToken?: string | null) {
+    if (this.pending.size >= MAX_PENDING_TOTAL) {
+      return Promise.reject(new Error("gateway-overloaded"));
+    }
+
+    let devicePending = 0;
+    for (const pending of this.pending.values()) {
+      if (pending.deviceId === deviceId) devicePending += 1;
+    }
+    if (devicePending >= MAX_PENDING_PER_DEVICE) {
+      return Promise.reject(new Error("device-request-limit"));
+    }
+
     const socket = this.sockets.get(deviceId);
     if (!socket || socket.readyState !== 1) {
       return Promise.reject(new Error("device-offline"));
