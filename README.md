@@ -66,10 +66,14 @@ The agent initiates the connection. Controlled devices do not need an inbound fi
 - hashed device credentials and pairing codes
 - authenticated WebSocket relay
 - MCP JSON-RPC endpoint
-- one-time high-risk approval tokens
+- tenant-scoped API tokens with viewer/operator/admin/owner RBAC
+- one-time exact-operation approval tokens
+- human-in-the-loop approval queue for AI/MCP HIGH-risk actions
+- native device-side verification of signed HIGH-risk approvals
 - device rename/disconnect/revoke
 - audit log + secret redaction
 - enrollment/pairing rate limits
+- bounded in-flight request concurrency and retention housekeeping
 - liveness/readiness endpoints
 
 ### Self-hosted console
@@ -80,17 +84,18 @@ The agent initiates the connection. Controlled devices do not need an inbound fi
 - approved command execution
 - persistent background task control
 - persistent terminal UI
+- human approval review/approve/deny queue
 - audit log
 - device rename/reconnect/revoke
 
 ### Operations
 - Docker Compose
 - release Dockerfile
-- Windows Service installer/uninstaller
+- native Windows SCM service mode + installer/uninstaller
 - Linux systemd installer/uninstaller
 - macOS LaunchAgent installer/uninstaller
-- GitHub Actions for Rust, TypeScript, multi-platform compile and integration/E2E acceptance
-- tagged release workflow for native binaries
+- GitHub Actions for Rust, TypeScript, clean Compose boot, real-agent E2E and Windows service lifecycle
+- tagged release workflow with Linux x64, Windows x64, universal macOS binaries and SHA-256 checksums
 
 ## Risk model
 
@@ -98,7 +103,7 @@ The agent initiates the connection. Controlled devices do not need an inbound fi
 |---|---|---|
 | Low | system info, file read/list, process list, task/terminal read | authenticated device routing |
 | Medium | file write/mkdir, terminal input/resize | allowed only inside agent roots |
-| High | command execution, process kill, delete, task start/cancel, PTY start/stop | short-lived one-time approval required |
+| High | command execution, process kill, delete, task start/cancel, PTY start/stop | short-lived one-time approval bound to the exact parameters |
 
 The native filesystem policy is the final path boundary. Gateway requests cannot use normal file tools to escape configured roots.
 
@@ -151,8 +156,9 @@ Task state lives in the native agent process. PTY sessions follow the same princ
 
 - device secrets are stored server-side only as SHA-256 verifiers
 - pairing codes are one-time and expire
-- approval tokens are HMAC-signed, short-lived and consumed once
-- high-risk actions without valid approval are rejected
+- approval tokens are per-device HMAC-signed, short-lived, exact-operation bound and consumed once
+- HIGH-risk MCP calls can enter a human approval queue instead of silently executing
+- the native agent independently verifies approved device/action/parameters/expiry before execution
 - agent configuration is written with user-only permissions on Unix
 - logs intentionally avoid credentials and redact common secret forms
 - install scripts are explicit; no silent persistence installation
