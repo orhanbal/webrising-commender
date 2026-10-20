@@ -170,3 +170,62 @@ Existing users must enter their current account password when accepting an invit
 Member role changes and removals use the **Members** table. The gateway refuses any operation that would leave a workspace without an owner.
 
 Tenant API tokens are also managed from **Access**. Raw token values are returned once at creation and should be copied immediately.
+
+
+## Deployment mode and SaaS entitlements
+
+The default is:
+
+```env
+DEPLOYMENT_MODE=self_hosted
+```
+
+In `self_hosted` mode no billing record is required and core device/member/API-token allocations are unlimited.
+
+For a WebRising-operated SaaS deployment, set:
+
+```env
+DEPLOYMENT_MODE=saas
+```
+
+SaaS mode intentionally ships without hard-coded commercial prices. The global control plane provisions a plan and assigns it to an organization. Example:
+
+```bash
+curl -X POST https://YOUR-GATEWAY/api/admin/billing/plans \
+  -H "Authorization: Bearer $CONTROL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "key":"pro",
+    "name":"Pro",
+    "maxDevices":10,
+    "maxMembers":5,
+    "maxApiTokens":10,
+    "metadata":{},
+    "active":true
+  }'
+```
+
+Then assign the plan:
+
+```bash
+curl -X PUT https://YOUR-GATEWAY/api/admin/organizations/ORGANIZATION_UUID/subscription \
+  -H "Authorization: Bearer $CONTROL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "planKey":"pro",
+    "status":"active",
+    "provider":null,
+    "cancelAtPeriodEnd":false
+  }'
+```
+
+A tenant can read its effective limits and current usage with `GET /api/billing`. The web console shows the same data under **Access → Plan & usage**.
+
+The provider-neutral normalized event ingress is `POST /api/admin/billing/events`. It is protected by the global control credential and is **not** a raw Paddle/Stripe webhook endpoint. A provider adapter must verify the provider signature first, resolve the organization/plan, and only then submit the normalized event.
+
+In SaaS mode:
+- missing/inactive billing state returns `billing_required` for new allocations;
+- exhausted limits return `quota_exceeded` with resource, usage and limit;
+- existing resources remain intact when billing state changes;
+- pending invitations reserve member slots;
+- revoked/expired invitations, revoked tokens and revoked devices release their corresponding capacity.
