@@ -64,3 +64,10 @@ The agent provides bounded recursive discovery so an AI client does not need she
 - `terminal_list`: recover persistent PTY session ids after client reconnect
 
 `fs_replace` is a guarded surgical edit. Unless `replaceAll=true`, the search text must match exactly once. `fs_move` handles move/rename within the agent allowlisted roots.
+
+
+## Connection readiness
+
+An authenticated WebSocket upgrade means the transport is connected, but the device is not exposed as `online` or eligible for routed requests until the gateway has received and persisted that socket's `hello` message.
+
+This prevents a race where the control plane could route a request before the agent receive loop and gateway message handlers were ready. Replacing a socket clears readiness until the new connection completes its own `hello` handshake. Messages from a stale replaced socket are ignored.

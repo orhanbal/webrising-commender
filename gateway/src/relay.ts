@@ -15,30 +15,47 @@ type Pending = {
 
 export class AgentHub {
   private sockets = new Map<string, WebSocket>();
+  private ready = new Set<string>();
   private pending = new Map<string, Pending>();
   private timeoutMs = Math.max(1_000, Number(process.env.AGENT_REQUEST_TIMEOUT_MS || 30_000));
 
   isOnline(deviceId: string) {
-    return this.sockets.has(deviceId);
+    return this.ready.has(deviceId);
   }
 
   onlineIds() {
-    return [...this.sockets.keys()];
+    return [...this.ready];
+  }
+
+  private rejectPendingForDevice(deviceId: string, reason: string) {
+    for (const [id, pending] of this.pending) {
+      if (pending.deviceId !== deviceId) continue;
+      clearTimeout(pending.timer);
+      pending.reject(new Error(reason));
+      this.pending.delete(id);
+    }
   }
 
   disconnect(deviceId: string) {
     const socket = this.sockets.get(deviceId);
     if (!socket) return false;
     this.sockets.delete(deviceId);
+    this.ready.delete(deviceId);
+    this.rejectPendingForDevice(deviceId, "device-disconnected");
     socket.close(4002, "operator-disconnect");
     return true;
   }
 
-  async register(deviceId: string, socket: WebSocket) {
+  register(deviceId: string, socket: WebSocket) {
     const old = this.sockets.get(deviceId);
-    if (old && old !== socket) old.close(4001, "replaced");
+    if (old && old !== socket) {
+      this.ready.delete(deviceId);
+      this.rejectPendingForDevice(deviceId, "device-replaced");
+      old.close(4001, "replaced");
+    }
+
     this.sockets.set(deviceId, socket);
-    await db.query("update devices set last_seen_at=now() where id=$1", [deviceId]);
+    this.ready.delete(deviceId);
 
     socket.on("message", (raw) => {
       let message: AgentMessage;
@@ -48,21 +65,28 @@ export class AgentHub {
         socket.close(1003, "invalid-json");
         return;
       }
-      void this.onMessage(deviceId, message);
+
+      void this.onMessage(deviceId, socket, message).catch(() => {
+        if (this.sockets.get(deviceId) === socket) {
+          this.sockets.delete(deviceId);
+          this.ready.delete(deviceId);
+          this.rejectPendingForDevice(deviceId, "device-state-error");
+        }
+        socket.close(1011, "state-update-failed");
+      });
     });
 
     socket.on("close", () => {
-      if (this.sockets.get(deviceId) === socket) this.sockets.delete(deviceId);
-      for (const [id, pending] of this.pending) {
-        if (pending.deviceId !== deviceId) continue;
-        clearTimeout(pending.timer);
-        pending.reject(new Error("device-disconnected"));
-        this.pending.delete(id);
-      }
+      if (this.sockets.get(deviceId) !== socket) return;
+      this.sockets.delete(deviceId);
+      this.ready.delete(deviceId);
+      this.rejectPendingForDevice(deviceId, "device-disconnected");
     });
   }
 
-  private async onMessage(deviceId: string, message: AgentMessage) {
+  private async onMessage(deviceId: string, socket: WebSocket, message: AgentMessage) {
+    if (this.sockets.get(deviceId) !== socket) return;
+
     if (message.type === "heartbeat") {
       await db.query("update devices set last_seen_at=now() where id=$1", [deviceId]);
       return;
@@ -73,6 +97,9 @@ export class AgentHub {
         "update devices set hostname=$2,platform=$3,agent_version=$4,capabilities=$5::jsonb,last_seen_at=now() where id=$1",
         [deviceId, message.hostname, message.os, message.version, JSON.stringify(message.capabilities)],
       );
+      if (this.sockets.get(deviceId) === socket && socket.readyState === 1) {
+        this.ready.add(deviceId);
+      }
       return;
     }
 
@@ -100,7 +127,7 @@ export class AgentHub {
     }
 
     const socket = this.sockets.get(deviceId);
-    if (!socket || socket.readyState !== 1) {
+    if (!this.ready.has(deviceId) || !socket || socket.readyState !== 1) {
       return Promise.reject(new Error("device-offline"));
     }
 

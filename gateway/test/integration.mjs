@@ -46,6 +46,21 @@ function toolText(response) {
   return JSON.parse(text);
 }
 
+async function waitFor(predicate, timeoutMs = 5000, intervalMs = 100) {
+  const deadline = Date.now() + timeoutMs;
+  let last;
+  while (Date.now() < deadline) {
+    try {
+      last = await predicate();
+      if (last) return last;
+    } catch (error) {
+      last = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error(`condition timeout; last=${last instanceof Error ? last.message : JSON.stringify(last)}`);
+}
+
 const health = await jsonFetch("/health");
 assert.equal(health.status, "ok");
 
@@ -151,6 +166,11 @@ await new Promise((resolve, reject) => {
   socket.once("error", reject);
 });
 
+const connectedDevices = await jsonFetch("/api/devices", { headers: authHeaders });
+const connectedDevice = connectedDevices.items.find((item) => item.id === enrolled.deviceId);
+assert.ok(connectedDevice);
+assert.equal(connectedDevice.online, false);
+
 socket.send(JSON.stringify({
   type: "hello",
   deviceId: enrolled.deviceId,
@@ -192,11 +212,11 @@ socket.on("message", (raw) => {
   }));
 });
 
-await new Promise((resolve) => setTimeout(resolve, 100));
-
-const devices = await jsonFetch("/api/devices", { headers: authHeaders });
-const device = devices.items.find((item) => item.id === enrolled.deviceId);
-assert.ok(device);
+const device = await waitFor(async () => {
+  const devices = await jsonFetch("/api/devices", { headers: authHeaders });
+  const item = devices.items.find((candidate) => candidate.id === enrolled.deviceId);
+  return item?.online ? item : null;
+});
 assert.equal(device.online, true);
 
 const initialized = await rpc(1, "initialize", {});
