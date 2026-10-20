@@ -467,6 +467,17 @@ const tenantAdminHeaders = {
   "Content-Type": "application/json",
 };
 
+const forbiddenOwnerMembershipChange = await fetch(base + "/api/members", {
+  method: "POST",
+  headers: tenantAdminHeaders,
+  body: JSON.stringify({
+    email: "owner@example.test",
+    role: "operator",
+  }),
+});
+assert.equal(forbiddenOwnerMembershipChange.status, 403);
+assert.equal((await forbiddenOwnerMembershipChange.json()).error, "cannot_manage_higher_role");
+
 const forbiddenOwnerGrant = await fetch(base + "/api/tokens", {
   method: "POST",
   headers: tenantAdminHeaders,
