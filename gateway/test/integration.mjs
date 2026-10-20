@@ -366,6 +366,40 @@ const tenantOrg = await jsonFetch("/api/organizations", {
 });
 assert.match(tenantOrg.item.id, /^[0-9a-f-]{36}$/i);
 
+const tenantMembership = await jsonFetch("/api/members", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    email: "owner@example.test",
+    role: "owner",
+    organizationId: tenantOrg.item.id,
+  }),
+});
+assert.equal(tenantMembership.item.organization_id, tenantOrg.item.id);
+assert.equal(tenantMembership.item.role, "owner");
+
+const switchedOrganizationResponse = await fetch(base + "/api/auth/switch-organization", {
+  method: "POST",
+  headers: {
+    Cookie: browserCookies,
+    "Content-Type": "application/json",
+    "X-CSRF-Token": browserLogin.csrfToken,
+  },
+  body: JSON.stringify({ organizationId: tenantOrg.item.id }),
+});
+assert.equal(switchedOrganizationResponse.status, 200);
+const switchedOrganization = await switchedOrganizationResponse.json();
+assert.equal(switchedOrganization.organizationId, tenantOrg.item.id);
+assert.equal(switchedOrganization.role, "owner");
+
+const switchedMeResponse = await fetch(base + "/api/auth/me", {
+  headers: { Cookie: browserCookies },
+});
+assert.equal(switchedMeResponse.status, 200);
+const switchedMe = await switchedMeResponse.json();
+assert.equal(switchedMe.organizationId, tenantOrg.item.id);
+assert.equal(switchedMe.role, "owner");
+
 const tenantToken = await jsonFetch("/api/tokens", {
   method: "POST",
   headers: authHeaders,
