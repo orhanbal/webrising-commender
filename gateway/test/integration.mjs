@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import pg from "pg";
 import WebSocket from "ws";
 
 const base = process.env.TEST_BASE_URL || "http://127.0.0.1:8787";
@@ -9,6 +11,13 @@ const authHeaders = {
   Authorization: `Bearer ${apiKey}`,
   "Content-Type": "application/json",
 };
+
+const smtpCapture = process.env.SMTP_TEST_OUTPUT || "/tmp/commender-smtp.jsonl";
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) throw new Error("DATABASE_URL is required");
+const { Client } = pg;
+const acceptanceDb = new Client({ connectionString: databaseUrl });
+await acceptanceDb.connect();
 
 async function jsonFetch(path, options = {}) {
   const response = await fetch(base + path, options);
@@ -61,6 +70,21 @@ async function waitFor(predicate, timeoutMs = 5000, intervalMs = 100) {
   throw new Error(`condition timeout; last=${last instanceof Error ? last.message : JSON.stringify(last)}`);
 }
 
+async function smtpMessages() {
+  const raw = await fs.readFile(smtpCapture, "utf8").catch(() => "");
+  return raw
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
+async function waitForMail(pattern, timeoutMs = 8000) {
+  return waitFor(async () => {
+    const messages = await smtpMessages();
+    return messages.find((message) => pattern.test(message.data)) || null;
+  }, timeoutMs, 100);
+}
+
 async function assignSubscription(organizationId, planKey = "ci-standard", status = "active") {
   return jsonFetch(`/api/admin/organizations/${organizationId}/subscription`, {
     method: "PUT",
@@ -104,6 +128,150 @@ assert.equal(initialBilling.mode, "saas");
 assert.equal(initialBilling.entitled, true);
 assert.equal(initialBilling.plan.key, "ci-standard");
 assert.equal(initialBilling.usage.devices, 0);
+
+const signupResponse = await fetch(base + "/api/auth/signup", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    email: "signup@example.test",
+    password: "signup-initial-password",
+    workspaceName: "Signup Workspace",
+  }),
+});
+assert.equal(signupResponse.status, 202);
+assert.equal((await signupResponse.json()).ok, true);
+
+const signupLoginBeforeVerify = await fetch(base + "/api/auth/login", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    email: "signup@example.test",
+    password: "signup-initial-password",
+  }),
+});
+assert.equal(signupLoginBeforeVerify.status, 401);
+
+const verificationMail = await waitForMail(/#verify=wrsv_/);
+const verificationMatch = verificationMail.data.match(/#verify=(wrsv_[A-Za-z0-9_-]+)/);
+assert.ok(verificationMatch);
+const verificationToken = verificationMatch[1];
+
+const encryptedOutbox = await acceptanceDb.query(
+  `select recipient_hash,payload_ciphertext,payload_nonce,payload_tag
+     from mail_outbox
+    order by id asc
+    limit 1`,
+);
+assert.equal(encryptedOutbox.rowCount, 1);
+assert.notEqual(encryptedOutbox.rows[0].recipient_hash, "signup@example.test");
+assert.equal(
+  encryptedOutbox.rows[0].payload_ciphertext.includes("signup@example.test"),
+  false,
+);
+assert.ok(encryptedOutbox.rows[0].payload_nonce);
+assert.ok(encryptedOutbox.rows[0].payload_tag);
+
+const verifySignupResponse = await fetch(base + "/api/auth/signup/verify", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ token: verificationToken }),
+});
+assert.equal(verifySignupResponse.status, 200);
+const verifiedSignup = await verifySignupResponse.json();
+assert.equal(verifiedSignup.email, "signup@example.test");
+assert.equal(verifiedSignup.role, "owner");
+const signupCookies = verifySignupResponse.headers
+  .getSetCookie()
+  .map((value) => value.split(";")[0])
+  .join("; ");
+
+const verifyReplay = await fetch(base + "/api/auth/signup/verify", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ token: verificationToken }),
+});
+assert.equal(verifyReplay.status, 400);
+assert.equal((await verifyReplay.json()).error, "invalid_or_expired_verification");
+
+const verifiedSignupMe = await fetch(base + "/api/auth/me", {
+  headers: { Cookie: signupCookies },
+});
+assert.equal(verifiedSignupMe.status, 200);
+assert.equal((await verifiedSignupMe.json()).email, "signup@example.test");
+
+const signupBilling = await fetch(base + "/api/billing", {
+  headers: { Cookie: signupCookies },
+});
+assert.equal(signupBilling.status, 200);
+const signupBillingBody = await signupBilling.json();
+assert.equal(signupBillingBody.entitled, false);
+assert.equal(signupBillingBody.reason, "billing_required");
+
+const unknownResetRequest = await fetch(base + "/api/auth/password-reset/request", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ email: "does-not-exist@example.test" }),
+});
+assert.equal(unknownResetRequest.status, 202);
+assert.equal((await unknownResetRequest.json()).ok, true);
+
+const resetRequest = await fetch(base + "/api/auth/password-reset/request", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ email: "signup@example.test" }),
+});
+assert.equal(resetRequest.status, 202);
+
+const resetMail = await waitForMail(/#reset=wrrp_/);
+const resetMatch = resetMail.data.match(/#reset=(wrrp_[A-Za-z0-9_-]+)/);
+assert.ok(resetMatch);
+const resetToken = resetMatch[1];
+
+const resetConfirm = await fetch(base + "/api/auth/password-reset/confirm", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    token: resetToken,
+    newPassword: "signup-replaced-password",
+  }),
+});
+assert.equal(resetConfirm.status, 200);
+assert.equal((await resetConfirm.json()).ok, true);
+
+const resetReplay = await fetch(base + "/api/auth/password-reset/confirm", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    token: resetToken,
+    newPassword: "signup-third-password",
+  }),
+});
+assert.equal(resetReplay.status, 400);
+
+const revokedSignupSession = await fetch(base + "/api/auth/me", {
+  headers: { Cookie: signupCookies },
+});
+assert.equal(revokedSignupSession.status, 401);
+
+const oldSignupPassword = await fetch(base + "/api/auth/login", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    email: "signup@example.test",
+    password: "signup-initial-password",
+  }),
+});
+assert.equal(oldSignupPassword.status, 401);
+
+const newSignupPassword = await fetch(base + "/api/auth/login", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    email: "signup@example.test",
+    password: "signup-replaced-password",
+  }),
+});
+assert.equal(newSignupPassword.status, 200);
 
 const browserUser = await jsonFetch("/api/users", {
   method: "POST",
@@ -1222,4 +1390,5 @@ const revokedBrowserSession = await fetch(base + "/api/auth/me", {
 assert.equal(revokedBrowserSession.status, 401);
 
 socket.close();
+await acceptanceDb.end();
 console.log("integration: ok");
