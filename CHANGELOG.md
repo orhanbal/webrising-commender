@@ -6,6 +6,10 @@
 - Added scrypt password verification, hashed HttpOnly browser sessions, CSRF protection and login throttling.
 - Added browser login/logout to the web console while preserving API-token and self-hosted control-key access.
 - Added browser-auth integration acceptance including CSRF denial and session revocation.
+- Added workspace creation, switching and owner-only rename controls.
+- Added expiring, revocable, hash-only invitation tokens with new/existing-user acceptance flows.
+- Added member role updates/removal with serialized last-owner protection and scoped session revocation.
+- Added web-console management for members, invitations and tenant API tokens.
 
 ## 0.1.0 - Unreleased
 
