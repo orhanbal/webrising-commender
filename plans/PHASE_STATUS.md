@@ -11,7 +11,7 @@ Updated: 2026-10-20
 | 4 Console | DONE (MVP) | device management, filesystem, command/task/terminal controls, approvals, audit |
 | 5 Hardening | IMPLEMENTED — ACCEPTANCE PENDING | exact-operation approvals, native verification, RBAC, allowlisted roots, payload/resource caps, redaction, rate limits, replay/tamper rejection |
 | 6 Distribution | IMPLEMENTED — ACCEPTANCE PENDING | Docker Compose, native Windows SCM host, Windows/Linux/macOS installers, tagged multi-platform release pipeline |
-| 7 SaaS | FOUNDATION IMPLEMENTED | organizations, tenant API tokens and RBAC are implemented; browser user auth, billing and regional relay orchestration remain deployment/product work |
+| 7 SaaS | FOUNDATION + BROWSER AUTH IMPLEMENTED | organizations, tenant API tokens, RBAC, users/memberships and hardened browser sessions are implemented; billing and regional relay orchestration remain product/deployment work |
 
 ## Automated acceptance already covered
 
@@ -30,6 +30,7 @@ CI exercises:
 - HIGH-risk denial, parameter tamper rejection and single-use approval
 - human-in-the-loop MCP approval queue
 - organization isolation and token RBAC boundaries
+- browser user login/logout, HttpOnly session persistence and CSRF rejection
 - installer syntax
 - native Windows service install/start/stop/remove lifecycle
 
