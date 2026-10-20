@@ -69,3 +69,4 @@ Quota checks run inside the same organization-level database lock as the resourc
 A downgrade, `past_due` state or cancellation never deletes existing devices, memberships or tokens. It blocks new allocations until entitlement is restored or usage falls within the active plan.
 
 Provider webhooks are expected to be signature-verified by a provider-specific adapter before they are converted to the normalized internal billing event contract. The normalized event ledger is idempotent on `provider + event_id` and rejects an event-id replay carrying a different payload.
+The normalized contract includes the provider's trusted occurrence time. Subscription rows retain the last applied provider event id/time; older events and events from a no-longer-bound provider are ledgered for audit but cannot mutate current entitlement state.
