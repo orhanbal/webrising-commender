@@ -11,7 +11,7 @@ Updated: 2026-10-21
 | 4 Console | DONE (MVP) | device management, filesystem, command/task/terminal controls, approvals, audit |
 | 5 Hardening | IMPLEMENTED — ACCEPTANCE PENDING | exact-operation approvals, native verification, RBAC, allowlisted roots, payload/resource caps, redaction, rate limits, replay/tamper rejection |
 | 6 Distribution | IMPLEMENTED — ACCEPTANCE PENDING | Docker Compose, native Windows SCM host, Windows/Linux/macOS installers, tagged multi-platform release pipeline |
-| 7 SaaS | BILLING CORE + ENTITLEMENTS IMPLEMENTED | onboarding/access plus provider-neutral plans, subscriptions, usage snapshots, transactional device/member/token quotas and idempotent normalized billing events are implemented; provider checkout/webhook adapters, verified public signup and regional relay orchestration remain |
+| 7 SaaS | AUTH + BILLING CORE IMPLEMENTED | onboarding/access, verified public signup/password reset, own-SMTP durable mail outbox, provider-neutral plans/subscriptions and transactional quotas are implemented; provider checkout/webhook adapters and regional relay orchestration remain |
 
 ## Automated acceptance already covered
 
@@ -31,6 +31,8 @@ CI exercises:
 - human-in-the-loop MCP approval queue
 - organization isolation and token RBAC boundaries
 - browser user login/logout, HttpOnly session persistence and CSRF rejection
+- public signup verification, login-before-verification rejection, password reset/replay rejection, session revocation and auth-token scrubbing
+- built-in local SMTP conversation unit test without an external mail service
 - invitation preview/accept/replay rejection, workspace creation/switching, role updates/removal and last-owner protection
 - SaaS plan/subscription provisioning, billing-required gating, device/member/token quota enforcement, pending-seat reservation, normalized-event idempotency, provider-identity collision rejection, stale-event suppression and same-time order-conflict detection
 - self-hosted unlimited resource allocation remains covered by Compose/real-agent flows while integration runs in SaaS mode
