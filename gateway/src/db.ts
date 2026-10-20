@@ -53,8 +53,10 @@ export async function migrate() {
       action text not null,
       nonce text not null unique,
       expires_at timestamptz not null,
+      consumed_at timestamptz,
       created_at timestamptz not null default now()
     );
+    alter table approvals add column if not exists consumed_at timestamptz;
 
     create table if not exists audit_logs (
       id bigserial primary key,

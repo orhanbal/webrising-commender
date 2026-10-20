@@ -38,7 +38,7 @@ export type AgentMessage =
   | { type: "result"; requestId: string; ok: true; data: unknown }
   | { type: "result"; requestId: string; ok: false; error: { code: string; message: string } };
 
-export function actionRisk(kind: AgentAction["kind"]): Risk {
+export function actionRisk(kind: AgentAction["kind"] | string): Risk {
   switch (kind) {
     case "system_info":
     case "fs_list":
@@ -61,5 +61,7 @@ export function actionRisk(kind: AgentAction["kind"]): Risk {
     case "terminal_start":
     case "terminal_stop":
       return "high";
+    default:
+      throw new Error(`unknown agent action: ${kind}`);
   }
 }

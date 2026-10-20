@@ -18,13 +18,13 @@ export function randomToken(bytes = 32) {
 }
 
 export function isControlAuthorized(header: string | undefined) {
-  if (!header?.startsWith("Bearer ")) return false;
+  if (!header?.startsWith("Bearer ")) return null;
   const supplied = Buffer.from(header.slice(7));
   const expected = Buffer.from(controlApiKey);
   return supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
 }
 
-type ApprovalClaim = {
+export type ApprovalClaim = {
   deviceId: string;
   action: string;
   exp: number;
@@ -47,25 +47,42 @@ export function issueApproval(deviceId: string, action: string, ttlSeconds = 120
   return { token: `${payload}.${signature}`, claim };
 }
 
-export function verifyApproval(token: string | undefined | null, deviceId: string, action: string) {
-  if (!token) return false;
+export function verifyApprovalClaim(
+  token: string | undefined | null,
+  deviceId: string,
+  action: string,
+): ApprovalClaim | null {
+  if (!token) return null;
   const [payload, signature] = token.split(".");
-  if (!payload || !signature) return false;
+  if (!payload || !signature) return null;
   const expected = crypto.createHmac("sha256", approvalSecret).update(payload).digest();
   let supplied: Buffer;
   try {
     supplied = Buffer.from(signature, "base64url");
   } catch {
-    return false;
+    return null;
   }
-  if (expected.length !== supplied.length || !crypto.timingSafeEqual(expected, supplied)) return false;
+  if (expected.length !== supplied.length || !crypto.timingSafeEqual(expected, supplied)) return null;
 
   try {
     const claim = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as ApprovalClaim;
-    return claim.deviceId === deviceId && claim.action === action && claim.exp >= Math.floor(Date.now() / 1000);
+    if (
+      claim.deviceId !== deviceId ||
+      claim.action !== action ||
+      claim.exp < Math.floor(Date.now() / 1000) ||
+      typeof claim.nonce !== "string" ||
+      claim.nonce.length < 16
+    ) {
+      return null;
+    }
+    return claim;
   } catch {
-    return false;
+    return null;
   }
+}
+
+export function verifyApproval(token: string | undefined | null, deviceId: string, action: string) {
+  return verifyApprovalClaim(token, deviceId, action) !== null;
 }
 
 const secretPatterns = [

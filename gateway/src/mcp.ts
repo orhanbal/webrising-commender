@@ -1,7 +1,8 @@
+import { consumeApproval } from "./approvals.js";
 import { db, defaultOrganizationId } from "./db.js";
 import { actionRisk, type AgentAction } from "./protocol.js";
 import type { AgentHub } from "./relay.js";
-import { redact, verifyApproval } from "./security.js";
+import { redact } from "./security.js";
 
 type JsonRpcRequest = { jsonrpc?: string; id?: string | number | null; method?: string; params?: any };
 
@@ -180,7 +181,7 @@ export async function handleMcp(request: JsonRpcRequest, hub: AgentHub) {
 
   const risk = actionRisk(action.kind);
   const approvalToken = typeof args.approval_token === "string" ? args.approval_token : undefined;
-  if (risk === "high" && !verifyApproval(approvalToken, deviceId, action.kind)) {
+  if (risk === "high" && !(await consumeApproval(approvalToken, deviceId, action.kind))) {
     await audit(orgId, deviceId, name, risk, "denied", "missing_or_invalid_approval");
     return ok(request.id, toolResult({ error: "approval_required", action: action.kind }, true));
   }

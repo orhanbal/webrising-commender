@@ -164,6 +164,17 @@ const approvedData = toolText(approved);
 assert.equal(approvedData.success, true);
 assert.equal(approvedData.stdout, "approved");
 
+const replayed = await rpc(6, "tools/call", {
+  name: "process_exec",
+  arguments: {
+    device_id: enrolled.deviceId,
+    command: "echo replayed",
+    approval_token: approval.approvalToken,
+  },
+});
+assert.equal(replayed.result.isError, true);
+assert.equal(toolText(replayed).error, "approval_required");
+
 const audit = await jsonFetch("/api/audit?limit=20", { headers: authHeaders });
 assert.ok(audit.items.some((item) => item.tool === "process_exec" && item.outcome === "denied"));
 assert.ok(audit.items.some((item) => item.tool === "process_exec" && item.outcome === "success"));

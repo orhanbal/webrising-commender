@@ -5,11 +5,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
+import { consumeApproval } from "./approvals.js";
 import { db, defaultOrganizationId, migrate, ready } from "./db.js";
 import { handleMcp } from "./mcp.js";
 import { actionRisk, type AgentAction } from "./protocol.js";
 import { AgentHub } from "./relay.js";
-import { isControlAuthorized, issueApproval, randomToken, redact, sha256, verifyApproval } from "./security.js";
+import { isControlAuthorized, issueApproval, randomToken, redact, sha256 } from "./security.js";
 
 const host = process.env.HOST || "0.0.0.0";
 const port = Number(process.env.PORT || 8787);
@@ -79,7 +80,11 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/") return void (await serveConsole(res));
     if (req.method === "GET" && url.pathname === "/health/live") return void json(res, 200, { status: "ok", service: "commender-gateway" });
     if (req.method === "GET" && url.pathname === "/health") {
-      return void json(res, (await ready()) ? 200 : 503, { status: (await ready()) ? "ok" : "error", database: (await ready()) ? "ok" : "error" });
+      const databaseReady = await ready();
+      return void json(res, databaseReady ? 200 : 503, {
+        status: databaseReady ? "ok" : "error",
+        database: databaseReady ? "ok" : "error",
+      });
     }
 
     if (req.method === "POST" && url.pathname === "/api/agent/enroll") {
@@ -183,8 +188,15 @@ const server = http.createServer(async (req, res) => {
       }).parse(await readJson(req));
       const action = body.action as AgentAction;
       if (typeof action.kind !== "string") return void json(res, 400, { error: "invalid_action" });
-      const risk = actionRisk(action.kind);
-      if (risk === "high" && !verifyApproval(body.approvalToken, body.deviceId, action.kind)) {
+
+      let risk;
+      try {
+        risk = actionRisk(action.kind);
+      } catch {
+        return void json(res, 400, { error: "invalid_action" });
+      }
+
+      if (risk === "high" && !(await consumeApproval(body.approvalToken, body.deviceId, action.kind))) {
         return void json(res, 403, { error: "approval_required", action: action.kind });
       }
       try {
