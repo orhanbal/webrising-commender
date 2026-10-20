@@ -100,17 +100,38 @@ The endpoint implements the MCP JSON-RPC methods used by the MVP:
 - `tools/list`
 - `tools/call`
 
-For production SaaS, `CONTROL_API_KEY` is replaced by user/session authorization. The self-hosted API key mode remains supported.
+Self-hosted mode supports the global `CONTROL_API_KEY` and tenant-scoped API tokens. SaaS/browser session authentication can sit in front of the same organization/RBAC boundary without changing the native-agent protocol.
 
 ## 7. High-risk approval
 
-High-risk actions such as shell execution and deletion require a short-lived approval token.
+HIGH-risk operations are approved for the **exact operation payload**, not only the action family. Changing the command, path, PID, task id or terminal session invalidates the approval.
+
+Direct REST approval example:
 
 ```bash
 curl -X POST http://localhost:8787/api/approvals \
   -H "Authorization: Bearer $CONTROL_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"deviceId":"<DEVICE_UUID>","action":"process_exec","ttlSeconds":120}'
+  -d '{
+    "deviceId":"<DEVICE_UUID>",
+    "action":{
+      "kind":"process_exec",
+      "command":"git status",
+      "cwd":"/allowed/project",
+      "timeoutMs":30000
+    },
+    "ttlSeconds":120
+  }'
 ```
 
-Pass the returned `approvalToken` to the corresponding MCP tool call.
+Pass the returned `approvalToken` with that **same** operation.
+
+For MCP callers, the safer human-in-the-loop flow is automatic:
+
+1. Call a HIGH-risk tool without `approval_token`.
+2. Commender returns `approval_request_id` and stores the exact requested operation.
+3. An admin/owner reviews it in the **Approvals** console and approves or denies it.
+4. Retry the same MCP tool call without an approval token.
+5. The gateway atomically consumes the approved request, creates a device-bound signed claim internally, and executes it once.
+
+An approved request cannot authorize a different operation or a replay.
