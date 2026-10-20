@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
 import WebSocket from "ws";
 
 const base = process.env.TEST_BASE_URL || "http://127.0.0.1:8787";
@@ -61,6 +62,23 @@ async function waitFor(predicate, timeoutMs = 5000, intervalMs = 100) {
   throw new Error(`condition timeout; last=${last instanceof Error ? last.message : JSON.stringify(last)}`);
 }
 
+async function smtpMessages() {
+  try {
+    const raw = await fs.readFile("/tmp/commender-smtp.jsonl", "utf8");
+    return raw.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+  } catch {
+    return [];
+  }
+}
+
+async function waitForMail(match, afterCount = 0) {
+  return waitFor(async () => {
+    const messages = await smtpMessages();
+    const candidates = messages.slice(afterCount);
+    return candidates.find((item) => item.message.includes(match)) || null;
+  }, 5000, 100);
+}
+
 async function assignSubscription(organizationId, planKey = "ci-standard", status = "active") {
   return jsonFetch(`/api/admin/organizations/${organizationId}/subscription`, {
     method: "PUT",
@@ -75,6 +93,131 @@ async function assignSubscription(organizationId, planKey = "ci-standard", statu
 
 const health = await jsonFetch("/health");
 assert.equal(health.status, "ok");
+
+const authCapabilities = await jsonFetch("/api/auth/capabilities");
+assert.equal(authCapabilities.publicSignupEnabled, true);
+assert.equal(authCapabilities.emailDeliveryConfigured, true);
+assert.equal(authCapabilities.deploymentMode, "saas");
+
+const signupMailCount = (await smtpMessages()).length;
+const signupRequestResponse = await fetch(base + "/api/auth/signup/request", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    email: "signup@example.test",
+    password: "signup-secure-password",
+    organizationName: "CI Signup Workspace",
+  }),
+});
+assert.equal(signupRequestResponse.status, 202);
+
+const signupMail = await waitForMail("To: signup@example.test", signupMailCount);
+const signupToken = signupMail.message.match(/#signup=(wrcv_[A-Za-z0-9_-]+)/)?.[1];
+assert.ok(signupToken);
+
+const signupCompleteResponse = await fetch(base + "/api/auth/signup/complete", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ token: signupToken }),
+});
+assert.equal(signupCompleteResponse.status, 201);
+const signupComplete = await signupCompleteResponse.json();
+assert.equal(signupComplete.email, "signup@example.test");
+assert.equal(signupComplete.role, "owner");
+const signupCookies = signupCompleteResponse.headers.getSetCookie().map((value) => value.split(";")[0]).join("; ");
+assert.match(signupCookies, /commender_session=wrcs_/);
+
+const signupReplayResponse = await fetch(base + "/api/auth/signup/complete", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ token: signupToken }),
+});
+assert.equal(signupReplayResponse.status, 400);
+assert.equal((await signupReplayResponse.json()).error, "invalid_or_expired_verification");
+
+const signupMeResponse = await fetch(base + "/api/auth/me", {
+  headers: { Cookie: signupCookies },
+});
+assert.equal(signupMeResponse.status, 200);
+const signupMe = await signupMeResponse.json();
+assert.equal(signupMe.email, "signup@example.test");
+assert.equal(signupMe.role, "owner");
+
+const signupBillingResponse = await fetch(base + "/api/billing", {
+  headers: { Cookie: signupCookies },
+});
+assert.equal(signupBillingResponse.status, 200);
+const signupBilling = await signupBillingResponse.json();
+assert.equal(signupBilling.entitled, false);
+assert.equal(signupBilling.reason, "billing_required");
+
+const resetMailCount = (await smtpMessages()).length;
+const resetRequestResponse = await fetch(base + "/api/auth/password-reset/request", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ email: "signup@example.test" }),
+});
+assert.equal(resetRequestResponse.status, 202);
+
+const resetMail = await waitForMail("To: signup@example.test", resetMailCount);
+const resetToken = resetMail.message.match(/#reset=(wrpr_[A-Za-z0-9_-]+)/)?.[1];
+assert.ok(resetToken);
+
+const resetCompleteResponse = await fetch(base + "/api/auth/password-reset/complete", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    token: resetToken,
+    newPassword: "signup-new-secure-password",
+  }),
+});
+assert.equal(resetCompleteResponse.status, 200);
+
+const revokedSignupSession = await fetch(base + "/api/auth/me", {
+  headers: { Cookie: signupCookies },
+});
+assert.equal(revokedSignupSession.status, 401);
+
+const oldSignupPassword = await fetch(base + "/api/auth/login", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    email: "signup@example.test",
+    password: "signup-secure-password",
+  }),
+});
+assert.equal(oldSignupPassword.status, 401);
+
+const newSignupPassword = await fetch(base + "/api/auth/login", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    email: "signup@example.test",
+    password: "signup-new-secure-password",
+  }),
+});
+assert.equal(newSignupPassword.status, 200);
+
+const resetReplayResponse = await fetch(base + "/api/auth/password-reset/complete", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    token: resetToken,
+    newPassword: "another-secure-password",
+  }),
+});
+assert.equal(resetReplayResponse.status, 400);
+assert.equal((await resetReplayResponse.json()).error, "invalid_or_expired_reset");
+
+const unknownResetMailCount = (await smtpMessages()).length;
+const unknownResetResponse = await fetch(base + "/api/auth/password-reset/request", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ email: "missing@example.test" }),
+});
+assert.equal(unknownResetResponse.status, 202);
+await new Promise((resolve) => setTimeout(resolve, 150));
+assert.equal((await smtpMessages()).length, unknownResetMailCount);
 
 const standardPlan = await jsonFetch("/api/admin/billing/plans", {
   method: "POST",
