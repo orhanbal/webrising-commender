@@ -195,7 +195,7 @@ export async function handleMcp(request: JsonRpcRequest, hub: AgentHub, principa
   }
 
   const approvalToken = typeof args.approval_token === "string" ? args.approval_token : undefined;
-  if (risk === "high" && !(await consumeApproval(approvalToken, deviceId, action.kind))) {
+  if (risk === "high" && !(await consumeApproval(approvalToken, deviceId, action))) {
     await audit(orgId, principal.actor, deviceId, name, risk, "denied", "missing_or_invalid_approval");
     return ok(request.id, toolResult({ error: "approval_required", action: action.kind }, true));
   }
