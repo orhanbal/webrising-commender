@@ -75,12 +75,14 @@ export async function migrate() {
       locked_at timestamptz,
       locked_by text,
       sent_at timestamptz,
+      failed_at timestamptz,
       last_error text,
       created_at timestamptz not null default now()
     );
     create index if not exists mail_outbox_delivery_idx
       on mail_outbox(sent_at,next_attempt_at,created_at)
       where sent_at is null;
+    alter table mail_outbox add column if not exists failed_at timestamptz;
 
     create table if not exists organization_members (
       organization_id uuid not null references organizations(id) on delete cascade,
@@ -302,10 +304,10 @@ export async function housekeeping() {
     "delete from auth_tokens where expires_at < now() - interval '7 days' or consumed_at < now() - interval '7 days'",
   );
   await db.query(
-    "update mail_outbox set locked_at=null,locked_by=null where sent_at is null and locked_at < now() - interval '10 minutes'",
+    "update mail_outbox set locked_at=null,locked_by=null where sent_at is null and failed_at is null and locked_at < now() - interval '10 minutes'",
   );
   await db.query(
-    "delete from mail_outbox where sent_at < now() - interval '30 days'",
+    "delete from mail_outbox where sent_at < now() - interval '30 days' or failed_at < now() - interval '30 days'",
   );
   await db.query(
     `update approval_requests
