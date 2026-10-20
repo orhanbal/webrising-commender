@@ -491,6 +491,20 @@ const server = http.createServer(async (req, res) => {
       );
       if (!user.rows[0]) return void json(res, 404, { error: "user_not_found" });
 
+      const currentMembership = await db.query<{ role: Role }>(
+        "select role from organization_members where organization_id=$1 and user_id=$2",
+        [organizationId, user.rows[0].id],
+      );
+      if (
+        currentMembership.rows[0] &&
+        !roleAtLeast(principal!, currentMembership.rows[0].role)
+      ) {
+        return void json(res, 403, {
+          error: "cannot_manage_higher_role",
+          targetRole: currentMembership.rows[0].role,
+        });
+      }
+
       const membership = await db.query(
         `insert into organization_members(organization_id,user_id,role)
          values($1,$2,$3)
