@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { randomToken, sha256 } from "./security.js";
+import { randomToken, sha256 } from "./crypto-utils.js";
 
 export const sessionCookieName = "commender_session";
 export const csrfCookieName = "commender_csrf";
