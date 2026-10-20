@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>WebRising Commender</title>
+  <style>
+    :root{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:#e8ecf3;background:#0b1020}
+    *{box-sizing:border-box}body{margin:0}.shell{max-width:1120px;margin:auto;padding:36px 20px}
+    .top{display:flex;justify-content:space-between;gap:20px;align-items:center;margin-bottom:28px}
+    h1{font-size:28px;margin:0}p{color:#9aa7bd}.card{background:#121a2e;border:1px solid #26324c;border-radius:16px;padding:20px;margin:14px 0}
+    input,button{font:inherit;border-radius:10px;border:1px solid #33415e;padding:11px 13px}input{background:#0c1428;color:#fff;min-width:280px}
+    button{background:#3157d5;color:#fff;cursor:pointer}.muted{background:#1a2540}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .device{display:grid;grid-template-columns:1fr auto;gap:12px;padding:14px 0;border-top:1px solid #25314a}.device:first-child{border-top:0}
+    .pill{font-size:12px;border-radius:999px;padding:5px 9px;background:#27324b}.online{background:#164b3a;color:#a6f0d2}
+    code{word-break:break-all;color:#bfd0ff}.error{color:#ffb8b8}
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <div class="top"><div><h1>WebRising Commender</h1><p>Self-hosted control plane</p></div><span id="health" class="pill">checking…</span></div>
+    <section class="card">
+      <h2>Control API key</h2>
+      <div class="row"><input id="key" type="password" placeholder="CONTROL_API_KEY"><button id="save">Use key</button></div>
+      <p>The key stays in this browser tab's session storage.</p>
+    </section>
+    <section class="card">
+      <div class="row"><button id="pair">Create pairing code</button><button id="refresh" class="muted">Refresh devices</button></div>
+      <p id="pairing"></p>
+    </section>
+    <section class="card"><h2>Devices</h2><div id="devices"><p>No data yet.</p></div></section>
+    <p id="error" class="error"></p>
+  </main>
+<script>
+const $=id=>document.getElementById(id);
+$("key").value=sessionStorage.getItem("commender-key")||"";
+function headers(){return {"Authorization":"Bearer "+$("key").value,"Content-Type":"application/json"}}
+async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{...headers(),...(opts.headers||{})}});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||r.statusText);return j}
+async function health(){try{const r=await fetch("/health");$("health").textContent=r.ok?"healthy":"degraded";$("health").className="pill "+(r.ok?"online":"")}catch{$("health").textContent="offline"}}
+async function devices(){try{const j=await api("/api/devices");$("devices").innerHTML=j.items.length?j.items.map(d=>'<div class="device"><div><b>'+escapeHtml(d.name)+'</b><p>'+escapeHtml(d.hostname||d.platform||d.id)+'</p><code>'+d.id+'</code></div><span class="pill '+(d.online?'online':'')+'">'+(d.online?'online':'offline')+'</span></div>').join(""):"<p>No enrolled devices.</p>";$("error").textContent=""}catch(e){$("error").textContent=e.message}}
+$("save").onclick=()=>{sessionStorage.setItem("commender-key",$("key").value);devices()}
+$("refresh").onclick=devices;
+$("pair").onclick=async()=>{try{const j=await api("/api/pairing",{method:"POST",body:"{}"});$("pairing").innerHTML='Pairing code (10 min): <code>'+j.pairingCode+'</code>'}catch(e){$("error").textContent=e.message}}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+health();if($("key").value)devices();setInterval(health,15000);
+</script>
+</body>
+</html>
