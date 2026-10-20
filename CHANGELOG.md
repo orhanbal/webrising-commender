@@ -16,6 +16,7 @@
 - Added transaction-serialized quotas for device enrollment, member seats/pending invitations and tenant API tokens.
 - Added idempotent normalized billing events with payload-collision rejection and provider-bound subscription state.
 - Added provider event occurrence ordering, stale-event suppression, wrong-provider rejection, same-time order-conflict detection and provider subscription identity collision protection.
+- Restricted provider/customer/subscription identity binding to the normalized verified-event path; manual plan assignments remain provider-neutral.
 - Added SaaS CI coverage for billing-required, quota-exceeded and past-due allocation gates.
 
 ## 0.1.0 - Unreleased
