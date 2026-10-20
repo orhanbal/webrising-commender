@@ -135,7 +135,13 @@ try {
   assert.equal(read.encoding, "utf8");
   assert.equal(read.content, "hello-from-real-agent");
 
-  const execToken = await approval(deviceId, "process_exec");
+  const execAction = {
+    kind: "process_exec",
+    command: "printf agent-process-ok",
+    cwd: tempRoot,
+    timeoutMs: 10000,
+  };
+  const execToken = await approval(deviceId, execAction);
   const executed = await tool(104, "process_exec", {
     device_id: deviceId,
     command: "printf agent-process-ok",
@@ -146,7 +152,13 @@ try {
   assert.equal(executed.success, true);
   assert.match(executed.stdout, /agent-process-ok/);
 
-  const startToken = await approval(deviceId, "terminal_start");
+  const startAction = {
+    kind: "terminal_start",
+    cwd: tempRoot,
+    cols: 100,
+    rows: 30,
+  };
+  const startToken = await approval(deviceId, startAction);
   const started = await tool(105, "terminal_start", {
     device_id: deviceId,
     cwd: tempRoot,
@@ -173,7 +185,10 @@ try {
     return terminalText.includes("PTY_AGENT_OK");
   }, 10000, 250);
 
-  const stopToken = await approval(deviceId, "terminal_stop");
+  const stopToken = await approval(deviceId, {
+    kind: "terminal_stop",
+    sessionId: started.sessionId,
+  });
   const stopped = await tool(108, "terminal_stop", {
     device_id: deviceId,
     session_id: started.sessionId,
@@ -181,7 +196,13 @@ try {
   });
   assert.equal(stopped.ok, true);
 
-  const taskToken = await approval(deviceId, "task_start");
+  const taskAction = {
+    kind: "task_start",
+    command: "sleep 1; printf PERSISTENT_TASK_OK",
+    cwd: tempRoot,
+    timeoutMs: 10000,
+  };
+  const taskToken = await approval(deviceId, taskAction);
   const persistentTask = await tool(109, "task_start", {
     device_id: deviceId,
     command: "sleep 1; printf PERSISTENT_TASK_OK",
@@ -217,7 +238,11 @@ try {
   });
   assert.match(finalTaskStatus.result.stdout, /PERSISTENT_TASK_OK/);
 
-  const deleteToken = await approval(deviceId, "fs_delete");
+  const deleteToken = await approval(deviceId, {
+    kind: "fs_delete",
+    path: filePath,
+    recursive: false,
+  });
   const deleted = await tool(112, "fs_delete", {
     device_id: deviceId,
     path: filePath,
