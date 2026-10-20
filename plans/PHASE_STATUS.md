@@ -6,7 +6,7 @@ Updated: 2026-10-20
 |---|---|---|
 | 0 Foundation | DONE | canonical plan, architecture, protocol, CI, security model |
 | 1 Core relay | DONE | PostgreSQL, pairing, hashed device credentials, WSS relay, presence |
-| 2 Remote operations | DONE (MVP) | filesystem, process, system info, persistent PTY, persistent background tasks |
+| 2 Remote operations | DONE (MVP) | filesystem, recursive tree/search, surgical text edit, move/rename, process, system info, persistent PTY/tasks with reconnect discovery |
 | 3 MCP | DONE (MVP) | initialize, tools/list, tools/call, routing, structured tool errors |
 | 4 Console | DONE (MVP) | device management, filesystem, command/task/terminal controls, approvals, audit |
 | 5 Hardening | IMPLEMENTED — ACCEPTANCE PENDING | exact-operation approvals, native verification, RBAC, allowlisted roots, payload/resource caps, redaction, rate limits, replay/tamper rejection |

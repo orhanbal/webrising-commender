@@ -24,8 +24,8 @@ AI client (ChatGPT / Claude / Cursor / custom)
 | Native Rust Agent                         |
 | - reconnect/heartbeat                     |
 | - local path policy                       |
-| - file/process/system operations          |
-| - persistent PTY manager                  |
+| - file/search/edit/process/system ops     |
+| - persistent PTY + background tasks       |
 +-------------------------------------------+
 ```
 
@@ -50,4 +50,4 @@ The agent is the final enforcement boundary for filesystem roots. A compromised 
 
 Gateway is stateless for device transport except for live sockets and in-flight request promises. Durable state is PostgreSQL.
 
-PTY sessions are held by the native agent process, not by the AI client connection. This lets the AI disconnect/reconnect without killing the terminal.
+PTY sessions and background task state are held by the native agent process, not by the AI client connection. This lets the AI disconnect/reconnect without killing work. `terminal_list` and `task_list` allow a newly connected client to rediscover retained session/task ids.

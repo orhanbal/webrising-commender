@@ -7,7 +7,10 @@
 - PostgreSQL control plane and organization-scoped tenancy foundation.
 - Viewer/operator/admin/owner API-token RBAC.
 - Device presence and heartbeat.
-- Allowed-root filesystem list/stat/read/write/mkdir/delete.
+- Allowed-root filesystem list/stat/read/write/mkdir/delete/move.
+- Bounded recursive tree and filename search.
+- Bounded literal text/code search and guarded surgical replacement.
+- Task and PTY session discovery after AI reconnect.
 - Bounded filesystem reads and payload limits.
 - Process execute/list/kill with streamed capped output.
 - Persistent PTY sessions with bounded retained output.

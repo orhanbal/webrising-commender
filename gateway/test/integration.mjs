@@ -140,6 +140,12 @@ assert.equal(initialized.result.serverInfo.name, "webrising-commender");
 const listed = await rpc(2, "tools/list", {});
 assert.ok(listed.result.tools.some((tool) => tool.name === "system_info"));
 assert.ok(listed.result.tools.some((tool) => tool.name === "process_exec"));
+assert.ok(listed.result.tools.some((tool) => tool.name === "fs_tree"));
+assert.ok(listed.result.tools.some((tool) => tool.name === "fs_search"));
+assert.ok(listed.result.tools.some((tool) => tool.name === "code_search"));
+assert.ok(listed.result.tools.some((tool) => tool.name === "fs_replace"));
+assert.ok(listed.result.tools.some((tool) => tool.name === "task_list"));
+assert.ok(listed.result.tools.some((tool) => tool.name === "terminal_list"));
 
 const info = await rpc(3, "tools/call", {
   name: "system_info",

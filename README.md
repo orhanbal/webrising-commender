@@ -52,10 +52,14 @@ The agent initiates the connection. Controlled devices do not need an inbound fi
 - automatic reconnect with capped backoff
 - heartbeat and device presence
 - agent-side allowlisted filesystem roots
-- filesystem list/stat/read/write/mkdir/delete
+- filesystem list/stat/read/write/mkdir/delete/move
+- bounded recursive directory tree
+- recursive filename search
+- bounded literal text/code search
+- guarded surgical text replacement
 - process list/execute/kill
-- persistent PTY sessions
-- persistent background command tasks
+- persistent PTY sessions with session discovery after reconnect
+- persistent background command tasks with task discovery after reconnect
 - system information
 - request cancellation
 - output/payload limits
@@ -81,6 +85,7 @@ The agent initiates the connection. Controlled devices do not need an inbound fi
 - online/offline device view
 - system information
 - filesystem browser + text editing
+- AI/MCP tree, filename search, code/text search, move/rename and guarded replace tools
 - approved command execution
 - persistent background task control
 - persistent terminal UI
