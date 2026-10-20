@@ -53,3 +53,46 @@ Use WSS/HTTPS outside trusted local development.
 6. Verify a high-risk denial + approved call.
 
 Breaking protocol changes require a compatibility window.
+
+
+## Native agent service identity
+
+Run the native agent with the least privilege needed for its configured roots. Elevated service identities expand the blast radius of command execution and filesystem access.
+
+### Windows
+
+The installer refuses an implicit LocalSystem installation. Recommended:
+
+```powershell
+$cred = Get-Credential
+.\scripts\install-windows.ps1 `
+  -BinaryPath .\webrising-commender.exe `
+  -ConfigPath "$env:APPDATA\webrising-commender\agent.json" `
+  -Credential $cred
+```
+
+LocalSystem is available only as an explicit opt-in:
+
+```powershell
+.\scripts\install-windows.ps1 -BinaryPath .\webrising-commender.exe -ConfigPath C:\secure\agent.json -AllowLocalSystem
+```
+
+Use LocalSystem only when the controlled roots genuinely require machine-level privilege.
+
+### Linux
+
+When invoked through `sudo`, the installer uses `SUDO_USER`. Otherwise pass the service account explicitly:
+
+```bash
+sudo ./scripts/install-linux.sh ./webrising-commender ~/.config/webrising-commender/agent.json myuser
+```
+
+Running as root requires an explicit acknowledgement:
+
+```bash
+sudo COMMANDER_ALLOW_ROOT=1 ./scripts/install-linux.sh ./webrising-commender /root/.config/webrising-commender/agent.json root
+```
+
+### macOS
+
+The provided installer creates a per-user LaunchAgent, so it naturally runs with that user's permissions.
