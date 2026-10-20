@@ -35,7 +35,7 @@
           <label><span class="label">Email</span><input id="loginEmail" type="email" autocomplete="username" placeholder="you@example.com"></label>
           <label><span class="label">Password</span><input id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••••••••"></label>
         </div>
-        <div class="row" style="margin-top:10px"><button id="loginButton">Sign in</button><button id="logoutButton" class="secondary">Sign out</button><span id="authState" class="pill">not signed in</span></div>
+        <div class="row" style="margin-top:10px"><button id="loginButton">Sign in</button><button id="signupOpen" class="secondary">Create account</button><button id="resetOpen" class="secondary">Forgot password</button><button id="logoutButton" class="secondary">Sign out</button><span id="authState" class="pill">not signed in</span></div>
         <p class="hint">Browser sessions use HttpOnly cookies. Passwords and session tokens are never stored in localStorage.</p>
       </div>
       <div>
@@ -48,6 +48,42 @@
       </div>
     </div>
     <p id="globalError" class="error"></p>
+  </section>
+
+  <section id="signupCard" class="login hidden">
+    <div class="row" style="justify-content:space-between"><div><h3 style="margin:0 0 6px">Create account</h3><p class="hint" style="margin:0">SaaS signup is activated only when your own SMTP delivery is configured.</p></div><button id="signupClose" class="secondary">Close</button></div>
+    <div class="toolbar" style="margin-top:14px">
+      <label><span class="label">Email</span><input id="signupEmail" type="email" autocomplete="email" placeholder="you@example.com"></label>
+      <label><span class="label">Workspace name</span><input id="signupWorkspace" autocomplete="organization" placeholder="My Workspace"></label>
+      <label><span class="label">Password</span><input id="signupPassword" type="password" autocomplete="new-password" placeholder="Minimum 12 characters"></label>
+      <button id="signupSubmit">Create account</button>
+    </div>
+    <p id="signupStatus" class="hint"></p>
+    <p id="signupError" class="error"></p>
+  </section>
+
+  <section id="resetRequestCard" class="login hidden">
+    <div class="row" style="justify-content:space-between"><div><h3 style="margin:0 0 6px">Reset password</h3><p class="hint" style="margin:0">If the account exists, a reset link will be sent through the configured SMTP server.</p></div><button id="resetRequestClose" class="secondary">Close</button></div>
+    <div class="toolbar" style="margin-top:14px">
+      <label><span class="label">Email</span><input id="resetEmail" type="email" autocomplete="email" placeholder="you@example.com"></label>
+      <button id="resetRequestSubmit">Send reset link</button>
+    </div>
+    <p id="resetRequestStatus" class="hint"></p>
+    <p id="resetRequestError" class="error"></p>
+  </section>
+
+  <section id="resetConfirmCard" class="login hidden">
+    <div class="row" style="justify-content:space-between"><div><h3 style="margin:0 0 6px">Choose a new password</h3><p class="hint" style="margin:0">The reset token is read from the URL fragment and is not sent in the page request URL.</p></div><span id="resetConfirmState" class="pill">reset link</span></div>
+    <div class="toolbar" style="margin-top:14px">
+      <label><span class="label">New password</span><input id="resetNewPassword" type="password" autocomplete="new-password" placeholder="Minimum 12 characters"></label>
+      <button id="resetConfirmSubmit">Set new password</button>
+    </div>
+    <p id="resetConfirmStatus" class="hint"></p>
+    <p id="resetConfirmError" class="error"></p>
+  </section>
+
+  <section id="verifyCard" class="login hidden">
+    <div class="row" style="justify-content:space-between"><div><h3 style="margin:0 0 6px">Verify account</h3><p id="verifyStatus" class="hint" style="margin:0">Verifying your email…</p></div><span id="verifyState" class="pill">verifying</span></div>
   </section>
 
   <section id="inviteCard" class="login hidden">
@@ -209,7 +245,10 @@ let terminalSession=null;
 let terminalTimer=null;
 let currentIdentity=null;
 let organizations=[];
-let invitationToken=new URLSearchParams(location.hash.startsWith("#")?location.hash.slice(1):location.hash).get("invite")||"";
+const hashParams=new URLSearchParams(location.hash.startsWith("#")?location.hash.slice(1):location.hash);
+let invitationToken=hashParams.get("invite")||"";
+let verificationToken=hashParams.get("verify")||"";
+let passwordResetToken=hashParams.get("reset")||"";
 
 $("key").value=sessionStorage.getItem("commender-key")||"";
 const cookieValue=name=>document.cookie.split(";").map(x=>x.trim()).find(x=>x.startsWith(name+"="))?.slice(name.length+1)||"";
@@ -278,6 +317,12 @@ async function refreshIdentity(){
 }
 $("loginButton").onclick=async()=>{try{clearError();sessionStorage.removeItem("commender-key");$("key").value="";const r=await fetch("/api/auth/login",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("loginEmail").value.trim(),password:$("loginPassword").value})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(body.error||("HTTP "+r.status));$("loginPassword").value="";await refreshIdentity()}catch(e){showError(e)}}
 $("logoutButton").onclick=async()=>{try{if(currentIdentity)await api("/api/auth/logout",{method:"POST",body:"{}"});sessionStorage.removeItem("commender-key");$("key").value="";selected=null;currentIdentity=null;syncSelection();await refreshIdentity()}catch(e){showError(e)}}
+$("signupOpen").onclick=()=>{$("signupCard").classList.remove("hidden");$("signupError").textContent="";$("signupStatus").textContent=""}
+$("signupClose").onclick=()=>{$("signupCard").classList.add("hidden")}
+$("signupSubmit").onclick=async()=>{try{$("signupError").textContent="";$("signupStatus").textContent="";const email=$("signupEmail").value.trim();const workspaceName=$("signupWorkspace").value.trim();const password=$("signupPassword").value;if(!email||!workspaceName||password.length<12)throw new Error("Enter an email, workspace name and a password of at least 12 characters.");const r=await fetch("/api/auth/signup",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,workspaceName,password})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(apiError(body,r.status));$("signupPassword").value="";$("signupStatus").textContent="If signup is available for this address, check your email for the verification link."}catch(e){$("signupError").textContent=e.message||String(e)}}
+$("resetOpen").onclick=()=>{$("resetRequestCard").classList.remove("hidden");$("resetRequestError").textContent="";$("resetRequestStatus").textContent="";$("resetEmail").value=$("loginEmail").value.trim()}
+$("resetRequestClose").onclick=()=>{$("resetRequestCard").classList.add("hidden")}
+$("resetRequestSubmit").onclick=async()=>{try{$("resetRequestError").textContent="";const email=$("resetEmail").value.trim();if(!email)throw new Error("Enter your email address.");const r=await fetch("/api/auth/password-reset/request",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(apiError(body,r.status));$("resetRequestStatus").textContent="If the account exists, a reset link has been queued for delivery."}catch(e){$("resetRequestError").textContent=e.message||String(e)}}
 $("saveKey").onclick=()=>{sessionStorage.setItem("commender-key",$("key").value);refreshIdentity()}
 $("forgetKey").onclick=()=>{sessionStorage.removeItem("commender-key");$("key").value="";selected=null;syncSelection();refreshIdentity()}
 $("refreshDevices").onclick=loadDevices;
@@ -368,6 +413,32 @@ $("switchOrganization").onclick=async()=>{try{const organizationId=$("organizati
 $("createOrganization").onclick=async()=>{try{const name=prompt("New workspace name");if(!name?.trim())return;await api("/api/auth/organizations",{method:"POST",body:JSON.stringify({name:name.trim()})});selected=null;syncSelection();await refreshIdentity();await loadAccess()}catch(e){showError(e)}}
 $("renameOrganization").onclick=async()=>{try{const name=$("organizationName").value.trim();if(!name)throw new Error("Enter a workspace name.");await api("/api/organization",{method:"PATCH",body:JSON.stringify({name})});await refreshIdentity();await loadAccess()}catch(e){showError(e)}}
 
+async function verifySignupLink(){
+  if(!verificationToken)return;
+  $("verifyCard").classList.remove("hidden");
+  try{
+    const r=await fetch("/api/auth/signup/verify",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:verificationToken})});
+    const body=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(apiError(body,r.status));
+    verificationToken="";
+    history.replaceState(null,"",location.pathname+location.search);
+    $("verifyState").textContent="verified";
+    $("verifyState").className="pill ok";
+    $("verifyStatus").textContent="Email verified. Your workspace has been created and you are signed in.";
+    await refreshIdentity();
+  }catch(e){
+    $("verifyState").textContent="invalid";
+    $("verifyState").className="pill bad";
+    $("verifyStatus").textContent=e.message||String(e);
+  }
+}
+
+async function preparePasswordReset(){
+  if(!passwordResetToken)return;
+  $("resetConfirmCard").classList.remove("hidden");
+}
+$("resetConfirmSubmit").onclick=async()=>{try{$("resetConfirmError").textContent="";const newPassword=$("resetNewPassword").value;if(newPassword.length<12)throw new Error("Password must be at least 12 characters.");const r=await fetch("/api/auth/password-reset/confirm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:passwordResetToken,newPassword})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(apiError(body,r.status));passwordResetToken="";history.replaceState(null,"",location.pathname+location.search);$("resetNewPassword").value="";$("resetConfirmState").textContent="complete";$("resetConfirmState").className="pill ok";$("resetConfirmStatus").textContent="Password changed. Sign in with your new password."}catch(e){$("resetConfirmState").textContent="invalid";$("resetConfirmState").className="pill bad";$("resetConfirmError").textContent=e.message||String(e)}}
+
 async function loadInvitePreview(){
   if(!invitationToken)return;
   $("inviteCard").classList.remove("hidden");
@@ -394,7 +465,7 @@ $("acceptInvite").onclick=async()=>{try{const password=$("invitePassword").value
 async function loadAudit(){try{const j=await api("/api/audit?limit=100");$("auditBody").innerHTML=j.items.map(x=>'<tr><td>'+escapeHtml(new Date(x.created_at).toLocaleString())+'</td><td>'+escapeHtml(x.actor)+'</td><td>'+escapeHtml(x.device_id||"")+'</td><td>'+escapeHtml(x.tool)+'</td><td>'+escapeHtml(x.risk)+'</td><td>'+escapeHtml(x.outcome)+'</td><td>'+escapeHtml(x.detail)+'</td></tr>').join("")}catch(e){showError(e)}}
 $("loadAudit").onclick=loadAudit;
 
-health();setInterval(health,15000);loadInvitePreview();refreshIdentity()
+health();setInterval(health,15000);verifySignupLink();preparePasswordReset();loadInvitePreview();refreshIdentity()
 
 </script>
 </body>
