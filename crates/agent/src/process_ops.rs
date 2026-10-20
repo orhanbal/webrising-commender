@@ -16,6 +16,42 @@ pub async fn exec(
     cwd: Option<&str>,
     timeout_ms: Option<u64>,
 ) -> Result<Value> {
+    exec_with_timeout_bounds(
+        policy,
+        command,
+        cwd,
+        timeout_ms,
+        30_000,
+        10 * 60_000,
+    )
+    .await
+}
+
+pub async fn exec_task(
+    policy: &PathPolicy,
+    command: &str,
+    cwd: Option<&str>,
+    timeout_ms: Option<u64>,
+) -> Result<Value> {
+    exec_with_timeout_bounds(
+        policy,
+        command,
+        cwd,
+        timeout_ms,
+        60 * 60_000,
+        24 * 60 * 60_000,
+    )
+    .await
+}
+
+async fn exec_with_timeout_bounds(
+    policy: &PathPolicy,
+    command: &str,
+    cwd: Option<&str>,
+    timeout_ms: Option<u64>,
+    default_timeout_ms: u64,
+    max_timeout_ms: u64,
+) -> Result<Value> {
     if command.trim().is_empty() {
         return Err(anyhow!("command cannot be empty"));
     }
@@ -63,7 +99,11 @@ pub async fn exec(
     let stdout_task = tokio::spawn(read_capped(stdout, OUTPUT_LIMIT));
     let stderr_task = tokio::spawn(read_capped(stderr, OUTPUT_LIMIT));
 
-    let timeout = Duration::from_millis(timeout_ms.unwrap_or(30_000).clamp(100, 10 * 60_000));
+    let timeout = Duration::from_millis(
+        timeout_ms
+            .unwrap_or(default_timeout_ms)
+            .clamp(100, max_timeout_ms),
+    );
     let status = match tokio::time::timeout(timeout, child.wait()).await {
         Ok(result) => result.context("failed while waiting for command")?,
         Err(_) => {
