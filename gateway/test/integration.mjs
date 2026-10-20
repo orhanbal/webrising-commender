@@ -730,6 +730,77 @@ const forbiddenOwnerRevoke = await fetch(
 );
 assert.equal(forbiddenOwnerRevoke.status, 403);
 
+const existingUserInviteOrg = await jsonFetch("/api/organizations", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({ name: "CI Existing User Invite" }),
+});
+const existingUserInviteOwnerToken = await jsonFetch("/api/tokens", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    name: "Existing Invite Bootstrap",
+    role: "owner",
+    organizationId: existingUserInviteOrg.item.id,
+  }),
+});
+const existingUserInviteHeaders = {
+  Authorization: `Bearer ${existingUserInviteOwnerToken.token}`,
+  "Content-Type": "application/json",
+};
+const existingUserInvitationResponse = await fetch(base + "/api/invitations", {
+  method: "POST",
+  headers: existingUserInviteHeaders,
+  body: JSON.stringify({
+    email: "owner@example.test",
+    role: "admin",
+  }),
+});
+assert.equal(existingUserInvitationResponse.status, 201);
+const existingUserInvitation = await existingUserInvitationResponse.json();
+
+const existingUserPreviewResponse = await fetch(
+  base + "/api/invitations/preview?token=" + encodeURIComponent(existingUserInvitation.inviteToken),
+);
+assert.equal(existingUserPreviewResponse.status, 200);
+assert.equal((await existingUserPreviewResponse.json()).item.existingUser, true);
+
+const existingUserWrongPassword = await fetch(base + "/api/invitations/accept", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    token: existingUserInvitation.inviteToken,
+    password: "wrong-password-value",
+  }),
+});
+assert.equal(existingUserWrongPassword.status, 401);
+assert.equal((await existingUserWrongPassword.json()).error, "invalid_credentials");
+
+const existingUserAcceptResponse = await fetch(base + "/api/invitations/accept", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    token: existingUserInvitation.inviteToken,
+    password: "correct-horse-battery-staple",
+  }),
+});
+assert.equal(existingUserAcceptResponse.status, 200);
+const existingUserAccept = await existingUserAcceptResponse.json();
+assert.equal(existingUserAccept.userId, browserMe.userId);
+assert.equal(existingUserAccept.organizationId, existingUserInviteOrg.item.id);
+assert.equal(existingUserAccept.role, "admin");
+
+const forbiddenOwnerInvite = await fetch(base + "/api/invitations", {
+  method: "POST",
+  headers: tenantAdminHeaders,
+  body: JSON.stringify({
+    email: "future-owner@example.test",
+    role: "owner",
+  }),
+});
+assert.equal(forbiddenOwnerInvite.status, 403);
+assert.equal((await forbiddenOwnerInvite.json()).error, "cannot_grant_role");
+
 const browserLogoutResponse = await fetch(base + "/api/auth/logout", {
   method: "POST",
   headers: {
