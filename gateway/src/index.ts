@@ -871,75 +871,92 @@ const server = http.createServer(async (req, res) => {
     if (memberMatch && (req.method === "PATCH" || req.method === "DELETE")) {
       if (!requireRole(principal!, "admin", res)) return;
       const userId = memberMatch[1]!;
-      const target = await db.query<{ role: Role; email: string }>(
-        `select m.role,u.email
-           from organization_members m
-           join users u on u.id=m.user_id
-          where m.organization_id=$1 and m.user_id=$2`,
-        [principal!.organizationId, userId],
-      );
-      const member = target.rows[0];
-      if (!member) return void json(res, 404, { error: "member_not_found" });
-      if (!roleAtLeast(principal!, member.role)) {
-        return void json(res, 403, { error: "cannot_manage_higher_role", targetRole: member.role });
+      const nextRole = req.method === "PATCH"
+        ? z.object({ role: z.enum(["viewer", "operator", "admin", "owner"]) }).parse(await readJson(req)).role
+        : null;
+      if (nextRole && !roleAtLeast(principal!, nextRole)) {
+        return void json(res, 403, { error: "cannot_grant_role", requestedRole: nextRole });
       }
 
-      const owners = async () => {
-        const count = await db.query<{ count: string }>(
-          "select count(*)::text as count from organization_members where organization_id=$1 and role='owner'",
+      const client = await db.connect();
+      let auditDetail: Record<string, unknown> | null = null;
+      try {
+        await client.query("begin");
+        const lockedMembers = await client.query<{ user_id: string; role: Role; email: string }>(
+          `select m.user_id,m.role,u.email
+             from organization_members m
+             join users u on u.id=m.user_id
+            where m.organization_id=$1
+            order by m.user_id
+            for update of m`,
           [principal!.organizationId],
         );
-        return Number(count.rows[0]?.count || 0);
-      };
-
-      if (req.method === "PATCH") {
-        const body = z.object({
-          role: z.enum(["viewer", "operator", "admin", "owner"]),
-        }).parse(await readJson(req));
-        if (!roleAtLeast(principal!, body.role)) {
-          return void json(res, 403, { error: "cannot_grant_role", requestedRole: body.role });
+        const member = lockedMembers.rows.find((row) => row.user_id === userId);
+        if (!member) {
+          await client.query("rollback");
+          return void json(res, 404, { error: "member_not_found" });
         }
-        if (member.role === "owner" && body.role !== "owner" && (await owners()) <= 1) {
+        if (!roleAtLeast(principal!, member.role)) {
+          await client.query("rollback");
+          return void json(res, 403, { error: "cannot_manage_higher_role", targetRole: member.role });
+        }
+
+        const ownerCount = lockedMembers.rows.filter((row) => row.role === "owner").length;
+        if (
+          member.role === "owner" &&
+          ownerCount <= 1 &&
+          (req.method === "DELETE" || nextRole !== "owner")
+        ) {
+          await client.query("rollback");
           return void json(res, 409, { error: "last_owner_required" });
         }
-        const updated = await db.query(
-          `update organization_members
-              set role=$3
-            where organization_id=$1 and user_id=$2
-            returning organization_id,user_id,role,created_at`,
-          [principal!.organizationId, userId, body.role],
+
+        if (req.method === "PATCH") {
+          const updated = await client.query(
+            `update organization_members
+                set role=$3
+              where organization_id=$1 and user_id=$2
+              returning organization_id,user_id,role,created_at`,
+            [principal!.organizationId, userId, nextRole],
+          );
+          await client.query("commit");
+          auditDetail = { userId, email: member.email, from: member.role, to: nextRole };
+          await auditControl(
+            principal!,
+            null,
+            "member.role_update",
+            "high",
+            "success",
+            JSON.stringify(auditDetail),
+          );
+          return void json(res, 200, { item: updated.rows[0] });
+        }
+
+        await client.query(
+          "delete from organization_members where organization_id=$1 and user_id=$2",
+          [principal!.organizationId, userId],
         );
+        await client.query(
+          "update browser_sessions set revoked_at=coalesce(revoked_at,now()) where organization_id=$1 and user_id=$2 and revoked_at is null",
+          [principal!.organizationId, userId],
+        );
+        await client.query("commit");
+        auditDetail = { userId, email: member.email, role: member.role };
         await auditControl(
           principal!,
           null,
-          "member.role_update",
+          "member.remove",
           "high",
           "success",
-          JSON.stringify({ userId, email: member.email, from: member.role, to: body.role }),
+          JSON.stringify(auditDetail),
         );
-        return void json(res, 200, { item: updated.rows[0] });
+        return void json(res, 200, { ok: true });
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
       }
-
-      if (member.role === "owner" && (await owners()) <= 1) {
-        return void json(res, 409, { error: "last_owner_required" });
-      }
-      await db.query(
-        "delete from organization_members where organization_id=$1 and user_id=$2",
-        [principal!.organizationId, userId],
-      );
-      await db.query(
-        "update browser_sessions set revoked_at=coalesce(revoked_at,now()) where organization_id=$1 and user_id=$2 and revoked_at is null",
-        [principal!.organizationId, userId],
-      );
-      await auditControl(
-        principal!,
-        null,
-        "member.remove",
-        "high",
-        "success",
-        JSON.stringify({ userId, email: member.email, role: member.role }),
-      );
-      return void json(res, 200, { ok: true });
     }
 
     if (req.method === "GET" && url.pathname === "/api/tokens") {
