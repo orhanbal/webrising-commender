@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 
 function required(name: string, min = 32) {
   const value = String(process.env[name] || "");
@@ -24,9 +25,15 @@ export function isControlAuthorized(header: string | undefined) {
   return supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
 }
 
+export type ApprovalRequest = {
+  kind: string;
+  [key: string]: unknown;
+};
+
 export type ApprovalClaim = {
   deviceId: string;
   action: string;
+  request: ApprovalRequest;
   exp: number;
   nonce: string;
 };
@@ -46,10 +53,11 @@ export function deviceApprovalKeyForAgent(deviceId: string) {
   return deriveDeviceApprovalKey(deviceId).toString("base64url");
 }
 
-export function issueApproval(deviceId: string, action: string, ttlSeconds = 120) {
+export function issueApproval(deviceId: string, request: ApprovalRequest, ttlSeconds = 120) {
   const claim: ApprovalClaim = {
     deviceId,
-    action,
+    action: request.kind,
+    request,
     exp: Math.floor(Date.now() / 1000) + Math.max(15, Math.min(ttlSeconds, 600)),
     nonce: randomToken(18),
   };
@@ -64,7 +72,7 @@ export function issueApproval(deviceId: string, action: string, ttlSeconds = 120
 export function verifyApprovalClaim(
   token: string | undefined | null,
   deviceId: string,
-  action: string,
+  request: ApprovalRequest,
 ): ApprovalClaim | null {
   if (!token) return null;
   const [payload, signature] = token.split(".");
@@ -85,7 +93,8 @@ export function verifyApprovalClaim(
     const claim = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as ApprovalClaim;
     if (
       claim.deviceId !== deviceId ||
-      claim.action !== action ||
+      claim.action !== request.kind ||
+      !isDeepStrictEqual(claim.request, request) ||
       claim.exp < Math.floor(Date.now() / 1000) ||
       typeof claim.nonce !== "string" ||
       claim.nonce.length < 16
@@ -98,8 +107,12 @@ export function verifyApprovalClaim(
   }
 }
 
-export function verifyApproval(token: string | undefined | null, deviceId: string, action: string) {
-  return verifyApprovalClaim(token, deviceId, action) !== null;
+export function verifyApproval(
+  token: string | undefined | null,
+  deviceId: string,
+  request: ApprovalRequest,
+) {
+  return verifyApprovalClaim(token, deviceId, request) !== null;
 }
 
 const secretPatterns = [
