@@ -76,6 +76,15 @@ jobs:
       HOST: 127.0.0.1
       PORT: 8787
       DEPLOYMENT_MODE: saas
+      PUBLIC_SIGNUP_ENABLED: true
+      SMTP_HOST: 127.0.0.1
+      SMTP_PORT: 2525
+      SMTP_SECURITY: none
+      SMTP_HELO_NAME: commender-ci
+      SMTP_FROM: WebRising Commender <commender@example.test>
+      MAIL_OUTBOX_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      MAIL_DELIVERY_INTERVAL_MS: 250
+      MAIL_DELIVERY_BATCH: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -85,6 +94,18 @@ jobs:
           cache-dependency-path: gateway/package-lock.json
       - run: npm ci
       - run: npm run build
+      - name: Start local SMTP acceptance server
+        run: |
+          node test/fake-smtp.mjs > /tmp/commender-smtp-server.log 2>&1 &
+          echo $! > /tmp/commender-smtp-server.pid
+          for i in {1..20}; do
+            if grep -q "fake smtp listening" /tmp/commender-smtp-server.log 2>/dev/null; then
+              exit 0
+            fi
+            sleep 0.25
+          done
+          cat /tmp/commender-smtp-server.log
+          exit 1
       - name: Start gateway
         run: |
           node dist/index.js > /tmp/commender-gateway.log 2>&1 &
@@ -99,9 +120,12 @@ jobs:
           exit 1
       - name: Run integration acceptance
         run: npm run integration
-      - name: Print gateway log on failure
+      - name: Print gateway and SMTP logs on failure
         if: failure()
-        run: cat /tmp/commender-gateway.log || true
+        run: |
+          cat /tmp/commender-gateway.log || true
+          cat /tmp/commender-smtp-server.log || true
+          cat /tmp/commender-smtp.jsonl || true
 
   agent-e2e:
     runs-on: ubuntu-latest
