@@ -33,19 +33,11 @@ export async function migrate() {
     );
     create unique index if not exists users_email_lower_uidx on users(lower(email));
 
-    do $
-    begin
-      if not exists (
-        select 1
-          from information_schema.columns
-         where table_schema='public'
-           and table_name='users'
-           and column_name='email_verified_at'
-      ) then
-        alter table users add column email_verified_at timestamptz;
-        update users set email_verified_at=created_at where email_verified_at is null;
-      end if;
-    end $;
+    alter table users add column if not exists email_verified_at timestamptz;
+    update users
+       set email_verified_at=coalesce(email_verified_at,created_at)
+     where email_verified_at is null;
+    alter table users alter column email_verified_at set not null;
 
     create table if not exists organization_members (
       organization_id uuid not null references organizations(id) on delete cascade,
