@@ -8,7 +8,7 @@ const mailModule = await import("./mail.js");
 const baseConfig = {
   host: "127.0.0.1",
   port: 25,
-  security: "plain",
+  security: "plain" as const,
   username: null,
   password: null,
   from: "commender@example.test",
@@ -92,7 +92,7 @@ test("first-party SMTP client completes a local relay conversation", async (t) =
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
   });
-  t.after(() => new Promise((resolve) => server.close(resolve)));
+  t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
 
   const address = server.address();
   assert.ok(address && typeof address === "object");
