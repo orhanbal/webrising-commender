@@ -827,6 +827,7 @@ const server = http.createServer(async (req, res) => {
         provider: z.string().trim().min(1).max(80).transform((value) => value.toLowerCase()),
         eventId: z.string().trim().min(1).max(255),
         eventType: z.string().trim().min(1).max(120),
+        occurredAt: z.string().datetime({ offset: true }),
         organizationId: z.string().uuid(),
         subscription: z.object({
           planKey: z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9_-]{1,63}$/),
@@ -841,6 +842,7 @@ const server = http.createServer(async (req, res) => {
         provider: body.provider,
         eventId: body.eventId,
         eventType: body.eventType,
+        occurredAt: body.occurredAt,
         organizationId: body.organizationId,
         subscription: {
           planKey: body.subscription.planKey,
@@ -863,8 +865,25 @@ const server = http.createServer(async (req, res) => {
             provider: body.provider,
             eventId: body.eventId,
             eventType: body.eventType,
+            occurredAt: body.occurredAt,
             planKey: body.subscription.planKey,
             status: body.subscription.status,
+          }),
+        );
+      } else if (result.stale || result.providerMismatch) {
+        await auditForOrganization(
+          principal!,
+          body.organizationId,
+          null,
+          "billing.event.ignore",
+          "high",
+          "denied",
+          JSON.stringify({
+            provider: body.provider,
+            eventId: body.eventId,
+            eventType: body.eventType,
+            occurredAt: body.occurredAt,
+            reason: result.stale ? "stale" : "provider_mismatch",
           }),
         );
       }
