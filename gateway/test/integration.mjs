@@ -141,18 +141,45 @@ const denied = await rpc(4, "tools/call", {
 assert.equal(denied.result.isError, true);
 assert.equal(toolText(denied).error, "approval_required");
 
+const approvedAction = {
+  kind: "process_exec",
+  command: "echo approved",
+};
+
+const tamperApproval = await jsonFetch("/api/approvals", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    deviceId: enrolled.deviceId,
+    action: approvedAction,
+    ttlSeconds: 60,
+  }),
+});
+assert.equal(typeof tamperApproval.approvalToken, "string");
+
+const tampered = await rpc(5, "tools/call", {
+  name: "process_exec",
+  arguments: {
+    device_id: enrolled.deviceId,
+    command: "echo tampered",
+    approval_token: tamperApproval.approvalToken,
+  },
+});
+assert.equal(tampered.result.isError, true);
+assert.equal(toolText(tampered).error, "approval_required");
+
 const approval = await jsonFetch("/api/approvals", {
   method: "POST",
   headers: authHeaders,
   body: JSON.stringify({
     deviceId: enrolled.deviceId,
-    action: "process_exec",
+    action: approvedAction,
     ttlSeconds: 60,
   }),
 });
 assert.equal(typeof approval.approvalToken, "string");
 
-const approved = await rpc(5, "tools/call", {
+const approved = await rpc(6, "tools/call", {
   name: "process_exec",
   arguments: {
     device_id: enrolled.deviceId,
@@ -164,11 +191,11 @@ const approvedData = toolText(approved);
 assert.equal(approvedData.success, true);
 assert.equal(approvedData.stdout, "approved");
 
-const replayed = await rpc(6, "tools/call", {
+const replayed = await rpc(7, "tools/call", {
   name: "process_exec",
   arguments: {
     device_id: enrolled.deviceId,
-    command: "echo replayed",
+    command: "echo approved",
     approval_token: approval.approvalToken,
   },
 });
