@@ -646,6 +646,27 @@ assert.equal(browserWorkspaceResponse.status, 201);
 const browserWorkspace = await browserWorkspaceResponse.json();
 assert.equal(browserWorkspace.item.role, "owner");
 
+const unprovisionedBillingResponse = await fetch(base + "/api/billing", {
+  headers: { Cookie: browserCookies },
+});
+assert.equal(unprovisionedBillingResponse.status, 200);
+const unprovisionedBilling = await unprovisionedBillingResponse.json();
+assert.equal(unprovisionedBilling.mode, "saas");
+assert.equal(unprovisionedBilling.entitled, false);
+assert.equal(unprovisionedBilling.reason, "billing_required");
+
+const unprovisionedPairingResponse = await fetch(base + "/api/pairing", {
+  method: "POST",
+  headers: {
+    Cookie: browserCookies,
+    "Content-Type": "application/json",
+    "X-CSRF-Token": browserLogin.csrfToken,
+  },
+  body: "{}",
+});
+assert.equal(unprovisionedPairingResponse.status, 402);
+assert.equal((await unprovisionedPairingResponse.json()).error, "billing_required");
+
 const renameWorkspaceResponse = await fetch(base + "/api/organization", {
   method: "PATCH",
   headers: {
@@ -751,6 +772,12 @@ const tenantAdminHeaders = {
   Authorization: `Bearer ${tenantAdminToken.token}`,
   "Content-Type": "application/json",
 };
+
+const forbiddenBillingAdmin = await fetch(base + "/api/admin/billing/plans", {
+  headers: tenantAdminHeaders,
+});
+assert.equal(forbiddenBillingAdmin.status, 403);
+assert.equal((await forbiddenBillingAdmin.json()).error, "global_control_required");
 
 const forbiddenOwnerMembershipChange = await fetch(base + `/api/members/${browserMe.userId}`, {
   method: "PATCH",
@@ -1016,6 +1043,20 @@ const duplicateEvent = await jsonFetch("/api/admin/billing/events", {
 });
 assert.equal(duplicateEvent.applied, false);
 assert.equal(duplicateEvent.duplicate, true);
+
+const conflictingEventResponse = await fetch(base + "/api/admin/billing/events", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    ...normalizedEvent,
+    subscription: {
+      ...normalizedEvent.subscription,
+      status: "canceled",
+    },
+  }),
+});
+assert.equal(conflictingEventResponse.status, 409);
+assert.equal((await conflictingEventResponse.json()).error, "billing_event_conflict");
 
 const eventBilling = await jsonFetch(
   `/api/admin/organizations/${eventOrg.item.id}/billing`,
