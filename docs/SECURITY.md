@@ -63,6 +63,7 @@ The web console supports first-class browser sessions in addition to control/API
 Workspace invitation URLs are bearer secrets. The raw invitation token is never persisted; only its SHA-256 verifier is stored.
 
 - Invitation preview and acceptance endpoints are independently rate-limited.
+- Invitation links place the bearer token in the URL fragment (`#invite=...`), which browsers do not send in HTTP request URLs; preview sends the token in a POST body to avoid proxy/access-log leakage.
 - Invitations are single-use, expiring, and revocable.
 - Existing accounts must prove knowledge of their current password before an invitation can create a new membership.
 - New accounts are created only while consuming a valid invitation.
