@@ -32,6 +32,56 @@ export async function migrate() {
     );
     create unique index if not exists users_email_lower_uidx on users(lower(email));
 
+    alter table users add column if not exists email_verified_at timestamptz;
+    update users set email_verified_at=coalesce(email_verified_at,created_at,now())
+      where email_verified_at is null;
+
+    create table if not exists pending_signups (
+      id uuid primary key default gen_random_uuid(),
+      email text not null,
+      password_hash text not null,
+      workspace_name text not null,
+      token_hash text not null unique,
+      expires_at timestamptz not null,
+      consumed_at timestamptz,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create unique index if not exists pending_signups_email_lower_uidx
+      on pending_signups(lower(email));
+    create index if not exists pending_signups_expiry_idx
+      on pending_signups(expires_at);
+
+    create table if not exists auth_tokens (
+      id uuid primary key default gen_random_uuid(),
+      user_id uuid not null references users(id) on delete cascade,
+      purpose text not null check (purpose in ('password_reset')),
+      token_hash text not null unique,
+      expires_at timestamptz not null,
+      consumed_at timestamptz,
+      created_at timestamptz not null default now()
+    );
+    create index if not exists auth_tokens_user_purpose_idx
+      on auth_tokens(user_id,purpose,created_at desc);
+
+    create table if not exists mail_outbox (
+      id bigserial primary key,
+      recipient_hash text not null,
+      payload_nonce text not null,
+      payload_ciphertext text not null,
+      payload_tag text not null,
+      attempts integer not null default 0,
+      next_attempt_at timestamptz not null default now(),
+      locked_at timestamptz,
+      locked_by text,
+      sent_at timestamptz,
+      last_error text,
+      created_at timestamptz not null default now()
+    );
+    create index if not exists mail_outbox_delivery_idx
+      on mail_outbox(sent_at,next_attempt_at,created_at)
+      where sent_at is null;
+
     create table if not exists organization_members (
       organization_id uuid not null references organizations(id) on delete cascade,
       user_id uuid not null references users(id) on delete cascade,
@@ -244,6 +294,18 @@ export async function housekeeping() {
   );
   await db.query(
     "delete from invitations where (expires_at < now() - interval '7 days') or (accepted_at < now() - interval '30 days') or (revoked_at < now() - interval '30 days')",
+  );
+  await db.query(
+    "delete from pending_signups where expires_at < now() - interval '7 days' or consumed_at < now() - interval '7 days'",
+  );
+  await db.query(
+    "delete from auth_tokens where expires_at < now() - interval '7 days' or consumed_at < now() - interval '7 days'",
+  );
+  await db.query(
+    "update mail_outbox set locked_at=null,locked_by=null where sent_at is null and locked_at < now() - interval '10 minutes'",
+  );
+  await db.query(
+    "delete from mail_outbox where sent_at < now() - interval '30 days'",
   );
   await db.query(
     `update approval_requests
