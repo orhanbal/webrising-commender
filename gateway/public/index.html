@@ -28,11 +28,25 @@
   </header>
 
   <section class="login">
-    <div class="toolbar">
-      <label><span class="label">Control API key</span><input id="key" type="password" autocomplete="off" placeholder="CONTROL_API_KEY"></label>
-      <button id="saveKey">Connect</button><button id="forgetKey" class="secondary">Forget key</button>
+    <div class="two">
+      <div>
+        <h3 style="margin-top:0">Browser account</h3>
+        <div class="toolbar">
+          <label><span class="label">Email</span><input id="loginEmail" type="email" autocomplete="username" placeholder="you@example.com"></label>
+          <label><span class="label">Password</span><input id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••••••••"></label>
+        </div>
+        <div class="row" style="margin-top:10px"><button id="loginButton">Sign in</button><button id="logoutButton" class="secondary">Sign out</button><span id="authState" class="pill">not signed in</span></div>
+        <p class="hint">Browser sessions use HttpOnly cookies. Passwords and session tokens are never stored in localStorage.</p>
+      </div>
+      <div>
+        <h3 style="margin-top:0">API / self-hosted fallback</h3>
+        <div class="toolbar">
+          <label><span class="label">Control or tenant API token</span><input id="key" type="password" autocomplete="off" placeholder="CONTROL_API_KEY or wrc_…"></label>
+          <button id="saveKey">Connect</button><button id="forgetKey" class="secondary">Forget token</button>
+        </div>
+        <p class="hint">The API token is stored only in this browser tab session. Browser login is preferred for the web console.</p>
+      </div>
     </div>
-    <p class="hint">Stored only in this browser tab session. Device credentials never enter this console.</p>
     <p id="globalError" class="error"></p>
   </section>
 
@@ -132,7 +146,8 @@ let terminalSession=null;
 let terminalTimer=null;
 
 $("key").value=sessionStorage.getItem("commender-key")||"";
-const auth=()=>({"Authorization":"Bearer "+$("key").value,"Content-Type":"application/json"});
+const cookieValue=name=>document.cookie.split(";").map(x=>x.trim()).find(x=>x.startsWith(name+"="))?.slice(name.length+1)||"";
+const auth=()=>{const key=$("key").value.trim();return key?{"Authorization":"Bearer "+key,"Content-Type":"application/json"}:{"Content-Type":"application/json"}};
 const escapeHtml=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function toBase64(text){const bytes=new TextEncoder().encode(text);let binary="";for(const b of bytes)binary+=String.fromCharCode(b);return btoa(binary)}
 function parentPath(value){if(!value)return "";const normalized=value.replace(/[\\/]+$/,"");const i=Math.max(normalized.lastIndexOf("/"),normalized.lastIndexOf("\\"));if(i<0)return normalized;return normalized.slice(0,i)||normalized.slice(0,1)}
@@ -140,7 +155,7 @@ function needDevice(online=true){if(!selected)throw new Error("Select a device f
 function showError(error){$("globalError").textContent=error instanceof Error?error.message:String(error)}
 function clearError(){$("globalError").textContent=""}
 
-async function api(route,opts={}){const r=await fetch(route,{...opts,headers:{...auth(),...(opts.headers||{})}});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(body.error||("HTTP "+r.status));return body}
+async function api(route,opts={}){const method=(opts.method||"GET").toUpperCase();const headers={...auth(),...(opts.headers||{})};if(!$("key").value.trim()&&!["GET","HEAD","OPTIONS"].includes(method)){const csrf=cookieValue("commender_csrf");if(csrf)headers["X-CSRF-Token"]=csrf}const r=await fetch(route,{credentials:"same-origin",...opts,headers});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(body.error||("HTTP "+r.status));return body}
 async function deviceRequest(action,approve=false){const d=needDevice();let approvalToken;if(approve){const preview=JSON.stringify(action,null,2);if(!confirm("Approve this HIGH-risk operation?\n\n"+preview))throw new Error("Action canceled.");const a=await api("/api/approvals",{method:"POST",body:JSON.stringify({deviceId:d.id,action,ttlSeconds:120})});approvalToken=a.approvalToken}const r=await api("/api/device/request",{method:"POST",body:JSON.stringify({deviceId:d.id,action,...(approvalToken?{approvalToken}:{})})});return r.data}
 
 async function health(){try{const r=await fetch("/health");$("health").textContent=r.ok?"gateway healthy":"gateway degraded";$("health").className="pill "+(r.ok?"ok":"bad")}catch{$("health").textContent="gateway offline";$("health").className="pill bad"}}
@@ -149,8 +164,11 @@ async function loadDevices(){try{clearError();const j=await api("/api/devices");
 function renderDevices(items){$("devices").innerHTML=items.length?items.map(d=>'<div class="device '+(selected?.id===d.id?'selected':'')+'" data-id="'+d.id+'"><b><span class="status '+(d.revoked_at?'revoked':d.online?'online':'')+'"></span>'+escapeHtml(d.name)+'</b><small>'+escapeHtml(d.hostname||d.platform||d.id)+'</small><div class="small">'+(d.revoked_at?'revoked':d.online?'online':'offline')+' · '+escapeHtml(d.agent_version||"agent unknown")+'</div></div>').join(""):'<p class="hint">No devices enrolled.</p>';document.querySelectorAll(".device").forEach(el=>el.onclick=()=>{selected=items.find(x=>x.id===el.dataset.id)||null;renderDevices(items);syncSelection()})}
 function syncSelection(){$("selection").textContent=selected?(selected.name+" · "+(selected.revoked_at?"revoked":selected.online?"online":"offline")):"no device selected";$("deviceName").value=selected?.name||""}
 
-$("saveKey").onclick=()=>{sessionStorage.setItem("commender-key",$("key").value);loadDevices();loadAudit()}
-$("forgetKey").onclick=()=>{sessionStorage.removeItem("commender-key");$("key").value="";selected=null;syncSelection();$("devices").innerHTML='<p class="hint">Enter your API key.</p>'}
+async function refreshIdentity(){try{const me=await api("/api/auth/me");$("authState").textContent=(me.email||me.actor)+" · "+me.role;$("authState").className="pill ok";await loadDevices();if(me.role==="admin"||me.role==="owner")await loadAudit()}catch{$("authState").textContent="not signed in";$("authState").className="pill";if(!$("key").value.trim())$("devices").innerHTML='<p class="hint">Sign in or enter an API token.</p>'}}
+$("loginButton").onclick=async()=>{try{clearError();sessionStorage.removeItem("commender-key");$("key").value="";const r=await fetch("/api/auth/login",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("loginEmail").value.trim(),password:$("loginPassword").value})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(body.error||("HTTP "+r.status));$("loginPassword").value="";await refreshIdentity()}catch(e){showError(e)}}
+$("logoutButton").onclick=async()=>{try{await api("/api/auth/logout",{method:"POST",body:"{}"});selected=null;syncSelection();$("authState").textContent="not signed in";$("authState").className="pill";$("devices").innerHTML='<p class="hint">Sign in or enter an API token.</p>'}catch(e){showError(e)}}
+$("saveKey").onclick=()=>{sessionStorage.setItem("commender-key",$("key").value);refreshIdentity()}
+$("forgetKey").onclick=()=>{sessionStorage.removeItem("commender-key");$("key").value="";selected=null;syncSelection();refreshIdentity()}
 $("refreshDevices").onclick=loadDevices;
 $("pair").onclick=async()=>{try{const j=await api("/api/pairing",{method:"POST",body:"{}"});$("pairing").innerHTML='Pairing code (10 min):<br><code>'+escapeHtml(j.pairingCode)+'</code>'}catch(e){showError(e)}}
 $("rename").onclick=async()=>{try{const d=needDevice(false);await api("/api/devices/"+d.id,{method:"PATCH",body:JSON.stringify({name:$("deviceName").value})});await loadDevices()}catch(e){showError(e)}}
@@ -189,14 +207,14 @@ $("termSend").onclick=async()=>{try{if(!terminalSession)throw new Error("Start a
 $("terminalInput").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();$("termSend").click()}})
 $("termStop").onclick=async()=>{try{if(!terminalSession)return;await deviceRequest({kind:"terminal_stop",sessionId:terminalSession},true);clearInterval(terminalTimer);terminalTimer=null;terminalSession=null;$("terminalSessionId").value="";$("terminalOutput").textContent+="\n[terminal stopped]"}catch(e){showError(e)}}
 
-async function loadApprovals(){if(!$("key").value)return;try{const j=await api("/api/approval-requests?status=pending&limit=100");$("approvalBody").innerHTML=j.items.length?j.items.map(x=>'<tr><td>'+escapeHtml(new Date(x.created_at).toLocaleString())+'</td><td>'+escapeHtml(x.requested_by)+'</td><td>'+escapeHtml(x.device_id)+'</td><td><b>'+escapeHtml(x.action_kind)+'</b><pre style="max-height:180px;margin:7px 0 0">'+escapeHtml(JSON.stringify(x.action,null,2))+'</pre></td><td>'+escapeHtml(new Date(x.expires_at).toLocaleString())+'</td><td><div class="row"><button data-approval="'+x.id+'" data-decision="approve">Approve</button><button class="danger" data-approval="'+x.id+'" data-decision="deny">Deny</button></div></td></tr>').join(""):'<tr><td colspan="6" class="hint">No pending approval requests.</td></tr>';document.querySelectorAll("[data-approval]").forEach(button=>button.onclick=()=>decideApproval(button.dataset.approval,button.dataset.decision))}catch(e){showError(e)}}
+async function loadApprovals(){try{const j=await api("/api/approval-requests?status=pending&limit=100");$("approvalBody").innerHTML=j.items.length?j.items.map(x=>'<tr><td>'+escapeHtml(new Date(x.created_at).toLocaleString())+'</td><td>'+escapeHtml(x.requested_by)+'</td><td>'+escapeHtml(x.device_id)+'</td><td><b>'+escapeHtml(x.action_kind)+'</b><pre style="max-height:180px;margin:7px 0 0">'+escapeHtml(JSON.stringify(x.action,null,2))+'</pre></td><td>'+escapeHtml(new Date(x.expires_at).toLocaleString())+'</td><td><div class="row"><button data-approval="'+x.id+'" data-decision="approve">Approve</button><button class="danger" data-approval="'+x.id+'" data-decision="deny">Deny</button></div></td></tr>').join(""):'<tr><td colspan="6" class="hint">No pending approval requests.</td></tr>';document.querySelectorAll("[data-approval]").forEach(button=>button.onclick=()=>decideApproval(button.dataset.approval,button.dataset.decision))}catch(e){showError(e)}}
 async function decideApproval(id,decision){try{const verb=decision==="approve"?"Approve":"Deny";if(!confirm(verb+" this exact AI operation?"))return;await api("/api/approval-requests/"+id+"/"+decision,{method:"POST",body:"{}"});await loadApprovals();await loadAudit()}catch(e){showError(e)}}
 $("loadApprovals").onclick=loadApprovals;
 
-async function loadAudit(){if(!$("key").value)return;try{const j=await api("/api/audit?limit=100");$("auditBody").innerHTML=j.items.map(x=>'<tr><td>'+escapeHtml(new Date(x.created_at).toLocaleString())+'</td><td>'+escapeHtml(x.actor)+'</td><td>'+escapeHtml(x.device_id||"")+'</td><td>'+escapeHtml(x.tool)+'</td><td>'+escapeHtml(x.risk)+'</td><td>'+escapeHtml(x.outcome)+'</td><td>'+escapeHtml(x.detail)+'</td></tr>').join("")}catch(e){showError(e)}}
+async function loadAudit(){try{const j=await api("/api/audit?limit=100");$("auditBody").innerHTML=j.items.map(x=>'<tr><td>'+escapeHtml(new Date(x.created_at).toLocaleString())+'</td><td>'+escapeHtml(x.actor)+'</td><td>'+escapeHtml(x.device_id||"")+'</td><td>'+escapeHtml(x.tool)+'</td><td>'+escapeHtml(x.risk)+'</td><td>'+escapeHtml(x.outcome)+'</td><td>'+escapeHtml(x.detail)+'</td></tr>').join("")}catch(e){showError(e)}}
 $("loadAudit").onclick=loadAudit;
 
-health();setInterval(health,15000);if($("key").value){loadDevices();loadAudit()}
+health();setInterval(health,15000);refreshIdentity()
 </script>
 </body>
 </html>
