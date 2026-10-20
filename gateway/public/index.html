@@ -10,7 +10,7 @@
     .shell{max-width:1380px;margin:auto;padding:28px 20px 60px}.top{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:20px}
     .brand h1{font-size:26px;margin:0}.brand p{margin:5px 0 0;color:var(--muted)}.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:6px 10px;font-size:12px;color:var(--muted)}.pill.ok{background:#12352b;color:#a9f1d5;border-color:#245843}.pill.bad{background:#351820;color:#ffc0c7;border-color:#5d2632}
     .login,.card{background:rgba(16,24,39,.94);border:1px solid var(--line);border-radius:16px;box-shadow:0 16px 60px rgba(0,0,0,.2)}.login{padding:18px;margin-bottom:18px}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.grid{display:grid;grid-template-columns:300px 1fr;gap:16px}.sidebar,.workspace{min-width:0}.card{padding:18px;margin-bottom:14px}.card h2,.card h3{margin:0 0 14px}.card h2{font-size:16px}.card h3{font-size:14px}
-    input,textarea{width:100%;background:#0a1120;color:#eef3ff;border:1px solid #31405e;border-radius:10px;padding:10px 12px;outline:0}input:focus,textarea:focus{border-color:#617fff;box-shadow:0 0 0 3px rgba(85,119,255,.14)}textarea{resize:vertical;min-height:100px}
+    input,textarea,select{width:100%;background:#0a1120;color:#eef3ff;border:1px solid #31405e;border-radius:10px;padding:10px 12px;outline:0}input:focus,textarea:focus,select:focus{border-color:#617fff;box-shadow:0 0 0 3px rgba(85,119,255,.14)}textarea{resize:vertical;min-height:100px}
     button{border:1px solid transparent;border-radius:10px;padding:10px 13px;background:var(--blue);color:#fff;cursor:pointer;font-weight:650}button.secondary{background:#1a263b;border-color:#30405e;color:#dbe5fb}button.danger{background:#3b1821;border-color:#652735;color:#ffc4ca}button:disabled{opacity:.5;cursor:not-allowed}
     .device{border:1px solid transparent;border-radius:12px;padding:12px;margin:8px 0;background:#0c1423;cursor:pointer}.device:hover{border-color:#30405e}.device.selected{border-color:#5577ff;background:#111d36}.device b{display:block;margin-bottom:4px}.small,.device small{color:var(--muted);font-size:12px}.status{display:inline-block;width:8px;height:8px;border-radius:50%;background:#58657a;margin-right:6px}.status.online{background:var(--green)}.status.revoked{background:var(--red)}
     .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}.tab{background:#151f31;color:#aebbd1;border-color:#26344f}.tab.active{background:#2545b8;color:#fff;border-color:#5577ff}.pane{display:none}.pane.active{display:block}
@@ -24,7 +24,7 @@
 <main class="shell">
   <header class="top">
     <div class="brand"><h1>WebRising Commender</h1><p>Secure AI-to-device control plane</p></div>
-    <div class="row"><span id="health" class="pill">gateway checking…</span><span id="selection" class="pill">no device selected</span></div>
+    <div class="row"><span id="health" class="pill">gateway checking…</span><span id="orgState" class="pill">no workspace</span><span id="selection" class="pill">no device selected</span></div>
   </header>
 
   <section class="login">
@@ -50,6 +50,15 @@
     <p id="globalError" class="error"></p>
   </section>
 
+  <section id="inviteCard" class="login hidden">
+    <div class="row" style="justify-content:space-between"><div><h3 style="margin:0 0 6px">Workspace invitation</h3><p id="inviteSummary" class="hint" style="margin:0">Loading invitation…</p></div><span id="inviteStatus" class="pill">pending</span></div>
+    <div class="toolbar" style="margin-top:14px">
+      <label><span id="invitePasswordLabel" class="label">Choose password</span><input id="invitePassword" type="password" autocomplete="new-password" placeholder="Minimum 12 characters"></label>
+      <button id="acceptInvite">Accept invitation</button>
+    </div>
+    <p id="inviteError" class="error"></p>
+  </section>
+
   <div class="grid">
     <aside class="sidebar">
       <section class="card">
@@ -73,6 +82,7 @@
         <button class="tab" data-tab="tasks">Tasks</button>
         <button class="tab" data-tab="terminal">Terminal</button>
         <button class="tab" data-tab="approvals">Approvals</button>
+        <button id="accessTab" class="tab hidden" data-tab="access">Access</button>
         <button class="tab" data-tab="audit">Audit</button>
       </div>
 
@@ -132,6 +142,53 @@
         <div style="overflow:auto"><table class="audit"><thead><tr><th>Requested</th><th>Actor</th><th>Device</th><th>Operation</th><th>Expires</th><th>Decision</th></tr></thead><tbody id="approvalBody"></tbody></table></div>
       </section>
 
+      <section id="pane-access" class="card pane">
+        <div class="row" style="justify-content:space-between"><div><h2>Workspace & access</h2><p class="hint">Manage workspace membership, invitations and tenant API tokens. Invitation links can be delivered by any channel; no paid email provider is required.</p></div><button id="refreshAccess" class="secondary">Refresh</button></div>
+
+        <div class="card" style="box-shadow:none">
+          <h3>Workspace</h3>
+          <div id="workspaceBrowserControls">
+            <div class="toolbar">
+              <label><span class="label">Current workspace</span><select id="organizationSelect"></select></label>
+              <button id="switchOrganization" class="secondary">Switch</button>
+            </div>
+            <div class="toolbar" style="margin-top:10px">
+              <label><span class="label">Workspace name</span><input id="organizationName" placeholder="Workspace name"></label>
+              <button id="renameOrganization" class="secondary">Rename</button>
+              <button id="createOrganization">Create workspace</button>
+            </div>
+          </div>
+          <p id="workspaceTokenHint" class="hint hidden">API-token sessions are already scoped to one workspace. Sign in with a browser account to switch or create workspaces.</p>
+        </div>
+
+        <div class="card" style="box-shadow:none">
+          <h3>Members</h3>
+          <div style="overflow:auto"><table class="audit"><thead><tr><th>Email</th><th>Role</th><th>Last login</th><th>Since</th><th>Action</th></tr></thead><tbody id="memberBody"></tbody></table></div>
+        </div>
+
+        <div class="card" style="box-shadow:none">
+          <h3>Invite member</h3>
+          <div class="toolbar">
+            <label><span class="label">Email</span><input id="inviteEmail" type="email" placeholder="member@example.com"></label>
+            <label style="max-width:180px"><span class="label">Role</span><select id="inviteRole"><option>viewer</option><option selected>operator</option><option>admin</option><option>owner</option></select></label>
+            <button id="createInvitation">Create invitation</button>
+          </div>
+          <pre id="inviteLinkOutput" class="hidden"></pre>
+          <div style="overflow:auto;margin-top:10px"><table class="audit"><thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Expires</th><th>Action</th></tr></thead><tbody id="invitationBody"></tbody></table></div>
+        </div>
+
+        <div class="card" style="box-shadow:none">
+          <h3>Tenant API tokens</h3>
+          <div class="toolbar">
+            <label><span class="label">Token name</span><input id="tokenName" placeholder="CI, automation, ChatGPT…"></label>
+            <label style="max-width:180px"><span class="label">Role</span><select id="tokenRole"><option>viewer</option><option selected>operator</option><option>admin</option><option>owner</option></select></label>
+            <button id="createToken">Create token</button>
+          </div>
+          <pre id="tokenOutput" class="hidden"></pre>
+          <div style="overflow:auto;margin-top:10px"><table class="audit"><thead><tr><th>Name</th><th>Role</th><th>Last used</th><th>Status</th><th>Action</th></tr></thead><tbody id="tokenBody"></tbody></table></div>
+        </div>
+      </section>
+
       <section id="pane-audit" class="card pane">
         <div class="row" style="justify-content:space-between"><h2>Audit log</h2><button id="loadAudit">Refresh</button></div>
         <div style="overflow:auto"><table class="audit"><thead><tr><th>Time</th><th>Actor</th><th>Device</th><th>Tool</th><th>Risk</th><th>Outcome</th><th>Detail</th></tr></thead><tbody id="auditBody"></tbody></table></div>
@@ -144,6 +201,9 @@ const $=id=>document.getElementById(id);
 let selected=null;
 let terminalSession=null;
 let terminalTimer=null;
+let currentIdentity=null;
+let organizations=[];
+let invitationToken=new URLSearchParams(location.search).get("invite")||"";
 
 $("key").value=sessionStorage.getItem("commender-key")||"";
 const cookieValue=name=>document.cookie.split(";").map(x=>x.trim()).find(x=>x.startsWith(name+"="))?.slice(name.length+1)||"";
