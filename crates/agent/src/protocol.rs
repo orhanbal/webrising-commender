@@ -22,7 +22,7 @@ pub enum GatewayMessage {
     },
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
     rename_all = "snake_case",
