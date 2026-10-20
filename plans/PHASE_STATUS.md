@@ -1,6 +1,6 @@
 # Phase status
 
-Updated: 2026-10-20
+Updated: 2026-10-21
 
 | Phase | Status | Notes |
 |---|---|---|
@@ -32,7 +32,7 @@ CI exercises:
 - organization isolation and token RBAC boundaries
 - browser user login/logout, HttpOnly session persistence and CSRF rejection
 - invitation preview/accept/replay rejection, workspace creation/switching, role updates/removal and last-owner protection
-- SaaS plan/subscription provisioning, billing-required gating, device/member/token quota enforcement, pending-seat reservation, normalized-event idempotency/conflict rejection
+- SaaS plan/subscription provisioning, billing-required gating, device/member/token quota enforcement, pending-seat reservation, normalized-event idempotency, provider-identity collision rejection, stale-event suppression and same-time order-conflict detection
 - self-hosted unlimited resource allocation remains covered by Compose/real-agent flows while integration runs in SaaS mode
 - installer syntax
 - native Windows service install/start/stop/remove lifecycle
