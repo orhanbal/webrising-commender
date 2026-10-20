@@ -35,6 +35,17 @@ function encode(value: unknown) {
   return Buffer.from(JSON.stringify(value)).toString("base64url");
 }
 
+export function deriveDeviceApprovalKey(deviceId: string) {
+  return crypto
+    .createHmac("sha256", approvalSecret)
+    .update(`device:${deviceId}:approval:v1`)
+    .digest();
+}
+
+export function deviceApprovalKeyForAgent(deviceId: string) {
+  return deriveDeviceApprovalKey(deviceId).toString("base64url");
+}
+
 export function issueApproval(deviceId: string, action: string, ttlSeconds = 120) {
   const claim: ApprovalClaim = {
     deviceId,
@@ -43,7 +54,10 @@ export function issueApproval(deviceId: string, action: string, ttlSeconds = 120
     nonce: randomToken(18),
   };
   const payload = encode(claim);
-  const signature = crypto.createHmac("sha256", approvalSecret).update(payload).digest("base64url");
+  const signature = crypto
+    .createHmac("sha256", deriveDeviceApprovalKey(deviceId))
+    .update(payload)
+    .digest("base64url");
   return { token: `${payload}.${signature}`, claim };
 }
 
@@ -55,7 +69,10 @@ export function verifyApprovalClaim(
   if (!token) return null;
   const [payload, signature] = token.split(".");
   if (!payload || !signature) return null;
-  const expected = crypto.createHmac("sha256", approvalSecret).update(payload).digest();
+  const expected = crypto
+    .createHmac("sha256", deriveDeviceApprovalKey(deviceId))
+    .update(payload)
+    .digest();
   let supplied: Buffer;
   try {
     supplied = Buffer.from(signature, "base64url");
