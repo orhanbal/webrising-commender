@@ -107,6 +107,27 @@ impl TaskManager {
         Ok(json!({ "taskId": task_id, "status": "running" }))
     }
 
+    pub async fn list(&self) -> Result<Value> {
+        let tasks = self.tasks.lock().await;
+        let mut items: Vec<Value> = tasks
+            .iter()
+            .map(|(task_id, entry)| {
+                json!({
+                    "taskId": task_id,
+                    "status": entry.status,
+                    "createdAtMs": entry.created_at_ms.to_string(),
+                    "finishedAtMs": entry.finished_at_ms.map(|value| value.to_string())
+                })
+            })
+            .collect();
+        items.sort_by(|left, right| {
+            right["createdAtMs"]
+                .as_str()
+                .cmp(&left["createdAtMs"].as_str())
+        });
+        Ok(json!({ "items": items }))
+    }
+
     pub async fn status(&self, task_id: &str) -> Result<Value> {
         let tasks = self.tasks.lock().await;
         let entry = tasks
