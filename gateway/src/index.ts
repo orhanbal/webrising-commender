@@ -32,7 +32,9 @@ const enrollRateLimit = new FixedWindowRateLimiter();
 const pairingRateLimit = new FixedWindowRateLimiter();
 const loginIpRateLimit = new FixedWindowRateLimiter();
 const loginAccountRateLimit = new FixedWindowRateLimiter();
-const invitationAcceptRateLimit = new FixedWindowRateLimiter();
+const invitationPreviewRateLimit = new FixedWindowRateLimiter();
+const invitationAcceptIpRateLimit = new FixedWindowRateLimiter();
+const invitationAcceptTokenRateLimit = new FixedWindowRateLimiter();
 const trustProxyHeaders = /^(1|true|yes)$/i.test(String(process.env.TRUST_PROXY_HEADERS || ""));
 
 await migrate();
@@ -221,6 +223,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/api/invitations/preview") {
+      const previewRate = invitationPreviewRateLimit.hit(remoteKey(req), 120, 10 * 60_000);
+      if (!previewRate.allowed) {
+        res.setHeader("Retry-After", String(previewRate.retryAfterSeconds));
+        return void json(res, 429, { error: "rate_limited" });
+      }
       const token = String(url.searchParams.get("token") || "");
       if (!token.startsWith("wrci_") || token.length < 40 || token.length > 200) {
         return void json(res, 404, { error: "invalid_or_expired_invitation" });
@@ -265,13 +272,18 @@ const server = http.createServer(async (req, res) => {
         token: z.string().min(40).max(200),
         password: z.string().min(12).max(256),
       }).parse(await readJson(req));
-      const rate = invitationAcceptRateLimit.hit(
-        `${remoteKey(req)}:${sha256(body.token)}`,
+      const ip = remoteKey(req);
+      const ipRate = invitationAcceptIpRateLimit.hit(ip, 60, 15 * 60_000);
+      const tokenRate = invitationAcceptTokenRateLimit.hit(
+        `${ip}:${sha256(body.token)}`,
         10,
         15 * 60_000,
       );
-      if (!rate.allowed) {
-        res.setHeader("Retry-After", String(rate.retryAfterSeconds));
+      if (!ipRate.allowed || !tokenRate.allowed) {
+        res.setHeader(
+          "Retry-After",
+          String(Math.max(ipRate.retryAfterSeconds, tokenRate.retryAfterSeconds)),
+        );
         return void json(res, 429, { error: "rate_limited" });
       }
 
