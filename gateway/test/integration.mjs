@@ -68,9 +68,6 @@ async function assignSubscription(organizationId, planKey = "ci-standard", statu
     body: JSON.stringify({
       planKey,
       status,
-      provider: "ci-manual",
-      externalCustomerId: `customer-${organizationId}`,
-      externalSubscriptionId: `subscription-${organizationId}`,
       cancelAtPeriodEnd: false,
     }),
   });
@@ -1072,21 +1069,24 @@ const conflictingSubscriptionOrg = await jsonFetch("/api/organizations", {
   headers: authHeaders,
   body: JSON.stringify({ name: "CI Subscription Conflict Tenant" }),
 });
-const conflictingSubscriptionResponse = await fetch(
-  base + `/api/admin/organizations/${conflictingSubscriptionOrg.item.id}/subscription`,
-  {
-    method: "PUT",
-    headers: authHeaders,
-    body: JSON.stringify({
+const conflictingSubscriptionResponse = await fetch(base + "/api/admin/billing/events", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    provider: "ci-provider",
+    eventId: "evt-ci-subscription-collision",
+    eventType: "subscription.activated",
+    occurredAt: "2026-10-20T20:05:00.000Z",
+    organizationId: conflictingSubscriptionOrg.item.id,
+    subscription: {
       planKey: "ci-event",
       status: "active",
-      provider: "ci-provider",
       externalCustomerId: "ci-customer-conflict",
       externalSubscriptionId: "ci-subscription-event",
       cancelAtPeriodEnd: false,
-    }),
-  },
-);
+    },
+  }),
+});
 assert.equal(conflictingSubscriptionResponse.status, 409);
 assert.equal(
   (await conflictingSubscriptionResponse.json()).error,
