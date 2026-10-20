@@ -18,6 +18,10 @@
 - Added provider event occurrence ordering, stale-event suppression, wrong-provider rejection, same-time order-conflict detection and provider subscription identity collision protection.
 - Restricted provider/customer/subscription identity binding to the normalized verified-event path; manual plan assignments remain provider-neutral.
 - Added SaaS CI coverage for billing-required, quota-exceeded and past-due allocation gates.
+- Added optional email-verified public signup and one-time password reset with session revocation.
+- Added a durable PostgreSQL auth-mail outbox and first-party Node net/tls SMTP transport with plain/STARTTLS/TLS modes.
+- Auth links now use URL fragments and hash-only server-side token verifiers; consumed/superseded message bodies are scrubbed.
+- Added local fake-SMTP unit coverage and SaaS integration coverage for verification/reset flows.
 
 ## 0.1.0 - Unreleased
 
