@@ -57,9 +57,9 @@ export async function migrate() {
 
     create table if not exists mail_outbox (
       id bigserial primary key,
-      to_address text not null,
-      subject text not null,
-      body_text text not null,
+      payload_ciphertext text not null,
+      payload_iv text not null,
+      payload_tag text not null,
       attempts integer not null default 0,
       next_attempt_at timestamptz not null default now(),
       lease_until timestamptz,
