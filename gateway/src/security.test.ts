@@ -12,11 +12,20 @@ const {
   sha256,
 } = await import("./security.js");
 
-test("approval is bound to device and action", () => {
-  const { token } = issueApproval("device-a", "process_exec", 60);
-  assert.equal(verifyApproval(token, "device-a", "process_exec"), true);
-  assert.equal(verifyApproval(token, "device-b", "process_exec"), false);
-  assert.equal(verifyApproval(token, "device-a", "fs_delete"), false);
+test("approval is bound to device and exact operation", () => {
+  const action = { kind: "process_exec", command: "echo approved", timeoutMs: 30_000 };
+  const { token } = issueApproval("device-a", action, 60);
+
+  assert.equal(verifyApproval(token, "device-a", action), true);
+  assert.equal(verifyApproval(token, "device-b", action), false);
+  assert.equal(
+    verifyApproval(token, "device-a", { ...action, command: "echo changed" }),
+    false,
+  );
+  assert.equal(
+    verifyApproval(token, "device-a", { kind: "fs_delete", path: "/tmp/example" }),
+    false,
+  );
 });
 
 test("redactor hides common secrets", () => {
