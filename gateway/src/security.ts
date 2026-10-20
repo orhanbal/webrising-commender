@@ -27,7 +27,6 @@ export function isControlAuthorized(header: string | undefined) {
 
 export type ApprovalRequest = {
   kind: string;
-  [key: string]: unknown;
 };
 
 export type ApprovalClaim = {
