@@ -200,16 +200,6 @@ export async function allocationDecision(
   queryable: Queryable = db,
 ) {
   const snapshot = await billingSnapshot(organizationId, queryable);
-  if (!snapshot.entitled) {
-    return {
-      allowed: false,
-      reason: "billing_required" as const,
-      resource: resource === "member_accept" ? "member" : resource,
-      limit: 0,
-      used: 0,
-      snapshot,
-    };
-  }
 
   let limit: number | null;
   let used: number;
@@ -225,6 +215,17 @@ export async function allocationDecision(
   } else {
     limit = snapshot.limits.maxMembers;
     used = snapshot.usage.members + snapshot.usage.pendingInvitations;
+  }
+
+  if (!snapshot.entitled) {
+    return {
+      allowed: false,
+      reason: "billing_required" as const,
+      resource: resource === "member_accept" ? "member" : resource,
+      limit,
+      used,
+      snapshot,
+    };
   }
 
   if (limit === null) {
