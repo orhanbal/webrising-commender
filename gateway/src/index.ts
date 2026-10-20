@@ -870,7 +870,12 @@ const server = http.createServer(async (req, res) => {
             status: body.subscription.status,
           }),
         );
-      } else if (result.stale || result.providerMismatch) {
+      } else if (result.stale || result.providerMismatch || result.orderConflict) {
+        const reason = result.orderConflict
+          ? "order_conflict"
+          : result.stale
+            ? "stale"
+            : "provider_mismatch";
         await auditForOrganization(
           principal!,
           body.organizationId,
@@ -883,11 +888,14 @@ const server = http.createServer(async (req, res) => {
             eventId: body.eventId,
             eventType: body.eventType,
             occurredAt: body.occurredAt,
-            reason: result.stale ? "stale" : "provider_mismatch",
+            reason,
           }),
         );
       }
-      return void json(res, 200, result);
+      return void json(res, result.orderConflict ? 409 : 200, {
+        ...result,
+        ...(result.orderConflict ? { error: "billing_event_order_conflict" } : {}),
+      });
     }
 
     if (req.method === "GET" && (url.pathname === "/api/users" || url.pathname === "/api/members")) {
