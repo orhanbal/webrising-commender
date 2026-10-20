@@ -1,12 +1,12 @@
 import { db } from "./db.js";
-import { verifyApprovalClaim } from "./security.js";
+import { verifyApprovalClaim, type ApprovalRequest } from "./security.js";
 
 export async function consumeApproval(
   token: string | undefined | null,
   deviceId: string,
-  action: string,
+  request: ApprovalRequest,
 ) {
-  const claim = verifyApprovalClaim(token, deviceId, action);
+  const claim = verifyApprovalClaim(token, deviceId, request);
   if (!claim) return false;
 
   const result = await db.query(
@@ -18,7 +18,7 @@ export async function consumeApproval(
        and expires_at>now()
        and consumed_at is null
      returning id`,
-    [claim.nonce, deviceId, action],
+    [claim.nonce, deviceId, request.kind],
   );
 
   return result.rowCount === 1;
