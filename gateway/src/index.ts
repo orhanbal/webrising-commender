@@ -274,7 +274,7 @@ const server = http.createServer(async (req, res) => {
         await client.query(
           `insert into pending_signups(email,password_hash,workspace_name,token_hash,expires_at,updated_at)
            values($1,$2,$3,$4,now()+interval '24 hours',now())
-           on conflict (lower(email))
+           on conflict ((lower(email)))
            do update set
              password_hash=excluded.password_hash,
              workspace_name=excluded.workspace_name,
@@ -466,6 +466,7 @@ const server = http.createServer(async (req, res) => {
         return void json(res, 429, { error: "rate_limited" });
       }
 
+      await hashPassword(randomToken(24));
       const user = await db.query<{ id: string; email: string }>(
         `select id,email
            from users
