@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
+import type { PoolClient } from "pg";
 import { consumeApproval } from "./approvals.js";
 import { authenticateRequest, newApiToken, roleAtLeast, verifyBrowserCsrf, type Principal, type Role } from "./auth.js";
 import {
@@ -16,6 +17,15 @@ import {
   normalizeEmail,
   verifyPassword,
 } from "./browser-auth.js";
+import {
+  allocationDecision,
+  applyNormalizedBillingEvent,
+  billingSnapshot,
+  deploymentMode,
+  upsertBillingPlan,
+  upsertSubscription,
+  type AllocationResource,
+} from "./billing.js";
 import { db, housekeeping, migrate, ready } from "./db.js";
 import { handleMcp } from "./mcp.js";
 import { actionRisk, parseAgentAction } from "./protocol.js";
@@ -90,8 +100,9 @@ function remoteKey(req: IncomingMessage) {
   return req.socket.remoteAddress || "unknown";
 }
 
-async function auditControl(
+async function auditForOrganization(
   principal: Principal,
+  organizationId: string,
   deviceId: string | null,
   tool: string,
   risk: string,
@@ -100,13 +111,49 @@ async function auditControl(
 ) {
   await db.query(
     "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,$2,$3,$4,$5,$6,$7)",
-    [principal.organizationId, principal.actor, deviceId, tool, risk, outcome, detail],
+    [organizationId, principal.actor, deviceId, tool, risk, outcome, detail],
+  );
+}
+
+async function auditControl(
+  principal: Principal,
+  deviceId: string | null,
+  tool: string,
+  risk: string,
+  outcome: string,
+  detail = "",
+) {
+  await auditForOrganization(
+    principal,
+    principal.organizationId,
+    deviceId,
+    tool,
+    risk,
+    outcome,
+    detail,
   );
 }
 
 function requireRole(principal: Principal, role: Role, res: ServerResponse) {
   if (roleAtLeast(principal, role)) return true;
   json(res, 403, { error: "forbidden", requiredRole: role });
+  return false;
+}
+
+async function requireCapacity(
+  organizationId: string,
+  resource: AllocationResource,
+  res: ServerResponse,
+  queryable: typeof db | PoolClient = db,
+) {
+  const decision = await allocationDecision(organizationId, resource, queryable);
+  if (decision.allowed) return true;
+  json(res, decision.reason === "billing_required" ? 402 : 409, {
+    error: decision.reason,
+    resource: decision.resource,
+    used: decision.used,
+    limit: decision.limit,
+  });
   return false;
 }
 
@@ -316,6 +363,10 @@ const server = http.createServer(async (req, res) => {
           return void json(res, 400, { error: "invalid_or_expired_invitation" });
         }
 
+        await client.query("select id from organizations where id=$1 for update", [
+          invite.organization_id,
+        ]);
+
         let existing = await client.query<{ id: string; email: string; password_hash: string }>(
           "select id,email,password_hash from users where lower(email)=lower($1) and disabled_at is null for update",
           [invite.email],
@@ -359,6 +410,10 @@ const server = http.createServer(async (req, res) => {
         if (currentMembership.rows[0]) {
           acceptedRole = currentMembership.rows[0].role;
         } else {
+          if (!(await requireCapacity(invite.organization_id, "member_accept", res, client))) {
+            await client.query("rollback");
+            return;
+          }
           await client.query(
             "insert into organization_members(organization_id,user_id,role) values($1,$2,$3)",
             [invite.organization_id, userId, invite.role],
@@ -443,6 +498,14 @@ const server = http.createServer(async (req, res) => {
         if (!code) {
           await client.query("rollback");
           return void json(res, 400, { error: "invalid_or_expired_pairing_code" });
+        }
+
+        await client.query("select id from organizations where id=$1 for update", [
+          code.organization_id,
+        ]);
+        if (!(await requireCapacity(code.organization_id, "device", res, client))) {
+          await client.query("rollback");
+          return;
         }
 
         const deviceId = crypto.randomUUID();
@@ -642,6 +705,198 @@ const server = http.createServer(async (req, res) => {
       return void json(res, 201, { item: created.rows[0] });
     }
 
+    if (req.method === "GET" && url.pathname === "/api/billing") {
+      if (!requireRole(principal!, "viewer", res)) return;
+      return void json(res, 200, await billingSnapshot(principal!.organizationId));
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/admin/billing/plans") {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const result = await db.query(
+        `select key,name,max_devices,max_members,max_api_tokens,metadata,active,created_at,updated_at
+           from billing_plans
+          order by created_at asc,key asc`,
+      );
+      return void json(res, 200, { mode: deploymentMode, items: result.rows });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/admin/billing/plans") {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const body = z.object({
+        key: z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9_-]{1,63}$/),
+        name: z.string().trim().min(2).max(120),
+        maxDevices: z.number().int().min(0).max(1_000_000).nullable().default(null),
+        maxMembers: z.number().int().min(0).max(1_000_000).nullable().default(null),
+        maxApiTokens: z.number().int().min(0).max(1_000_000).nullable().default(null),
+        metadata: z.record(z.string(), z.unknown()).default({}),
+        active: z.boolean().default(true),
+      }).parse(await readJson(req));
+      const item = await upsertBillingPlan(body);
+      await auditControl(
+        principal!,
+        null,
+        "billing.plan.upsert",
+        "high",
+        "success",
+        JSON.stringify({
+          key: body.key,
+          maxDevices: body.maxDevices,
+          maxMembers: body.maxMembers,
+          maxApiTokens: body.maxApiTokens,
+          active: body.active,
+        }),
+      );
+      return void json(res, 200, { item });
+    }
+
+    const adminBillingMatch = url.pathname.match(
+      /^\/api\/admin\/organizations\/([0-9a-f-]{36})\/billing$/i,
+    );
+    if (req.method === "GET" && adminBillingMatch) {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const organizationId = adminBillingMatch[1]!;
+      const exists = await db.query("select 1 from organizations where id=$1", [organizationId]);
+      if (!exists.rowCount) return void json(res, 404, { error: "organization_not_found" });
+      return void json(res, 200, await billingSnapshot(organizationId));
+    }
+
+    const subscriptionMatch = url.pathname.match(
+      /^\/api\/admin\/organizations\/([0-9a-f-]{36})\/subscription$/i,
+    );
+    if (req.method === "PUT" && subscriptionMatch) {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const organizationId = subscriptionMatch[1]!;
+      const body = z.object({
+        planKey: z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9_-]{1,63}$/),
+        status: z.enum(["trialing", "active", "past_due", "canceled"]),
+        currentPeriodEnd: z.string().datetime({ offset: true }).nullable().optional(),
+        cancelAtPeriodEnd: z.boolean().default(false),
+      }).parse(await readJson(req));
+
+      const client = await db.connect();
+      try {
+        await client.query("begin");
+        const organization = await client.query(
+          "select id from organizations where id=$1 for update",
+          [organizationId],
+        );
+        if (!organization.rowCount) {
+          await client.query("rollback");
+          return void json(res, 404, { error: "organization_not_found" });
+        }
+        const item = await upsertSubscription(
+          {
+            organizationId,
+            planKey: body.planKey,
+            status: body.status,
+            provider: null,
+            externalCustomerId: null,
+            externalSubscriptionId: null,
+            currentPeriodEnd: body.currentPeriodEnd ?? null,
+            cancelAtPeriodEnd: body.cancelAtPeriodEnd,
+            providerEventAt: null,
+            providerEventId: null,
+          },
+          client,
+        );
+        await client.query("commit");
+        await auditForOrganization(
+          principal!,
+          organizationId,
+          null,
+          "billing.subscription.upsert",
+          "high",
+          "success",
+          JSON.stringify({ planKey: body.planKey, status: body.status, provider: null }),
+        );
+        return void json(res, 200, { item });
+      } catch (error) {
+        try {
+          await client.query("rollback");
+        } catch {}
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/admin/billing/events") {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const body = z.object({
+        provider: z.string().trim().min(1).max(80).transform((value) => value.toLowerCase()),
+        eventId: z.string().trim().min(1).max(255),
+        eventType: z.string().trim().min(1).max(120),
+        occurredAt: z.string().datetime({ offset: true }),
+        organizationId: z.string().uuid(),
+        subscription: z.object({
+          planKey: z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9_-]{1,63}$/),
+          status: z.enum(["trialing", "active", "past_due", "canceled"]),
+          externalCustomerId: z.string().trim().min(1).max(255).nullable().optional(),
+          externalSubscriptionId: z.string().trim().min(1).max(255).nullable().optional(),
+          currentPeriodEnd: z.string().datetime({ offset: true }).nullable().optional(),
+          cancelAtPeriodEnd: z.boolean().default(false),
+        }),
+      }).parse(await readJson(req));
+      const result = await applyNormalizedBillingEvent({
+        provider: body.provider,
+        eventId: body.eventId,
+        eventType: body.eventType,
+        occurredAt: body.occurredAt,
+        organizationId: body.organizationId,
+        subscription: {
+          planKey: body.subscription.planKey,
+          status: body.subscription.status,
+          externalCustomerId: body.subscription.externalCustomerId ?? null,
+          externalSubscriptionId: body.subscription.externalSubscriptionId ?? null,
+          currentPeriodEnd: body.subscription.currentPeriodEnd ?? null,
+          cancelAtPeriodEnd: body.subscription.cancelAtPeriodEnd,
+        },
+      });
+      if (result.applied) {
+        await auditForOrganization(
+          principal!,
+          body.organizationId,
+          null,
+          "billing.event.apply",
+          "high",
+          "success",
+          JSON.stringify({
+            provider: body.provider,
+            eventId: body.eventId,
+            eventType: body.eventType,
+            occurredAt: body.occurredAt,
+            planKey: body.subscription.planKey,
+            status: body.subscription.status,
+          }),
+        );
+      } else if (result.stale || result.providerMismatch || result.orderConflict) {
+        const reason = result.orderConflict
+          ? "order_conflict"
+          : result.stale
+            ? "stale"
+            : "provider_mismatch";
+        await auditForOrganization(
+          principal!,
+          body.organizationId,
+          null,
+          "billing.event.ignore",
+          "high",
+          "denied",
+          JSON.stringify({
+            provider: body.provider,
+            eventId: body.eventId,
+            eventType: body.eventType,
+            occurredAt: body.occurredAt,
+            reason,
+          }),
+        );
+      }
+      return void json(res, result.orderConflict ? 409 : 200, {
+        ...result,
+        ...(result.orderConflict ? { error: "billing_event_order_conflict" } : {}),
+      });
+    }
+
     if (req.method === "GET" && (url.pathname === "/api/users" || url.pathname === "/api/members")) {
       if (!requireRole(principal!, "admin", res)) return;
       const result = await db.query(
@@ -684,6 +939,18 @@ const server = http.createServer(async (req, res) => {
       const client = await db.connect();
       try {
         await client.query("begin");
+        const lockedOrganization = await client.query(
+          "select id from organizations where id=$1 for update",
+          [organizationId],
+        );
+        if (!lockedOrganization.rowCount) {
+          await client.query("rollback");
+          return void json(res, 404, { error: "organization_not_found" });
+        }
+        if (!(await requireCapacity(organizationId, "member", res, client))) {
+          await client.query("rollback");
+          return;
+        }
         const created = await client.query<{ id: string; email: string; created_at: string }>(
           "insert into users(email,password_hash) values($1,$2) returning id,email,created_at",
           [email, passwordHash],
@@ -733,52 +1000,80 @@ const server = http.createServer(async (req, res) => {
       }
 
       const organizationId = body.organizationId ?? principal!.organizationId;
-      const org = await db.query("select 1 from organizations where id=$1", [organizationId]);
-      if (!org.rowCount) return void json(res, 404, { error: "organization_not_found" });
-
       const email = normalizeEmail(body.email);
-      const user = await db.query<{ id: string; email: string }>(
-        "select id,email from users where lower(email)=lower($1) and disabled_at is null",
-        [email],
-      );
-      if (!user.rows[0]) return void json(res, 404, { error: "user_not_found" });
+      const client = await db.connect();
+      try {
+        await client.query("begin");
+        const organization = await client.query(
+          "select id from organizations where id=$1 for update",
+          [organizationId],
+        );
+        if (!organization.rowCount) {
+          await client.query("rollback");
+          return void json(res, 404, { error: "organization_not_found" });
+        }
 
-      const currentMembership = await db.query<{ role: Role }>(
-        "select role from organization_members where organization_id=$1 and user_id=$2",
-        [organizationId, user.rows[0].id],
-      );
-      if (currentMembership.rows[0]) {
-        if (!roleAtLeast(principal!, currentMembership.rows[0].role)) {
-          return void json(res, 403, {
-            error: "cannot_manage_higher_role",
-            targetRole: currentMembership.rows[0].role,
+        const user = await client.query<{ id: string; email: string }>(
+          "select id,email from users where lower(email)=lower($1) and disabled_at is null",
+          [email],
+        );
+        if (!user.rows[0]) {
+          await client.query("rollback");
+          return void json(res, 404, { error: "user_not_found" });
+        }
+
+        const currentMembership = await client.query<{ role: Role }>(
+          "select role from organization_members where organization_id=$1 and user_id=$2",
+          [organizationId, user.rows[0].id],
+        );
+        if (currentMembership.rows[0]) {
+          await client.query("rollback");
+          if (!roleAtLeast(principal!, currentMembership.rows[0].role)) {
+            return void json(res, 403, {
+              error: "cannot_manage_higher_role",
+              targetRole: currentMembership.rows[0].role,
+            });
+          }
+          return void json(res, 409, {
+            error: "member_already_exists",
+            currentRole: currentMembership.rows[0].role,
           });
         }
-        return void json(res, 409, {
-          error: "member_already_exists",
-          currentRole: currentMembership.rows[0].role,
-        });
-      }
 
-      const membership = await db.query(
-        `insert into organization_members(organization_id,user_id,role)
-         values($1,$2,$3)
-         on conflict do nothing
-         returning organization_id,user_id,role,created_at`,
-        [organizationId, user.rows[0].id, body.role],
-      );
-      if (!membership.rows[0]) {
-        return void json(res, 409, { error: "member_already_exists" });
-      }
-      await db.query(
-        "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,$2,null,'member.upsert','high','success',$3)",
-        [
+        if (!(await requireCapacity(organizationId, "member", res, client))) {
+          await client.query("rollback");
+          return;
+        }
+
+        const membership = await client.query(
+          `insert into organization_members(organization_id,user_id,role)
+           values($1,$2,$3)
+           on conflict do nothing
+           returning organization_id,user_id,role,created_at`,
+          [organizationId, user.rows[0].id, body.role],
+        );
+        if (!membership.rows[0]) {
+          await client.query("rollback");
+          return void json(res, 409, { error: "member_already_exists" });
+        }
+
+        await client.query("commit");
+        await auditForOrganization(
+          principal!,
           organizationId,
-          principal!.actor,
+          null,
+          "member.create",
+          "high",
+          "success",
           JSON.stringify({ userId: user.rows[0].id, email, role: body.role }),
-        ],
-      );
-      return void json(res, 200, { item: membership.rows[0] });
+        );
+        return void json(res, 200, { item: membership.rows[0] });
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
     }
 
     if (req.method === "GET" && url.pathname === "/api/invitations") {
@@ -811,20 +1106,26 @@ const server = http.createServer(async (req, res) => {
         return void json(res, 403, { error: "cannot_grant_role", requestedRole: body.role });
       }
 
+      const organizationId = principal!.organizationId;
       const email = normalizeEmail(body.email);
-      const existingMember = await db.query(
-        `select 1
-           from organization_members m
-           join users u on u.id=m.user_id
-          where m.organization_id=$1 and lower(u.email)=lower($2)`,
-        [principal!.organizationId, email],
-      );
-      if (existingMember.rowCount) return void json(res, 409, { error: "already_member" });
-
       const token = "wrci_" + randomToken(32);
       const client = await db.connect();
       try {
         await client.query("begin");
+        await client.query("select id from organizations where id=$1 for update", [organizationId]);
+
+        const existingMember = await client.query(
+          `select 1
+             from organization_members m
+             join users u on u.id=m.user_id
+            where m.organization_id=$1 and lower(u.email)=lower($2)`,
+          [organizationId, email],
+        );
+        if (existingMember.rowCount) {
+          await client.query("rollback");
+          return void json(res, 409, { error: "already_member" });
+        }
+
         await client.query(
           `update invitations
               set revoked_at=now()
@@ -832,14 +1133,20 @@ const server = http.createServer(async (req, res) => {
               and lower(email)=lower($2)
               and accepted_at is null
               and revoked_at is null`,
-          [principal!.organizationId, email],
+          [organizationId, email],
         );
+
+        if (!(await requireCapacity(organizationId, "member", res, client))) {
+          await client.query("rollback");
+          return;
+        }
+
         const created = await client.query(
           `insert into invitations(organization_id,email,role,token_hash,created_by,expires_at)
            values($1,$2,$3,$4,$5,now()+($6::int * interval '1 hour'))
            returning id,email,role,expires_at,created_at`,
           [
-            principal!.organizationId,
+            organizationId,
             email,
             body.role,
             sha256(token),
@@ -1022,27 +1329,48 @@ const server = http.createServer(async (req, res) => {
       }
 
       const organizationId = body.organizationId ?? principal!.organizationId;
-      const org = await db.query("select 1 from organizations where id=$1", [organizationId]);
-      if (!org.rowCount) return void json(res, 404, { error: "organization_not_found" });
-
       const rawToken = newApiToken();
-      const created = await db.query(
-        "insert into api_tokens(organization_id,name,role,token_hash,created_by) values($1,$2,$3,$4,$5) returning id,name,role,created_at",
-        [organizationId, body.name, body.role, sha256(rawToken), principal!.actor],
-      );
-      await db.query(
-        "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,$2,null,'token.create','medium','success',$3)",
-        [
+      const client = await db.connect();
+      try {
+        await client.query("begin");
+        const organization = await client.query(
+          "select id from organizations where id=$1 for update",
+          [organizationId],
+        );
+        if (!organization.rowCount) {
+          await client.query("rollback");
+          return void json(res, 404, { error: "organization_not_found" });
+        }
+        if (!(await requireCapacity(organizationId, "api_token", res, client))) {
+          await client.query("rollback");
+          return;
+        }
+
+        const created = await client.query(
+          "insert into api_tokens(organization_id,name,role,token_hash,created_by) values($1,$2,$3,$4,$5) returning id,name,role,created_at",
+          [organizationId, body.name, body.role, sha256(rawToken), principal!.actor],
+        );
+        await client.query("commit");
+        await auditForOrganization(
+          principal!,
           organizationId,
-          principal!.actor,
+          null,
+          "token.create",
+          "medium",
+          "success",
           JSON.stringify({
             tokenId: created.rows[0].id,
             name: body.name,
             role: body.role,
           }),
-        ],
-      );
-      return void json(res, 201, { item: created.rows[0], token: rawToken });
+        );
+        return void json(res, 201, { item: created.rows[0], token: rawToken });
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
     }
 
     const tokenRevokeMatch = url.pathname.match(/^\/api\/tokens\/([0-9a-f-]{36})\/revoke$/i);
@@ -1086,6 +1414,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       const orgId = principal!.organizationId;
+      if (!(await requireCapacity(orgId, "device", res))) return;
       await db.query("delete from pairing_codes where expires_at < now() or used_at is not null");
       const code = randomToken(24);
       await db.query(

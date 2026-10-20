@@ -138,6 +138,67 @@ export async function migrate() {
     create index if not exists approval_requests_org_status_idx
       on approval_requests(organization_id,status,created_at desc);
 
+    create table if not exists billing_plans (
+      key text primary key,
+      name text not null,
+      max_devices integer check (max_devices is null or max_devices>=0),
+      max_members integer check (max_members is null or max_members>=0),
+      max_api_tokens integer check (max_api_tokens is null or max_api_tokens>=0),
+      metadata jsonb not null default '{}'::jsonb,
+      active boolean not null default true,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+
+    create table if not exists organization_subscriptions (
+      organization_id uuid primary key references organizations(id) on delete cascade,
+      plan_key text not null references billing_plans(key),
+      status text not null
+        check (status in ('trialing','active','past_due','canceled')),
+      provider text,
+      external_customer_id text,
+      external_subscription_id text,
+      current_period_end timestamptz,
+      cancel_at_period_end boolean not null default false,
+      provider_event_at timestamptz,
+      provider_event_id text,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create unique index if not exists organization_subscriptions_provider_uidx
+      on organization_subscriptions(provider,external_subscription_id)
+      where provider is not null and external_subscription_id is not null;
+
+    alter table organization_subscriptions
+      add column if not exists provider_event_at timestamptz;
+    alter table organization_subscriptions
+      add column if not exists provider_event_id text;
+
+    create table if not exists billing_events (
+      id bigserial primary key,
+      provider text not null,
+      event_id text not null,
+      event_type text not null,
+      organization_id uuid not null references organizations(id) on delete cascade,
+      payload_hash text not null,
+      normalized_event jsonb not null,
+      disposition text not null default 'received'
+        check (disposition in ('received','applied','stale','provider_mismatch','order_conflict')),
+      created_at timestamptz not null default now(),
+      unique(provider,event_id)
+    );
+    create index if not exists billing_events_org_idx
+      on billing_events(organization_id,created_at desc);
+
+    alter table billing_events
+      add column if not exists disposition text not null default 'received';
+
+    alter table billing_events
+      drop constraint if exists billing_events_disposition_check;
+    alter table billing_events
+      add constraint billing_events_disposition_check
+      check (disposition in ('received','applied','stale','provider_mismatch','order_conflict'));
+
     create table if not exists audit_logs (
       id bigserial primary key,
       organization_id uuid references organizations(id) on delete set null,

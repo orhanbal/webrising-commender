@@ -75,6 +75,7 @@ jobs:
       PUBLIC_BASE_URL: http://127.0.0.1:8787
       HOST: 127.0.0.1
       PORT: 8787
+      DEPLOYMENT_MODE: saas
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

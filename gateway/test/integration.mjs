@@ -61,8 +61,49 @@ async function waitFor(predicate, timeoutMs = 5000, intervalMs = 100) {
   throw new Error(`condition timeout; last=${last instanceof Error ? last.message : JSON.stringify(last)}`);
 }
 
+async function assignSubscription(organizationId, planKey = "ci-standard", status = "active") {
+  return jsonFetch(`/api/admin/organizations/${organizationId}/subscription`, {
+    method: "PUT",
+    headers: authHeaders,
+    body: JSON.stringify({
+      planKey,
+      status,
+      cancelAtPeriodEnd: false,
+    }),
+  });
+}
+
 const health = await jsonFetch("/health");
 assert.equal(health.status, "ok");
+
+const standardPlan = await jsonFetch("/api/admin/billing/plans", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    key: "ci-standard",
+    name: "CI Standard",
+    maxDevices: 20,
+    maxMembers: 20,
+    maxApiTokens: 20,
+    metadata: { fixture: true },
+    active: true,
+  }),
+});
+assert.equal(standardPlan.item.key, "ci-standard");
+
+const initialOrganizations = await jsonFetch("/api/organizations", { headers: authHeaders });
+assert.ok(initialOrganizations.items.length > 0);
+const defaultOrganization = initialOrganizations.items[0];
+await assignSubscription(defaultOrganization.id);
+
+const initialBilling = await jsonFetch(
+  `/api/admin/organizations/${defaultOrganization.id}/billing`,
+  { headers: authHeaders },
+);
+assert.equal(initialBilling.mode, "saas");
+assert.equal(initialBilling.entitled, true);
+assert.equal(initialBilling.plan.key, "ci-standard");
+assert.equal(initialBilling.usage.devices, 0);
 
 const browserUser = await jsonFetch("/api/users", {
   method: "POST",
@@ -386,6 +427,8 @@ const tenantOrg = await jsonFetch("/api/organizations", {
 });
 assert.match(tenantOrg.item.id, /^[0-9a-f-]{36}$/i);
 
+await assignSubscription(tenantOrg.item.id);
+
 const tenantMembership = await jsonFetch("/api/members", {
   method: "POST",
   headers: authHeaders,
@@ -600,6 +643,27 @@ assert.equal(browserWorkspaceResponse.status, 201);
 const browserWorkspace = await browserWorkspaceResponse.json();
 assert.equal(browserWorkspace.item.role, "owner");
 
+const unprovisionedBillingResponse = await fetch(base + "/api/billing", {
+  headers: { Cookie: browserCookies },
+});
+assert.equal(unprovisionedBillingResponse.status, 200);
+const unprovisionedBilling = await unprovisionedBillingResponse.json();
+assert.equal(unprovisionedBilling.mode, "saas");
+assert.equal(unprovisionedBilling.entitled, false);
+assert.equal(unprovisionedBilling.reason, "billing_required");
+
+const unprovisionedPairingResponse = await fetch(base + "/api/pairing", {
+  method: "POST",
+  headers: {
+    Cookie: browserCookies,
+    "Content-Type": "application/json",
+    "X-CSRF-Token": browserLogin.csrfToken,
+  },
+  body: "{}",
+});
+assert.equal(unprovisionedPairingResponse.status, 402);
+assert.equal((await unprovisionedPairingResponse.json()).error, "billing_required");
+
 const renameWorkspaceResponse = await fetch(base + "/api/organization", {
   method: "PATCH",
   headers: {
@@ -706,6 +770,12 @@ const tenantAdminHeaders = {
   "Content-Type": "application/json",
 };
 
+const forbiddenBillingAdmin = await fetch(base + "/api/admin/billing/plans", {
+  headers: tenantAdminHeaders,
+});
+assert.equal(forbiddenBillingAdmin.status, 403);
+assert.equal((await forbiddenBillingAdmin.json()).error, "global_control_required");
+
 const forbiddenOwnerMembershipChange = await fetch(base + `/api/members/${browserMe.userId}`, {
   method: "PATCH",
   headers: tenantAdminHeaders,
@@ -759,6 +829,7 @@ const existingUserInviteOrg = await jsonFetch("/api/organizations", {
   headers: authHeaders,
   body: JSON.stringify({ name: "CI Existing User Invite" }),
 });
+await assignSubscription(existingUserInviteOrg.item.id);
 const existingUserInviteOwnerToken = await jsonFetch("/api/tokens", {
   method: "POST",
   headers: authHeaders,
@@ -826,6 +897,314 @@ const forbiddenOwnerInvite = await fetch(base + "/api/invitations", {
 });
 assert.equal(forbiddenOwnerInvite.status, 403);
 assert.equal((await forbiddenOwnerInvite.json()).error, "cannot_grant_role");
+
+const tinyPlan = await jsonFetch("/api/admin/billing/plans", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    key: "ci-tiny",
+    name: "CI Tiny",
+    maxDevices: 0,
+    maxMembers: 1,
+    maxApiTokens: 1,
+    metadata: { fixture: true },
+    active: true,
+  }),
+});
+assert.equal(tinyPlan.item.max_devices, 0);
+
+const tinyOrg = await jsonFetch("/api/organizations", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({ name: "CI Tiny Tenant" }),
+});
+await assignSubscription(tinyOrg.item.id, "ci-tiny");
+
+const tinyOwnerToken = await jsonFetch("/api/tokens", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    name: "Tiny Owner",
+    role: "owner",
+    organizationId: tinyOrg.item.id,
+  }),
+});
+const tinyHeaders = {
+  Authorization: `Bearer ${tinyOwnerToken.token}`,
+  "Content-Type": "application/json",
+};
+
+const tinySecondToken = await fetch(base + "/api/tokens", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    name: "Tiny Overflow",
+    role: "operator",
+    organizationId: tinyOrg.item.id,
+  }),
+});
+assert.equal(tinySecondToken.status, 409);
+const tinySecondTokenBody = await tinySecondToken.json();
+assert.equal(tinySecondTokenBody.error, "quota_exceeded");
+assert.equal(tinySecondTokenBody.resource, "api_token");
+assert.equal(tinySecondTokenBody.limit, 1);
+
+const tinyPairing = await fetch(base + "/api/pairing", {
+  method: "POST",
+  headers: tinyHeaders,
+  body: "{}",
+});
+assert.equal(tinyPairing.status, 409);
+const tinyPairingBody = await tinyPairing.json();
+assert.equal(tinyPairingBody.error, "quota_exceeded");
+assert.equal(tinyPairingBody.resource, "device");
+assert.equal(tinyPairingBody.limit, 0);
+
+const tinyInvite = await fetch(base + "/api/invitations", {
+  method: "POST",
+  headers: tinyHeaders,
+  body: JSON.stringify({
+    email: "tiny-one@example.test",
+    role: "viewer",
+  }),
+});
+assert.equal(tinyInvite.status, 201);
+
+const tinyInviteOverflow = await fetch(base + "/api/invitations", {
+  method: "POST",
+  headers: tinyHeaders,
+  body: JSON.stringify({
+    email: "tiny-two@example.test",
+    role: "viewer",
+  }),
+});
+assert.equal(tinyInviteOverflow.status, 409);
+const tinyInviteOverflowBody = await tinyInviteOverflow.json();
+assert.equal(tinyInviteOverflowBody.error, "quota_exceeded");
+assert.equal(tinyInviteOverflowBody.resource, "member");
+assert.equal(tinyInviteOverflowBody.used, 1);
+assert.equal(tinyInviteOverflowBody.limit, 1);
+
+const tinyBilling = await jsonFetch("/api/billing", { headers: tinyHeaders });
+assert.equal(tinyBilling.entitled, true);
+assert.equal(tinyBilling.plan.key, "ci-tiny");
+assert.equal(tinyBilling.usage.pendingInvitations, 1);
+assert.equal(tinyBilling.usage.apiTokens, 1);
+
+const eventPlan = await jsonFetch("/api/admin/billing/plans", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    key: "ci-event",
+    name: "CI Event Plan",
+    maxDevices: 5,
+    maxMembers: 5,
+    maxApiTokens: 5,
+    metadata: { fixture: true },
+    active: true,
+  }),
+});
+assert.equal(eventPlan.item.key, "ci-event");
+
+const eventOrg = await jsonFetch("/api/organizations", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({ name: "CI Event Tenant" }),
+});
+
+const normalizedEvent = {
+  provider: "ci-provider",
+  eventId: "evt-ci-001",
+  eventType: "subscription.activated",
+  occurredAt: "2026-10-20T20:00:00.000Z",
+  organizationId: eventOrg.item.id,
+  subscription: {
+    planKey: "ci-event",
+    status: "active",
+    externalCustomerId: "ci-customer-event",
+    externalSubscriptionId: "ci-subscription-event",
+    cancelAtPeriodEnd: false,
+  },
+};
+const appliedEvent = await jsonFetch("/api/admin/billing/events", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify(normalizedEvent),
+});
+assert.equal(appliedEvent.applied, true);
+assert.equal(appliedEvent.duplicate, false);
+
+const duplicateEvent = await jsonFetch("/api/admin/billing/events", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify(normalizedEvent),
+});
+assert.equal(duplicateEvent.applied, false);
+assert.equal(duplicateEvent.duplicate, true);
+
+const conflictingEventResponse = await fetch(base + "/api/admin/billing/events", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    ...normalizedEvent,
+    subscription: {
+      ...normalizedEvent.subscription,
+      status: "canceled",
+    },
+  }),
+});
+assert.equal(conflictingEventResponse.status, 409);
+assert.equal((await conflictingEventResponse.json()).error, "billing_event_conflict");
+
+const eventBilling = await jsonFetch(
+  `/api/admin/organizations/${eventOrg.item.id}/billing`,
+  { headers: authHeaders },
+);
+assert.equal(eventBilling.entitled, true);
+assert.equal(eventBilling.plan.key, "ci-event");
+assert.equal(eventBilling.subscription.provider, "ci-provider");
+
+const conflictingSubscriptionOrg = await jsonFetch("/api/organizations", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({ name: "CI Subscription Conflict Tenant" }),
+});
+const conflictingSubscriptionResponse = await fetch(base + "/api/admin/billing/events", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    provider: "ci-provider",
+    eventId: "evt-ci-subscription-collision",
+    eventType: "subscription.activated",
+    occurredAt: "2026-10-20T20:05:00.000Z",
+    organizationId: conflictingSubscriptionOrg.item.id,
+    subscription: {
+      planKey: "ci-event",
+      status: "active",
+      externalCustomerId: "ci-customer-conflict",
+      externalSubscriptionId: "ci-subscription-event",
+      cancelAtPeriodEnd: false,
+    },
+  }),
+});
+assert.equal(conflictingSubscriptionResponse.status, 409);
+assert.equal(
+  (await conflictingSubscriptionResponse.json()).error,
+  "billing_subscription_conflict",
+);
+
+const pastDueEvent = await jsonFetch("/api/admin/billing/events", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    ...normalizedEvent,
+    eventId: "evt-ci-002",
+    eventType: "subscription.past_due",
+    occurredAt: "2026-10-20T21:00:00.000Z",
+    subscription: {
+      ...normalizedEvent.subscription,
+      status: "past_due",
+    },
+  }),
+});
+assert.equal(pastDueEvent.applied, true);
+
+const pastDueBilling = await jsonFetch(
+  `/api/admin/organizations/${eventOrg.item.id}/billing`,
+  { headers: authHeaders },
+);
+assert.equal(pastDueBilling.entitled, false);
+assert.equal(pastDueBilling.reason, "billing_required");
+
+const sameTimeConflictResponse = await fetch(base + "/api/admin/billing/events", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    ...normalizedEvent,
+    eventId: "evt-ci-same-time",
+    eventType: "subscription.same_time_conflict",
+    occurredAt: "2026-10-20T21:00:00.000Z",
+    subscription: {
+      ...normalizedEvent.subscription,
+      status: "active",
+    },
+  }),
+});
+assert.equal(sameTimeConflictResponse.status, 409);
+const sameTimeConflict = await sameTimeConflictResponse.json();
+assert.equal(sameTimeConflict.error, "billing_event_order_conflict");
+assert.equal(sameTimeConflict.orderConflict, true);
+assert.equal(sameTimeConflict.applied, false);
+
+const billingAfterOrderConflict = await jsonFetch(
+  `/api/admin/organizations/${eventOrg.item.id}/billing`,
+  { headers: authHeaders },
+);
+assert.equal(billingAfterOrderConflict.subscription.status, "past_due");
+assert.equal(billingAfterOrderConflict.subscription.providerEventId, "evt-ci-002");
+
+const staleEvent = await jsonFetch("/api/admin/billing/events", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    ...normalizedEvent,
+    eventId: "evt-ci-003",
+    eventType: "subscription.reactivated_late",
+    occurredAt: "2026-10-20T20:30:00.000Z",
+    subscription: {
+      ...normalizedEvent.subscription,
+      status: "active",
+    },
+  }),
+});
+assert.equal(staleEvent.applied, false);
+assert.equal(staleEvent.duplicate, false);
+assert.equal(staleEvent.stale, true);
+assert.equal(staleEvent.providerMismatch, false);
+
+const billingAfterStaleEvent = await jsonFetch(
+  `/api/admin/organizations/${eventOrg.item.id}/billing`,
+  { headers: authHeaders },
+);
+assert.equal(billingAfterStaleEvent.entitled, false);
+assert.equal(billingAfterStaleEvent.subscription.status, "past_due");
+assert.equal(
+  billingAfterStaleEvent.subscription.providerEventId,
+  "evt-ci-002",
+);
+
+const wrongProviderEvent = await jsonFetch("/api/admin/billing/events", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    ...normalizedEvent,
+    provider: "old-provider",
+    eventId: "evt-ci-old-provider",
+    eventType: "subscription.activated",
+    occurredAt: "2026-10-20T22:00:00.000Z",
+  }),
+});
+assert.equal(wrongProviderEvent.applied, false);
+assert.equal(wrongProviderEvent.providerMismatch, true);
+
+const billingAfterWrongProvider = await jsonFetch(
+  `/api/admin/organizations/${eventOrg.item.id}/billing`,
+  { headers: authHeaders },
+);
+assert.equal(billingAfterWrongProvider.subscription.provider, "ci-provider");
+assert.equal(billingAfterWrongProvider.subscription.status, "past_due");
+
+const pastDueToken = await fetch(base + "/api/tokens", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    name: "Blocked By Billing",
+    role: "owner",
+    organizationId: eventOrg.item.id,
+  }),
+});
+assert.equal(pastDueToken.status, 402);
+assert.equal((await pastDueToken.json()).error, "billing_required");
 
 const browserLogoutResponse = await fetch(base + "/api/auth/logout", {
   method: "POST",

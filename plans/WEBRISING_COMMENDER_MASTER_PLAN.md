@@ -91,6 +91,7 @@ Approval tokens are short-lived, one-time HMAC-signed claims containing device i
 - organizations
 - users
 - organization_members
+- invitations
 - devices
 - device_credentials
 - pairing_codes
@@ -98,6 +99,9 @@ Approval tokens are short-lived, one-time HMAC-signed claims containing device i
 - tasks
 - approvals
 - policies
+- billing_plans
+- organization_subscriptions
+- billing_events
 - audit_logs
 
 The first implementation uses a default organization to remain simple for self-hosting. Tables and APIs carry organization_id where it materially affects future tenancy.
@@ -128,7 +132,7 @@ Windows service, systemd, Docker images, release artifacts.
 ### Phase 7 — SaaS
 Real user auth, organizations, RBAC, plans/billing, regional relays. This phase must not weaken self-hosted mode.
 
-Current milestone: organization-scoped browser users, hardened sessions, workspace creation/switching, secure expiring invitations, membership lifecycle, tenant API-token management and RBAC are implemented. Billing, email-verified public signup and regional relay orchestration remain.
+Current milestone: organization-scoped browser users, hardened sessions, workspace onboarding/access, provider-neutral billing plans/subscriptions, transactional resource entitlements, idempotent normalized billing events, provider identity binding and stale/out-of-order event protection are implemented. Provider-specific checkout + signed webhook adapters, email-verified public signup and regional relay orchestration remain.
 
 ## 7. Definition of done
 

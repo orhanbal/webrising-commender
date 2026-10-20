@@ -71,3 +71,26 @@ Workspace invitation URLs are bearer secrets. The raw invitation token is never 
 - Admins cannot grant or manage a role above their own role.
 - Removing a member revokes that member's browser sessions scoped to the workspace.
 - Open unauthenticated self-registration is intentionally not enabled before email-verification and billing-abuse controls exist.
+
+
+## Billing and entitlement boundary
+
+Billing state cannot be modified by tenant-scoped admins. Plan catalog changes, manual subscription assignments and normalized billing events require the global control credential. Manual assignments are deliberately provider-neutral: provider/customer/subscription identifiers can enter durable state only after a provider-specific adapter has verified and normalized an event.
+
+SaaS quota enforcement is server-side and transaction-bound:
+
+- device limits are enforced again when an enrollment actually consumes a device slot;
+- pending invitations reserve member capacity;
+- direct member creation and invitation acceptance serialize on the organization row;
+- tenant API-token creation serializes on the same organization row;
+- subscription/event state changes take that organization lock as well.
+
+This prevents concurrent allocation requests from oversubscribing the last available slot.
+
+A non-entitled or `past_due`/canceled organization keeps its existing resources but cannot allocate new billable resources. This avoids destructive billing side effects while still enforcing the commercial boundary.
+
+Normalized billing events are stored without raw webhook bodies or payment credentials. Event idempotency is keyed by `provider + event_id`. A replay with the same normalized payload is a no-op; reusing the same event id with different normalized data is rejected as `billing_event_conflict`.
+
+Every normalized provider event must also carry a verified provider occurrence timestamp. Once a provider event has advanced an organization's subscription state, older events from that provider are retained in the event ledger but ignored for state mutation. A different event with the exact same occurrence time is treated as `billing_event_order_conflict` rather than guessed into an order; the adapter must reconcile against the provider's authoritative subscription snapshot. Events from a different provider are ignored while the subscription is bound to the current provider. This prevents delayed webhooks from rolling subscription state backward or a retired provider from overwriting the active provider.
+
+The internal normalized-event API is not a substitute for provider webhook verification. Any Paddle, Stripe or other adapter must verify the provider's signature and map trusted provider identifiers to an organization before calling the internal billing event layer.
