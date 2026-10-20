@@ -35,7 +35,7 @@
           <label><span class="label">Email</span><input id="loginEmail" type="email" autocomplete="username" placeholder="you@example.com"></label>
           <label><span class="label">Password</span><input id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••••••••"></label>
         </div>
-        <div class="row" style="margin-top:10px"><button id="loginButton">Sign in</button><button id="logoutButton" class="secondary">Sign out</button><span id="authState" class="pill">not signed in</span></div>
+        <div class="row" style="margin-top:10px"><button id="loginButton">Sign in</button><button id="logoutButton" class="secondary">Sign out</button><button id="showSignup" class="secondary hidden">Create account</button><button id="showReset" class="secondary hidden">Forgot password</button><span id="authState" class="pill">not signed in</span></div>
         <p class="hint">Browser sessions use HttpOnly cookies. Passwords and session tokens are never stored in localStorage.</p>
       </div>
       <div>
@@ -48,6 +48,31 @@
       </div>
     </div>
     <p id="globalError" class="error"></p>
+  </section>
+
+  <section id="signupCard" class="login hidden">
+    <div class="row" style="justify-content:space-between"><div><h3 style="margin:0 0 6px">Create browser account</h3><p class="hint" style="margin:0">Email verification is required before the account can sign in.</p></div><button id="hideSignup" class="secondary">Close</button></div>
+    <div class="three" style="margin-top:14px">
+      <label><span class="label">Email</span><input id="signupEmail" type="email" autocomplete="email" placeholder="you@example.com"></label>
+      <label><span class="label">Password</span><input id="signupPassword" type="password" autocomplete="new-password" placeholder="Minimum 12 characters"></label>
+      <label><span class="label">Workspace name</span><input id="signupWorkspace" placeholder="My workspace"></label>
+    </div>
+    <div class="row" style="margin-top:10px"><button id="requestSignup">Send verification email</button><span id="signupState" class="hint"></span></div>
+    <p id="signupError" class="error"></p>
+  </section>
+
+  <section id="resetCard" class="login hidden">
+    <div class="row" style="justify-content:space-between"><div><h3 style="margin:0 0 6px">Password reset</h3><p class="hint" style="margin:0">Reset links are one-time and expire after one hour.</p></div><button id="hideReset" class="secondary">Close</button></div>
+    <div id="resetRequestFields" class="toolbar" style="margin-top:14px">
+      <label><span class="label">Account email</span><input id="resetEmail" type="email" autocomplete="email" placeholder="you@example.com"></label>
+      <button id="requestReset">Send reset email</button>
+    </div>
+    <div id="resetConfirmFields" class="toolbar hidden" style="margin-top:14px">
+      <label><span class="label">New password</span><input id="resetNewPassword" type="password" autocomplete="new-password" placeholder="Minimum 12 characters"></label>
+      <button id="confirmReset">Set new password</button>
+    </div>
+    <p id="resetState" class="hint"></p>
+    <p id="resetError" class="error"></p>
   </section>
 
   <section id="inviteCard" class="login hidden">
@@ -209,7 +234,11 @@ let terminalSession=null;
 let terminalTimer=null;
 let currentIdentity=null;
 let organizations=[];
-let invitationToken=new URLSearchParams(location.hash.startsWith("#")?location.hash.slice(1):location.hash).get("invite")||"";
+const initialHashParams=new URLSearchParams(location.hash.startsWith("#")?location.hash.slice(1):location.hash);
+let invitationToken=initialHashParams.get("invite")||"";
+let verificationToken=initialHashParams.get("verify")||"";
+let resetToken=initialHashParams.get("reset")||"";
+let publicAuthConfig=null;
 
 $("key").value=sessionStorage.getItem("commender-key")||"";
 const cookieValue=name=>document.cookie.split(";").map(x=>x.trim()).find(x=>x.startsWith(name+"="))?.slice(name.length+1)||"";
@@ -278,6 +307,53 @@ async function refreshIdentity(){
 }
 $("loginButton").onclick=async()=>{try{clearError();sessionStorage.removeItem("commender-key");$("key").value="";const r=await fetch("/api/auth/login",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("loginEmail").value.trim(),password:$("loginPassword").value})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(body.error||("HTTP "+r.status));$("loginPassword").value="";await refreshIdentity()}catch(e){showError(e)}}
 $("logoutButton").onclick=async()=>{try{if(currentIdentity)await api("/api/auth/logout",{method:"POST",body:"{}"});sessionStorage.removeItem("commender-key");$("key").value="";selected=null;currentIdentity=null;syncSelection();await refreshIdentity()}catch(e){showError(e)}}
+function clearAuthFragment(){history.replaceState(null,"",location.pathname+location.search)}
+function publicAuthError(body,status){return body?.error||("HTTP "+status)}
+function showSignupCard(){$("signupCard").classList.remove("hidden");$("signupError").textContent="";$("signupState").textContent=""}
+function showResetCard(confirmMode=false){$("resetCard").classList.remove("hidden");$("resetError").textContent="";$("resetRequestFields").classList.toggle("hidden",confirmMode);$("resetConfirmFields").classList.toggle("hidden",!confirmMode)}
+$("showSignup").onclick=showSignupCard;
+$("hideSignup").onclick=()=>$("signupCard").classList.add("hidden");
+$("showReset").onclick=()=>showResetCard(false);
+$("hideReset").onclick=()=>$("resetCard").classList.add("hidden");
+
+$("requestSignup").onclick=async()=>{try{$("signupError").textContent="";$("signupState").textContent="Sending…";const email=$("signupEmail").value.trim();const password=$("signupPassword").value;const workspaceName=$("signupWorkspace").value.trim();const r=await fetch("/api/auth/signup",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password,workspaceName})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(publicAuthError(body,r.status));$("signupPassword").value="";$("signupState").textContent="If the address is eligible, a verification email has been queued."}catch(e){$("signupState").textContent="";$("signupError").textContent=e.message||String(e)}}
+
+$("requestReset").onclick=async()=>{try{$("resetError").textContent="";$("resetState").textContent="Sending…";const r=await fetch("/api/auth/password-reset/request",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("resetEmail").value.trim()})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(publicAuthError(body,r.status));$("resetState").textContent="If the address is eligible, reset instructions have been queued."}catch(e){$("resetState").textContent="";$("resetError").textContent=e.message||String(e)}}
+
+$("confirmReset").onclick=async()=>{try{$("resetError").textContent="";const newPassword=$("resetNewPassword").value;if(newPassword.length<12)throw new Error("Password must be at least 12 characters.");const r=await fetch("/api/auth/password-reset/confirm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:resetToken,newPassword})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(publicAuthError(body,r.status));resetToken="";$("resetNewPassword").value="";clearAuthFragment();$("resetConfirmFields").classList.add("hidden");$("resetRequestFields").classList.remove("hidden");$("resetState").textContent="Password updated. You can sign in with the new password."}catch(e){$("resetError").textContent=e.message||String(e)}}
+
+async function verifyPublicSignup(){
+  if(!verificationToken)return;
+  showSignupCard();
+  $("requestSignup").disabled=true;
+  $("signupState").textContent="Verifying email…";
+  try{
+    const r=await fetch("/api/auth/signup/verify",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:verificationToken})});
+    const body=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(publicAuthError(body,r.status));
+    verificationToken="";
+    clearAuthFragment();
+    $("signupState").textContent="Email verified. Account created and signed in.";
+    $("signupPassword").value="";
+    await refreshIdentity();
+  }catch(e){
+    $("signupState").textContent="";
+    $("signupError").textContent=e.message||String(e);
+  }finally{
+    $("requestSignup").disabled=false;
+  }
+}
+
+async function loadPublicAuth(){
+  try{
+    const r=await fetch("/api/auth/config",{credentials:"same-origin"});
+    publicAuthConfig=await r.json();
+    $("showSignup").classList.toggle("hidden",!publicAuthConfig.publicSignupEnabled);
+    $("showReset").classList.toggle("hidden",!publicAuthConfig.passwordResetEnabled);
+  }catch{}
+  if(resetToken){showResetCard(true);$("resetState").textContent="Enter a new password to finish the reset."}
+  await verifyPublicSignup();
+}
 $("saveKey").onclick=()=>{sessionStorage.setItem("commender-key",$("key").value);refreshIdentity()}
 $("forgetKey").onclick=()=>{sessionStorage.removeItem("commender-key");$("key").value="";selected=null;syncSelection();refreshIdentity()}
 $("refreshDevices").onclick=loadDevices;
@@ -394,7 +470,7 @@ $("acceptInvite").onclick=async()=>{try{const password=$("invitePassword").value
 async function loadAudit(){try{const j=await api("/api/audit?limit=100");$("auditBody").innerHTML=j.items.map(x=>'<tr><td>'+escapeHtml(new Date(x.created_at).toLocaleString())+'</td><td>'+escapeHtml(x.actor)+'</td><td>'+escapeHtml(x.device_id||"")+'</td><td>'+escapeHtml(x.tool)+'</td><td>'+escapeHtml(x.risk)+'</td><td>'+escapeHtml(x.outcome)+'</td><td>'+escapeHtml(x.detail)+'</td></tr>').join("")}catch(e){showError(e)}}
 $("loadAudit").onclick=loadAudit;
 
-health();setInterval(health,15000);loadInvitePreview();refreshIdentity()
+health();setInterval(health,15000);loadPublicAuth();loadInvitePreview();refreshIdentity()
 
 </script>
 </body>
