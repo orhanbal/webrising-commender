@@ -9,7 +9,7 @@ import { consumeApproval } from "./approvals.js";
 import { authenticateAuthorization, newApiToken, roleAtLeast, type Principal, type Role } from "./auth.js";
 import { db, housekeeping, migrate, ready } from "./db.js";
 import { handleMcp } from "./mcp.js";
-import { actionRisk, type AgentAction } from "./protocol.js";
+import { actionRisk, parseAgentAction, type AgentAction } from "./protocol.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { AgentHub } from "./relay.js";
 import { deviceApprovalKeyForAgent, issueApproval, randomToken, redact, sha256 } from "./security.js";
@@ -436,13 +436,10 @@ const server = http.createServer(async (req, res) => {
       if (!requireRole(principal!, "admin", res)) return;
       const body = z.object({
         deviceId: z.string().uuid(),
-        action: z.record(z.string(), z.unknown()),
+        action: z.unknown(),
         ttlSeconds: z.number().int().min(15).max(600).optional(),
       }).parse(await readJson(req));
-      const approvalAction = body.action as AgentAction;
-      if (typeof approvalAction.kind !== "string") {
-        return void json(res, 400, { error: "invalid_action" });
-      }
+      const approvalAction = parseAgentAction(body.action);
       const orgId = principal!.organizationId;
       const exists = await db.query("select 1 from devices where id=$1 and organization_id=$2 and revoked_at is null", [body.deviceId, orgId]);
       if (!exists.rowCount) return void json(res, 404, { error: "device_not_found" });
@@ -476,11 +473,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/device/request") {
       const body = z.object({
         deviceId: z.string().uuid(),
-        action: z.record(z.string(), z.unknown()),
+        action: z.unknown(),
         approvalToken: z.string().optional(),
       }).parse(await readJson(req));
-      const action = body.action as AgentAction;
-      if (typeof action.kind !== "string") return void json(res, 400, { error: "invalid_action" });
+      const action = parseAgentAction(body.action);
 
       const orgId = principal!.organizationId;
       const exists = await db.query(
