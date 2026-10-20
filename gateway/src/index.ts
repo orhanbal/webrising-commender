@@ -303,6 +303,7 @@ const server = http.createServer(async (req, res) => {
         return void json(res, 429, { error: "rate_limited" });
       }
 
+      const passwordHash = await hashPassword(body.password);
       const existing = await db.query(
         "select 1 from users where lower(email)=lower($1) limit 1",
         [email],
@@ -311,7 +312,6 @@ const server = http.createServer(async (req, res) => {
         return void json(res, 202, { ok: true });
       }
 
-      const passwordHash = await hashPassword(body.password);
       const token = "wrsv_" + randomToken(32);
       const ttlHoursRaw = Number(process.env.SIGNUP_VERIFY_TTL_HOURS ?? 24);
       const ttlHours = Number.isFinite(ttlHoursRaw)
@@ -359,7 +359,10 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && url.pathname === "/api/auth/signup/verify") {
-      const body = z.object({ token: z.string().min(40).max(200) }).parse(await readJson(req));
+      const body = z.object({
+        token: z.string().min(40).max(200),
+        password: z.string().min(12).max(256),
+      }).parse(await readJson(req));
       const rate = signupVerifyRateLimit.hit(
         `${remoteKey(req)}:${sha256(body.token)}`,
         15,
@@ -405,6 +408,10 @@ const server = http.createServer(async (req, res) => {
         if (!item) {
           await client.query("rollback");
           return void json(res, 400, { error: "invalid_or_expired_verification" });
+        }
+        if (!(await verifyPassword(body.password, item.password_hash))) {
+          await client.query("rollback");
+          return void json(res, 401, { error: "invalid_credentials" });
         }
 
         const exists = await client.query(
