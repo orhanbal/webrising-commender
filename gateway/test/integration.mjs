@@ -171,10 +171,23 @@ assert.equal(
 assert.ok(encryptedOutbox.rows[0].payload_nonce);
 assert.ok(encryptedOutbox.rows[0].payload_tag);
 
+const wrongVerificationPassword = await fetch(base + "/api/auth/signup/verify", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    token: verificationToken,
+    password: "wrong-signup-password",
+  }),
+});
+assert.equal(wrongVerificationPassword.status, 401);
+
 const verifySignupResponse = await fetch(base + "/api/auth/signup/verify", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ token: verificationToken }),
+  body: JSON.stringify({
+    token: verificationToken,
+    password: "signup-initial-password",
+  }),
 });
 assert.equal(verifySignupResponse.status, 200);
 const verifiedSignup = await verifySignupResponse.json();
@@ -188,7 +201,10 @@ const signupCookies = verifySignupResponse.headers
 const verifyReplay = await fetch(base + "/api/auth/signup/verify", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ token: verificationToken }),
+  body: JSON.stringify({
+    token: verificationToken,
+    password: "signup-initial-password",
+  }),
 });
 assert.equal(verifyReplay.status, 400);
 assert.equal((await verifyReplay.json()).error, "invalid_or_expired_verification");
