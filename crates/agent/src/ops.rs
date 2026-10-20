@@ -22,7 +22,7 @@ pub async fn execute(
     if action.risk() == Risk::High {
         let token = approval_token
             .ok_or_else(|| anyhow!("approval token required for high-risk action"))?;
-        approval::verify(token, approval_key, device_id, action.kind_name())?;
+        approval::verify(token, approval_key, device_id, &action)?;
     }
 
     match action {
