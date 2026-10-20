@@ -7,7 +7,7 @@ import { WebSocketServer } from "ws";
 import { z } from "zod";
 import { consumeApproval } from "./approvals.js";
 import { authenticateAuthorization, newApiToken, roleAtLeast, type Principal, type Role } from "./auth.js";
-import { db, migrate, ready } from "./db.js";
+import { db, housekeeping, migrate, ready } from "./db.js";
 import { handleMcp } from "./mcp.js";
 import { actionRisk, type AgentAction } from "./protocol.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
@@ -23,6 +23,14 @@ const enrollRateLimit = new FixedWindowRateLimiter();
 const pairingRateLimit = new FixedWindowRateLimiter();
 
 await migrate();
+await housekeeping();
+
+const housekeepingTimer = setInterval(() => {
+  void housekeeping().catch((error) => {
+    process.stderr.write(`housekeeping failed: ${redact(error instanceof Error ? error.message : error)}\n`);
+  });
+}, 60 * 60 * 1000);
+housekeepingTimer.unref();
 
 function json(res: ServerResponse, status: number, value: unknown) {
   const body = JSON.stringify(value);
