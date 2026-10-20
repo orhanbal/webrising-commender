@@ -83,7 +83,12 @@
   </section>
 
   <section id="verifyCard" class="login hidden">
-    <div class="row" style="justify-content:space-between"><div><h3 style="margin:0 0 6px">Verify account</h3><p id="verifyStatus" class="hint" style="margin:0">Verifying your email…</p></div><span id="verifyState" class="pill">verifying</span></div>
+    <div class="row" style="justify-content:space-between"><div><h3 style="margin:0 0 6px">Verify account</h3><p id="verifyStatus" class="hint" style="margin:0">Enter the password you chose when signing up to complete email verification.</p></div><span id="verifyState" class="pill">verification link</span></div>
+    <div class="toolbar" style="margin-top:14px">
+      <label><span class="label">Signup password</span><input id="verifyPassword" type="password" autocomplete="current-password" placeholder="Your signup password"></label>
+      <button id="verifySubmit">Verify & sign in</button>
+    </div>
+    <p id="verifyError" class="error"></p>
   </section>
 
   <section id="inviteCard" class="login hidden">
@@ -413,25 +418,11 @@ $("switchOrganization").onclick=async()=>{try{const organizationId=$("organizati
 $("createOrganization").onclick=async()=>{try{const name=prompt("New workspace name");if(!name?.trim())return;await api("/api/auth/organizations",{method:"POST",body:JSON.stringify({name:name.trim()})});selected=null;syncSelection();await refreshIdentity();await loadAccess()}catch(e){showError(e)}}
 $("renameOrganization").onclick=async()=>{try{const name=$("organizationName").value.trim();if(!name)throw new Error("Enter a workspace name.");await api("/api/organization",{method:"PATCH",body:JSON.stringify({name})});await refreshIdentity();await loadAccess()}catch(e){showError(e)}}
 
-async function verifySignupLink(){
+async function prepareSignupVerification(){
   if(!verificationToken)return;
   $("verifyCard").classList.remove("hidden");
-  try{
-    const r=await fetch("/api/auth/signup/verify",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:verificationToken})});
-    const body=await r.json().catch(()=>({}));
-    if(!r.ok)throw new Error(apiError(body,r.status));
-    verificationToken="";
-    history.replaceState(null,"",location.pathname+location.search);
-    $("verifyState").textContent="verified";
-    $("verifyState").className="pill ok";
-    $("verifyStatus").textContent="Email verified. Your workspace has been created and you are signed in.";
-    await refreshIdentity();
-  }catch(e){
-    $("verifyState").textContent="invalid";
-    $("verifyState").className="pill bad";
-    $("verifyStatus").textContent=e.message||String(e);
-  }
 }
+$("verifySubmit").onclick=async()=>{try{$("verifyError").textContent="";const password=$("verifyPassword").value;if(password.length<12)throw new Error("Enter the password you used when signing up.");const r=await fetch("/api/auth/signup/verify",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:verificationToken,password})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(apiError(body,r.status));verificationToken="";history.replaceState(null,"",location.pathname+location.search);$("verifyPassword").value="";$("verifyState").textContent="verified";$("verifyState").className="pill ok";$("verifyStatus").textContent="Email verified. Your workspace has been created and you are signed in.";await refreshIdentity()}catch(e){$("verifyState").textContent="verification failed";$("verifyState").className="pill bad";$("verifyError").textContent=e.message||String(e)}}
 
 async function preparePasswordReset(){
   if(!passwordResetToken)return;
@@ -465,7 +456,7 @@ $("acceptInvite").onclick=async()=>{try{const password=$("invitePassword").value
 async function loadAudit(){try{const j=await api("/api/audit?limit=100");$("auditBody").innerHTML=j.items.map(x=>'<tr><td>'+escapeHtml(new Date(x.created_at).toLocaleString())+'</td><td>'+escapeHtml(x.actor)+'</td><td>'+escapeHtml(x.device_id||"")+'</td><td>'+escapeHtml(x.tool)+'</td><td>'+escapeHtml(x.risk)+'</td><td>'+escapeHtml(x.outcome)+'</td><td>'+escapeHtml(x.detail)+'</td></tr>').join("")}catch(e){showError(e)}}
 $("loadAudit").onclick=loadAudit;
 
-health();setInterval(health,15000);verifySignupLink();preparePasswordReset();loadInvitePreview();refreshIdentity()
+health();setInterval(health,15000);prepareSignupVerification();preparePasswordReset();loadInvitePreview();refreshIdentity()
 
 </script>
 </body>
