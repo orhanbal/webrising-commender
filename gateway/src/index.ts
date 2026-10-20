@@ -31,7 +31,8 @@ import { handleMcp } from "./mcp.js";
 import { actionRisk, parseAgentAction } from "./protocol.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { AgentHub } from "./relay.js";
-import { sendMail, smtpConfigured } from "./mailer.js";
+import { smtpConfigured } from "./mailer.js";
+import { enqueueMail, startMailOutboxWorker } from "./mail-outbox.js";
 import { deviceApprovalKeyForAgent, issueApproval, randomToken, redact, sha256 } from "./security.js";
 
 const host = process.env.HOST || "0.0.0.0";
@@ -66,6 +67,7 @@ const housekeepingTimer = setInterval(() => {
   });
 }, 60 * 60 * 1000);
 housekeepingTimer.unref();
+const stopMailOutboxWorker = startMailOutboxWorker();
 
 function securityHeaders() {
   return {
@@ -171,7 +173,7 @@ function authLink(kind: "signup" | "reset", token: string) {
   return publicBaseUrl + "/#" + kind + "=" + encodeURIComponent(token);
 }
 
-async function deliverAuthEmail(input: {
+function authEmailMessage(input: {
   to: string;
   purpose: "signup" | "password_reset";
   token: string;
@@ -201,7 +203,7 @@ async function deliverAuthEmail(input: {
         "If you did not request a password reset, ignore this message.",
       ].join("\n");
 
-  await sendMail({ to: input.to, subject, text });
+  return { to: input.to, subject, text };
 }
 
 async function serveConsole(res: ServerResponse) {
@@ -2045,6 +2047,7 @@ server.listen(port, host, () => {
 });
 
 async function shutdown() {
+  stopMailOutboxWorker();
   server.close();
   for (const client of wss.clients) client.close(1001, "shutdown");
   await db.end();
