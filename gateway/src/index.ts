@@ -721,24 +721,29 @@ const server = http.createServer(async (req, res) => {
         "select role from organization_members where organization_id=$1 and user_id=$2",
         [organizationId, user.rows[0].id],
       );
-      if (
-        currentMembership.rows[0] &&
-        !roleAtLeast(principal!, currentMembership.rows[0].role)
-      ) {
-        return void json(res, 403, {
-          error: "cannot_manage_higher_role",
-          targetRole: currentMembership.rows[0].role,
+      if (currentMembership.rows[0]) {
+        if (!roleAtLeast(principal!, currentMembership.rows[0].role)) {
+          return void json(res, 403, {
+            error: "cannot_manage_higher_role",
+            targetRole: currentMembership.rows[0].role,
+          });
+        }
+        return void json(res, 409, {
+          error: "member_already_exists",
+          currentRole: currentMembership.rows[0].role,
         });
       }
 
       const membership = await db.query(
         `insert into organization_members(organization_id,user_id,role)
          values($1,$2,$3)
-         on conflict (organization_id,user_id)
-         do update set role=excluded.role
+         on conflict do nothing
          returning organization_id,user_id,role,created_at`,
         [organizationId, user.rows[0].id, body.role],
       );
+      if (!membership.rows[0]) {
+        return void json(res, 409, { error: "member_already_exists" });
+      }
       await db.query(
         "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,$2,null,'member.upsert','high','success',$3)",
         [
