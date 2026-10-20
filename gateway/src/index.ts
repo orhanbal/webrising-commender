@@ -222,14 +222,15 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    if (req.method === "GET" && url.pathname === "/api/invitations/preview") {
+    if (req.method === "POST" && url.pathname === "/api/invitations/preview") {
       const previewRate = invitationPreviewRateLimit.hit(remoteKey(req), 120, 10 * 60_000);
       if (!previewRate.allowed) {
         res.setHeader("Retry-After", String(previewRate.retryAfterSeconds));
         return void json(res, 429, { error: "rate_limited" });
       }
-      const token = String(url.searchParams.get("token") || "");
-      if (!token.startsWith("wrci_") || token.length < 40 || token.length > 200) {
+      const body = z.object({ token: z.string().min(40).max(200) }).parse(await readJson(req));
+      const token = body.token;
+      if (!token.startsWith("wrci_")) {
         return void json(res, 404, { error: "invalid_or_expired_invitation" });
       }
       const result = await db.query<{
@@ -858,7 +859,7 @@ const server = http.createServer(async (req, res) => {
         return void json(res, 201, {
           item: created.rows[0],
           inviteToken: token,
-          inviteUrl: `${publicBaseUrl}/?invite=${encodeURIComponent(token)}`,
+          inviteUrl: `${publicBaseUrl}/#invite=${encodeURIComponent(token)}`,
         });
       } catch (error) {
         await client.query("rollback");
