@@ -28,6 +28,12 @@ import {
 } from "./billing.js";
 import { db, housekeeping, migrate, ready } from "./db.js";
 import { handleMcp } from "./mcp.js";
+import {
+  mailDeliveryAvailable,
+  mailDeliveryMode,
+  queueMail,
+  startMailWorker,
+} from "./mail.js";
 import { actionRisk, parseAgentAction } from "./protocol.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { AgentHub } from "./relay.js";
@@ -45,10 +51,19 @@ const loginAccountRateLimit = new FixedWindowRateLimiter();
 const invitationPreviewRateLimit = new FixedWindowRateLimiter();
 const invitationAcceptIpRateLimit = new FixedWindowRateLimiter();
 const invitationAcceptTokenRateLimit = new FixedWindowRateLimiter();
+const signupIpRateLimit = new FixedWindowRateLimiter();
+const signupAccountRateLimit = new FixedWindowRateLimiter();
+const signupVerifyRateLimit = new FixedWindowRateLimiter();
+const resetRequestIpRateLimit = new FixedWindowRateLimiter();
+const resetRequestAccountRateLimit = new FixedWindowRateLimiter();
+const resetConfirmRateLimit = new FixedWindowRateLimiter();
+const publicSignupRequested = /^(1|true|yes)$/i.test(String(process.env.PUBLIC_SIGNUP_ENABLED || ""));
+const publicSignupEnabled = publicSignupRequested && mailDeliveryAvailable();
 const trustProxyHeaders = /^(1|true|yes)$/i.test(String(process.env.TRUST_PROXY_HEADERS || ""));
 
 await migrate();
 await housekeeping();
+const stopMailWorker = startMailWorker();
 
 const housekeepingTimer = setInterval(() => {
   void housekeeping().catch((error) => {
