@@ -1019,6 +1019,7 @@ const normalizedEvent = {
   provider: "ci-provider",
   eventId: "evt-ci-001",
   eventType: "subscription.activated",
+  occurredAt: "2026-10-20T20:00:00.000Z",
   organizationId: eventOrg.item.id,
   subscription: {
     planKey: "ci-event",
@@ -1073,6 +1074,7 @@ const pastDueEvent = await jsonFetch("/api/admin/billing/events", {
     ...normalizedEvent,
     eventId: "evt-ci-002",
     eventType: "subscription.past_due",
+    occurredAt: "2026-10-20T21:00:00.000Z",
     subscription: {
       ...normalizedEvent.subscription,
       status: "past_due",
@@ -1087,6 +1089,57 @@ const pastDueBilling = await jsonFetch(
 );
 assert.equal(pastDueBilling.entitled, false);
 assert.equal(pastDueBilling.reason, "billing_required");
+
+const staleEvent = await jsonFetch("/api/admin/billing/events", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    ...normalizedEvent,
+    eventId: "evt-ci-003",
+    eventType: "subscription.reactivated_late",
+    occurredAt: "2026-10-20T20:30:00.000Z",
+    subscription: {
+      ...normalizedEvent.subscription,
+      status: "active",
+    },
+  }),
+});
+assert.equal(staleEvent.applied, false);
+assert.equal(staleEvent.duplicate, false);
+assert.equal(staleEvent.stale, true);
+assert.equal(staleEvent.providerMismatch, false);
+
+const billingAfterStaleEvent = await jsonFetch(
+  `/api/admin/organizations/${eventOrg.item.id}/billing`,
+  { headers: authHeaders },
+);
+assert.equal(billingAfterStaleEvent.entitled, false);
+assert.equal(billingAfterStaleEvent.subscription.status, "past_due");
+assert.equal(
+  billingAfterStaleEvent.subscription.providerEventId,
+  "evt-ci-002",
+);
+
+const wrongProviderEvent = await jsonFetch("/api/admin/billing/events", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    ...normalizedEvent,
+    provider: "old-provider",
+    eventId: "evt-ci-old-provider",
+    eventType: "subscription.activated",
+    occurredAt: "2026-10-20T22:00:00.000Z",
+  }),
+});
+assert.equal(wrongProviderEvent.applied, false);
+assert.equal(wrongProviderEvent.providerMismatch, true);
+
+const billingAfterWrongProvider = await jsonFetch(
+  `/api/admin/organizations/${eventOrg.item.id}/billing`,
+  { headers: authHeaders },
+);
+assert.equal(billingAfterWrongProvider.subscription.provider, "ci-provider");
+assert.equal(billingAfterWrongProvider.subscription.status, "past_due");
 
 const pastDueToken = await fetch(base + "/api/tokens", {
   method: "POST",
