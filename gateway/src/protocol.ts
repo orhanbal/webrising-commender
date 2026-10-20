@@ -10,17 +10,24 @@ export type AgentAction =
   | { kind: "fs_write"; path: string; contentBase64: string; createParents?: boolean }
   | { kind: "fs_mkdir"; path: string; recursive?: boolean }
   | { kind: "fs_delete"; path: string; recursive?: boolean }
+  | { kind: "fs_move"; source: string; destination: string }
+  | { kind: "fs_tree"; path: string; maxDepth?: number; maxEntries?: number }
+  | { kind: "fs_search"; path: string; query: string; maxResults?: number }
+  | { kind: "text_search"; path: string; query: string; caseSensitive?: boolean; maxResults?: number }
+  | { kind: "fs_replace"; path: string; search: string; replace: string; replaceAll?: boolean }
   | { kind: "process_exec"; command: string; cwd?: string; timeoutMs?: number }
   | { kind: "process_list" }
   | { kind: "process_kill"; pid: number }
   | { kind: "task_start"; command: string; cwd?: string; timeoutMs?: number }
   | { kind: "task_status"; taskId: string }
   | { kind: "task_cancel"; taskId: string }
+  | { kind: "task_list" }
   | { kind: "terminal_start"; shell?: string; cwd?: string; cols?: number; rows?: number }
   | { kind: "terminal_input"; sessionId: string; dataBase64: string }
   | { kind: "terminal_read"; sessionId: string; maxBytes?: number }
   | { kind: "terminal_resize"; sessionId: string; cols: number; rows: number }
-  | { kind: "terminal_stop"; sessionId: string };
+  | { kind: "terminal_stop"; sessionId: string }
+  | { kind: "terminal_list" };
 
 const pathSchema = z.string().min(1).max(4096);
 const sessionIdSchema = z.string().uuid();
@@ -52,6 +59,37 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     recursive: z.boolean().optional(),
   }).strict(),
   z.object({
+    kind: z.literal("fs_move"),
+    source: pathSchema,
+    destination: pathSchema,
+  }).strict(),
+  z.object({
+    kind: z.literal("fs_tree"),
+    path: pathSchema,
+    maxDepth: z.number().int().min(0).max(20).optional(),
+    maxEntries: z.number().int().min(1).max(5000).optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("fs_search"),
+    path: pathSchema,
+    query: z.string().min(1).max(1024),
+    maxResults: z.number().int().min(1).max(500).optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("text_search"),
+    path: pathSchema,
+    query: z.string().min(1).max(4096),
+    caseSensitive: z.boolean().optional(),
+    maxResults: z.number().int().min(1).max(500).optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("fs_replace"),
+    path: pathSchema,
+    search: z.string().min(1).max(256 * 1024),
+    replace: z.string().max(1024 * 1024),
+    replaceAll: z.boolean().optional(),
+  }).strict(),
+  z.object({
     kind: z.literal("process_exec"),
     command: z.string().min(1).max(32_000),
     cwd: pathSchema.optional(),
@@ -76,6 +114,7 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     kind: z.literal("task_cancel"),
     taskId: z.string().uuid(),
   }).strict(),
+  z.object({ kind: z.literal("task_list") }).strict(),
   z.object({
     kind: z.literal("terminal_start"),
     shell: z.string().min(1).max(1024).optional(),
@@ -103,6 +142,7 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     kind: z.literal("terminal_stop"),
     sessionId: sessionIdSchema,
   }).strict(),
+  z.object({ kind: z.literal("terminal_list") }).strict(),
 ]);
 
 export function parseAgentAction(value: unknown): AgentAction {
@@ -133,12 +173,19 @@ export function actionRisk(kind: AgentAction["kind"] | string): Risk {
     case "fs_list":
     case "fs_stat":
     case "fs_read":
+    case "fs_tree":
+    case "fs_search":
+    case "text_search":
     case "process_list":
     case "task_status":
+    case "task_list":
     case "terminal_read":
+    case "terminal_list":
       return "low";
     case "fs_write":
     case "fs_mkdir":
+    case "fs_move":
+    case "fs_replace":
     case "terminal_input":
     case "terminal_resize":
       return "medium";
