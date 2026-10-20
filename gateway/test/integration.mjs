@@ -431,11 +431,13 @@ const memberInvitationResponse = await fetch(base + "/api/invitations", {
 assert.equal(memberInvitationResponse.status, 201);
 const memberInvitation = await memberInvitationResponse.json();
 assert.match(memberInvitation.inviteToken, /^wrci_/);
-assert.match(memberInvitation.inviteUrl, /\?invite=wrci_/);
+assert.match(memberInvitation.inviteUrl, /#invite=wrci_/);
 
-const invitationPreviewResponse = await fetch(
-  base + "/api/invitations/preview?token=" + encodeURIComponent(memberInvitation.inviteToken),
-);
+const invitationPreviewResponse = await fetch(base + "/api/invitations/preview", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ token: memberInvitation.inviteToken }),
+});
 assert.equal(invitationPreviewResponse.status, 200);
 const invitationPreview = await invitationPreviewResponse.json();
 assert.equal(invitationPreview.item.email, "member@example.test");
@@ -544,9 +546,11 @@ const revokeInvitationAction = await fetch(
 );
 assert.equal(revokeInvitationAction.status, 200);
 
-const revokedPreview = await fetch(
-  base + "/api/invitations/preview?token=" + encodeURIComponent(revokeInvitation.inviteToken),
-);
+const revokedPreview = await fetch(base + "/api/invitations/preview", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ token: revokeInvitation.inviteToken }),
+});
 assert.equal(revokedPreview.status, 404);
 
 const memberRemovalResponse = await fetch(base + `/api/members/${invitedMember.id}`, {
@@ -759,9 +763,11 @@ const existingUserInvitationResponse = await fetch(base + "/api/invitations", {
 assert.equal(existingUserInvitationResponse.status, 201);
 const existingUserInvitation = await existingUserInvitationResponse.json();
 
-const existingUserPreviewResponse = await fetch(
-  base + "/api/invitations/preview?token=" + encodeURIComponent(existingUserInvitation.inviteToken),
-);
+const existingUserPreviewResponse = await fetch(base + "/api/invitations/preview", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ token: existingUserInvitation.inviteToken }),
+});
 assert.equal(existingUserPreviewResponse.status, 200);
 assert.equal((await existingUserPreviewResponse.json()).item.existingUser, true);
 
