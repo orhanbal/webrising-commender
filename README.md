@@ -78,6 +78,9 @@ The agent initiates the connection. Controlled devices do not need an inbound fi
 - audit log + secret redaction
 - enrollment/pairing rate limits
 - bounded in-flight request concurrency and retention housekeeping
+- optional verified public signup and password reset
+- durable PostgreSQL mail outbox + built-in plain/STARTTLS/TLS SMTP client
+- provider-neutral SaaS billing entitlements and transaction-bound quotas
 - liveness/readiness endpoints
 
 ### Self-hosted console
@@ -92,6 +95,7 @@ The agent initiates the connection. Controlled devices do not need an inbound fi
 - human approval review/approve/deny queue
 - audit log
 - device rename/reconnect/revoke
+- browser account signup/login/reset and workspace access management when enabled
 
 ### Operations
 - Docker Compose
