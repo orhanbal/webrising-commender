@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import { randomToken, sha256 } from "./crypto-utils.js";
+export { randomToken, sha256 } from "./crypto-utils.js";
 import { isDeepStrictEqual } from "node:util";
 
 function required(name: string, min = 32) {
@@ -9,14 +11,6 @@ function required(name: string, min = 32) {
 
 export const controlApiKey = required("CONTROL_API_KEY");
 const approvalSecret = required("APPROVAL_SIGNING_SECRET");
-
-export function sha256(value: string) {
-  return crypto.createHash("sha256").update(value).digest("hex");
-}
-
-export function randomToken(bytes = 32) {
-  return crypto.randomBytes(bytes).toString("base64url");
-}
 
 export function isControlAuthorized(header: string | undefined) {
   if (!header?.startsWith("Bearer ")) return false;
