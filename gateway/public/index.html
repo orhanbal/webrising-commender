@@ -203,7 +203,7 @@ let terminalSession=null;
 let terminalTimer=null;
 let currentIdentity=null;
 let organizations=[];
-let invitationToken=new URLSearchParams(location.search).get("invite")||"";
+let invitationToken=new URLSearchParams(location.hash.startsWith("#")?location.hash.slice(1):location.hash).get("invite")||"";
 
 $("key").value=sessionStorage.getItem("commender-key")||"";
 const cookieValue=name=>document.cookie.split(";").map(x=>x.trim()).find(x=>x.startsWith(name+"="))?.slice(name.length+1)||"";
@@ -350,7 +350,7 @@ async function loadInvitePreview(){
   if(!invitationToken)return;
   $("inviteCard").classList.remove("hidden");
   try{
-    const r=await fetch("/api/invitations/preview?token="+encodeURIComponent(invitationToken),{credentials:"same-origin"});
+    const r=await fetch("/api/invitations/preview",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:invitationToken})});
     const j=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(j.error||("HTTP "+r.status));
     const x=j.item;
@@ -367,7 +367,7 @@ async function loadInvitePreview(){
     $("inviteError").textContent=e.message||String(e);
   }
 }
-$("acceptInvite").onclick=async()=>{try{const password=$("invitePassword").value;if(password.length<12)throw new Error("Password must be at least 12 characters.");const r=await fetch("/api/invitations/accept",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:invitationToken,password})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||("HTTP "+r.status));sessionStorage.removeItem("commender-key");$("key").value="";$("invitePassword").value="";invitationToken="";history.replaceState(null,"",location.pathname);$("inviteCard").classList.add("hidden");await refreshIdentity()}catch(e){$("inviteError").textContent=e.message||String(e)}}
+$("acceptInvite").onclick=async()=>{try{const password=$("invitePassword").value;if(password.length<12)throw new Error("Password must be at least 12 characters.");const r=await fetch("/api/invitations/accept",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:invitationToken,password})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||("HTTP "+r.status));sessionStorage.removeItem("commender-key");$("key").value="";$("invitePassword").value="";invitationToken="";history.replaceState(null,"",location.pathname+location.search);$("inviteCard").classList.add("hidden");await refreshIdentity()}catch(e){$("inviteError").textContent=e.message||String(e)}}
 
 async function loadAudit(){try{const j=await api("/api/audit?limit=100");$("auditBody").innerHTML=j.items.map(x=>'<tr><td>'+escapeHtml(new Date(x.created_at).toLocaleString())+'</td><td>'+escapeHtml(x.actor)+'</td><td>'+escapeHtml(x.device_id||"")+'</td><td>'+escapeHtml(x.tool)+'</td><td>'+escapeHtml(x.risk)+'</td><td>'+escapeHtml(x.outcome)+'</td><td>'+escapeHtml(x.detail)+'</td></tr>').join("")}catch(e){showError(e)}}
 $("loadAudit").onclick=loadAudit;
