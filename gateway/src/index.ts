@@ -790,7 +790,7 @@ const server = http.createServer(async (req, res) => {
         if (!existing.rows[0]) {
           const passwordHash = await hashPassword(body.password);
           const created = await client.query<{ id: string; email: string }>(
-            "insert into users(email,password_hash) values($1,$2) on conflict do nothing returning id,email",
+            "insert into users(email,password_hash,email_verified_at) values($1,$2,now()) on conflict do nothing returning id,email",
             [normalizeEmail(invite.email), passwordHash],
           );
           if (created.rows[0]) {
@@ -836,7 +836,10 @@ const server = http.createServer(async (req, res) => {
         }
 
         await client.query("update invitations set accepted_at=now() where id=$1", [invite.id]);
-        await client.query("update users set last_login_at=now() where id=$1", [userId]);
+        await client.query(
+          "update users set email_verified_at=coalesce(email_verified_at,now()),last_login_at=now() where id=$1",
+          [userId],
+        );
         await client.query("commit");
         acceptedUserId = userId;
         acceptedEmail = email;
@@ -1366,7 +1369,7 @@ const server = http.createServer(async (req, res) => {
           return;
         }
         const created = await client.query<{ id: string; email: string; created_at: string }>(
-          "insert into users(email,password_hash) values($1,$2) returning id,email,created_at",
+          "insert into users(email,password_hash,email_verified_at) values($1,$2,now()) returning id,email,created_at",
           [email, passwordHash],
         );
         await client.query(
@@ -2123,6 +2126,7 @@ server.listen(port, host, () => {
 });
 
 async function shutdown() {
+  stopMailWorker();
   server.close();
   for (const client of wss.clients) client.close(1001, "shutdown");
   await db.end();
