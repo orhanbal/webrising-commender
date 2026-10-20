@@ -364,12 +364,13 @@ export async function deliverOutboxOnce(config = smtpConfigFromEnv()) {
 export function startMailWorker() {
   if (mailDeliveryMode !== "smtp") return () => {};
 
+  const config = smtpConfigFromEnv();
   let busy = false;
   const run = async () => {
     if (busy) return;
     busy = true;
     try {
-      await deliverOutboxOnce();
+      await deliverOutboxOnce(config);
     } catch (error) {
       process.stderr.write(
         `mail worker failed: ${redact(error instanceof Error ? error.message : String(error))}\n`,
