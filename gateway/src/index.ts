@@ -790,8 +790,13 @@ const server = http.createServer(async (req, res) => {
         const item = await upsertSubscription(
           {
             organizationId,
-            ...body,
+            planKey: body.planKey,
+            status: body.status,
             provider: body.provider?.toLowerCase() ?? null,
+            externalCustomerId: body.externalCustomerId ?? null,
+            externalSubscriptionId: body.externalSubscriptionId ?? null,
+            currentPeriodEnd: body.currentPeriodEnd ?? null,
+            cancelAtPeriodEnd: body.cancelAtPeriodEnd,
           },
           client,
         );
@@ -832,7 +837,20 @@ const server = http.createServer(async (req, res) => {
           cancelAtPeriodEnd: z.boolean().default(false),
         }),
       }).parse(await readJson(req));
-      const result = await applyNormalizedBillingEvent(body);
+      const result = await applyNormalizedBillingEvent({
+        provider: body.provider,
+        eventId: body.eventId,
+        eventType: body.eventType,
+        organizationId: body.organizationId,
+        subscription: {
+          planKey: body.subscription.planKey,
+          status: body.subscription.status,
+          externalCustomerId: body.subscription.externalCustomerId ?? null,
+          externalSubscriptionId: body.subscription.externalSubscriptionId ?? null,
+          currentPeriodEnd: body.subscription.currentPeriodEnd ?? null,
+          cancelAtPeriodEnd: body.subscription.cancelAtPeriodEnd,
+        },
+      });
       if (result.applied) {
         await auditForOrganization(
           principal!,
