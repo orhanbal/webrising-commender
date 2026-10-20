@@ -4,6 +4,7 @@ use crate::{
     process_ops,
     protocol::{AgentAction, Risk},
     system_ops,
+    task_manager::TaskManager,
     terminal::TerminalManager,
 };
 use anyhow::{anyhow, Result};
@@ -12,6 +13,7 @@ use serde_json::Value;
 pub async fn execute(
     policy: &PathPolicy,
     terminals: &TerminalManager,
+    tasks: &TaskManager,
     action: AgentAction,
     approval_token: Option<&str>,
 ) -> Result<Value> {
@@ -47,6 +49,13 @@ pub async fn execute(
         } => process_ops::exec(policy, &command, cwd.as_deref(), timeout_ms).await,
         AgentAction::ProcessList => process_ops::list(),
         AgentAction::ProcessKill { pid } => process_ops::kill(pid),
+        AgentAction::TaskStart {
+            command,
+            cwd,
+            timeout_ms,
+        } => tasks.start(policy.clone(), command, cwd, timeout_ms).await,
+        AgentAction::TaskStatus { task_id } => tasks.status(&task_id).await,
+        AgentAction::TaskCancel { task_id } => tasks.cancel(&task_id).await,
         AgentAction::TerminalStart {
             shell,
             cwd,

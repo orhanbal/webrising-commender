@@ -42,6 +42,24 @@ const tools = [
     ["pid", "approval_token"],
   ),
   tool(
+    "task_start",
+    "Start a persistent background command task. The task survives AI/gateway disconnects while the agent process remains alive. HIGH risk and requires approval_token.",
+    { command: str(), cwd: str(), timeout_ms: integer(), approval_token: str() },
+    ["command", "approval_token"],
+  ),
+  tool(
+    "task_status",
+    "Read status and retained output of a persistent background task.",
+    { task_id: str() },
+    ["task_id"],
+  ),
+  tool(
+    "task_cancel",
+    "Cancel a persistent background task. HIGH risk and requires approval_token.",
+    { task_id: str(), approval_token: str() },
+    ["task_id", "approval_token"],
+  ),
+  tool(
     "terminal_start",
     "Start a persistent PTY session. HIGH risk and requires approval_token.",
     { shell: str(), cwd: str(), cols: integer(), rows: integer(), approval_token: str() },
@@ -97,6 +115,9 @@ function actionFromTool(name: string, a: any): AgentAction {
     case "process_exec": return { kind: "process_exec", command: String(a.command), ...(a.cwd ? { cwd: String(a.cwd) } : {}), ...(a.timeout_ms ? { timeoutMs: Number(a.timeout_ms) } : {}) };
     case "process_list": return { kind: "process_list" };
     case "process_kill": return { kind: "process_kill", pid: Number(a.pid) };
+    case "task_start": return { kind: "task_start", command: String(a.command), ...(a.cwd ? { cwd: String(a.cwd) } : {}), ...(a.timeout_ms ? { timeoutMs: Number(a.timeout_ms) } : {}) };
+    case "task_status": return { kind: "task_status", taskId: String(a.task_id) };
+    case "task_cancel": return { kind: "task_cancel", taskId: String(a.task_id) };
     case "terminal_start": return { kind: "terminal_start", ...(a.shell ? { shell: String(a.shell) } : {}), ...(a.cwd ? { cwd: String(a.cwd) } : {}), ...(a.cols ? { cols: Number(a.cols) } : {}), ...(a.rows ? { rows: Number(a.rows) } : {}) };
     case "terminal_input": return { kind: "terminal_input", sessionId: String(a.session_id), dataBase64: String(a.data_base64) };
     case "terminal_read": return { kind: "terminal_read", sessionId: String(a.session_id), ...(a.max_bytes ? { maxBytes: Number(a.max_bytes) } : {}) };

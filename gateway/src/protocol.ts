@@ -11,6 +11,9 @@ export type AgentAction =
   | { kind: "process_exec"; command: string; cwd?: string; timeoutMs?: number }
   | { kind: "process_list" }
   | { kind: "process_kill"; pid: number }
+  | { kind: "task_start"; command: string; cwd?: string; timeoutMs?: number }
+  | { kind: "task_status"; taskId: string }
+  | { kind: "task_cancel"; taskId: string }
   | { kind: "terminal_start"; shell?: string; cwd?: string; cols?: number; rows?: number }
   | { kind: "terminal_input"; sessionId: string; dataBase64: string }
   | { kind: "terminal_read"; sessionId: string; maxBytes?: number }
@@ -42,6 +45,7 @@ export function actionRisk(kind: AgentAction["kind"]): Risk {
     case "fs_stat":
     case "fs_read":
     case "process_list":
+    case "task_status":
     case "terminal_read":
       return "low";
     case "fs_write":
@@ -52,6 +56,8 @@ export function actionRisk(kind: AgentAction["kind"]): Risk {
     case "fs_delete":
     case "process_exec":
     case "process_kill":
+    case "task_start":
+    case "task_cancel":
     case "terminal_start":
     case "terminal_stop":
       return "high";

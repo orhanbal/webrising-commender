@@ -181,8 +181,44 @@ try {
   });
   assert.equal(stopped.ok, true);
 
+  const taskToken = await approval(deviceId, "task_start");
+  const persistentTask = await tool(109, "task_start", {
+    device_id: deviceId,
+    command: "sleep 1; printf PERSISTENT_TASK_OK",
+    cwd: tempRoot,
+    timeout_ms: 10000,
+    approval_token: taskToken,
+  });
+  assert.equal(typeof persistentTask.taskId, "string");
+
+  await jsonFetch(`/api/devices/${deviceId}/disconnect`, {
+    method: "POST",
+    headers: authHeaders,
+    body: "{}",
+  });
+
+  await waitFor(async () => {
+    const devices = await jsonFetch("/api/devices", { headers: authHeaders });
+    return devices.items.some((item) => item.id === deviceId && item.online);
+  }, 10000, 200);
+
+  await waitFor(async () => {
+    const status = await tool(110, "task_status", {
+      device_id: deviceId,
+      task_id: persistentTask.taskId,
+    });
+    if (status.status === "failed") throw new Error(status.error || "persistent task failed");
+    return status.status === "completed" ? status : false;
+  }, 10000, 250);
+
+  const finalTaskStatus = await tool(111, "task_status", {
+    device_id: deviceId,
+    task_id: persistentTask.taskId,
+  });
+  assert.match(finalTaskStatus.result.stdout, /PERSISTENT_TASK_OK/);
+
   const deleteToken = await approval(deviceId, "fs_delete");
-  const deleted = await tool(109, "fs_delete", {
+  const deleted = await tool(112, "fs_delete", {
     device_id: deviceId,
     path: filePath,
     recursive: false,
@@ -207,7 +243,7 @@ try {
     return devices.items.some((item) => item.id === deviceId && item.online);
   }, 10000, 200);
 
-  const infoAfterReconnect = await tool(110, "system_info", { device_id: deviceId });
+  const infoAfterReconnect = await tool(113, "system_info", { device_id: deviceId });
   assert.equal(typeof infoAfterReconnect.totalMemory, "number");
 
   console.log("agent-e2e: ok");

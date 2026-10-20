@@ -62,6 +62,17 @@ pub enum AgentAction {
     ProcessKill {
         pid: u32,
     },
+    TaskStart {
+        command: String,
+        cwd: Option<String>,
+        timeout_ms: Option<u64>,
+    },
+    TaskStatus {
+        task_id: String,
+    },
+    TaskCancel {
+        task_id: String,
+    },
     TerminalStart {
         shell: Option<String>,
         cwd: Option<String>,
@@ -134,6 +145,7 @@ impl AgentAction {
             | Self::FsStat { .. }
             | Self::FsRead { .. }
             | Self::ProcessList
+            | Self::TaskStatus { .. }
             | Self::TerminalRead { .. } => Risk::Low,
 
             Self::FsWrite { .. }
@@ -144,6 +156,8 @@ impl AgentAction {
             Self::FsDelete { .. }
             | Self::ProcessExec { .. }
             | Self::ProcessKill { .. }
+            | Self::TaskStart { .. }
+            | Self::TaskCancel { .. }
             | Self::TerminalStart { .. }
             | Self::TerminalStop { .. } => Risk::High,
         }

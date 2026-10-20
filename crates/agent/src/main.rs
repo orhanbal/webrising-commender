@@ -5,6 +5,7 @@ mod policy;
 mod process_ops;
 mod protocol;
 mod system_ops;
+mod task_manager;
 mod terminal;
 
 use anyhow::{anyhow, Context, Result};
@@ -19,6 +20,7 @@ use std::{
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use task_manager::TaskManager;
 use terminal::TerminalManager;
 use tokio::sync::Mutex;
 use tokio_tungstenite::{
@@ -178,6 +180,7 @@ async fn enroll(
 async fn run(config: AgentConfig) -> Result<()> {
     let policy = Arc::new(PathPolicy::new(&config.allowed_roots)?);
     let terminals = TerminalManager::default();
+    let tasks = TaskManager::default();
     let active = Arc::new(Mutex::new(
         HashMap::<String, tokio::task::AbortHandle>::new(),
     ));
@@ -188,6 +191,7 @@ async fn run(config: AgentConfig) -> Result<()> {
             &config,
             Arc::clone(&policy),
             terminals.clone(),
+            tasks.clone(),
             Arc::clone(&active),
         )
         .await
@@ -217,6 +221,7 @@ async fn connected_loop(
     config: &AgentConfig,
     policy: Arc<PathPolicy>,
     terminals: TerminalManager,
+    tasks: TaskManager,
     active: Arc<Mutex<HashMap<String, tokio::task::AbortHandle>>>,
 ) -> Result<()> {
     let mut request = config.gateway_ws_url.clone().into_client_request()?;
@@ -245,7 +250,13 @@ async fn connected_loop(
                 .to_string(),
             os: std::env::consts::OS.to_owned(),
             version: VERSION.to_owned(),
-            capabilities: vec!["fs".into(), "process".into(), "pty".into(), "system".into()],
+            capabilities: vec![
+                "fs".into(),
+                "process".into(),
+                "task".into(),
+                "pty".into(),
+                "system".into(),
+            ],
         },
     )
     .await?;
@@ -290,6 +301,7 @@ async fn connected_loop(
                         let task_writer = Arc::clone(&writer);
                         let task_policy = Arc::clone(&policy);
                         let task_terminals = terminals.clone();
+                        let persistent_tasks = tasks.clone();
                         let active_map = Arc::clone(&active);
                         let id_for_task = request_id.clone();
 
@@ -297,6 +309,7 @@ async fn connected_loop(
                             let result = ops::execute(
                                 &task_policy,
                                 &task_terminals,
+                                &persistent_tasks,
                                 action,
                                 approval_token.as_deref(),
                             )
