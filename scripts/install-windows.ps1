@@ -28,7 +28,7 @@ if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
   throw "Service '$ServiceName' already exists. Uninstall it first."
 }
 
-$command = ('"{0}" --config "{1}" run' -f $BinaryPath, $ConfigPath)
+$command = ('"{0}" --config "{1}" service' -f $BinaryPath, $ConfigPath)
 
 $params = @{
   Name = $ServiceName
