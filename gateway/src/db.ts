@@ -62,6 +62,7 @@ export async function migrate() {
       payload_tag text not null,
       attempts integer not null default 0,
       next_attempt_at timestamptz not null default now(),
+      expires_at timestamptz,
       lease_until timestamptz,
       lease_token uuid,
       sent_at timestamptz,
@@ -289,7 +290,7 @@ export async function housekeeping() {
     "delete from auth_email_challenges where expires_at < now() - interval '7 days' or consumed_at < now() - interval '30 days' or revoked_at < now() - interval '30 days'",
   );
   await db.query(
-    "delete from mail_outbox where sent_at < now() - interval '30 days'",
+    "delete from mail_outbox where sent_at < now() - interval '30 days' or (sent_at is null and expires_at < now() - interval '1 day')",
   );
   await db.query(
     `update approval_requests
