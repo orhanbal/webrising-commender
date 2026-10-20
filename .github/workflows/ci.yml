@@ -17,6 +17,17 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
 
+  rust-platforms:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo check -p webrising-commender-agent
+
   gateway:
     runs-on: ubuntu-latest
     defaults:
@@ -33,3 +44,56 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: commender
+          POSTGRES_USER: commender
+          POSTGRES_PASSWORD: commender-test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U commender -d commender"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    defaults:
+      run:
+        working-directory: gateway
+    env:
+      DATABASE_URL: postgres://commender:commender-test@127.0.0.1:5432/commender
+      CONTROL_API_KEY: ci-control-key-0123456789-0123456789
+      APPROVAL_SIGNING_SECRET: ci-approval-secret-0123456789-012345
+      PUBLIC_BASE_URL: http://127.0.0.1:8787
+      HOST: 127.0.0.1
+      PORT: 8787
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: gateway/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Start gateway
+        run: |
+          node dist/index.js > /tmp/commender-gateway.log 2>&1 &
+          echo $! > /tmp/commender-gateway.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8787/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/commender-gateway.log
+          exit 1
+      - name: Run integration acceptance
+        run: npm run integration
+      - name: Print gateway log on failure
+        if: failure()
+        run: cat /tmp/commender-gateway.log || true
