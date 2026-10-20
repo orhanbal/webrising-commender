@@ -7,6 +7,7 @@ on:
       - "gateway/package.json"
       - "Cargo.toml"
       - "crates/**/Cargo.toml"
+      - "crates/**/*.rs"
       - ".github/workflows/bootstrap-locks.yml"
   workflow_dispatch:
 
