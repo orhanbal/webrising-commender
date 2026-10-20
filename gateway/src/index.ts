@@ -27,6 +27,7 @@ import {
   type AllocationResource,
 } from "./billing.js";
 import { db, housekeeping, migrate, ready } from "./db.js";
+import { enqueueMail, mailConfigured, publicSignupEnabled, startMailWorker } from "./mail.js";
 import { handleMcp } from "./mcp.js";
 import { actionRisk, parseAgentAction } from "./protocol.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
@@ -45,10 +46,17 @@ const loginAccountRateLimit = new FixedWindowRateLimiter();
 const invitationPreviewRateLimit = new FixedWindowRateLimiter();
 const invitationAcceptIpRateLimit = new FixedWindowRateLimiter();
 const invitationAcceptTokenRateLimit = new FixedWindowRateLimiter();
+const signupIpRateLimit = new FixedWindowRateLimiter();
+const signupEmailRateLimit = new FixedWindowRateLimiter();
+const signupVerifyRateLimit = new FixedWindowRateLimiter();
+const resetIpRateLimit = new FixedWindowRateLimiter();
+const resetEmailRateLimit = new FixedWindowRateLimiter();
+const resetTokenRateLimit = new FixedWindowRateLimiter();
 const trustProxyHeaders = /^(1|true|yes)$/i.test(String(process.env.TRUST_PROXY_HEADERS || ""));
 
 await migrate();
 await housekeeping();
+startMailWorker();
 
 const housekeepingTimer = setInterval(() => {
   void housekeeping().catch((error) => {
@@ -223,6 +231,7 @@ const server = http.createServer(async (req, res) => {
            join organization_members m on m.user_id=u.id
           where lower(u.email)=lower($1)
             and u.disabled_at is null
+            and u.email_verified_at is not null
             and ($2::uuid is null or m.organization_id=$2)
           order by case m.role when 'owner' then 40 when 'admin' then 30 when 'operator' then 20 else 10 end desc,
                    m.created_at asc
@@ -376,7 +385,7 @@ const server = http.createServer(async (req, res) => {
         if (!existing.rows[0]) {
           const passwordHash = await hashPassword(body.password);
           const created = await client.query<{ id: string; email: string }>(
-            "insert into users(email,password_hash) values($1,$2) on conflict do nothing returning id,email",
+            "insert into users(email,password_hash,email_verified_at) values($1,$2,now()) on conflict do nothing returning id,email",
             [normalizeEmail(invite.email), passwordHash],
           );
           if (created.rows[0]) {
@@ -952,7 +961,7 @@ const server = http.createServer(async (req, res) => {
           return;
         }
         const created = await client.query<{ id: string; email: string; created_at: string }>(
-          "insert into users(email,password_hash) values($1,$2) returning id,email,created_at",
+          "insert into users(email,password_hash,email_verified_at) values($1,$2,now()) returning id,email,created_at",
           [email, passwordHash],
         );
         await client.query(
