@@ -1,6 +1,5 @@
 use crate::{
-    approval,
-    fs_ops,
+    approval, fs_ops,
     policy::PathPolicy,
     process_ops,
     protocol::{AgentAction, Risk},
