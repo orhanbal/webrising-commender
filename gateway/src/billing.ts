@@ -38,6 +38,8 @@ export type SubscriptionInput = {
   externalSubscriptionId?: string | null;
   currentPeriodEnd?: string | null;
   cancelAtPeriodEnd?: boolean;
+  providerEventAt?: string | null;
+  providerEventId?: string | null;
 };
 
 export type NormalizedBillingEvent = {
@@ -45,7 +47,11 @@ export type NormalizedBillingEvent = {
   eventId: string;
   eventType: string;
   organizationId: string;
-  subscription: Omit<SubscriptionInput, "organizationId" | "provider">;
+  occurredAt: string;
+  subscription: Omit<
+    SubscriptionInput,
+    "organizationId" | "provider" | "providerEventAt" | "providerEventId"
+  >;
 };
 
 function count(value: string | number | null | undefined) {
@@ -119,6 +125,8 @@ export async function billingSnapshot(organizationId: string, queryable: Queryab
     external_subscription_id: string | null;
     current_period_end: string | null;
     cancel_at_period_end: boolean;
+    provider_event_at: string | null;
+    provider_event_id: string | null;
     updated_at: string;
   }>(
     `select s.plan_key,
@@ -134,6 +142,8 @@ export async function billingSnapshot(organizationId: string, queryable: Queryab
             s.external_subscription_id,
             s.current_period_end,
             s.cancel_at_period_end,
+            s.provider_event_at,
+            s.provider_event_id,
             s.updated_at
        from organization_subscriptions s
        join billing_plans p on p.key=s.plan_key
@@ -183,6 +193,8 @@ export async function billingSnapshot(organizationId: string, queryable: Queryab
       externalSubscriptionId: row.external_subscription_id,
       currentPeriodEnd: row.current_period_end,
       cancelAtPeriodEnd: row.cancel_at_period_end,
+      providerEventAt: row.provider_event_at,
+      providerEventId: row.provider_event_id,
       updatedAt: row.updated_at,
     },
     limits: {
@@ -303,9 +315,9 @@ export async function upsertSubscription(input: SubscriptionInput, queryable: Qu
   const result = await queryable.query(
     `insert into organization_subscriptions(
          organization_id,plan_key,status,provider,external_customer_id,external_subscription_id,
-         current_period_end,cancel_at_period_end,updated_at
+         current_period_end,cancel_at_period_end,provider_event_at,provider_event_id,updated_at
        )
-       values($1,$2,$3,$4,$5,$6,$7,$8,now())
+       values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())
        on conflict(organization_id)
        do update set
          plan_key=excluded.plan_key,
@@ -315,9 +327,12 @@ export async function upsertSubscription(input: SubscriptionInput, queryable: Qu
          external_subscription_id=excluded.external_subscription_id,
          current_period_end=excluded.current_period_end,
          cancel_at_period_end=excluded.cancel_at_period_end,
+         provider_event_at=excluded.provider_event_at,
+         provider_event_id=excluded.provider_event_id,
          updated_at=now()
        returning organization_id,plan_key,status,provider,external_customer_id,
-                 external_subscription_id,current_period_end,cancel_at_period_end,created_at,updated_at`,
+                 external_subscription_id,current_period_end,cancel_at_period_end,
+                 provider_event_at,provider_event_id,created_at,updated_at`,
     [
       input.organizationId,
       input.planKey,
@@ -327,12 +342,19 @@ export async function upsertSubscription(input: SubscriptionInput, queryable: Qu
       input.externalSubscriptionId ?? null,
       input.currentPeriodEnd ?? null,
       input.cancelAtPeriodEnd ?? false,
+      input.providerEventAt ?? null,
+      input.providerEventId ?? null,
     ],
   );
   return result.rows[0];
 }
 
 export async function applyNormalizedBillingEvent(event: NormalizedBillingEvent) {
+  const occurredAtMs = Date.parse(event.occurredAt);
+  if (!Number.isFinite(occurredAtMs)) {
+    throw Object.assign(new Error("invalid_billing_event_time"), { status: 400 });
+  }
+
   const client = await db.connect();
   const payloadHash = sha256(JSON.stringify(event));
   try {
@@ -346,13 +368,13 @@ export async function applyNormalizedBillingEvent(event: NormalizedBillingEvent)
       throw Object.assign(new Error("organization_not_found"), { status: 404 });
     }
 
-    const inserted = await client.query(
+    const inserted = await client.query<{ id: string }>(
       `insert into billing_events(
          provider,event_id,event_type,organization_id,payload_hash,normalized_event
        )
        values($1,$2,$3,$4,$5,$6::jsonb)
        on conflict(provider,event_id) do nothing
-       returning id`,
+       returning id::text`,
       [
         event.provider,
         event.eventId,
@@ -364,15 +386,66 @@ export async function applyNormalizedBillingEvent(event: NormalizedBillingEvent)
     );
 
     if (!inserted.rows[0]) {
-      const existing = await client.query<{ payload_hash: string }>(
-        "select payload_hash from billing_events where provider=$1 and event_id=$2",
+      const existing = await client.query<{ payload_hash: string; disposition: string }>(
+        "select payload_hash,disposition from billing_events where provider=$1 and event_id=$2",
         [event.provider, event.eventId],
       );
       await client.query("rollback");
       if (existing.rows[0]?.payload_hash !== payloadHash) {
         throw Object.assign(new Error("billing_event_conflict"), { status: 409 });
       }
-      return { applied: false, duplicate: true };
+      return {
+        applied: false,
+        duplicate: true,
+        stale: existing.rows[0]?.disposition === "stale",
+        providerMismatch: existing.rows[0]?.disposition === "provider_mismatch",
+      };
+    }
+
+    const current = await client.query<{
+      provider: string | null;
+      provider_event_at: string | null;
+    }>(
+      `select provider,provider_event_at
+         from organization_subscriptions
+        where organization_id=$1
+        for update`,
+      [event.organizationId],
+    );
+    const currentSubscription = current.rows[0];
+
+    if (
+      currentSubscription?.provider &&
+      currentSubscription.provider !== event.provider
+    ) {
+      await client.query(
+        "update billing_events set disposition='provider_mismatch' where id=$1::bigint",
+        [inserted.rows[0].id],
+      );
+      await client.query("commit");
+      return {
+        applied: false,
+        duplicate: false,
+        stale: false,
+        providerMismatch: true,
+      };
+    }
+
+    if (currentSubscription?.provider_event_at) {
+      const currentEventAtMs = new Date(currentSubscription.provider_event_at).getTime();
+      if (Number.isFinite(currentEventAtMs) && occurredAtMs <= currentEventAtMs) {
+        await client.query(
+          "update billing_events set disposition='stale' where id=$1::bigint",
+          [inserted.rows[0].id],
+        );
+        await client.query("commit");
+        return {
+          applied: false,
+          duplicate: false,
+          stale: true,
+          providerMismatch: false,
+        };
+      }
     }
 
     const subscription = await upsertSubscription(
@@ -380,11 +453,23 @@ export async function applyNormalizedBillingEvent(event: NormalizedBillingEvent)
         organizationId: event.organizationId,
         ...event.subscription,
         provider: event.provider,
+        providerEventAt: event.occurredAt,
+        providerEventId: event.eventId,
       },
       client,
     );
+    await client.query(
+      "update billing_events set disposition='applied' where id=$1::bigint",
+      [inserted.rows[0].id],
+    );
     await client.query("commit");
-    return { applied: true, duplicate: false, subscription };
+    return {
+      applied: true,
+      duplicate: false,
+      stale: false,
+      providerMismatch: false,
+      subscription,
+    };
   } catch (error) {
     try {
       await client.query("rollback");
