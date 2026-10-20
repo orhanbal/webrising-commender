@@ -77,8 +77,9 @@ export async function authenticateRequest(
   authorization: string | undefined,
   cookieHeader: string | undefined,
 ): Promise<Principal | null> {
-  const headerPrincipal = await authenticateAuthorization(authorization);
-  if (headerPrincipal) return headerPrincipal;
+  if (authorization) {
+    return authenticateAuthorization(authorization);
+  }
 
   const sessionToken = sessionTokenFromCookie(cookieHeader);
   if (!sessionToken) return null;
