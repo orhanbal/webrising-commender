@@ -138,6 +138,29 @@ pub enum Risk {
 }
 
 impl AgentAction {
+    pub fn kind_name(&self) -> &'static str {
+        match self {
+            Self::SystemInfo => "system_info",
+            Self::FsList { .. } => "fs_list",
+            Self::FsStat { .. } => "fs_stat",
+            Self::FsRead { .. } => "fs_read",
+            Self::FsWrite { .. } => "fs_write",
+            Self::FsMkdir { .. } => "fs_mkdir",
+            Self::FsDelete { .. } => "fs_delete",
+            Self::ProcessExec { .. } => "process_exec",
+            Self::ProcessList => "process_list",
+            Self::ProcessKill { .. } => "process_kill",
+            Self::TaskStart { .. } => "task_start",
+            Self::TaskStatus { .. } => "task_status",
+            Self::TaskCancel { .. } => "task_cancel",
+            Self::TerminalStart { .. } => "terminal_start",
+            Self::TerminalInput { .. } => "terminal_input",
+            Self::TerminalRead { .. } => "terminal_read",
+            Self::TerminalResize { .. } => "terminal_resize",
+            Self::TerminalStop { .. } => "terminal_stop",
+        }
+    }
+
     pub fn risk(&self) -> Risk {
         match self {
             Self::SystemInfo
