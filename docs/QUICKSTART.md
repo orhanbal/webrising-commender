@@ -214,14 +214,13 @@ curl -X PUT https://YOUR-GATEWAY/api/admin/organizations/ORGANIZATION_UUID/subsc
   -d '{
     "planKey":"pro",
     "status":"active",
-    "provider":null,
     "cancelAtPeriodEnd":false
   }'
 ```
 
 A tenant can read its effective limits and current usage with `GET /api/billing`. The web console shows the same data under **Access → Plan & usage**.
 
-The provider-neutral normalized event ingress is `POST /api/admin/billing/events`. It is protected by the global control credential and is **not** a raw Paddle/Stripe webhook endpoint. A provider adapter must verify the provider signature first, resolve the organization/plan, and only then submit the normalized event. Every normalized event must include the provider's trusted `occurredAt` timestamp. Older events are ledgered but ignored; if two different events have the same occurrence time, the gateway returns `billing_event_order_conflict` (409) and the adapter must reconcile the current subscription state from the provider.
+The provider-neutral normalized event ingress is `POST /api/admin/billing/events`. It is protected by the global control credential and is **not** a raw Paddle/Stripe webhook endpoint. Manual subscription assignment never writes provider/customer/subscription identifiers; those identities are accepted only through the verified normalized-event path. A provider adapter must verify the provider signature first, resolve the organization/plan, and only then submit the normalized event. Every normalized event must include the provider's trusted `occurredAt` timestamp. Older events are ledgered but ignored; if two different events have the same occurrence time, the gateway returns `billing_event_order_conflict` (409) and the adapter must reconcile the current subscription state from the provider.
 
 In SaaS mode:
 - missing/inactive billing state returns `billing_required` for new allocations;
