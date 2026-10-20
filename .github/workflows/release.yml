@@ -15,40 +15,73 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
             artifact: webrising-commender-linux-x64
-            binary: target/release/webrising-commender
-            suffix: ""
+            binary: target/x86_64-unknown-linux-gnu/release/webrising-commender
+            output: webrising-commender-linux-x64
           - os: windows-latest
+            target: x86_64-pc-windows-msvc
             artifact: webrising-commender-windows-x64
-            binary: target/release/webrising-commender.exe
-            suffix: ".exe"
-          - os: macos-latest
-            artifact: webrising-commender-macos-arm64
-            binary: target/release/webrising-commender
-            suffix: ""
+            binary: target/x86_64-pc-windows-msvc/release/webrising-commender.exe
+            output: webrising-commender-windows-x64.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release -p webrising-commender-agent
+        with:
+          targets: ${{ matrix.target }}
+      - run: cargo build --release -p webrising-commender-agent --target ${{ matrix.target }}
       - name: Package
         shell: bash
         run: |
           mkdir -p dist
-          cp "${{ matrix.binary }}" "dist/${{ matrix.artifact }}${{ matrix.suffix }}"
+          cp "${{ matrix.binary }}" "dist/${{ matrix.output }}"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
           path: dist/*
 
+  macos-universal:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+      - name: Build both macOS architectures
+        run: |
+          cargo build --release -p webrising-commender-agent --target x86_64-apple-darwin
+          cargo build --release -p webrising-commender-agent --target aarch64-apple-darwin
+      - name: Create universal binary
+        run: |
+          mkdir -p dist
+          lipo -create             target/x86_64-apple-darwin/release/webrising-commender             target/aarch64-apple-darwin/release/webrising-commender             -output dist/webrising-commender-macos-universal
+          lipo -info dist/webrising-commender-macos-universal
+      - uses: actions/upload-artifact@v4
+        with:
+          name: webrising-commender-macos-universal
+          path: dist/*
+
   publish:
-    needs: agent
+    needs: [agent, macos-universal]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+      - name: Add installer helpers and checksums
+        run: |
+          cp scripts/install-windows.ps1 dist/
+          cp scripts/uninstall-windows.ps1 dist/
+          cp scripts/install-linux.sh dist/
+          cp scripts/uninstall-linux.sh dist/
+          cp scripts/install-macos.sh dist/
+          cp scripts/uninstall-macos.sh dist/
+          cp docs/QUICKSTART.md dist/
+          cd dist
+          sha256sum * > SHA256SUMS.txt
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
