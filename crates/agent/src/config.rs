@@ -22,6 +22,7 @@ pub struct AgentConfig {
 pub struct EnrollmentResponse {
     pub device_id: String,
     pub device_token: String,
+    pub approval_key: String,
     pub gateway_ws_url: String,
 }
 
