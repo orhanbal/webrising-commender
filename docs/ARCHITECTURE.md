@@ -14,6 +14,7 @@ AI client (ChatGPT / Claude / Cursor / custom)
 | - approval signer                         |
 | - audit + redaction                       |
 | - SaaS entitlement/billing boundary        |
+| - auth verification + durable mail outbox  |
 +----------------------+--------------------+
                        |
                     PostgreSQL
@@ -70,3 +71,16 @@ A downgrade, `past_due` state or cancellation never deletes existing devices, me
 
 Provider webhooks are expected to be signature-verified by a provider-specific adapter before they are converted to the normalized internal billing event contract. The normalized event ledger is idempotent on `provider + event_id` and rejects an event-id replay carrying a different payload.
 The normalized contract includes the provider's trusted occurrence time. Subscription rows retain the last applied provider event id/time; older events and events from a no-longer-bound provider are ledgered for audit but cannot mutate current entitlement state. Same-time different events are rejected as an ordering conflict so the adapter can reconcile from an authoritative provider snapshot instead of relying on an arbitrary tie-breaker.
+
+
+## Authentication mail boundary
+
+Email delivery is internal to the gateway rather than delegated to a hosted SDK.
+
+Public signup writes a short-lived pending registration containing the normalized email, scrypt password verifier, requested workspace name and only the SHA-256 verifier of the verification token. Verification atomically converts that pending record into a verified user + owner membership.
+
+Password reset uses a separate single-use auth-token table and revokes all browser sessions when consumed.
+
+Mail is first committed to `mail_outbox`. In SMTP mode, a built-in worker claims rows with PostgreSQL row locks/leases and delivers them through a first-party SMTP client. Failed deliveries back off and retry. Successful auth messages have their text body cleared so bearer links do not remain at rest after delivery.
+
+This architecture permits an operator-owned mail server, a local relay, or development outbox mode without introducing a runtime dependency on a commercial email provider.
