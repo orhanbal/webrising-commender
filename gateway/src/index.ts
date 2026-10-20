@@ -359,7 +359,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && url.pathname === "/api/approvals") {
-      if (!requireRole(principal!, "operator", res)) return;
+      if (!requireRole(principal!, "admin", res)) return;
       const body = z.object({
         deviceId: z.string().uuid(),
         action: z.record(z.string(), z.unknown()),
