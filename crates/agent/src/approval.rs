@@ -65,9 +65,9 @@ pub fn verify(
         return Err(anyhow!("approval token is for another action"));
     }
 
-    let expected_request = serde_json::to_value(action)
-        .context("cannot serialize action for approval verification")?;
-    if claim.request != expected_request {
+    let approved_action: AgentAction = serde_json::from_value(claim.request)
+        .context("invalid approved operation payload")?;
+    if &approved_action != action {
         return Err(anyhow!(
             "approval token parameters do not match the requested operation"
         ));
