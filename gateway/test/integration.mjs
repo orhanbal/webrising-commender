@@ -146,6 +146,28 @@ const approvedAction = {
   command: "echo approved",
 };
 
+const defaultOperator = await jsonFetch("/api/tokens", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    name: "CI Default Operator",
+    role: "operator",
+  }),
+});
+const operatorApprovalResponse = await fetch(base + "/api/approvals", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${defaultOperator.token}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    deviceId: enrolled.deviceId,
+    action: approvedAction,
+    ttlSeconds: 60,
+  }),
+});
+assert.equal(operatorApprovalResponse.status, 403);
+
 const tamperApproval = await jsonFetch("/api/approvals", {
   method: "POST",
   headers: authHeaders,
