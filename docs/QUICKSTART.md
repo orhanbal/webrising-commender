@@ -163,6 +163,7 @@ Admins and owners can create invitation links without any paid email dependency:
 4. Deliver it through email, chat, or another trusted channel.
 
 Invitation secrets are returned only when created. The gateway stores only a SHA-256 verifier. Invitations expire automatically, can be revoked before use, and become unusable after acceptance.
+The invitation token is carried in the URL fragment (`#invite=...`) so it is not sent as part of the page request URL or exposed to ordinary reverse-proxy access logs.
 
 Existing users must enter their current account password when accepting an invitation. New users choose a password during acceptance.
 
