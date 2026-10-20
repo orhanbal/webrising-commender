@@ -213,3 +213,50 @@ jobs:
             [ref]$errors
           )
           if ($errors.Count -gt 0) { $errors | Format-List; exit 1 }
+
+
+  windows-service-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build native agent
+        run: cargo build -p webrising-commender-agent
+      - name: Install, start and remove Windows service
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:ProgramData "WebRisingCommenderCI"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+
+          $binary = Join-Path $dir "webrising-commender.exe"
+          $config = Join-Path $dir "agent.json"
+          Copy-Item "target\debug\webrising-commender.exe" $binary -Force
+
+          $approvalKey = [Convert]::ToBase64String((1..32 | ForEach-Object { 7 }))
+            .TrimEnd("=")
+            .Replace("+","-")
+            .Replace("/","_")
+
+          @{
+            deviceId = "00000000-0000-0000-0000-000000000001"
+            deviceToken = "ci-device-token"
+            approvalKey = $approvalKey
+            gatewayWsUrl = "ws://127.0.0.1:9/agent"
+            controlUrl = "http://127.0.0.1:9"
+            name = "CI Windows Service"
+            allowedRoots = @($dir)
+          } | ConvertTo-Json -Depth 5 | Set-Content -Encoding UTF8 $config
+
+          try {
+            .\scripts\install-windows.ps1 -BinaryPath $binary -ConfigPath $config -AllowLocalSystem
+            Start-Sleep -Seconds 3
+            $service = Get-Service -Name "WebRisingCommender"
+            if ($service.Status -ne "Running") {
+              throw "Expected service to be Running, got $($service.Status)"
+            }
+          }
+          finally {
+            .\scripts\uninstall-windows.ps1 -ServiceName "WebRisingCommender"
+            Start-Sleep -Seconds 2
+            Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+          }
