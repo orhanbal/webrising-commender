@@ -303,9 +303,7 @@ async fn refresh_gateway_route(config: &AgentConfig) -> Option<String> {
         }
     };
 
-    if !route.gateway_ws_url.starts_with("ws://")
-        && !route.gateway_ws_url.starts_with("wss://")
-    {
+    if !route.gateway_ws_url.starts_with("ws://") && !route.gateway_ws_url.starts_with("wss://") {
         warn!("route response returned a non-WebSocket URL");
         return None;
     }
