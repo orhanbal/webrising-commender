@@ -182,7 +182,7 @@ DEPLOYMENT_MODE=self_hosted
 
 In `self_hosted` mode no billing record is required and core device/member/API-token allocations are unlimited.
 
-For a WebRising-operated SaaS deployment, set:
+For a WECOMMANDER-operated SaaS deployment, set:
 
 ```env
 DEPLOYMENT_MODE=saas
@@ -243,10 +243,10 @@ PUBLIC_SIGNUP_ENABLED=true
 SMTP_HOST=mail.example.com
 SMTP_PORT=587
 SMTP_SECURITY=starttls
-SMTP_HELO_NAME=commender.example.com
+SMTP_HELO_NAME=wecommander.example.com
 SMTP_USERNAME=commender@example.com
 SMTP_PASSWORD=replace-me
-SMTP_FROM=WebRising Commender <commender@example.com>
+SMTP_FROM=WECOMMANDER <commender@example.com>
 SMTP_TLS_REJECT_UNAUTHORIZED=true
 
 # 32 random bytes. Keep this outside the database backup.
@@ -319,7 +319,7 @@ Agents do not require re-enrollment during relay failover. The durable `controlU
 Commender can terminate TLS directly. Supply both certificate files and set the public URL to HTTPS:
 
 ```env
-PUBLIC_BASE_URL=https://commender.example.com:8787
+PUBLIC_BASE_URL=https://wecommander.example.com:8787
 TLS_CERT_FILE=/run/secrets/commender-fullchain.pem
 TLS_KEY_FILE=/run/secrets/commender-privkey.pem
 TLS_MIN_VERSION=TLSv1.2
@@ -335,7 +335,7 @@ services:
       - ./secrets/privkey.pem:/run/secrets/commender-privkey.pem:ro
 ```
 
-The paths in `.env` are paths **inside the container**. Keep the key file private. If the public host maps TCP 443 to the gateway's internal port, use the externally visible URL (for example `https://commender.example.com`) as `PUBLIC_BASE_URL`.
+The paths in `.env` are paths **inside the container**. Keep the key file private. If the public host maps TCP 443 to the gateway's internal port, use the externally visible URL (for example `https://wecommander.example.com`) as `PUBLIC_BASE_URL`.
 
 To keep an existing reverse proxy instead, leave `TLS_CERT_FILE` and `TLS_KEY_FILE` empty and terminate HTTPS/WSS at that proxy.
 
