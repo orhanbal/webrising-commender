@@ -13,7 +13,10 @@ export const db = new Pool({
 });
 
 export async function migrate() {
-  await db.query(`
+  const client = await db.connect();
+  try {
+    await client.query("select pg_advisory_lock(hashtext('webrising-commender-migrate'))");
+    await client.query(`
     create extension if not exists pgcrypto;
 
     create table if not exists organizations (
@@ -310,7 +313,14 @@ export async function migrate() {
     insert into organizations(name)
       select 'Self Hosted'
       where not exists(select 1 from organizations);
-  `);
+    `);
+  } finally {
+    try {
+      await client.query("select pg_advisory_unlock(hashtext('webrising-commender-migrate'))");
+    } finally {
+      client.release();
+    }
+  }
 }
 
 export async function defaultOrganizationId(): Promise<string> {
