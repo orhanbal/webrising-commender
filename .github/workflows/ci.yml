@@ -499,6 +499,58 @@ jobs:
           if ($errors.Count -gt 0) { $errors | Format-List; exit 1 }
 
 
+  linux-acceptance-artifact:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release agent
+        run: cargo build --release -p webrising-commender-agent
+      - name: Package Linux acceptance bundle
+        run: |
+          mkdir -p dist
+          cp target/release/webrising-commender dist/webrising-commender
+          cp scripts/install-linux.sh dist/
+          cp scripts/uninstall-linux.sh dist/
+          cp docs/QUICKSTART.md dist/
+          cd dist
+          sha256sum webrising-commender > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WECOMMANDER-linux-x64-acceptance
+          path: dist/*
+          retention-days: 14
+
+  macos-acceptance-artifact:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+      - name: Build universal release agent
+        run: |
+          cargo build --release -p webrising-commender-agent --target x86_64-apple-darwin
+          cargo build --release -p webrising-commender-agent --target aarch64-apple-darwin
+          mkdir -p dist
+          lipo -create \
+            target/x86_64-apple-darwin/release/webrising-commender \
+            target/aarch64-apple-darwin/release/webrising-commender \
+            -output dist/webrising-commender
+          lipo -info dist/webrising-commender
+      - name: Package macOS acceptance bundle
+        run: |
+          cp scripts/install-macos.sh dist/
+          cp scripts/uninstall-macos.sh dist/
+          cp docs/QUICKSTART.md dist/
+          cd dist
+          shasum -a 256 webrising-commender > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WECOMMANDER-macos-universal-acceptance
+          path: dist/*
+          retention-days: 14
+
   windows-acceptance-artifact:
     runs-on: windows-latest
     steps:

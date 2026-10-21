@@ -37,7 +37,7 @@ install -m 0755 "$BINARY" /usr/local/bin/webrising-commender
 
 cat >/etc/systemd/system/webrising-commender.service <<EOF
 [Unit]
-Description=WebRising Commender Agent
+Description=WECOMMANDER Agent
 After=network-online.target
 Wants=network-online.target
 
