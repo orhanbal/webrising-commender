@@ -11,7 +11,7 @@ Updated: 2026-10-21
 | 4 Console | DONE (MVP) | device management, filesystem, command/task/terminal controls, approvals, audit |
 | 5 Hardening | IMPLEMENTED — ACCEPTANCE PENDING | exact-operation approvals, native verification, RBAC, allowlisted roots, payload/resource caps, redaction, rate limits, replay/tamper rejection |
 | 6 Distribution | IMPLEMENTED — ACCEPTANCE PENDING | Docker Compose, native Windows SCM host, Windows/Linux/macOS installers, tagged multi-platform release pipeline |
-| 7 SaaS | VERIFIED AUTH + BILLING CORE IMPLEMENTED | onboarding/access, verified public signup/password reset, first-party encrypted SMTP outbox, provider-neutral plans/subscriptions and transactional quotas are implemented; provider checkout/webhook adapters and regional relay orchestration remain |
+| 7 SaaS | CORE IMPLEMENTED — EXTERNAL ACCEPTANCE PENDING | onboarding/access, verified public signup/password reset, first-party encrypted SMTP outbox, provider-neutral plans/subscriptions/quotas and first-party regional relay orchestration are implemented. Third-party checkout/webhook adapters are intentionally excluded under the no-third-party runtime rule. |
 
 ## Automated acceptance already covered
 
@@ -35,6 +35,7 @@ CI exercises:
 - SaaS plan/subscription provisioning, billing-required gating, device/member/token quota enforcement, pending-seat reservation, normalized-event idempotency, provider-identity collision rejection, stale-event suppression and same-time order-conflict detection
 - self-hosted unlimited resource allocation remains covered by Compose/real-agent flows while integration runs in SaaS mode
 - local SMTP email verification, token+password activation, encrypted-at-rest outbox, password reset/session revocation and unknown-account response parity
+- two-relay real-agent routing, preferred-region placement, signed control-to-relay RPC, drain behavior and automatic cross-region reconnect/failover
 - installer syntax
 - native Windows service install/start/stop/remove lifecycle
 
