@@ -2,7 +2,6 @@ import crypto from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
 import type { PoolClient } from "pg";
 import { db } from "./db.js";
-import { sha256 } from "./crypto-utils.js";
 
 type Queryable = typeof db | PoolClient;
 
@@ -310,7 +309,7 @@ function relaySignatureBase(
   nonce: string,
   body: Buffer | string,
 ) {
-  const bodyHash = sha256(body);
+  const bodyHash = crypto.createHash("sha256").update(body).digest("hex");
   return [
     method.toUpperCase(),
     path,
