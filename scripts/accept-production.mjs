@@ -56,7 +56,7 @@ async function checkConsole() {
   const response = await fetch(new URL("/", base), { redirect: "manual" });
   const text = await response.text();
   assert.equal(response.status, 200);
-  assert.match(text, /WebRising Commender/i);
+  assert.match(text, /WECOMMANDER/i);
   record("Web console", true, "console HTML served");
 }
 
