@@ -93,6 +93,8 @@ export async function migrate() {
       payload_nonce text not null,
       payload_ciphertext text not null,
       payload_tag text not null,
+      organization_id uuid references organizations(id) on delete cascade,
+      kind text not null default 'generic',
       attempts integer not null default 0,
       next_attempt_at timestamptz not null default now(),
       locked_at timestamptz,
@@ -102,6 +104,10 @@ export async function migrate() {
       last_error text,
       created_at timestamptz not null default now()
     );
+    alter table mail_outbox
+      add column if not exists organization_id uuid references organizations(id) on delete cascade;
+    alter table mail_outbox
+      add column if not exists kind text not null default 'generic';
     create index if not exists mail_outbox_delivery_idx
       on mail_outbox(sent_at,next_attempt_at,created_at)
       where sent_at is null;
