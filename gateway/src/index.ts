@@ -1201,7 +1201,7 @@ const server = http.createServer(async (req, res) => {
         return void json(res, 400, { error: "browser_session_required" });
       }
       const memberships = await db.query(
-        `select o.id,o.name,m.role,m.created_at
+        `select o.id,o.name,o.relay_region,m.role,m.created_at
            from organization_members m
            join organizations o on o.id=m.organization_id
           where m.user_id=$1
@@ -1285,6 +1285,75 @@ const server = http.createServer(async (req, res) => {
       return void json(res, 200, { item: updated.rows[0] });
     }
 
+    if (req.method === "GET" && url.pathname === "/api/relay-regions") {
+      if (!requireRole(principal!, "viewer", res)) return;
+      if (!regionalRelayEnabled()) {
+        return void json(res, 200, { enabled: false, items: [] });
+      }
+      const regions = await db.query<{ region: string; nodes: string }>(
+        `select region,count(*)::text as nodes
+           from relay_nodes
+          where enabled
+            and not drain
+            and last_seen_at>now()-interval '45 seconds'
+          group by region
+          order by region asc`,
+      );
+      return void json(res, 200, {
+        enabled: true,
+        items: regions.rows.map((row) => ({
+          region: row.region,
+          nodes: Number(row.nodes),
+        })),
+      });
+    }
+
+    if (req.method === "PATCH" && url.pathname === "/api/organization/relay-region") {
+      if (!requireRole(principal!, "owner", res)) return;
+      const body = z.object({
+        region: z.string().trim().min(1).max(80).nullable(),
+      }).parse(await readJson(req));
+
+      const region = body.region?.toLowerCase() ?? null;
+      if (region !== null) {
+        if (!regionalRelayEnabled()) {
+          return void json(res, 409, { error: "regional_relay_disabled" });
+        }
+        const available = await db.query(
+          `select 1
+             from relay_nodes
+            where region=$1
+              and enabled
+              and not drain
+              and last_seen_at>now()-interval '45 seconds'
+            limit 1`,
+          [region],
+        );
+        if (!available.rowCount) {
+          return void json(res, 409, { error: "relay_region_unavailable" });
+        }
+      }
+
+      const updated = await db.query(
+        `update organizations
+            set relay_region=$2
+          where id=$1
+          returning id,name,relay_region,created_at`,
+        [principal!.organizationId, region],
+      );
+      if (!updated.rows[0]) return void json(res, 404, { error: "organization_not_found" });
+
+      await auditControl(
+        principal!,
+        null,
+        "organization.relay_region",
+        "high",
+        "success",
+        JSON.stringify({ relayRegion: region }),
+      );
+      return void json(res, 200, { item: updated.rows[0] });
+    }
+
     if (req.method === "GET" && url.pathname === "/api/organizations") {
       if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
       const result = await db.query("select id,name,created_at from organizations order by created_at asc");
@@ -1304,6 +1373,99 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/billing") {
       if (!requireRole(principal!, "viewer", res)) return;
       return void json(res, 200, await billingSnapshot(principal!.organizationId));
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/admin/relays") {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const result = await db.query<{
+        id: string;
+        region: string;
+        public_ws_url: string;
+        internal_base_url: string;
+        max_devices: number;
+        enabled: boolean;
+        drain: boolean;
+        last_seen_at: string;
+        assigned_count: string;
+        connected_count: string;
+      }>(
+        `select r.id,
+                r.region,
+                r.public_ws_url,
+                r.internal_base_url,
+                r.max_devices,
+                r.enabled,
+                r.drain,
+                r.last_seen_at,
+                count(d.id) filter (
+                  where d.assigned_relay_id=r.id and d.revoked_at is null
+                )::text as assigned_count,
+                count(d.id) filter (
+                  where d.connected_relay_id=r.id
+                    and d.revoked_at is null
+                    and d.relay_last_seen_at>now()-interval '45 seconds'
+                )::text as connected_count
+           from relay_nodes r
+           left join devices d
+             on d.assigned_relay_id=r.id or d.connected_relay_id=r.id
+          group by r.id
+          order by r.region asc,r.id asc`,
+      );
+      return void json(res, 200, {
+        enabled: regionalRelayEnabled(),
+        items: result.rows.map((row) => ({
+          ...row,
+          healthy: row.enabled && new Date(row.last_seen_at).getTime() > Date.now() - 45_000,
+          assigned_count: Number(row.assigned_count),
+          connected_count: Number(row.connected_count),
+        })),
+      });
+    }
+
+    const relayAdminMatch = url.pathname.match(
+      /^\/api\/admin\/relays\/([^/]+)$/,
+    );
+    if (req.method === "PATCH" && relayAdminMatch) {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const relayId = decodeURIComponent(relayAdminMatch[1]!);
+      const body = z.object({
+        enabled: z.boolean().optional(),
+        drain: z.boolean().optional(),
+        maxDevices: z.number().int().min(1).max(1_000_000).optional(),
+      }).refine(
+        (value) =>
+          value.enabled !== undefined ||
+          value.drain !== undefined ||
+          value.maxDevices !== undefined,
+        { message: "at_least_one_relay_setting_required" },
+      ).parse(await readJson(req));
+
+      const updated = await db.query(
+        `update relay_nodes
+            set enabled=coalesce($2,enabled),
+                drain=coalesce($3,drain),
+                max_devices=coalesce($4,max_devices),
+                updated_at=now()
+          where id=$1
+          returning id,region,max_devices,enabled,drain,last_seen_at,updated_at`,
+        [relayId, body.enabled ?? null, body.drain ?? null, body.maxDevices ?? null],
+      );
+      if (!updated.rows[0]) return void json(res, 404, { error: "relay_not_found" });
+
+      await auditControl(
+        principal!,
+        null,
+        "relay.update",
+        "high",
+        "success",
+        JSON.stringify({
+          relayId,
+          enabled: body.enabled,
+          drain: body.drain,
+          maxDevices: body.maxDevices,
+        }),
+      );
+      return void json(res, 200, { item: updated.rows[0] });
     }
 
     if (req.method === "GET" && url.pathname === "/api/admin/mail/outbox") {
