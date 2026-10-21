@@ -51,6 +51,7 @@ const bodyLimit = 2 * 1024 * 1024;
 const hub = new AgentHub(currentNodeId());
 const deviceRouter = new DeviceRouter(hub);
 const enrollRateLimit = new FixedWindowRateLimiter();
+const agentRouteRateLimit = new FixedWindowRateLimiter();
 const pairingRateLimit = new FixedWindowRateLimiter();
 const loginIpRateLimit = new FixedWindowRateLimiter();
 const loginAccountRateLimit = new FixedWindowRateLimiter();
@@ -338,6 +339,16 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/agent/route") {
       const device = await authenticateDeviceRequest(req);
       if (!device) return void json(res, 401, { error: "unauthorized" });
+
+      const routeRate = agentRouteRateLimit.hit(
+        `${remoteKey(req)}:${device.deviceId}`,
+        120,
+        5 * 60_000,
+      );
+      if (!routeRate.allowed) {
+        res.setHeader("Retry-After", String(routeRate.retryAfterSeconds));
+        return void json(res, 429, { error: "rate_limited" });
+      }
 
       if (!regionalRelayEnabled()) {
         return void json(res, 200, {
