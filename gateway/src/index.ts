@@ -118,7 +118,7 @@ function securityHeaders() {
     "referrer-policy": "no-referrer",
     "permissions-policy": "camera=(), microphone=(), geolocation=()",
     ...(publicBaseUrl.startsWith("https://")
-      ? { "strict-transport-security": "max-age=31536000; includeSubDomains" }
+      ? { "strict-transport-security": "max-age=31536000" }
       : {}),
   };
 }
