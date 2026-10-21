@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>WECOMMANDER</title>
+  <style>
+    :root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#eef3ff;background:#080d18;--bg:#080d18;--panel:#101827;--panel2:#151f31;--line:#26344f;--muted:#92a0b8;--blue:#5577ff;--green:#32c48d;--red:#ff6b7a;--amber:#f7bd5b}
+    *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#080d18,#0b1220 50%,#080d18);min-height:100vh}button,input,textarea{font:inherit}
+    .shell{max-width:1380px;margin:auto;padding:28px 20px 60px}.top{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:20px}
+    .brand h1{font-size:26px;margin:0}.brand p{margin:5px 0 0;color:var(--muted)}.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:6px 10px;font-size:12px;color:var(--muted)}.pill.ok{background:#12352b;color:#a9f1d5;border-color:#245843}.pill.bad{background:#351820;color:#ffc0c7;border-color:#5d2632}
+    .login,.card{background:rgba(16,24,39,.94);border:1px solid var(--line);border-radius:16px;box-shadow:0 16px 60px rgba(0,0,0,.2)}.login{padding:18px;margin-bottom:18px}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.grid{display:grid;grid-template-columns:300px 1fr;gap:16px}.sidebar,.workspace{min-width:0}.card{padding:18px;margin-bottom:14px}.card h2,.card h3{margin:0 0 14px}.card h2{font-size:16px}.card h3{font-size:14px}
+    input,textarea,select{width:100%;background:#0a1120;color:#eef3ff;border:1px solid #31405e;border-radius:10px;padding:10px 12px;outline:0}input:focus,textarea:focus,select:focus{border-color:#617fff;box-shadow:0 0 0 3px rgba(85,119,255,.14)}textarea{resize:vertical;min-height:100px}
+    button{border:1px solid transparent;border-radius:10px;padding:10px 13px;background:var(--blue);color:#fff;cursor:pointer;font-weight:650}button.secondary{background:#1a263b;border-color:#30405e;color:#dbe5fb}button.danger{background:#3b1821;border-color:#652735;color:#ffc4ca}button:disabled{opacity:.5;cursor:not-allowed}
+    .device{border:1px solid transparent;border-radius:12px;padding:12px;margin:8px 0;background:#0c1423;cursor:pointer}.device:hover{border-color:#30405e}.device.selected{border-color:#5577ff;background:#111d36}.device b{display:block;margin-bottom:4px}.small,.device small{color:var(--muted);font-size:12px}.status{display:inline-block;width:8px;height:8px;border-radius:50%;background:#58657a;margin-right:6px}.status.online{background:var(--green)}.status.revoked{background:var(--red)}
+    .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}.tab{background:#151f31;color:#aebbd1;border-color:#26344f}.tab.active{background:#2545b8;color:#fff;border-color:#5577ff}.pane{display:none}.pane.active{display:block}
+    .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}.three{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.kv{display:grid;grid-template-columns:180px 1fr;gap:7px;font-size:13px;padding:7px 0;border-bottom:1px solid #1e2a40}.kv span:first-child{color:var(--muted)}
+    pre{background:#070c15;border:1px solid #26344f;border-radius:12px;padding:14px;overflow:auto;white-space:pre-wrap;word-break:break-word;max-height:420px;color:#cfe0ff}.file-list{max-height:360px;overflow:auto;border:1px solid #26344f;border-radius:10px}.file{display:grid;grid-template-columns:26px 1fr auto;gap:8px;align-items:center;padding:9px 10px;border-bottom:1px solid #1b263a;cursor:pointer}.file:last-child{border-bottom:0}.file:hover{background:#162138}.file .meta{color:var(--muted);font-size:11px}
+    .terminal{background:#05080d;color:#bfffdc;border:1px solid #25364a;border-radius:12px;padding:12px;height:330px;overflow:auto;white-space:pre-wrap;font:13px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace}.audit{width:100%;border-collapse:collapse;font-size:12px}.audit th,.audit td{padding:9px;border-bottom:1px solid #223049;text-align:left;vertical-align:top}.audit th{color:#9baac4}.error{color:#ff9ba7}.success{color:#8ce0bd}.hint{color:var(--muted);font-size:12px;line-height:1.5}.toolbar{display:flex;gap:8px;align-items:end;flex-wrap:wrap}.toolbar>label{flex:1 1 220px}.label{display:block;color:#aab7cc;font-size:12px;margin:0 0 6px}.hidden{display:none!important}
+    @media(max-width:900px){.grid{grid-template-columns:1fr}.two,.three{grid-template-columns:1fr}.sidebar{order:0}.workspace{order:1}.kv{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}}
+  </style>
+</head>
+<body>
+<main class="shell">
+  <header class="top">
+    <div class="brand"><h1>WECOMMANDER</h1><p>Secure AI-to-device control plane</p></div>
+    <div class="row"><span id="health" class="pill">gateway checking…</span><span id="orgState" class="pill">no workspace</span><span id="selection" class="pill">no device selected</span></div>
+  </header>
+
+  <section class="login">
+    <div class="two">
+      <div>
+        <h3 style="margin-top:0">Browser account</h3>
+        <div class="toolbar">
+          <label><span class="label">Email</span><input id="loginEmail" type="email" autocomplete="username" placeholder="you@example.com"></label>
+          <label><span class="label">Password</span><input id="loginPassword" type="password" autocomplete="current-password" placeholder="••••••••••••"></label>
+        </div>
+        <div class="row" style="margin-top:10px"><button id="loginButton">Sign in</button><button id="signupOpen" class="secondary hidden">Create account</button><button id="resetOpen" class="secondary hidden">Forgot password</button><button id="logoutButton" class="secondary">Sign out</button><span id="authState" class="pill">not signed in</span></div>
+        <p class="hint">Browser sessions use HttpOnly cookies. Passwords and session tokens are never stored in localStorage.</p>
+      </div>
+      <div>
+        <h3 style="margin-top:0">API / self-hosted fallback</h3>
+        <div class="toolbar">
+          <label><span class="label">Control or tenant API token</span><input id="key" type="password" autocomplete="off" placeholder="CONTROL_API_KEY or wrc_…"></label>
+          <button id="saveKey">Connect</button><button id="forgetKey" class="secondary">Forget token</button>
+        </div>
+        <p class="hint">The API token is stored only in this browser tab session. Browser login is preferred for the web console.</p>
+      </div>
+    </div>
+    <p id="globalError" class="error"></p>
+  </section>
+
+  <section id="signupCard" class="login hidden">
+    <div class="row" style="justify-content:space-between"><div><h3 style="margin:0 0 6px">Create account</h3><p class="hint" style="margin:0">SaaS signup is activated only when your own SMTP delivery is configured.</p></div><button id="signupClose" class="secondary">Close</button></div>
+    <div class="toolbar" style="margin-top:14px">
+      <label><span class="label">Email</span><input id="signupEmail" type="email" autocomplete="email" placeholder="you@example.com"></label>
+      <label><span class="label">Workspace name</span><input id="signupWorkspace" autocomplete="organization" placeholder="My Workspace"></label>
+      <label><span class="label">Password</span><input id="signupPassword" type="password" autocomplete="new-password" placeholder="Minimum 12 characters"></label>
+      <button id="signupSubmit">Create account</button>
+    </div>
+    <p id="signupStatus" class="hint"></p>
+    <p id="signupError" class="error"></p>
+  </section>
+
+  <section id="resetRequestCard" class="login hidden">
+    <div class="row" style="justify-content:space-between"><div><h3 style="margin:0 0 6px">Reset password</h3><p class="hint" style="margin:0">If the account exists, a reset link will be sent through the configured SMTP server.</p></div><button id="resetRequestClose" class="secondary">Close</button></div>
+    <div class="toolbar" style="margin-top:14px">
+      <label><span class="label">Email</span><input id="resetEmail" type="email" autocomplete="email" placeholder="you@example.com"></label>
+      <button id="resetRequestSubmit">Send reset link</button>
+    </div>
+    <p id="resetRequestStatus" class="hint"></p>
+    <p id="resetRequestError" class="error"></p>
+  </section>
+
+  <section id="resetConfirmCard" class="login hidden">
+    <div class="row" style="justify-content:space-between"><div><h3 style="margin:0 0 6px">Choose a new password</h3><p class="hint" style="margin:0">The reset token is read from the URL fragment and is not sent in the page request URL.</p></div><span id="resetConfirmState" class="pill">reset link</span></div>
+    <div class="toolbar" style="margin-top:14px">
+      <label><span class="label">New password</span><input id="resetNewPassword" type="password" autocomplete="new-password" placeholder="Minimum 12 characters"></label>
+      <button id="resetConfirmSubmit">Set new password</button>
+    </div>
+    <p id="resetConfirmStatus" class="hint"></p>
+    <p id="resetConfirmError" class="error"></p>
+  </section>
+
+  <section id="verifyCard" class="login hidden">
+    <div class="row" style="justify-content:space-between"><div><h3 style="margin:0 0 6px">Verify account</h3><p id="verifyStatus" class="hint" style="margin:0">Enter the password you chose when signing up to complete email verification.</p></div><span id="verifyState" class="pill">verification link</span></div>
+    <div class="toolbar" style="margin-top:14px">
+      <label><span class="label">Signup password</span><input id="verifyPassword" type="password" autocomplete="current-password" placeholder="Your signup password"></label>
+      <button id="verifySubmit">Verify & sign in</button>
+    </div>
+    <p id="verifyError" class="error"></p>
+  </section>
+
+  <section id="inviteCard" class="login hidden">
+    <div class="row" style="justify-content:space-between"><div><h3 style="margin:0 0 6px">Workspace invitation</h3><p id="inviteSummary" class="hint" style="margin:0">Loading invitation…</p></div><span id="inviteStatus" class="pill">pending</span></div>
+    <div class="toolbar" style="margin-top:14px">
+      <label><span id="invitePasswordLabel" class="label">Choose password</span><input id="invitePassword" type="password" autocomplete="new-password" placeholder="Minimum 12 characters"></label>
+      <button id="acceptInvite">Accept invitation</button>
+    </div>
+    <p id="inviteError" class="error"></p>
+  </section>
+
+  <div class="grid">
+    <aside class="sidebar">
+      <section class="card">
+        <div class="row" style="justify-content:space-between"><h2>Devices</h2><button id="refreshDevices" class="secondary">Refresh</button></div>
+        <button id="pair" style="width:100%;margin-bottom:10px">Create pairing code</button>
+        <div id="pairing" class="hint"></div>
+        <div id="devices"><p class="hint">Enter your API key.</p></div>
+      </section>
+      <section class="card">
+        <h2>Selected device</h2>
+        <label><span class="label">Display name</span><input id="deviceName" placeholder="Device name"></label>
+        <div class="row" style="margin-top:10px"><button id="rename" class="secondary">Rename</button><button id="disconnect" class="secondary">Reconnect test</button><button id="revoke" class="danger">Revoke</button></div>
+      </section>
+    </aside>
+
+    <section class="workspace">
+      <div class="tabs">
+        <button class="tab active" data-tab="system">System</button>
+        <button class="tab" data-tab="files">Files</button>
+        <button class="tab" data-tab="command">Command</button>
+        <button class="tab" data-tab="tasks">Tasks</button>
+        <button class="tab" data-tab="terminal">Terminal</button>
+        <button class="tab" data-tab="approvals">Approvals</button>
+        <button id="accessTab" class="tab hidden" data-tab="access">Access</button>
+        <button class="tab" data-tab="audit">Audit</button>
+      </div>
+
+      <section id="pane-system" class="card pane active">
+        <div class="row" style="justify-content:space-between"><h2>System information</h2><button id="loadSystem">Refresh</button></div>
+        <div id="systemInfo"><p class="hint">Select an online device.</p></div>
+      </section>
+
+      <section id="pane-files" class="card pane">
+        <h2>Filesystem</h2>
+        <div class="toolbar">
+          <label><span class="label">Path</span><input id="filePath" placeholder="/home/user or C:\Users\Name"></label>
+          <button id="fileList">List</button><button id="fileUp" class="secondary">Up</button><button id="newFolder" class="secondary">New folder</button>
+        </div>
+        <div class="toolbar" style="margin-top:10px">
+          <label><span class="label">Discover</span><input id="fileQuery" placeholder="filename or literal text"></label>
+          <button id="fileNameSearch" class="secondary">Search names</button>
+          <button id="fileTextSearch" class="secondary">Search text</button>
+          <button id="fileTree" class="secondary">Tree</button>
+        </div>
+        <pre id="fileDiscoveryOutput" class="hidden" style="max-height:260px"></pre>
+        <p class="hint">The native agent enforces its own allowlisted roots. The gateway cannot bypass them.</p>
+        <div id="fileItems" class="file-list"><p class="hint" style="padding:10px">No directory loaded.</p></div>
+        <div style="margin-top:12px">
+          <label><span class="label">Selected text file</span><input id="selectedFile" readonly placeholder="Click a file"></label>
+          <textarea id="fileContent" placeholder="UTF-8 file content"></textarea>
+          <div class="row"><button id="saveFile">Save file</button><button id="moveFile" class="secondary">Move / rename</button><button id="replaceFile" class="secondary">Surgical replace</button><button id="deleteFile" class="danger">Delete file</button></div>
+        </div>
+      </section>
+
+      <section id="pane-command" class="card pane">
+        <h2>One-shot command</h2>
+        <label><span class="label">Working directory (optional; must be allowlisted)</span><input id="commandCwd"></label>
+        <label><span class="label">Command</span><textarea id="commandText" placeholder="git status"></textarea></label>
+        <div class="row"><button id="execute">Approve & execute</button></div>
+        <pre id="commandOutput">No command run.</pre>
+      </section>
+
+      <section id="pane-tasks" class="card pane">
+        <h2>Persistent background task</h2>
+        <p class="hint">Tasks continue inside the agent when the AI client or gateway connection drops. They stop only if completed, canceled, timed out, or the agent process itself stops.</p>
+        <label><span class="label">Working directory (optional)</span><input id="taskCwd"></label>
+        <label><span class="label">Command</span><textarea id="taskCommand" placeholder="long-running-command"></textarea></label>
+        <div class="row"><button id="taskStart">Approve & start</button><input id="taskId" style="flex:1" placeholder="Task ID"><button id="taskList" class="secondary">Discover tasks</button><button id="taskStatus" class="secondary">Status</button><button id="taskCancel" class="danger">Approve & cancel</button></div>
+        <pre id="taskOutput">No task selected.</pre>
+      </section>
+
+      <section id="pane-terminal" class="card pane">
+        <div class="row" style="justify-content:space-between"><h2>Persistent terminal</h2><div class="row"><button id="termStart">Approve & start</button><button id="termStop" class="danger">Approve & stop</button></div></div>
+        <div id="terminalOutput" class="terminal">Terminal not started.</div>
+        <div class="row" style="margin-top:10px"><input id="terminalSessionId" style="flex:1" placeholder="Persistent session ID"><button id="termList" class="secondary">Discover sessions</button><button id="termAttach" class="secondary">Attach</button></div>
+        <div class="row" style="margin-top:10px"><input id="terminalInput" style="flex:1" placeholder="Type command and press Enter"><button id="termSend">Send</button></div>
+      </section>
+
+      <section id="pane-approvals" class="card pane">
+        <div class="row" style="justify-content:space-between"><div><h2>Pending AI approvals</h2><p class="hint">Review the exact operation requested by an operator/MCP client. Approval is one-time and tied to these parameters.</p></div><button id="loadApprovals">Refresh</button></div>
+        <div style="overflow:auto"><table class="audit"><thead><tr><th>Requested</th><th>Actor</th><th>Device</th><th>Operation</th><th>Expires</th><th>Decision</th></tr></thead><tbody id="approvalBody"></tbody></table></div>
+      </section>
+
+      <section id="pane-access" class="card pane">
+        <div class="row" style="justify-content:space-between"><div><h2>Workspace & access</h2><p class="hint">Manage workspace membership, invitations and tenant API tokens. Invitation links can be delivered by any channel; no paid email provider is required.</p></div><button id="refreshAccess" class="secondary">Refresh</button></div>
+
+        <div class="card" style="box-shadow:none">
+          <div class="row" style="justify-content:space-between"><h3>Plan & usage</h3><span id="billingState" class="pill">loading…</span></div>
+          <div id="billingSummary"><p class="hint">Open this tab to load current entitlements.</p></div>
+          <p class="hint">Self-hosted mode is unlimited. SaaS limits block only new allocations; existing devices and members are not deleted when a subscription changes.</p>
+        </div>
+
+        <div class="card" style="box-shadow:none">
+          <h3>Workspace</h3>
+          <div id="workspaceBrowserControls">
+            <div class="toolbar">
+              <label><span class="label">Current workspace</span><select id="organizationSelect"></select></label>
+              <button id="switchOrganization" class="secondary">Switch</button>
+            </div>
+            <div class="toolbar" style="margin-top:10px">
+              <label><span class="label">Workspace name</span><input id="organizationName" placeholder="Workspace name"></label>
+              <button id="renameOrganization" class="secondary">Rename</button>
+              <button id="createOrganization">Create workspace</button>
+            </div>
+          </div>
+          <p id="workspaceTokenHint" class="hint hidden">API-token sessions are already scoped to one workspace. Sign in with a browser account to switch or create workspaces.</p>
+          <div id="relayRegionControls" class="toolbar hidden" style="margin-top:12px">
+            <label><span class="label">Preferred relay region</span><select id="relayRegion"><option value="">Automatic</option></select></label>
+            <button id="saveRelayRegion" class="secondary">Save region</button>
+          </div>
+          <p id="relayRegionHint" class="hint hidden">Preferred region is best-effort. If it is unavailable, Commender automatically selects another healthy relay.</p>
+        </div>
+
+        <div id="relayAdminCard" class="card global-access hidden" style="box-shadow:none">
+          <div class="row" style="justify-content:space-between"><div><h3>Regional relay nodes</h3><p class="hint">Drain stops new assignments while existing connections keep working. Disable removes a node from routing immediately.</p></div><button id="refreshRelays" class="secondary">Refresh</button></div>
+          <div style="overflow:auto"><table class="audit"><thead><tr><th>Node</th><th>Region</th><th>Health</th><th>Assigned</th><th>Connected</th><th>Capacity</th><th>State</th><th>Action</th></tr></thead><tbody id="relayNodeBody"></tbody></table></div>
+        </div>
+
+        <div class="card admin-access" style="box-shadow:none">
+          <h3>Members</h3>
+          <div style="overflow:auto"><table class="audit"><thead><tr><th>Email</th><th>Role</th><th>Last login</th><th>Since</th><th>Action</th></tr></thead><tbody id="memberBody"></tbody></table></div>
+        </div>
+
+        <div class="card admin-access" style="box-shadow:none">
+          <h3>Invite member</h3>
+          <div class="toolbar">
+            <label><span class="label">Email</span><input id="inviteEmail" type="email" placeholder="member@example.com"></label>
+            <label style="max-width:180px"><span class="label">Role</span><select id="inviteRole"><option>viewer</option><option selected>operator</option><option>admin</option><option>owner</option></select></label>
+            <button id="createInvitation">Create invitation</button>
+          </div>
+          <pre id="inviteLinkOutput" class="hidden"></pre>
+          <div style="overflow:auto;margin-top:10px"><table class="audit"><thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Expires</th><th>Action</th></tr></thead><tbody id="invitationBody"></tbody></table></div>
+        </div>
+
+        <div class="card admin-access" style="box-shadow:none">
+          <h3>Tenant API tokens</h3>
+          <div class="toolbar">
+            <label><span class="label">Token name</span><input id="tokenName" placeholder="CI, automation, ChatGPT…"></label>
+            <label style="max-width:180px"><span class="label">Role</span><select id="tokenRole"><option>viewer</option><option selected>operator</option><option>admin</option><option>owner</option></select></label>
+            <button id="createToken">Create token</button>
+          </div>
+          <pre id="tokenOutput" class="hidden"></pre>
+          <div style="overflow:auto;margin-top:10px"><table class="audit"><thead><tr><th>Name</th><th>Role</th><th>Last used</th><th>Status</th><th>Action</th></tr></thead><tbody id="tokenBody"></tbody></table></div>
+        </div>
+      </section>
+
+      <section id="pane-audit" class="card pane">
+        <div class="row" style="justify-content:space-between"><h2>Audit log</h2><button id="loadAudit">Refresh</button></div>
+        <div style="overflow:auto"><table class="audit"><thead><tr><th>Time</th><th>Actor</th><th>Device</th><th>Tool</th><th>Risk</th><th>Outcome</th><th>Detail</th></tr></thead><tbody id="auditBody"></tbody></table></div>
+      </section>
+    </section>
+  </div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let selected=null;
+let terminalSession=null;
+let terminalTimer=null;
+let currentIdentity=null;
+let organizations=[];
+const hashParams=new URLSearchParams(location.hash.startsWith("#")?location.hash.slice(1):location.hash);
+let invitationToken=hashParams.get("invite")||"";
+let verificationToken=hashParams.get("verify")||"";
+let passwordResetToken=hashParams.get("reset")||"";
+
+$("key").value=sessionStorage.getItem("commender-key")||"";
+const cookieValue=name=>document.cookie.split(";").map(x=>x.trim()).find(x=>x.startsWith(name+"="))?.slice(name.length+1)||"";
+const auth=()=>{const key=$("key").value.trim();return key?{"Authorization":"Bearer "+key,"Content-Type":"application/json"}:{"Content-Type":"application/json"}};
+const escapeHtml=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function toBase64(text){const bytes=new TextEncoder().encode(text);let binary="";for(const b of bytes)binary+=String.fromCharCode(b);return btoa(binary)}
+function parentPath(value){if(!value)return "";const normalized=value.replace(/[\\/]+$/,"");const i=Math.max(normalized.lastIndexOf("/"),normalized.lastIndexOf("\\"));if(i<0)return normalized;return normalized.slice(0,i)||normalized.slice(0,1)}
+function needDevice(online=true){if(!selected)throw new Error("Select a device first.");if(selected.revoked_at)throw new Error("Device is revoked.");if(online&&!selected.online)throw new Error("Device is offline.");return selected}
+function showError(error){$("globalError").textContent=error instanceof Error?error.message:String(error)}
+function clearError(){$("globalError").textContent=""}
+function dateOrDash(value){return value?new Date(value).toLocaleString():"—"}
+function setText(id,value){$(id).textContent=String(value??"")}
+
+function apiError(body,status){if(body?.error==="quota_exceeded")return (body.resource||"resource")+" quota reached ("+body.used+"/"+body.limit+")";if(body?.error==="billing_required")return "This workspace needs an active SaaS entitlement before new resources can be created.";if(body?.error==="signup_disabled")return "Public signup is disabled on this deployment.";if(body?.error==="mail_not_configured")return "Email delivery is not configured on this deployment.";if(body?.error==="relay_region_unavailable")return "The selected relay region currently has no healthy node.";if(body?.error==="relay_unavailable")return "No healthy relay is currently available.";return body?.error||("HTTP "+status)}
+async function api(route,opts={}){const method=(opts.method||"GET").toUpperCase();const headers={...auth(),...(opts.headers||{})};if(!$("key").value.trim()&&!["GET","HEAD","OPTIONS"].includes(method)){const csrf=cookieValue("commender_csrf");if(csrf)headers["X-CSRF-Token"]=csrf}const r=await fetch(route,{credentials:"same-origin",...opts,headers});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(apiError(body,r.status));return body}
+async function deviceRequest(action,approve=false){const d=needDevice();let approvalToken;if(approve){const preview=JSON.stringify(action,null,2);if(!confirm("Approve this HIGH-risk operation?\n\n"+preview))throw new Error("Action canceled.");const a=await api("/api/approvals",{method:"POST",body:JSON.stringify({deviceId:d.id,action,ttlSeconds:120})});approvalToken=a.approvalToken}const r=await api("/api/device/request",{method:"POST",body:JSON.stringify({deviceId:d.id,action,...(approvalToken?{approvalToken}:{})})});return r.data}
+
+async function health(){try{const r=await fetch("/health");$("health").textContent=r.ok?"gateway healthy":"gateway degraded";$("health").className="pill "+(r.ok?"ok":"bad")}catch{$("health").textContent="gateway offline";$("health").className="pill bad"}}
+
+async function loadPublicConfig(){try{const r=await fetch("/api/public/config");const j=await r.json();$("signupOpen").classList.toggle("hidden",!j.signupEnabled);$("resetOpen").classList.toggle("hidden",!j.passwordResetEnabled)}catch{$("signupOpen").classList.add("hidden");$("resetOpen").classList.add("hidden")}}
+
+async function loadDevices(){try{clearError();const j=await api("/api/devices");if(selected){selected=j.items.find(x=>x.id===selected.id)||null}renderDevices(j.items);syncSelection()}catch(e){showError(e)}}
+function renderDevices(items){$("devices").innerHTML=items.length?items.map(d=>'<div class="device '+(selected?.id===d.id?'selected':'')+'" data-id="'+d.id+'"><b><span class="status '+(d.revoked_at?'revoked':d.online?'online':'')+'"></span>'+escapeHtml(d.name)+'</b><small>'+escapeHtml(d.hostname||d.platform||d.id)+'</small><div class="small">'+(d.revoked_at?'revoked':d.online?'online':'offline')+' · '+escapeHtml(d.agent_version||"agent unknown")+(d.connected_relay_id?' · relay '+escapeHtml(d.connected_relay_id):'')+'</div></div>').join(""):'<p class="hint">No devices enrolled.</p>';document.querySelectorAll(".device").forEach(el=>el.onclick=()=>{selected=items.find(x=>x.id===el.dataset.id)||null;renderDevices(items);syncSelection()})}
+function syncSelection(){$("selection").textContent=selected?(selected.name+" · "+(selected.revoked_at?"revoked":selected.online?"online":"offline")):"no device selected";$("deviceName").value=selected?.name||""}
+
+async function loadOrganizations(){
+  organizations=[];
+  if(currentIdentity?.authKind!=="session"){
+    $("workspaceBrowserControls").classList.add("hidden");
+    $("workspaceTokenHint").classList.remove("hidden");
+    $("orgState").textContent=currentIdentity?"workspace · "+currentIdentity.organizationId.slice(0,8):"no workspace";
+    return;
+  }
+  $("workspaceBrowserControls").classList.remove("hidden");
+  $("workspaceTokenHint").classList.add("hidden");
+  const j=await api("/api/auth/organizations");
+  organizations=j.items||[];
+  $("organizationSelect").innerHTML=organizations.map(x=>'<option value="'+escapeHtml(x.id)+'">'+escapeHtml(x.name)+' · '+escapeHtml(x.role)+'</option>').join("");
+  $("organizationSelect").value=currentIdentity.organizationId;
+  const active=organizations.find(x=>x.id===currentIdentity.organizationId);
+  $("organizationName").value=active?.name||"";
+  $("renameOrganization").disabled=currentIdentity.role!=="owner";
+  $("orgState").textContent=active?(active.name+" · "+active.role):"workspace";
+}
+async function refreshIdentity(){
+  try{
+    clearError();
+    const me=await api("/api/auth/me");
+    currentIdentity=me;
+    $("authState").textContent=(me.email||me.actor)+" · "+me.role;
+    $("authState").className="pill ok";
+    const canManage=me.role==="admin"||me.role==="owner";
+    const canSeeAccess=me.authKind==="session"||canManage;
+    $("accessTab").classList.toggle("hidden",!canSeeAccess);
+    document.querySelectorAll(".admin-access").forEach(x=>x.classList.toggle("hidden",!canManage));
+    document.querySelectorAll(".global-access").forEach(x=>x.classList.toggle("hidden",!me.global));
+    await loadOrganizations();
+    await loadDevices();
+    if(canManage)await loadAudit();
+  }catch{
+    currentIdentity=null;
+    organizations=[];
+    $("authState").textContent="not signed in";
+    $("authState").className="pill";
+    $("orgState").textContent="no workspace";
+    $("accessTab").classList.add("hidden");
+    document.querySelectorAll(".global-access").forEach(x=>x.classList.add("hidden"));
+    $("relayRegionControls").classList.add("hidden");
+    $("relayRegionHint").classList.add("hidden");
+    if(!$("key").value.trim())$("devices").innerHTML='<p class="hint">Sign in or enter an API token.</p>';
+  }
+}
+$("loginButton").onclick=async()=>{try{clearError();sessionStorage.removeItem("commender-key");$("key").value="";const r=await fetch("/api/auth/login",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("loginEmail").value.trim(),password:$("loginPassword").value})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(body.error||("HTTP "+r.status));$("loginPassword").value="";await refreshIdentity()}catch(e){showError(e)}}
+$("logoutButton").onclick=async()=>{try{if(currentIdentity)await api("/api/auth/logout",{method:"POST",body:"{}"});sessionStorage.removeItem("commender-key");$("key").value="";selected=null;currentIdentity=null;syncSelection();await refreshIdentity()}catch(e){showError(e)}}
+$("signupOpen").onclick=()=>{$("signupCard").classList.remove("hidden");$("signupError").textContent="";$("signupStatus").textContent=""}
+$("signupClose").onclick=()=>{$("signupCard").classList.add("hidden")}
+$("signupSubmit").onclick=async()=>{try{$("signupError").textContent="";$("signupStatus").textContent="";const email=$("signupEmail").value.trim();const workspaceName=$("signupWorkspace").value.trim();const password=$("signupPassword").value;if(!email||!workspaceName||password.length<12)throw new Error("Enter an email, workspace name and a password of at least 12 characters.");const r=await fetch("/api/auth/signup",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,workspaceName,password})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(apiError(body,r.status));$("signupPassword").value="";$("signupStatus").textContent="If signup is available for this address, check your email for the verification link."}catch(e){$("signupError").textContent=e.message||String(e)}}
+$("resetOpen").onclick=()=>{$("resetRequestCard").classList.remove("hidden");$("resetRequestError").textContent="";$("resetRequestStatus").textContent="";$("resetEmail").value=$("loginEmail").value.trim()}
+$("resetRequestClose").onclick=()=>{$("resetRequestCard").classList.add("hidden")}
+$("resetRequestSubmit").onclick=async()=>{try{$("resetRequestError").textContent="";const email=$("resetEmail").value.trim();if(!email)throw new Error("Enter your email address.");const r=await fetch("/api/auth/password-reset/request",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(apiError(body,r.status));$("resetRequestStatus").textContent="If the account exists, a reset link has been queued for delivery."}catch(e){$("resetRequestError").textContent=e.message||String(e)}}
+$("saveKey").onclick=()=>{sessionStorage.setItem("commender-key",$("key").value);refreshIdentity()}
+$("forgetKey").onclick=()=>{sessionStorage.removeItem("commender-key");$("key").value="";selected=null;syncSelection();refreshIdentity()}
+$("refreshDevices").onclick=loadDevices;
+$("pair").onclick=async()=>{try{const j=await api("/api/pairing",{method:"POST",body:"{}"});$("pairing").innerHTML='Pairing code (10 min):<br><code>'+escapeHtml(j.pairingCode)+'</code>'}catch(e){showError(e)}}
+$("rename").onclick=async()=>{try{const d=needDevice(false);await api("/api/devices/"+d.id,{method:"PATCH",body:JSON.stringify({name:$("deviceName").value})});await loadDevices()}catch(e){showError(e)}}
+$("disconnect").onclick=async()=>{try{const d=needDevice();await api("/api/devices/"+d.id+"/disconnect",{method:"POST",body:"{}"});setTimeout(loadDevices,1200)}catch(e){showError(e)}}
+$("revoke").onclick=async()=>{try{const d=needDevice(false);if(!confirm("Revoke "+d.name+"? The agent must be re-enrolled to reconnect."))return;await api("/api/devices/"+d.id+"/revoke",{method:"POST",body:"{}"});await loadDevices();await loadAudit()}catch(e){showError(e)}}
+
+document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b));document.querySelectorAll(".pane").forEach(p=>p.classList.remove("active"));$("pane-"+b.dataset.tab).classList.add("active");if(b.dataset.tab==="audit")loadAudit();if(b.dataset.tab==="approvals")loadApprovals();if(b.dataset.tab==="access")loadAccess()});
+
+$("loadSystem").onclick=async()=>{try{const data=await deviceRequest({kind:"system_info"});$("systemInfo").innerHTML=Object.entries(data).map(([k,v])=>'<div class="kv"><span>'+escapeHtml(k)+'</span><span>'+escapeHtml(typeof v==="object"?JSON.stringify(v):v)+'</span></div>').join("")}catch(e){showError(e)}}
+
+async function listFiles(){try{const path=$("filePath").value.trim();const data=await deviceRequest({kind:"fs_list",path});$("filePath").value=data.path||path;$("fileItems").innerHTML=data.items.length?data.items.map(x=>'<div class="file" data-path="'+escapeHtml(x.path)+'" data-type="'+escapeHtml(x.type)+'"><span>'+(x.type==="directory"?"📁":"📄")+'</span><span>'+escapeHtml(x.name)+'</span><span class="meta">'+escapeHtml(x.size)+'</span></div>').join(""):'<p class="hint" style="padding:10px">Empty directory.</p>';document.querySelectorAll(".file").forEach(el=>el.onclick=()=>openEntry(el.dataset.path,el.dataset.type))}catch(e){showError(e)}}
+async function openEntry(path,type){if(type==="directory"){$("filePath").value=path;return listFiles()}try{const data=await deviceRequest({kind:"fs_read",path,maxBytes:1048576});const isText=data.encoding==="utf8";$("selectedFile").value=path;$("fileContent").value=isText?data.content:"[Binary file: "+data.size+" bytes]";$("fileContent").disabled=!isText;$("saveFile").disabled=!isText}catch(e){showError(e)}}
+function showDiscovery(data){$("fileDiscoveryOutput").classList.remove("hidden");$("fileDiscoveryOutput").textContent=JSON.stringify(data,null,2)}
+$("fileNameSearch").onclick=async()=>{try{const query=$("fileQuery").value.trim();if(!query)throw new Error("Enter a filename query.");showDiscovery(await deviceRequest({kind:"fs_search",path:$("filePath").value.trim(),query,maxResults:200}))}catch(e){showError(e)}}
+$("fileTextSearch").onclick=async()=>{try{const query=$("fileQuery").value;if(!query)throw new Error("Enter text to search.");showDiscovery(await deviceRequest({kind:"text_search",path:$("filePath").value.trim(),query,maxResults:200}))}catch(e){showError(e)}}
+$("fileTree").onclick=async()=>{try{showDiscovery(await deviceRequest({kind:"fs_tree",path:$("filePath").value.trim(),maxDepth:6,maxEntries:2000}))}catch(e){showError(e)}}
+$("fileList").onclick=listFiles;$("fileUp").onclick=()=>{$("filePath").value=parentPath($("filePath").value);listFiles()}
+$("newFolder").onclick=async()=>{try{const base=$("filePath").value.trim();const name=prompt("Folder name");if(!name)return;const sep=base.includes("\\")?"\\":"/";await deviceRequest({kind:"fs_mkdir",path:base.replace(/[\\/]+$/,"")+sep+name,recursive:false});await listFiles()}catch(e){showError(e)}}
+$("saveFile").onclick=async()=>{try{const path=$("selectedFile").value;if(!path)throw new Error("Select a text file.");if(!confirm("Save changes to "+path+"?"))return;await deviceRequest({kind:"fs_write",path,contentBase64:toBase64($("fileContent").value),createParents:false});await openEntry(path,"file")}catch(e){showError(e)}}
+$("moveFile").onclick=async()=>{try{const source=$("selectedFile").value;if(!source)throw new Error("Select a file.");const destination=prompt("New absolute path inside an allowed root:",source);if(!destination||destination===source)return;await deviceRequest({kind:"fs_move",source,destination});$("selectedFile").value=destination;await openEntry(destination,"file");$("filePath").value=parentPath(destination);await listFiles()}catch(e){showError(e)}}
+$("replaceFile").onclick=async()=>{try{const path=$("selectedFile").value;if(!path)throw new Error("Select a text file.");const search=prompt("Exact text to replace:");if(!search)return;const replace=prompt("Replacement text:");if(replace===null)return;const replaceAll=confirm("Replace every occurrence? Cancel means require exactly one match.");const result=await deviceRequest({kind:"fs_replace",path,search,replace,replaceAll});showDiscovery(result);await openEntry(path,"file")}catch(e){showError(e)}}
+$("deleteFile").onclick=async()=>{try{const path=$("selectedFile").value;if(!path)throw new Error("Select a file.");await deviceRequest({kind:"fs_delete",path,recursive:false},true);$("selectedFile").value="";$("fileContent").value="";$("fileContent").disabled=false;$("saveFile").disabled=false;await listFiles()}catch(e){showError(e)}}
+
+$("execute").onclick=async()=>{try{$("commandOutput").textContent="Running…";const action={kind:"process_exec",command:$("commandText").value,timeoutMs:30000};if($("commandCwd").value.trim())action.cwd=$("commandCwd").value.trim();const data=await deviceRequest(action,true);$("commandOutput").textContent=JSON.stringify(data,null,2);loadAudit()}catch(e){$("commandOutput").textContent=String(e.message||e);showError(e)}}
+
+$("taskStart").onclick=async()=>{try{const action={kind:"task_start",command:$("taskCommand").value,timeoutMs:600000};if($("taskCwd").value.trim())action.cwd=$("taskCwd").value.trim();const data=await deviceRequest(action,true);$("taskId").value=data.taskId;$("taskOutput").textContent=JSON.stringify(data,null,2)}catch(e){showError(e)}}
+$("taskList").onclick=async()=>{try{const data=await deviceRequest({kind:"task_list"});$("taskOutput").textContent=JSON.stringify(data,null,2)}catch(e){showError(e)}}
+$("taskStatus").onclick=async()=>{try{const data=await deviceRequest({kind:"task_status",taskId:$("taskId").value.trim()});$("taskOutput").textContent=JSON.stringify(data,null,2)}catch(e){showError(e)}}
+$("taskCancel").onclick=async()=>{try{const data=await deviceRequest({kind:"task_cancel",taskId:$("taskId").value.trim()},true);$("taskOutput").textContent=JSON.stringify(data,null,2)}catch(e){showError(e)}}
+
+async function pollTerminal(){if(!terminalSession)return;try{const d=await deviceRequest({kind:"terminal_read",sessionId:terminalSession,maxBytes:65536});if(d.text){$("terminalOutput").textContent+=d.text;$("terminalOutput").scrollTop=$("terminalOutput").scrollHeight}}catch(e){showError(e)}}
+$("termStart").onclick=async()=>{try{if(terminalSession)throw new Error("Terminal already started.");const d=await deviceRequest({kind:"terminal_start",cols:120,rows:30},true);terminalSession=d.sessionId;$("terminalSessionId").value=terminalSession;$("terminalOutput").textContent="";terminalTimer=setInterval(pollTerminal,700)}catch(e){showError(e)}}
+$("termList").onclick=async()=>{try{const d=await deviceRequest({kind:"terminal_list"});$("terminalOutput").textContent=JSON.stringify(d,null,2)}catch(e){showError(e)}}
+$("termAttach").onclick=()=>{try{const id=$("terminalSessionId").value.trim();if(!id)throw new Error("Enter a session ID.");terminalSession=id;clearInterval(terminalTimer);terminalTimer=setInterval(pollTerminal,700);$("terminalOutput").textContent+="\n[attached "+id+"]\n";pollTerminal()}catch(e){showError(e)}}
+$("termSend").onclick=async()=>{try{if(!terminalSession)throw new Error("Start a terminal first.");const value=$("terminalInput").value+"\n";await deviceRequest({kind:"terminal_input",sessionId:terminalSession,dataBase64:toBase64(value)});$("terminalInput").value="";setTimeout(pollTerminal,150)}catch(e){showError(e)}}
+$("terminalInput").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();$("termSend").click()}})
+$("termStop").onclick=async()=>{try{if(!terminalSession)return;await deviceRequest({kind:"terminal_stop",sessionId:terminalSession},true);clearInterval(terminalTimer);terminalTimer=null;terminalSession=null;$("terminalSessionId").value="";$("terminalOutput").textContent+="\n[terminal stopped]"}catch(e){showError(e)}}
+
+async function loadApprovals(){try{const j=await api("/api/approval-requests?status=pending&limit=100");$("approvalBody").innerHTML=j.items.length?j.items.map(x=>'<tr><td>'+escapeHtml(new Date(x.created_at).toLocaleString())+'</td><td>'+escapeHtml(x.requested_by)+'</td><td>'+escapeHtml(x.device_id)+'</td><td><b>'+escapeHtml(x.action_kind)+'</b><pre style="max-height:180px;margin:7px 0 0">'+escapeHtml(JSON.stringify(x.action,null,2))+'</pre></td><td>'+escapeHtml(new Date(x.expires_at).toLocaleString())+'</td><td><div class="row"><button data-approval="'+x.id+'" data-decision="approve">Approve</button><button class="danger" data-approval="'+x.id+'" data-decision="deny">Deny</button></div></td></tr>').join(""):'<tr><td colspan="6" class="hint">No pending approval requests.</td></tr>';document.querySelectorAll("[data-approval]").forEach(button=>button.onclick=()=>decideApproval(button.dataset.approval,button.dataset.decision))}catch(e){showError(e)}}
+async function decideApproval(id,decision){try{const verb=decision==="approve"?"Approve":"Deny";if(!confirm(verb+" this exact AI operation?"))return;await api("/api/approval-requests/"+id+"/"+decision,{method:"POST",body:"{}"});await loadApprovals();await loadAudit()}catch(e){showError(e)}}
+$("loadApprovals").onclick=loadApprovals;
+
+async function loadMembers(){
+  const j=await api("/api/members");
+  $("memberBody").innerHTML=j.items.length?j.items.map(x=>'<tr><td>'+escapeHtml(x.email)+'</td><td><select data-member-role="'+escapeHtml(x.id)+'"><option '+(x.role==="viewer"?"selected":"")+'>viewer</option><option '+(x.role==="operator"?"selected":"")+'>operator</option><option '+(x.role==="admin"?"selected":"")+'>admin</option><option '+(x.role==="owner"?"selected":"")+'>owner</option></select></td><td>'+escapeHtml(dateOrDash(x.last_login_at))+'</td><td>'+escapeHtml(dateOrDash(x.member_since))+'</td><td><div class="row"><button class="secondary" data-member-save="'+escapeHtml(x.id)+'">Save role</button><button class="danger" data-member-remove="'+escapeHtml(x.id)+'">Remove</button></div></td></tr>').join(""):'<tr><td colspan="5" class="hint">No members.</td></tr>';
+  document.querySelectorAll("[data-member-save]").forEach(b=>b.onclick=()=>updateMember(b.dataset.memberSave));
+  document.querySelectorAll("[data-member-remove]").forEach(b=>b.onclick=()=>removeMember(b.dataset.memberRemove));
+}
+async function updateMember(id){try{const role=document.querySelector('[data-member-role="'+CSS.escape(id)+'"]').value;await api("/api/members/"+id,{method:"PATCH",body:JSON.stringify({role})});await loadMembers();await loadAudit();if(id===currentIdentity?.userId)await refreshIdentity()}catch(e){showError(e)}}
+async function removeMember(id){try{if(!confirm("Remove this member from the current workspace?"))return;await api("/api/members/"+id,{method:"DELETE"});await loadMembers();await loadAudit();if(id===currentIdentity?.userId)await refreshIdentity()}catch(e){showError(e)}}
+
+async function loadInvitations(){
+  const j=await api("/api/invitations");
+  $("invitationBody").innerHTML=j.items.length?j.items.map(x=>'<tr><td>'+escapeHtml(x.email)+'</td><td>'+escapeHtml(x.role)+'</td><td>'+escapeHtml(x.status)+'</td><td>'+escapeHtml(dateOrDash(x.expires_at))+'</td><td>'+(x.status==="pending"?'<button class="danger" data-invite-revoke="'+escapeHtml(x.id)+'">Revoke</button>':'—')+'</td></tr>').join(""):'<tr><td colspan="5" class="hint">No invitations.</td></tr>';
+  document.querySelectorAll("[data-invite-revoke]").forEach(b=>b.onclick=()=>revokeInvitation(b.dataset.inviteRevoke));
+}
+async function revokeInvitation(id){try{if(!confirm("Revoke this invitation?"))return;await api("/api/invitations/"+id+"/revoke",{method:"POST",body:"{}"});await loadInvitations();await loadAudit()}catch(e){showError(e)}}
+$("createInvitation").onclick=async()=>{try{const email=$("inviteEmail").value.trim();if(!email)throw new Error("Enter an email address.");const j=await api("/api/invitations",{method:"POST",body:JSON.stringify({email,role:$("inviteRole").value,ttlHours:72})});$("inviteLinkOutput").classList.remove("hidden");$("inviteLinkOutput").textContent="Share this one-time invitation link:\n"+j.inviteUrl;try{await navigator.clipboard?.writeText(j.inviteUrl)}catch{}$("inviteEmail").value="";await loadInvitations();await loadAudit()}catch(e){showError(e)}}
+
+async function loadTokens(){
+  const j=await api("/api/tokens");
+  $("tokenBody").innerHTML=j.items.length?j.items.map(x=>'<tr><td>'+escapeHtml(x.name)+'</td><td>'+escapeHtml(x.role)+'</td><td>'+escapeHtml(dateOrDash(x.last_used_at))+'</td><td>'+escapeHtml(x.revoked_at?"revoked":"active")+'</td><td>'+(!x.revoked_at?'<button class="danger" data-token-revoke="'+escapeHtml(x.id)+'">Revoke</button>':'—')+'</td></tr>').join(""):'<tr><td colspan="5" class="hint">No API tokens.</td></tr>';
+  document.querySelectorAll("[data-token-revoke]").forEach(b=>b.onclick=()=>revokeToken(b.dataset.tokenRevoke));
+}
+async function revokeToken(id){try{if(!confirm("Revoke this API token?"))return;await api("/api/tokens/"+id+"/revoke",{method:"POST",body:"{}"});await loadTokens();await loadAudit()}catch(e){showError(e)}}
+$("createToken").onclick=async()=>{try{const name=$("tokenName").value.trim();if(!name)throw new Error("Enter a token name.");const j=await api("/api/tokens",{method:"POST",body:JSON.stringify({name,role:$("tokenRole").value})});$("tokenOutput").classList.remove("hidden");$("tokenOutput").textContent="Copy now. This token is only returned once:\n"+j.token;$("tokenName").value="";await loadTokens();await loadAudit()}catch(e){showError(e)}}
+
+async function loadRelayRegions(){
+  const [workspace,regions]=await Promise.all([api("/api/organization"),api("/api/relay-regions")]);
+  const canChoose=currentIdentity?.authKind==="session"&&currentIdentity?.role==="owner"&&regions.enabled;
+  $("relayRegionControls").classList.toggle("hidden",!canChoose);
+  $("relayRegionHint").classList.toggle("hidden",!canChoose);
+  if(!canChoose)return;
+  $("relayRegion").innerHTML='<option value="">Automatic</option>'+regions.items.map(x=>'<option value="'+escapeHtml(x.region)+'">'+escapeHtml(x.region)+' · '+escapeHtml(x.nodes)+' node'+(x.nodes===1?'':'s')+'</option>').join("");
+  $("relayRegion").value=workspace.item.relay_region||"";
+}
+$("saveRelayRegion").onclick=async()=>{try{const region=$("relayRegion").value||null;await api("/api/organization/relay-region",{method:"PATCH",body:JSON.stringify({region})});await loadRelayRegions();await loadDevices();await loadAudit()}catch(e){showError(e)}}
+
+async function loadRelays(){
+  if(!currentIdentity?.global)return;
+  const j=await api("/api/admin/relays");
+  $("relayNodeBody").innerHTML=j.items.length?j.items.map(x=>'<tr><td><b>'+escapeHtml(x.id)+'</b></td><td>'+escapeHtml(x.region)+'</td><td><span class="pill '+(x.healthy?'ok':'bad')+'">'+(x.healthy?'healthy':'stale')+'</span></td><td>'+escapeHtml(x.assigned_count)+'</td><td>'+escapeHtml(x.connected_count)+'</td><td><input data-relay-capacity="'+escapeHtml(x.id)+'" type="number" min="1" max="1000000" value="'+escapeHtml(x.max_devices)+'" style="width:110px"></td><td>'+escapeHtml(x.enabled?(x.drain?'draining':'enabled'):'disabled')+'</td><td><div class="row"><button class="secondary" data-relay-save="'+escapeHtml(x.id)+'">Save</button><button class="secondary" data-relay-drain="'+escapeHtml(x.id)+'">'+(x.drain?'Undrain':'Drain')+'</button><button class="'+(x.enabled?'danger':'secondary')+'" data-relay-enable="'+escapeHtml(x.id)+'">'+(x.enabled?'Disable':'Enable')+'</button></div></td></tr>').join(""):'<tr><td colspan="8" class="hint">No relay nodes registered.</td></tr>';
+  document.querySelectorAll("[data-relay-save]").forEach(b=>b.onclick=()=>updateRelay(b.dataset.relaySave,{maxDevices:Number(document.querySelector('[data-relay-capacity="'+CSS.escape(b.dataset.relaySave)+'"]').value)}));
+  document.querySelectorAll("[data-relay-drain]").forEach(b=>b.onclick=()=>{const row=j.items.find(x=>x.id===b.dataset.relayDrain);updateRelay(b.dataset.relayDrain,{drain:!row.drain})});
+  document.querySelectorAll("[data-relay-enable]").forEach(b=>b.onclick=()=>{const row=j.items.find(x=>x.id===b.dataset.relayEnable);updateRelay(b.dataset.relayEnable,{enabled:!row.enabled})});
+}
+async function updateRelay(id,patch){try{await api("/api/admin/relays/"+encodeURIComponent(id),{method:"PATCH",body:JSON.stringify(patch)});await loadRelays();await loadDevices();await loadAudit()}catch(e){showError(e)}}
+$("refreshRelays").onclick=loadRelays;
+
+function limitText(value){return value===null?"∞":String(value)}
+async function loadBilling(){
+  const j=await api("/api/billing");
+  $("billingState").textContent=j.mode==="self_hosted"?"self-hosted · unlimited":(j.entitled?(j.plan?.name||"active plan"):"billing required");
+  $("billingState").className="pill "+(j.entitled?"ok":"bad");
+  const memberSlots=j.usage.members+j.usage.pendingInvitations;
+  $("billingSummary").innerHTML=
+    '<div class="kv"><span>Mode</span><span>'+escapeHtml(j.mode)+'</span></div>'+
+    '<div class="kv"><span>Plan</span><span>'+escapeHtml(j.plan?.name||"—")+'</span></div>'+
+    '<div class="kv"><span>Subscription</span><span>'+escapeHtml(j.subscription?.status||"—")+'</span></div>'+
+    '<div class="kv"><span>Devices</span><span>'+escapeHtml(j.usage.devices+" / "+limitText(j.limits.maxDevices))+'</span></div>'+
+    '<div class="kv"><span>Member slots</span><span>'+escapeHtml(memberSlots+" / "+limitText(j.limits.maxMembers))+' <span class="small">('+escapeHtml(j.usage.pendingInvitations)+' pending)</span></span></div>'+
+    '<div class="kv"><span>API tokens</span><span>'+escapeHtml(j.usage.apiTokens+" / "+limitText(j.limits.maxApiTokens))+'</span></div>'+
+    '<div class="kv"><span>Period end</span><span>'+escapeHtml(dateOrDash(j.subscription?.currentPeriodEnd))+'</span></div>';
+}
+async function loadAccess(){try{if(!currentIdentity)throw new Error("Sign in first.");await Promise.all([loadOrganizations(),loadBilling(),loadRelayRegions()]);const canManage=currentIdentity.role==="admin"||currentIdentity.role==="owner";const jobs=[];if(canManage)jobs.push(loadMembers(),loadInvitations(),loadTokens());if(currentIdentity.global)jobs.push(loadRelays());if(jobs.length)await Promise.all(jobs)}catch(e){showError(e)}}
+$("refreshAccess").onclick=loadAccess;
+$("switchOrganization").onclick=async()=>{try{const organizationId=$("organizationSelect").value;if(!organizationId||organizationId===currentIdentity?.organizationId)return;await api("/api/auth/switch-organization",{method:"POST",body:JSON.stringify({organizationId})});selected=null;syncSelection();await refreshIdentity();await loadAccess()}catch(e){showError(e)}}
+$("createOrganization").onclick=async()=>{try{const name=prompt("New workspace name");if(!name?.trim())return;await api("/api/auth/organizations",{method:"POST",body:JSON.stringify({name:name.trim()})});selected=null;syncSelection();await refreshIdentity();await loadAccess()}catch(e){showError(e)}}
+$("renameOrganization").onclick=async()=>{try{const name=$("organizationName").value.trim();if(!name)throw new Error("Enter a workspace name.");await api("/api/organization",{method:"PATCH",body:JSON.stringify({name})});await refreshIdentity();await loadAccess()}catch(e){showError(e)}}
+
+async function prepareSignupVerification(){
+  if(!verificationToken)return;
+  $("verifyCard").classList.remove("hidden");
+}
+$("verifySubmit").onclick=async()=>{try{$("verifyError").textContent="";const password=$("verifyPassword").value;if(password.length<12)throw new Error("Enter the password you used when signing up.");const r=await fetch("/api/auth/signup/verify",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:verificationToken,password})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(apiError(body,r.status));verificationToken="";history.replaceState(null,"",location.pathname+location.search);$("verifyPassword").value="";$("verifyState").textContent="verified";$("verifyState").className="pill ok";$("verifyStatus").textContent="Email verified. Your workspace has been created and you are signed in.";await refreshIdentity()}catch(e){$("verifyState").textContent="verification failed";$("verifyState").className="pill bad";$("verifyError").textContent=e.message||String(e)}}
+
+async function preparePasswordReset(){
+  if(!passwordResetToken)return;
+  $("resetConfirmCard").classList.remove("hidden");
+}
+$("resetConfirmSubmit").onclick=async()=>{try{$("resetConfirmError").textContent="";const newPassword=$("resetNewPassword").value;if(newPassword.length<12)throw new Error("Password must be at least 12 characters.");const r=await fetch("/api/auth/password-reset/confirm",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:passwordResetToken,newPassword})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(apiError(body,r.status));passwordResetToken="";history.replaceState(null,"",location.pathname+location.search);$("resetNewPassword").value="";$("resetConfirmState").textContent="complete";$("resetConfirmState").className="pill ok";$("resetConfirmStatus").textContent="Password changed. Sign in with your new password."}catch(e){$("resetConfirmState").textContent="invalid";$("resetConfirmState").className="pill bad";$("resetConfirmError").textContent=e.message||String(e)}}
+
+async function loadInvitePreview(){
+  if(!invitationToken)return;
+  $("inviteCard").classList.remove("hidden");
+  try{
+    const r=await fetch("/api/invitations/preview",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:invitationToken})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(j.error||("HTTP "+r.status));
+    const x=j.item;
+    $("inviteSummary").textContent=x.email+" was invited to "+x.organizationName+" as "+x.role+".";
+    $("inviteStatus").textContent=x.role;
+    $("inviteStatus").className="pill ok";
+    $("invitePasswordLabel").textContent=x.existingUser?"Current account password":"Choose password";
+    $("invitePassword").autocomplete=x.existingUser?"current-password":"new-password";
+  }catch(e){
+    $("inviteSummary").textContent="This invitation is invalid, expired or already used.";
+    $("inviteStatus").textContent="invalid";
+    $("inviteStatus").className="pill bad";
+    $("acceptInvite").disabled=true;
+    $("inviteError").textContent=e.message||String(e);
+  }
+}
+$("acceptInvite").onclick=async()=>{try{const password=$("invitePassword").value;if(password.length<12)throw new Error("Password must be at least 12 characters.");const r=await fetch("/api/invitations/accept",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:invitationToken,password})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||("HTTP "+r.status));sessionStorage.removeItem("commender-key");$("key").value="";$("invitePassword").value="";invitationToken="";history.replaceState(null,"",location.pathname+location.search);$("inviteCard").classList.add("hidden");await refreshIdentity()}catch(e){$("inviteError").textContent=e.message||String(e)}}
+
+async function loadAudit(){try{const j=await api("/api/audit?limit=100");$("auditBody").innerHTML=j.items.map(x=>'<tr><td>'+escapeHtml(new Date(x.created_at).toLocaleString())+'</td><td>'+escapeHtml(x.actor)+'</td><td>'+escapeHtml(x.device_id||"")+'</td><td>'+escapeHtml(x.tool)+'</td><td>'+escapeHtml(x.risk)+'</td><td>'+escapeHtml(x.outcome)+'</td><td>'+escapeHtml(x.detail)+'</td></tr>').join("")}catch(e){showError(e)}}
+$("loadAudit").onclick=loadAudit;
+
+health();setInterval(health,15000);loadPublicConfig();prepareSignupVerification();preparePasswordReset();loadInvitePreview();refreshIdentity()
+
+</script>
+</body>
+</html>

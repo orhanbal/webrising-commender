@@ -266,11 +266,15 @@ async function requireCapacity(
   return false;
 }
 
-async function serveConsole(res: ServerResponse) {
+async function servePublicHtml(
+  res: ServerResponse,
+  fileName: "index.html" | "app.html",
+  notFoundError: string,
+) {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const candidates = [
-    path.resolve(here, "../public/index.html"),
-    path.resolve(here, "../../public/index.html"),
+    path.resolve(here, `../public/${fileName}`),
+    path.resolve(here, `../../public/${fileName}`),
   ];
   for (const candidate of candidates) {
     try {
@@ -285,14 +289,25 @@ async function serveConsole(res: ServerResponse) {
       return;
     } catch {}
   }
-  json(res, 404, { error: "console-not-found" });
+  json(res, 404, { error: notFoundError });
+}
+
+async function serveLanding(res: ServerResponse) {
+  return servePublicHtml(res, "index.html", "landing-not-found");
+}
+
+async function serveConsole(res: ServerResponse) {
+  return servePublicHtml(res, "app.html", "console-not-found");
 }
 
 const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
   try {
     const url = new URL(req.url || "/", publicBaseUrl);
 
-    if (req.method === "GET" && url.pathname === "/") return void (await serveConsole(res));
+    if (req.method === "GET" && url.pathname === "/") return void (await serveLanding(res));
+    if (req.method === "GET" && (url.pathname === "/app" || url.pathname === "/app/")) {
+      return void (await serveConsole(res));
+    }
     if (req.method === "GET" && url.pathname === "/health/live") return void json(res, 200, { status: "ok", service: "commender-gateway" });
     if (req.method === "GET" && url.pathname === "/health") {
       const databaseReady = await ready();
@@ -552,7 +567,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       const ttlHours = Number.isFinite(ttlHoursRaw)
         ? Math.min(168, Math.max(1, Math.floor(ttlHoursRaw)))
         : 24;
-      const verifyUrl = `${publicBaseUrl}/#verify=${encodeURIComponent(token)}`;
+      const verifyUrl = `${publicBaseUrl}/app#verify=${encodeURIComponent(token)}`;
 
       const client = await db.connect();
       try {
@@ -776,7 +791,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         const ttlMinutes = Number.isFinite(ttlMinutesRaw)
           ? Math.min(1440, Math.max(10, Math.floor(ttlMinutesRaw)))
           : 60;
-        const resetUrl = `${publicBaseUrl}/#reset=${encodeURIComponent(token)}`;
+        const resetUrl = `${publicBaseUrl}/app#reset=${encodeURIComponent(token)}`;
 
         const client = await db.connect();
         try {
@@ -2065,7 +2080,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         return void json(res, 201, {
           item: created.rows[0],
           inviteToken: token,
-          inviteUrl: `${publicBaseUrl}/#invite=${encodeURIComponent(token)}`,
+          inviteUrl: `${publicBaseUrl}/app#invite=${encodeURIComponent(token)}`,
         });
       } catch (error) {
         await client.query("rollback");
