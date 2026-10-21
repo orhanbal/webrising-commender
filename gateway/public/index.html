@@ -248,10 +248,22 @@
 
         <div id="lifecycleDanger" class="card hidden" style="box-shadow:none;border-color:#7f1d1d">
           <h3>Danger zone</h3>
-          <p class="hint">Destructive lifecycle actions require your current password and an exact workspace/email confirmation.</p>
-          <div class="row">
-            <button id="deleteWorkspace" class="danger hidden">Delete workspace</button>
-            <button id="deleteAccount" class="danger hidden">Delete my account</button>
+          <p class="hint">Destructive lifecycle actions require your current password and exact confirmation text.</p>
+          <div id="workspaceDeleteControls" class="hidden" style="margin-top:12px">
+            <h4>Delete current workspace</h4>
+            <div class="toolbar">
+              <label><span class="label">Type workspace name</span><input id="deleteWorkspaceName" autocomplete="off"></label>
+              <label><span class="label">Current password</span><input id="deleteWorkspacePassword" type="password" autocomplete="current-password"></label>
+              <button id="deleteWorkspace" class="danger">Delete workspace</button>
+            </div>
+          </div>
+          <div id="accountDeleteControls" style="margin-top:16px">
+            <h4>Delete my account</h4>
+            <div class="toolbar">
+              <label><span class="label">Type account email</span><input id="deleteAccountEmail" type="email" autocomplete="off"></label>
+              <label><span class="label">Current password</span><input id="deleteAccountPassword" type="password" autocomplete="current-password"></label>
+              <button id="deleteAccount" class="danger">Delete my account</button>
+            </div>
           </div>
         </div>
       </section>
@@ -334,8 +346,9 @@ async function refreshIdentity(){
     document.querySelectorAll(".global-access").forEach(x=>x.classList.toggle("hidden",!me.global));
     const browserSession=me.authKind==="session";
     $("lifecycleDanger").classList.toggle("hidden",!browserSession);
-    $("deleteWorkspace").classList.toggle("hidden",!(browserSession&&me.role==="owner"));
-    $("deleteAccount").classList.toggle("hidden",!browserSession);
+    $("workspaceDeleteControls").classList.toggle("hidden",!(browserSession&&me.role==="owner"));
+    $("accountDeleteControls").classList.toggle("hidden",!browserSession);
+    if(browserSession&&me.email&&!$("deleteAccountEmail").value)$("deleteAccountEmail").placeholder=me.email;
     await loadOrganizations();
     await loadDevices();
     if(canManage)await loadAudit();
@@ -350,8 +363,8 @@ async function refreshIdentity(){
     $("relayRegionControls").classList.add("hidden");
     $("relayRegionHint").classList.add("hidden");
     $("lifecycleDanger").classList.add("hidden");
-    $("deleteWorkspace").classList.add("hidden");
-    $("deleteAccount").classList.add("hidden");
+    $("workspaceDeleteControls").classList.add("hidden");
+    $("accountDeleteControls").classList.add("hidden");
     if(!$("key").value.trim())$("devices").innerHTML='<p class="hint">Sign in or enter an API token.</p>';
   }
 }
@@ -475,8 +488,8 @@ $("switchOrganization").onclick=async()=>{try{const organizationId=$("organizati
 $("createOrganization").onclick=async()=>{try{const name=prompt("New workspace name");if(!name?.trim())return;await api("/api/auth/organizations",{method:"POST",body:JSON.stringify({name:name.trim()})});selected=null;syncSelection();await refreshIdentity();await loadAccess()}catch(e){showError(e)}}
 $("renameOrganization").onclick=async()=>{try{const name=$("organizationName").value.trim();if(!name)throw new Error("Enter a workspace name.");await api("/api/organization",{method:"PATCH",body:JSON.stringify({name})});await refreshIdentity();await loadAccess()}catch(e){showError(e)}}
 
-$("deleteWorkspace").onclick=async()=>{try{const workspace=await api("/api/organization");const expected=workspace.item.name;const confirmName=prompt('Type the workspace name exactly to delete it:\n'+expected);if(confirmName===null)return;if(confirmName!==expected)throw new Error("Workspace name confirmation did not match.");const password=prompt("Enter your current account password:");if(password===null)return;if(!confirm("Delete workspace '"+expected+"' permanently? Devices, memberships, tokens, invitations and billing state for this workspace will be deleted."))return;const j=await api("/api/organization",{method:"DELETE",body:JSON.stringify({password,confirmName})});selected=null;syncSelection();if(j.signedOut){currentIdentity=null}await refreshIdentity();if(!j.signedOut)await loadAccess()}catch(e){showError(e)}}
-$("deleteAccount").onclick=async()=>{try{if(currentIdentity?.authKind!=="session"||!currentIdentity.email)throw new Error("Browser account session required.");const expected=currentIdentity.email;const confirmEmail=prompt('Type your account email exactly to delete the account:\n'+expected);if(confirmEmail===null)return;if(confirmEmail.trim().toLowerCase()!==expected.trim().toLowerCase())throw new Error("Account email confirmation did not match.");const password=prompt("Enter your current account password:");if(password===null)return;if(!confirm("Delete your WebRising Commender account permanently? This cannot be undone."))return;await api("/api/auth/account",{method:"DELETE",body:JSON.stringify({password,confirmEmail})});currentIdentity=null;selected=null;syncSelection();await refreshIdentity()}catch(e){showError(e)}}
+$("deleteWorkspace").onclick=async()=>{try{const workspace=await api("/api/organization");const expected=workspace.item.name;const confirmName=$("deleteWorkspaceName").value.trim();const password=$("deleteWorkspacePassword").value;if(confirmName!==expected)throw new Error("Workspace name confirmation did not match.");if(password.length<12)throw new Error("Enter your current password.");if(!confirm("Delete workspace '"+expected+"' permanently? Devices, memberships, tokens, invitations and billing state for this workspace will be deleted."))return;const j=await api("/api/organization",{method:"DELETE",body:JSON.stringify({password,confirmName})});$("deleteWorkspaceName").value="";$("deleteWorkspacePassword").value="";selected=null;syncSelection();if(j.signedOut){currentIdentity=null}await refreshIdentity();if(!j.signedOut)await loadAccess()}catch(e){$("deleteWorkspacePassword").value="";showError(e)}}
+$("deleteAccount").onclick=async()=>{try{if(currentIdentity?.authKind!=="session"||!currentIdentity.email)throw new Error("Browser account session required.");const expected=currentIdentity.email;const confirmEmail=$("deleteAccountEmail").value.trim();const password=$("deleteAccountPassword").value;if(confirmEmail.toLowerCase()!==expected.trim().toLowerCase())throw new Error("Account email confirmation did not match.");if(password.length<12)throw new Error("Enter your current password.");if(!confirm("Delete your WebRising Commender account permanently? This cannot be undone."))return;await api("/api/auth/account",{method:"DELETE",body:JSON.stringify({password,confirmEmail})});$("deleteAccountEmail").value="";$("deleteAccountPassword").value="";currentIdentity=null;selected=null;syncSelection();await refreshIdentity()}catch(e){$("deleteAccountPassword").value="";showError(e)}}
 
 async function prepareSignupVerification(){
   if(!verificationToken)return;
