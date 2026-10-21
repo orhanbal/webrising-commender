@@ -136,6 +136,7 @@ jobs:
         run: |
           PORT=8788 \
           PUBLIC_BASE_URL=http://127.0.0.1:8788 \
+          GATEWAY_ROLE=relay \
           GATEWAY_NODE_ID=ci-node-b \
           GATEWAY_REGION=ci-region-b \
           GATEWAY_INTERNAL_URL=http://127.0.0.1:8788 \
