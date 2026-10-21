@@ -90,3 +90,37 @@ signup request
 Password reset uses `auth_tokens` and the same encrypted outbox. Mail delivery workers claim rows with database locks, use retry/backoff, recover stale worker locks and move exhausted rows to dead-letter state.
 
 This design keeps mail delivery asynchronous: an SMTP outage does not require storing plaintext messages, and account/control-plane requests do not need to keep an SMTP socket open.
+
+
+## Regional relay orchestration
+
+Regional routing is first-party and optional. With `REGIONAL_RELAY_ENABLED=false` the existing single-gateway/self-hosted path is unchanged.
+
+A clustered deployment uses one logical control plane and one or more relay-capable gateway nodes sharing the control-plane PostgreSQL state:
+
+```text
+AI / web console
+      |
+      v
+control node
+      |
+      | signed internal HTTPS RPC
+      v
+regional relay A  <--- outbound WSS --- agent
+regional relay B  <--- outbound WSS --- agent
+      |
+      +---- shared private PostgreSQL control-plane state
+```
+
+Each relay publishes a node id, region, public WSS URL, private internal HTTPS URL, capacity and heartbeat. Relay selection is transactionally serialized and prefers the workspace's configured region, then falls back to another healthy non-draining node.
+
+The device row separates:
+- `assigned_relay_id`: where the next connection should go;
+- `connected_relay_id`: where the current live socket actually is;
+- `relay_last_seen_at`: freshness of the live device path.
+
+REST and MCP use `DeviceRouter`. It executes locally when the socket is on the current node and otherwise forwards the exact agent action to the currently connected relay through signed internal RPC.
+
+The native agent keeps its durable control URL. After any WebSocket disconnect or failed connection it calls `POST /api/agent/route` with its device credential. A drained, stale, disabled or capacity-constrained relay is replaced with another healthy relay without re-enrollment.
+
+Drain is intentionally non-destructive: existing sockets continue to serve requests, while reconnects/new assignments move elsewhere. Disabling a node removes it from control-plane routing immediately.
