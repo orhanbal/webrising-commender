@@ -93,6 +93,13 @@ try {
   });
   assert.equal(relayRegistry.enabled, true);
 
+  const preferredRegion = await jsonFetch("/api/organization/relay-region", {
+    method: "PATCH",
+    headers: authHeaders,
+    body: JSON.stringify({ region: "eu-central" }),
+  });
+  assert.equal(preferredRegion.item.relay_region, "eu-central");
+
   const pairing = await jsonFetch("/api/pairing", {
     method: "POST",
     headers: authHeaders,
@@ -149,7 +156,7 @@ try {
   });
 
   const firstRelay = firstConnected.connected_relay_id;
-  assert.match(firstRelay, /^relay-[ab]$/);
+  assert.equal(firstRelay, "relay-b");
 
   const infoBefore = toolText(
     await rpc(501, "tools/call", {
@@ -209,7 +216,7 @@ try {
       : null;
   }, 30_000);
 
-  assert.match(secondConnected.connected_relay_id, /^relay-[ab]$/);
+  assert.equal(secondConnected.connected_relay_id, "relay-a");
   assert.notEqual(secondConnected.connected_relay_id, firstRelay);
 
   const infoAfter = toolText(
