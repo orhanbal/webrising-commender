@@ -26,6 +26,7 @@ import {
   upsertSubscription,
   type AllocationResource,
 } from "./billing.js";
+import { DeviceRouter } from "./cluster.js";
 import { db, housekeeping, migrate, ready } from "./db.js";
 import { enqueueMail, mailConfigured, publicSignupEnabled, startMailWorker } from "./mail.js";
 import { handleMcp } from "./mcp.js";
@@ -39,6 +40,7 @@ const port = Number(process.env.PORT || 8787);
 const publicBaseUrl = String(process.env.PUBLIC_BASE_URL || `http://localhost:${port}`).replace(/\/$/, "");
 const bodyLimit = 2 * 1024 * 1024;
 const hub = new AgentHub();
+const router = new DeviceRouter(hub, publicBaseUrl);
 const enrollRateLimit = new FixedWindowRateLimiter();
 const pairingRateLimit = new FixedWindowRateLimiter();
 const loginIpRateLimit = new FixedWindowRateLimiter();
@@ -58,6 +60,7 @@ const trustProxyHeaders = /^(1|true|yes)$/i.test(String(process.env.TRUST_PROXY_
 
 await migrate();
 await housekeeping();
+await router.start();
 startMailWorker();
 
 const housekeepingTimer = setInterval(() => {
@@ -1897,11 +1900,15 @@ const server = http.createServer(async (req, res) => {
 
       const orgId = principal!.organizationId;
       if (!(await requireCapacity(orgId, "device", res))) return;
+      const relay = await router.pairingRelay(orgId);
       await db.query("delete from pairing_codes where expires_at < now() or used_at is not null");
       const code = randomToken(24);
       await db.query(
-        "insert into pairing_codes(organization_id,code_hash,expires_at) values($1,$2,now()+interval '10 minutes')",
-        [orgId, sha256(code)],
+        `insert into pairing_codes(
+           organization_id,code_hash,expires_at,relay_node_id
+         )
+         values($1,$2,now()+interval '10 minutes',$3)`,
+        [orgId, sha256(code), relay?.id ?? null],
       );
       return void json(res, 201, { pairingCode: code, expiresInSeconds: 600 });
     }
@@ -1910,10 +1917,17 @@ const server = http.createServer(async (req, res) => {
       if (!requireRole(principal!, "viewer", res)) return;
       const orgId = principal!.organizationId;
       const result = await db.query(
-        "select id,name,hostname,platform,agent_version,capabilities,last_seen_at,created_at,revoked_at from devices where organization_id=$1 order by created_at desc",
+        `select id,name,hostname,platform,agent_version,capabilities,last_seen_at,
+                created_at,revoked_at,relay_node_id,connected_node_id,connected_at
+           from devices
+          where organization_id=$1
+          order by created_at desc`,
         [orgId],
       );
-      return void json(res, 200, { items: result.rows.map((row) => ({ ...row, online: hub.isOnline(row.id) })) });
+      const states = await router.onlineStates(result.rows.map((row) => row.id));
+      return void json(res, 200, {
+        items: result.rows.map((row) => ({ ...row, online: states.get(row.id) === true })),
+      });
     }
 
     const disconnectMatch = url.pathname.match(/^\/api\/devices\/([0-9a-f-]{36})\/disconnect$/i);
@@ -1926,7 +1940,7 @@ const server = http.createServer(async (req, res) => {
         [deviceId, orgId],
       );
       if (!exists.rowCount) return void json(res, 404, { error: "device_not_found" });
-      const disconnected = hub.disconnect(deviceId);
+      const disconnected = await router.disconnect(deviceId);
       return void json(res, 200, { ok: true, disconnected });
     }
 
@@ -1955,7 +1969,7 @@ const server = http.createServer(async (req, res) => {
         [deviceId, orgId],
       );
       if (!revoked.rowCount) return void json(res, 404, { error: "device_not_found" });
-      hub.disconnect(deviceId);
+      await router.disconnect(deviceId);
       await auditControl(principal!, deviceId, "device.revoke", "high", "success");
       return void json(res, 200, { ok: true, item: revoked.rows[0] });
     }
@@ -2107,7 +2121,7 @@ const server = http.createServer(async (req, res) => {
         return void json(res, 403, { error: "approval_required", action: action.kind });
       }
       try {
-        const data = await hub.request(body.deviceId, action, body.approvalToken);
+        const data = await router.request(body.deviceId, action, body.approvalToken);
         await auditControl(principal!, body.deviceId, `direct.${action.kind}`, risk, "success", redact({ kind: action.kind }));
         return void json(res, 200, { ok: true, data });
       } catch (error) {
@@ -2130,10 +2144,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/mcp") {
       const payload = await readJson(req);
       if (Array.isArray(payload)) {
-        const results = (await Promise.all(payload.map((item) => handleMcp(item, hub, principal!)))).filter(Boolean);
+        const results = (await Promise.all(payload.map((item) => handleMcp(item, router, principal!)))).filter(Boolean);
         return void json(res, 200, results);
       }
-      const result = await handleMcp(payload, hub, principal!);
+      const result = await handleMcp(payload, router, principal!);
       if (result === null) {
         res.writeHead(202);
         res.end();
@@ -2178,8 +2192,14 @@ server.on("upgrade", async (req, socket, head) => {
       return;
     }
 
+    if (!(await router.validateLocalSocket(deviceId))) {
+      socket.write("HTTP/1.1 409 Conflict\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+
     wss.handleUpgrade(req, socket, head, (ws) => {
-      void hub.register(deviceId, ws);
+      void router.registerLocal(deviceId, ws);
     });
   } catch {
     socket.destroy();
@@ -2193,6 +2213,7 @@ server.listen(port, host, () => {
 async function shutdown() {
   server.close();
   for (const client of wss.clients) client.close(1001, "shutdown");
+  await router.shutdown();
   await db.end();
   process.exit(0);
 }
