@@ -69,6 +69,7 @@ The agent initiates the connection. Controlled devices do not need an inbound fi
 - PostgreSQL persistence
 - hashed device credentials and pairing codes
 - authenticated WebSocket relay
+- optional first-party native HTTPS/WSS termination from certificate/key files
 - MCP JSON-RPC endpoint
 - tenant-scoped API tokens with viewer/operator/admin/owner RBAC
 - verified browser signup and password reset through a first-party SMTP/STARTTLS client
@@ -107,6 +108,7 @@ The agent initiates the connection. Controlled devices do not need an inbound fi
 - tagged release workflow with Linux x64, Windows x64, universal macOS binaries and SHA-256 checksums
 - verified PostgreSQL Compose backup/restore scripts with checksum/manifest and CI round-trip acceptance
 - first-party gateway restart/network-interruption soak runner for enrolled devices and persistent tasks
+- native HTTPS/WSS transport with TLS 1.2+ and CI handshake acceptance
 
 ## Risk model
 
