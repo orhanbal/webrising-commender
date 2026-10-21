@@ -2,13 +2,13 @@
 
 Target selected for the first real acceptance deployment:
 
-- Coolify project: **WebRising Platform**
+- Coolify project: **WECOMMANDER**
 - Server: **localhost** (reachable/usable)
 - GitHub connection: **webrising-github**
 - Repository: **orhanbal/webrising-commender**
 - Branch: **main**
 - Compose file: **docker-compose.coolify.yml**
-- Recommended first acceptance domain: **commender.webrising.tr**
+- Recommended first acceptance domain: **wecommander.webrising.tr**
 - Runtime mode for first acceptance: **self_hosted** unless explicitly changed later.
 
 ## Why this layout
@@ -23,11 +23,11 @@ The current Coolify MCP exposes deploy/control for **existing** resources but do
 
 Create a new **Docker Compose / Git repository** resource with:
 
-- Project: WebRising Platform
+- Project: WECOMMANDER
 - Repository: orhanbal/webrising-commender
 - Branch: main
 - Compose file: docker-compose.coolify.yml
-- Domain/FQDN for the gateway service: https://commender.webrising.tr
+- Domain/FQDN for the gateway service: https://wecommander.webrising.tr
 - Internal gateway port: 8787
 
 Do not expose PostgreSQL publicly.
@@ -48,7 +48,7 @@ Required environment variables:
 POSTGRES_PASSWORD=<hex secret>
 CONTROL_API_KEY=<hex secret>
 APPROVAL_SIGNING_SECRET=<hex secret>
-PUBLIC_BASE_URL=https://commender.webrising.tr
+PUBLIC_BASE_URL=https://wecommander.webrising.tr
 DEPLOYMENT_MODE=self_hosted
 PUBLIC_SIGNUP_ENABLED=false
 ```
@@ -60,7 +60,7 @@ For the first acceptance deployment, leave regional relay and SMTP optional feat
 After deployment is healthy:
 
 ```bash
-COMMANDER_BASE_URL=https://commender.webrising.tr \
+COMMANDER_BASE_URL=https://wecommander.webrising.tr \
 CONTROL_API_KEY='<control key>' \
 node scripts/accept-production.mjs
 ```
@@ -103,7 +103,7 @@ export COMMANDER_COMPOSE_PROJECT=<compose-project-name>
 For restart/reconnect acceptance with a real enrolled device:
 
 ```bash
-COMMANDER_CONTROL_URL=https://commender.webrising.tr \
+COMMANDER_CONTROL_URL=https://wecommander.webrising.tr \
 CONTROL_API_KEY='<control key>' \
 DEVICE_ID='<device uuid>' \
 COMMANDER_COMPOSE_FILE=docker-compose.coolify.yml \
