@@ -228,6 +228,7 @@
           <div class="toolbar">
             <label><span class="label">Email</span><input id="inviteEmail" type="email" placeholder="member@example.com"></label>
             <label style="max-width:180px"><span class="label">Role</span><select id="inviteRole"><option>viewer</option><option selected>operator</option><option>admin</option><option>owner</option></select></label>
+            <label style="max-width:190px"><span class="label">Delivery</span><span class="row"><input id="inviteSendEmail" type="checkbox" style="width:auto"> SMTP email</span></label>
             <button id="createInvitation">Create invitation</button>
           </div>
           <pre id="inviteLinkOutput" class="hidden"></pre>
@@ -243,6 +244,15 @@
           </div>
           <pre id="tokenOutput" class="hidden"></pre>
           <div style="overflow:auto;margin-top:10px"><table class="audit"><thead><tr><th>Name</th><th>Role</th><th>Last used</th><th>Status</th><th>Action</th></tr></thead><tbody id="tokenBody"></tbody></table></div>
+        </div>
+
+        <div id="lifecycleDanger" class="card hidden" style="box-shadow:none;border-color:#7f1d1d">
+          <h3>Danger zone</h3>
+          <p class="hint">Destructive lifecycle actions require your current password and an exact workspace/email confirmation.</p>
+          <div class="row">
+            <button id="deleteWorkspace" class="danger hidden">Delete workspace</button>
+            <button id="deleteAccount" class="danger hidden">Delete my account</button>
+          </div>
         </div>
       </section>
 
@@ -260,6 +270,7 @@ let terminalSession=null;
 let terminalTimer=null;
 let currentIdentity=null;
 let organizations=[];
+let mailDeliveryAvailable=false;
 const hashParams=new URLSearchParams(location.hash.startsWith("#")?location.hash.slice(1):location.hash);
 let invitationToken=hashParams.get("invite")||"";
 let verificationToken=hashParams.get("verify")||"";
@@ -277,13 +288,14 @@ function clearError(){$("globalError").textContent=""}
 function dateOrDash(value){return value?new Date(value).toLocaleString():"—"}
 function setText(id,value){$(id).textContent=String(value??"")}
 
-function apiError(body,status){if(body?.error==="quota_exceeded")return (body.resource||"resource")+" quota reached ("+body.used+"/"+body.limit+")";if(body?.error==="billing_required")return "This workspace needs an active SaaS entitlement before new resources can be created.";if(body?.error==="signup_disabled")return "Public signup is disabled on this deployment.";if(body?.error==="mail_not_configured")return "Email delivery is not configured on this deployment.";if(body?.error==="relay_region_unavailable")return "The selected relay region currently has no healthy node.";if(body?.error==="relay_unavailable")return "No healthy relay is currently available.";return body?.error||("HTTP "+status)}
+function apiError(body,status){if(body?.error==="quota_exceeded")return (body.resource||"resource")+" quota reached ("+body.used+"/"+body.limit+")";if(body?.error==="billing_required")return "This workspace needs an active SaaS entitlement before new resources can be created.";if(body?.error==="signup_disabled")return "Public signup is disabled on this deployment.";if(body?.error==="mail_not_configured")return "Email delivery is not configured on this deployment.";if(body?.error==="relay_region_unavailable")return "The selected relay region currently has no healthy node.";if(body?.error==="relay_unavailable")return "No healthy relay is currently available.";if(body?.error==="owned_workspace_requires_transfer_or_delete")return "Transfer ownership or delete the listed workspace(s) before deleting your account.";if(body?.error==="last_organization_required")return "The final workspace cannot be deleted because the control plane must retain at least one organization.";if(body?.error==="workspace_confirmation_mismatch")return "Workspace name confirmation did not match.";if(body?.error==="account_confirmation_mismatch")return "Account email confirmation did not match.";return body?.error||("HTTP "+status)}
 async function api(route,opts={}){const method=(opts.method||"GET").toUpperCase();const headers={...auth(),...(opts.headers||{})};if(!$("key").value.trim()&&!["GET","HEAD","OPTIONS"].includes(method)){const csrf=cookieValue("commender_csrf");if(csrf)headers["X-CSRF-Token"]=csrf}const r=await fetch(route,{credentials:"same-origin",...opts,headers});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(apiError(body,r.status));return body}
 async function deviceRequest(action,approve=false){const d=needDevice();let approvalToken;if(approve){const preview=JSON.stringify(action,null,2);if(!confirm("Approve this HIGH-risk operation?\n\n"+preview))throw new Error("Action canceled.");const a=await api("/api/approvals",{method:"POST",body:JSON.stringify({deviceId:d.id,action,ttlSeconds:120})});approvalToken=a.approvalToken}const r=await api("/api/device/request",{method:"POST",body:JSON.stringify({deviceId:d.id,action,...(approvalToken?{approvalToken}:{})})});return r.data}
 
 async function health(){try{const r=await fetch("/health");$("health").textContent=r.ok?"gateway healthy":"gateway degraded";$("health").className="pill "+(r.ok?"ok":"bad")}catch{$("health").textContent="gateway offline";$("health").className="pill bad"}}
 
-async function loadPublicConfig(){try{const r=await fetch("/api/public/config");const j=await r.json();$("signupOpen").classList.toggle("hidden",!j.signupEnabled);$("resetOpen").classList.toggle("hidden",!j.passwordResetEnabled)}catch{$("signupOpen").classList.add("hidden");$("resetOpen").classList.add("hidden")}}
+async function loadPublicConfig(){try{const r=await fetch("/api/public/config");const j=await r.json();mailDeliveryAvailable=Boolean(j.mailEnabled);$("signupOpen").classList.toggle("hidden",!j.signupEnabled);$("resetOpen").classList.toggle("hidden",!j.passwordResetEnabled);$("inviteSendEmail").disabled=!mailDeliveryAvailable;$("inviteSendEmail").checked=mailDeliveryAvailable}catch{mailDeliveryAvailable=false;$("signupOpen").classList.add("hidden");$("resetOpen").classList.add("hidden");$("inviteSendEmail").disabled=true;$("inviteSendEmail").checked=false}}
+
 
 async function loadDevices(){try{clearError();const j=await api("/api/devices");if(selected){selected=j.items.find(x=>x.id===selected.id)||null}renderDevices(j.items);syncSelection()}catch(e){showError(e)}}
 function renderDevices(items){$("devices").innerHTML=items.length?items.map(d=>'<div class="device '+(selected?.id===d.id?'selected':'')+'" data-id="'+d.id+'"><b><span class="status '+(d.revoked_at?'revoked':d.online?'online':'')+'"></span>'+escapeHtml(d.name)+'</b><small>'+escapeHtml(d.hostname||d.platform||d.id)+'</small><div class="small">'+(d.revoked_at?'revoked':d.online?'online':'offline')+' · '+escapeHtml(d.agent_version||"agent unknown")+(d.connected_relay_id?' · relay '+escapeHtml(d.connected_relay_id):'')+'</div></div>').join(""):'<p class="hint">No devices enrolled.</p>';document.querySelectorAll(".device").forEach(el=>el.onclick=()=>{selected=items.find(x=>x.id===el.dataset.id)||null;renderDevices(items);syncSelection()})}
@@ -320,6 +332,10 @@ async function refreshIdentity(){
     $("accessTab").classList.toggle("hidden",!canSeeAccess);
     document.querySelectorAll(".admin-access").forEach(x=>x.classList.toggle("hidden",!canManage));
     document.querySelectorAll(".global-access").forEach(x=>x.classList.toggle("hidden",!me.global));
+    const browserSession=me.authKind==="session";
+    $("lifecycleDanger").classList.toggle("hidden",!browserSession);
+    $("deleteWorkspace").classList.toggle("hidden",!(browserSession&&me.role==="owner"));
+    $("deleteAccount").classList.toggle("hidden",!browserSession);
     await loadOrganizations();
     await loadDevices();
     if(canManage)await loadAudit();
@@ -333,6 +349,9 @@ async function refreshIdentity(){
     document.querySelectorAll(".global-access").forEach(x=>x.classList.add("hidden"));
     $("relayRegionControls").classList.add("hidden");
     $("relayRegionHint").classList.add("hidden");
+    $("lifecycleDanger").classList.add("hidden");
+    $("deleteWorkspace").classList.add("hidden");
+    $("deleteAccount").classList.add("hidden");
     if(!$("key").value.trim())$("devices").innerHTML='<p class="hint">Sign in or enter an API token.</p>';
   }
 }
@@ -403,7 +422,7 @@ async function loadInvitations(){
   document.querySelectorAll("[data-invite-revoke]").forEach(b=>b.onclick=()=>revokeInvitation(b.dataset.inviteRevoke));
 }
 async function revokeInvitation(id){try{if(!confirm("Revoke this invitation?"))return;await api("/api/invitations/"+id+"/revoke",{method:"POST",body:"{}"});await loadInvitations();await loadAudit()}catch(e){showError(e)}}
-$("createInvitation").onclick=async()=>{try{const email=$("inviteEmail").value.trim();if(!email)throw new Error("Enter an email address.");const j=await api("/api/invitations",{method:"POST",body:JSON.stringify({email,role:$("inviteRole").value,ttlHours:72})});$("inviteLinkOutput").classList.remove("hidden");$("inviteLinkOutput").textContent="Share this one-time invitation link:\n"+j.inviteUrl;try{await navigator.clipboard?.writeText(j.inviteUrl)}catch{}$("inviteEmail").value="";await loadInvitations();await loadAudit()}catch(e){showError(e)}}
+$("createInvitation").onclick=async()=>{try{const email=$("inviteEmail").value.trim();if(!email)throw new Error("Enter an email address.");const sendEmail=mailDeliveryAvailable&&$("inviteSendEmail").checked;const j=await api("/api/invitations",{method:"POST",body:JSON.stringify({email,role:$("inviteRole").value,ttlHours:72,sendEmail})});$("inviteLinkOutput").classList.remove("hidden");$("inviteLinkOutput").textContent=(j.emailQueued?"Invitation email queued. Copy this link as a fallback:\n":"Share this one-time invitation link:\n")+j.inviteUrl;try{await navigator.clipboard?.writeText(j.inviteUrl)}catch{}$("inviteEmail").value="";await loadInvitations();await loadAudit()}catch(e){showError(e)}}
 
 async function loadTokens(){
   const j=await api("/api/tokens");
@@ -455,6 +474,9 @@ $("refreshAccess").onclick=loadAccess;
 $("switchOrganization").onclick=async()=>{try{const organizationId=$("organizationSelect").value;if(!organizationId||organizationId===currentIdentity?.organizationId)return;await api("/api/auth/switch-organization",{method:"POST",body:JSON.stringify({organizationId})});selected=null;syncSelection();await refreshIdentity();await loadAccess()}catch(e){showError(e)}}
 $("createOrganization").onclick=async()=>{try{const name=prompt("New workspace name");if(!name?.trim())return;await api("/api/auth/organizations",{method:"POST",body:JSON.stringify({name:name.trim()})});selected=null;syncSelection();await refreshIdentity();await loadAccess()}catch(e){showError(e)}}
 $("renameOrganization").onclick=async()=>{try{const name=$("organizationName").value.trim();if(!name)throw new Error("Enter a workspace name.");await api("/api/organization",{method:"PATCH",body:JSON.stringify({name})});await refreshIdentity();await loadAccess()}catch(e){showError(e)}}
+
+$("deleteWorkspace").onclick=async()=>{try{const workspace=await api("/api/organization");const expected=workspace.item.name;const confirmName=prompt('Type the workspace name exactly to delete it:\n'+expected);if(confirmName===null)return;if(confirmName!==expected)throw new Error("Workspace name confirmation did not match.");const password=prompt("Enter your current account password:");if(password===null)return;if(!confirm("Delete workspace '"+expected+"' permanently? Devices, memberships, tokens, invitations and billing state for this workspace will be deleted."))return;const j=await api("/api/organization",{method:"DELETE",body:JSON.stringify({password,confirmName})});selected=null;syncSelection();if(j.signedOut){currentIdentity=null}await refreshIdentity();if(!j.signedOut)await loadAccess()}catch(e){showError(e)}}
+$("deleteAccount").onclick=async()=>{try{if(currentIdentity?.authKind!=="session"||!currentIdentity.email)throw new Error("Browser account session required.");const expected=currentIdentity.email;const confirmEmail=prompt('Type your account email exactly to delete the account:\n'+expected);if(confirmEmail===null)return;if(confirmEmail.trim().toLowerCase()!==expected.trim().toLowerCase())throw new Error("Account email confirmation did not match.");const password=prompt("Enter your current account password:");if(password===null)return;if(!confirm("Delete your WebRising Commender account permanently? This cannot be undone."))return;await api("/api/auth/account",{method:"DELETE",body:JSON.stringify({password,confirmEmail})});currentIdentity=null;selected=null;syncSelection();await refreshIdentity()}catch(e){showError(e)}}
 
 async function prepareSignupVerification(){
   if(!verificationToken)return;
