@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added a dependency-free external production acceptance probe and an isolated Coolify Compose deployment model.
+- Hardened PUBLIC_BASE_URL validation, relay RPC redirect behavior, SMTP plaintext transport defaults and query-limit parsing.
+- Backup/restore and restart-soak tooling can now target an explicit production Compose file/project.
 - Added optional native HTTPS/WSS gateway termination using operator-supplied certificate/key files with TLS 1.2+ enforcement.
 - Added CA-verified HTTPS health + WSS upgrade CI acceptance and fail-closed TLS configuration checks.
 - Added first-party regional relay registry, preferred-region placement, capacity-aware transactional assignment and relay health/drain controls.
