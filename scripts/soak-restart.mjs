@@ -19,6 +19,9 @@ const intervalMs = boundedInt("SOAK_POLL_MS", 1000, 250, 10_000);
 const mode = String(process.env.SOAK_RESTART_MODE || "compose").toLowerCase();
 const taskCommand = String(process.env.SOAK_TASK_COMMAND || "").trim();
 
+const composeFile = String(process.env.COMMANDER_COMPOSE_FILE || "").trim();
+const composeProject = String(process.env.COMMANDER_COMPOSE_PROJECT || "").trim();
+
 if (!apiKey) throw new Error("CONTROL_API_KEY is required");
 if (!deviceId) throw new Error("DEVICE_ID is required");
 if (!["compose", "manual"].includes(mode)) throw new Error("SOAK_RESTART_MODE must be compose or manual");
@@ -101,12 +104,16 @@ async function highRisk(action) {
 }
 
 function restartComposeGateway() {
-  const result = spawnSync("docker", ["compose", "restart", "gateway"], {
+  const args = ["compose"];
+  if (composeFile) args.push("-f", composeFile);
+  if (composeProject) args.push("-p", composeProject);
+  args.push("restart", "gateway");
+  const result = spawnSync("docker", args, {
     stdio: "inherit",
     shell: false,
   });
   if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(`docker compose restart gateway exited ${result.status}`);
+  if (result.status !== 0) throw new Error(`docker ${args.join(" ")} exited ${result.status}`);
 }
 
 async function waitGatewayHealth() {
