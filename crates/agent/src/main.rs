@@ -13,7 +13,7 @@ mod windows_service_host;
 
 use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};
-use config::{default_allowed_root, AgentConfig, EnrollmentResponse};
+use config::{default_allowed_root, AgentConfig, EnrollmentResponse, RelayResolutionResponse};
 use futures_util::{Sink, SinkExt, StreamExt};
 use policy::PathPolicy;
 use protocol::{AgentError, AgentMessage, GatewayMessage};
@@ -202,14 +202,28 @@ pub(crate) async fn run_until_shutdown(
     ));
 
     let mut backoff = Duration::from_secs(1);
+    let mut gateway_ws_url = config.gateway_ws_url.clone();
     loop {
         if *shutdown.borrow() {
             abort_active(&active).await;
             return Ok(());
         }
 
+        match resolve_gateway_ws_url(&config).await {
+            Ok(resolved) => {
+                if resolved != gateway_ws_url {
+                    info!(gateway = %resolved, "resolved updated relay endpoint");
+                }
+                gateway_ws_url = resolved;
+            }
+            Err(error) => {
+                warn!(%error, gateway = %gateway_ws_url, "relay resolution failed; using last known gateway");
+            }
+        }
+
         let result = connected_loop(
             &config,
+            &gateway_ws_url,
             Arc::clone(&policy),
             terminals.clone(),
             tasks.clone(),
@@ -254,6 +268,38 @@ pub(crate) async fn run_until_shutdown(
     }
 }
 
+async fn resolve_gateway_ws_url(config: &AgentConfig) -> Result<String> {
+    let endpoint = format!(
+        "{}/api/agent/resolve",
+        config.control_url.trim_end_matches('/')
+    );
+    let response = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()?
+        .post(endpoint)
+        .bearer_auth(&config.device_token)
+        .json(&serde_json::json!({ "deviceId": config.device_id }))
+        .send()
+        .await
+        .context("relay resolution request failed")?;
+
+    if !response.status().is_success() {
+        return Err(anyhow!(
+            "relay resolution rejected: HTTP {} {}",
+            response.status(),
+            response.text().await.unwrap_or_default()
+        ));
+    }
+
+    let resolved: RelayResolutionResponse = response.json().await?;
+    if !resolved.gateway_ws_url.starts_with("ws://")
+        && !resolved.gateway_ws_url.starts_with("wss://")
+    {
+        return Err(anyhow!("relay resolution returned invalid WebSocket URL"));
+    }
+    Ok(resolved.gateway_ws_url)
+}
+
 async fn abort_active(active: &Arc<Mutex<HashMap<String, tokio::task::AbortHandle>>>) {
     let handles: Vec<_> = active
         .lock()
@@ -268,13 +314,14 @@ async fn abort_active(active: &Arc<Mutex<HashMap<String, tokio::task::AbortHandl
 
 async fn connected_loop(
     config: &AgentConfig,
+    gateway_ws_url: &str,
     policy: Arc<PathPolicy>,
     terminals: TerminalManager,
     tasks: TaskManager,
     active: Arc<Mutex<HashMap<String, tokio::task::AbortHandle>>>,
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<()> {
-    let mut request = config.gateway_ws_url.clone().into_client_request()?;
+    let mut request = gateway_ws_url.to_owned().into_client_request()?;
     request.headers_mut().insert(
         HeaderName::from_static("x-device-id"),
         HeaderValue::from_str(&config.device_id)?,
