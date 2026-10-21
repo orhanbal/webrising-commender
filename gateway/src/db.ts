@@ -22,6 +22,39 @@ export async function migrate() {
       created_at timestamptz not null default now()
     );
 
+    create table if not exists relay_nodes (
+      id text primary key,
+      instance_id uuid not null,
+      region text not null,
+      internal_url text not null,
+      public_url text not null,
+      last_seen_at timestamptz not null default now(),
+      disabled_at timestamptz,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create index if not exists relay_nodes_health_idx
+      on relay_nodes(disabled_at,last_seen_at);
+
+    create table if not exists organization_relay_assignments (
+      organization_id uuid primary key references organizations(id) on delete cascade,
+      relay_node_id text not null references relay_nodes(id),
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create index if not exists organization_relay_node_idx
+      on organization_relay_assignments(relay_node_id);
+
+    create table if not exists cluster_request_nonces (
+      source_node_id text not null,
+      nonce text not null,
+      expires_at timestamptz not null,
+      created_at timestamptz not null default now(),
+      primary key(source_node_id,nonce)
+    );
+    create index if not exists cluster_request_nonces_expiry_idx
+      on cluster_request_nonces(expires_at);
+
     create table if not exists users (
       id uuid primary key default gen_random_uuid(),
       email text not null,
@@ -151,6 +184,14 @@ export async function migrate() {
     );
     create index if not exists devices_org_idx on devices(organization_id);
 
+    alter table devices add column if not exists relay_node_id text;
+    alter table devices add column if not exists connected_node_id text;
+    alter table devices add column if not exists connected_connection_id uuid;
+    alter table devices add column if not exists connected_at timestamptz;
+    create index if not exists devices_connected_node_idx
+      on devices(connected_node_id)
+      where connected_node_id is not null;
+
     create table if not exists pairing_codes (
       id uuid primary key default gen_random_uuid(),
       organization_id uuid not null references organizations(id) on delete cascade,
@@ -159,6 +200,8 @@ export async function migrate() {
       used_at timestamptz,
       created_at timestamptz not null default now()
     );
+
+    alter table pairing_codes add column if not exists relay_node_id text;
 
     create table if not exists approvals (
       id uuid primary key default gen_random_uuid(),
@@ -289,6 +332,7 @@ function auditRetentionDays() {
 }
 
 export async function housekeeping() {
+  await db.query("delete from cluster_request_nonces where expires_at < now()");
   await db.query("delete from pairing_codes where expires_at < now() or used_at < now() - interval '1 day'");
   await db.query("delete from approvals where expires_at < now() - interval '1 day'");
   await db.query(
