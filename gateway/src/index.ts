@@ -2081,10 +2081,21 @@ const server = http.createServer(async (req, res) => {
       if (!requireRole(principal!, "viewer", res)) return;
       const orgId = principal!.organizationId;
       const result = await db.query(
-        "select id,name,hostname,platform,agent_version,capabilities,last_seen_at,created_at,revoked_at from devices where organization_id=$1 order by created_at desc",
+        `select id,name,hostname,platform,agent_version,capabilities,last_seen_at,
+                assigned_relay_id,connected_relay_id,relay_last_seen_at,
+                created_at,revoked_at
+           from devices
+          where organization_id=$1
+          order by created_at desc`,
         [orgId],
       );
-      return void json(res, 200, { items: result.rows.map((row) => ({ ...row, online: hub.isOnline(row.id) })) });
+      const online = await deviceRouter.onlineStatuses(result.rows.map((row) => row.id));
+      return void json(res, 200, {
+        items: result.rows.map((row) => ({
+          ...row,
+          online: online.has(row.id),
+        })),
+      });
     }
 
     const disconnectMatch = url.pathname.match(/^\/api\/devices\/([0-9a-f-]{36})\/disconnect$/i);
@@ -2097,7 +2108,7 @@ const server = http.createServer(async (req, res) => {
         [deviceId, orgId],
       );
       if (!exists.rowCount) return void json(res, 404, { error: "device_not_found" });
-      const disconnected = hub.disconnect(deviceId);
+      const disconnected = await deviceRouter.disconnect(deviceId);
       return void json(res, 200, { ok: true, disconnected });
     }
 
@@ -2126,7 +2137,7 @@ const server = http.createServer(async (req, res) => {
         [deviceId, orgId],
       );
       if (!revoked.rowCount) return void json(res, 404, { error: "device_not_found" });
-      hub.disconnect(deviceId);
+      await deviceRouter.disconnect(deviceId);
       await auditControl(principal!, deviceId, "device.revoke", "high", "success");
       return void json(res, 200, { ok: true, item: revoked.rows[0] });
     }
@@ -2278,7 +2289,7 @@ const server = http.createServer(async (req, res) => {
         return void json(res, 403, { error: "approval_required", action: action.kind });
       }
       try {
-        const data = await hub.request(body.deviceId, action, body.approvalToken);
+        const data = await deviceRouter.request(body.deviceId, action, body.approvalToken);
         await auditControl(principal!, body.deviceId, `direct.${action.kind}`, risk, "success", redact({ kind: action.kind }));
         return void json(res, 200, { ok: true, data });
       } catch (error) {
@@ -2301,10 +2312,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/mcp") {
       const payload = await readJson(req);
       if (Array.isArray(payload)) {
-        const results = (await Promise.all(payload.map((item) => handleMcp(item, hub, principal!)))).filter(Boolean);
+        const results = (await Promise.all(payload.map((item) => handleMcp(item, deviceRouter, principal!)))).filter(Boolean);
         return void json(res, 200, results);
       }
-      const result = await handleMcp(payload, hub, principal!);
+      const result = await handleMcp(payload, deviceRouter, principal!);
       if (result === null) {
         res.writeHead(202);
         res.end();
