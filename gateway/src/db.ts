@@ -13,7 +13,13 @@ export const db = new Pool({
 });
 
 export async function migrate() {
-  await db.query(`
+  const client = await db.connect();
+  try {
+    await client.query("begin");
+    await client.query(
+      "select pg_advisory_xact_lock(hashtext('webrising-commender:migrate'))",
+    );
+    await client.query(`
     create extension if not exists pgcrypto;
 
     create table if not exists organizations (
@@ -172,22 +178,6 @@ export async function migrate() {
     alter table devices add column if not exists connected_relay_id text;
     alter table devices add column if not exists relay_last_seen_at timestamptz;
 
-    do $
-    begin
-      alter table devices
-        add constraint devices_assigned_relay_fk
-        foreign key (assigned_relay_id) references relay_nodes(id) on delete set null;
-    exception when duplicate_object then null;
-    end $;
-
-    do $
-    begin
-      alter table devices
-        add constraint devices_connected_relay_fk
-        foreign key (connected_relay_id) references relay_nodes(id) on delete set null;
-    exception when duplicate_object then null;
-    end $;
-
     create index if not exists devices_assigned_relay_idx
       on devices(assigned_relay_id)
       where assigned_relay_id is not null and revoked_at is null;
@@ -311,7 +301,41 @@ export async function migrate() {
     insert into organizations(name)
       select 'Self Hosted'
       where not exists(select 1 from organizations);
-  `);
+    `);
+
+    const constraints = [
+      ["devices_assigned_relay_fk", "assigned_relay_id"],
+      ["devices_connected_relay_fk", "connected_relay_id"],
+    ] as const;
+
+    for (const [constraintName, columnName] of constraints) {
+      const exists = await client.query(
+        `select 1
+           from pg_constraint
+          where conname=$1
+            and conrelid='devices'::regclass`,
+        [constraintName],
+      );
+      if (!exists.rowCount) {
+        await client.query(
+          `alter table devices
+             add constraint ${constraintName}
+             foreign key (${columnName})
+             references relay_nodes(id)
+             on delete set null`,
+        );
+      }
+    }
+
+    await client.query("commit");
+  } catch (error) {
+    try {
+      await client.query("rollback");
+    } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function defaultOrganizationId(): Promise<string> {
