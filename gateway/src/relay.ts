@@ -6,6 +6,11 @@ import type { AgentAction, AgentMessage, GatewayMessage } from "./protocol.js";
 const MAX_PENDING_TOTAL = 1024;
 const MAX_PENDING_PER_DEVICE = 64;
 
+export type AgentLifecycleHooks = {
+  onReady?: (deviceId: string) => Promise<void> | void;
+  onClosed?: (deviceId: string) => Promise<void> | void;
+};
+
 type Pending = {
   deviceId: string;
   resolve: (value: unknown) => void;
@@ -46,7 +51,7 @@ export class AgentHub {
     return true;
   }
 
-  register(deviceId: string, socket: WebSocket) {
+  register(deviceId: string, socket: WebSocket, hooks: AgentLifecycleHooks = {}) {
     const old = this.sockets.get(deviceId);
     if (old && old !== socket) {
       this.ready.delete(deviceId);
@@ -66,7 +71,7 @@ export class AgentHub {
         return;
       }
 
-      void this.onMessage(deviceId, socket, message).catch(() => {
+      void this.onMessage(deviceId, socket, message, hooks).catch(() => {
         if (this.sockets.get(deviceId) === socket) {
           this.sockets.delete(deviceId);
           this.ready.delete(deviceId);
@@ -81,10 +86,16 @@ export class AgentHub {
       this.sockets.delete(deviceId);
       this.ready.delete(deviceId);
       this.rejectPendingForDevice(deviceId, "device-disconnected");
+      void Promise.resolve(hooks.onClosed?.(deviceId)).catch(() => {});
     });
   }
 
-  private async onMessage(deviceId: string, socket: WebSocket, message: AgentMessage) {
+  private async onMessage(
+    deviceId: string,
+    socket: WebSocket,
+    message: AgentMessage,
+    hooks: AgentLifecycleHooks,
+  ) {
     if (this.sockets.get(deviceId) !== socket) return;
 
     if (message.type === "heartbeat") {
@@ -98,7 +109,10 @@ export class AgentHub {
         [deviceId, message.hostname, message.os, message.version, JSON.stringify(message.capabilities)],
       );
       if (this.sockets.get(deviceId) === socket && socket.readyState === 1) {
-        this.ready.add(deviceId);
+        await hooks.onReady?.(deviceId);
+        if (this.sockets.get(deviceId) === socket && socket.readyState === 1) {
+          this.ready.add(deviceId);
+        }
       }
       return;
     }
