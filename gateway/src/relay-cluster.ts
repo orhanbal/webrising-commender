@@ -43,6 +43,33 @@ function validatedUrl(value: string, protocols: string[]) {
 const normalizedPublicWsUrl = validatedUrl(relayPublicWsUrl, ["ws:", "wss:"]);
 const normalizedInternalBaseUrl = validatedUrl(relayInternalBaseUrl, ["http:", "https:"]);
 
+function isLoopbackUrl(value: string | null) {
+  if (!value) return false;
+  const parsed = new URL(value);
+  return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(parsed.hostname);
+}
+
+const allowInsecureTransport = /^(1|true|yes|on)$/i.test(
+  String(process.env.RELAY_ALLOW_INSECURE_TRANSPORT || ""),
+);
+
+if (
+  enabled &&
+  normalizedPublicWsUrl?.startsWith("ws://") &&
+  !isLoopbackUrl(normalizedPublicWsUrl) &&
+  !allowInsecureTransport
+) {
+  throw new Error("RELAY_PUBLIC_WS_URL must use wss:// outside loopback");
+}
+if (
+  enabled &&
+  normalizedInternalBaseUrl?.startsWith("http://") &&
+  !isLoopbackUrl(normalizedInternalBaseUrl) &&
+  !allowInsecureTransport
+) {
+  throw new Error("RELAY_INTERNAL_BASE_URL must use https:// outside loopback");
+}
+
 if ((normalizedPublicWsUrl && !normalizedInternalBaseUrl) || (!normalizedPublicWsUrl && normalizedInternalBaseUrl)) {
   throw new Error("RELAY_PUBLIC_WS_URL and RELAY_INTERNAL_BASE_URL must be configured together");
 }
@@ -52,7 +79,7 @@ export function regionalRelayEnabled() {
 }
 
 export function currentNodeId() {
-  return nodeId || null;
+  return enabled && nodeId ? nodeId : null;
 }
 
 export function currentNodeIsRelay() {
