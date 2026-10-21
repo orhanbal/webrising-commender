@@ -73,6 +73,7 @@ The agent initiates the connection. Controlled devices do not need an inbound fi
 - tenant-scoped API tokens with viewer/operator/admin/owner RBAC
 - verified browser signup and password reset through a first-party SMTP/STARTTLS client
 - AES-256-GCM encrypted persistent mail outbox with retry/dead-letter handling
+- first-party regional relay routing with preferred-region placement, signed inter-node RPC and automatic agent failover
 - one-time exact-operation approval tokens
 - human-in-the-loop approval queue for AI/MCP HIGH-risk actions
 - native device-side verification of signed HIGH-risk approvals

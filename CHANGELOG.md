@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added first-party regional relay registry, preferred-region placement, capacity-aware transactional assignment and relay health/drain controls.
+- Added HMAC-authenticated control-to-relay RPC and DeviceRouter routing for REST/MCP operations.
+- Added native agent route refresh so disconnected agents can fail over to another healthy region without re-enrollment.
+- Added real-agent two-relay CI acceptance covering preferred-region placement, unsigned internal-RPC rejection, drain and cross-region failover.
 - Added verified PostgreSQL Compose backup/restore tooling with custom-format archive validation, SHA-256 sidecars, retention and fail-closed restore behavior.
 - Added a dependency-free gateway restart/manual-network soak runner that verifies device reconnect, low-risk requests and optional persistent-task rediscovery.
 - Added CI backup → mutation → destructive restore → API verification acceptance.

@@ -187,6 +187,122 @@ jobs:
         if: failure()
         run: cat /tmp/commender-gateway.log || true
 
+  relay-e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: commender
+          POSTGRES_USER: commender
+          POSTGRES_PASSWORD: commender-test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U commender -d commender"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://commender:commender-test@127.0.0.1:5432/commender
+      CONTROL_API_KEY: ci-control-key-0123456789-0123456789
+      APPROVAL_SIGNING_SECRET: ci-approval-secret-0123456789-012345
+      DEPLOYMENT_MODE: self_hosted
+      REGIONAL_RELAY_ENABLED: true
+      RELAY_CLUSTER_SECRET: ci-relay-cluster-secret-0123456789-0123456789
+      RELAY_REQUEST_TIMEOUT_MS: 35000
+      HOST: 127.0.0.1
+      PUBLIC_BASE_URL: http://127.0.0.1:8787
+      PORT: 8787
+      CLUSTER_NODE_ID: control-ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: gateway/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+        working-directory: gateway
+      - run: npm run build
+        working-directory: gateway
+      - run: cargo build -p webrising-commender-agent
+      - name: Start control and relay nodes
+        working-directory: gateway
+        run: |
+          node dist/index.js > /tmp/commender-control.log 2>&1 &
+          echo $! > /tmp/commender-control.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8787/health >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8787/health >/dev/null || {
+            cat /tmp/commender-control.log
+            exit 1
+          }
+
+          PUBLIC_BASE_URL=http://127.0.0.1:8788 \
+          PORT=8788 \
+          CLUSTER_NODE_ID=relay-a \
+          RELAY_REGION=eu-west \
+          RELAY_PUBLIC_WS_URL=ws://127.0.0.1:8788/agent \
+          RELAY_INTERNAL_BASE_URL=http://127.0.0.1:8788 \
+          RELAY_MAX_DEVICES=10 \
+          node dist/index.js > /tmp/commender-relay-a.log 2>&1 &
+          echo $! > /tmp/commender-relay-a.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8788/health >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8788/health >/dev/null || {
+            cat /tmp/commender-relay-a.log
+            exit 1
+          }
+
+          PUBLIC_BASE_URL=http://127.0.0.1:8789 \
+          PORT=8789 \
+          CLUSTER_NODE_ID=relay-b \
+          RELAY_REGION=eu-central \
+          RELAY_PUBLIC_WS_URL=ws://127.0.0.1:8789/agent \
+          RELAY_INTERNAL_BASE_URL=http://127.0.0.1:8789 \
+          RELAY_MAX_DEVICES=10 \
+          node dist/index.js > /tmp/commender-relay-b.log 2>&1 &
+          echo $! > /tmp/commender-relay-b.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8789/health >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8789/health >/dev/null || {
+            cat /tmp/commender-relay-b.log
+            exit 1
+          }
+      - name: Run regional relay failover E2E
+        run: node gateway/test/relay-e2e.mjs
+      - name: Print cluster logs on failure
+        if: failure()
+        run: |
+          echo "=== control ==="
+          cat /tmp/commender-control.log || true
+          echo "=== relay-a ==="
+          cat /tmp/commender-relay-a.log || true
+          echo "=== relay-b ==="
+          cat /tmp/commender-relay-b.log || true
+      - name: Stop cluster
+        if: always()
+        run: |
+          for pidfile in /tmp/commender-control.pid /tmp/commender-relay-a.pid /tmp/commender-relay-b.pid; do
+            if [ -f "$pidfile" ]; then
+              kill "$(cat "$pidfile")" 2>/dev/null || true
+            fi
+          done
+
   compose-smoke:
     runs-on: ubuntu-latest
     env:

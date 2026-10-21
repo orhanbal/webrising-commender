@@ -206,6 +206,16 @@
             </div>
           </div>
           <p id="workspaceTokenHint" class="hint hidden">API-token sessions are already scoped to one workspace. Sign in with a browser account to switch or create workspaces.</p>
+          <div id="relayRegionControls" class="toolbar hidden" style="margin-top:12px">
+            <label><span class="label">Preferred relay region</span><select id="relayRegion"><option value="">Automatic</option></select></label>
+            <button id="saveRelayRegion" class="secondary">Save region</button>
+          </div>
+          <p id="relayRegionHint" class="hint hidden">Preferred region is best-effort. If it is unavailable, Commender automatically selects another healthy relay.</p>
+        </div>
+
+        <div id="relayAdminCard" class="card global-access hidden" style="box-shadow:none">
+          <div class="row" style="justify-content:space-between"><div><h3>Regional relay nodes</h3><p class="hint">Drain stops new assignments while existing connections keep working. Disable removes a node from routing immediately.</p></div><button id="refreshRelays" class="secondary">Refresh</button></div>
+          <div style="overflow:auto"><table class="audit"><thead><tr><th>Node</th><th>Region</th><th>Health</th><th>Assigned</th><th>Connected</th><th>Capacity</th><th>State</th><th>Action</th></tr></thead><tbody id="relayNodeBody"></tbody></table></div>
         </div>
 
         <div class="card admin-access" style="box-shadow:none">
@@ -267,7 +277,7 @@ function clearError(){$("globalError").textContent=""}
 function dateOrDash(value){return value?new Date(value).toLocaleString():"—"}
 function setText(id,value){$(id).textContent=String(value??"")}
 
-function apiError(body,status){if(body?.error==="quota_exceeded")return (body.resource||"resource")+" quota reached ("+body.used+"/"+body.limit+")";if(body?.error==="billing_required")return "This workspace needs an active SaaS entitlement before new resources can be created.";if(body?.error==="signup_disabled")return "Public signup is disabled on this deployment.";if(body?.error==="mail_not_configured")return "Email delivery is not configured on this deployment.";return body?.error||("HTTP "+status)}
+function apiError(body,status){if(body?.error==="quota_exceeded")return (body.resource||"resource")+" quota reached ("+body.used+"/"+body.limit+")";if(body?.error==="billing_required")return "This workspace needs an active SaaS entitlement before new resources can be created.";if(body?.error==="signup_disabled")return "Public signup is disabled on this deployment.";if(body?.error==="mail_not_configured")return "Email delivery is not configured on this deployment.";if(body?.error==="relay_region_unavailable")return "The selected relay region currently has no healthy node.";if(body?.error==="relay_unavailable")return "No healthy relay is currently available.";return body?.error||("HTTP "+status)}
 async function api(route,opts={}){const method=(opts.method||"GET").toUpperCase();const headers={...auth(),...(opts.headers||{})};if(!$("key").value.trim()&&!["GET","HEAD","OPTIONS"].includes(method)){const csrf=cookieValue("commender_csrf");if(csrf)headers["X-CSRF-Token"]=csrf}const r=await fetch(route,{credentials:"same-origin",...opts,headers});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(apiError(body,r.status));return body}
 async function deviceRequest(action,approve=false){const d=needDevice();let approvalToken;if(approve){const preview=JSON.stringify(action,null,2);if(!confirm("Approve this HIGH-risk operation?\n\n"+preview))throw new Error("Action canceled.");const a=await api("/api/approvals",{method:"POST",body:JSON.stringify({deviceId:d.id,action,ttlSeconds:120})});approvalToken=a.approvalToken}const r=await api("/api/device/request",{method:"POST",body:JSON.stringify({deviceId:d.id,action,...(approvalToken?{approvalToken}:{})})});return r.data}
 
@@ -276,7 +286,7 @@ async function health(){try{const r=await fetch("/health");$("health").textConte
 async function loadPublicConfig(){try{const r=await fetch("/api/public/config");const j=await r.json();$("signupOpen").classList.toggle("hidden",!j.signupEnabled);$("resetOpen").classList.toggle("hidden",!j.passwordResetEnabled)}catch{$("signupOpen").classList.add("hidden");$("resetOpen").classList.add("hidden")}}
 
 async function loadDevices(){try{clearError();const j=await api("/api/devices");if(selected){selected=j.items.find(x=>x.id===selected.id)||null}renderDevices(j.items);syncSelection()}catch(e){showError(e)}}
-function renderDevices(items){$("devices").innerHTML=items.length?items.map(d=>'<div class="device '+(selected?.id===d.id?'selected':'')+'" data-id="'+d.id+'"><b><span class="status '+(d.revoked_at?'revoked':d.online?'online':'')+'"></span>'+escapeHtml(d.name)+'</b><small>'+escapeHtml(d.hostname||d.platform||d.id)+'</small><div class="small">'+(d.revoked_at?'revoked':d.online?'online':'offline')+' · '+escapeHtml(d.agent_version||"agent unknown")+'</div></div>').join(""):'<p class="hint">No devices enrolled.</p>';document.querySelectorAll(".device").forEach(el=>el.onclick=()=>{selected=items.find(x=>x.id===el.dataset.id)||null;renderDevices(items);syncSelection()})}
+function renderDevices(items){$("devices").innerHTML=items.length?items.map(d=>'<div class="device '+(selected?.id===d.id?'selected':'')+'" data-id="'+d.id+'"><b><span class="status '+(d.revoked_at?'revoked':d.online?'online':'')+'"></span>'+escapeHtml(d.name)+'</b><small>'+escapeHtml(d.hostname||d.platform||d.id)+'</small><div class="small">'+(d.revoked_at?'revoked':d.online?'online':'offline')+' · '+escapeHtml(d.agent_version||"agent unknown")+(d.connected_relay_id?' · relay '+escapeHtml(d.connected_relay_id):'')+'</div></div>').join(""):'<p class="hint">No devices enrolled.</p>';document.querySelectorAll(".device").forEach(el=>el.onclick=()=>{selected=items.find(x=>x.id===el.dataset.id)||null;renderDevices(items);syncSelection()})}
 function syncSelection(){$("selection").textContent=selected?(selected.name+" · "+(selected.revoked_at?"revoked":selected.online?"online":"offline")):"no device selected";$("deviceName").value=selected?.name||""}
 
 async function loadOrganizations(){
@@ -309,6 +319,7 @@ async function refreshIdentity(){
     const canSeeAccess=me.authKind==="session"||canManage;
     $("accessTab").classList.toggle("hidden",!canSeeAccess);
     document.querySelectorAll(".admin-access").forEach(x=>x.classList.toggle("hidden",!canManage));
+    document.querySelectorAll(".global-access").forEach(x=>x.classList.toggle("hidden",!me.global));
     await loadOrganizations();
     await loadDevices();
     if(canManage)await loadAudit();
@@ -319,6 +330,9 @@ async function refreshIdentity(){
     $("authState").className="pill";
     $("orgState").textContent="no workspace";
     $("accessTab").classList.add("hidden");
+    document.querySelectorAll(".global-access").forEach(x=>x.classList.add("hidden"));
+    $("relayRegionControls").classList.add("hidden");
+    $("relayRegionHint").classList.add("hidden");
     if(!$("key").value.trim())$("devices").innerHTML='<p class="hint">Sign in or enter an API token.</p>';
   }
 }
@@ -399,6 +413,28 @@ async function loadTokens(){
 async function revokeToken(id){try{if(!confirm("Revoke this API token?"))return;await api("/api/tokens/"+id+"/revoke",{method:"POST",body:"{}"});await loadTokens();await loadAudit()}catch(e){showError(e)}}
 $("createToken").onclick=async()=>{try{const name=$("tokenName").value.trim();if(!name)throw new Error("Enter a token name.");const j=await api("/api/tokens",{method:"POST",body:JSON.stringify({name,role:$("tokenRole").value})});$("tokenOutput").classList.remove("hidden");$("tokenOutput").textContent="Copy now. This token is only returned once:\n"+j.token;$("tokenName").value="";await loadTokens();await loadAudit()}catch(e){showError(e)}}
 
+async function loadRelayRegions(){
+  const [workspace,regions]=await Promise.all([api("/api/organization"),api("/api/relay-regions")]);
+  const canChoose=currentIdentity?.authKind==="session"&&currentIdentity?.role==="owner"&&regions.enabled;
+  $("relayRegionControls").classList.toggle("hidden",!canChoose);
+  $("relayRegionHint").classList.toggle("hidden",!canChoose);
+  if(!canChoose)return;
+  $("relayRegion").innerHTML='<option value="">Automatic</option>'+regions.items.map(x=>'<option value="'+escapeHtml(x.region)+'">'+escapeHtml(x.region)+' · '+escapeHtml(x.nodes)+' node'+(x.nodes===1?'':'s')+'</option>').join("");
+  $("relayRegion").value=workspace.item.relay_region||"";
+}
+$("saveRelayRegion").onclick=async()=>{try{const region=$("relayRegion").value||null;await api("/api/organization/relay-region",{method:"PATCH",body:JSON.stringify({region})});await loadRelayRegions();await loadDevices();await loadAudit()}catch(e){showError(e)}}
+
+async function loadRelays(){
+  if(!currentIdentity?.global)return;
+  const j=await api("/api/admin/relays");
+  $("relayNodeBody").innerHTML=j.items.length?j.items.map(x=>'<tr><td><b>'+escapeHtml(x.id)+'</b></td><td>'+escapeHtml(x.region)+'</td><td><span class="pill '+(x.healthy?'ok':'bad')+'">'+(x.healthy?'healthy':'stale')+'</span></td><td>'+escapeHtml(x.assigned_count)+'</td><td>'+escapeHtml(x.connected_count)+'</td><td><input data-relay-capacity="'+escapeHtml(x.id)+'" type="number" min="1" max="1000000" value="'+escapeHtml(x.max_devices)+'" style="width:110px"></td><td>'+escapeHtml(x.enabled?(x.drain?'draining':'enabled'):'disabled')+'</td><td><div class="row"><button class="secondary" data-relay-save="'+escapeHtml(x.id)+'">Save</button><button class="secondary" data-relay-drain="'+escapeHtml(x.id)+'">'+(x.drain?'Undrain':'Drain')+'</button><button class="'+(x.enabled?'danger':'secondary')+'" data-relay-enable="'+escapeHtml(x.id)+'">'+(x.enabled?'Disable':'Enable')+'</button></div></td></tr>').join(""):'<tr><td colspan="8" class="hint">No relay nodes registered.</td></tr>';
+  document.querySelectorAll("[data-relay-save]").forEach(b=>b.onclick=()=>updateRelay(b.dataset.relaySave,{maxDevices:Number(document.querySelector('[data-relay-capacity="'+CSS.escape(b.dataset.relaySave)+'"]').value)}));
+  document.querySelectorAll("[data-relay-drain]").forEach(b=>b.onclick=()=>{const row=j.items.find(x=>x.id===b.dataset.relayDrain);updateRelay(b.dataset.relayDrain,{drain:!row.drain})});
+  document.querySelectorAll("[data-relay-enable]").forEach(b=>b.onclick=()=>{const row=j.items.find(x=>x.id===b.dataset.relayEnable);updateRelay(b.dataset.relayEnable,{enabled:!row.enabled})});
+}
+async function updateRelay(id,patch){try{await api("/api/admin/relays/"+encodeURIComponent(id),{method:"PATCH",body:JSON.stringify(patch)});await loadRelays();await loadDevices();await loadAudit()}catch(e){showError(e)}}
+$("refreshRelays").onclick=loadRelays;
+
 function limitText(value){return value===null?"∞":String(value)}
 async function loadBilling(){
   const j=await api("/api/billing");
@@ -414,7 +450,7 @@ async function loadBilling(){
     '<div class="kv"><span>API tokens</span><span>'+escapeHtml(j.usage.apiTokens+" / "+limitText(j.limits.maxApiTokens))+'</span></div>'+
     '<div class="kv"><span>Period end</span><span>'+escapeHtml(dateOrDash(j.subscription?.currentPeriodEnd))+'</span></div>';
 }
-async function loadAccess(){try{if(!currentIdentity)throw new Error("Sign in first.");await Promise.all([loadOrganizations(),loadBilling()]);const canManage=currentIdentity.role==="admin"||currentIdentity.role==="owner";if(canManage)await Promise.all([loadMembers(),loadInvitations(),loadTokens()])}catch(e){showError(e)}}
+async function loadAccess(){try{if(!currentIdentity)throw new Error("Sign in first.");await Promise.all([loadOrganizations(),loadBilling(),loadRelayRegions()]);const canManage=currentIdentity.role==="admin"||currentIdentity.role==="owner";const jobs=[];if(canManage)jobs.push(loadMembers(),loadInvitations(),loadTokens());if(currentIdentity.global)jobs.push(loadRelays());if(jobs.length)await Promise.all(jobs)}catch(e){showError(e)}}
 $("refreshAccess").onclick=loadAccess;
 $("switchOrganization").onclick=async()=>{try{const organizationId=$("organizationSelect").value;if(!organizationId||organizationId===currentIdentity?.organizationId)return;await api("/api/auth/switch-organization",{method:"POST",body:JSON.stringify({organizationId})});selected=null;syncSelection();await refreshIdentity();await loadAccess()}catch(e){showError(e)}}
 $("createOrganization").onclick=async()=>{try{const name=prompt("New workspace name");if(!name?.trim())return;await api("/api/auth/organizations",{method:"POST",body:JSON.stringify({name:name.trim()})});selected=null;syncSelection();await refreshIdentity();await loadAccess()}catch(e){showError(e)}}

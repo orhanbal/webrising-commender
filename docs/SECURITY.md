@@ -112,3 +112,23 @@ Public signup is available only when `DEPLOYMENT_MODE=saas`, `PUBLIC_SIGNUP_ENAB
 - SMTP STARTTLS/TLS certificate validation defaults to enabled. Disabling `SMTP_TLS_REJECT_UNAUTHORIZED` weakens transport authentication and is not recommended for production.
 - Delivery retries are bounded. Exhausted messages enter a dead-letter state instead of retrying forever.
 - Operational outbox APIs expose delivery metadata/errors only, never decrypted payloads or recipient addresses.
+
+
+## Regional relay security boundary
+
+Regional relay mode is optional and first-party. Relay nodes are trusted members of the Commender control plane; they are not third-party services.
+
+- Every node has a distinct `CLUSTER_NODE_ID`.
+- Inter-node request payloads are authenticated with HMAC-SHA256 over HTTP method, path, timestamp, nonce and exact body hash.
+- Relay requests outside a short clock window are rejected.
+- A valid nonce is accepted only once per relay process, preventing captured-request replay inside the acceptance window.
+- A relay executes an internal device request only when that device is currently recorded as connected to that exact relay and its local socket is ready.
+- Agent WebSocket upgrade requires the normal device token and, in clustered mode, the device must be assigned to the current healthy/non-draining relay.
+- Regional route refresh is device-token authenticated and separately rate-limited.
+- Outside loopback, public relay URLs must use `wss://` and private inter-node URLs must use `https://` unless an operator explicitly sets `RELAY_ALLOW_INSECURE_TRANSPORT=true`.
+- HMAC authenticates/integrity-protects the internal payload but is not a confidentiality layer; production inter-node traffic must use TLS.
+- `RELAY_CLUSTER_SECRET` is a dedicated cluster secret. Do not reuse `CONTROL_API_KEY`, device tokens or approval-signing secrets.
+- PostgreSQL must remain private to trusted control-plane/relay nodes and must never be exposed publicly. Network ACL/firewall policy should restrict database access to those nodes only.
+- Relay `drain` preserves existing connections; `enabled=false` removes the node from routing immediately.
+
+A compromise of a trusted relay node is treated as control-plane infrastructure compromise. Rotate the cluster secret, disable the node, rotate infrastructure credentials and review audit/device presence records.

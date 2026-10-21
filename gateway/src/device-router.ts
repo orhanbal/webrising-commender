@@ -1,0 +1,79 @@
+import type { AgentAction } from "./protocol.js";
+import type { AgentHub } from "./relay.js";
+import {
+  callRelay,
+  connectedRelayForDevice,
+  relayOnlineDeviceIds,
+  regionalRelayEnabled,
+} from "./relay-cluster.js";
+
+export class DeviceRouter {
+  constructor(private readonly hub: AgentHub) {}
+
+  async onlineStatuses(deviceIds: string[]) {
+    const online = new Set<string>();
+    for (const deviceId of deviceIds) {
+      if (this.hub.isOnline(deviceId)) online.add(deviceId);
+    }
+
+    if (regionalRelayEnabled()) {
+      const remote = await relayOnlineDeviceIds(
+        deviceIds.filter((id) => !online.has(id)),
+      );
+      for (const id of remote) online.add(id);
+    }
+    return online;
+  }
+
+  async isOnline(deviceId: string) {
+    if (this.hub.isOnline(deviceId)) return true;
+    if (!regionalRelayEnabled()) return false;
+    return (await relayOnlineDeviceIds([deviceId])).has(deviceId);
+  }
+
+  async request(
+    deviceId: string,
+    action: AgentAction,
+    approvalToken?: string | null,
+  ) {
+    if (this.hub.isOnline(deviceId)) {
+      return this.hub.request(deviceId, action, approvalToken);
+    }
+    if (!regionalRelayEnabled()) {
+      throw new Error("device-offline");
+    }
+
+    const relay = await connectedRelayForDevice(deviceId);
+    if (!relay) throw new Error("device-offline");
+
+    const response = await callRelay<{
+      ok: boolean;
+      data?: unknown;
+      error?: string;
+    }>(relay.internalBaseUrl, "/internal/relay/request", {
+      deviceId,
+      action,
+      ...(approvalToken !== undefined ? { approvalToken } : {}),
+    });
+    if (!response.ok) {
+      throw new Error(response.error || "relay_request_failed");
+    }
+    return response.data;
+  }
+
+  async disconnect(deviceId: string) {
+    if (this.hub.isOnline(deviceId)) {
+      return this.hub.disconnect(deviceId);
+    }
+    if (!regionalRelayEnabled()) return false;
+
+    const relay = await connectedRelayForDevice(deviceId);
+    if (!relay) return false;
+
+    const response = await callRelay<{
+      ok: boolean;
+      disconnected: boolean;
+    }>(relay.internalBaseUrl, "/internal/relay/disconnect", { deviceId });
+    return Boolean(response.ok && response.disconnected);
+  }
+}
