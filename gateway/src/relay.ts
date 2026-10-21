@@ -85,6 +85,7 @@ export class AgentHub {
           this.sockets.delete(deviceId);
           this.ready.delete(deviceId);
           this.rejectPendingForDevice(deviceId, "device-state-error");
+          void this.markDisconnected(deviceId).catch(() => {});
         }
         socket.close(1011, "state-update-failed");
       });
