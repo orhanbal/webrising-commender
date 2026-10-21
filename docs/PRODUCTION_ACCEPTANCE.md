@@ -79,3 +79,37 @@ The next acceptance gates add a real enrolled device, authenticated WSS, reconne
 ## Current tool limitation
 
 The connected Coolify MCP can inspect repositories/resources and deploy existing resources, but it cannot create a new application/service resource. This is an external tooling blocker, not a product-code blocker. Once the resource exists, deployment, status inspection, logs and redeploy can be managed through the Coolify connector.
+
+
+## Production backup and soak commands
+
+When running the repository-managed production Compose directly, target it explicitly:
+
+```bash
+export COMMANDER_COMPOSE_FILE=docker-compose.coolify.yml
+
+bash scripts/backup-compose.sh /secure/backups/commender
+
+COMMANDER_RESTORE_CONFIRM=RESTORE \
+bash scripts/restore-compose.sh /secure/backups/commender/commender-YYYYMMDDTHHMMSSZ.dump
+```
+
+If the deployment uses a non-default Compose project name, also set:
+
+```bash
+export COMMANDER_COMPOSE_PROJECT=<compose-project-name>
+```
+
+For restart/reconnect acceptance with a real enrolled device:
+
+```bash
+COMMANDER_CONTROL_URL=https://commender.webrising.tr \
+CONTROL_API_KEY='<control key>' \
+DEVICE_ID='<device uuid>' \
+COMMANDER_COMPOSE_FILE=docker-compose.coolify.yml \
+SOAK_ITERATIONS=10 \
+SOAK_TASK_COMMAND='<long-running harmless command>' \
+node scripts/soak-restart.mjs
+```
+
+The destructive restore gate must be run only after a fresh backup has been verified and only during an explicit acceptance window.
