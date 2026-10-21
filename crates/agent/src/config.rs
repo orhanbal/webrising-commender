@@ -26,6 +26,12 @@ pub struct EnrollmentResponse {
     pub gateway_ws_url: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayResolutionResponse {
+    pub gateway_ws_url: String,
+}
+
 impl AgentConfig {
     pub fn default_path() -> Result<PathBuf> {
         let base =
