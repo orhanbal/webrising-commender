@@ -323,7 +323,6 @@ const server = http.createServer(async (req, res) => {
            from devices
           where id=$1
             and connected_relay_id=$2
-            and revoked_at is null
           limit 1`,
         [body.deviceId, currentNodeId()],
       );
