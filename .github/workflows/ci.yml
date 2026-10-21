@@ -248,6 +248,16 @@ jobs:
           RELAY_MAX_DEVICES=10 \
           node dist/index.js > /tmp/commender-relay-a.log 2>&1 &
           echo $! > /tmp/commender-relay-a.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8788/health >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8788/health >/dev/null || {
+            cat /tmp/commender-relay-a.log
+            exit 1
+          }
 
           PUBLIC_BASE_URL=http://127.0.0.1:8789 \
           PORT=8789 \
@@ -258,16 +268,16 @@ jobs:
           RELAY_MAX_DEVICES=10 \
           node dist/index.js > /tmp/commender-relay-b.log 2>&1 &
           echo $! > /tmp/commender-relay-b.pid
-
-          for port in 8788 8789; do
-            for i in {1..30}; do
-              if curl -fsS http://127.0.0.1:$port/health >/dev/null; then
-                break
-              fi
-              sleep 1
-            done
-            curl -fsS http://127.0.0.1:$port/health >/dev/null || exit 1
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8789/health >/dev/null; then
+              break
+            fi
+            sleep 1
           done
+          curl -fsS http://127.0.0.1:8789/health >/dev/null || {
+            cat /tmp/commender-relay-b.log
+            exit 1
+          }
       - name: Run regional relay failover E2E
         run: node gateway/test/relay-e2e.mjs
       - name: Print cluster logs on failure
