@@ -47,18 +47,21 @@ import { deviceApprovalKeyForAgent, issueApproval, randomToken, redact, sha256 }
 
 const host = process.env.HOST || "0.0.0.0";
 const port = Number(process.env.PORT || 8787);
-const publicBaseUrl = String(process.env.PUBLIC_BASE_URL || `http://localhost:${port}`).replace(/\/$/, "");
-const parsedPublicBaseUrl = new URL(publicBaseUrl);
+const publicBaseUrlInput = String(
+  process.env.PUBLIC_BASE_URL || `http://localhost:${port}`,
+).trim();
+const parsedPublicBaseUrl = new URL(publicBaseUrlInput);
 if (
   !["http:", "https:"].includes(parsedPublicBaseUrl.protocol) ||
   parsedPublicBaseUrl.username ||
   parsedPublicBaseUrl.password ||
-  (parsedPublicBaseUrl.pathname !== "/" && parsedPublicBaseUrl.pathname !== "") ||
+  parsedPublicBaseUrl.pathname !== "/" ||
   parsedPublicBaseUrl.search ||
   parsedPublicBaseUrl.hash
 ) {
   throw new Error("PUBLIC_BASE_URL must be an http(s) origin without credentials, path, query or fragment");
 }
+const publicBaseUrl = parsedPublicBaseUrl.origin;
 const tlsCertFile = String(process.env.TLS_CERT_FILE || "").trim();
 const tlsKeyFile = String(process.env.TLS_KEY_FILE || "").trim();
 const tlsMinVersionRaw = String(process.env.TLS_MIN_VERSION || "TLSv1.2").trim();
@@ -71,7 +74,7 @@ if (!["TLSv1.2", "TLSv1.3"].includes(tlsMinVersionRaw)) {
   throw new Error("TLS_MIN_VERSION must be TLSv1.2 or TLSv1.3");
 }
 const nativeTlsEnabled = Boolean(tlsCertFile && tlsKeyFile);
-if (nativeTlsEnabled && !publicBaseUrl.startsWith("https://")) {
+if (nativeTlsEnabled && parsedPublicBaseUrl.protocol !== "https:") {
   throw new Error("PUBLIC_BASE_URL must use https:// when native TLS is enabled");
 }
 
