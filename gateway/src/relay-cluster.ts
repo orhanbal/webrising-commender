@@ -23,8 +23,11 @@ const nodeHeartbeatMs = 10_000;
 const nodeFreshSeconds = 45;
 
 if (enabled) {
-  if (nodeId.length < 2 || nodeId.length > 120) {
-    throw new Error("CLUSTER_NODE_ID must be 2-120 characters when regional relay is enabled");
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{1,119}$/.test(nodeId)) {
+    throw new Error("CLUSTER_NODE_ID must use 2-120 safe characters: letters, digits, dot, underscore or hyphen");
+  }
+  if (!/^[a-z0-9][a-z0-9._-]{0,79}$/.test(relayRegion)) {
+    throw new Error("RELAY_REGION must use 1-80 lowercase safe characters");
   }
   if (clusterSecret.length < 32) {
     throw new Error("RELAY_CLUSTER_SECRET must be at least 32 characters when regional relay is enabled");
@@ -72,6 +75,19 @@ if (
 
 if ((normalizedPublicWsUrl && !normalizedInternalBaseUrl) || (!normalizedPublicWsUrl && normalizedInternalBaseUrl)) {
   throw new Error("RELAY_PUBLIC_WS_URL and RELAY_INTERNAL_BASE_URL must be configured together");
+}
+
+if (normalizedPublicWsUrl) {
+  const parsed = new URL(normalizedPublicWsUrl);
+  if (parsed.pathname !== "/agent" || parsed.search || parsed.hash) {
+    throw new Error("RELAY_PUBLIC_WS_URL must point exactly to /agent without query or fragment");
+  }
+}
+if (normalizedInternalBaseUrl) {
+  const parsed = new URL(normalizedInternalBaseUrl);
+  if ((parsed.pathname !== "/" && parsed.pathname !== "") || parsed.search || parsed.hash) {
+    throw new Error("RELAY_INTERNAL_BASE_URL must be an origin URL without path, query or fragment");
+  }
 }
 
 export function regionalRelayEnabled() {
