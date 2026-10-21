@@ -499,6 +499,30 @@ jobs:
           if ($errors.Count -gt 0) { $errors | Format-List; exit 1 }
 
 
+  windows-acceptance-artifact:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release agent
+        run: cargo build --release -p webrising-commender-agent
+      - name: Package Windows acceptance bundle
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item "target\release\webrising-commender.exe" "dist\webrising-commender.exe" -Force
+          Copy-Item "scripts\install-windows.ps1" "dist\install-windows.ps1" -Force
+          Copy-Item "scripts\uninstall-windows.ps1" "dist\uninstall-windows.ps1" -Force
+          Copy-Item "docs\QUICKSTART.md" "dist\QUICKSTART.md" -Force
+          Get-FileHash "dist\webrising-commender.exe" -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  webrising-commender.exe" } |
+            Set-Content -Encoding ascii "dist\SHA256SUMS.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WECOMMANDER-windows-x64-acceptance
+          path: dist/*
+          retention-days: 14
+
   windows-service-smoke:
     runs-on: windows-latest
     steps:
