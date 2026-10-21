@@ -691,12 +691,18 @@ const memberInvitationResponse = await fetch(base + "/api/invitations", {
     email: "member@example.test",
     role: "operator",
     ttlHours: 24,
+    sendEmail: true,
   }),
 });
 assert.equal(memberInvitationResponse.status, 201);
 const memberInvitation = await memberInvitationResponse.json();
 assert.match(memberInvitation.inviteToken, /^wrci_/);
 assert.match(memberInvitation.inviteUrl, /#invite=wrci_/);
+assert.equal(memberInvitation.emailQueued, true);
+
+const invitationMail = await waitForMail(/To: member@example\.test[\s\S]*#invite=wrci_/);
+assert.ok(invitationMail.data.includes(memberInvitation.inviteToken));
+assert.ok(invitationMail.data.includes("CI Tenant"));
 
 const invitationPreviewResponse = await fetch(base + "/api/invitations/preview", {
   method: "POST",
@@ -1407,6 +1413,213 @@ const pastDueToken = await fetch(base + "/api/tokens", {
 });
 assert.equal(pastDueToken.status, 402);
 assert.equal((await pastDueToken.json()).error, "billing_required");
+
+const switchToDisposableWorkspace = await fetch(
+  base + "/api/auth/switch-organization",
+  {
+    method: "POST",
+    headers: {
+      Cookie: browserCookies,
+      "Content-Type": "application/json",
+      "X-CSRF-Token": browserLogin.csrfToken,
+    },
+    body: JSON.stringify({ organizationId: browserWorkspace.item.id }),
+  },
+);
+assert.equal(switchToDisposableWorkspace.status, 200);
+
+const deleteWorkspaceWrongName = await fetch(base + "/api/organization", {
+  method: "DELETE",
+  headers: {
+    Cookie: browserCookies,
+    "Content-Type": "application/json",
+    "X-CSRF-Token": browserLogin.csrfToken,
+  },
+  body: JSON.stringify({
+    password: "correct-horse-battery-staple",
+    confirmName: "Wrong Workspace Name",
+  }),
+});
+assert.equal(deleteWorkspaceWrongName.status, 400);
+assert.equal(
+  (await deleteWorkspaceWrongName.json()).error,
+  "workspace_confirmation_mismatch",
+);
+
+const deleteWorkspaceWrongPassword = await fetch(base + "/api/organization", {
+  method: "DELETE",
+  headers: {
+    Cookie: browserCookies,
+    "Content-Type": "application/json",
+    "X-CSRF-Token": browserLogin.csrfToken,
+  },
+  body: JSON.stringify({
+    password: "wrong-password-value",
+    confirmName: "CI Browser Workspace Renamed",
+  }),
+});
+assert.equal(deleteWorkspaceWrongPassword.status, 401);
+assert.equal(
+  (await deleteWorkspaceWrongPassword.json()).error,
+  "invalid_credentials",
+);
+
+const deleteWorkspaceResponse = await fetch(base + "/api/organization", {
+  method: "DELETE",
+  headers: {
+    Cookie: browserCookies,
+    "Content-Type": "application/json",
+    "X-CSRF-Token": browserLogin.csrfToken,
+  },
+  body: JSON.stringify({
+    password: "correct-horse-battery-staple",
+    confirmName: "CI Browser Workspace Renamed",
+  }),
+});
+assert.equal(deleteWorkspaceResponse.status, 200);
+const deletedWorkspace = await deleteWorkspaceResponse.json();
+assert.equal(deletedWorkspace.deletedOrganizationId, browserWorkspace.item.id);
+assert.equal(deletedWorkspace.signedOut, false);
+assert.ok(deletedWorkspace.nextOrganizationId);
+
+const browserAfterWorkspaceDelete = await fetch(base + "/api/auth/me", {
+  headers: { Cookie: browserCookies },
+});
+assert.equal(browserAfterWorkspaceDelete.status, 200);
+assert.equal(
+  (await browserAfterWorkspaceDelete.json()).organizationId,
+  deletedWorkspace.nextOrganizationId,
+);
+
+const organizationsAfterDelete = await fetch(
+  base + "/api/auth/organizations",
+  { headers: { Cookie: browserCookies } },
+);
+assert.equal(organizationsAfterDelete.status, 200);
+assert.equal(
+  (await organizationsAfterDelete.json()).items.some(
+    (item) => item.id === browserWorkspace.item.id,
+  ),
+  false,
+);
+
+const lifecycleOrg = await jsonFetch("/api/organizations", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({ name: "CI Account Lifecycle" }),
+});
+await assignSubscription(lifecycleOrg.item.id);
+
+const lifecycleUser = await jsonFetch("/api/users", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    email: "delete-me@example.test",
+    password: "delete-account-secure-password",
+    role: "owner",
+    organizationId: lifecycleOrg.item.id,
+  }),
+});
+assert.equal(lifecycleUser.item.email, "delete-me@example.test");
+
+const lifecycleLoginResponse = await fetch(base + "/api/auth/login", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    email: "delete-me@example.test",
+    password: "delete-account-secure-password",
+    organizationId: lifecycleOrg.item.id,
+  }),
+});
+assert.equal(lifecycleLoginResponse.status, 200);
+const lifecycleLogin = await lifecycleLoginResponse.json();
+const lifecycleCookies = lifecycleLoginResponse.headers
+  .getSetCookie()
+  .map((value) => value.split(";")[0])
+  .join("; ");
+
+const soleOwnerAccountDelete = await fetch(base + "/api/auth/account", {
+  method: "DELETE",
+  headers: {
+    Cookie: lifecycleCookies,
+    "Content-Type": "application/json",
+    "X-CSRF-Token": lifecycleLogin.csrfToken,
+  },
+  body: JSON.stringify({
+    password: "delete-account-secure-password",
+    confirmEmail: "delete-me@example.test",
+  }),
+});
+assert.equal(soleOwnerAccountDelete.status, 409);
+const soleOwnerAccountDeleteBody = await soleOwnerAccountDelete.json();
+assert.equal(
+  soleOwnerAccountDeleteBody.error,
+  "owned_workspace_requires_transfer_or_delete",
+);
+assert.ok(
+  soleOwnerAccountDeleteBody.workspaces.some(
+    (workspace) => workspace.id === lifecycleOrg.item.id,
+  ),
+);
+
+const lifecycleSecondOwner = await jsonFetch("/api/members", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    email: "owner@example.test",
+    role: "owner",
+    organizationId: lifecycleOrg.item.id,
+  }),
+});
+assert.equal(lifecycleSecondOwner.item.role, "owner");
+
+const accountDeleteWrongEmail = await fetch(base + "/api/auth/account", {
+  method: "DELETE",
+  headers: {
+    Cookie: lifecycleCookies,
+    "Content-Type": "application/json",
+    "X-CSRF-Token": lifecycleLogin.csrfToken,
+  },
+  body: JSON.stringify({
+    password: "delete-account-secure-password",
+    confirmEmail: "wrong@example.test",
+  }),
+});
+assert.equal(accountDeleteWrongEmail.status, 400);
+assert.equal(
+  (await accountDeleteWrongEmail.json()).error,
+  "account_confirmation_mismatch",
+);
+
+const accountDeleteResponse = await fetch(base + "/api/auth/account", {
+  method: "DELETE",
+  headers: {
+    Cookie: lifecycleCookies,
+    "Content-Type": "application/json",
+    "X-CSRF-Token": lifecycleLogin.csrfToken,
+  },
+  body: JSON.stringify({
+    password: "delete-account-secure-password",
+    confirmEmail: "delete-me@example.test",
+  }),
+});
+assert.equal(accountDeleteResponse.status, 200);
+assert.equal((await accountDeleteResponse.json()).signedOut, true);
+
+const deletedAccountSession = await fetch(base + "/api/auth/me", {
+  headers: { Cookie: lifecycleCookies },
+});
+assert.equal(deletedAccountSession.status, 401);
+
+const deletedAccountLogin = await fetch(base + "/api/auth/login", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    email: "delete-me@example.test",
+    password: "delete-account-secure-password",
+  }),
+});
+assert.equal(deletedAccountLogin.status, 401);
 
 const browserLogoutResponse = await fetch(base + "/api/auth/logout", {
   method: "POST",
