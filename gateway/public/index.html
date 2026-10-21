@@ -450,6 +450,7 @@ async function loadRelayRegions(){
   const canChoose=currentIdentity?.authKind==="session"&&currentIdentity?.role==="owner"&&regions.enabled;
   $("relayRegionControls").classList.toggle("hidden",!canChoose);
   $("relayRegionHint").classList.toggle("hidden",!canChoose);
+  if(currentIdentity?.authKind==="session"&&currentIdentity?.role==="owner")$("deleteWorkspaceName").placeholder=workspace.item.name;
   if(!canChoose)return;
   $("relayRegion").innerHTML='<option value="">Automatic</option>'+regions.items.map(x=>'<option value="'+escapeHtml(x.region)+'">'+escapeHtml(x.region)+' · '+escapeHtml(x.nodes)+' node'+(x.nodes===1?'':'s')+'</option>').join("");
   $("relayRegion").value=workspace.item.relay_region||"";
