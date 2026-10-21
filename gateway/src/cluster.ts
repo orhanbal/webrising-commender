@@ -389,6 +389,87 @@ export class DeviceRouter {
     return websocketUrl(node.public_url);
   }
 
+  async assignDeviceRelay(
+    organizationId: string,
+    deviceId: string,
+    relayNodeId: string,
+  ) {
+    if (!this.isRegional()) {
+      throw Object.assign(new Error("regional_mode_required"), { status: 400 });
+    }
+    const node = await this.enrollmentNode(relayNodeId);
+    if (!node) {
+      throw Object.assign(new Error("relay_not_accepting_enrollments"), { status: 409 });
+    }
+
+    const client = await db.connect();
+    let previousRelayNodeId: string | null = null;
+    let previousConnectedNodeId: string | null = null;
+    try {
+      await client.query("begin");
+      const device = await client.query<{
+        relay_node_id: string | null;
+        connected_node_id: string | null;
+      }>(
+        `select relay_node_id,connected_node_id
+           from devices
+          where id=$1
+            and organization_id=$2
+            and revoked_at is null
+          for update`,
+        [deviceId, organizationId],
+      );
+      if (!device.rows[0]) {
+        await client.query("rollback");
+        throw Object.assign(new Error("device_not_found"), { status: 404 });
+      }
+      previousRelayNodeId = device.rows[0].relay_node_id;
+      previousConnectedNodeId = device.rows[0].connected_node_id;
+      await client.query(
+        "update devices set relay_node_id=$3 where id=$1 and organization_id=$2",
+        [deviceId, organizationId, relayNodeId],
+      );
+      await client.query("commit");
+    } catch (error) {
+      try {
+        await client.query("rollback");
+      } catch {}
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    const disconnected = previousConnectedNodeId ? await this.disconnect(deviceId) : false;
+    return {
+      organizationId,
+      deviceId,
+      previousRelayNodeId,
+      relayNodeId,
+      previousConnectedNodeId,
+      disconnected,
+      reconnectRequired: Boolean(previousConnectedNodeId),
+    };
+  }
+
+  async setRelayDraining(relayNodeId: string, draining: boolean) {
+    if (!this.isRegional()) {
+      throw Object.assign(new Error("regional_mode_required"), { status: 400 });
+    }
+    const updated = await db.query(
+      `update relay_nodes
+          set draining_at=case
+                when $2::boolean then coalesce(draining_at,now())
+                else null
+              end,
+              updated_at=now()
+        where id=$1
+        returning id,region,public_url,internal_url,last_seen_at,draining_at,disabled_at`,
+      [relayNodeId, draining],
+    );
+    if (!updated.rows[0]) throw Object.assign(new Error("relay_not_found"), { status: 404 });
+    return updated.rows[0];
+  }
+
   private sign(method: string, path: string, body: unknown) {
     if (!this.isRegional() || !this.clusterSecret || !this.nodeId) {
       throw new Error("regional_mode_required");
@@ -561,7 +642,8 @@ export class DeviceRouter {
   async nodes() {
     if (!this.isRegional()) return [];
     const result = await db.query(
-      `select n.id,n.instance_id,n.region,n.internal_url,n.public_url,n.last_seen_at,n.disabled_at,
+      `select n.id,n.instance_id,n.region,n.internal_url,n.public_url,n.last_seen_at,
+              n.draining_at,n.disabled_at,
               (n.disabled_at is null and n.last_seen_at>now()-($1::int*interval '1 second')) as healthy,
               count(distinct a.organization_id)::int as organizations,
               count(distinct d.id) filter (where d.connected_node_id=n.id)::int as connected_devices
@@ -605,7 +687,7 @@ export class DeviceRouter {
       `select 1 from devices
         where id=$1
           and organization_id=$2
-          and relay_node_id=$3`,
+          and connected_node_id=$3`,
       [body.deviceId, body.organizationId, this.nodeId],
     );
     if (!device.rowCount) throw Object.assign(new Error("device_not_local"), { status: 409 });
