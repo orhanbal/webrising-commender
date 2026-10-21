@@ -271,3 +271,44 @@ Password reset uses the same local outbox. Reset requests return the same generi
 Global-control operations can inspect delivery metadata only with `GET /api/admin/mail/outbox`; recipients, subjects and bodies are never returned. Failed dead-letter rows can be requeued with `POST /api/admin/mail/outbox/:id/retry`.
 
 **Backup note:** `MAIL_OUTBOX_KEY` is intentionally not stored in PostgreSQL. A database restore containing unsent outbox rows requires the same key. Store it in your normal secret backup process. Changing the key while rows are pending makes those encrypted payloads unreadable.
+
+
+## Regional relay deployment
+
+Regional relays are optional. Leave `REGIONAL_RELAY_ENABLED=false` for a normal self-hosted single-gateway installation.
+
+For a clustered control node:
+
+```env
+REGIONAL_RELAY_ENABLED=true
+CLUSTER_NODE_ID=control-1
+RELAY_CLUSTER_SECRET=<at least 32 random characters>
+```
+
+The control node does not need `RELAY_PUBLIC_WS_URL` or `RELAY_INTERNAL_BASE_URL`.
+
+Each relay node runs the same gateway build against the same private PostgreSQL control-plane database and additionally sets:
+
+```env
+REGIONAL_RELAY_ENABLED=true
+CLUSTER_NODE_ID=relay-eu-1
+RELAY_CLUSTER_SECRET=<same cluster secret>
+RELAY_REGION=eu-central
+RELAY_PUBLIC_WS_URL=wss://relay-eu-1.example.com/agent
+RELAY_INTERNAL_BASE_URL=https://10.0.20.11:8787
+RELAY_MAX_DEVICES=10000
+```
+
+Production requirements:
+- `RELAY_PUBLIC_WS_URL` uses WSS.
+- `RELAY_INTERNAL_BASE_URL` uses HTTPS on a private network/VPN.
+- PostgreSQL is private and reachable only by trusted Commender control/relay nodes.
+- `RELAY_CLUSTER_SECRET` is distributed through your own secret-management process and is not stored in PostgreSQL.
+- public reverse proxies must preserve WebSocket upgrade support on `/agent`.
+- internal relay HTTP endpoints should not be internet-routable even though they also require HMAC.
+
+Relay nodes self-register/heartbeat. Global control can inspect them with `GET /api/admin/relays` or through **Access → Regional relay nodes**. A node can be drained or disabled there.
+
+Workspace owners can choose a best-effort preferred region under **Access → Workspace**. If that region is unavailable, Commender automatically falls back to another healthy region.
+
+Agents do not require re-enrollment during relay failover. The durable `controlUrl` is used to refresh `gatewayWsUrl` after a disconnect.
