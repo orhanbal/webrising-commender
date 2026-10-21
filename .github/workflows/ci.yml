@@ -81,6 +81,15 @@ jobs:
       HOST: 127.0.0.1
       PORT: 8787
       DEPLOYMENT_MODE: saas
+      CLUSTER_MODE: regional
+      GATEWAY_NODE_ID: ci-node-a
+      GATEWAY_REGION: ci-region-a
+      GATEWAY_INTERNAL_URL: http://127.0.0.1:8787
+      GATEWAY_PUBLIC_URL: http://127.0.0.1:8787
+      CLUSTER_SHARED_SECRET: ci-cluster-secret-0123456789-0123456789
+      CLUSTER_HEARTBEAT_SECONDS: 1
+      CLUSTER_NODE_STALE_SECONDS: 4
+      CLUSTER_INTERNAL_TIMEOUT_MS: 10000
       PUBLIC_SIGNUP_ENABLED: true
       SMTP_HOST: 127.0.0.1
       SMTP_PORT: 2525
@@ -123,12 +132,33 @@ jobs:
           done
           cat /tmp/commender-gateway.log
           exit 1
+      - name: Start second regional relay node
+        run: |
+          PORT=8788 \
+          PUBLIC_BASE_URL=http://127.0.0.1:8788 \
+          GATEWAY_NODE_ID=ci-node-b \
+          GATEWAY_REGION=ci-region-b \
+          GATEWAY_INTERNAL_URL=http://127.0.0.1:8788 \
+          GATEWAY_PUBLIC_URL=http://127.0.0.1:8788 \
+          PUBLIC_SIGNUP_ENABLED=false \
+          SMTP_HOST= \
+          node dist/index.js > /tmp/commender-gateway-b.log 2>&1 &
+          echo $! > /tmp/commender-gateway-b.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8788/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/commender-gateway-b.log
+          exit 1
       - name: Run integration acceptance
         run: npm run integration
       - name: Print gateway and SMTP logs on failure
         if: failure()
         run: |
           cat /tmp/commender-gateway.log || true
+          cat /tmp/commender-gateway-b.log || true
           cat /tmp/commender-smtp-server.log || true
           cat /tmp/commender-smtp.jsonl || true
 
