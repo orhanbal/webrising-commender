@@ -48,12 +48,17 @@ function normalizedBaseUrl(name: string, value: string) {
 }
 
 function canonical(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (value === null) return "null";
+  if (typeof value !== "object") {
+    const encoded = JSON.stringify(value);
+    return encoded === undefined ? "null" : encoded;
+  }
   if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
   const object = value as Record<string, unknown>;
   return (
     "{" +
     Object.keys(object)
+      .filter((key) => object[key] !== undefined)
       .sort()
       .map((key) => JSON.stringify(key) + ":" + canonical(object[key]))
       .join(",") +
