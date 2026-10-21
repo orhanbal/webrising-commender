@@ -104,6 +104,7 @@ const publicConfig = await jsonFetch("/api/public/config");
 assert.equal(publicConfig.deploymentMode, "saas");
 assert.equal(publicConfig.signupEnabled, true);
 assert.equal(publicConfig.passwordResetEnabled, true);
+assert.equal(publicConfig.mailEnabled, true);
 
 const standardPlan = await jsonFetch("/api/admin/billing/plans", {
   method: "POST",
@@ -703,6 +704,26 @@ assert.equal(memberInvitation.emailQueued, true);
 const invitationMail = await waitForMail(/To: member@example\.test[\s\S]*#invite=wrci_/);
 assert.ok(invitationMail.data.includes(memberInvitation.inviteToken));
 assert.ok(invitationMail.data.includes("CI Tenant"));
+
+const invitationOutboxMetadata = await acceptanceDb.query(
+  `select organization_id,kind,payload_ciphertext
+     from mail_outbox
+    where kind='invitation'
+    order by id desc
+    limit 1`,
+);
+assert.equal(invitationOutboxMetadata.rowCount, 1);
+assert.equal(
+  invitationOutboxMetadata.rows[0].organization_id,
+  tenantOrg.item.id,
+);
+assert.equal(invitationOutboxMetadata.rows[0].kind, "invitation");
+assert.equal(
+  invitationOutboxMetadata.rows[0].payload_ciphertext.includes(
+    memberInvitation.inviteToken,
+  ),
+  false,
+);
 
 const invitationPreviewResponse = await fetch(base + "/api/invitations/preview", {
   method: "POST",
@@ -1414,6 +1435,8 @@ const pastDueToken = await fetch(base + "/api/tokens", {
 assert.equal(pastDueToken.status, 402);
 assert.equal((await pastDueToken.json()).error, "billing_required");
 
+await assignSubscription(browserWorkspace.item.id);
+
 const switchToDisposableWorkspace = await fetch(
   base + "/api/auth/switch-organization",
   {
@@ -1427,6 +1450,29 @@ const switchToDisposableWorkspace = await fetch(
   },
 );
 assert.equal(switchToDisposableWorkspace.status, 200);
+
+const disposableInvitationResponse = await fetch(base + "/api/invitations", {
+  method: "POST",
+  headers: {
+    Cookie: browserCookies,
+    "Content-Type": "application/json",
+    "X-CSRF-Token": browserLogin.csrfToken,
+  },
+  body: JSON.stringify({
+    email: "workspace-delete-mail@example.test",
+    role: "viewer",
+    ttlHours: 24,
+    sendEmail: true,
+  }),
+});
+assert.equal(disposableInvitationResponse.status, 201);
+assert.equal((await disposableInvitationResponse.json()).emailQueued, true);
+
+const disposableOutboxBeforeDelete = await acceptanceDb.query(
+  "select count(*)::int as count from mail_outbox where organization_id=$1",
+  [browserWorkspace.item.id],
+);
+assert.ok(disposableOutboxBeforeDelete.rows[0].count >= 1);
 
 const deleteWorkspaceWrongName = await fetch(base + "/api/organization", {
   method: "DELETE",
@@ -1502,6 +1548,12 @@ assert.equal(
   ),
   false,
 );
+
+const disposableOutboxAfterDelete = await acceptanceDb.query(
+  "select count(*)::int as count from mail_outbox where organization_id=$1",
+  [browserWorkspace.item.id],
+);
+assert.equal(disposableOutboxAfterDelete.rows[0].count, 0);
 
 const lifecycleOrg = await jsonFetch("/api/organizations", {
   method: "POST",
@@ -1620,6 +1672,16 @@ const deletedAccountLogin = await fetch(base + "/api/auth/login", {
   }),
 });
 assert.equal(deletedAccountLogin.status, 401);
+
+const accountDeleteAudit = await acceptanceDb.query(
+  `select count(*)::int as count
+     from audit_logs
+    where actor=$1
+      and tool='auth.account_delete'
+      and outcome='success'`,
+  [`user:${lifecycleUser.item.id}`],
+);
+assert.ok(accountDeleteAudit.rows[0].count >= 1);
 
 const browserLogoutResponse = await fetch(base + "/api/auth/logout", {
   method: "POST",
