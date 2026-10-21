@@ -257,6 +257,7 @@ const server = http.createServer(async (req, res) => {
           publicSignupEnabled() &&
           mailConfigured(),
         passwordResetEnabled: mailConfigured(),
+        regionalRelayEnabled: regionalRelayEnabled(),
       });
     }
 
@@ -1269,6 +1270,16 @@ const server = http.createServer(async (req, res) => {
         organizationId: body.organizationId,
         role: membership.rows[0].role,
       });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/organization") {
+      if (!requireRole(principal!, "viewer", res)) return;
+      const result = await db.query(
+        "select id,name,relay_region,created_at from organizations where id=$1",
+        [principal!.organizationId],
+      );
+      if (!result.rows[0]) return void json(res, 404, { error: "organization_not_found" });
+      return void json(res, 200, { item: result.rows[0] });
     }
 
     if (req.method === "PATCH" && url.pathname === "/api/organization") {
