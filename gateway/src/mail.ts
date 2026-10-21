@@ -113,19 +113,22 @@ function decryptPayload(row: {
 export async function enqueueMail(
   payload: MailPayload,
   queryable: Queryable = db,
+  metadata: { organizationId?: string | null; kind?: string } = {},
 ) {
   const encrypted = encryptPayload(payload);
   const result = await queryable.query(
     `insert into mail_outbox(
-       recipient_hash,payload_nonce,payload_ciphertext,payload_tag
+       recipient_hash,payload_nonce,payload_ciphertext,payload_tag,organization_id,kind
      )
-     values($1,$2,$3,$4)
+     values($1,$2,$3,$4,$5,$6)
      returning id,created_at`,
     [
       sha256(payload.to.trim().toLowerCase()),
       encrypted.nonce,
       encrypted.ciphertext,
       encrypted.tag,
+      metadata.organizationId ?? null,
+      metadata.kind ?? "generic",
     ],
   );
   return result.rows[0];
