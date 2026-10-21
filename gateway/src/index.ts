@@ -255,6 +255,118 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (
+      req.method === "POST" &&
+      (url.pathname === "/internal/relay/request" ||
+        url.pathname === "/internal/relay/disconnect")
+    ) {
+      if (!currentNodeIsRelay() || !currentNodeId()) {
+        return void json(res, 404, { error: "relay_endpoint_unavailable" });
+      }
+
+      const rawBody = await readBody(req);
+      if (!verifyRelayRequest(req.method, url.pathname, req.headers, rawBody)) {
+        return void json(res, 401, { error: "invalid_relay_signature" });
+      }
+
+      const parsed = rawBody.length
+        ? JSON.parse(rawBody.toString("utf8"))
+        : {};
+
+      if (url.pathname === "/internal/relay/request") {
+        const body = z.object({
+          deviceId: z.string().uuid(),
+          action: z.unknown(),
+          approvalToken: z.string().nullable().optional(),
+        }).parse(parsed);
+        const action = parseAgentAction(body.action);
+        const device = await db.query(
+          `select 1
+             from devices
+            where id=$1
+              and connected_relay_id=$2
+              and revoked_at is null
+            limit 1`,
+          [body.deviceId, currentNodeId()],
+        );
+        if (!device.rowCount || !hub.isOnline(body.deviceId)) {
+          return void json(res, 409, { ok: false, error: "device-offline" });
+        }
+
+        try {
+          const data = await hub.request(
+            body.deviceId,
+            action,
+            body.approvalToken,
+          );
+          return void json(res, 200, { ok: true, data });
+        } catch (error) {
+          return void json(res, 502, {
+            ok: false,
+            error: redact(error instanceof Error ? error.message : error),
+          });
+        }
+      }
+
+      const body = z.object({
+        deviceId: z.string().uuid(),
+      }).parse(parsed);
+      const device = await db.query(
+        `select 1
+           from devices
+          where id=$1
+            and connected_relay_id=$2
+            and revoked_at is null
+          limit 1`,
+        [body.deviceId, currentNodeId()],
+      );
+      if (!device.rowCount) {
+        return void json(res, 200, { ok: true, disconnected: false });
+      }
+      return void json(res, 200, {
+        ok: true,
+        disconnected: hub.disconnect(body.deviceId),
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/agent/route") {
+      const device = await authenticateDeviceRequest(req);
+      if (!device) return void json(res, 401, { error: "unauthorized" });
+
+      if (!regionalRelayEnabled()) {
+        return void json(res, 200, {
+          deviceId: device.deviceId,
+          gatewayWsUrl:
+            publicBaseUrl.replace(/^http:/, "ws:").replace(/^https:/, "wss:") +
+            "/agent",
+          relayId: null,
+          region: null,
+        });
+      }
+
+      const client = await db.connect();
+      try {
+        await client.query("begin");
+        const relay = await assignRelayForDevice(device.deviceId, client);
+        if (!relay) {
+          await client.query("rollback");
+          return void json(res, 503, { error: "relay_unavailable" });
+        }
+        await client.query("commit");
+        return void json(res, 200, {
+          deviceId: device.deviceId,
+          gatewayWsUrl: relay.publicWsUrl,
+          relayId: relay.id,
+          region: relay.region,
+        });
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+
     if (req.method === "POST" && url.pathname === "/api/auth/login") {
       const body = z.object({
         email: z.string().trim().email().max(320),
