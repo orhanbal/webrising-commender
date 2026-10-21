@@ -49,6 +49,7 @@ if (gatewayRole === "relay" && !router.isRegional()) {
   throw new Error("GATEWAY_ROLE=relay requires CLUSTER_MODE=regional");
 }
 const enrollRateLimit = new FixedWindowRateLimiter();
+const agentResolveRateLimit = new FixedWindowRateLimiter();
 const pairingRateLimit = new FixedWindowRateLimiter();
 const loginIpRateLimit = new FixedWindowRateLimiter();
 const loginAccountRateLimit = new FixedWindowRateLimiter();
@@ -996,6 +997,30 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    if (req.method === "POST" && url.pathname === "/api/agent/resolve") {
+      const rate = agentResolveRateLimit.hit(remoteKey(req), 240, 10 * 60_000);
+      if (!rate.allowed) {
+        res.setHeader("Retry-After", String(rate.retryAfterSeconds));
+        return void json(res, 429, { error: "rate_limited" });
+      }
+
+      const body = z.object({ deviceId: z.string().uuid() }).parse(await readJson(req));
+      const authorization = req.headers.authorization || "";
+      const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+      if (!token) return void json(res, 401, { error: "unauthorized" });
+
+      const device = await db.query<{ token_hash: string }>(
+        "select token_hash from devices where id=$1 and revoked_at is null",
+        [body.deviceId],
+      );
+      if (!device.rows[0] || device.rows[0].token_hash !== sha256(token)) {
+        return void json(res, 401, { error: "unauthorized" });
+      }
+
+      const gatewayWsUrl = await router.resolveDeviceWsUrl(body.deviceId);
+      return void json(res, 200, { gatewayWsUrl });
+    }
+
     if (req.method === "POST" && url.pathname === "/internal/cluster/device/request") {
       const body = z.object({
         organizationId: z.string().uuid(),
@@ -1212,6 +1237,48 @@ const server = http.createServer(async (req, res) => {
         localNodeId: router.nodeId,
         items: await router.nodes(),
       });
+    }
+
+    const relayStateMatch = url.pathname.match(
+      /^\/api\/admin\/relays\/([A-Za-z0-9][A-Za-z0-9_-]{0,63})\/(drain|resume)$/,
+    );
+    if (req.method === "POST" && relayStateMatch) {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const relayNodeId = relayStateMatch[1]!;
+      const draining = relayStateMatch[2] === "drain";
+      const item = await router.setRelayDraining(relayNodeId, draining);
+      return void json(res, 200, { ok: true, item });
+    }
+
+    const deviceRelayMatch = url.pathname.match(
+      /^\/api\/admin\/devices\/([0-9a-f-]{36})\/relay$/i,
+    );
+    if (req.method === "PUT" && deviceRelayMatch) {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const deviceId = deviceRelayMatch[1]!;
+      const body = z.object({
+        relayNodeId: z.string().trim().min(1).max(64),
+      }).parse(await readJson(req));
+      const device = await db.query<{ organization_id: string }>(
+        "select organization_id from devices where id=$1 and revoked_at is null",
+        [deviceId],
+      );
+      if (!device.rows[0]) return void json(res, 404, { error: "device_not_found" });
+      const result = await router.assignDeviceRelay(
+        device.rows[0].organization_id,
+        deviceId,
+        body.relayNodeId,
+      );
+      await auditForOrganization(
+        principal!,
+        device.rows[0].organization_id,
+        deviceId,
+        "relay.device_assign",
+        "high",
+        "success",
+        JSON.stringify(result),
+      );
+      return void json(res, 200, result);
     }
 
     const organizationRelayMatch = url.pathname.match(
