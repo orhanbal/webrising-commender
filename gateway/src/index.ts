@@ -1849,7 +1849,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         ? Math.min(500, Math.max(1, Math.floor(requestedLimit)))
         : 100;
       const result = await db.query(
-        `select id::text,attempts,next_attempt_at,sent_at,failed_at,last_error,created_at
+        `select id::text,organization_id,kind,attempts,next_attempt_at,sent_at,failed_at,last_error,created_at
            from mail_outbox
           order by created_at desc
           limit $1`,
@@ -2366,6 +2366,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
                 `The invitation expires in ${body.ttlHours} hour(s). If you were not expecting this invitation, ignore this message.`,
             },
             client,
+            { organizationId, kind: "invitation" },
           );
         }
         await client.query("commit");
