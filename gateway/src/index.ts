@@ -41,6 +41,13 @@ const publicBaseUrl = String(process.env.PUBLIC_BASE_URL || `http://localhost:${
 const bodyLimit = 2 * 1024 * 1024;
 const hub = new AgentHub();
 const router = new DeviceRouter(hub, publicBaseUrl);
+const gatewayRole = String(process.env.GATEWAY_ROLE || "hybrid").trim().toLowerCase();
+if (!["hybrid", "relay"].includes(gatewayRole)) {
+  throw new Error("GATEWAY_ROLE must be hybrid or relay");
+}
+if (gatewayRole === "relay" && !router.isRegional()) {
+  throw new Error("GATEWAY_ROLE=relay requires CLUSTER_MODE=regional");
+}
 const enrollRateLimit = new FixedWindowRateLimiter();
 const pairingRateLimit = new FixedWindowRateLimiter();
 const loginIpRateLimit = new FixedWindowRateLimiter();
@@ -61,7 +68,7 @@ const trustProxyHeaders = /^(1|true|yes)$/i.test(String(process.env.TRUST_PROXY_
 await migrate();
 await housekeeping();
 await router.start();
-startMailWorker();
+if (gatewayRole !== "relay") startMailWorker();
 
 const housekeepingTimer = setInterval(() => {
   void housekeeping().catch((error) => {
@@ -196,8 +203,15 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", publicBaseUrl);
 
-    if (req.method === "GET" && url.pathname === "/") return void (await serveConsole(res));
-    if (req.method === "GET" && url.pathname === "/health/live") return void json(res, 200, { status: "ok", service: "commender-gateway" });
+    if (req.method === "GET" && url.pathname === "/health/live") {
+      return void json(res, 200, {
+        status: "ok",
+        service: "commender-gateway",
+        role: gatewayRole,
+        clusterMode: router.mode,
+        nodeId: router.nodeId,
+      });
+    }
     if (req.method === "GET" && url.pathname === "/health") {
       const databaseReady = await ready();
       return void json(res, databaseReady ? 200 : 503, {
@@ -205,6 +219,12 @@ const server = http.createServer(async (req, res) => {
         database: databaseReady ? "ok" : "error",
       });
     }
+
+    if (gatewayRole === "relay" && !url.pathname.startsWith("/internal/cluster/")) {
+      return void json(res, 404, { error: "not_found" });
+    }
+
+    if (req.method === "GET" && url.pathname === "/") return void (await serveConsole(res));
 
     if (req.method === "GET" && url.pathname === "/api/public/config") {
       return void json(res, 200, {
@@ -2312,7 +2332,9 @@ server.on("upgrade", async (req, socket, head) => {
 });
 
 server.listen(port, host, () => {
-  process.stdout.write(`WebRising Commender gateway listening on ${host}:${port}\n`);
+  process.stdout.write(
+    `WebRising Commender gateway listening on ${host}:${port} role=${gatewayRole} cluster=${router.mode}\n`,
+  );
 });
 
 async function shutdown() {
