@@ -1088,15 +1088,33 @@ const server = http.createServer(async (req, res) => {
           "insert into devices(id,organization_id,name,hostname,platform,token_hash) values($1,$2,$3,$4,$5,$6)",
           [deviceId, code.organization_id, body.name || body.hostname || "Unnamed device", body.hostname, body.platform, sha256(token)],
         );
+
+        let wsUrl =
+          publicBaseUrl.replace(/^http:/, "ws:").replace(/^https:/, "wss:") +
+          "/agent";
+        let relayId: string | null = null;
+        let relayRegion: string | null = null;
+        if (regionalRelayEnabled()) {
+          const relay = await assignRelayForDevice(deviceId, client);
+          if (!relay) {
+            await client.query("rollback");
+            return void json(res, 503, { error: "relay_unavailable" });
+          }
+          wsUrl = relay.publicWsUrl;
+          relayId = relay.id;
+          relayRegion = relay.region;
+        }
+
         await client.query("update pairing_codes set used_at=now() where id=$1", [code.id]);
         await client.query("commit");
 
-        const wsUrl = publicBaseUrl.replace(/^http:/, "ws:").replace(/^https:/, "wss:") + "/agent";
         return void json(res, 201, {
           deviceId,
           deviceToken: token,
           approvalKey: deviceApprovalKeyForAgent(deviceId),
           gatewayWsUrl: wsUrl,
+          relayId,
+          relayRegion,
         });
       } catch (error) {
         await client.query("rollback");
