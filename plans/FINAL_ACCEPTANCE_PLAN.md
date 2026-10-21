@@ -33,10 +33,13 @@ This is the canonical closure plan for v1.0 acceptance. Update this file after e
   - [ ] Run production acceptance probe.
 
 - [ ] **3. Production backup/restore acceptance**
-  - Produce a real PostgreSQL backup.
-  - Validate checksum/manifest.
-  - Run controlled destructive restore acceptance.
-  - Confirm API/data after restore.
+  - [x] Backup/restore scripts support selecting a production Compose file/project via `COMMANDER_COMPOSE_FILE` / `COMMANDER_COMPOSE_PROJECT`.
+  - [x] Restart soak runner supports the same production Compose selection.
+  - [x] Backup archive checksum/manifest and destructive restore round-trip are already covered in CI.
+  - [ ] BLOCKED until Step 2 deployment exists: produce a real production backup.
+  - [ ] Validate production checksum/manifest.
+  - [ ] Run controlled destructive production restore acceptance.
+  - [ ] Confirm API/data after restore.
 
 - [ ] **4. Real Windows acceptance**
   - Enroll a real Windows machine.
@@ -66,6 +69,11 @@ This is the canonical closure plan for v1.0 acceptance. Update this file after e
   - If no macOS machine is available, record as an external platform blocker rather than blocking the usable Windows/server v1.
 
 - [ ] **9. Final security and operations audit**
+  - [x] Audit pass identified and fixed: strict PUBLIC_BASE_URL origin validation.
+  - [x] Audit pass identified and fixed: relay RPC redirects disabled and timeout parsing bounded.
+  - [x] Audit pass identified and fixed: non-loopback plaintext SMTP rejected by default.
+  - [x] Audit pass identified and fixed: query limit parsing cannot inject NaN into SQL limits.
+  - [x] Base Compose now passes TRUST_PROXY_HEADERS and explicit SMTP transport policy.
   - Review exposed endpoints, auth boundaries, relay HMAC/TLS, secrets and logs.
   - Verify backup/restore docs and install/uninstall docs.
   - Verify no paid/third-party runtime dependency entered the product.
