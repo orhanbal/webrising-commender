@@ -132,7 +132,7 @@ Windows service, systemd, Docker images, release artifacts.
 ### Phase 7 — SaaS
 Real user auth, organizations, RBAC, plans/billing, regional relays. This phase must not weaken self-hosted mode.
 
-Current milestone: organization-scoped browser users, hardened sessions, email-verified public signup/password reset through the built-in SMTP/outbox layer, workspace onboarding/access, provider-neutral billing plans/subscriptions, transactional resource entitlements, idempotent normalized billing events, provider identity binding and stale/out-of-order event protection are implemented. Provider-specific checkout + signed webhook adapters and regional relay orchestration remain.
+Current milestone: organization-scoped browser users, hardened sessions, email-verified public signup/password reset through the built-in SMTP/outbox layer, workspace onboarding/access, provider-neutral billing plans/subscriptions, transactional resource entitlements, idempotent normalized billing events, provider identity binding/stale-event protection, and first-party regional relay orchestration with agent route refresh/failover are implemented. Third-party checkout/webhook adapters are not a required runtime component and are intentionally excluded while the no-third-party rule is active.
 
 ## 7. Definition of done
 
