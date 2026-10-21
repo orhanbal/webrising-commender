@@ -27,18 +27,29 @@ import {
   type AllocationResource,
 } from "./billing.js";
 import { db, housekeeping, migrate, ready } from "./db.js";
+import { DeviceRouter } from "./device-router.js";
 import { enqueueMail, mailConfigured, publicSignupEnabled, startMailWorker } from "./mail.js";
 import { handleMcp } from "./mcp.js";
 import { actionRisk, parseAgentAction } from "./protocol.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { AgentHub } from "./relay.js";
+import {
+  assignRelayForDevice,
+  currentNodeId,
+  currentNodeIsRelay,
+  heartbeatRelayNode,
+  regionalRelayEnabled,
+  startRelayHeartbeat,
+  verifyRelayRequest,
+} from "./relay-cluster.js";
 import { deviceApprovalKeyForAgent, issueApproval, randomToken, redact, sha256 } from "./security.js";
 
 const host = process.env.HOST || "0.0.0.0";
 const port = Number(process.env.PORT || 8787);
 const publicBaseUrl = String(process.env.PUBLIC_BASE_URL || `http://localhost:${port}`).replace(/\/$/, "");
 const bodyLimit = 2 * 1024 * 1024;
-const hub = new AgentHub();
+const hub = new AgentHub(currentNodeId());
+const deviceRouter = new DeviceRouter(hub);
 const enrollRateLimit = new FixedWindowRateLimiter();
 const pairingRateLimit = new FixedWindowRateLimiter();
 const loginIpRateLimit = new FixedWindowRateLimiter();
@@ -58,6 +69,8 @@ const trustProxyHeaders = /^(1|true|yes)$/i.test(String(process.env.TRUST_PROXY_
 
 await migrate();
 await housekeeping();
+await heartbeatRelayNode();
+startRelayHeartbeat();
 startMailWorker();
 
 const housekeepingTimer = setInterval(() => {
@@ -87,7 +100,7 @@ function json(res: ServerResponse, status: number, value: unknown) {
   res.end(body);
 }
 
-async function readJson(req: IncomingMessage) {
+async function readBody(req: IncomingMessage) {
   const chunks: Buffer[] = [];
   let total = 0;
   for await (const raw of req) {
@@ -96,8 +109,36 @@ async function readJson(req: IncomingMessage) {
     if (total > bodyLimit) throw Object.assign(new Error("body-too-large"), { status: 413 });
     chunks.push(chunk);
   }
-  if (total === 0) return {};
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  return Buffer.concat(chunks);
+}
+
+async function readJson(req: IncomingMessage) {
+  const body = await readBody(req);
+  if (body.length === 0) return {};
+  return JSON.parse(body.toString("utf8"));
+}
+
+async function authenticateDeviceRequest(req: IncomingMessage) {
+  const deviceId = String(req.headers["x-device-id"] || "");
+  const authorization = req.headers.authorization || "";
+  const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+  if (!deviceId || !token) return null;
+
+  const result = await db.query<{
+    id: string;
+    organization_id: string;
+    token_hash: string;
+  }>(
+    `select id,organization_id,token_hash
+       from devices
+      where id=$1
+        and revoked_at is null
+      limit 1`,
+    [deviceId],
+  );
+  const row = result.rows[0];
+  if (!row || row.token_hash !== sha256(token)) return null;
+  return { deviceId: row.id, organizationId: row.organization_id };
 }
 
 function remoteKey(req: IncomingMessage) {
