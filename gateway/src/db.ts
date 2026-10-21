@@ -172,21 +172,15 @@ export async function migrate() {
     alter table devices add column if not exists connected_relay_id text;
     alter table devices add column if not exists relay_last_seen_at timestamptz;
 
-    do $
-    begin
-      alter table devices
-        add constraint devices_assigned_relay_fk
-        foreign key (assigned_relay_id) references relay_nodes(id) on delete set null;
-    exception when duplicate_object then null;
-    end $;
+    alter table devices drop constraint if exists devices_assigned_relay_fk;
+    alter table devices
+      add constraint devices_assigned_relay_fk
+      foreign key (assigned_relay_id) references relay_nodes(id) on delete set null;
 
-    do $
-    begin
-      alter table devices
-        add constraint devices_connected_relay_fk
-        foreign key (connected_relay_id) references relay_nodes(id) on delete set null;
-    exception when duplicate_object then null;
-    end $;
+    alter table devices drop constraint if exists devices_connected_relay_fk;
+    alter table devices
+      add constraint devices_connected_relay_fk
+      foreign key (connected_relay_id) references relay_nodes(id) on delete set null;
 
     create index if not exists devices_assigned_relay_idx
       on devices(assigned_relay_id)
