@@ -444,10 +444,11 @@ export class DeviceRouter {
       organization_id: string;
       relay_node_id: string | null;
       connected_node_id: string | null;
+      revoked_at: string | null;
     }>(
-      `select organization_id,relay_node_id,connected_node_id
+      `select organization_id,relay_node_id,connected_node_id,revoked_at
          from devices
-        where id=$1 and revoked_at is null`,
+        where id=$1`,
       [deviceId],
     );
     return result.rows[0] ?? null;
@@ -458,7 +459,8 @@ export class DeviceRouter {
     if (this.hub.isOnline(deviceId)) return this.hub.request(deviceId, action, approvalToken);
 
     const route = await this.deviceRoute(deviceId);
-    if (!route?.connected_node_id) throw new Error("device-offline");
+    if (!route || route.revoked_at) throw new Error("device-not-found");
+    if (!route.connected_node_id) throw new Error("device-offline");
     if (route.connected_node_id === this.nodeId) throw new Error("device-offline");
 
     const node = await this.healthyNode(route.connected_node_id);
@@ -568,7 +570,6 @@ export class DeviceRouter {
       `select 1 from devices
         where id=$1
           and organization_id=$2
-          and revoked_at is null
           and relay_node_id=$3`,
       [body.deviceId, body.organizationId, this.nodeId],
     );
