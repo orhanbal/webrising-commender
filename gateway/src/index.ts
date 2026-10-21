@@ -1337,7 +1337,12 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "PATCH" && url.pathname === "/api/organization/relay-region") {
       if (!requireRole(principal!, "owner", res)) return;
       const body = z.object({
-        region: z.string().trim().min(1).max(80).nullable(),
+        region: z
+          .string()
+          .trim()
+          .toLowerCase()
+          .regex(/^[a-z0-9][a-z0-9._-]{0,79}$/)
+          .nullable(),
       }).parse(await readJson(req));
 
       const region = body.region?.toLowerCase() ?? null;
