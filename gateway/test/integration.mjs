@@ -207,8 +207,8 @@ const unsignedInternal = await fetch(relayB + "/internal/cluster/device/disconne
 assert.equal(unsignedInternal.status, 401);
 assert.equal((await unsignedInternal.json()).error, "invalid_cluster_signature");
 
-function regionalSocket() {
-  const ws = new WebSocket(remoteEnroll.gatewayWsUrl, {
+function regionalSocket(wsUrl = remoteEnroll.gatewayWsUrl) {
+  const ws = new WebSocket(wsUrl, {
     headers: {
       "x-device-id": remoteEnroll.deviceId,
       Authorization: `Bearer ${remoteEnroll.deviceToken}`,
@@ -357,6 +357,101 @@ await waitFor(async () => {
   const devices = await jsonFetch("/api/devices", { headers: remoteHeaders });
   return devices.items.find((item) => item.id === remoteEnroll.deviceId && item.online) || null;
 }, 10_000, 100);
+
+const resolveBeforeMigration = await jsonFetch("/api/agent/resolve", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${remoteEnroll.deviceToken}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ deviceId: remoteEnroll.deviceId }),
+});
+assert.equal(resolveBeforeMigration.gatewayWsUrl, "ws://127.0.0.1:8788/agent");
+
+const migratedSocketClosed = new Promise((resolve) => remoteSocket.once("close", resolve));
+const migrateDevice = await jsonFetch(
+  `/api/admin/devices/${remoteEnroll.deviceId}/relay`,
+  {
+    method: "PUT",
+    headers: authHeaders,
+    body: JSON.stringify({ relayNodeId: "ci-node-a" }),
+  },
+);
+assert.equal(migrateDevice.previousRelayNodeId, "ci-node-b");
+assert.equal(migrateDevice.relayNodeId, "ci-node-a");
+assert.equal(migrateDevice.reconnectRequired, true);
+assert.equal(migrateDevice.disconnected, true);
+await migratedSocketClosed;
+
+const resolveAfterMigration = await jsonFetch("/api/agent/resolve", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${remoteEnroll.deviceToken}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ deviceId: remoteEnroll.deviceId }),
+});
+assert.equal(resolveAfterMigration.gatewayWsUrl, "ws://127.0.0.1:8787/agent");
+
+remoteSocket = regionalSocket(resolveAfterMigration.gatewayWsUrl);
+await new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error("migrated websocket connect timeout")), 5000);
+  remoteSocket.once("open", () => {
+    clearTimeout(timer);
+    resolve();
+  });
+  remoteSocket.once("error", reject);
+});
+remoteSocket.send(JSON.stringify({
+  type: "hello",
+  deviceId: remoteEnroll.deviceId,
+  hostname: "ci-regional-host",
+  os: "linux",
+  version: "ci-migrated",
+  capabilities: ["system"],
+}));
+
+const migratedReady = await waitFor(async () => {
+  const devices = await jsonFetch("/api/devices", { headers: remoteHeaders });
+  const item = devices.items.find((candidate) => candidate.id === remoteEnroll.deviceId);
+  return item?.online && item.connected_node_id === "ci-node-a" ? item : null;
+}, 10_000, 100);
+assert.equal(migratedReady.relay_node_id, "ci-node-a");
+
+const migratedDirect = await jsonFetch("/api/device/request", {
+  method: "POST",
+  headers: remoteHeaders,
+  body: JSON.stringify({
+    deviceId: remoteEnroll.deviceId,
+    action: { kind: "system_info" },
+  }),
+});
+assert.equal(migratedDirect.data.regional, true);
+
+const drainedNodeA = await jsonFetch("/api/admin/relays/ci-node-a/drain", {
+  method: "POST",
+  headers: authHeaders,
+  body: "{}",
+});
+assert.ok(drainedNodeA.item.draining_at);
+
+const pairingWhileDraining = await fetch(base + "/api/pairing", {
+  method: "POST",
+  headers: remoteHeaders,
+  body: "{}",
+});
+assert.equal(pairingWhileDraining.status, 409);
+assert.equal(
+  (await pairingWhileDraining.json()).error,
+  "relay_not_accepting_enrollments",
+);
+
+const resumedNodeA = await jsonFetch("/api/admin/relays/ci-node-a/resume", {
+  method: "POST",
+  headers: authHeaders,
+  body: "{}",
+});
+assert.equal(resumedNodeA.item.draining_at, null);
 
 const futurePairing = await jsonFetch("/api/pairing", {
   method: "POST",
