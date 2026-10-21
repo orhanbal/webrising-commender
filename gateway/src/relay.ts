@@ -19,6 +19,8 @@ export class AgentHub {
   private pending = new Map<string, Pending>();
   private timeoutMs = Math.max(1_000, Number(process.env.AGENT_REQUEST_TIMEOUT_MS || 30_000));
 
+  constructor(private readonly relayNodeId: string | null = null) {}
+
   isOnline(deviceId: string) {
     return this.ready.has(deviceId);
   }
@@ -42,8 +44,20 @@ export class AgentHub {
     this.sockets.delete(deviceId);
     this.ready.delete(deviceId);
     this.rejectPendingForDevice(deviceId, "device-disconnected");
+    void this.markDisconnected(deviceId);
     socket.close(4002, "operator-disconnect");
     return true;
+  }
+
+  private async markDisconnected(deviceId: string) {
+    if (!this.relayNodeId) return;
+    await db.query(
+      `update devices
+          set connected_relay_id=null
+        where id=$1
+          and connected_relay_id=$2`,
+      [deviceId, this.relayNodeId],
+    );
   }
 
   register(deviceId: string, socket: WebSocket) {
@@ -81,6 +95,7 @@ export class AgentHub {
       this.sockets.delete(deviceId);
       this.ready.delete(deviceId);
       this.rejectPendingForDevice(deviceId, "device-disconnected");
+      void this.markDisconnected(deviceId).catch(() => {});
     });
   }
 
@@ -88,15 +103,48 @@ export class AgentHub {
     if (this.sockets.get(deviceId) !== socket) return;
 
     if (message.type === "heartbeat") {
-      await db.query("update devices set last_seen_at=now() where id=$1", [deviceId]);
+      if (this.relayNodeId) {
+        await db.query(
+          `update devices
+              set last_seen_at=now(),
+                  relay_last_seen_at=now(),
+                  connected_relay_id=$2
+            where id=$1`,
+          [deviceId, this.relayNodeId],
+        );
+      } else {
+        await db.query("update devices set last_seen_at=now() where id=$1", [deviceId]);
+      }
       return;
     }
 
     if (message.type === "hello") {
-      await db.query(
-        "update devices set hostname=$2,platform=$3,agent_version=$4,capabilities=$5::jsonb,last_seen_at=now() where id=$1",
-        [deviceId, message.hostname, message.os, message.version, JSON.stringify(message.capabilities)],
-      );
+      if (this.relayNodeId) {
+        await db.query(
+          `update devices
+              set hostname=$2,
+                  platform=$3,
+                  agent_version=$4,
+                  capabilities=$5::jsonb,
+                  last_seen_at=now(),
+                  relay_last_seen_at=now(),
+                  connected_relay_id=$6
+            where id=$1`,
+          [
+            deviceId,
+            message.hostname,
+            message.os,
+            message.version,
+            JSON.stringify(message.capabilities),
+            this.relayNodeId,
+          ],
+        );
+      } else {
+        await db.query(
+          "update devices set hostname=$2,platform=$3,agent_version=$4,capabilities=$5::jsonb,last_seen_at=now() where id=$1",
+          [deviceId, message.hostname, message.os, message.version, JSON.stringify(message.capabilities)],
+        );
+      }
       if (this.sockets.get(deviceId) === socket && socket.readyState === 1) {
         this.ready.add(deviceId);
       }
