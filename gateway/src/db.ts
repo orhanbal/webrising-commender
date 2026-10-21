@@ -32,12 +32,15 @@ export async function migrate() {
       internal_url text not null,
       public_url text not null,
       last_seen_at timestamptz not null default now(),
+      draining_at timestamptz,
       disabled_at timestamptz,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
     create index if not exists relay_nodes_health_idx
       on relay_nodes(disabled_at,last_seen_at);
+
+    alter table relay_nodes add column if not exists draining_at timestamptz;
 
     create table if not exists organization_relay_assignments (
       organization_id uuid primary key references organizations(id) on delete cascade,
