@@ -1,4 +1,4 @@
-# WebRising Commender — Final Acceptance Plan
+# WECOMMANDER — Final Acceptance Plan
 
 Updated: 2026-10-21
 Baseline main: `c4d1ed6427301bc755fcb622aa87f46244f2fcfc`
@@ -22,11 +22,11 @@ This is the canonical closure plan for v1.0 acceptance. Update this file after e
   - Final external acceptance gates consolidated here.
 
 - [ ] **2. Production deployment and HTTPS/WSS**
-  - [x] Production target identified: WebRising Platform / localhost server.
+  - [x] Production target identified: WECOMMANDER / localhost server.
   - [x] GitHub connection verified: `orhanbal/webrising-commender` is visible to Coolify.
   - [x] Isolated production Compose prepared: `docker-compose.coolify.yml`.
   - [x] Dependency-free external acceptance probe prepared: `scripts/accept-production.mjs`.
-  - [x] Recommended acceptance domain selected: `commender.webrising.tr` (currently unused in Coolify inventory).
+  - [x] Recommended acceptance domain selected: `wecommander.webrising.tr` (currently unused in Coolify inventory).
   - [ ] BLOCKED: create the one-time Coolify Docker Compose resource. The connected Coolify MCP has no create-resource operation.
   - [ ] Deploy current main.
   - [ ] Configure/verify public HTTPS certificate and WSS proxying.
