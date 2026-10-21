@@ -105,7 +105,6 @@ export async function heartbeatRelayNode() {
        region=excluded.region,
        public_ws_url=excluded.public_ws_url,
        internal_base_url=excluded.internal_base_url,
-       max_devices=excluded.max_devices,
        last_seen_at=now(),
        updated_at=now()`,
     [nodeId, relayRegion, normalizedPublicWsUrl, normalizedInternalBaseUrl, relayMaxDevices],
@@ -150,7 +149,7 @@ async function healthyRelayById(
             from devices d
            where d.assigned_relay_id=r.id
              and d.revoked_at is null
-        ) < r.max_devices
+        ) <= r.max_devices
         and ($3::text is null or r.region=$3)
       for update`,
     [relayId, nodeFreshSeconds, preferredRegion],
