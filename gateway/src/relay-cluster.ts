@@ -303,7 +303,6 @@ export async function connectedRelayForDevice(deviceId: string) {
        from devices d
        join relay_nodes r on r.id=d.connected_relay_id
       where d.id=$1
-        and d.revoked_at is null
         and d.relay_last_seen_at>now()-($2::int*interval '1 second')
         and r.enabled
         and r.last_seen_at>now()-($2::int*interval '1 second')
@@ -329,6 +328,7 @@ function purgeNonces(now: number) {
 }
 
 function relaySignatureBase(
+  sender: string,
   method: string,
   path: string,
   timestamp: string,
@@ -337,6 +337,7 @@ function relaySignatureBase(
 ) {
   const bodyHash = crypto.createHash("sha256").update(body).digest("hex");
   return [
+    sender,
     method.toUpperCase(),
     path,
     timestamp,
@@ -356,7 +357,7 @@ export function signedRelayHeaders(method: string, path: string, body: string) {
   const timestamp = String(Date.now());
   const nonce = crypto.randomBytes(18).toString("base64url");
   const signature = signatureFor(
-    relaySignatureBase(method, path, timestamp, nonce, body),
+    relaySignatureBase(nodeId, method, path, timestamp, nonce, body),
   );
   return {
     "content-type": "application/json",
@@ -397,7 +398,7 @@ export function verifyRelayRequest(
   if (seenNonces.has(nonce)) return false;
 
   const expected = Buffer.from(
-    signatureFor(relaySignatureBase(method, path, timestamp, nonce, body)),
+    signatureFor(relaySignatureBase(sender, method, path, timestamp, nonce, body)),
     "hex",
   );
   let supplied: Buffer;
