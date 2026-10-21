@@ -16,6 +16,7 @@ export type RelayNode = {
   internal_url: string;
   public_url: string;
   last_seen_at: string;
+  draining_at: string | null;
   disabled_at: string | null;
 };
 
@@ -265,7 +266,7 @@ export class DeviceRouter {
 
   private async healthyNode(nodeId: string, queryable: Queryable = db) {
     const result = await queryable.query<RelayNode>(
-      `select id,region,internal_url,public_url,last_seen_at,disabled_at
+      `select id,region,internal_url,public_url,last_seen_at,draining_at,disabled_at
          from relay_nodes
         where id=$1
           and disabled_at is null
@@ -275,6 +276,12 @@ export class DeviceRouter {
     return result.rows[0] ?? null;
   }
 
+  private async enrollmentNode(nodeId: string, queryable: Queryable = db) {
+    const node = await this.healthyNode(nodeId, queryable);
+    if (!node || node.draining_at) return null;
+    return node;
+  }
+
   async ensureOrganizationRelay(
     organizationId: string,
     queryable: Queryable = db,
@@ -282,7 +289,7 @@ export class DeviceRouter {
     if (!this.isRegional()) return null;
 
     const assigned = await queryable.query<RelayNode>(
-      `select n.id,n.region,n.internal_url,n.public_url,n.last_seen_at,n.disabled_at
+      `select n.id,n.region,n.internal_url,n.public_url,n.last_seen_at,n.draining_at,n.disabled_at
          from organization_relay_assignments a
          join relay_nodes n on n.id=a.relay_node_id
         where a.organization_id=$1`,
@@ -304,7 +311,7 @@ export class DeviceRouter {
       [organizationId, this.nodeId],
     );
     const final = await queryable.query<RelayNode>(
-      `select n.id,n.region,n.internal_url,n.public_url,n.last_seen_at,n.disabled_at
+      `select n.id,n.region,n.internal_url,n.public_url,n.last_seen_at,n.draining_at,n.disabled_at
          from organization_relay_assignments a
          join relay_nodes n on n.id=a.relay_node_id
         where a.organization_id=$1`,
