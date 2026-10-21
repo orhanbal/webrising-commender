@@ -291,6 +291,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           publicSignupEnabled() &&
           mailConfigured(),
         passwordResetEnabled: mailConfigured(),
+        mailEnabled: mailConfigured(),
         regionalRelayEnabled: regionalRelayEnabled(),
       });
     }
@@ -1980,9 +1981,13 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         email: z.string().trim().email().max(320),
         role: z.enum(["viewer", "operator", "admin", "owner"]).default("operator"),
         ttlHours: z.number().int().min(1).max(168).default(72),
+        sendEmail: z.boolean().default(false),
       }).parse(await readJson(req));
       if (!roleAtLeast(principal!, body.role)) {
         return void json(res, 403, { error: "cannot_grant_role", requestedRole: body.role });
+      }
+      if (body.sendEmail && !mailConfigured()) {
+        return void json(res, 503, { error: "mail_not_configured" });
       }
 
       const organizationId = principal!.organizationId;
@@ -1991,7 +1996,14 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       const client = await db.connect();
       try {
         await client.query("begin");
-        await client.query("select id from organizations where id=$1 for update", [organizationId]);
+        const organization = await client.query<{ name: string }>(
+          "select name from organizations where id=$1 for update",
+          [organizationId],
+        );
+        if (!organization.rows[0]) {
+          await client.query("rollback");
+          return void json(res, 404, { error: "organization_not_found" });
+        }
 
         const existingMember = await client.query(
           `select 1
@@ -2033,6 +2045,20 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
             body.ttlHours,
           ],
         );
+        const inviteUrl = `${publicBaseUrl}/#invite=${encodeURIComponent(token)}`;
+        if (body.sendEmail) {
+          await enqueueMail(
+            {
+              to: email,
+              subject: `Invitation to ${organization.rows[0].name} · WebRising Commender`,
+              text:
+                `You were invited to ${organization.rows[0].name} as ${body.role}.\n\n` +
+                `Open this one-time invitation link:\n\n${inviteUrl}\n\n` +
+                `The invitation expires in ${body.ttlHours} hour(s). If you were not expecting this invitation, ignore this message.`,
+            },
+            client,
+          );
+        }
         await client.query("commit");
         await auditControl(
           principal!,
@@ -2040,12 +2066,18 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           "invitation.create",
           "medium",
           "success",
-          JSON.stringify({ invitationId: created.rows[0]!.id, email, role: body.role }),
+          JSON.stringify({
+            invitationId: created.rows[0]!.id,
+            email,
+            role: body.role,
+            emailQueued: body.sendEmail,
+          }),
         );
         return void json(res, 201, {
           item: created.rows[0],
           inviteToken: token,
           inviteUrl: `${publicBaseUrl}/#invite=${encodeURIComponent(token)}`,
+          emailQueued: body.sendEmail,
         });
       } catch (error) {
         await client.query("rollback");
