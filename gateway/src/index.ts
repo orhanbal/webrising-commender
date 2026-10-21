@@ -575,9 +575,9 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         await enqueueMail(
           {
             to: email,
-            subject: "Verify your WebRising Commender account",
+            subject: "Verify your WECOMMANDER account",
             text:
-              `Verify your WebRising Commender account by opening this link:\n\n${verifyUrl}\n\n` +
+              `Verify your WECOMMANDER account by opening this link:\n\n${verifyUrl}\n\n` +
               `This link expires in ${ttlHours} hour(s). If you did not request this account, ignore this message.`,
           },
           client,
@@ -797,9 +797,9 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           await enqueueMail(
             {
               to: user.rows[0].email,
-              subject: "Reset your WebRising Commender password",
+              subject: "Reset your WECOMMANDER password",
               text:
-                `Reset your WebRising Commender password by opening this link:\n\n${resetUrl}\n\n` +
+                `Reset your WECOMMANDER password by opening this link:\n\n${resetUrl}\n\n` +
                 `This link expires in ${ttlMinutes} minute(s). If you did not request a reset, ignore this message.`,
             },
             client,
@@ -2634,7 +2634,7 @@ server.on("upgrade", async (req, socket, head) => {
 server.listen(port, host, () => {
   startRelayHeartbeat();
   process.stdout.write(
-    `WebRising Commender gateway listening on ${nativeTlsEnabled ? "https" : "http"}://${host}:${port}\n`,
+    `WECOMMANDER gateway listening on ${nativeTlsEnabled ? "https" : "http"}://${host}:${port}\n`,
   );
 });
 
