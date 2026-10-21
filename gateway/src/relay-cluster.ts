@@ -437,13 +437,16 @@ export async function callRelay<T>(
   payload: unknown,
 ): Promise<T> {
   const body = JSON.stringify(payload);
+  const rawTimeout = Number(process.env.RELAY_REQUEST_TIMEOUT_MS ?? 35_000);
+  const timeoutMs = Number.isFinite(rawTimeout)
+    ? Math.min(120_000, Math.max(1_000, Math.floor(rawTimeout)))
+    : 35_000;
   const response = await fetch(relayInternalBaseUrl + path, {
     method: "POST",
     headers: signedRelayHeaders("POST", path, body),
     body,
-    signal: AbortSignal.timeout(
-      Math.max(1_000, Number(process.env.RELAY_REQUEST_TIMEOUT_MS || 35_000)),
-    ),
+    redirect: "error",
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
