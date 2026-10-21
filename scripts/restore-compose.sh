@@ -25,6 +25,18 @@ if [[ ! -r "$ARCHIVE" ]]; then
 fi
 command -v docker >/dev/null 2>&1 || { echo "docker is required" >&2; exit 2; }
 
+compose_args=()
+if [[ -n "${COMMANDER_COMPOSE_FILE:-}" ]]; then
+  compose_args+=(-f "$COMMANDER_COMPOSE_FILE")
+fi
+if [[ -n "${COMMANDER_COMPOSE_PROJECT:-}" ]]; then
+  compose_args+=(-p "$COMMANDER_COMPOSE_PROJECT")
+fi
+
+compose() {
+  docker compose "${compose_args[@]}" "$@"
+}
+
 sha256_file() {
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$1" | awk '{print $1}'
@@ -52,35 +64,35 @@ if [[ -z "$expected" || "$expected" != "$actual" ]]; then
 fi
 
 echo "Validating pg_dump archive before stopping the gateway..."
-docker compose exec -T postgres pg_restore --list < "$ARCHIVE" >/dev/null
+compose exec -T postgres pg_restore --list < "$ARCHIVE" >/dev/null
 
 echo "Stopping gateway for consistent destructive restore..."
-docker compose stop gateway
+compose stop gateway
 
 echo "Terminating database sessions..."
-docker compose exec -T postgres psql -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1   -c "select pg_terminate_backend(pid) from pg_stat_activity where datname='$DB_NAME' and pid<>pg_backend_pid();" >/dev/null
+compose exec -T postgres psql -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1   -c "select pg_terminate_backend(pid) from pg_stat_activity where datname='$DB_NAME' and pid<>pg_backend_pid();" >/dev/null
 
 echo "Recreating database $DB_NAME..."
-docker compose exec -T postgres dropdb --if-exists --force -U "$DB_USER" "$DB_NAME"
-docker compose exec -T postgres createdb -U "$DB_USER" -O "$DB_USER" "$DB_NAME"
+compose exec -T postgres dropdb --if-exists --force -U "$DB_USER" "$DB_NAME"
+compose exec -T postgres createdb -U "$DB_USER" -O "$DB_USER" "$DB_NAME"
 
 echo "Restoring archive..."
-if ! docker compose exec -T postgres   pg_restore -U "$DB_USER" -d "$DB_NAME"   --no-owner --no-acl --exit-on-error < "$ARCHIVE"; then
+if ! compose exec -T postgres   pg_restore -U "$DB_USER" -d "$DB_NAME"   --no-owner --no-acl --exit-on-error < "$ARCHIVE"; then
   echo "Restore failed. Gateway intentionally remains stopped." >&2
   exit 1
 fi
 
 echo "Starting gateway..."
-docker compose start gateway
+compose start gateway
 
 echo "Waiting for gateway health..."
 for ((i=1; i<=HEALTH_ATTEMPTS; i++)); do
-  if docker compose exec -T gateway node -e     "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"     >/dev/null 2>&1; then
+  if compose exec -T gateway node -e     "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"     >/dev/null 2>&1; then
     echo "Restore complete and gateway healthy."
     exit 0
   fi
   sleep 1
 done
 
-echo "Restore completed, but gateway did not become healthy. Inspect docker compose logs." >&2
+echo "Restore completed, but gateway did not become healthy. Inspect compose logs." >&2
 exit 1
