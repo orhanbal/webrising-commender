@@ -1474,6 +1474,82 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       return void json(res, 200, await billingSnapshot(principal!.organizationId));
     }
 
+    if (req.method === "GET" && url.pathname === "/api/usage") {
+      if (!requireRole(principal!, "viewer", res)) return;
+      const organizationId = principal!.organizationId;
+      const [snapshot, current, history, reset] = await Promise.all([
+        billingSnapshot(organizationId),
+        db.query<{ month_calls: string; days_elapsed: string }>(
+          `select
+             count(*) filter (
+               where created_at >= date_trunc('month',now())
+                 and (tool not like '%.%' or tool like 'direct.%')
+             )::text as month_calls,
+             greatest(1,extract(day from now()))::text as days_elapsed
+             from audit_logs
+            where organization_id=$1`,
+          [organizationId],
+        ),
+        db.query<{ month: string; calls: string }>(
+          `with months as (
+             select generate_series(
+               date_trunc('month',now()) - interval '5 months',
+               date_trunc('month',now()),
+               interval '1 month'
+             ) as month
+           ),
+           counts as (
+             select date_trunc('month',created_at) as month,count(*)::bigint as calls
+               from audit_logs
+              where organization_id=$1
+                and created_at >= date_trunc('month',now()) - interval '5 months'
+                and (tool not like '%.%' or tool like 'direct.%')
+              group by 1
+           )
+           select to_char(months.month,'YYYY-MM') as month,
+                  coalesce(counts.calls,0)::text as calls
+             from months
+             left join counts using(month)
+            order by months.month asc`,
+          [organizationId],
+        ),
+        db.query<{ reset_at: string }>(
+          "select (date_trunc('month',now()) + interval '1 month')::timestamptz::text as reset_at",
+        ),
+      ]);
+
+      const monthCalls = Number(current.rows[0]?.month_calls ?? 0);
+      const daysElapsed = Math.max(1, Number(current.rows[0]?.days_elapsed ?? 1));
+      const metadata = (snapshot.plan?.metadata ?? {}) as Record<string, unknown>;
+      const configuredLimit = Number(
+        metadata.monthlyToolCalls ??
+        metadata.maxToolCalls ??
+        metadata.toolCallLimit ??
+        Number.NaN,
+      );
+      let limit: number | null;
+      if (snapshot.mode === "self_hosted" || snapshot.plan?.key === "pro") {
+        limit = null;
+      } else if (Number.isFinite(configuredLimit) && configuredLimit >= 0) {
+        limit = configuredLimit;
+      } else if (snapshot.plan?.key === "free") {
+        limit = 10_000;
+      } else {
+        limit = snapshot.entitled ? null : 0;
+      }
+
+      return void json(res, 200, {
+        monthCalls,
+        dailyAverage: Math.round(monthCalls / daysElapsed),
+        limit,
+        resetAt: reset.rows[0]?.reset_at ?? null,
+        months: history.rows.map((row) => ({
+          month: row.month,
+          calls: Number(row.calls ?? 0),
+        })),
+      });
+    }
+
     if (req.method === "GET" && url.pathname === "/api/admin/relays") {
       if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
       const result = await db.query<{
