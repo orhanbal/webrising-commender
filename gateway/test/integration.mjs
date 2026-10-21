@@ -4,6 +4,7 @@ import pg from "pg";
 import WebSocket from "ws";
 
 const base = process.env.TEST_BASE_URL || "http://127.0.0.1:8787";
+const relayB = process.env.TEST_RELAY_B_URL || "http://127.0.0.1:8788";
 const apiKey = process.env.CONTROL_API_KEY;
 if (!apiKey) throw new Error("CONTROL_API_KEY is required");
 
@@ -24,6 +25,15 @@ async function jsonFetch(path, options = {}) {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(`${options.method || "GET"} ${path} -> ${response.status}: ${JSON.stringify(body)}`);
+  }
+  return body;
+}
+
+async function jsonFetchAt(origin, path, options = {}) {
+  const response = await fetch(origin + path, options);
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(`${options.method || "GET"} ${origin}${path} -> ${response.status}: ${JSON.stringify(body)}`);
   }
   return body;
 }
@@ -119,6 +129,260 @@ const standardPlan = await jsonFetch("/api/admin/billing/plans", {
   }),
 });
 assert.equal(standardPlan.item.key, "ci-standard");
+
+const relayNodes = await waitFor(async () => {
+  const relays = await jsonFetch("/api/admin/relays", { headers: authHeaders });
+  if (relays.mode !== "regional") return null;
+  const nodeA = relays.items.find((item) => item.id === "ci-node-a" && item.healthy);
+  const nodeB = relays.items.find((item) => item.id === "ci-node-b" && item.healthy);
+  return nodeA && nodeB ? relays : null;
+}, 10_000, 100);
+assert.equal(relayNodes.localNodeId, "ci-node-a");
+
+const remoteOrg = await jsonFetch("/api/organizations", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({ name: "CI Regional Tenant" }),
+});
+await assignSubscription(remoteOrg.item.id);
+
+const remoteAssignment = await jsonFetch(
+  `/api/admin/organizations/${remoteOrg.item.id}/relay`,
+  {
+    method: "PUT",
+    headers: authHeaders,
+    body: JSON.stringify({ relayNodeId: "ci-node-b" }),
+  },
+);
+assert.equal(remoteAssignment.relayNodeId, "ci-node-b");
+assert.equal(remoteAssignment.existingDevicesUnaffected, 0);
+
+const remoteOwner = await jsonFetch("/api/tokens", {
+  method: "POST",
+  headers: authHeaders,
+  body: JSON.stringify({
+    name: "CI Regional Owner",
+    role: "owner",
+    organizationId: remoteOrg.item.id,
+  }),
+});
+const remoteHeaders = {
+  Authorization: `Bearer ${remoteOwner.token}`,
+  "Content-Type": "application/json",
+};
+
+const remotePairing = await jsonFetch("/api/pairing", {
+  method: "POST",
+  headers: remoteHeaders,
+  body: "{}",
+});
+const remoteEnroll = await jsonFetch("/api/agent/enroll", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    pairingCode: remotePairing.pairingCode,
+    name: "CI regional mock device",
+    hostname: "ci-regional-host",
+    platform: "linux",
+  }),
+});
+assert.equal(remoteEnroll.gatewayWsUrl, "ws://127.0.0.1:8788/agent");
+
+const unsignedInternal = await fetch(relayB + "/internal/cluster/device/disconnect", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    organizationId: remoteOrg.item.id,
+    deviceId: remoteEnroll.deviceId,
+  }),
+});
+assert.equal(unsignedInternal.status, 401);
+assert.equal((await unsignedInternal.json()).error, "invalid_cluster_signature");
+
+function regionalSocket() {
+  const ws = new WebSocket(remoteEnroll.gatewayWsUrl, {
+    headers: {
+      "x-device-id": remoteEnroll.deviceId,
+      Authorization: `Bearer ${remoteEnroll.deviceToken}`,
+    },
+  });
+  ws.on("message", (raw) => {
+    const message = JSON.parse(raw.toString());
+    if (message.type !== "request") return;
+    if (message.action.kind === "system_info") {
+      ws.send(JSON.stringify({
+        type: "result",
+        requestId: message.requestId,
+        ok: true,
+        data: { hostname: "ci-regional-host", os: "linux", regional: true },
+      }));
+      return;
+    }
+    ws.send(JSON.stringify({
+      type: "result",
+      requestId: message.requestId,
+      ok: false,
+      error: { code: "unsupported_test_action", message: message.action.kind },
+    }));
+  });
+  return ws;
+}
+
+let remoteSocket = regionalSocket();
+await new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error("regional websocket open timeout")), 5000);
+  remoteSocket.once("open", () => {
+    clearTimeout(timer);
+    resolve();
+  });
+  remoteSocket.once("error", reject);
+});
+
+const remoteBeforeHello = await jsonFetch("/api/devices", { headers: remoteHeaders });
+const remoteBeforeHelloDevice = remoteBeforeHello.items.find((item) => item.id === remoteEnroll.deviceId);
+assert.ok(remoteBeforeHelloDevice);
+assert.equal(remoteBeforeHelloDevice.online, false);
+
+remoteSocket.send(JSON.stringify({
+  type: "hello",
+  deviceId: remoteEnroll.deviceId,
+  hostname: "ci-regional-host",
+  os: "linux",
+  version: "ci-regional",
+  capabilities: ["system"],
+}));
+
+const remoteReady = await waitFor(async () => {
+  const devices = await jsonFetch("/api/devices", { headers: remoteHeaders });
+  const item = devices.items.find((candidate) => candidate.id === remoteEnroll.deviceId);
+  return item?.online ? item : null;
+}, 10_000, 100);
+assert.equal(remoteReady.relay_node_id, "ci-node-b");
+assert.equal(remoteReady.connected_node_id, "ci-node-b");
+
+const remoteDirect = await jsonFetch("/api/device/request", {
+  method: "POST",
+  headers: remoteHeaders,
+  body: JSON.stringify({
+    deviceId: remoteEnroll.deviceId,
+    action: { kind: "system_info" },
+  }),
+});
+assert.deepEqual(remoteDirect.data, {
+  hostname: "ci-regional-host",
+  os: "linux",
+  regional: true,
+});
+
+const remoteMcp = await rpcAs(remoteHeaders, 70, "tools/call", {
+  name: "system_info",
+  arguments: { device_id: remoteEnroll.deviceId },
+});
+assert.deepEqual(toolText(remoteMcp), {
+  hostname: "ci-regional-host",
+  os: "linux",
+  regional: true,
+});
+
+const relaysAfterConnection = await jsonFetch("/api/admin/relays", { headers: authHeaders });
+const nodeBAfterConnection = relaysAfterConnection.items.find((item) => item.id === "ci-node-b");
+assert.ok(nodeBAfterConnection);
+assert.ok(Number(nodeBAfterConnection.connected_devices) >= 1);
+
+const moveDefaultRelay = await jsonFetch(
+  `/api/admin/organizations/${remoteOrg.item.id}/relay`,
+  {
+    method: "PUT",
+    headers: authHeaders,
+    body: JSON.stringify({ relayNodeId: "ci-node-a" }),
+  },
+);
+assert.equal(moveDefaultRelay.relayNodeId, "ci-node-a");
+assert.equal(moveDefaultRelay.existingDevicesUnaffected, 1);
+
+const stillRemote = await jsonFetch("/api/device/request", {
+  method: "POST",
+  headers: remoteHeaders,
+  body: JSON.stringify({
+    deviceId: remoteEnroll.deviceId,
+    action: { kind: "system_info" },
+  }),
+});
+assert.equal(stillRemote.data.regional, true);
+
+const remoteClosed = new Promise((resolve) => remoteSocket.once("close", resolve));
+const remoteDisconnect = await jsonFetch(
+  `/api/devices/${remoteEnroll.deviceId}/disconnect`,
+  {
+    method: "POST",
+    headers: remoteHeaders,
+    body: "{}",
+  },
+);
+assert.equal(remoteDisconnect.disconnected, true);
+await remoteClosed;
+
+await waitFor(async () => {
+  const devices = await jsonFetch("/api/devices", { headers: remoteHeaders });
+  const item = devices.items.find((candidate) => candidate.id === remoteEnroll.deviceId);
+  return item && item.online === false ? item : null;
+}, 10_000, 100);
+
+remoteSocket = regionalSocket();
+await new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error("regional websocket reconnect timeout")), 5000);
+  remoteSocket.once("open", () => {
+    clearTimeout(timer);
+    resolve();
+  });
+  remoteSocket.once("error", reject);
+});
+remoteSocket.send(JSON.stringify({
+  type: "hello",
+  deviceId: remoteEnroll.deviceId,
+  hostname: "ci-regional-host",
+  os: "linux",
+  version: "ci-regional",
+  capabilities: ["system"],
+}));
+await waitFor(async () => {
+  const devices = await jsonFetch("/api/devices", { headers: remoteHeaders });
+  return devices.items.find((item) => item.id === remoteEnroll.deviceId && item.online) || null;
+}, 10_000, 100);
+
+const futurePairing = await jsonFetch("/api/pairing", {
+  method: "POST",
+  headers: remoteHeaders,
+  body: "{}",
+});
+const futureEnroll = await jsonFetch("/api/agent/enroll", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    pairingCode: futurePairing.pairingCode,
+    name: "CI future relay device",
+    hostname: "ci-future-relay",
+    platform: "linux",
+  }),
+});
+assert.equal(futureEnroll.gatewayWsUrl, "ws://127.0.0.1:8787/agent");
+
+const remoteRevokedClose = new Promise((resolve) => remoteSocket.once("close", resolve));
+const remoteRevoke = await jsonFetch(
+  `/api/devices/${remoteEnroll.deviceId}/revoke`,
+  {
+    method: "POST",
+    headers: remoteHeaders,
+    body: "{}",
+  },
+);
+assert.equal(remoteRevoke.ok, true);
+await remoteRevokedClose;
+
+const remoteAfterRevoke = await jsonFetch("/api/devices", { headers: remoteHeaders });
+const revokedRemoteDevice = remoteAfterRevoke.items.find((item) => item.id === remoteEnroll.deviceId);
+assert.ok(revokedRemoteDevice.revoked_at);
+assert.equal(revokedRemoteDevice.online, false);
 
 const initialOrganizations = await jsonFetch("/api/organizations", { headers: authHeaders });
 assert.ok(initialOrganizations.items.length > 0);
