@@ -3,7 +3,7 @@ import { consumeApproval } from "./approvals.js";
 import { roleAtLeast, type Principal } from "./auth.js";
 import { db } from "./db.js";
 import { actionRisk, type AgentAction } from "./protocol.js";
-import type { AgentHub } from "./relay.js";
+import type { DeviceRouter } from "./cluster.js";
 import { issueApproval, redact } from "./security.js";
 
 type JsonRpcRequest = { jsonrpc?: string; id?: string | number | null; method?: string; params?: any };
@@ -197,7 +197,7 @@ function toolResult(data: unknown, isError = false) {
   };
 }
 
-export async function handleMcp(request: JsonRpcRequest, hub: AgentHub, principal: Principal) {
+export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, principal: Principal) {
   if (request.method === "initialize") {
     return ok(request.id, {
       protocolVersion: "2025-06-18",
@@ -219,9 +219,10 @@ export async function handleMcp(request: JsonRpcRequest, hub: AgentHub, principa
       "select id,name,hostname,platform,agent_version,last_seen_at,revoked_at from devices where organization_id=$1 order by created_at desc",
       [orgId],
     );
+    const states = await router.onlineStates(result.rows.map((row) => row.id));
     return ok(
       request.id,
-      toolResult(result.rows.map((row) => ({ ...row, online: hub.isOnline(row.id) }))),
+      toolResult(result.rows.map((row) => ({ ...row, online: states.get(row.id) === true }))),
     );
   }
 
@@ -317,7 +318,7 @@ export async function handleMcp(request: JsonRpcRequest, hub: AgentHub, principa
   }
 
   try {
-    const data = await hub.request(deviceId, action, approvalToken);
+    const data = await router.request(deviceId, action, approvalToken);
     await audit(orgId, principal.actor, deviceId, name, risk, "success", redact({ kind: action.kind }));
     return ok(request.id, toolResult(data));
   } catch (error) {
