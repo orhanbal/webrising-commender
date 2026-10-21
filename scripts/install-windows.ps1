@@ -33,8 +33,8 @@ $command = ('"{0}" --config "{1}" service' -f $BinaryPath, $ConfigPath)
 $params = @{
   Name = $ServiceName
   BinaryPathName = $command
-  DisplayName = "WebRising Commender Agent"
-  Description = "Outbound WebRising Commender native agent"
+  DisplayName = "WECOMMANDER Agent"
+  Description = "Outbound WECOMMANDER native agent"
   StartupType = "Automatic"
 }
 if ($Credential) {
