@@ -1246,6 +1246,142 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       return void json(res, 200, { ok: true });
     }
 
+    if (req.method === "DELETE" && url.pathname === "/api/auth/account") {
+      if (principal!.authKind !== "session" || !principal!.userId) {
+        return void json(res, 400, { error: "browser_session_required" });
+      }
+      const body = z.object({
+        password: z.string().min(12).max(256),
+        confirmEmail: z.string().trim().email().max(320),
+      }).parse(await readJson(req));
+
+      const preflight = await db.query<{
+        password_hash: string;
+        email: string;
+      }>(
+        "select password_hash,email from users where id=$1 and disabled_at is null",
+        [principal!.userId],
+      );
+      const account = preflight.rows[0];
+      if (!account || normalizeEmail(body.confirmEmail) !== normalizeEmail(account.email)) {
+        return void json(res, 400, { error: "account_confirmation_mismatch" });
+      }
+      if (!(await verifyPassword(body.password, account.password_hash))) {
+        return void json(res, 401, { error: "invalid_credentials" });
+      }
+
+      const client = await db.connect();
+      try {
+        await client.query("begin");
+        const lockedUser = await client.query<{
+          password_hash: string;
+          email: string;
+        }>(
+          "select password_hash,email from users where id=$1 and disabled_at is null for update",
+          [principal!.userId],
+        );
+        const user = lockedUser.rows[0];
+        if (!user || user.password_hash !== account.password_hash) {
+          await client.query("rollback");
+          return void json(res, 409, { error: "credentials_changed_retry" });
+        }
+
+        const memberships = await client.query<{
+          organization_id: string;
+          role: Role;
+          name: string;
+        }>(
+          `select m.organization_id,m.role,o.name
+             from organization_members m
+             join organizations o on o.id=m.organization_id
+            where m.user_id=$1
+            order by m.organization_id
+            for update of m`,
+          [principal!.userId],
+        );
+
+        const ownedIds = memberships.rows
+          .filter((row) => row.role === "owner")
+          .map((row) => row.organization_id);
+        if (ownedIds.length) {
+          const lockedOwnedMembers = await client.query<{
+            organization_id: string;
+            user_id: string;
+            role: Role;
+          }>(
+            `select organization_id,user_id,role
+               from organization_members
+              where organization_id=any($1::uuid[])
+              order by organization_id,user_id
+              for update`,
+            [ownedIds],
+          );
+          const blocking = memberships.rows
+            .filter((membership) => membership.role === "owner")
+            .filter((membership) => {
+              const owners = lockedOwnedMembers.rows.filter(
+                (row) =>
+                  row.organization_id === membership.organization_id &&
+                  row.role === "owner",
+              );
+              return owners.length <= 1;
+            })
+            .map((membership) => ({
+              id: membership.organization_id,
+              name: membership.name,
+            }));
+          if (blocking.length) {
+            await client.query("rollback");
+            return void json(res, 409, {
+              error: "owned_workspace_requires_transfer_or_delete",
+              workspaces: blocking,
+            });
+          }
+        }
+
+        await client.query(
+          `insert into audit_logs(
+             organization_id,actor,device_id,tool,risk,outcome,detail
+           )
+           select m.organization_id,$2,null,'auth.account_delete','high','success',$3
+             from organization_members m
+            where m.user_id=$1`,
+          [
+            principal!.userId,
+            principal!.actor,
+            JSON.stringify({ userId: principal!.userId }),
+          ],
+        );
+        await client.query(
+          "delete from pending_signups where lower(email)=lower($1)",
+          [user.email],
+        );
+        await client.query(
+          "delete from invitations where lower(email)=lower($1)",
+          [user.email],
+        );
+        await client.query(
+          "delete from mail_outbox where recipient_hash=$1 and sent_at is null",
+          [sha256(normalizeEmail(user.email))],
+        );
+        await client.query("delete from users where id=$1", [principal!.userId]);
+        await client.query("commit");
+      } catch (error) {
+        try {
+          await client.query("rollback");
+        } catch {}
+        throw error;
+      } finally {
+        client.release();
+      }
+
+      res.setHeader(
+        "Set-Cookie",
+        clearAuthCookies(publicBaseUrl.startsWith("https://")),
+      );
+      return void json(res, 200, { ok: true, signedOut: true });
+    }
+
     if (req.method === "GET" && url.pathname === "/api/auth/organizations") {
       if (principal!.authKind !== "session" || !principal!.userId) {
         return void json(res, 400, { error: "browser_session_required" });
@@ -1343,6 +1479,172 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         JSON.stringify({ name: body.name }),
       );
       return void json(res, 200, { item: updated.rows[0] });
+    }
+
+    if (req.method === "DELETE" && url.pathname === "/api/organization") {
+      if (
+        principal!.authKind !== "session" ||
+        !principal!.userId ||
+        !principal!.sessionId
+      ) {
+        return void json(res, 400, { error: "browser_session_required" });
+      }
+      if (!requireRole(principal!, "owner", res)) return;
+
+      const body = z.object({
+        password: z.string().min(12).max(256),
+        confirmName: z.string().trim().min(1).max(120),
+      }).parse(await readJson(req));
+
+      const preflight = await db.query<{
+        password_hash: string;
+        name: string;
+      }>(
+        `select u.password_hash,o.name
+           from users u
+           join organization_members m on m.user_id=u.id
+           join organizations o on o.id=m.organization_id
+          where u.id=$1
+            and o.id=$2
+            and m.role='owner'
+            and u.disabled_at is null
+          limit 1`,
+        [principal!.userId, principal!.organizationId],
+      );
+      const current = preflight.rows[0];
+      if (!current || body.confirmName !== current.name) {
+        return void json(res, 400, { error: "workspace_confirmation_mismatch" });
+      }
+      if (!(await verifyPassword(body.password, current.password_hash))) {
+        return void json(res, 401, { error: "invalid_credentials" });
+      }
+
+      const devices = await db.query<{ id: string }>(
+        "select id from devices where organization_id=$1 and revoked_at is null",
+        [principal!.organizationId],
+      );
+      await Promise.allSettled(
+        devices.rows.map((device) => deviceRouter.disconnect(device.id)),
+      );
+
+      const client = await db.connect();
+      let nextOrganization:
+        | { id: string; role: Role }
+        | null = null;
+      try {
+        await client.query("begin");
+        await client.query("lock table organizations in share row exclusive mode");
+
+        const lockedOrganization = await client.query<{ name: string }>(
+          "select name from organizations where id=$1 for update",
+          [principal!.organizationId],
+        );
+        if (!lockedOrganization.rows[0]) {
+          await client.query("rollback");
+          return void json(res, 404, { error: "organization_not_found" });
+        }
+        if (lockedOrganization.rows[0].name !== body.confirmName) {
+          await client.query("rollback");
+          return void json(res, 409, { error: "workspace_changed_retry" });
+        }
+
+        const lockedUser = await client.query<{ password_hash: string }>(
+          "select password_hash from users where id=$1 and disabled_at is null for update",
+          [principal!.userId],
+        );
+        if (
+          !lockedUser.rows[0] ||
+          lockedUser.rows[0].password_hash !== current.password_hash
+        ) {
+          await client.query("rollback");
+          return void json(res, 409, { error: "credentials_changed_retry" });
+        }
+
+        const membership = await client.query<{ role: Role }>(
+          `select role
+             from organization_members
+            where organization_id=$1 and user_id=$2
+            for update`,
+          [principal!.organizationId, principal!.userId],
+        );
+        if (membership.rows[0]?.role !== "owner") {
+          await client.query("rollback");
+          return void json(res, 403, { error: "owner_required" });
+        }
+
+        const organizationCount = await client.query<{ count: string }>(
+          "select count(*)::text as count from organizations",
+        );
+        if (Number(organizationCount.rows[0]?.count || 0) <= 1) {
+          await client.query("rollback");
+          return void json(res, 409, { error: "last_organization_required" });
+        }
+
+        const next = await client.query<{ id: string; role: Role }>(
+          `select o.id,m.role
+             from organization_members m
+             join organizations o on o.id=m.organization_id
+            where m.user_id=$1
+              and m.organization_id<>$2
+            order by
+              case m.role
+                when 'owner' then 40
+                when 'admin' then 30
+                when 'operator' then 20
+                else 10
+              end desc,
+              m.created_at asc
+            limit 1`,
+          [principal!.userId, principal!.organizationId],
+        );
+        nextOrganization = next.rows[0] ?? null;
+        if (nextOrganization) {
+          await client.query(
+            "update browser_sessions set organization_id=$2 where id=$1",
+            [principal!.sessionId, nextOrganization.id],
+          );
+        }
+
+        await client.query(
+          `insert into audit_logs(
+             organization_id,actor,device_id,tool,risk,outcome,detail
+           )
+           values($1,$2,null,'organization.delete','high','success',$3)`,
+          [
+            principal!.organizationId,
+            principal!.actor,
+            JSON.stringify({
+              organizationId: principal!.organizationId,
+              name: lockedOrganization.rows[0].name,
+            }),
+          ],
+        );
+        await client.query("delete from organizations where id=$1", [
+          principal!.organizationId,
+        ]);
+        await client.query("commit");
+      } catch (error) {
+        try {
+          await client.query("rollback");
+        } catch {}
+        throw error;
+      } finally {
+        client.release();
+      }
+
+      if (!nextOrganization) {
+        res.setHeader(
+          "Set-Cookie",
+          clearAuthCookies(publicBaseUrl.startsWith("https://")),
+        );
+      }
+      return void json(res, 200, {
+        ok: true,
+        deletedOrganizationId: principal!.organizationId,
+        nextOrganizationId: nextOrganization?.id ?? null,
+        role: nextOrganization?.role ?? null,
+        signedOut: !nextOrganization,
+      });
     }
 
     if (req.method === "GET" && url.pathname === "/api/relay-regions") {
