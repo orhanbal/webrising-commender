@@ -148,3 +148,16 @@ Commender can terminate HTTPS/WSS directly without nginx, Caddy or another runti
 - HSTS is emitted on HTTPS deployments but does not opt unrelated subdomains into HSTS.
 
 If an existing reverse proxy terminates TLS, leave the native TLS file settings empty and keep the proxy-to-gateway link constrained to the trusted local/private network.
+
+
+## Final production hardening
+
+The v1.0 closure audit adds the following fail-closed boundaries:
+
+- `PUBLIC_BASE_URL` must be a plain `http(s)` origin. Credentials, paths, query strings and fragments are rejected at startup.
+- First-party relay RPC never follows HTTP redirects. This prevents a configured relay origin from redirecting an HMAC-authenticated request to an unintended target.
+- `RELAY_REQUEST_TIMEOUT_MS` is finite and bounded before it reaches `AbortSignal.timeout`.
+- Plaintext SMTP (`SMTP_SECURITY=none`) is accepted only for loopback by default. Non-loopback plaintext transport requires the explicit `SMTP_ALLOW_INSECURE_TRANSPORT=true` override.
+- Query-string result limits are converted to bounded integers before being passed to PostgreSQL.
+- `TRUST_PROXY_HEADERS` remains opt-in in the generic Compose deployment. The Coolify production stack enables it because the self-hosted Coolify proxy is the trusted ingress and overwrites forwarded client addressing.
+- Production relay HTTP calls, SMTP credentials, control credentials and PostgreSQL must remain on trusted/encrypted transport.
