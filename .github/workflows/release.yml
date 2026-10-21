@@ -16,14 +16,14 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact: webrising-commender-linux-x64
+            artifact: WECOMMANDER-linux-x64
             binary: target/x86_64-unknown-linux-gnu/release/webrising-commender
-            output: webrising-commender-linux-x64
+            output: WECOMMANDER-linux-x64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact: webrising-commender-windows-x64
+            artifact: WECOMMANDER-windows-x64
             binary: target/x86_64-pc-windows-msvc/release/webrising-commender.exe
-            output: webrising-commender-windows-x64.exe
+            output: WECOMMANDER-windows-x64.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -55,11 +55,11 @@ jobs:
       - name: Create universal binary
         run: |
           mkdir -p dist
-          lipo -create             target/x86_64-apple-darwin/release/webrising-commender             target/aarch64-apple-darwin/release/webrising-commender             -output dist/webrising-commender-macos-universal
-          lipo -info dist/webrising-commender-macos-universal
+          lipo -create             target/x86_64-apple-darwin/release/webrising-commender             target/aarch64-apple-darwin/release/webrising-commender             -output dist/WECOMMANDER-macos-universal
+          lipo -info dist/WECOMMANDER-macos-universal
       - uses: actions/upload-artifact@v4
         with:
-          name: webrising-commender-macos-universal
+          name: WECOMMANDER-macos-universal
           path: dist/*
 
   publish:
