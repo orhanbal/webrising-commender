@@ -128,8 +128,9 @@ async function authenticateDeviceRequest(req: IncomingMessage) {
     id: string;
     organization_id: string;
     token_hash: string;
+    assigned_relay_id: string | null;
   }>(
-    `select id,organization_id,token_hash
+    `select id,organization_id,token_hash,assigned_relay_id
        from devices
       where id=$1
         and revoked_at is null
@@ -138,7 +139,11 @@ async function authenticateDeviceRequest(req: IncomingMessage) {
   );
   const row = result.rows[0];
   if (!row || row.token_hash !== sha256(token)) return null;
-  return { deviceId: row.id, organizationId: row.organization_id };
+  return {
+    deviceId: row.id,
+    organizationId: row.organization_id,
+    assignedRelayId: row.assigned_relay_id,
+  };
 }
 
 function remoteKey(req: IncomingMessage) {
@@ -2503,27 +2508,40 @@ server.on("upgrade", async (req, socket, head) => {
       return;
     }
 
-    const deviceId = String(req.headers["x-device-id"] || "");
-    const authorization = req.headers.authorization || "";
-    const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
-    if (!deviceId || !token) {
+    const device = await authenticateDeviceRequest(req);
+    if (!device) {
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
       return;
     }
 
-    const result = await db.query<{ token_hash: string }>(
-      "select token_hash from devices where id=$1 and revoked_at is null",
-      [deviceId],
-    );
-    if (!result.rows[0] || result.rows[0].token_hash !== sha256(token)) {
-      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-      socket.destroy();
-      return;
+    if (regionalRelayEnabled()) {
+      const relayId = currentNodeId();
+      if (!currentNodeIsRelay() || !relayId || device.assignedRelayId !== relayId) {
+        socket.write("HTTP/1.1 409 Conflict\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+
+      const relay = await db.query(
+        `select 1
+           from relay_nodes
+          where id=$1
+            and enabled
+            and not drain
+            and last_seen_at>now()-interval '45 seconds'
+          limit 1`,
+        [relayId],
+      );
+      if (!relay.rowCount) {
+        socket.write("HTTP/1.1 503 Service Unavailable\r\n\r\n");
+        socket.destroy();
+        return;
+      }
     }
 
     wss.handleUpgrade(req, socket, head, (ws) => {
-      void hub.register(deviceId, ws);
+      void hub.register(device.deviceId, ws);
     });
   } catch {
     socket.destroy();
