@@ -1,0 +1,76 @@
+# WebRising Commender — Final Acceptance Plan
+
+Updated: 2026-10-21
+Baseline main: `c4d1ed6427301bc755fcb622aa87f46244f2fcfc`
+
+This is the canonical closure plan for v1.0 acceptance. Update this file after every completed gate.
+
+## Rules
+
+- Do not add paid or third-party runtime/SaaS dependencies.
+- Preserve the free self-hosted core.
+- Prefer first-party/local solutions.
+- Do not mark external acceptance complete without a real environment test.
+- Product changes use feature-branch validation and green CI before main.
+- Record blockers explicitly instead of pretending a gate passed.
+
+## Final plan
+
+- [x] **1. Baseline and closure plan**
+  - Current main recorded.
+  - Main CI baseline already green.
+  - Final external acceptance gates consolidated here.
+
+- [ ] **2. Production deployment and HTTPS/WSS**
+  - Identify the production Coolify/server resource.
+  - Deploy current main.
+  - Configure production domain/certificate.
+  - Verify external HTTPS health, HSTS and WSS agent upgrade.
+
+- [ ] **3. Production backup/restore acceptance**
+  - Produce a real PostgreSQL backup.
+  - Validate checksum/manifest.
+  - Run controlled destructive restore acceptance.
+  - Confirm API/data after restore.
+
+- [ ] **4. Real Windows acceptance**
+  - Enroll a real Windows machine.
+  - Install native Windows Service.
+  - Verify service survives restart and reconnects automatically.
+  - Verify file/process/PTY/task operations.
+
+- [ ] **5. Real reconnect and soak acceptance**
+  - Start a persistent task/PTY.
+  - Restart gateway/container and/or interrupt network.
+  - Verify device reconnect.
+  - Verify long-running task/PTY rediscovery and continuity.
+
+- [ ] **6. Real ChatGPT MCP acceptance**
+  - Connect the production MCP endpoint from the intended ChatGPT client.
+  - List devices.
+  - Execute LOW/MEDIUM operations.
+  - Verify HIGH-risk denial without approval and success with exact approval.
+
+- [ ] **7. Real Linux systemd acceptance**
+  - Install on a real Linux machine.
+  - Verify start/stop/restart/boot behavior and reconnect.
+
+- [ ] **8. Real macOS LaunchAgent acceptance**
+  - Install on a real macOS machine if one is available.
+  - Verify login/start/restart/uninstall behavior.
+  - If no macOS machine is available, record as an external platform blocker rather than blocking the usable Windows/server v1.
+
+- [ ] **9. Final security and operations audit**
+  - Review exposed endpoints, auth boundaries, relay HMAC/TLS, secrets and logs.
+  - Verify backup/restore docs and install/uninstall docs.
+  - Verify no paid/third-party runtime dependency entered the product.
+  - Run final full CI on main.
+
+- [ ] **10. v1.0 closure**
+  - Update phase status and master plan.
+  - Record any genuine hardware/platform blockers.
+  - Create the v1.0 release/tag only after all applicable gates are green.
+
+## Current estimate
+
+The software implementation is approximately 93–95% complete. Remaining work is dominated by real-environment acceptance rather than missing core product code.
