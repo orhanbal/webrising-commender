@@ -22,10 +22,15 @@ This is the canonical closure plan for v1.0 acceptance. Update this file after e
   - Final external acceptance gates consolidated here.
 
 - [ ] **2. Production deployment and HTTPS/WSS**
-  - Identify the production Coolify/server resource.
-  - Deploy current main.
-  - Configure production domain/certificate.
-  - Verify external HTTPS health, HSTS and WSS agent upgrade.
+  - [x] Production target identified: WebRising Platform / localhost server.
+  - [x] GitHub connection verified: `orhanbal/webrising-commender` is visible to Coolify.
+  - [x] Isolated production Compose prepared: `docker-compose.coolify.yml`.
+  - [x] Dependency-free external acceptance probe prepared: `scripts/accept-production.mjs`.
+  - [x] Recommended acceptance domain selected: `commender.webrising.tr` (currently unused in Coolify inventory).
+  - [ ] BLOCKED: create the one-time Coolify Docker Compose resource. The connected Coolify MCP has no create-resource operation.
+  - [ ] Deploy current main.
+  - [ ] Configure/verify public HTTPS certificate and WSS proxying.
+  - [ ] Run production acceptance probe.
 
 - [ ] **3. Production backup/restore acceptance**
   - Produce a real PostgreSQL backup.
@@ -73,4 +78,4 @@ This is the canonical closure plan for v1.0 acceptance. Update this file after e
 
 ## Current estimate
 
-The software implementation is approximately 93–95% complete. Remaining work is dominated by real-environment acceptance rather than missing core product code.
+The software implementation is approximately 95% complete. The remaining work is dominated by real-environment acceptance. Production deployment preparation is complete; the first external blocker is the one-time Coolify resource creation because the connected Coolify MCP exposes deploy/control but not create-resource.
