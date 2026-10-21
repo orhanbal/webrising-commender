@@ -13,6 +13,18 @@ if ! [[ "$DB_NAME" =~ ^[A-Za-z0-9_]+$ && "$DB_USER" =~ ^[A-Za-z0-9_]+$ ]]; then
 fi
 command -v docker >/dev/null 2>&1 || { echo "docker is required" >&2; exit 2; }
 
+compose_args=()
+if [[ -n "${COMMANDER_COMPOSE_FILE:-}" ]]; then
+  compose_args+=(-f "$COMMANDER_COMPOSE_FILE")
+fi
+if [[ -n "${COMMANDER_COMPOSE_PROJECT:-}" ]]; then
+  compose_args+=(-p "$COMMANDER_COMPOSE_PROJECT")
+fi
+
+compose() {
+  docker compose "${compose_args[@]}" "$@"
+}
+
 sha256_file() {
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$1" | awk '{print $1}'
@@ -37,7 +49,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "Creating PostgreSQL backup: $archive"
-docker compose exec -T postgres   pg_dump -U "$DB_USER" -d "$DB_NAME"   --format=custom --no-owner --no-acl > "$partial"
+compose exec -T postgres   pg_dump -U "$DB_USER" -d "$DB_NAME"   --format=custom --no-owner --no-acl > "$partial"
 
 if [[ ! -s "$partial" ]]; then
   echo "Backup is empty." >&2
@@ -45,7 +57,7 @@ if [[ ! -s "$partial" ]]; then
 fi
 
 echo "Verifying archive structure..."
-docker compose exec -T postgres pg_restore --list < "$partial" >/dev/null
+compose exec -T postgres pg_restore --list < "$partial" >/dev/null
 
 checksum="$(sha256_file "$partial")"
 bytes="$(wc -c < "$partial" | tr -d ' ')"

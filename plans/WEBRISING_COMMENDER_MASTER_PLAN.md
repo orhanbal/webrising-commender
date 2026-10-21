@@ -1,10 +1,10 @@
-# WebRising Commender — Master Plan
+# WECOMMANDER — Master Plan
 
 Canonical product and implementation plan.
 
 ## 1. Product definition
 
-WebRising Commender is a secure, persistent remote-computer control platform designed for AI clients. It combines a native local agent with a self-hostable control plane and an MCP endpoint.
+WECOMMANDER is a secure, persistent remote-computer control platform designed for AI clients. It combines a native local agent with a self-hostable control plane and an MCP endpoint.
 
 The product must work in two modes without architectural forks:
 

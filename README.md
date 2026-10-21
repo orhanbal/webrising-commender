@@ -1,8 +1,8 @@
-# WebRising Commender
+# WECOMMANDER
 
 Secure, persistent remote computer control for AI clients through MCP.
 
-WebRising Commender is a self-hostable control plane plus native device agent. It is designed for AI clients that need reliable terminal, filesystem, process and long-running task access without exposing an inbound port on the controlled machine.
+WECOMMANDER is a self-hostable control plane plus native device agent. It is designed for AI clients that need reliable terminal, filesystem, process and long-running task access without exposing an inbound port on the controlled machine.
 
 > Pre-release software. The core is implemented and continuously tested, but production acceptance still requires a real deployment and device enrollment.
 
@@ -28,7 +28,7 @@ ChatGPT / Claude / Cursor / custom MCP client
                     HTTPS MCP
                        |
                        v
-          WebRising Commender Gateway
+          WECOMMANDER Gateway
        MCP · REST · approvals · audit
                        |
                   PostgreSQL

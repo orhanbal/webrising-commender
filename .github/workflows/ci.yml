@@ -53,6 +53,7 @@ jobs:
           bash -n ../scripts/backup-compose.sh
           bash -n ../scripts/restore-compose.sh
           node --check ../scripts/soak-restart.mjs
+          node --check ../scripts/accept-production.mjs
 
   integration:
     runs-on: ubuntu-latest
@@ -86,7 +87,7 @@ jobs:
       SMTP_PORT: 2525
       SMTP_SECURITY: none
       SMTP_HELO_NAME: commender-ci
-      SMTP_FROM: WebRising Commender <commender@example.test>
+      SMTP_FROM: WECOMMANDER <commender@example.test>
       MAIL_OUTBOX_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       MAIL_DELIVERY_INTERVAL_MS: 250
       MAIL_DELIVERY_BATCH: 20
@@ -125,6 +126,11 @@ jobs:
           exit 1
       - name: Run integration acceptance
         run: npm run integration
+      - name: Run production acceptance probe against local gateway
+        working-directory: .
+        env:
+          COMMANDER_BASE_URL: http://127.0.0.1:8787
+        run: node scripts/accept-production.mjs
       - name: Print gateway and SMTP logs on failure
         if: failure()
         run: |
@@ -361,6 +367,12 @@ jobs:
             exit 1
           fi
           grep -q "PUBLIC_BASE_URL must use https:// when native TLS is enabled" /tmp/tls-base-url-check.log
+
+          if PUBLIC_BASE_URL=https://localhost:9443/subpath              node dist/index.js >/tmp/public-origin-check.log 2>&1; then
+            echo "gateway accepted PUBLIC_BASE_URL with a path" >&2
+            exit 1
+          fi
+          grep -q "PUBLIC_BASE_URL must be an http(s) origin" /tmp/public-origin-check.log
       - name: Start native HTTPS gateway
         working-directory: gateway
         run: |
@@ -405,14 +417,16 @@ jobs:
       PUBLIC_BASE_URL: http://127.0.0.1:8787
     steps:
       - uses: actions/checkout@v4
-      - name: Validate compose model
-        run: docker compose config --quiet
+      - name: Validate compose models
+        run: |
+          docker compose config --quiet
+          docker compose -f docker-compose.coolify.yml config --quiet
       - name: Start clean stack
         run: docker compose up -d --build --wait
       - name: Verify gateway health and console
         run: |
           curl -fsS http://127.0.0.1:8787/health | grep -q '"status":"ok"'
-          curl -fsS http://127.0.0.1:8787/ | grep -q 'WebRising Commender'
+          curl -fsS http://127.0.0.1:8787/ | grep -q 'WECOMMANDER'
       - name: Verify backup and destructive restore
         run: |
           curl -fsS -X POST http://127.0.0.1:8787/api/organizations \

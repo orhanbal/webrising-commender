@@ -47,7 +47,21 @@ import { deviceApprovalKeyForAgent, issueApproval, randomToken, redact, sha256 }
 
 const host = process.env.HOST || "0.0.0.0";
 const port = Number(process.env.PORT || 8787);
-const publicBaseUrl = String(process.env.PUBLIC_BASE_URL || `http://localhost:${port}`).replace(/\/$/, "");
+const publicBaseUrlInput = String(
+  process.env.PUBLIC_BASE_URL || `http://localhost:${port}`,
+).trim();
+const parsedPublicBaseUrl = new URL(publicBaseUrlInput);
+if (
+  !["http:", "https:"].includes(parsedPublicBaseUrl.protocol) ||
+  parsedPublicBaseUrl.username ||
+  parsedPublicBaseUrl.password ||
+  parsedPublicBaseUrl.pathname !== "/" ||
+  parsedPublicBaseUrl.search ||
+  parsedPublicBaseUrl.hash
+) {
+  throw new Error("PUBLIC_BASE_URL must be an http(s) origin without credentials, path, query or fragment");
+}
+const publicBaseUrl = parsedPublicBaseUrl.origin;
 const tlsCertFile = String(process.env.TLS_CERT_FILE || "").trim();
 const tlsKeyFile = String(process.env.TLS_KEY_FILE || "").trim();
 const tlsMinVersionRaw = String(process.env.TLS_MIN_VERSION || "TLSv1.2").trim();
@@ -60,7 +74,7 @@ if (!["TLSv1.2", "TLSv1.3"].includes(tlsMinVersionRaw)) {
   throw new Error("TLS_MIN_VERSION must be TLSv1.2 or TLSv1.3");
 }
 const nativeTlsEnabled = Boolean(tlsCertFile && tlsKeyFile);
-if (nativeTlsEnabled && !publicBaseUrl.startsWith("https://")) {
+if (nativeTlsEnabled && parsedPublicBaseUrl.protocol !== "https:") {
   throw new Error("PUBLIC_BASE_URL must use https:// when native TLS is enabled");
 }
 
@@ -177,6 +191,12 @@ async function authenticateDeviceRequest(req: IncomingMessage) {
     organizationId: row.organization_id,
     assignedRelayId: row.assigned_relay_id,
   };
+}
+
+function queryLimit(url: URL, fallback = 100, max = 200) {
+  const value = Number(url.searchParams.get("limit") || fallback);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(1, Math.floor(value)));
 }
 
 function remoteKey(req: IncomingMessage) {
@@ -555,9 +575,9 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         await enqueueMail(
           {
             to: email,
-            subject: "Verify your WebRising Commender account",
+            subject: "Verify your WECOMMANDER account",
             text:
-              `Verify your WebRising Commender account by opening this link:\n\n${verifyUrl}\n\n` +
+              `Verify your WECOMMANDER account by opening this link:\n\n${verifyUrl}\n\n` +
               `This link expires in ${ttlHours} hour(s). If you did not request this account, ignore this message.`,
           },
           client,
@@ -777,9 +797,9 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           await enqueueMail(
             {
               to: user.rows[0].email,
-              subject: "Reset your WebRising Commender password",
+              subject: "Reset your WECOMMANDER password",
               text:
-                `Reset your WebRising Commender password by opening this link:\n\n${resetUrl}\n\n` +
+                `Reset your WECOMMANDER password by opening this link:\n\n${resetUrl}\n\n` +
                 `This link expires in ${ttlMinutes} minute(s). If you did not request a reset, ignore this message.`,
             },
             client,
@@ -2376,7 +2396,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       if (!parsedStatus.success) {
         return void json(res, 400, { error: "invalid_status" });
       }
-      const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit") || 100)));
+      const limit = queryLimit(url, 100, 200);
       const result = await db.query(
         `select id,device_id,requested_by,action_kind,action,status,expires_at,
                 decided_by,decided_at,consumed_at,created_at
@@ -2527,7 +2547,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
 
     if (req.method === "GET" && url.pathname === "/api/audit") {
       if (!requireRole(principal!, "admin", res)) return;
-      const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit") || 100)));
+      const limit = queryLimit(url, 100, 200);
       const result = await db.query(
         "select id,actor,device_id,tool,risk,outcome,detail,created_at from audit_logs where organization_id=$1 order by created_at desc limit $2",
         [principal!.organizationId, limit],
@@ -2614,7 +2634,7 @@ server.on("upgrade", async (req, socket, head) => {
 server.listen(port, host, () => {
   startRelayHeartbeat();
   process.stdout.write(
-    `WebRising Commender gateway listening on ${nativeTlsEnabled ? "https" : "http"}://${host}:${port}\n`,
+    `WECOMMANDER gateway listening on ${nativeTlsEnabled ? "https" : "http"}://${host}:${port}\n`,
   );
 });
 

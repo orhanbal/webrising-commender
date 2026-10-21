@@ -35,6 +35,16 @@ function intEnv(name: string, fallback: number, min: number, max: number) {
   return Math.min(max, Math.max(min, Math.floor(value)));
 }
 
+function isLoopbackHost(host: string) {
+  const normalized = host.trim().toLowerCase();
+  return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(normalized);
+}
+
+function insecureTransportAllowed(host: string, security: string) {
+  if (security !== "none") return true;
+  return isLoopbackHost(host) || boolEnv("SMTP_ALLOW_INSECURE_TRANSPORT", false);
+}
+
 function encryptionKey() {
   const raw = String(process.env.MAIL_OUTBOX_KEY || "").trim();
   if (!raw) return null;
@@ -52,11 +62,13 @@ function encryptionKey() {
 }
 
 export function mailConfigured() {
+  const host = String(process.env.SMTP_HOST || "").trim();
   const security = String(process.env.SMTP_SECURITY || "starttls").trim().toLowerCase();
   return Boolean(
-    String(process.env.SMTP_HOST || "").trim() &&
+    host &&
       String(process.env.SMTP_FROM || "").trim() &&
       ["none", "starttls", "tls"].includes(security) &&
+      insecureTransportAllowed(host, security) &&
       encryptionKey(),
   );
 }
@@ -227,6 +239,10 @@ class SmtpConnection {
     if (!host) throw new Error("smtp_host_not_configured");
     if (!["none", "starttls", "tls"].includes(security)) {
       throw new Error("invalid_smtp_security");
+    }
+
+    if (!insecureTransportAllowed(host, security)) {
+      throw new Error("smtp_plaintext_transport_not_allowed");
     }
 
     if (security === "tls") {
