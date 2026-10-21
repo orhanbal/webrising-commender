@@ -914,8 +914,17 @@ const server = http.createServer(async (req, res) => {
       const client = await db.connect();
       try {
         await client.query("begin");
-        const pairing = await client.query<{ id: string; organization_id: string }>(
-          "select id,organization_id from pairing_codes where code_hash=$1 and used_at is null and expires_at>now() for update",
+        const pairing = await client.query<{
+          id: string;
+          organization_id: string;
+          relay_node_id: string | null;
+        }>(
+          `select id,organization_id,relay_node_id
+             from pairing_codes
+            where code_hash=$1
+              and used_at is null
+              and expires_at>now()
+            for update`,
           [sha256(body.pairingCode)],
         );
         const code = pairing.rows[0];
@@ -932,16 +941,27 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
+        const wsUrl = await router.enrollmentWsUrl(code.relay_node_id);
         const deviceId = crypto.randomUUID();
         const token = randomToken(32);
         await client.query(
-          "insert into devices(id,organization_id,name,hostname,platform,token_hash) values($1,$2,$3,$4,$5,$6)",
-          [deviceId, code.organization_id, body.name || body.hostname || "Unnamed device", body.hostname, body.platform, sha256(token)],
+          `insert into devices(
+             id,organization_id,name,hostname,platform,token_hash,relay_node_id
+           )
+           values($1,$2,$3,$4,$5,$6,$7)`,
+          [
+            deviceId,
+            code.organization_id,
+            body.name || body.hostname || "Unnamed device",
+            body.hostname,
+            body.platform,
+            sha256(token),
+            code.relay_node_id,
+          ],
         );
         await client.query("update pairing_codes set used_at=now() where id=$1", [code.id]);
         await client.query("commit");
 
-        const wsUrl = publicBaseUrl.replace(/^http:/, "ws:").replace(/^https:/, "wss:") + "/agent";
         return void json(res, 201, {
           deviceId,
           deviceToken: token,
@@ -954,6 +974,38 @@ const server = http.createServer(async (req, res) => {
       } finally {
         client.release();
       }
+    }
+
+    if (req.method === "POST" && url.pathname === "/internal/cluster/device/request") {
+      const body = z.object({
+        organizationId: z.string().uuid(),
+        deviceId: z.string().uuid(),
+        action: z.unknown(),
+        approvalToken: z.string().optional(),
+      }).parse(await readJson(req));
+      if (!(await router.verifyInternal(req.headers, "POST", url.pathname, body))) {
+        return void json(res, 401, { error: "invalid_cluster_signature" });
+      }
+      const action = parseAgentAction(body.action);
+      const data = await router.handleInternalRequest({
+        organizationId: body.organizationId,
+        deviceId: body.deviceId,
+        action,
+        approvalToken: body.approvalToken,
+      });
+      return void json(res, 200, { ok: true, data });
+    }
+
+    if (req.method === "POST" && url.pathname === "/internal/cluster/device/disconnect") {
+      const body = z.object({
+        organizationId: z.string().uuid(),
+        deviceId: z.string().uuid(),
+      }).parse(await readJson(req));
+      if (!(await router.verifyInternal(req.headers, "POST", url.pathname, body))) {
+        return void json(res, 401, { error: "invalid_cluster_signature" });
+      }
+      const disconnected = await router.handleInternalDisconnect(body);
+      return void json(res, 200, { ok: true, disconnected });
     }
 
     let principal: Principal | null = null;
@@ -1131,6 +1183,59 @@ const server = http.createServer(async (req, res) => {
         [body.name],
       );
       return void json(res, 201, { item: created.rows[0] });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/admin/relays") {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      return void json(res, 200, {
+        mode: router.mode,
+        localNodeId: router.nodeId,
+        items: await router.nodes(),
+      });
+    }
+
+    const organizationRelayMatch = url.pathname.match(
+      /^\/api\/admin\/organizations\/([0-9a-f-]{36})\/relay$/i,
+    );
+    if (req.method === "GET" && organizationRelayMatch) {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const organizationId = organizationRelayMatch[1]!;
+      const organization = await db.query("select 1 from organizations where id=$1", [organizationId]);
+      if (!organization.rowCount) return void json(res, 404, { error: "organization_not_found" });
+      const assignment = await db.query(
+        `select a.organization_id,a.relay_node_id,a.created_at,a.updated_at,
+                n.region,n.public_url,n.last_seen_at,n.disabled_at
+           from organization_relay_assignments a
+           join relay_nodes n on n.id=a.relay_node_id
+          where a.organization_id=$1`,
+        [organizationId],
+      );
+      return void json(res, 200, {
+        mode: router.mode,
+        item: assignment.rows[0] ?? null,
+      });
+    }
+
+    if (req.method === "PUT" && organizationRelayMatch) {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const organizationId = organizationRelayMatch[1]!;
+      const body = z.object({
+        relayNodeId: z.string().trim().min(1).max(64),
+      }).parse(await readJson(req));
+      const result = await router.assignOrganizationRelay(organizationId, body.relayNodeId);
+      await auditForOrganization(
+        principal!,
+        organizationId,
+        null,
+        "relay.assign",
+        "high",
+        "success",
+        JSON.stringify({
+          relayNodeId: body.relayNodeId,
+          existingDevicesUnaffected: result.existingDevicesUnaffected,
+        }),
+      );
+      return void json(res, 200, result);
     }
 
     if (req.method === "GET" && url.pathname === "/api/billing") {
