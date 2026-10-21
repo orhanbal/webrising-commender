@@ -52,12 +52,22 @@ async function checkHealth() {
   }
 }
 
-async function checkConsole() {
+async function checkLanding() {
   const response = await fetch(new URL("/", base), { redirect: "manual" });
   const text = await response.text();
   assert.equal(response.status, 200);
   assert.match(text, /WECOMMANDER/i);
-  record("Web console", true, "console HTML served");
+  assert.match(text, /Use your computer/i);
+  record("Public landing", true, "landing HTML served");
+}
+
+async function checkConsole() {
+  const response = await fetch(new URL("/app", base), { redirect: "manual" });
+  const text = await response.text();
+  assert.equal(response.status, 200);
+  assert.match(text, /WECOMMANDER/i);
+  assert.match(text, /Browser account/i);
+  record("Web console", true, "/app console HTML served");
 }
 
 async function checkPublicConfig() {
@@ -150,6 +160,7 @@ async function checkUnauthenticatedWsUpgrade() {
 
 try {
   await checkHealth();
+  await checkLanding();
   await checkConsole();
   await checkPublicConfig();
   await checkMcp();
