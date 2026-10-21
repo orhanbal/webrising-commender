@@ -48,6 +48,17 @@ import { deviceApprovalKeyForAgent, issueApproval, randomToken, redact, sha256 }
 const host = process.env.HOST || "0.0.0.0";
 const port = Number(process.env.PORT || 8787);
 const publicBaseUrl = String(process.env.PUBLIC_BASE_URL || `http://localhost:${port}`).replace(/\/$/, "");
+const parsedPublicBaseUrl = new URL(publicBaseUrl);
+if (
+  !["http:", "https:"].includes(parsedPublicBaseUrl.protocol) ||
+  parsedPublicBaseUrl.username ||
+  parsedPublicBaseUrl.password ||
+  (parsedPublicBaseUrl.pathname !== "/" && parsedPublicBaseUrl.pathname !== "") ||
+  parsedPublicBaseUrl.search ||
+  parsedPublicBaseUrl.hash
+) {
+  throw new Error("PUBLIC_BASE_URL must be an http(s) origin without credentials, path, query or fragment");
+}
 const tlsCertFile = String(process.env.TLS_CERT_FILE || "").trim();
 const tlsKeyFile = String(process.env.TLS_KEY_FILE || "").trim();
 const tlsMinVersionRaw = String(process.env.TLS_MIN_VERSION || "TLSv1.2").trim();
@@ -177,6 +188,12 @@ async function authenticateDeviceRequest(req: IncomingMessage) {
     organizationId: row.organization_id,
     assignedRelayId: row.assigned_relay_id,
   };
+}
+
+function queryLimit(url: URL, fallback = 100, max = 200) {
+  const value = Number(url.searchParams.get("limit") || fallback);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(1, Math.floor(value)));
 }
 
 function remoteKey(req: IncomingMessage) {
@@ -2376,7 +2393,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       if (!parsedStatus.success) {
         return void json(res, 400, { error: "invalid_status" });
       }
-      const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit") || 100)));
+      const limit = queryLimit(url, 100, 200);
       const result = await db.query(
         `select id,device_id,requested_by,action_kind,action,status,expires_at,
                 decided_by,decided_at,consumed_at,created_at
@@ -2527,7 +2544,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
 
     if (req.method === "GET" && url.pathname === "/api/audit") {
       if (!requireRole(principal!, "admin", res)) return;
-      const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit") || 100)));
+      const limit = queryLimit(url, 100, 200);
       const result = await db.query(
         "select id,actor,device_id,tool,risk,outcome,detail,created_at from audit_logs where organization_id=$1 order by created_at desc limit $2",
         [principal!.organizationId, limit],
