@@ -27,19 +27,30 @@ import {
   type AllocationResource,
 } from "./billing.js";
 import { db, housekeeping, migrate, ready } from "./db.js";
+import { DeviceRouter } from "./device-router.js";
 import { enqueueMail, mailConfigured, publicSignupEnabled, startMailWorker } from "./mail.js";
 import { handleMcp } from "./mcp.js";
 import { actionRisk, parseAgentAction } from "./protocol.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { AgentHub } from "./relay.js";
+import {
+  assignRelayForDevice,
+  currentNodeId,
+  currentNodeIsRelay,
+  regionalRelayEnabled,
+  startRelayHeartbeat,
+  verifyRelayRequest,
+} from "./relay-cluster.js";
 import { deviceApprovalKeyForAgent, issueApproval, randomToken, redact, sha256 } from "./security.js";
 
 const host = process.env.HOST || "0.0.0.0";
 const port = Number(process.env.PORT || 8787);
 const publicBaseUrl = String(process.env.PUBLIC_BASE_URL || `http://localhost:${port}`).replace(/\/$/, "");
 const bodyLimit = 2 * 1024 * 1024;
-const hub = new AgentHub();
+const hub = new AgentHub(currentNodeId());
+const deviceRouter = new DeviceRouter(hub);
 const enrollRateLimit = new FixedWindowRateLimiter();
+const agentRouteRateLimit = new FixedWindowRateLimiter();
 const pairingRateLimit = new FixedWindowRateLimiter();
 const loginIpRateLimit = new FixedWindowRateLimiter();
 const loginAccountRateLimit = new FixedWindowRateLimiter();
@@ -87,7 +98,7 @@ function json(res: ServerResponse, status: number, value: unknown) {
   res.end(body);
 }
 
-async function readJson(req: IncomingMessage) {
+async function readBody(req: IncomingMessage) {
   const chunks: Buffer[] = [];
   let total = 0;
   for await (const raw of req) {
@@ -96,8 +107,41 @@ async function readJson(req: IncomingMessage) {
     if (total > bodyLimit) throw Object.assign(new Error("body-too-large"), { status: 413 });
     chunks.push(chunk);
   }
-  if (total === 0) return {};
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  return Buffer.concat(chunks);
+}
+
+async function readJson(req: IncomingMessage) {
+  const body = await readBody(req);
+  if (body.length === 0) return {};
+  return JSON.parse(body.toString("utf8"));
+}
+
+async function authenticateDeviceRequest(req: IncomingMessage) {
+  const deviceId = String(req.headers["x-device-id"] || "");
+  const authorization = req.headers.authorization || "";
+  const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+  if (!deviceId || !token) return null;
+
+  const result = await db.query<{
+    id: string;
+    organization_id: string;
+    token_hash: string;
+    assigned_relay_id: string | null;
+  }>(
+    `select id,organization_id,token_hash,assigned_relay_id
+       from devices
+      where id=$1
+        and revoked_at is null
+      limit 1`,
+    [deviceId],
+  );
+  const row = result.rows[0];
+  if (!row || row.token_hash !== sha256(token)) return null;
+  return {
+    deviceId: row.id,
+    organizationId: row.organization_id,
+    assignedRelayId: row.assigned_relay_id,
+  };
 }
 
 function remoteKey(req: IncomingMessage) {
@@ -211,7 +255,129 @@ const server = http.createServer(async (req, res) => {
           publicSignupEnabled() &&
           mailConfigured(),
         passwordResetEnabled: mailConfigured(),
+        regionalRelayEnabled: regionalRelayEnabled(),
       });
+    }
+
+    if (
+      req.method === "POST" &&
+      (url.pathname === "/internal/relay/request" ||
+        url.pathname === "/internal/relay/disconnect")
+    ) {
+      if (!currentNodeIsRelay() || !currentNodeId()) {
+        return void json(res, 404, { error: "relay_endpoint_unavailable" });
+      }
+
+      const rawBody = await readBody(req);
+      if (!verifyRelayRequest(req.method, url.pathname, req.headers, rawBody)) {
+        return void json(res, 401, { error: "invalid_relay_signature" });
+      }
+
+      const parsed = rawBody.length
+        ? JSON.parse(rawBody.toString("utf8"))
+        : {};
+
+      if (url.pathname === "/internal/relay/request") {
+        const body = z.object({
+          deviceId: z.string().uuid(),
+          action: z.unknown(),
+          approvalToken: z.string().nullable().optional(),
+        }).parse(parsed);
+        const action = parseAgentAction(body.action);
+        const device = await db.query(
+          `select 1
+             from devices
+            where id=$1
+              and connected_relay_id=$2
+              and revoked_at is null
+            limit 1`,
+          [body.deviceId, currentNodeId()],
+        );
+        if (!device.rowCount || !hub.isOnline(body.deviceId)) {
+          return void json(res, 409, { ok: false, error: "device-offline" });
+        }
+
+        try {
+          const data = await hub.request(
+            body.deviceId,
+            action,
+            body.approvalToken,
+          );
+          return void json(res, 200, { ok: true, data });
+        } catch (error) {
+          return void json(res, 502, {
+            ok: false,
+            error: redact(error instanceof Error ? error.message : error),
+          });
+        }
+      }
+
+      const body = z.object({
+        deviceId: z.string().uuid(),
+      }).parse(parsed);
+      const device = await db.query(
+        `select 1
+           from devices
+          where id=$1
+            and connected_relay_id=$2
+          limit 1`,
+        [body.deviceId, currentNodeId()],
+      );
+      if (!device.rowCount) {
+        return void json(res, 200, { ok: true, disconnected: false });
+      }
+      return void json(res, 200, {
+        ok: true,
+        disconnected: hub.disconnect(body.deviceId),
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/agent/route") {
+      const device = await authenticateDeviceRequest(req);
+      if (!device) return void json(res, 401, { error: "unauthorized" });
+
+      const routeRate = agentRouteRateLimit.hit(
+        `${remoteKey(req)}:${device.deviceId}`,
+        120,
+        5 * 60_000,
+      );
+      if (!routeRate.allowed) {
+        res.setHeader("Retry-After", String(routeRate.retryAfterSeconds));
+        return void json(res, 429, { error: "rate_limited" });
+      }
+
+      if (!regionalRelayEnabled()) {
+        return void json(res, 200, {
+          deviceId: device.deviceId,
+          gatewayWsUrl:
+            publicBaseUrl.replace(/^http:/, "ws:").replace(/^https:/, "wss:") +
+            "/agent",
+          relayId: null,
+          region: null,
+        });
+      }
+
+      const client = await db.connect();
+      try {
+        await client.query("begin");
+        const relay = await assignRelayForDevice(device.deviceId, client);
+        if (!relay) {
+          await client.query("rollback");
+          return void json(res, 503, { error: "relay_unavailable" });
+        }
+        await client.query("commit");
+        return void json(res, 200, {
+          deviceId: device.deviceId,
+          gatewayWsUrl: relay.publicWsUrl,
+          relayId: relay.id,
+          region: relay.region,
+        });
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
     }
 
     if (req.method === "POST" && url.pathname === "/api/auth/login") {
@@ -935,15 +1101,33 @@ const server = http.createServer(async (req, res) => {
           "insert into devices(id,organization_id,name,hostname,platform,token_hash) values($1,$2,$3,$4,$5,$6)",
           [deviceId, code.organization_id, body.name || body.hostname || "Unnamed device", body.hostname, body.platform, sha256(token)],
         );
+
+        let wsUrl =
+          publicBaseUrl.replace(/^http:/, "ws:").replace(/^https:/, "wss:") +
+          "/agent";
+        let relayId: string | null = null;
+        let relayRegion: string | null = null;
+        if (regionalRelayEnabled()) {
+          const relay = await assignRelayForDevice(deviceId, client);
+          if (!relay) {
+            await client.query("rollback");
+            return void json(res, 503, { error: "relay_unavailable" });
+          }
+          wsUrl = relay.publicWsUrl;
+          relayId = relay.id;
+          relayRegion = relay.region;
+        }
+
         await client.query("update pairing_codes set used_at=now() where id=$1", [code.id]);
         await client.query("commit");
 
-        const wsUrl = publicBaseUrl.replace(/^http:/, "ws:").replace(/^https:/, "wss:") + "/agent";
         return void json(res, 201, {
           deviceId,
           deviceToken: token,
           approvalKey: deviceApprovalKeyForAgent(deviceId),
           gatewayWsUrl: wsUrl,
+          relayId,
+          relayRegion,
         });
       } catch (error) {
         await client.query("rollback");
@@ -1030,7 +1214,7 @@ const server = http.createServer(async (req, res) => {
         return void json(res, 400, { error: "browser_session_required" });
       }
       const memberships = await db.query(
-        `select o.id,o.name,m.role,m.created_at
+        `select o.id,o.name,o.relay_region,m.role,m.created_at
            from organization_members m
            join organizations o on o.id=m.organization_id
           where m.user_id=$1
@@ -1095,6 +1279,16 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (req.method === "GET" && url.pathname === "/api/organization") {
+      if (!requireRole(principal!, "viewer", res)) return;
+      const result = await db.query(
+        "select id,name,relay_region,created_at from organizations where id=$1",
+        [principal!.organizationId],
+      );
+      if (!result.rows[0]) return void json(res, 404, { error: "organization_not_found" });
+      return void json(res, 200, { item: result.rows[0] });
+    }
+
     if (req.method === "PATCH" && url.pathname === "/api/organization") {
       if (!requireRole(principal!, "owner", res)) return;
       const body = z.object({ name: z.string().trim().min(2).max(120) }).parse(await readJson(req));
@@ -1110,6 +1304,80 @@ const server = http.createServer(async (req, res) => {
         "high",
         "success",
         JSON.stringify({ name: body.name }),
+      );
+      return void json(res, 200, { item: updated.rows[0] });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/relay-regions") {
+      if (!requireRole(principal!, "viewer", res)) return;
+      if (!regionalRelayEnabled()) {
+        return void json(res, 200, { enabled: false, items: [] });
+      }
+      const regions = await db.query<{ region: string; nodes: string }>(
+        `select region,count(*)::text as nodes
+           from relay_nodes
+          where enabled
+            and not drain
+            and last_seen_at>now()-interval '45 seconds'
+          group by region
+          order by region asc`,
+      );
+      return void json(res, 200, {
+        enabled: true,
+        items: regions.rows.map((row) => ({
+          region: row.region,
+          nodes: Number(row.nodes),
+        })),
+      });
+    }
+
+    if (req.method === "PATCH" && url.pathname === "/api/organization/relay-region") {
+      if (!requireRole(principal!, "owner", res)) return;
+      const body = z.object({
+        region: z
+          .string()
+          .trim()
+          .toLowerCase()
+          .regex(/^[a-z0-9][a-z0-9._-]{0,79}$/)
+          .nullable(),
+      }).parse(await readJson(req));
+
+      const region = body.region?.toLowerCase() ?? null;
+      if (region !== null) {
+        if (!regionalRelayEnabled()) {
+          return void json(res, 409, { error: "regional_relay_disabled" });
+        }
+        const available = await db.query(
+          `select 1
+             from relay_nodes
+            where region=$1
+              and enabled
+              and not drain
+              and last_seen_at>now()-interval '45 seconds'
+            limit 1`,
+          [region],
+        );
+        if (!available.rowCount) {
+          return void json(res, 409, { error: "relay_region_unavailable" });
+        }
+      }
+
+      const updated = await db.query(
+        `update organizations
+            set relay_region=$2
+          where id=$1
+          returning id,name,relay_region,created_at`,
+        [principal!.organizationId, region],
+      );
+      if (!updated.rows[0]) return void json(res, 404, { error: "organization_not_found" });
+
+      await auditControl(
+        principal!,
+        null,
+        "organization.relay_region",
+        "high",
+        "success",
+        JSON.stringify({ relayRegion: region }),
       );
       return void json(res, 200, { item: updated.rows[0] });
     }
@@ -1133,6 +1401,99 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/billing") {
       if (!requireRole(principal!, "viewer", res)) return;
       return void json(res, 200, await billingSnapshot(principal!.organizationId));
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/admin/relays") {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const result = await db.query<{
+        id: string;
+        region: string;
+        public_ws_url: string;
+        internal_base_url: string;
+        max_devices: number;
+        enabled: boolean;
+        drain: boolean;
+        last_seen_at: string;
+        assigned_count: string;
+        connected_count: string;
+      }>(
+        `select r.id,
+                r.region,
+                r.public_ws_url,
+                r.internal_base_url,
+                r.max_devices,
+                r.enabled,
+                r.drain,
+                r.last_seen_at,
+                count(d.id) filter (
+                  where d.assigned_relay_id=r.id and d.revoked_at is null
+                )::text as assigned_count,
+                count(d.id) filter (
+                  where d.connected_relay_id=r.id
+                    and d.revoked_at is null
+                    and d.relay_last_seen_at>now()-interval '45 seconds'
+                )::text as connected_count
+           from relay_nodes r
+           left join devices d
+             on d.assigned_relay_id=r.id or d.connected_relay_id=r.id
+          group by r.id
+          order by r.region asc,r.id asc`,
+      );
+      return void json(res, 200, {
+        enabled: regionalRelayEnabled(),
+        items: result.rows.map((row) => ({
+          ...row,
+          healthy: row.enabled && new Date(row.last_seen_at).getTime() > Date.now() - 45_000,
+          assigned_count: Number(row.assigned_count),
+          connected_count: Number(row.connected_count),
+        })),
+      });
+    }
+
+    const relayAdminMatch = url.pathname.match(
+      /^\/api\/admin\/relays\/([^/]+)$/,
+    );
+    if (req.method === "PATCH" && relayAdminMatch) {
+      if (!principal!.global) return void json(res, 403, { error: "global_control_required" });
+      const relayId = decodeURIComponent(relayAdminMatch[1]!);
+      const body = z.object({
+        enabled: z.boolean().optional(),
+        drain: z.boolean().optional(),
+        maxDevices: z.number().int().min(1).max(1_000_000).optional(),
+      }).refine(
+        (value) =>
+          value.enabled !== undefined ||
+          value.drain !== undefined ||
+          value.maxDevices !== undefined,
+        { message: "at_least_one_relay_setting_required" },
+      ).parse(await readJson(req));
+
+      const updated = await db.query(
+        `update relay_nodes
+            set enabled=coalesce($2,enabled),
+                drain=coalesce($3,drain),
+                max_devices=coalesce($4,max_devices),
+                updated_at=now()
+          where id=$1
+          returning id,region,max_devices,enabled,drain,last_seen_at,updated_at`,
+        [relayId, body.enabled ?? null, body.drain ?? null, body.maxDevices ?? null],
+      );
+      if (!updated.rows[0]) return void json(res, 404, { error: "relay_not_found" });
+
+      await auditControl(
+        principal!,
+        null,
+        "relay.update",
+        "high",
+        "success",
+        JSON.stringify({
+          relayId,
+          enabled: body.enabled,
+          drain: body.drain,
+          maxDevices: body.maxDevices,
+        }),
+      );
+      return void json(res, 200, { item: updated.rows[0] });
     }
 
     if (req.method === "GET" && url.pathname === "/api/admin/mail/outbox") {
@@ -1910,10 +2271,21 @@ const server = http.createServer(async (req, res) => {
       if (!requireRole(principal!, "viewer", res)) return;
       const orgId = principal!.organizationId;
       const result = await db.query(
-        "select id,name,hostname,platform,agent_version,capabilities,last_seen_at,created_at,revoked_at from devices where organization_id=$1 order by created_at desc",
+        `select id,name,hostname,platform,agent_version,capabilities,last_seen_at,
+                assigned_relay_id,connected_relay_id,relay_last_seen_at,
+                created_at,revoked_at
+           from devices
+          where organization_id=$1
+          order by created_at desc`,
         [orgId],
       );
-      return void json(res, 200, { items: result.rows.map((row) => ({ ...row, online: hub.isOnline(row.id) })) });
+      const online = await deviceRouter.onlineStatuses(result.rows.map((row) => row.id));
+      return void json(res, 200, {
+        items: result.rows.map((row) => ({
+          ...row,
+          online: online.has(row.id),
+        })),
+      });
     }
 
     const disconnectMatch = url.pathname.match(/^\/api\/devices\/([0-9a-f-]{36})\/disconnect$/i);
@@ -1926,7 +2298,7 @@ const server = http.createServer(async (req, res) => {
         [deviceId, orgId],
       );
       if (!exists.rowCount) return void json(res, 404, { error: "device_not_found" });
-      const disconnected = hub.disconnect(deviceId);
+      const disconnected = await deviceRouter.disconnect(deviceId);
       return void json(res, 200, { ok: true, disconnected });
     }
 
@@ -1955,7 +2327,7 @@ const server = http.createServer(async (req, res) => {
         [deviceId, orgId],
       );
       if (!revoked.rowCount) return void json(res, 404, { error: "device_not_found" });
-      hub.disconnect(deviceId);
+      await deviceRouter.disconnect(deviceId);
       await auditControl(principal!, deviceId, "device.revoke", "high", "success");
       return void json(res, 200, { ok: true, item: revoked.rows[0] });
     }
@@ -2107,7 +2479,7 @@ const server = http.createServer(async (req, res) => {
         return void json(res, 403, { error: "approval_required", action: action.kind });
       }
       try {
-        const data = await hub.request(body.deviceId, action, body.approvalToken);
+        const data = await deviceRouter.request(body.deviceId, action, body.approvalToken);
         await auditControl(principal!, body.deviceId, `direct.${action.kind}`, risk, "success", redact({ kind: action.kind }));
         return void json(res, 200, { ok: true, data });
       } catch (error) {
@@ -2130,10 +2502,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/mcp") {
       const payload = await readJson(req);
       if (Array.isArray(payload)) {
-        const results = (await Promise.all(payload.map((item) => handleMcp(item, hub, principal!)))).filter(Boolean);
+        const results = (await Promise.all(payload.map((item) => handleMcp(item, deviceRouter, principal!)))).filter(Boolean);
         return void json(res, 200, results);
       }
-      const result = await handleMcp(payload, hub, principal!);
+      const result = await handleMcp(payload, deviceRouter, principal!);
       if (result === null) {
         res.writeHead(202);
         res.end();
@@ -2159,27 +2531,40 @@ server.on("upgrade", async (req, socket, head) => {
       return;
     }
 
-    const deviceId = String(req.headers["x-device-id"] || "");
-    const authorization = req.headers.authorization || "";
-    const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
-    if (!deviceId || !token) {
+    const device = await authenticateDeviceRequest(req);
+    if (!device) {
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
       return;
     }
 
-    const result = await db.query<{ token_hash: string }>(
-      "select token_hash from devices where id=$1 and revoked_at is null",
-      [deviceId],
-    );
-    if (!result.rows[0] || result.rows[0].token_hash !== sha256(token)) {
-      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-      socket.destroy();
-      return;
+    if (regionalRelayEnabled()) {
+      const relayId = currentNodeId();
+      if (!currentNodeIsRelay() || !relayId || device.assignedRelayId !== relayId) {
+        socket.write("HTTP/1.1 409 Conflict\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+
+      const relay = await db.query(
+        `select 1
+           from relay_nodes
+          where id=$1
+            and enabled
+            and not drain
+            and last_seen_at>now()-interval '45 seconds'
+          limit 1`,
+        [relayId],
+      );
+      if (!relay.rowCount) {
+        socket.write("HTTP/1.1 503 Service Unavailable\r\n\r\n");
+        socket.destroy();
+        return;
+      }
     }
 
     wss.handleUpgrade(req, socket, head, (ws) => {
-      void hub.register(deviceId, ws);
+      void hub.register(device.deviceId, ws);
     });
   } catch {
     socket.destroy();
@@ -2187,6 +2572,7 @@ server.on("upgrade", async (req, socket, head) => {
 });
 
 server.listen(port, host, () => {
+  startRelayHeartbeat();
   process.stdout.write(`WebRising Commender gateway listening on ${host}:${port}\n`);
 });
 

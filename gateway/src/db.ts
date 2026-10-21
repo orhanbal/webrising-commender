@@ -22,6 +22,23 @@ export async function migrate() {
       created_at timestamptz not null default now()
     );
 
+    alter table organizations add column if not exists relay_region text;
+
+    create table if not exists relay_nodes (
+      id text primary key,
+      region text not null,
+      public_ws_url text not null,
+      internal_base_url text not null,
+      max_devices integer not null default 10000 check (max_devices>0),
+      enabled boolean not null default true,
+      drain boolean not null default false,
+      last_seen_at timestamptz not null default now(),
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create index if not exists relay_nodes_region_health_idx
+      on relay_nodes(region,enabled,drain,last_seen_at desc);
+
     create table if not exists users (
       id uuid primary key default gen_random_uuid(),
       email text not null,
@@ -150,6 +167,33 @@ export async function migrate() {
       revoked_at timestamptz
     );
     create index if not exists devices_org_idx on devices(organization_id);
+
+    alter table devices add column if not exists assigned_relay_id text;
+    alter table devices add column if not exists connected_relay_id text;
+    alter table devices add column if not exists relay_last_seen_at timestamptz;
+
+    do $
+    begin
+      alter table devices
+        add constraint devices_assigned_relay_fk
+        foreign key (assigned_relay_id) references relay_nodes(id) on delete set null;
+    exception when duplicate_object then null;
+    end $;
+
+    do $
+    begin
+      alter table devices
+        add constraint devices_connected_relay_fk
+        foreign key (connected_relay_id) references relay_nodes(id) on delete set null;
+    exception when duplicate_object then null;
+    end $;
+
+    create index if not exists devices_assigned_relay_idx
+      on devices(assigned_relay_id)
+      where assigned_relay_id is not null and revoked_at is null;
+    create index if not exists devices_connected_relay_idx
+      on devices(connected_relay_id,relay_last_seen_at)
+      where connected_relay_id is not null and revoked_at is null;
 
     create table if not exists pairing_codes (
       id uuid primary key default gen_random_uuid(),
