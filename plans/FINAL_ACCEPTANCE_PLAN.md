@@ -22,15 +22,18 @@ This is the canonical closure plan for v1.0 acceptance. Update this file after e
   - Final external acceptance gates consolidated here.
 
 - [ ] **2. Production deployment and HTTPS/WSS**
-  - [x] Production target identified: WECOMMANDER / localhost server.
-  - [x] GitHub connection verified: `orhanbal/webrising-commender` is visible to Coolify.
-  - [x] Isolated production Compose prepared: `docker-compose.coolify.yml`.
-  - [x] Dependency-free external acceptance probe prepared: `scripts/accept-production.mjs`.
-  - [x] Recommended acceptance domain selected: `wecommander.webrising.tr` (currently unused in Coolify inventory).
-  - [ ] BLOCKED: create the one-time Coolify Docker Compose resource. The connected Coolify MCP has no create-resource operation.
-  - [ ] Deploy current main.
-  - [ ] Configure/verify public HTTPS certificate and WSS proxying.
-  - [ ] Run production acceptance probe.
+  - [x] Coolify project exists: **WECOMMANDER** / production.
+  - [x] Coolify application exists and points to `orhanbal/webrising-commender` / `main`.
+  - [x] Coolify production compose entrypoint added at `/docker-compose.yaml`.
+  - [x] Production target domain standardized as `https://wecommander.webrising.tr`.
+  - [ ] Coolify application must receive three required secret env values:
+    - `POSTGRES_PASSWORD`
+    - `CONTROL_API_KEY`
+    - `APPROVAL_SIGNING_SECRET`
+  - [ ] Coolify gateway service must be assigned FQDN `https://wecommander.webrising.tr`.
+  - [ ] Deploy current main after the final acceptance package is merged.
+  - [ ] Verify external HTTPS health, HSTS and WSS agent upgrade.
+  - Current blocker: Coolify MCP can deploy/control existing resources but cannot mutate application configuration or environment values. The one-time secret/FQDN UI step requires the owner.
 
 - [ ] **3. Production backup/restore acceptance**
   - [x] Backup/restore scripts support selecting a production Compose file/project via `COMMANDER_COMPOSE_FILE` / `COMMANDER_COMPOSE_PROJECT`.
