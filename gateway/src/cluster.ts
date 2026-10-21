@@ -296,12 +296,14 @@ export class DeviceRouter {
       [organizationId],
     );
     if (assigned.rows[0]) {
-      const healthy = await this.healthyNode(assigned.rows[0].id, queryable);
-      if (!healthy) throw Object.assign(new Error("relay_unavailable"), { status: 503 });
-      return healthy;
+      const available = await this.enrollmentNode(assigned.rows[0].id, queryable);
+      if (!available) {
+        throw Object.assign(new Error("relay_not_accepting_enrollments"), { status: 409 });
+      }
+      return available;
     }
 
-    const local = await this.healthyNode(this.nodeId!, queryable);
+    const local = await this.enrollmentNode(this.nodeId!, queryable);
     if (!local) throw Object.assign(new Error("local_relay_unavailable"), { status: 503 });
 
     await queryable.query(
@@ -317,17 +319,23 @@ export class DeviceRouter {
         where a.organization_id=$1`,
       [organizationId],
     );
-    const healthy = final.rows[0] ? await this.healthyNode(final.rows[0].id, queryable) : null;
-    if (!healthy) throw Object.assign(new Error("relay_unavailable"), { status: 503 });
-    return healthy;
+    const available = final.rows[0]
+      ? await this.enrollmentNode(final.rows[0].id, queryable)
+      : null;
+    if (!available) {
+      throw Object.assign(new Error("relay_not_accepting_enrollments"), { status: 409 });
+    }
+    return available;
   }
 
   async assignOrganizationRelay(organizationId: string, relayNodeId: string) {
     if (!this.isRegional()) {
       throw Object.assign(new Error("regional_mode_required"), { status: 400 });
     }
-    const node = await this.healthyNode(relayNodeId);
-    if (!node) throw Object.assign(new Error("relay_unavailable"), { status: 409 });
+    const node = await this.enrollmentNode(relayNodeId);
+    if (!node) {
+      throw Object.assign(new Error("relay_not_accepting_enrollments"), { status: 409 });
+    }
 
     const organization = await db.query("select 1 from organizations where id=$1", [organizationId]);
     if (!organization.rowCount) {
@@ -360,6 +368,21 @@ export class DeviceRouter {
 
   async enrollmentWsUrl(relayNodeId: string | null) {
     if (!this.isRegional()) return websocketUrl(this.publicUrl);
+    if (!relayNodeId) throw Object.assign(new Error("relay_assignment_missing"), { status: 503 });
+    const node = await this.enrollmentNode(relayNodeId);
+    if (!node) {
+      throw Object.assign(new Error("relay_not_accepting_enrollments"), { status: 409 });
+    }
+    return websocketUrl(node.public_url);
+  }
+
+  async resolveDeviceWsUrl(deviceId: string) {
+    if (!this.isRegional()) return websocketUrl(this.publicUrl);
+    const device = await db.query<{ relay_node_id: string | null }>(
+      "select relay_node_id from devices where id=$1 and revoked_at is null",
+      [deviceId],
+    );
+    const relayNodeId = device.rows[0]?.relay_node_id;
     if (!relayNodeId) throw Object.assign(new Error("relay_assignment_missing"), { status: 503 });
     const node = await this.healthyNode(relayNodeId);
     if (!node) throw Object.assign(new Error("relay_unavailable"), { status: 503 });
