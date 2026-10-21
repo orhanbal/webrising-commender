@@ -12,6 +12,14 @@ const authHeaders = {
   "Content-Type": "application/json",
 };
 
+const appResponse = await fetch(base + "/app");
+assert.equal(appResponse.status, 200);
+const appHtml = await appResponse.text();
+assert.match(appHtml, /WECOMMANDER/);
+assert.match(appHtml, />Devices</);
+assert.match(appHtml, /Plan &amp; billing/);
+assert.match(appHtml, />Settings</);
+
 const smtpCapture = process.env.SMTP_TEST_OUTPUT || "/tmp/commender-smtp.jsonl";
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
@@ -1192,6 +1200,14 @@ assert.equal(tinyBilling.entitled, true);
 assert.equal(tinyBilling.plan.key, "ci-tiny");
 assert.equal(tinyBilling.usage.pendingInvitations, 1);
 assert.equal(tinyBilling.usage.apiTokens, 1);
+
+const tinyUsage = await jsonFetch("/api/usage", { headers: tinyHeaders });
+assert.equal(typeof tinyUsage.monthCalls, "number");
+assert.equal(typeof tinyUsage.dailyAverage, "number");
+assert.equal(tinyUsage.limit, null);
+assert.equal(Array.isArray(tinyUsage.months), true);
+assert.equal(tinyUsage.months.length, 6);
+assert.equal(typeof tinyUsage.resetAt, "string");
 
 const eventPlan = await jsonFetch("/api/admin/billing/plans", {
   method: "POST",
