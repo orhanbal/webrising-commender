@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added optional native HTTPS/WSS gateway termination using operator-supplied certificate/key files with TLS 1.2+ enforcement.
+- Added CA-verified HTTPS health + WSS upgrade CI acceptance and fail-closed TLS configuration checks.
 - Added first-party regional relay registry, preferred-region placement, capacity-aware transactional assignment and relay health/drain controls.
 - Added HMAC-authenticated control-to-relay RPC and DeviceRouter routing for REST/MCP operations.
 - Added native agent route refresh so disconnected agents can fail over to another healthy region without re-enrollment.
