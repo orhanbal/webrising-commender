@@ -139,6 +139,14 @@ const relayNodes = await waitFor(async () => {
 }, 10_000, 100);
 assert.equal(relayNodes.localNodeId, "ci-node-a");
 
+const relayPublicApi = await fetch(relayB + "/api/devices", { headers: authHeaders });
+assert.equal(relayPublicApi.status, 404);
+const relayConsole = await fetch(relayB + "/");
+assert.equal(relayConsole.status, 404);
+const relayHealth = await jsonFetchAt(relayB, "/health/live");
+assert.equal(relayHealth.role, "relay");
+assert.equal(relayHealth.nodeId, "ci-node-b");
+
 const remoteOrg = await jsonFetch("/api/organizations", {
   method: "POST",
   headers: authHeaders,
