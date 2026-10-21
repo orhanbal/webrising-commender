@@ -36,6 +36,7 @@ CI exercises:
 - self-hosted unlimited resource allocation remains covered by Compose/real-agent flows while integration runs in SaaS mode
 - local SMTP email verification, token+password activation, encrypted-at-rest outbox, password reset/session revocation and unknown-account response parity
 - two-relay real-agent routing, preferred-region placement, signed control-to-relay RPC, drain behavior and automatic cross-region reconnect/failover
+- native HTTPS health, HSTS, CA-verified TLS handshake, WSS upgrade authentication and fail-closed certificate configuration
 - installer syntax
 - native Windows service install/start/stop/remove lifecycle
 - PostgreSQL custom-format backup checksum validation and destructive Compose restore round trip
@@ -45,7 +46,7 @@ CI exercises:
 
 These require a real deployed gateway and real user-controlled machines rather than CI runners:
 
-- production reverse proxy/TLS deployment
+- production domain/certificate installation and external HTTPS/WSS acceptance
 - real Windows machine enrollment and day-to-day service behavior
 - real Linux systemd installation
 - real macOS LaunchAgent installation

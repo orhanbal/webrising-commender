@@ -124,3 +124,17 @@ REST and MCP use `DeviceRouter`. It executes locally when the socket is on the c
 The native agent keeps its durable control URL. After any WebSocket disconnect or failed connection it calls `POST /api/agent/route` with its device credential. A drained, stale, disabled or capacity-constrained relay is replaced with another healthy relay without re-enrollment.
 
 Drain is intentionally non-destructive: existing sockets continue to serve requests, while reconnects/new assignments move elsewhere. Disabling a node removes it from control-plane routing immediately.
+
+
+## Native HTTPS/WSS transport
+
+The gateway can terminate TLS itself using Node's built-in HTTPS/TLS stack. No reverse proxy is required for transport termination.
+
+- With both `TLS_CERT_FILE` and `TLS_KEY_FILE` unset, the gateway keeps its existing HTTP mode. This supports loopback development and deployments where an existing trusted reverse proxy terminates TLS.
+- With both files set, the same listener serves HTTPS REST/MCP/console traffic and WSS agent upgrades.
+- Supplying only one TLS file is a startup error.
+- Native TLS requires `PUBLIC_BASE_URL` to use `https://`, preventing secure-cookie and generated-link scheme drift.
+- `TLS_MIN_VERSION` is restricted to `TLSv1.2` or `TLSv1.3`.
+- HSTS is emitted for HTTPS deployments and is scoped to the Commender host rather than automatically covering unrelated subdomains.
+
+Commender deliberately does not implement certificate issuance or renewal. Operators may use any certificate chain trusted by their clients. Certificate/key rotation currently requires a gateway restart.

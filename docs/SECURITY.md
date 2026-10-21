@@ -132,3 +132,19 @@ Regional relay mode is optional and first-party. Relay nodes are trusted members
 - Relay `drain` preserves existing connections; `enabled=false` removes the node from routing immediately.
 
 A compromise of a trusted relay node is treated as control-plane infrastructure compromise. Rotate the cluster secret, disable the node, rotate infrastructure credentials and review audit/device presence records.
+
+
+## Native TLS termination
+
+Commender can terminate HTTPS/WSS directly without nginx, Caddy or another runtime proxy.
+
+- Configure `TLS_CERT_FILE` and `TLS_KEY_FILE` together. Partial configuration fails startup.
+- The private key is read from the filesystem and is never persisted to PostgreSQL.
+- Keep the private-key file readable only by the gateway runtime identity and mount it read-only when using containers.
+- Native TLS requires an HTTPS `PUBLIC_BASE_URL`; this keeps generated links and Secure-cookie behavior aligned with the actual public transport.
+- Minimum protocol version defaults to TLS 1.2. Only TLS 1.2 or TLS 1.3 may be selected.
+- Public certificates must chain to a CA trusted by the browsers, AI clients and native agents that connect to the deployment.
+- The container-local healthcheck may skip certificate verification only to test the already-local gateway process; this does not disable TLS verification for external clients or agents.
+- HSTS is emitted on HTTPS deployments but does not opt unrelated subdomains into HSTS.
+
+If an existing reverse proxy terminates TLS, leave the native TLS file settings empty and keep the proxy-to-gateway link constrained to the trusted local/private network.

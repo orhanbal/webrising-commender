@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
+import https from "node:https";
+import type { SecureVersion } from "node:tls";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
@@ -46,7 +48,37 @@ import { deviceApprovalKeyForAgent, issueApproval, randomToken, redact, sha256 }
 const host = process.env.HOST || "0.0.0.0";
 const port = Number(process.env.PORT || 8787);
 const publicBaseUrl = String(process.env.PUBLIC_BASE_URL || `http://localhost:${port}`).replace(/\/$/, "");
+const tlsCertFile = String(process.env.TLS_CERT_FILE || "").trim();
+const tlsKeyFile = String(process.env.TLS_KEY_FILE || "").trim();
+const tlsMinVersionRaw = String(process.env.TLS_MIN_VERSION || "TLSv1.2").trim();
 const bodyLimit = 2 * 1024 * 1024;
+
+if (Boolean(tlsCertFile) !== Boolean(tlsKeyFile)) {
+  throw new Error("TLS_CERT_FILE and TLS_KEY_FILE must be configured together");
+}
+if (!["TLSv1.2", "TLSv1.3"].includes(tlsMinVersionRaw)) {
+  throw new Error("TLS_MIN_VERSION must be TLSv1.2 or TLSv1.3");
+}
+const nativeTlsEnabled = Boolean(tlsCertFile && tlsKeyFile);
+if (nativeTlsEnabled && !publicBaseUrl.startsWith("https://")) {
+  throw new Error("PUBLIC_BASE_URL must use https:// when native TLS is enabled");
+}
+
+async function nativeTlsOptions() {
+  if (!nativeTlsEnabled) return null;
+  const [cert, key] = await Promise.all([
+    fs.readFile(tlsCertFile),
+    fs.readFile(tlsKeyFile),
+  ]);
+  return {
+    cert,
+    key,
+    minVersion: tlsMinVersionRaw as SecureVersion,
+    honorCipherOrder: true,
+  };
+}
+
+const tlsOptions = await nativeTlsOptions();
 const hub = new AgentHub(currentNodeId());
 const deviceRouter = new DeviceRouter(hub);
 const enrollRateLimit = new FixedWindowRateLimiter();
@@ -85,6 +117,9 @@ function securityHeaders() {
     "x-frame-options": "DENY",
     "referrer-policy": "no-referrer",
     "permissions-policy": "camera=(), microphone=(), geolocation=()",
+    ...(publicBaseUrl.startsWith("https://")
+      ? { "strict-transport-security": "max-age=31536000" }
+      : {}),
   };
 }
 
@@ -233,7 +268,7 @@ async function serveConsole(res: ServerResponse) {
   json(res, 404, { error: "console-not-found" });
 }
 
-const server = http.createServer(async (req, res) => {
+const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
   try {
     const url = new URL(req.url || "/", publicBaseUrl);
 
@@ -244,6 +279,7 @@ const server = http.createServer(async (req, res) => {
       return void json(res, databaseReady ? 200 : 503, {
         status: databaseReady ? "ok" : "error",
         database: databaseReady ? "ok" : "error",
+        transport: nativeTlsEnabled ? "https" : "http",
       });
     }
 
@@ -2519,7 +2555,11 @@ const server = http.createServer(async (req, res) => {
     const status = typeof (error as any)?.status === "number" ? (error as any).status : error instanceof z.ZodError ? 400 : 500;
     json(res, status, { error: status === 500 ? "internal_error" : redact(error instanceof Error ? error.message : error) });
   }
-});
+};
+
+const server = tlsOptions
+  ? https.createServer(tlsOptions, requestHandler)
+  : http.createServer(requestHandler);
 
 const wss = new WebSocketServer({ noServer: true, maxPayload: 2 * 1024 * 1024 });
 
@@ -2573,7 +2613,9 @@ server.on("upgrade", async (req, socket, head) => {
 
 server.listen(port, host, () => {
   startRelayHeartbeat();
-  process.stdout.write(`WebRising Commender gateway listening on ${host}:${port}\n`);
+  process.stdout.write(
+    `WebRising Commender gateway listening on ${nativeTlsEnabled ? "https" : "http"}://${host}:${port}\n`,
+  );
 });
 
 async function shutdown() {

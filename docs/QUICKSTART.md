@@ -312,3 +312,31 @@ Relay nodes self-register/heartbeat. Global control can inspect them with `GET /
 Workspace owners can choose a best-effort preferred region under **Access → Workspace**. If that region is unavailable, Commender automatically falls back to another healthy region.
 
 Agents do not require re-enrollment during relay failover. The durable `controlUrl` is used to refresh `gatewayWsUrl` after a disconnect.
+
+
+## Native HTTPS/WSS without a reverse proxy
+
+Commender can terminate TLS directly. Supply both certificate files and set the public URL to HTTPS:
+
+```env
+PUBLIC_BASE_URL=https://commender.example.com:8787
+TLS_CERT_FILE=/run/secrets/commender-fullchain.pem
+TLS_KEY_FILE=/run/secrets/commender-privkey.pem
+TLS_MIN_VERSION=TLSv1.2
+```
+
+For Docker Compose, mount the certificate and key read-only into the gateway container using a local Compose override:
+
+```yaml
+services:
+  gateway:
+    volumes:
+      - ./secrets/fullchain.pem:/run/secrets/commender-fullchain.pem:ro
+      - ./secrets/privkey.pem:/run/secrets/commender-privkey.pem:ro
+```
+
+The paths in `.env` are paths **inside the container**. Keep the key file private. If the public host maps TCP 443 to the gateway's internal port, use the externally visible URL (for example `https://commender.example.com`) as `PUBLIC_BASE_URL`.
+
+To keep an existing reverse proxy instead, leave `TLS_CERT_FILE` and `TLS_KEY_FILE` empty and terminate HTTPS/WSS at that proxy.
+
+Commender does not issue or renew certificates. Use a certificate chain trusted by every browser, MCP client and agent that will connect. A certificate/key change currently requires a gateway restart.

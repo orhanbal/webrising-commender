@@ -303,6 +303,99 @@ jobs:
             fi
           done
 
+  tls-smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: commender
+          POSTGRES_USER: commender
+          POSTGRES_PASSWORD: commender-test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U commender -d commender"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://commender:commender-test@127.0.0.1:5432/commender
+      CONTROL_API_KEY: ci-control-key-0123456789-0123456789
+      APPROVAL_SIGNING_SECRET: ci-approval-secret-0123456789-012345
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: gateway/package-lock.json
+      - run: npm ci
+        working-directory: gateway
+      - run: npm run build
+        working-directory: gateway
+      - name: Generate ephemeral localhost certificate
+        run: |
+          openssl req -x509 -newkey rsa:2048 -sha256 -days 1 -nodes \
+            -keyout /tmp/commender-tls.key \
+            -out /tmp/commender-tls.crt \
+            -subj "/CN=localhost" \
+            -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+          chmod 600 /tmp/commender-tls.key
+      - name: Verify TLS config fails closed
+        working-directory: gateway
+        run: |
+          if TLS_CERT_FILE=/tmp/commender-tls.crt \
+             PUBLIC_BASE_URL=https://localhost:9443 \
+             node dist/index.js >/tmp/tls-pairing-check.log 2>&1; then
+            echo "gateway accepted TLS_CERT_FILE without TLS_KEY_FILE" >&2
+            exit 1
+          fi
+          grep -q "TLS_CERT_FILE and TLS_KEY_FILE must be configured together" /tmp/tls-pairing-check.log
+
+          if TLS_CERT_FILE=/tmp/commender-tls.crt \
+             TLS_KEY_FILE=/tmp/commender-tls.key \
+             PUBLIC_BASE_URL=http://localhost:9443 \
+             node dist/index.js >/tmp/tls-base-url-check.log 2>&1; then
+            echo "gateway accepted HTTP PUBLIC_BASE_URL with native TLS" >&2
+            exit 1
+          fi
+          grep -q "PUBLIC_BASE_URL must use https:// when native TLS is enabled" /tmp/tls-base-url-check.log
+      - name: Start native HTTPS gateway
+        working-directory: gateway
+        run: |
+          HOST=127.0.0.1 \
+          PORT=9443 \
+          PUBLIC_BASE_URL=https://localhost:9443 \
+          TLS_CERT_FILE=/tmp/commender-tls.crt \
+          TLS_KEY_FILE=/tmp/commender-tls.key \
+          TLS_MIN_VERSION=TLSv1.2 \
+          node dist/index.js > /tmp/commender-tls-gateway.log 2>&1 &
+          echo $! > /tmp/commender-tls-gateway.pid
+
+          for i in {1..30}; do
+            if curl --cacert /tmp/commender-tls.crt -fsS https://localhost:9443/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/commender-tls-gateway.log
+          exit 1
+      - name: Run HTTPS and WSS acceptance
+        env:
+          TEST_TLS_BASE_URL: https://localhost:9443
+          TEST_TLS_CA_FILE: /tmp/commender-tls.crt
+        run: node gateway/test/tls-smoke.mjs
+      - name: Print TLS gateway log on failure
+        if: failure()
+        run: cat /tmp/commender-tls-gateway.log || true
+      - name: Stop TLS gateway
+        if: always()
+        run: |
+          if [ -f /tmp/commender-tls-gateway.pid ]; then
+            kill "$(cat /tmp/commender-tls-gateway.pid)" 2>/dev/null || true
+          fi
+
   compose-smoke:
     runs-on: ubuntu-latest
     env:

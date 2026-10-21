@@ -36,6 +36,9 @@ services:
       CONTROL_API_KEY: ${CONTROL_API_KEY}
       APPROVAL_SIGNING_SECRET: ${APPROVAL_SIGNING_SECRET}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8787}
+      TLS_CERT_FILE: ${TLS_CERT_FILE:-}
+      TLS_KEY_FILE: ${TLS_KEY_FILE:-}
+      TLS_MIN_VERSION: ${TLS_MIN_VERSION:-TLSv1.2}
       AGENT_REQUEST_TIMEOUT_MS: ${AGENT_REQUEST_TIMEOUT_MS:-30000}
       DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-self_hosted}
       REGIONAL_RELAY_ENABLED: ${REGIONAL_RELAY_ENABLED:-false}
@@ -70,7 +73,7 @@ services:
         - CMD
         - node
         - -e
-        - "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        - "const secure=Boolean(process.env.TLS_CERT_FILE); const mod=require(secure?'node:https':'node:http'); const req=mod.get({host:'127.0.0.1',port:8787,path:'/health',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)); req.on('error',()=>process.exit(1));"
       interval: 10s
       timeout: 5s
       retries: 12
