@@ -1519,6 +1519,13 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         return void json(res, 401, { error: "invalid_credentials" });
       }
 
+      const preflightOrganizationCount = await db.query<{ count: string }>(
+        "select count(*)::text as count from organizations",
+      );
+      if (Number(preflightOrganizationCount.rows[0]?.count || 0) <= 1) {
+        return void json(res, 409, { error: "last_organization_required" });
+      }
+
       const devices = await db.query<{ id: string }>(
         "select id from devices where organization_id=$1 and revoked_at is null",
         [principal!.organizationId],
