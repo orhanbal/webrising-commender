@@ -1,299 +1,131 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="WECOMMANDER lets AI clients securely use your computer through an outbound native agent, MCP, approvals and audit logs.">
-  <title>WECOMMANDER — Use your computer from chat</title>
-  <style>
-    :root{
-      font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-      color:#f6f8ff;background:#0b0f17;
-      --bg:#0b0f17;--bg2:#10151f;--panel:#151b26;--panel2:#1a2230;--line:#252e3d;
-      --muted:#8f9aae;--soft:#b8c1d0;--blue:#2f6df6;--blue2:#4f82ff;--green:#39d98a;
-      --shadow:0 24px 80px rgba(0,0,0,.35)
-    }
-    *{box-sizing:border-box}
-    html{scroll-behavior:smooth}
-    body{margin:0;background:var(--bg);color:#fff}
-    a{color:inherit;text-decoration:none}
-    button{font:inherit}
-    .wrap{width:min(1120px,calc(100% - 40px));margin:auto}
-    .nav{height:64px;border-bottom:1px solid #171d28;background:rgba(11,15,23,.92);backdrop-filter:blur(14px);position:sticky;top:0;z-index:30}
-    .navin{height:100%;display:flex;align-items:center;gap:28px}
-    .brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:.02em}
-    .logo{width:27px;height:27px;border-radius:7px;border:1px solid #424d63;display:grid;place-items:center;background:#111722;font-size:10px;font-weight:900}
-    .links{display:flex;align-items:center;gap:24px;color:#aeb8c8;font-size:13px;flex:1}
-    .links a:hover{color:#fff}
-    .navright{display:flex;align-items:center;gap:10px}
-    .textlink{font-size:13px;color:#c7cede;padding:9px 12px}
-    .btn{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 18px;border:1px solid transparent;border-radius:7px;background:var(--blue);font-weight:750;font-size:13px;box-shadow:0 10px 26px rgba(47,109,246,.2)}
-    .btn:hover{background:var(--blue2)}
-    .btn.secondary{background:#121823;border-color:#252e3d;color:#e6ebf5;box-shadow:none}
-    .btn.ghost{background:transparent;border-color:#293343;box-shadow:none}
-    .hero{min-height:530px;display:grid;grid-template-columns:1.02fr .98fr;gap:70px;align-items:center;padding:74px 0 72px}
-    .eyebrow{display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid #263042;border-radius:999px;background:#111722;color:#b8c3d7;font-size:12px;margin-bottom:22px}
-    .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 4px rgba(57,217,138,.08)}
-    h1{font-size:56px;line-height:.97;letter-spacing:-.055em;margin:0 0 22px;max-width:610px}
-    .lead{font-size:16px;line-height:1.7;color:#9ca8ba;max-width:610px;margin:0 0 26px}
-    .heroactions{display:flex;gap:10px;flex-wrap:wrap}
-    .metrics{display:flex;gap:38px;margin-top:32px}
-    .metric strong{display:block;font-size:19px}.metric span{font-size:11px;color:#7f8999}
-    .heroart{height:370px;position:relative;display:grid;place-items:center}
-    .orbit{width:315px;height:315px;border:1px dashed #273142;border-radius:50%;position:relative}
-    .orbit:before{content:"";position:absolute;inset:58px;border:1px dashed #20293a;border-radius:50%}
-    .core{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:92px;height:92px;border:1px solid #3d4a63;border-radius:24px;background:linear-gradient(145deg,#1b2332,#0d131e);display:grid;place-items:center;box-shadow:0 25px 80px rgba(0,0,0,.5)}
-    .core .logo{width:48px;height:48px;border-radius:13px;font-size:16px}
-    .node{position:absolute;width:66px;height:66px;border:1px solid #313c51;border-radius:20px;background:#151c28;display:grid;place-items:center;font-size:11px;font-weight:800;box-shadow:0 16px 50px rgba(0,0,0,.35)}
-    .node.n1{top:-13px;left:68px}.node.n2{top:5px;right:20px}.node.n3{bottom:22px;right:-10px}.node.n4{bottom:-10px;left:65px}
-    .node small{display:block;color:#8793a5;font-size:8px;font-weight:600;margin-top:3px}
-    .section{padding:78px 0;border-top:1px solid #171d28}
-    .section.alt{background:#0f141d}
-    .center{text-align:center}.section h2{font-size:30px;letter-spacing:-.035em;margin:0 0 10px}.sub{color:#8f9aae;font-size:13px;line-height:1.7;margin:0 auto 38px;max-width:650px}
-    .installgrid{display:grid;grid-template-columns:1fr 1fr;gap:18px;max-width:760px;margin:auto}
-    .installcard{border:1px solid #2a3343;background:#151b26;border-radius:10px;padding:18px}
-    .installhead{display:flex;align-items:center;gap:12px;margin-bottom:16px}.aiicon{width:34px;height:34px;border-radius:9px;background:#f5f7fb;color:#0d1118;display:grid;place-items:center;font-weight:900;font-size:11px}
-    .installhead strong{font-size:15px}.installhead span{display:block;color:#7f899a;font-size:10px;margin-top:3px}
-    .checklist{display:grid;gap:8px;margin:0 0 16px;padding:0;list-style:none;color:#aeb8c8;font-size:11px}.checklist li:before{content:"✓";color:#52d996;margin-right:8px}
-    .installcard .btn{width:100%}
-    .commandbar{max-width:760px;margin:14px auto 0;border:1px solid #252e3d;border-radius:7px;background:#111722;color:#8490a3;font:11px ui-monospace,SFMono-Regular,Consolas,monospace;padding:11px 13px;display:flex;justify-content:space-between;gap:20px}
-    .split{display:grid;grid-template-columns:1fr 1fr;gap:70px;align-items:center}
-    .featurelist{display:grid;gap:18px;margin:25px 0}.feature{display:grid;grid-template-columns:28px 1fr;gap:12px}.feature i{width:28px;height:28px;border:1px solid #273142;border-radius:7px;background:#141b27;display:grid;place-items:center;font-style:normal;font-size:11px}.feature strong{font-size:13px}.feature p{margin:4px 0 0;color:#8490a3;font-size:11px;line-height:1.55}
-    .deviceframe{background:#151c28;border:1px solid #2a3548;border-radius:12px;padding:14px;box-shadow:var(--shadow)}
-    .devicebar{display:flex;gap:5px;margin-bottom:10px}.devicebar i{width:7px;height:7px;border-radius:50%;background:#3a4455}.screen{height:250px;border-radius:8px;background:radial-gradient(circle at 70% 15%,rgba(71,113,255,.2),transparent 26%),linear-gradient(135deg,#141b28,#0b1018);display:grid;grid-template-columns:1.1fr .9fr;gap:12px;padding:18px}
-    .screen .pane{border:1px solid #273246;border-radius:8px;background:#0c121c;padding:12px}.screen .line{height:7px;border-radius:3px;background:#273142;margin:8px 0}.screen .line.blue{background:#2f6df6}.screen .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.screen .key{height:25px;border-radius:5px;background:#202939}
-    .cards4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.usecard{background:#151c27;border:1px solid #273143;border-radius:9px;padding:16px;min-height:128px}.useicon{width:28px;height:28px;border-radius:7px;background:#16253e;color:#5f8dff;display:grid;place-items:center;margin-bottom:17px;font-size:11px}.usecard strong{font-size:12px}.usecard p{font-size:10.5px;line-height:1.55;color:#7f8b9e;margin:7px 0 0}
-    .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:34px}.stepnum{width:28px;height:28px;border:1px solid #29416f;background:#122141;color:#68a0ff;border-radius:50%;display:grid;place-items:center;font-size:11px;margin-bottom:13px}.steps strong{font-size:12px}.steps p{font-size:10.5px;color:#8691a3;line-height:1.55}
-    .promptbox{max-width:760px;margin:auto}.prompttabs{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}.prompttab{font-size:10px;color:#8e9aae;border:1px solid #283246;border-radius:999px;padding:6px 12px;background:#111721}.prompttab.active{background:#193765;color:#bcd1ff;border-color:#345c9c}.prompt{display:flex;align-items:center;gap:12px;border:1px solid #252f40;background:#121823;border-radius:7px;padding:13px;margin:7px 0;text-align:left}.prompt .useicon{margin:0;width:27px;height:27px}.prompt b{font-size:11px;flex:1}.prompt span{color:#68758a}
-    .clientgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.client{border:1px solid #252e3d;background:#151b26;border-radius:9px;padding:17px}.clienttop{display:flex;align-items:center;gap:10px}.client .aiicon{width:30px;height:30px}.client strong{font-size:12px}.status{display:inline-block;margin-top:13px;font-size:9px;color:#52d996;border:1px solid rgba(82,217,150,.25);padding:4px 7px;border-radius:999px;background:rgba(82,217,150,.06)}
-    .proofstats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:700px;margin:0 auto 28px}.proofstat{border:1px solid #252f40;background:#131a25;border-radius:9px;padding:16px;text-align:left}.proofstat b{font-size:22px}.proofstat span{display:block;color:#7f8b9d;font-size:10px;margin-top:3px}
-    .quotes{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;overflow:hidden}.quote{min-height:126px;border:1px solid #263143;background:#182130;border-radius:8px;padding:15px}.quotehead{display:flex;gap:9px;align-items:center;font-size:10px}.avatar{width:26px;height:26px;border-radius:50%;background:#26334a}.quote p{font-size:10px;line-height:1.55;color:#9aa6b8}
-    .pricing{display:grid;grid-template-columns:1fr 1fr;gap:18px;max-width:720px;margin:auto}.price{border:1px solid #2b3547;background:#141b26;border-radius:9px;padding:22px;text-align:left}.price.featured{background:#171f2c;border-color:#3c4c67}.price h3{font-size:14px;margin:0 0 12px}.amount{font-size:34px;font-weight:800;letter-spacing:-.04em}.amount small{font-size:11px;color:#7f8b9e;font-weight:500}.price ul{padding:0;list-style:none;font-size:10.5px;color:#9aa6b7;line-height:2}.price li:before{content:"✓";color:#52d996;margin-right:8px}.price .btn{width:100%;margin-top:6px}
-    .faq{max-width:760px;margin:auto;display:grid;gap:8px}.faq details{border:1px solid #242e3f;background:#101620;border-radius:7px;padding:0 14px}.faq summary{cursor:pointer;list-style:none;font-size:11px;font-weight:700;padding:14px 0}.faq summary::-webkit-details-marker{display:none}.faq summary:after{content:"+";float:right;color:#68758b}.faq details[open] summary:after{content:"−"}.faq p{font-size:10.5px;line-height:1.65;color:#8b97aa;margin:0 0 14px}
-    .final{padding:76px 0;text-align:center;background:linear-gradient(180deg,#0d121b,#111725)}.final h2{font-size:30px;margin:0 0 10px}.final p{color:#8995a7;font-size:12px;margin-bottom:22px}
-    footer{border-top:1px solid #222a38;background:#151b26;padding:34px 0}.footergrid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:50px}.footbrand p{font-size:10.5px;line-height:1.6;color:#7f8a9b;max-width:270px}.footcol strong{font-size:10px}.footcol a{display:block;color:#828ea0;font-size:10px;margin-top:10px}.copyright{margin-top:28px;padding-top:20px;border-top:1px solid #222b39;color:#647083;font-size:9px;display:flex;justify-content:space-between}
-    @media(max-width:900px){.links{display:none}.hero,.split{grid-template-columns:1fr}.hero{gap:20px}.heroart{order:-1;height:300px}.cards4,.steps,.clientgrid,.quotes{grid-template-columns:1fr 1fr}.installgrid,.pricing{grid-template-columns:1fr}.footergrid{grid-template-columns:1fr}.hero h1,h1{font-size:44px}}
-    @media(max-width:560px){.wrap{width:min(100% - 28px,1120px)}.navright .textlink{display:none}.hero{padding-top:40px}.heroart{transform:scale(.85);margin:-20px}.cards4,.steps,.clientgrid,.quotes,.proofstats{grid-template-columns:1fr}.metrics{gap:18px;flex-wrap:wrap}.section{padding:58px 0}.screen{grid-template-columns:1fr}.screen .pane:last-child{display:none}}
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="WECOMMANDER lets AI clients securely use your computer through an outbound native agent, MCP, approvals and audit logs.">
+<title>WECOMMANDER — Use your computer from chat</title>
+<style>
+:root{
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --bg:#0b0f16;--section:#0e131c;--section2:#121823;--card:#151b26;--card2:#101620;
+  --line:#232c3b;--line2:#2c3748;--text:#f5f7fb;--muted:#8f9bae;--muted2:#a8b2c2;
+  --blue:#2767f3;--blue2:#3c78ff;--green:#3bd28f;--purple:#7052ff;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font-size:14px}
+a{color:inherit;text-decoration:none}
+button{font:inherit}
+.container{width:min(1080px,calc(100% - 40px));margin:0 auto}
+.nav{height:58px;border-bottom:1px solid #171d27;background:#0b0f16}
+.nav-inner{height:100%;display:flex;align-items:center;gap:28px}
+.brand{display:flex;align-items:center;gap:9px;font-weight:780;font-size:14px;letter-spacing:-.01em}
+.mark{width:28px;height:28px;border:1px solid #4a556a;border-radius:5px;background:#101620;display:grid;place-items:center;font-size:8px;font-weight:900;color:#fff}
+.nav-links{display:flex;gap:24px;align-items:center;flex:1;color:#9ca6b7;font-size:14px}
+.nav-links a:hover,.nav-action:hover{color:#fff}
+.nav-actions{display:flex;align-items:center;gap:8px}
+.nav-action{font-size:13.5px;color:#c1c8d4;padding:7px 8px}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 17px;border:1px solid transparent;border-radius:6px;background:var(--blue);color:#fff;font-size:13.5px;font-weight:720;box-shadow:0 8px 24px rgba(39,103,243,.18)}
+.btn:hover{background:var(--blue2)}
+.btn.secondary{background:#111721;border-color:#283243;color:#d8dee8;box-shadow:none}
+.btn.dark{background:#0e131c;border-color:#252e3d;box-shadow:none;color:#dce2ec}
+.hero{min-height:650px;display:grid;grid-template-columns:1.08fr .92fr;align-items:center;gap:78px;padding:88px 0 84px}
+.hero-copy{max-width:570px}.eyebrow{display:inline-flex;align-items:center;gap:7px;color:#99a5b7;font-size:12.5px;margin-bottom:20px}.eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--green)}
+h1{font-size:60px;line-height:.98;letter-spacing:-.05em;margin:0 0 22px;max-width:590px}
+.hero-lead{font-size:16px;line-height:1.65;color:#98a4b5;max-width:600px;margin:0 0 26px}
+.hero-actions{display:flex;gap:8px;flex-wrap:wrap}
+.hero-stats{display:flex;gap:38px;margin-top:30px}.hero-stat strong{display:block;font-size:17px;line-height:1}.hero-stat span{display:block;margin-top:5px;color:#778397;font-size:12.5px}
+.hero-visual{height:360px;position:relative;display:flex;align-items:center;justify-content:center}
+.network{position:relative;width:420px;height:300px}
+.network svg{position:absolute;inset:0;width:100%;height:100%}.network path{stroke:#2d3b50;stroke-width:1.2;stroke-dasharray:3 6;fill:none}
+.ai-node{position:absolute;width:46px;height:46px;border-radius:13px;background:#f2f4f8;color:#0d1118;display:grid;place-items:center;font-size:10px;font-weight:850;box-shadow:0 9px 28px rgba(0,0,0,.25)}
+.ai-node small{position:absolute;top:51px;color:#7f8a9c;font-size:8px;font-weight:650;white-space:nowrap}.n1{left:34px;top:19px}.n2{left:157px;top:4px}.n3{right:32px;top:27px}
+.center-node{position:absolute;left:148px;top:111px;width:66px;height:66px;border-radius:16px;background:#141a24;border:1px solid #3a465b;display:grid;place-items:center;box-shadow:0 18px 45px rgba(0,0,0,.32)}
+.center-node .mark{width:37px;height:37px;border-radius:10px;font-size:12px}
+.capability{position:absolute;top:208px;height:28px;border:1px solid #232c3b;border-radius:6px;background:#101620;display:flex;align-items:center;padding:0 10px;color:#8f9bad;font-size:9.5px}.cap1{left:57px}.cap2{left:150px}.cap3{right:46px}
+.section{padding:108px 0;border-top:1px solid #171d27}.section.alt{background:var(--section)}.section.soft{background:var(--section2)}
+.section-head{text-align:center;max-width:700px;margin:0 auto 42px}.section-head h2{font-size:34px;line-height:1.1;letter-spacing:-.035em;margin:0 0 9px}.section-head p{font-size:15px;line-height:1.6;color:#8d99aa;margin:0}
+.install-wrap{max-width:820px;margin:0 auto}.install-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.install-card{background:#151b26;border:1px solid #283243;border-radius:8px;padding:22px}.install-head{display:flex;gap:10px;align-items:center;margin-bottom:16px}.app-icon{width:36px;height:36px;border-radius:8px;background:#f4f6fa;color:#11161e;display:grid;place-items:center;font-size:9px;font-weight:900}.install-head strong{font-size:16px}.install-head span{display:block;color:#778397;font-size:12.5px;margin-top:3px}.install-card p{font-size:14px;line-height:1.55;color:#8f9bad;margin:0 0 18px}.install-card .btn{width:100%}
+.setup-row{height:46px;border:1px solid #252e3e;background:#101620;border-radius:6px;margin-top:10px;display:flex;align-items:center;gap:10px;padding:0 14px;color:#7f8a9c;font-size:13px}.setup-row b{color:#c2cad7;font-weight:650;min-width:135px}.setup-row code{font:12px ui-monospace,SFMono-Regular,Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.setup-row span{color:#4f7df2;font-size:12px}
+.machine{display:grid;grid-template-columns:.9fr 1.1fr;align-items:center;gap:86px;max-width:1020px;margin:auto}.machine-copy h2{font-size:34px;letter-spacing:-.03em;margin:0 0 8px}.machine-copy>p{font-size:15px;line-height:1.6;color:#8e9aab;margin:0}.feature-list{display:grid;gap:18px;margin:28px 0}.feature{display:grid;grid-template-columns:30px 1fr;gap:13px}.feature-icon{width:28px;height:28px;border-radius:5px;border:1px solid #293346;background:#121925;color:#6f98ff;display:grid;place-items:center;font-size:9px}.feature strong{font-size:15px}.feature p{font-size:13.5px;line-height:1.5;color:#7f8b9e;margin:2px 0 0}.machine-copy .btn{min-width:170px}
+.device-stage{height:310px;position:relative;display:flex;align-items:center;justify-content:center}.purple-panel{width:460px;height:210px;background:linear-gradient(135deg,#643ff1,#815cff);border-radius:7px;position:relative;box-shadow:0 22px 55px rgba(0,0,0,.25)}.terminal-card{position:absolute;left:58px;top:70px;width:185px;height:115px;background:#0b0f16;border:1px solid #2a3444;border-radius:8px;box-shadow:0 16px 35px rgba(0,0,0,.35);padding:9px}.terminal-bar{display:flex;justify-content:space-between;color:#7e899a;font-size:7px;margin-bottom:7px}.terminal-line{height:5px;border-radius:3px;background:#263143;margin:6px 0}.terminal-line.blue{background:#3474ff;width:63%}.terminal-line.short{width:46%}.keypad-card{position:absolute;right:54px;top:36px;width:154px;height:168px;background:#0b0f16;border:1px solid #2a3444;border-radius:9px;box-shadow:0 16px 35px rgba(0,0,0,.35);padding:9px}.keypad-title{font-size:7px;color:#7e899a;text-align:center;margin-bottom:8px}.keys{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.key{height:27px;border-radius:5px;background:#202a39;border:1px solid #293548}.key.blue{background:#2868f3;border-color:#3a79ff}
+.use-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.use-card{border:1px solid #253043;background:#151c27;border-radius:8px;padding:19px;min-height:158px}.use-icon{width:30px;height:30px;border-radius:6px;background:#12213a;color:#6e9aff;display:grid;place-items:center;font-size:10px;margin-bottom:18px}.use-card strong{font-size:15px}.use-card p{font-size:13.5px;line-height:1.5;color:#7f8a9c;margin:6px 0 0}
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:44px;max-width:980px;margin:0 auto}.step{position:relative}.step-num{width:30px;height:30px;border:1px solid #2d4d83;border-radius:50%;background:#132447;color:#6fa0ff;display:grid;place-items:center;font-size:10px;margin-bottom:15px}.step strong{font-size:14.5px}.step p{font-size:13px;line-height:1.5;color:#7e899a;margin:5px 0 0}
+.prompt-wrap{max-width:820px;margin:0 auto}.tabs{display:flex;gap:4px;justify-content:center;margin-bottom:14px;background:#121925;border:1px solid #242e3f;border-radius:6px;padding:3px}.tab{padding:7px 14px;border-radius:4px;color:#7f8a9c;font-size:12px}.tab.active{background:#235fcf;color:#fff}.prompt-row{height:50px;border:1px solid #232d3e;border-radius:6px;background:#101620;margin-top:9px;display:flex;align-items:center;gap:10px;padding:0 14px;text-align:left}.prompt-row i{width:30px;height:30px;border-radius:5px;background:#13213a;color:#6e99ff;display:grid;place-items:center;font-style:normal;font-size:9px}.prompt-row b{font-size:13px;font-weight:620;flex:1}.prompt-row span{color:#5f6b7d}.prompt-cta{text-align:center;margin-top:14px}.prompt-note{text-align:center;color:#667285;font-size:11.5px;margin-top:10px}
+.client-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;max-width:940px;margin:0 auto}.client-card{border:1px solid #252f40;background:#151b26;border-radius:8px;padding:18px;min-height:112px}.client-top{display:flex;align-items:center;gap:9px}.client-card .app-icon{width:34px;height:34px}.client-card strong{font-size:14px}.client-card p{font-size:12px;color:#7e899c;margin:4px 0 0}.status{display:inline-flex;margin-top:10px;border:1px solid rgba(59,210,143,.2);background:rgba(59,210,143,.06);color:#53dba0;border-radius:999px;padding:4px 8px;font-size:11px}
+.proof-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;max-width:820px;margin:0 auto 28px}.proof-stat{display:flex;align-items:center;gap:11px;text-align:left}.proof-icon{width:34px;height:34px;border-radius:6px;background:#12213a;color:#6e99ff;display:grid;place-items:center;font-size:9px}.proof-stat strong{font-size:19px}.proof-stat span{display:block;color:#7d899b;font-size:12px;margin-top:3px}.proof-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.proof-card{border:1px solid #263143;background:#182130;border-radius:8px;padding:18px;min-height:145px}.proof-head{display:flex;align-items:center;gap:8px;font-size:13px}.avatar{width:23px;height:23px;border-radius:50%;background:#26344a}.proof-card p{font-size:12.5px;line-height:1.5;color:#8995a7;margin:8px 0 0}
+.pricing-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:720px;margin:0 auto}.price-card{border:1px solid #2a3445;background:#141b26;border-radius:8px;padding:24px;text-align:left}.price-card.featured{background:#171f2c;border-color:#394962}.price-card h3{font-size:15px;margin:0 0 10px}.price{font-size:36px;font-weight:800;letter-spacing:-.045em}.price small{font-size:12px;color:#7f8a9d;font-weight:500}.price-card ul{padding:0;list-style:none;font-size:13px;line-height:1.9;color:#929dae;margin:12px 0 15px}.price-card li:before{content:"✓";color:#4bd89c;margin-right:7px}.price-card .btn{width:100%}
+.faq{max-width:720px;margin:0 auto;display:grid;gap:7px}.faq details{border:1px solid #232d3d;background:#101620;border-radius:7px;padding:0 15px}.faq summary{cursor:pointer;list-style:none;padding:16px 0;font-size:13.5px;font-weight:650}.faq summary::-webkit-details-marker{display:none}.faq summary:after{content:"+";float:right;color:#647084}.faq details[open] summary:after{content:"−"}.faq p{font-size:13px;line-height:1.58;color:#8793a5;margin:0 0 12px}
+.final-cta{padding:86px 0;text-align:center;background:linear-gradient(180deg,#0e131c,#121823)}.final-cta h2{font-size:34px;letter-spacing:-.03em;margin:0 0 7px}.final-cta p{font-size:14px;color:#8995a7;margin:0 0 17px}.final-actions{display:flex;justify-content:center;gap:8px}
+footer{padding:44px 0 24px;background:#151b26;border-top:1px solid #222b39}.footer-grid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:45px}.footer-brand p{font-size:12.5px;line-height:1.55;color:#7d8899;max-width:270px}.footer-col strong{font-size:12px}.footer-col a{display:block;font-size:12px;color:#808b9c;margin-top:8px}.copyright{margin-top:30px;padding-top:20px;border-top:1px solid #232c3a;color:#626e80;font-size:11px;display:flex;justify-content:space-between}
+@media(max-width:900px){.nav-links{display:none}.hero,.machine{grid-template-columns:1fr}.hero{gap:18px}.hero-visual{order:-1;height:240px}.network{transform:scale(.86)}.install-grid,.pricing-grid{grid-template-columns:1fr}.use-grid,.steps,.client-grid,.proof-cards{grid-template-columns:1fr 1fr}.footer-grid{grid-template-columns:1fr}}
+@media(max-width:560px){.container{width:min(100% - 28px,1080px)}.nav-action{display:none}.hero{padding-top:38px}.hero h1{font-size:42px}.hero-lead{font-size:13.5px}.use-grid,.steps,.client-grid,.proof-cards,.proof-stats{grid-template-columns:1fr}.machine{gap:28px}.device-stage{transform:scale(.82);margin:-20px}.section{padding:54px 0}.copyright{display:block}.copyright span{display:block;margin-top:5px}}
+</style>
 </head>
 <body>
-  <header class="nav">
-    <div class="wrap navin">
-      <a class="brand" href="/"><span class="logo">WC</span><span>WECOMMANDER</span></a>
-      <nav class="links">
-        <a href="#product">Product</a>
-        <a href="#mcp">MCP</a>
-        <a href="#pricing">Pricing</a>
-        <a href="#resources">Resources</a>
-      </nav>
-      <div class="navright">
-        <a class="textlink" href="/app">Manage devices</a>
-        <a class="btn" href="/app">Install</a>
-      </div>
+<header class="nav">
+  <div class="container nav-inner">
+    <a class="brand" href="/"><span class="mark">WC</span><span>WECOMMANDER</span></a>
+    <nav class="nav-links"><a href="#product">Product</a><a href="#mcp">MCP</a><a href="#pricing">Pricing</a><a href="#resources">Resources</a></nav>
+    <div class="nav-actions"><a class="nav-action" href="/app">Manage devices</a><a class="btn" href="/app">Install</a></div>
+  </div>
+</header>
+<main>
+<section class="container hero" id="product">
+  <div class="hero-copy">
+    <div class="eyebrow"><span class="dot"></span> First-party · self-hostable · outbound-only agent</div>
+    <h1>Use your computer<br>from chat</h1>
+    <p class="hero-lead">WECOMMANDER gives your AI client secure access to your computer through a native agent and MCP. Work with files, processes, persistent terminals and long-running tasks while approvals, allowlisted roots and audit logs keep control explicit.</p>
+    <div class="hero-actions"><a class="btn" href="/app">Install</a><a class="btn secondary" href="/app">Manage devices</a></div>
+    <div class="hero-stats"><div class="hero-stat"><strong>3 platforms</strong><span>Windows · Linux · macOS</span></div><div class="hero-stat"><strong>0 inbound ports</strong><span>Agent connects outward</span></div><div class="hero-stat"><strong>MCP native</strong><span>Open AI control surface</span></div></div>
+  </div>
+  <div class="hero-visual" aria-label="AI clients connected to WECOMMANDER">
+    <div class="network">
+      <svg viewBox="0 0 360 255" aria-hidden="true"><path d="M57 42 C95 65 120 90 176 142"/><path d="M180 27 C180 70 180 95 180 142"/><path d="M306 51 C255 73 230 101 183 143"/><path d="M180 176 C180 193 137 205 103 220"/><path d="M180 176 C180 196 180 204 180 220"/><path d="M180 176 C180 193 221 205 270 220"/></svg>
+      <div class="ai-node n1">GPT<small>ChatGPT</small></div><div class="ai-node n2">C<small>Claude</small></div><div class="ai-node n3">AI<small>MCP client</small></div>
+      <div class="center-node"><span class="mark">WC</span></div>
+      <div class="capability cap1">Files</div><div class="capability cap2">Terminal</div><div class="capability cap3">Processes</div>
     </div>
-  </header>
+  </div>
+</section>
 
-  <main>
-    <section class="wrap hero" id="product">
-      <div>
-        <div class="eyebrow"><span class="dot"></span> First-party · self-hostable · outbound-only agent</div>
-        <h1>Use your computer<br>from chat</h1>
-        <p class="lead">WECOMMANDER gives your AI client secure access to your computer through a native agent and MCP. Work with files, processes, persistent terminals and long-running tasks while approvals, allowlisted roots and audit logs keep control explicit.</p>
-        <div class="heroactions">
-          <a class="btn" href="/app">Install</a>
-          <a class="btn secondary" href="/app">Manage devices</a>
-        </div>
-        <div class="metrics">
-          <div class="metric"><strong>3</strong><span>desktop platforms</span></div>
-          <div class="metric"><strong>0</strong><span>inbound ports required</span></div>
-          <div class="metric"><strong>MCP</strong><span>native control surface</span></div>
-        </div>
-      </div>
-      <div class="heroart" aria-label="AI clients connected to WECOMMANDER">
-        <div class="orbit">
-          <div class="node n1">ChatGPT<small>MCP</small></div>
-          <div class="node n2">Claude<small>MCP</small></div>
-          <div class="node n3">Gemini<small>client</small></div>
-          <div class="node n4">Other AI<small>MCP</small></div>
-          <div class="core"><span class="logo">WC</span></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="section alt" id="mcp">
-      <div class="wrap center">
-        <h2>Install it where you chat</h2>
-        <p class="sub">Connect WECOMMANDER to an MCP-capable AI client, enroll your machine once, and keep the native agent running in the background.</p>
-        <div class="installgrid">
-          <article class="installcard">
-            <div class="installhead"><span class="aiicon">GPT</span><div><strong>ChatGPT</strong><span>Use WECOMMANDER through MCP</span></div></div>
-            <ul class="checklist"><li>List and select enrolled devices</li><li>Read files and system information</li><li>Run approved operations with audit history</li></ul>
-            <a class="btn" href="/app">Open WECOMMANDER</a>
-          </article>
-          <article class="installcard">
-            <div class="installhead"><span class="aiicon">AI</span><div><strong>Any MCP client</strong><span>One secure control plane</span></div></div>
-            <ul class="checklist"><li>Streamable HTTP MCP endpoint</li><li>Workspace-scoped API tokens</li><li>Persistent agent reconnect</li></ul>
-            <a class="btn" href="/app">Manage devices</a>
-          </article>
-        </div>
-        <div class="commandbar"><span>MCP endpoint</span><strong>https://your-domain.example/mcp</strong></div>
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="wrap split">
-        <div>
-          <h2>Your machine, from anywhere</h2>
-          <p class="sub" style="margin:0;text-align:left">Your computer maintains an outbound connection to WECOMMANDER. No inbound port is required on the controlled machine.</p>
-          <div class="featurelist">
-            <div class="feature"><i>01</i><div><strong>Native agent</strong><p>A Rust binary runs on Windows, Linux or macOS and reconnects automatically.</p></div></div>
-            <div class="feature"><i>02</i><div><strong>Persistent work</strong><p>Long-running tasks and terminal sessions remain discoverable when the AI client reconnects.</p></div></div>
-            <div class="feature"><i>03</i><div><strong>Exact approvals</strong><p>HIGH-risk operations use short-lived one-time approvals bound to the exact operation payload.</p></div></div>
-            <div class="feature"><i>04</i><div><strong>Audit by default</strong><p>Mutating actions and command execution are recorded without intentionally leaking secrets.</p></div></div>
-          </div>
-          <a class="btn" href="/app">Connect your computer</a>
-        </div>
-        <div class="deviceframe">
-          <div class="devicebar"><i></i><i></i><i></i></div>
-          <div class="screen">
-            <div class="pane">
-              <div class="line blue" style="width:55%"></div><div class="line"></div><div class="line" style="width:82%"></div><div class="line" style="width:70%"></div><div class="line blue" style="width:36%;margin-top:28px"></div>
-            </div>
-            <div class="pane">
-              <div class="keypad"><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="wrap center">
-        <h2>What people use it for</h2>
-        <p class="sub">A secure bridge between AI reasoning and the machines where your actual work lives.</p>
-        <div class="cards4">
-          <article class="usecard"><span class="useicon">⌁</span><strong>Files and documents</strong><p>Browse allowlisted roots, read files, create folders, edit text and move files.</p></article>
-          <article class="usecard"><span class="useicon">&gt;_</span><strong>Code and projects</strong><p>Inspect repositories, execute approved commands and keep long-running work attached.</p></article>
-          <article class="usecard"><span class="useicon">▤</span><strong>Servers and devices</strong><p>See system information, processes, online state and reconnect behavior from one console.</p></article>
-          <article class="usecard"><span class="useicon">⌕</span><strong>Troubleshooting</strong><p>Use audit trails, terminal sessions and exact approvals to investigate issues safely.</p></article>
-        </div>
-      </div>
-    </section>
-
-    <section class="section alt">
-      <div class="wrap center">
-        <h2>How it works</h2>
-        <p class="sub">Four explicit steps. No hidden persistence and no inbound firewall hole.</p>
-        <div class="steps">
-          <div><span class="stepnum">1</span><strong>Sign in</strong><p>Create or access your WECOMMANDER workspace.</p></div>
-          <div><span class="stepnum">2</span><strong>Enroll a device</strong><p>Generate a one-time pairing code and connect the native agent.</p></div>
-          <div><span class="stepnum">3</span><strong>Connect your AI</strong><p>Use the MCP endpoint with a workspace-scoped credential.</p></div>
-          <div><span class="stepnum">4</span><strong>Start working</strong><p>AI requests are routed to the selected device under your policy and approvals.</p></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="section" id="resources">
-      <div class="wrap center promptbox">
-        <h2>Explore what you can do</h2>
-        <p class="sub">Common WECOMMANDER workflows, expressed the way you would ask an AI client.</p>
-        <div class="prompttabs"><span class="prompttab active">All workflows</span><span class="prompttab">Files</span><span class="prompttab">Development</span><span class="prompttab">Operations</span></div>
-        <div class="prompt"><span class="useicon">⌕</span><b>Find every configuration file containing a specific setting</b><span>→</span></div>
-        <div class="prompt"><span class="useicon">&gt;_</span><b>Check this project, run its tests and explain what failed</b><span>→</span></div>
-        <div class="prompt"><span class="useicon">▤</span><b>Start a persistent task and let me reconnect to its output later</b><span>→</span></div>
-        <div class="prompt"><span class="useicon">✓</span><b>Show me the exact HIGH-risk operation before I approve it</b><span>→</span></div>
-        <a class="btn" style="margin-top:14px" href="/app">Open WECOMMANDER</a>
-      </div>
-    </section>
-
-    <section class="section alt">
-      <div class="wrap center">
-        <h2>Works with your AI client</h2>
-        <p class="sub">Use the standard MCP surface instead of coupling your machines to one assistant.</p>
-        <div class="clientgrid">
-          <article class="client"><div class="clienttop"><span class="aiicon">GPT</span><strong>ChatGPT</strong></div><span class="status">MCP ready</span></article>
-          <article class="client"><div class="clienttop"><span class="aiicon">AI</span><strong>Claude</strong></div><span class="status">MCP ready</span></article>
-          <article class="client"><div class="clienttop"><span class="aiicon">G</span><strong>Gemini</strong></div><span class="status">MCP-capable clients</span></article>
-          <article class="client"><div class="clienttop"><span class="aiicon">MCP</span><strong>Other clients</strong></div><span class="status">Open protocol</span></article>
-        </div>
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="wrap center">
-        <h2>Built for real machines</h2>
-        <p class="sub">The product architecture is designed around control, portability and recoverability rather than a single hosted dependency.</p>
-        <div class="proofstats">
-          <div class="proofstat"><b>Self-hosted</b><span>Free core deployment mode</span></div>
-          <div class="proofstat"><b>3 platforms</b><span>Windows · Linux · macOS</span></div>
-          <div class="proofstat"><b>Outbound</b><span>No inbound device port required</span></div>
-        </div>
-        <div class="quotes">
-          <article class="quote"><div class="quotehead"><span class="avatar"></span><b>Policy-bound</b></div><p>File roots, roles and risk classes define what an AI client is allowed to do.</p></article>
-          <article class="quote"><div class="quotehead"><span class="avatar"></span><b>Reconnectable</b></div><p>Agents reconnect with capped backoff and persistent work can be rediscovered.</p></article>
-          <article class="quote"><div class="quotehead"><span class="avatar"></span><b>Auditable</b></div><p>Mutating actions are recorded with actor, device, operation and outcome.</p></article>
-          <article class="quote"><div class="quotehead"><span class="avatar"></span><b>Portable</b></div><p>The self-hosted control plane runs with PostgreSQL and first-party components.</p></article>
-        </div>
-      </div>
-    </section>
-
-    <section class="section alt" id="pricing">
-      <div class="wrap center">
-        <h2>Pricing</h2>
-        <p class="sub">Start with the self-hosted core. Cloud packaging can be layered on without weakening the local-first architecture.</p>
-        <div class="pricing">
-          <article class="price">
-            <h3>Community</h3><div class="amount">$0 <small>/ self-hosted</small></div>
-            <ul><li>Native agent</li><li>Device console</li><li>MCP endpoint</li><li>Approvals and audit</li><li>Windows, Linux and macOS</li></ul>
-            <a class="btn ghost" href="/app">Get started</a>
-          </article>
-          <article class="price featured">
-            <h3>Cloud</h3><div class="amount">Soon <small>/ managed</small></div>
-            <ul><li>Managed control plane</li><li>Organizations and RBAC</li><li>Regional relay orchestration</li><li>Workspace quotas and entitlements</li><li>Same native agent and protocol</li></ul>
-            <a class="btn" href="/app">Explore workspace</a>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="wrap center">
-        <h2>Frequently Asked Questions</h2>
-        <p class="sub">The important security and deployment questions, answered directly.</p>
-        <div class="faq">
-          <details><summary>What is WECOMMANDER?</summary><p>A secure remote-computer control platform for AI clients. A native agent connects outward to a gateway, while MCP exposes approved operations to the AI client.</p></details>
-          <details><summary>Do I need to open a port on my computer?</summary><p>No. The controlled device initiates the connection. The machine does not need an inbound port for the agent.</p></details>
-          <details><summary>Can I self-host it?</summary><p>Yes. The Community architecture is designed around the gateway, PostgreSQL and first-party components without a required paid infrastructure dependency.</p></details>
-          <details><summary>How are dangerous actions controlled?</summary><p>HIGH-risk actions require short-lived, one-time approval claims bound to the exact device, action and parameters unless local policy explicitly allows otherwise.</p></details>
-          <details><summary>What happens if ChatGPT or the gateway disconnects?</summary><p>The agent reconnects automatically. Persistent tasks and PTY sessions can be rediscovered while the native agent process remains alive.</p></details>
-          <details><summary>Which operating systems are supported?</summary><p>The native agent and install paths are built for Windows, Linux and macOS.</p></details>
-          <details><summary>Does WECOMMANDER work only with one AI provider?</summary><p>No. The control surface is based on MCP so the architecture is not intentionally tied to one assistant.</p></details>
-          <details><summary>Where do I manage my devices?</summary><p>Use the WECOMMANDER application console at /app to pair devices, inspect state, approve operations and view audit history.</p></details>
-        </div>
-      </div>
-    </section>
-
-    <section class="final">
-      <div class="wrap">
-        <h2>Put your computer in the chat.</h2>
-        <p>Keep the machine under your control while giving your AI a secure way to get real work done.</p>
-        <div class="heroactions" style="justify-content:center">
-          <a class="btn" href="/app">Install</a>
-          <a class="btn secondary" href="/app">Manage devices</a>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <footer>
-    <div class="wrap">
-      <div class="footergrid">
-        <div class="footbrand"><a class="brand" href="/"><span class="logo">WC</span><span>WECOMMANDER</span></a><p>Secure, persistent AI-to-device control with a native outbound agent, MCP, approvals and audit.</p></div>
-        <div class="footcol"><strong>Product</strong><a href="#product">Overview</a><a href="#mcp">MCP</a><a href="/app">Device console</a><a href="#pricing">Pricing</a></div>
-        <div class="footcol"><strong>Resources</strong><a href="#resources">Workflows</a><a href="/health">Health</a><a href="/app">Sign in</a></div>
-      </div>
-      <div class="copyright"><span>© 2026 WECOMMANDER</span><span>Self-hostable · MCP-native · outbound-only agent</span></div>
+<section class="section alt" id="mcp"><div class="container">
+  <div class="section-head"><h2>Install it where you chat</h2><p>Connect WECOMMANDER to an MCP-capable AI client, enroll your machine once, and keep the native agent running in the background.</p></div>
+  <div class="install-wrap">
+    <div class="install-grid">
+      <article class="install-card"><div class="install-head"><span class="app-icon">GPT</span><div><strong>ChatGPT</strong><span>Use WECOMMANDER through MCP</span></div></div><p>List devices, inspect files and system information, then run approved operations with an auditable trail.</p><a class="btn" href="/app">Install in ChatGPT</a></article>
+      <article class="install-card"><div class="install-head"><span class="app-icon">AI</span><div><strong>Any MCP client</strong><span>One secure control plane</span></div></div><p>Use Streamable HTTP MCP, workspace-scoped credentials and the same native agent across supported clients.</p><a class="btn" href="/app">Open WECOMMANDER</a></article>
     </div>
-  </footer>
+    <div class="setup-row"><b>MCP endpoint</b><code>https://your-domain.example/mcp</code><span>copy</span></div>
+    <div class="setup-row"><b>Device enrollment</b><code>Generate a one-time pairing code in /app</code><span>open</span></div>
+  </div>
+</div></section>
+
+<section class="section"><div class="container machine">
+  <div class="machine-copy"><h2>Your machine, from anywhere</h2><p>Your computer maintains an outbound connection to WECOMMANDER. No inbound port is required on the controlled machine.</p>
+    <div class="feature-list"><div class="feature"><span class="feature-icon">01</span><div><strong>Native agent</strong><p>A Rust binary runs on Windows, Linux or macOS and reconnects automatically.</p></div></div><div class="feature"><span class="feature-icon">02</span><div><strong>Persistent work</strong><p>Long-running tasks and terminal sessions remain discoverable after reconnects.</p></div></div><div class="feature"><span class="feature-icon">03</span><div><strong>Exact approvals</strong><p>HIGH-risk operations use one-time approvals bound to the exact operation payload.</p></div></div><div class="feature"><span class="feature-icon">04</span><div><strong>Audit by default</strong><p>Mutating actions and command execution are recorded without intentionally leaking secrets.</p></div></div></div>
+    <a class="btn" href="/app">Connect your computer</a>
+  </div>
+  <div class="device-stage"><div class="purple-panel"><div class="terminal-card"><div class="terminal-bar"><span>Terminal</span><span>online</span></div><div class="terminal-line blue"></div><div class="terminal-line"></div><div class="terminal-line short"></div><div class="terminal-line"></div></div><div class="keypad-card"><div class="keypad-title">Remote controls</div><div class="keys"><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key blue"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span><span class="key"></span></div></div></div></div>
+</div></section>
+
+<section class="section"><div class="container"><div class="section-head"><h2>What people use it for</h2><p>A secure bridge between AI reasoning and the machines where your actual work lives.</p></div><div class="use-grid"><article class="use-card"><span class="use-icon">⌁</span><strong>Files and documents</strong><p>Browse allowlisted roots, read files, create folders, edit text and move files.</p></article><article class="use-card"><span class="use-icon">&gt;_</span><strong>Code and projects</strong><p>Inspect repositories, execute approved commands and keep long-running work attached.</p></article><article class="use-card"><span class="use-icon">▤</span><strong>Servers and devices</strong><p>See system information, processes, online state and reconnect behavior from one console.</p></article><article class="use-card"><span class="use-icon">⌕</span><strong>Troubleshooting</strong><p>Use audit history, terminals and exact approvals to investigate issues safely.</p></article></div></div></section>
+
+<section class="section soft"><div class="container"><div class="section-head"><h2>How it works</h2><p>Four explicit steps. No hidden persistence and no inbound firewall hole.</p></div><div class="steps"><div class="step"><span class="step-num">1</span><strong>Sign in</strong><p>Create or access your WECOMMANDER workspace.</p></div><div class="step"><span class="step-num">2</span><strong>Enroll a device</strong><p>Generate a one-time pairing code and connect the native agent.</p></div><div class="step"><span class="step-num">3</span><strong>Connect your AI</strong><p>Use the MCP endpoint with a workspace-scoped credential.</p></div><div class="step"><span class="step-num">4</span><strong>Start working</strong><p>Requests route to the selected device under your policy and approvals.</p></div></div></div></section>
+
+<section class="section" id="resources"><div class="container"><div class="section-head"><h2>Explore Prompt Library</h2><p>Common WECOMMANDER workflows expressed the way you would ask an AI client.</p></div><div class="prompt-wrap"><div class="tabs"><span class="tab active">All workflows</span><span class="tab">Files</span><span class="tab">Development</span><span class="tab">Operations</span></div><div class="prompt-row"><i>⌕</i><b>Find every configuration file containing a specific setting</b><span>→</span></div><div class="prompt-row"><i>&gt;_</i><b>Check this project, run its tests and explain what failed</b><span>→</span></div><div class="prompt-row"><i>▤</i><b>Start a persistent task and let me reconnect to its output later</b><span>→</span></div><div class="prompt-row"><i>✓</i><b>Show me the exact HIGH-risk operation before I approve it</b><span>→</span></div><div class="prompt-cta"><a class="btn" href="/app">Open WECOMMANDER</a></div><div class="prompt-note">Your AI client still operates under WECOMMANDER policy and approvals.</div></div></div></section>
+
+<section class="section soft"><div class="container"><div class="section-head"><h2>Works with your AI client</h2><p>Use MCP instead of coupling your machines to one assistant.</p></div><div class="client-grid"><article class="client-card"><div class="client-top"><span class="app-icon">GPT</span><div><strong>ChatGPT</strong><p>MCP client</p></div></div><span class="status">MCP ready</span></article><article class="client-card"><div class="client-top"><span class="app-icon">C</span><div><strong>Claude</strong><p>MCP client</p></div></div><span class="status">MCP ready</span></article><article class="client-card"><div class="client-top"><span class="app-icon">G</span><div><strong>Gemini</strong><p>Compatible clients</p></div></div><span class="status">MCP capable</span></article><article class="client-card"><div class="client-top"><span class="app-icon">MCP</span><div><strong>Other clients</strong><p>Open protocol</p></div></div><span class="status">Portable</span></article></div></div></section>
+
+<section class="section"><div class="container"><div class="section-head"><h2>Built for real operations</h2><p>The architecture prioritizes control, portability and recoverability over a single hosted dependency.</p></div><div class="proof-stats"><div class="proof-stat"><span class="proof-icon">3</span><div><strong>3 platforms</strong><span>Windows · Linux · macOS</span></div></div><div class="proof-stat"><span class="proof-icon">0</span><div><strong>0 inbound ports</strong><span>Outbound native agent</span></div></div><div class="proof-stat"><span class="proof-icon">M</span><div><strong>MCP native</strong><span>Open AI control surface</span></div></div></div><div class="proof-cards"><article class="proof-card"><div class="proof-head"><span class="avatar"></span><b>Policy-bound</b></div><p>File roots, roles and risk classes define what an AI client can do.</p></article><article class="proof-card"><div class="proof-head"><span class="avatar"></span><b>Reconnectable</b></div><p>Agents reconnect with capped backoff and persistent work can be rediscovered.</p></article><article class="proof-card"><div class="proof-head"><span class="avatar"></span><b>Auditable</b></div><p>Mutating actions are recorded with actor, device, operation and outcome.</p></article><article class="proof-card"><div class="proof-head"><span class="avatar"></span><b>Portable</b></div><p>The self-hosted control plane runs with PostgreSQL and first-party components.</p></article></div></div></section>
+
+<section class="section alt" id="pricing"><div class="container"><div class="section-head"><h2>Pricing</h2><p>Start with the self-hosted core. Managed cloud packaging can be layered on without weakening the local-first architecture.</p></div><div class="pricing-grid"><article class="price-card"><h3>Community</h3><div class="price">$0 <small>/ self-hosted</small></div><ul><li>Native agent</li><li>Device console</li><li>MCP endpoint</li><li>Approvals and audit</li><li>Windows, Linux and macOS</li></ul><a class="btn dark" href="/app">Get started</a></article><article class="price-card featured"><h3>Managed Cloud</h3><div class="price">Soon <small>/ hosted</small></div><ul><li>Managed control plane</li><li>Organizations and RBAC</li><li>Regional relay orchestration</li><li>Workspace entitlements</li><li>Same native agent and protocol</li></ul><a class="btn" href="/app">Explore workspace</a></article></div></div></section>
+
+<section class="section"><div class="container"><div class="section-head"><h2>Frequently Asked Questions</h2><p>The important security and deployment questions, answered directly.</p></div><div class="faq"><details><summary>What is WECOMMANDER?</summary><p>A secure remote-computer control platform for AI clients. A native agent connects outward to a gateway, while MCP exposes approved operations to the AI client.</p></details><details><summary>Do I need to open a port on my computer?</summary><p>No. The controlled device initiates the connection. The machine does not need an inbound port for the agent.</p></details><details><summary>Can I self-host it?</summary><p>Yes. Community mode is designed around the gateway, PostgreSQL and first-party components without a required paid infrastructure dependency.</p></details><details><summary>How are dangerous actions controlled?</summary><p>HIGH-risk actions require short-lived, one-time approval claims bound to the exact device, action and parameters unless local policy explicitly allows otherwise.</p></details><details><summary>What happens if the AI client or gateway disconnects?</summary><p>The agent reconnects automatically. Persistent tasks and PTY sessions can be rediscovered while the native agent process remains alive.</p></details><details><summary>Which operating systems are supported?</summary><p>The native agent and install paths are built for Windows, Linux and macOS.</p></details><details><summary>Does WECOMMANDER work only with one AI provider?</summary><p>No. The control surface is based on MCP so the architecture is not intentionally tied to one assistant.</p></details><details><summary>Where do I manage my devices?</summary><p>Use the WECOMMANDER application console at /app to pair devices, inspect state, approve operations and view audit history.</p></details></div></div></section>
+
+<section class="final-cta"><div class="container"><h2>Put your computer in the chat.</h2><p>Keep the machine under your control while giving your AI a secure way to get real work done.</p><div class="final-actions"><a class="btn" href="/app">Install</a><a class="btn secondary" href="/app">Manage devices</a></div></div></section>
+</main>
+<footer><div class="container"><div class="footer-grid"><div class="footer-brand"><a class="brand" href="/"><span class="mark">WC</span><span>WECOMMANDER</span></a><p>Secure, persistent AI-to-device control with a native outbound agent, MCP, approvals and audit.</p></div><div class="footer-col"><strong>Product</strong><a href="#product">Overview</a><a href="#mcp">MCP</a><a href="/app">Device console</a><a href="#pricing">Pricing</a></div><div class="footer-col"><strong>Resources</strong><a href="#resources">Workflows</a><a href="/health">Health</a><a href="/app">Sign in</a></div></div><div class="copyright"><span>© 2026 WECOMMANDER</span><span>Self-hostable · MCP-native · outbound-only agent</span></div></div></footer>
 </body>
 </html>
