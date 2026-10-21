@@ -70,6 +70,7 @@ The local agent always initiates outbound connections. No inbound port is requir
 - No silent persistence installation.
 - Verified backup/restore tooling for the supported Compose deployment.
 - A repeatable restart/network soak runner for real-device acceptance.
+- Optional native HTTPS/WSS termination using operator-supplied certificate/key files.
 
 ## 4. Security model
 
@@ -135,7 +136,7 @@ Windows service, systemd, Docker images, release artifacts.
 ### Phase 7 — SaaS
 Real user auth, organizations, RBAC, plans/billing, regional relays. This phase must not weaken self-hosted mode.
 
-Current milestone: organization-scoped browser users, hardened sessions, email-verified public signup/password reset through the built-in SMTP/outbox layer, workspace onboarding/access, provider-neutral billing plans/subscriptions, transactional resource entitlements, idempotent normalized billing events, provider identity binding/stale-event protection, and first-party regional relay orchestration with agent route refresh/failover are implemented. Third-party checkout/webhook adapters are not a required runtime component and are intentionally excluded while the no-third-party rule is active.
+Current milestone: organization-scoped browser users, hardened sessions, email-verified public signup/password reset through the built-in SMTP/outbox layer, workspace onboarding/access, provider-neutral billing plans/subscriptions, transactional resource entitlements, idempotent normalized billing events, provider identity binding/stale-event protection, first-party regional relay orchestration with agent route refresh/failover, and native HTTPS/WSS termination are implemented. Third-party checkout/webhook adapters are not a required runtime component and are intentionally excluded while the no-third-party rule is active.
 
 ## 7. Definition of done
 
