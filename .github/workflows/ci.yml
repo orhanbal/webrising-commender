@@ -87,7 +87,7 @@ jobs:
       SMTP_PORT: 2525
       SMTP_SECURITY: none
       SMTP_HELO_NAME: commender-ci
-      SMTP_FROM: WebRising Commender <commender@example.test>
+      SMTP_FROM: WECOMMANDER <commender@example.test>
       MAIL_OUTBOX_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       MAIL_DELIVERY_INTERVAL_MS: 250
       MAIL_DELIVERY_BATCH: 20
@@ -426,7 +426,7 @@ jobs:
       - name: Verify gateway health and console
         run: |
           curl -fsS http://127.0.0.1:8787/health | grep -q '"status":"ok"'
-          curl -fsS http://127.0.0.1:8787/ | grep -q 'WebRising Commender'
+          curl -fsS http://127.0.0.1:8787/ | grep -q 'WECOMMANDER'
       - name: Verify backup and destructive restore
         run: |
           curl -fsS -X POST http://127.0.0.1:8787/api/organizations \
