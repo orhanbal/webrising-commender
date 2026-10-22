@@ -53,21 +53,21 @@ const bins=["google-chrome","google-chrome-stable","chromium","chromium-browser"
 const browser=bins.find(cmd=>spawnSync("which",[cmd],{encoding:"utf8"}).status===0);
 if(!browser){server.close();throw Error("Headless Chromium/Chrome not available on CI runner")}
 const profile=mkdtempSync(join(tmpdir(),"wc-dashboard-"));
-const child=spawn(browser,["--headless=new","--no-sandbox","--disable-dev-shm-usage","--disable-gpu","--no-first-run","--remote-debugging-port=0","--remote-allow-origins=*","--user-data-dir="+profile,"about:blank"],{stdio:["ignore","ignore","pipe"]});
+const child=spawn(browser,["--headless=new","--no-sandbox","--disable-dev-shm-usage","--disable-gpu","--no-first-run","--disable-extensions","--disable-background-networking","--disable-default-apps","--disable-features=MediaRouter,OptimizationHints","--remote-debugging-port=0","--remote-allow-origins=*","--user-data-dir="+profile,"about:blank"],{stdio:["ignore","ignore","pipe"]});
 let chromeError="";child.stderr.on("data",chunk=>chromeError+=String(chunk).slice(-2500));
 let ws;
 const pending=new Map(),browserErrors=[];
 let nextId=1;
 try{
  let port=null;
- for(let i=0;i<80;i++){
+ for(let i=0;i<600;i++){
   try{port=Number(readFileSync(join(profile,"DevToolsActivePort"),"utf8").split("\n")[0]);if(port)break}catch{}
   if(child.exitCode!==null)throw Error("Chrome exited: "+chromeError);
   await delay(100);
  }
- assert.ok(port,"Chrome DevTools startup timed out: "+chromeError);
+ assert.ok(port,"Chrome DevTools startup timed out after 60s (binary: "+browser+"): "+chromeError);
  let page=null;
- for(let i=0;i<30;i++){
+ for(let i=0;i<100;i++){
   const list=await (await fetch("http://127.0.0.1:"+port+"/json/list")).json();
   page=list.find(x=>x.type==="page");if(page)break;await delay(100);
  }
