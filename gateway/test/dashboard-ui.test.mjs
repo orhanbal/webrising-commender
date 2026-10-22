@@ -78,3 +78,29 @@ test("official SVG logo and favicon files are available", () => {
   assert.ok(landing.includes("center-brand-icon"));
   assert.ok(landing.includes("wecommander-favicon.svg"));
 });
+
+test("Windows 11 Fluent colors match both appearance modes", () => {
+  const landing=readFileSync(new URL("../public/index.html",import.meta.url),"utf8");
+  for(const page of [html,landing]){
+    for(const color of ["--win-bg:#202020","--win-sidebar:#1c1c1c"].filter(token=>page===html||!token.includes("sidebar"))){
+      assert.ok(page.includes(color), "Missing dark Windows color: "+color);
+    }
+    for(const color of ["--win-bg:#f3f3f3","--win-surface:#ffffff","--win-accent:#0067c0","--win-accent:#60cdff"]){
+      assert.ok(page.includes(color), "Missing Fluent token: "+color);
+    }
+    assert.ok(page.includes('name="theme-color"'),"Missing Windows browser chrome theme color");
+    assert.ok(page.includes("prefers-color-scheme"),"Must respect Windows system appearance");
+    assert.ok(page.includes('wecommander-theme'),"Must share preference across landing and app");
+  }
+  assert.ok(landing.includes("brand-wordmark-black"),"Landing must use the original black SVG in light mode");
+  assert.ok(html.includes("wc-brand-black"),"App must use the original black SVG in light mode");
+});
+
+test("Windows appearance toggle scripts parse without changing business logic", () => {
+ const landing=readFileSync(new URL("../public/index.html",import.meta.url),"utf8");
+ const landingScripts=landing.split("<script>").slice(1).map(part=>part.split("</script>")[0]);
+ assert.equal(landingScripts.length,1,"Landing only needs a single theme controller");
+ assert.doesNotThrow(()=>new Script(landingScripts[0],{filename:"index.html"}));
+ assert.match(landing,/id="landingThemeToggle"/);
+ assert.match(html,/id="wcThemeToggle"/);
+});

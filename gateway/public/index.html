@@ -6,7 +6,7 @@
 <meta name="description" content="WECOMMANDER lets AI clients securely use your computer through an outbound native agent, MCP, approvals and audit logs.">
 <title>WECOMMANDER — Use your computer from chat</title>
 <link rel="icon" href="/assets/wecommander-favicon.svg" type="image/svg+xml" sizes="any">
-<meta name="theme-color" content="#0b0f16">
+<meta name="theme-color" content="#202020">
 <style>
 :root{
   font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
@@ -70,14 +70,130 @@ footer{padding:44px 0 24px;background:#151b26;border-top:1px solid #222b39}.foot
 .center-node .center-brand-icon{display:block;width:45px;height:45px;object-fit:contain;border-radius:9px}
 .footer-brand .brand-wordmark{width:211px}
 @media(max-width:560px){.brand-wordmark{width:174px}.center-node .center-brand-icon{width:42px;height:42px}}
+
+/* Windows 11 Fluent color system. Layout, imagery, and official brand SVGs remain unchanged. */
+body{
+  color-scheme:dark;
+  --win-bg:#202020;--win-nav:#1c1c1c;--win-surface:#2c2c2c;
+  --win-surface-alt:#333333;--win-hover:#3c3c3c;--win-stroke:#454545;
+  --win-stroke-soft:#3c3c3c;--win-text:#f5f5f5;--win-muted:#c8c8c8;--win-subtle:#ababab;
+  --win-accent:#60cdff;--win-accent-hover:#8bdcff;--win-accent-ink:#00364e;
+  --win-accent-tint:#143947;--win-success:#6ccb5f;--win-shadow:rgba(0,0,0,.25);
+  --bg:var(--win-bg);--section:var(--win-nav);--section2:var(--win-bg);
+  --card:var(--win-surface);--card2:var(--win-surface-alt);
+  --line:var(--win-stroke);--line2:var(--win-stroke-soft);--text:var(--win-text);
+  --muted:var(--win-muted);--muted2:var(--win-subtle);--blue:var(--win-accent);--blue2:var(--win-accent-hover);
+  --green:var(--win-success);
+  background:var(--win-bg)!important;color:var(--win-text)!important;
+}
+body.light{
+  color-scheme:light;
+  --win-bg:#f3f3f3;--win-nav:#f9f9f9;--win-surface:#ffffff;
+  --win-surface-alt:#eeeeee;--win-hover:#e7e7e7;--win-stroke:#d1d1d1;
+  --win-stroke-soft:#e3e3e3;--win-text:#1a1a1a;--win-muted:#555555;--win-subtle:#6b6b6b;
+  --win-accent:#0067c0;--win-accent-hover:#005ba8;--win-accent-ink:#ffffff;
+  --win-accent-tint:#e4f1fb;--win-success:#0f7b0f;--win-shadow:rgba(0,0,0,.11);
+  --bg:var(--win-bg);--section:var(--win-nav);--section2:var(--win-bg);
+  --card:var(--win-surface);--card2:var(--win-surface-alt);
+  --line:var(--win-stroke);--line2:var(--win-stroke-soft);--text:var(--win-text);
+  --muted:var(--win-muted);--muted2:var(--win-subtle);--blue:var(--win-accent);--blue2:var(--win-accent-hover);
+  --green:var(--win-success);
+  background:var(--win-bg)!important;color:var(--win-text)!important;
+}
+body .nav{background:var(--win-nav)!important;border-bottom-color:var(--win-stroke-soft)!important}
+body .nav-links,body .nav-action{color:var(--win-muted)!important}
+body .nav-links a:hover,body .nav-action:hover{color:var(--win-text)!important}
+body .brand{color:var(--win-text)!important}
+body .brand-wordmark-black{display:none;width:218px;max-width:100%;height:auto;max-height:30px;object-fit:contain;object-position:left center;aspect-ratio:28020/3360}
+body.light .brand-wordmark{display:none!important}
+body.light .brand-wordmark-black{display:block!important}
+body .landing-theme-toggle{
+  display:grid;place-items:center;border:1px solid var(--win-stroke);background:var(--win-surface);
+  color:var(--win-text);border-radius:8px;width:37px;height:37px;cursor:pointer;font-size:20px;
+}
+body .landing-theme-toggle:hover{background:var(--win-hover)}
+body .landing-theme-toggle:focus-visible,body .btn:focus-visible{
+  outline:2px solid var(--win-accent);outline-offset:2px;
+}
+body .btn,body .tab.active,body .key.blue{
+  background:var(--win-accent)!important;color:var(--win-accent-ink)!important;
+  border-color:var(--win-accent)!important;box-shadow:none!important;
+}
+body .btn:hover{background:var(--win-accent-hover)!important}
+body .btn.secondary,body .btn.dark{
+  background:var(--win-surface-alt)!important;color:var(--win-text)!important;
+  border-color:var(--win-stroke)!important;
+}
+body .btn.secondary:hover,body .btn.dark:hover{background:var(--win-hover)!important}
+body .hero-lead,body .hero-stat span,body .section-head p,body .eyebrow,
+body .feature p,body .use-card p,body .step p,body .proof-stat span,
+body .proof-card p,body .price-card ul,body .price small,body .faq p,
+body .faq-help p,body .final-cta p,body .footer-brand p,body .footer-col a,
+body .copyright,body .install-head span,body .install-list,body .setup-row,
+body .setup-row b,body .machine-copy p,body .client-card p{
+  color:var(--win-muted)!important;
+}
+body .hero h1,body .section-head h2,body .machine-head h2,
+body .feature strong,body .use-card strong,body .step strong,
+body .proof-stat strong,body .client-card strong,body .price-card h3,
+body .price,body .faq summary,body .faq-help strong,
+body .final-cta h2,body .footer-col strong{color:var(--win-text)!important}
+body .eyebrow .dot{background:var(--win-success)!important}
+body .network path{stroke:var(--win-stroke)!important}
+body .ai-node{
+  background:var(--win-surface)!important;color:var(--win-text)!important;
+  border:1px solid var(--win-stroke);box-shadow:0 8px 20px var(--win-shadow)!important;
+}
+body .ai-node small{color:var(--win-muted)!important}
+body .center-node{background:var(--win-surface)!important;border-color:var(--win-stroke)!important;box-shadow:0 12px 30px var(--win-shadow)!important}
+body .capability{background:var(--win-surface-alt)!important;border-color:var(--win-stroke)!important;color:var(--win-muted)!important}
+body .section{border-top-color:var(--win-stroke-soft)!important}
+body .section.alt{background:var(--win-nav)!important}
+body .section.soft{background:var(--win-bg)!important}
+body .install-card,body .use-card,body .client-card,body .proof-card,
+body .price-card,body .price-card.featured,body .faq details,body .faq-help,
+body .terminal-card,body .keypad-card{
+  background:var(--win-surface)!important;color:var(--win-text)!important;
+  border-color:var(--win-stroke)!important;box-shadow:none!important;
+}
+body .setup-row,body .prompt-row,body .tabs,body .key,body .tab:not(.active){
+  background:var(--win-surface-alt)!important;color:var(--win-muted)!important;
+  border-color:var(--win-stroke)!important;
+}
+body .tab.active{color:var(--win-accent-ink)!important}
+body .app-icon,body .feature-icon,body .use-icon,body .proof-icon,
+body .prompt-row i,body .step-num{
+  background:var(--win-accent-tint)!important;color:var(--win-accent)!important;
+  border-color:var(--win-stroke)!important;
+}
+body .client-icon,body .proof-card .avatar{background:var(--win-accent-tint)!important}
+body .install-list li:before,body .price-card li:before{color:var(--win-success)!important}
+body .setup-row span,body .faq-help a,body .feature-icon{color:var(--win-accent)!important}
+body .purple-panel{
+  background:linear-gradient(140deg,var(--win-accent),var(--win-accent-hover))!important;
+  box-shadow:0 12px 30px var(--win-shadow)!important;
+}
+body .terminal-line,body .key:not(.blue){background:var(--win-stroke-soft)!important}
+body .terminal-line.blue{background:var(--win-accent)!important}
+body .proof-strip{color:var(--win-text)!important}
+body .status{
+  background:var(--win-accent-tint)!important;color:var(--win-success)!important;
+  border-color:var(--win-stroke)!important;
+}
+body .faq summary:after{color:var(--win-muted)!important}
+body .final-cta{background:var(--win-nav)!important}
+body footer{background:var(--win-surface)!important;border-top-color:var(--win-stroke)!important}
+body .copyright{border-top-color:var(--win-stroke-soft)!important}
+@media(max-width:560px){body .brand-wordmark-black{width:174px}}
+
 </style>
 </head>
 <body>
 <header class="nav">
   <div class="container nav-inner">
-    <a class="brand" href="/" aria-label="WECOMMANDER ana sayfa"><img class="brand-wordmark" src="/assets/wecommander-white.svg" alt="WECOMMANDER" width="218" height="26"></a>
+    <a class="brand" href="/" aria-label="WECOMMANDER ana sayfa"><img class="brand-wordmark" src="/assets/wecommander-white.svg" alt="WECOMMANDER" width="218" height="26"><img class="brand-wordmark-black" src="/assets/wecommander-black.svg" alt="" width="218" height="26" aria-hidden="true"></a>
     <nav class="nav-links"><a href="#product">Product</a><a href="#mcp">MCP</a><a href="#pricing">Pricing</a><a href="#resources">Resources</a></nav>
-    <div class="nav-actions"><a class="nav-action" href="/app">Manage devices</a><a class="btn" href="/app">Install</a></div>
+    <div class="nav-actions"><button id="landingThemeToggle" class="landing-theme-toggle" type="button" aria-label="Görünümü değiştir" title="Windows açık/koyu tema">☼</button><a class="nav-action" href="/app">Manage devices</a><a class="btn" href="/app">Install</a></div>
   </div>
 </header>
 <main>
@@ -138,6 +254,31 @@ footer{padding:44px 0 24px;background:#151b26;border-top:1px solid #222b39}.foot
 
 <section class="final-cta"><div class="container"><h2>Put your computer in the chat.</h2><p>Keep the machine under your control while giving your AI a secure way to get real work done.</p><div class="final-actions"><a class="btn" href="/app">Install</a><a class="btn secondary" href="/app">Manage devices</a></div></div></section>
 </main>
-<footer><div class="container"><div class="footer-grid"><div class="footer-brand"><a class="brand" href="/" aria-label="WECOMMANDER ana sayfa"><img class="brand-wordmark" src="/assets/wecommander-white.svg" alt="WECOMMANDER" width="218" height="26"></a><p>Secure, persistent AI-to-device control with a native outbound agent, MCP, approvals and audit.</p></div><div class="footer-col"><strong>Product</strong><a href="#product">Overview</a><a href="#mcp">MCP</a><a href="/app">Device console</a><a href="#pricing">Pricing</a></div><div class="footer-col"><strong>Resources</strong><a href="#resources">Workflows</a><a href="/health">Health</a><a href="/app">Sign in</a></div></div><div class="copyright"><span>© 2026 WECOMMANDER</span><span>Self-hostable · MCP-native · outbound-only agent</span></div></div></footer>
+<footer><div class="container"><div class="footer-grid"><div class="footer-brand"><a class="brand" href="/" aria-label="WECOMMANDER ana sayfa"><img class="brand-wordmark" src="/assets/wecommander-white.svg" alt="WECOMMANDER" width="218" height="26"><img class="brand-wordmark-black" src="/assets/wecommander-black.svg" alt="" width="218" height="26" aria-hidden="true"></a><p>Secure, persistent AI-to-device control with a native outbound agent, MCP, approvals and audit.</p></div><div class="footer-col"><strong>Product</strong><a href="#product">Overview</a><a href="#mcp">MCP</a><a href="/app">Device console</a><a href="#pricing">Pricing</a></div><div class="footer-col"><strong>Resources</strong><a href="#resources">Workflows</a><a href="/health">Health</a><a href="/app">Sign in</a></div></div><div class="copyright"><span>© 2026 WECOMMANDER</span><span>Self-hostable · MCP-native · outbound-only agent</span></div></div></footer>
+
+<script>
+/* Landing respects the same manual preference as the application, then Windows/system mode. */
+(()=>{
+ const toggle=document.getElementById("landingThemeToggle");
+ const media=window.matchMedia("(prefers-color-scheme: dark)");
+ function applyTheme(theme,remember=false){
+  const light=theme==="light";
+  document.body.classList.toggle("light",light);
+  document.documentElement.style.colorScheme=light?"light":"dark";
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content",light?"#f3f3f3":"#202020");
+  toggle.textContent=light?"☾":"☼";
+  toggle.setAttribute("aria-label",light?"Koyu temaya geç":"Açık temaya geç");
+  toggle.title=light?"Koyu temaya geç":"Açık temaya geç";
+  if(remember)localStorage.setItem("wecommander-theme",theme);
+ }
+ function syncTheme(){
+  const saved=localStorage.getItem("wecommander-theme");
+  applyTheme(saved==="dark"||saved==="light"?saved:(media.matches?"dark":"light"));
+ }
+ toggle.addEventListener("click",()=>applyTheme(document.body.classList.contains("light")?"dark":"light",true));
+ media.addEventListener?.("change",()=>{if(!localStorage.getItem("wecommander-theme"))syncTheme()});
+ syncTheme();
+})();
+</script>
 </body>
 </html>
