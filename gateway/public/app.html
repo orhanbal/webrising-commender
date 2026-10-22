@@ -1080,7 +1080,7 @@ async function refreshIdentity(){
     if(!$("key").value.trim())$("devices").innerHTML='<p class="hint">Sign in or enter an API token.</p>';
   }
 }
-$("loginButton").onclick=async()=>{try{clearError();sessionStorage.removeItem("commender-key");$("key").value="";const r=await fetch("/api/auth/login",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("loginEmail").value.trim(),password:$("loginPassword").value})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(body.error||("HTTP "+r.status));$("loginPassword").value="";await refreshIdentity()}catch(e){showError(e)}}
+$("loginButton").onclick=async()=>{try{clearError();sessionStorage.removeItem("commender-key");$("key").value="";const r=await fetch("/api/auth/login",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("loginEmail").value.trim(),password:$("loginPassword").value})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(body.error||("HTTP "+r.status));$("loginPassword").value="";await refreshIdentity();showPage("dashboard")}catch(e){showError(e)}}
 $("logoutButton").onclick=async()=>{try{if(currentIdentity)await api("/api/auth/logout",{method:"POST",body:"{}"});sessionStorage.removeItem("commender-key");$("key").value="";selected=null;currentIdentity=null;syncSelection();await refreshIdentity()}catch(e){showError(e)}}
 $("signupOpen").onclick=()=>{$("signupCard").classList.remove("hidden");$("signupError").textContent="";$("signupStatus").textContent=""}
 $("signupClose").onclick=()=>{$("signupCard").classList.add("hidden")}
@@ -1259,11 +1259,30 @@ function syncAccountUi(){
   if($("settingsAuthKind"))$("settingsAuthKind").textContent=currentIdentity?(currentIdentity.authKind==="session"?"Signed in with WECOMMANDER":"Connected with API token"):"Account unavailable";
   if($("settingsSignout"))$("settingsSignout").disabled=!currentIdentity&&!$("key").value.trim();
 }
+
 function showPage(page){
-  const target=["dashboard","devices","usage","billing","settings"].includes(page)?page:"devices";
+  const subTabs={terminal:"terminal",files:"files",tasks:"tasks",mcp:"access"};
+  const requested=["dashboard","devices","usage","billing","settings"].includes(page)||subTabs[page]?page:"dashboard";
+  const target=subTabs[requested]?"devices":requested;
   document.querySelectorAll(".page-view").forEach(x=>x.classList.remove("active"));
   $(target+"Page")?.classList.add("active");
-  document.querySelectorAll("[data-page-target]").forEach(x=>x.classList.toggle("active",x.dataset.pageTarget===target));
+  document.querySelectorAll("[data-page-target]").forEach(x=>x.classList.toggle("active",x.dataset.pageTarget===requested));
+  document.body.dataset.wcPage=requested;
+  if(target==="dashboard")wcLoadDashboard();
+  if(target==="usage")loadUsage();
+  if(target==="billing"&&currentIdentity)loadBilling().catch(showError);
+  if(target==="settings")syncAccountUi();
+  if(subTabs[requested]){
+    const tab=document.querySelector('[data-tab="'+subTabs[requested]+'"]');
+    if(tab&&!tab.classList.contains("hidden"))tab.click();
+    const workbench=requested==="mcp"&&!tab?.classList.contains("hidden")?document.querySelector(".workspace"):document.querySelector(".workspace");
+    if(tab&&!tab.classList.contains("hidden"))workbench?.scrollIntoView({behavior:"smooth",block:"start"});
+    else if(requested==="mcp")document.querySelector(".where-card")?.scrollIntoView({behavior:"smooth",block:"start"});
+  }else window.scrollTo({top:0,behavior:"instant"});
+  document.body.classList.remove("wc-mobile-nav-open");
+  if($("wcMobileMenu"))$("wcMobileMenu").setAttribute("aria-expanded","false");
+}
+document.querySelectorAll("[data-page-target]").forEach(x=>x.classList.toggle("active",x.dataset.pageTarget===target));
   history.replaceState(null,"",location.pathname+location.search+(location.hash||""));
   if(target==="dashboard")wcLoadDashboard();
   if(target==="usage")loadUsage();
@@ -1272,7 +1291,8 @@ function showPage(page){
 }
 document.querySelectorAll("[data-page-target]").forEach(button=>button.onclick=()=>showPage(button.dataset.pageTarget));
 $("addDeviceTop").onclick=async()=>{try{$("pair").click();setTimeout(()=>$("pairing").scrollIntoView({behavior:"smooth",block:"center"}),120)}catch(e){showError(e)}};
-$("sidebarUpgrade").onclick=$("quotaUpgrade").onclick=()=>showPage("billing");
+$("sidebarUpgrade").onclick=()=>showPage("usage");
+$("quotaUpgrade").onclick=()=>showPage("billing");
 $("upgradeButton").onclick=()=>{$("settingsMessage").textContent="Online checkout is not configured on this deployment yet.";showPage("settings")};
 $("teamContact").onclick=()=>{location.href="mailto:support@webrising.tr?subject=WECOMMANDER%20team%20plan"};
 $("settingsSignout").onclick=()=>$("logoutButton").click();
@@ -1331,109 +1351,329 @@ async function loadUsage(){
 }
 
 
-/* Dashboard uses the same authenticated API as the existing console; never invent metrics. */
+
+/* Dashboard UI v2 — API-backed, safe, and independent from screenshot mock values. */
+const WC_PATHS={
+  home:'<path d="m3 11 9-8 9 8v10h-7v-7h-4v7H3Z"/>',
+  devices:'<rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 22h8M12 18v4"/>',
+  terminal:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3m5 4h5"/>',
+  files:'<path d="M3 7a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v9H3Z"/>',
+  tasks:'<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/>',
+  mcp:'<circle cx="12" cy="12" r="3"/><circle cx="12" cy="3.5" r="1.5"/><circle cx="19.4" cy="16" r="1.5"/><circle cx="4.6" cy="16" r="1.5"/><path d="M12 9V5m2.6 8.4 3.5 2m-8.7-2-3.5 2"/>',
+  usage:'<path d="M4 20v-7m5 7V6m5 14v-11m5 11V3"/>',
+  billing:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18m-13 5h4"/>',
+  settings:'<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.2-1.6l2-1.6-2-3.5-2.4 1a7 7 0 0 0-2.8-1.6L13 2h-2l-.6 2.7a7 7 0 0 0-2.8 1.6l-2.4-1-2 3.5 2 1.6a7 7 0 0 0 0 3.2l-2 1.6 2 3.5 2.4-1a7 7 0 0 0 2.8 1.6L11 22h2l.6-2.7a7 7 0 0 0 2.8-1.6l2.4 1 2-3.5-2-1.6A7 7 0 0 0 19 12Z"/>',
+  arrow:'<path d="m9 18 6-6-6-6"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  monitor:'<rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 22h8M12 18v4"/>',
+  upload:'<path d="M12 17V3m-5 5 5-5 5 5M4 17v3h16v-3"/>',
+  alert:'<path d="M12 3 2 21h20L12 3Z"/><path d="M12 9v5m0 3h.01"/>',
+  check:'<path d="m5 12 4 4L19 6"/>'
+};
+function wcIcon(name,css=""){return '<svg class="wc-svg '+css+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(WC_PATHS[name]||WC_PATHS.monitor)+'</svg>'}
 function wcEscape(v){return escapeHtml(String(v??""))}
-function wcDate(v){if(!v)return "Henüz görülmedi";const d=new Date(v);return Number.isNaN(d.valueOf())?"Bilinmiyor":d.toLocaleString("tr-TR")}
-async function wcLoadDashboard(){
-  if(!currentIdentity&&!$("key").value.trim()){ $("wcDashDevices").textContent="Verileri görmek için giriş yapın.";return }
-  const email=currentIdentity?.email||currentIdentity?.actor||"";
-  $("wcWelcome").textContent=email.split("@")[0]||"WECOMMANDER";
-  $("wcTopAvatar").textContent=initials(email);
-  const requests=await Promise.allSettled([api("/api/devices"),api("/api/usage"),api("/api/audit?limit=6")]);
-  const [dev,usage,audit]=requests.map(x=>x.status==="fulfilled"?x.value:null);
-  if(dev){
-    const items=Array.isArray(dev.items)?dev.items:[];
-    $("wcDeviceCount").textContent=String(items.length);
-    $("wcDeviceStatus").textContent=items.filter(x=>x.online&&!x.revoked_at).length+" çevrimiçi · "+items.filter(x=>!x.online||x.revoked_at).length+" çevrimdışı";
-    $("wcDashDevices").innerHTML=items.length?items.slice(0,5).map(x=>'<div class="wc-device-item"><div><div class="wc-device-title">'+wcEscape(x.name)+'</div><div class="wc-device-sub '+(x.online&&!x.revoked_at?'wc-online':'wc-offline')+'">'+(x.online&&!x.revoked_at?'● Çevrimiçi':'● Çevrimdışı')+' · '+wcEscape(wcDate(x.last_seen_at))+'</div></div><span class="wc-dash-note">'+wcEscape(x.id.slice(0,8))+'</span><button type="button" data-wc-device="'+wcEscape(x.id)+'">Aç</button></div>').join(""):'<p class="wc-empty">Henüz cihaz eklenmedi.</p>';
-    $("wcDashDevices").querySelectorAll("[data-wc-device]").forEach(btn=>btn.onclick=()=>{showPage("devices");const el=[...document.querySelectorAll(".device")].find(x=>x.dataset.id===btn.dataset.wcDevice);if(el)el.click()});
-  }else{$("wcDashDevices").textContent="Cihaz verileri alınamadı."}
-  if(usage){
-    const used=Number(usage.monthCalls||0),limit=usage.limit===null?null:Number(usage.limit);
-    $("wcTaskCount").textContent=used.toLocaleString("tr-TR");
-    $("wcTaskLimit").textContent=limit===null?"Limitsiz kullanım":used.toLocaleString("tr-TR")+" / "+limit.toLocaleString("tr-TR")+" çağrı";
-    $("wcDashUsage").innerHTML='<div class="wc-usage-line"><span>Bu ay API çağrısı</span><strong>'+wcEscape(used.toLocaleString("tr-TR"))+'</strong></div><div class="wc-usage-line"><span>Günlük ortalama</span><strong>'+wcEscape(Number(usage.dailyAverage||0).toLocaleString("tr-TR"))+'</strong></div><div class="wc-usage-line"><span>Kota</span><strong>'+wcEscape(limit===null?"Limitsiz":String(limit))+'</strong></div>';
-    const months=Array.isArray(usage.months)?usage.months.slice(-7):[],max=Math.max(1,...months.map(x=>Number(x.calls)||0));
-    $("wcDashChart").innerHTML=months.map(x=>'<div class="wc-bar-wrap"><div class="wc-bar" title="'+wcEscape(x.calls)+' çağrı" style="height:'+Math.max(2,Math.round((Number(x.calls)||0)/max*100))+'%"></div></div>').join("");
-    $("wcDashChartLabels").innerHTML=months.map(x=>'<span>'+wcEscape(x.month)+'</span>').join("");
-  }else{$("wcTaskCount").textContent="—";$("wcDashUsage").textContent="Kullanım verisi alınamadı."}
-  $("wcDashActivity").innerHTML=audit&&Array.isArray(audit.items)?(audit.items.length?audit.items.slice(0,6).map(x=>'<div class="wc-activity-row"><span>'+wcEscape(x.tool||x.outcome||"İşlem")+'</span><span>'+wcEscape(wcDate(x.created_at))+'</span></div>').join(""):'<p class="wc-empty">Henüz aktivite bulunmuyor.</p>'):'<p class="wc-empty">Aktiviteler bu hesap için kullanılamıyor.</p>';
-  $("wcDashPlan").innerHTML='<div class="wc-dash-note">Güncel paket ve abonelik ayrıntıları için paket yönetimini açın.</div><button type="button" data-dash-page="billing" style="margin-top:16px">Paket Yönetimi →</button>';
-  $("wcDashPlan").querySelector("button").onclick=()=>showPage("billing");
+function wcNumber(v){const n=Number(v);return Number.isFinite(n)?n:0}
+function wcDate(iso){const d=new Date(iso||"");return Number.isNaN(+d)?null:d}
+function wcRelativeDate(iso){
+  const d=wcDate(iso);if(!d)return "Henüz görülmedi";
+  const diff=Math.max(0,Date.now()-d.getTime()),minutes=Math.floor(diff/60000);
+  if(minutes<1)return "Az önce";if(minutes<60)return minutes+" dk önce";
+  const hours=Math.floor(minutes/60);if(hours<24)return hours+" sa önce";
+  const days=Math.floor(hours/24);if(days<14)return days+" gün önce";
+  return d.toLocaleDateString("tr-TR",{day:"numeric",month:"short"});
 }
-$("wcAddDevice").onclick=()=>{showPage("devices");$("addDeviceTop").click()};
-$("wcQuickTask").onclick=()=>{showPage("devices");document.querySelector('[data-tab="tasks"]')?.click();document.querySelector(".workspace")?.scrollIntoView({behavior:"smooth"})};
-$("wcOpenAudit").onclick=()=>{showPage("devices");document.querySelector('[data-tab="audit"]')?.click();document.querySelector(".workspace")?.scrollIntoView({behavior:"smooth"})};
-$("wcRefreshDash").onclick=wcLoadDashboard;
+function wcFullDate(iso){return wcDate(iso)?.toLocaleString("tr-TR")||"Tarih yok"}
+function wcSignedIn(){return !!currentIdentity||!!$("key").value.trim()}
+let wcDashboardDevices=[],wcDashboardActivities=[],wcDashboardRequest=0,wcSearchTargets=[];
+const wcTopLinks=[
+  ["dashboard","Ana Sayfa"],["devices","Cihazlar"],["terminal","Terminal"],["files","Dosyalar"],
+  ["tasks","Görevler"],["mcp","MCP"],["usage","Kullanım"],["billing","Paket & Faturalama"],["settings","Ayarlar"]
+];
+for(const button of document.querySelectorAll(".wc-nav [data-page-target]")){
+  const id=button.dataset.pageTarget;
+  if(WC_PATHS[id]){
+    const oldIcon=button.querySelector("svg,.wc-nav-icon");
+    if(oldIcon)oldIcon.outerHTML=wcIcon(id,"wc-nav-svg");
+    else button.insertAdjacentHTML("afterbegin",wcIcon(id,"wc-nav-svg"));
+  }
+}
+function wcUpdateIdentity(){
+  const email=currentIdentity?.email||currentIdentity?.actor||"";
+  const name=(currentIdentity?.name||email.split("@")[0]||"Misafir").trim();
+  $("wcWelcome").textContent=wcSignedIn()?name:"WECOMMANDER";
+  $("wcTopName").textContent=wcSignedIn()?name:"Misafir";
+  $("wcTopAvatar").textContent=wcSignedIn()?initials(name):"WC";
+  $("wcTopPlan").textContent=wcSignedIn()?"Paket yükleniyor":"Giriş yapılmadı";
+  $("wcSignInPrompt").hidden=wcSignedIn();
+  $("wcProfileMenu").innerHTML=
+    '<div class="wc-popover-line">'+wcEscape(email||"Oturum açılmadı")+'</div>'+
+    (wcSignedIn()?'<button type="button" data-profile-action="settings">Hesap ayarları</button><button type="button" data-profile-action="logout">Çıkış yap</button>':'<button type="button" data-profile-action="login">Giriş yap</button>');
+  $("wcProfileMenu").querySelectorAll("[data-profile-action]").forEach(btn=>btn.onclick=()=>{
+    wcCloseTopMenus();
+    if(btn.dataset.profileAction==="settings")showPage("settings");
+    if(btn.dataset.profileAction==="logout")$("logoutButton").click();
+    if(btn.dataset.profileAction==="login")wcOpenLogin();
+  });
+}
+function wcOpenLogin(){
+  showPage("devices");
+  $("loginCard")?.scrollIntoView({behavior:"smooth",block:"center"});
+  $("loginEmail")?.focus();
+}
+function wcCloseTopMenus(){
+  for(const [id,trigger] of [["wcProfileMenu","wcProfileButton"],["wcNotificationsMenu","wcNotificationsButton"]]){
+    $(id).hidden=true;$(trigger).setAttribute("aria-expanded","false");
+  }
+}
+function wcToggleMenu(id,trigger){
+  const opened=$(id).hidden;wcCloseTopMenus();
+  $(id).hidden=!opened;$(trigger).setAttribute("aria-expanded",String(opened));
+}
+function wcOsMarkup(platform){
+  const p=String(platform||"").toLowerCase();
+  if(/win/.test(p))return '<span class="wc-os-icon win" aria-label="Windows"><svg viewBox="0 0 36 36" aria-hidden="true"><path fill="currentColor" d="M2 7.2 16.5 5v13H2Zm17-2.6L34 2v16H19ZM2 20h14.5v13L2 30.8Zm17 0h15v16l-15-2.6Z"/></svg></span>';
+  if(/linux|ubuntu|debian/.test(p))return '<span class="wc-os-icon linux" title="Linux" aria-label="Linux">🐧</span>';
+  if(/mac|darwin|apple/.test(p))return '<span class="wc-os-icon mac" aria-label="macOS"><svg viewBox="0 0 40 46" aria-hidden="true"><path fill="currentColor" d="M30 3c-5 0-8 4-8 9 5 .2 9-4 8-9Zm5 25c-.8 4-4.5 12.8-9 13.1-2.3.2-3.8-1.5-6.6-1.5-2.9 0-4.6 1.6-6.8 1.5C8.1 40.9 3 31 3 24c0-6.8 4.1-11 9.4-11 2.8 0 5.2 1.7 7.1 1.7 1.8 0 4.6-1.7 7.8-1.7 3.5 0 6.5 1.7 8.1 4.3-7.2 4.3-6 13.7-.4 17.7Z"/></svg></span>';
+  return '<span class="wc-os-icon" aria-label="Cihaz">'+wcIcon("devices")+'</span>';
+}
+function wcRenderDevices(dev){
+ const all=Array.isArray(dev?.items)?dev.items.filter(x=>!x.revoked_at):[];
+ wcDashboardDevices=all;
+ $("wcDeviceCount").textContent=String(all.length);
+ const online=all.filter(x=>x.online).length;
+ $("wcDeviceStatus").innerHTML='<span class="wc-online">'+online+' çevrimiçi</span> · '+(all.length-online)+' çevrimdışı';
+ $("wcDashDevices").innerHTML=all.length?all.slice(0,4).map(x=>{
+  const label=x.online?"Çevrimiçi":"Çevrimdışı";
+  const sub=[x.platform,x.hostname].filter(Boolean).join(" · ")||"Platform bilgisi yok";
+  return '<div class="wc-device-row" data-device-id="'+wcEscape(x.id)+'">'+
+   wcOsMarkup(x.platform)+'<div class="wc-device-copy"><span class="wc-device-title">'+wcEscape(x.name||"İsimsiz cihaz")+'</span>'+
+   '<small>'+wcEscape(sub)+'</small></div>'+
+   '<div class="wc-device-seen"><span>Son görülme</span><small title="'+wcEscape(wcFullDate(x.last_seen_at))+'">'+wcEscape(wcRelativeDate(x.last_seen_at))+'</small></div>'+
+   '<button type="button" class="wc-connect-button" data-wc-connect="'+wcEscape(x.id)+'" '+(x.online?"":"disabled title=\"Cihaz çevrimdışı\"")+'>'+
+   (x.online?"Bağlan":"Çevrimdışı")+'</button>'+
+   '<button type="button" class="wc-device-more" data-wc-detail="'+wcEscape(x.id)+'" aria-label="Cihaz ayrıntıları">···</button></div>';
+ }).join(""):'<div class="wc-empty-state">Henüz bağlı cihaz bulunmuyor. Cihaz Ekle düğmesiyle başlayabilirsin.</div>';
+ $("wcDashDevices").querySelectorAll("[data-wc-connect],[data-wc-detail]").forEach(b=>b.onclick=()=>wcOpenDevice(b.dataset.wcConnect||b.dataset.wcDetail));
+}
+function wcOpenDevice(id){
+ showPage("devices");
+ const device=Array.from(document.querySelectorAll(".device")).find(el=>el.dataset.id===id);
+ if(device)device.click();
+ document.querySelector("#selectedDeviceCard")?.scrollIntoView({behavior:"smooth",block:"center"});
+}
+function wcActivityType(tool,outcome){
+ const t=String(tool||"").toLowerCase(),o=String(outcome||"").toLowerCase();
+ if(/error|fail|denied|blocked|reject/.test(o))return "alert";
+ if(/file|folder|upload|download|fs\./.test(t))return "files";
+ if(/task|job|approval/.test(t))return "tasks";
+ return "terminal";
+}
+function wcToolLabel(tool,outcome){
+ const raw=String(tool||"işlem");
+ const t=raw.toLowerCase(),success=/success|ok|done|allow|complete/.test(String(outcome||"").toLowerCase());
+ if(/file|folder|upload|download|fs\./.test(t))return success?"Dosya işlemi tamamlandı":"Dosya işlemi";
+ if(/terminal|shell|exec|command/.test(t))return success?"Terminal komutu çalıştırıldı":"Terminal işlemi";
+ if(/task|job/.test(t))return success?"Görev tamamlandı":"Görev işlemi";
+ if(/approval/.test(t))return "Onay isteği işlendi";
+ if(/system|process|service/.test(t))return "Sistem işlemi";
+ return raw.replace(/^direct\./,"");
+}
+function wcRenderActivity(items){
+ wcDashboardActivities=Array.isArray(items)?items:[];
+ $("wcDashActivity").innerHTML=wcDashboardActivities.length?wcDashboardActivities.slice(0,6).map(x=>{
+  const type=wcActivityType(x.tool,x.outcome);
+  const icon=type==="alert"?"alert":type==="files"?"files":type==="tasks"?"tasks":"terminal";
+  const prefix=x.device_name?x.device_name+": ":"";
+  const label=prefix+wcToolLabel(x.tool,x.outcome);
+  return '<div class="wc-activity-row"><span class="wc-activity-glyph '+type+'">'+wcIcon(icon)+'</span>'+
+    '<span class="wc-activity-description" title="'+wcEscape(label)+'">'+wcEscape(label)+'</span>'+
+    '<time datetime="'+wcEscape(x.created_at||"")+'" title="'+wcEscape(wcFullDate(x.created_at))+'">'+wcEscape(wcRelativeDate(x.created_at))+'</time></div>';
+ }).join(""):'<div class="wc-empty-state">Henüz kaydedilmiş bir aktivite bulunmuyor.</div>';
+}
+function wcRenderChart(data){
+ const six=$("wcChartRange").value==="6";
+ const series=(six?data?.months:data?.daily)||[];
+ if(!Array.isArray(series)||!series.length){
+  $("wcDashChart").innerHTML='<div class="wc-empty-state">Grafik verisi bulunamadı.</div>';
+  $("wcDashChartLabels").innerHTML="";return;
+ }
+ const max=Math.max(1,...series.map(x=>wcNumber(x.calls)));
+ const bound=max<=5?5:Math.ceil(max/5)*5;
+ const labels=series.map(x=>{
+  if(six){const d=wcDate(x.month+"-01T00:00:00");return d?d.toLocaleDateString("tr-TR",{month:"short"}):x.month}
+  const d=wcDate(x.day+"T00:00:00");return d?d.toLocaleDateString("tr-TR",{day:"numeric",month:"short"}):x.day;
+ });
+ $("wcDashChart").innerHTML='<div class="wc-chart-axis"><span>'+wcEscape(bound)+'</span><span>'+wcEscape(Math.round(bound/2))+'</span><span>0</span></div>'+
+  '<div class="wc-chart-grid">'+series.map(x=>{
+    const count=wcNumber(x.calls);
+    return '<div class="wc-chart-column"><div class="wc-chart-fill" style="height:'+Math.min(100,100*count/bound)+'%" title="'+wcEscape(count.toLocaleString("tr-TR"))+' işlem"></div></div>';
+  }).join("")+'</div>';
+ $("wcDashChartLabels").innerHTML=labels.map(x=>'<span>'+wcEscape(x)+'</span>').join("");
+ $("wcDashChart").setAttribute("aria-label",(six?"Son altı ay":"Son yedi gün")+" kullanım verileri: "+series.map((x,i)=>labels[i]+" "+wcNumber(x.calls)).join(", "));
+}
+function wcOperationCategory(tool){
+ const s=String(tool||"").toLowerCase();
+ if(/terminal|shell|command|execute|exec/.test(s))return "terminal";
+ if(/file|folder|upload|download|fs\.|directory/.test(s))return "files";
+ if(/mcp|tool/.test(s))return "mcp";
+ if(/system|process|service|network|device|status/.test(s))return "system";
+ return "other";
+}
+function wcRenderOperations(tools){
+ if(!Array.isArray(tools)){ $("wcDashUsage").innerHTML='<div class="wc-empty-state">İşlem dağılımı alınamadı.</div>';return }
+ const groups=new Map([["terminal",0],["files",0],["mcp",0],["system",0],["other",0]]);
+ for(const item of tools)groups.set(wcOperationCategory(item.tool),groups.get(wcOperationCategory(item.tool))+wcNumber(item.calls));
+ const labels={terminal:"Terminal Komutları",files:"Dosya İşlemleri",mcp:"MCP Görevleri",system:"Sistem Yönetimi",other:"Diğer"};
+ const icons={terminal:"terminal",files:"files",mcp:"mcp",system:"settings",other:"devices"};
+ const max=Math.max(1,...groups.values());
+ $("wcDashUsage").innerHTML=[...groups].map(([key,count])=>
+  '<div class="wc-operation-row"><span class="wc-operation-icon '+key+'">'+wcIcon(icons[key])+'</span>'+
+  '<span class="wc-operation-name" title="'+labels[key]+'">'+labels[key]+'</span>'+
+  '<div class="meter"><span style="width:'+(count?Math.max(3,Math.round(count/max*100)):0)+'%"></span></div>'+
+  '<strong>'+count.toLocaleString("tr-TR")+'</strong></div>').join("");
+}
+function wcPlanPrice(b){
+ const meta=b?.plan?.metadata||{};
+ const price=meta.monthlyPriceTry??meta.monthlyPriceTRY??meta.monthlyPrice??meta.pricePerMonth??null;
+ const currency=String(meta.currency||"TRY");
+ if(price===null||price===undefined||price==="")return b?.mode==="self_hosted"?"Kendi sunucunda ücretsiz":"Fiyat bilgisi tanımlı değil";
+ return (typeof price==="number"?price.toLocaleString("tr-TR"):String(price))+" "+currency+" / ay";
+}
+function wcRenderBilling(b){
+ const plan=b?.plan;
+ const name=plan?.name||"Aktif paket bulunmuyor";
+ const limit=b?.limits||{};
+ const deviceLimit=limit.maxDevices===null?"Sınırsız cihaz":limit.maxDevices===undefined?"Cihaz limiti belirtilmedi":limit.maxDevices+" cihaz";
+ const tokenLimit=limit.maxApiTokens===null?"Sınırsız API anahtarı":limit.maxApiTokens===undefined?"API anahtarı limiti belirtilmedi":limit.maxApiTokens+" API anahtarı";
+ const memberLimit=limit.maxMembers===null?"Sınırsız üye":limit.maxMembers===undefined?"Üye limiti belirtilmedi":limit.maxMembers+" üye";
+ const renewal=b?.subscription?.currentPeriodEnd?("Dönem sonu: "+wcFullDate(b.subscription.currentPeriodEnd)):(b?.mode==="self_hosted"?"Kendi sunucunda yönetiliyor":"Sonraki ödeme tarihi bildirilmedi");
+ $("wcTopPlan").textContent=name;
+ $("wcSidePlanName").textContent=name;
+ $("wcSidePlanDetail").textContent=wcPlanPrice(b);
+ $("wcDashPlan").innerHTML='<div class="wc-plan-body"><div class="wc-plan-heading"><span class="wc-plan-crown">♛</span><div class="wc-plan-info">'+
+  '<div class="wc-plan-name">'+wcEscape(name)+'</div><div class="wc-plan-price">'+wcEscape(wcPlanPrice(b))+'</div></div></div>'+
+  '<div class="wc-plan-expiry">'+wcEscape(renewal)+'</div><div class="wc-plan-features">'+
+  [deviceLimit,tokenLimit,memberLimit,"Güvenli MCP bağlantıları"].map(x=>'<div class="wc-plan-feature">'+wcEscape(x)+'</div>').join("")+
+  '</div></div>';
+}
+function wcRenderSignedOut(){
+ wcDashboardDevices=[];wcDashboardActivities=[];
+ $("wcDeviceCount").textContent="—";$("wcDeviceStatus").textContent="Giriş gerekli";
+ $("wcTaskCount").textContent="—";$("wcTaskLimit").textContent="Giriş gerekli";
+ $("wcTaskMeter").style.width="0";
+ $("wcDashDevices").innerHTML='<div class="wc-empty-state">Cihazlarını görüntülemek için giriş yap.</div>';
+ $("wcDashActivity").innerHTML='<div class="wc-empty-state">Son işlemler için giriş yap.</div>';
+ $("wcDashUsage").innerHTML='<div class="wc-empty-state">İşlem istatistikleri için giriş yap.</div>';
+ $("wcDashChart").innerHTML='<div class="wc-empty-state">Gerçek kullanım grafiğin oturum açtıktan sonra görünecek.</div>';
+ $("wcDashChartLabels").innerHTML="";
+ $("wcDashPlan").innerHTML='<div class="wc-empty-state">Paket bilgilerini görmek için giriş yap.</div>';
+ $("wcSidePlanName").textContent="Paket Bilgisi";$("wcSidePlanDetail").textContent="Giriş yaparak görüntüle";
+ $("wcStorageValue").textContent="—";$("wcUptimeValue").textContent="—";
+}
+async function wcLoadDashboard(){
+ const request=++wcDashboardRequest;
+ wcUpdateIdentity();
+ if(!wcSignedIn()){wcRenderSignedOut();return}
+ const results=await Promise.allSettled([
+   api("/api/devices"),api("/api/usage"),api("/api/activity?limit=8"),api("/api/billing")
+ ]);
+ if(request!==wcDashboardRequest)return;
+ const [devices,usage,activity,billing]=results.map(x=>x.status==="fulfilled"?x.value:null);
+ if(devices)wcRenderDevices(devices);
+ else{$("wcDeviceCount").textContent="—";$("wcDeviceStatus").textContent="Cihaz verisi alınamadı";$("wcDashDevices").innerHTML='<div class="wc-empty-state">Cihazlar yüklenemedi. Bağlantını kontrol edip yeniden dene.</div>'}
+ if(usage){
+  const used=wcNumber(usage.monthCalls),limit=usage.limit===null?null:wcNumber(usage.limit);
+  $("wcTaskCount").textContent=used.toLocaleString("tr-TR");
+  $("wcTaskLimit").textContent=limit===null?"Sınırsız işlem":used.toLocaleString("tr-TR")+" / "+limit.toLocaleString("tr-TR")+" işlem";
+  $("wcTaskMeter").style.width=limit===null?"0%":Math.min(100,Math.round(limit?used/limit*100:0))+"%";
+  wcRenderChart(usage);wcRenderOperations(usage.topTools);
+ }else{$("wcTaskCount").textContent="—";$("wcTaskLimit").textContent="Kullanım verisi alınamadı";$("wcDashChart").innerHTML='<div class="wc-empty-state">Kullanım verisi alınamadı.</div>';$("wcDashChartLabels").innerHTML="";$("wcDashUsage").innerHTML='<div class="wc-empty-state">Kullanım verisi alınamadı.</div>'}
+ if(activity)wcRenderActivity(activity.items);
+ else $("wcDashActivity").innerHTML='<div class="wc-empty-state">Son aktiviteler şu anda alınamıyor.</div>';
+ if(billing)wcRenderBilling(billing);
+ else $("wcDashPlan").innerHTML='<div class="wc-empty-state">Paket bilgisi alınamadı.</div>';
+ // These indicators need agent-side historical telemetry; the API does not yet provide it.
+ $("wcStorageValue").textContent="—";$("wcStorageHint").textContent="Cihaz telemetrisi bulunmuyor";
+ $("wcUptimeValue").textContent="—";$("wcUptimeHint").textContent="Geçmiş uptime ölçümü yok";
+ wcNotificationsRefresh();
+}
+function wcNotificationsRefresh(){
+ const recent=wcDashboardActivities.slice(0,6);
+ const errors=recent.filter(x=>/error|fail|denied|blocked/.test(String(x.outcome||"").toLowerCase()));
+ $("wcNotifyIndicator").hidden=errors.length===0;
+ $("wcNotificationsMenu").innerHTML='<div class="wc-popover-line">Son Aktiviteler</div>'+
+  (recent.length?recent.map(x=>'<div class="wc-popover-line">'+wcEscape(wcToolLabel(x.tool,x.outcome))+' · '+wcEscape(wcRelativeDate(x.created_at))+'</div>').join(""):'<div class="wc-popover-line">Yeni aktivite yok</div>')+
+  '<button id="wcAllActivity" type="button">Tüm aktiviteler →</button>';
+ $("wcAllActivity").onclick=()=>{wcCloseTopMenus();wcShowAllActivities()};
+}
+async function wcShowAllActivities(){
+ if(!wcSignedIn()){wcOpenLogin();return}
+ try{
+  const j=await api("/api/activity?limit=30");
+  let dialog=$("wcActivityDialog");
+  if(!dialog){dialog=document.createElement("dialog");dialog.id="wcActivityDialog";dialog.className="wc-activity-dialog";document.body.appendChild(dialog)}
+  const items=Array.isArray(j.items)?j.items:[];
+  dialog.innerHTML='<div class="wc-dialog-head"><h2>Son Aktiviteler</h2><button id="wcCloseActivity" aria-label="Kapat">✕</button></div>'+
+   (items.length?items.map(x=>'<div class="wc-dialog-activity"><strong>'+wcEscape(wcToolLabel(x.tool,x.outcome))+'</strong><small>'+wcEscape(x.device_name||"")+' · '+wcEscape(wcFullDate(x.created_at))+' · '+wcEscape(x.outcome||"")+'</small></div>').join(""):'<p>Henüz aktivite yok.</p>');
+  $("wcCloseActivity").onclick=()=>dialog.close();dialog.showModal();
+ }catch(e){showError(e)}
+}
+function wcSearchItems(query){
+ const q=String(query||"").trim().toLocaleLowerCase("tr-TR");
+ if(!q)return [];
+ const pages=wcTopLinks.filter(x=>x[1].toLocaleLowerCase("tr-TR").includes(q)).map(x=>({label:x[1],hint:"Bölüm",page:x[0]}));
+ const devices=wcDashboardDevices.filter(x=>[x.name,x.platform,x.hostname].some(v=>String(v||"").toLocaleLowerCase("tr-TR").includes(q)))
+   .map(x=>({label:x.name||"Cihaz",hint:x.online?"Çevrimiçi cihaz":"Çevrimdışı cihaz",device:x.id}));
+ return [...pages,...devices].slice(0,9);
+}
+function wcSearchRender(){
+ const input=$("wcGlobalSearch"),query=input.value.trim();wcSearchTargets=wcSearchItems(query);
+ const panel=$("wcSearchResults");
+ panel.hidden=!query;
+ input.setAttribute("aria-expanded",String(!!query));
+ if(!query){panel.innerHTML="";return}
+ panel.innerHTML=wcSearchTargets.length?wcSearchTargets.map((x,i)=>
+  '<button role="option" type="button" data-search-index="'+i+'"><span>'+wcEscape(x.label)+'</span><small>'+wcEscape(x.hint)+'</small></button>').join(""):
+  '<div class="wc-popover-line">Eşleşen sonuç bulunamadı.</div>';
+ panel.querySelectorAll("[data-search-index]").forEach(btn=>btn.onclick=()=>wcSearchChoose(Number(btn.dataset.searchIndex)));
+}
+function wcSearchChoose(i){
+ const target=wcSearchTargets[i];if(!target)return;
+ $("wcGlobalSearch").value="";wcSearchRender();
+ if(target.device)wcOpenDevice(target.device);
+ if(target.page)showPage(target.page);
+}
+$("wcGlobalSearch").addEventListener("input",wcSearchRender);
+$("wcGlobalSearch").addEventListener("keydown",e=>{
+ if(e.key==="Escape"){$("wcGlobalSearch").value="";wcSearchRender();$("wcGlobalSearch").blur()}
+ if(e.key==="Enter"&&wcSearchTargets.length){e.preventDefault();wcSearchChoose(0)}
+});
+document.addEventListener("keydown",e=>{
+ if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();$("wcGlobalSearch").focus();$("wcGlobalSearch").select()}
+ if(e.key==="Escape")wcCloseTopMenus();
+});
+document.addEventListener("click",e=>{
+ if(!e.target.closest(".wc-menu-anchor"))wcCloseTopMenus();
+ if(!e.target.closest(".wc-search-wrap")){$("wcSearchResults").hidden=true;$("wcGlobalSearch").setAttribute("aria-expanded","false")}
+});
+$("wcProfileButton").onclick=()=>wcToggleMenu("wcProfileMenu","wcProfileButton");
+$("wcNotificationsButton").onclick=()=>wcToggleMenu("wcNotificationsMenu","wcNotificationsButton");
 $("wcThemeToggle").onclick=()=>setTheme(document.body.classList.contains("light")?"dark":"light");
-$("wcGlobalSearch").oninput=e=>{const q=e.target.value.toLocaleLowerCase("tr-TR");$("wcDashDevices").querySelectorAll(".wc-device-item").forEach(x=>x.style.display=x.textContent.toLocaleLowerCase("tr-TR").includes(q)?"":"none")};
-document.querySelectorAll("[data-dash-page]").forEach(b=>b.onclick=()=>showPage(b.dataset.dashPage));
-
-
-/* Reference dashboard navigation reuses the existing device workbench and tabs. */
-const wcBaseShowPage=showPage;
-showPage=function(page){
- const tabMap={terminal:"terminal",files:"files",tasks:"tasks",mcp:"access"};
- if(tabMap[page]){
-  wcBaseShowPage("devices");
-  const tab=document.querySelector('[data-tab="'+tabMap[page]+'"]');
-  if(tab&&!tab.classList.contains("hidden")){tab.click();document.querySelector(".workspace")?.scrollIntoView({behavior:"smooth",block:"start"})}
-  else if(page==="mcp")document.querySelector(".where-card")?.scrollIntoView({behavior:"smooth"});
-  document.querySelectorAll("[data-page-target]").forEach(x=>x.classList.toggle("active",x.dataset.pageTarget===page));
-  return;
- }
- wcBaseShowPage(page);
-};
-document.querySelectorAll("[data-page-target]").forEach(x=>x.onclick=()=>showPage(x.dataset.pageTarget));
-$("wcSidePlanButton").onclick=()=>showPage("billing");
+$("wcOpenLogin").onclick=wcOpenLogin;
+$("wcAddDevice").onclick=()=>{showPage("devices");if(wcSignedIn())$("addDeviceTop").click();else wcOpenLogin()};
+$("wcQuickTask").onclick=()=>{if(wcSignedIn())showPage("tasks");else wcOpenLogin()};
+$("wcOpenAudit").onclick=wcShowAllActivities;
 $("wcChartRange").onchange=()=>wcLoadDashboard();
-const wcOldDashboard=wcLoadDashboard;
-wcLoadDashboard=async function(){
- await wcOldDashboard();
- const email=currentIdentity?.email||currentIdentity?.actor||"";
- $("wcTopName").textContent=email?email.split("@")[0]:"Misafir";
- $("wcTopPlan").textContent=currentIdentity?"Hesap etkin":"Giriş yapılmadı";
- $("wcSidePlanName").textContent=currentIdentity?"Mevcut Paket":"Paket Bilgisi";
- $("wcSidePlanDetail").textContent=currentIdentity?"Paketini yönet":"Giriş yaparak görüntüle";
- if(!currentIdentity&&!$("key").value.trim()){
-  $("wcDeviceStatus").textContent="Giriş yapılmadı";
-  $("wcDashActivity").textContent="Etkinlikler için giriş yapın.";
-  $("wcDashUsage").textContent="İşlem istatistikleri için giriş yapın.";
-  $("wcDashPlan").textContent="Paket bilgileri için giriş yapın.";
-  $("wcDashChart").innerHTML="";$("wcDashChartLabels").innerHTML="";
-  return;
- }
- try{
-  const j=await api("/api/usage");
-  const months=Array.isArray(j.months)?j.months:[];
-  if($("wcChartRange").value==="6"){
-   const max=Math.max(1,...months.map(x=>Number(x.calls)||0));
-   $("wcDashChart").innerHTML=months.slice(-6).map(x=>'<div class="wc-bar-wrap"><div class="wc-bar" style="height:'+Math.max(2,Math.round((Number(x.calls)||0)/max*100))+'%"></div></div>').join("");
-   $("wcDashChartLabels").innerHTML=months.slice(-6).map(x=>'<span>'+wcEscape(x.month)+'</span>').join("");
-  }else{
-   $("wcDashChart").innerHTML='<div class="wc-empty">Günlük kullanım serisi API tarafından sağlanmıyor.</div>';
-   $("wcDashChartLabels").innerHTML="";
-  }
-  const breakdown=j.byTool||j.tools||j.breakdown;
-  if(breakdown&&typeof breakdown==="object"){
-   const entries=Array.isArray(breakdown)?breakdown.map(x=>[x.name||x.tool,Number(x.calls||x.count||0)]):Object.entries(breakdown).map(([k,v])=>[k,Number(v)||0]);
-   const max=Math.max(1,...entries.map(x=>x[1]));
-   $("wcDashUsage").innerHTML=entries.slice(0,5).map(([name,count])=>'<div class="wc-operation-row"><span class="wc-operation-icon">⌘</span><span>'+wcEscape(name)+'</span><div class="meter"><span style="width:'+Math.round(count/max*100)+'%"></span></div><strong>'+wcEscape(count)+'</strong></div>').join("")||'<p class="wc-empty">Henüz işlem yok.</p>';
-  }else $("wcDashUsage").textContent="İşlem türlerine göre kullanım verisi mevcut değil.";
- }catch(e){$("wcDashUsage").textContent="Kullanım verisi alınamadı."}
- try{
-  const b=await api("/api/billing");
-  const plan=b.plan||b.subscription?.plan||b.currentPlan||null;
-  if(plan){
-   const name=typeof plan==="string"?plan:(plan.name||plan.title||"Mevcut Paket");
-   $("wcDashPlan").innerHTML='<div class="wc-dash-plan-name">♛ '+wcEscape(name)+'</div><p class="wc-dash-note">Paket detayları ve ödeme işlemleri için yönetim sayfasını açın.</p><button type="button" data-dash-page="billing">Paketleri Gör →</button>';
-   $("wcDashPlan").querySelector("button").onclick=()=>showPage("billing");
-   $("wcSidePlanName").textContent=name;
-  }
- }catch(e){/* Billing visibility varies by account. Keep the existing link. */}
+$("wcMobileMenu").onclick=()=>{
+ const open=document.body.classList.toggle("wc-mobile-nav-open");
+ $("wcMobileBackdrop").hidden=!open;$("wcMobileMenu").setAttribute("aria-expanded",String(open));
 };
+$("wcMobileBackdrop").onclick=()=>{document.body.classList.remove("wc-mobile-nav-open");$("wcMobileBackdrop").hidden=true;$("wcMobileMenu").setAttribute("aria-expanded","false")};
+document.querySelectorAll("[data-wc-dest]").forEach(btn=>btn.onclick=()=>showPage(btn.dataset.wcDest));
+$("wcSidePlanButton").onclick=()=>showPage("billing");
+setInterval(()=>{if($("dashboardPage").classList.contains("active")&&wcSignedIn())wcLoadDashboard()},60000);
 
-health();setInterval(health,15000);loadPublicConfig();prepareSignupVerification();preparePasswordReset();loadInvitePreview();refreshIdentity().then(()=>{loadUsage();if(currentIdentity)showPage("dashboard")})
+health();setInterval(health,15000);loadPublicConfig();prepareSignupVerification();preparePasswordReset();loadInvitePreview();refreshIdentity().then(()=>{loadUsage();if(!verificationToken&&!passwordResetToken&&!invitationToken)showPage("dashboard")})
 
 </script>
 </body>
