@@ -226,6 +226,73 @@ body.light .sidebar-links{color:#44484e}
   .device-actions{width:100%;justify-content:flex-end}
   .setting-card{align-items:flex-start;flex-direction:column}
 }
+
+/* v1 console visual acceptance: responsive, readable, accessible surfaces. */
+:root{--sidebar:286px;--content:1160px}
+body{font-size:15px;line-height:1.55}
+.shell{padding:42px clamp(20px,3vw,52px) 80px}
+.content-frame{width:100%}
+.page-head{align-items:center;margin-bottom:32px}
+.page-head h1{font-size:clamp(30px,2.5vw,38px);line-height:1.18}
+.page-head p{font-size:16px;line-height:1.55}
+.card,.metric-card,.chart-card,.plan-card{padding:clamp(20px,2vw,30px)}
+.card h2,.chart-card h2{font-size:19px}
+.card h3{font-size:17px}
+.small,.device small,.hint,.label,.metric-note,.plan-copy,.feature,.settings-message{font-size:14px;line-height:1.55}
+.sidebar-usage-reset,.sidebar-usage-head,.sidebar-usage-copy,.sidebar-links,.account-row{font-size:13px}
+.side-nav-item{min-height:46px;font-size:16px}
+.wc-nav{gap:6px}
+.wc-brand{padding:25px 20px 22px}
+.wc-brand-text strong{font-size:17px}
+.wc-brand-text span{font-size:14px}
+.device-row{min-height:88px}
+.device-copy small,.client-info span,.client-row a,.state-badge,.row-action,.chart-label{font-size:13px}
+.tab{min-height:40px;font-size:14px}
+button{min-height:38px}
+button:focus-visible,a:focus-visible,.side-nav-item:focus-visible,.device:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
+.metric-grid,.plan-grid{gap:20px}
+.setting-card{min-height:120px}
+body.light .wc-brand-text span,body.light .side-nav-item,body.light .sidebar-usage-head,body.light .sidebar-usage-copy,body.light .sidebar-usage-reset,body.light .account-row,body.light .page-head p,body.light .metric-card .metric-label,body.light .metric-note,body.light .chart-card>p,body.light .chart-label,body.light .plan-copy,body.light .feature,body.light .setting-card p,body.light .settings-message,body.light .device-copy small,body.light .client-info span,body.light .label,body.light .hint,body.light .small,body.light .kv span:first-child{color:#505967}
+body.light .side-nav-item.active{color:#086bb7;background:#eaf5ff}
+body.light .side-nav-item:hover{color:#1b344b;background:#f0f5f9}
+body.light .device.selected{background:#eaf5ff}
+body.light .device-copy b,body.light .client-info b{color:#15171a}
+body.light .tab{background:#f1f4f8;color:#364657;border-color:#d3dce6}
+body.light .tab.active{background:#e3f2ff;color:#075b9b;border-color:#93c8ef}
+body.light .secondary{background:#f1f4f8;color:#263746;border-color:#cad3dc}
+body.light pre,body.light .terminal{background:#111821;color:#d9e8fb}
+body.light .file-list,body.light .file,body.light .audit th,body.light .audit td{border-color:#dfe3e9}
+body.light .file:hover{background:#f1f5f9}
+body.light .plan-card.pro{border-color:#168fdf}
+@media(max-width:1100px){:root{--sidebar:248px}.shell{padding:32px 24px 60px}.metric-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:820px){
+  :root{--sidebar:0px}
+  .wc-sidebar{position:sticky;top:0;z-index:40;width:100%;height:auto;background:var(--bg);border-right:0;border-bottom:1px solid var(--line)}
+  .wc-brand{padding:12px 18px 8px}
+  .wc-nav{padding:5px 12px 12px;flex-direction:row;overflow-x:auto;gap:6px;scrollbar-width:none}
+  .wc-nav::-webkit-scrollbar{display:none}
+  .side-nav-item{flex:0 0 auto;width:auto;min-width:max-content;padding:10px 14px}
+  .shell{margin-left:0;width:100%;padding:26px 18px 60px}
+  .metric-grid,.plan-grid,.two,.three{grid-template-columns:1fr}
+  .page-head{align-items:stretch}
+  .device-row{flex-direction:column;align-items:stretch;gap:12px;padding:14px 0}
+  .device-actions{justify-content:flex-start;flex-wrap:wrap}
+  .setting-card{flex-direction:column;align-items:flex-start}
+}
+@media(max-width:480px){
+  .shell{padding:20px 12px 48px}
+  .wc-brand{padding:10px 12px}
+  .page-head h1{font-size:29px}
+  .page-head p{font-size:15px}
+  .card,.metric-card,.chart-card,.plan-card{padding:18px}
+  .page-head .primary{min-width:0}
+  .device{padding:0 14px}
+  .usage-chart{gap:6px;padding:0 5px}
+  .kv{grid-template-columns:1fr;gap:3px}
+  .toolbar>label{flex-basis:100%}
+}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important}}
+
 </style>
 </head>
 <body>
