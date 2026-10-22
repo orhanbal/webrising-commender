@@ -311,11 +311,11 @@ async function serveBrandSvg(res: ServerResponse, fileName: string) {
     try {
       const svg = await fs.readFile(filePath);
       res.writeHead(200, {
+        ...securityHeaders(),
         "content-type": "image/svg+xml; charset=utf-8",
         "content-length": svg.length,
         "cache-control": "public, max-age=3600",
         "x-content-type-options": "nosniff",
-        ...securityHeaders(),
         "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
       });
       res.end(svg);
