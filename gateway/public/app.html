@@ -1079,8 +1079,8 @@ body.light .wc-device-badge.online{color:var(--win-success)!important}
 
 /* Fit the document backdrop to the actual Windows browser viewport. */
 body{min-height:100vh!important}
-html{background:#202020}
-html:has(body.light){background:#f3f3f3}
+html{background:#202020!important}
+html:has(body.light){background:#f3f3f3!important}
 /* Empty chart occupies both grid columns; never collapse into the 35px Y-axis. */
 body .wc-chart-plot>.wc-empty-state{
   grid-column:1/-1;align-self:start;min-width:0;
