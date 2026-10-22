@@ -562,6 +562,18 @@ body.light .wc-device-row,body.light .wc-activity-row,body.light .wc-operation-r
  .wc-button{font-size:12px;padding:9px}
  .wc-stat{min-height:121px!important}
 }
+
+/* Visual acceptance refinements from real Chrome 1536 × 1024 screenshots */
+.wc-devices-panel,.wc-activity-panel,.wc-chart-panel,.wc-operations-panel,.wc-plan-panel{padding:0!important}
+.wc-activity-glyph.wc-type-files{background:#153f42!important;color:#2adca8!important}
+.wc-activity-glyph.wc-type-tasks{background:#133c75!important;color:#55a5ff!important}
+.wc-activity-glyph.wc-type-alert{background:#5b2436!important;color:#ff7291!important}
+.wc-activity-glyph.wc-type-terminal{background:#153960!important;color:#69b4ff!important;padding:0!important;font:inherit!important;white-space:normal!important;border:0!important;overflow:visible!important}
+.wc-activity-glyph svg{width:17px!important;height:17px!important}
+.wc-sidebar>.sidebar-spacer{flex:1}
+.sidebar-usage{margin-bottom:76px!important}
+html{scrollbar-width:none}html::-webkit-scrollbar{display:none}
+@media(max-width:820px){.sidebar-usage{margin-bottom:24px!important}}
 </style>
 </head>
 <body>
@@ -1355,8 +1367,8 @@ async function loadUsage(){
     $("sidebarUsagePercent").textContent=limit?(pct+"%"):"∞";
     $("sidebarUsageMeter").style.width=(limit?pct:100)+"%";
     $("sidebarUsageCount").textContent=formatCount(used)+(limit?(" of "+formatCount(limit)):"");
-    $("sidebarUsageLimitText").textContent=limit?"this month":"calls this month";
-    $("sidebarUsageReset").textContent=limit?("Resets "+new Date(j.resetAt).toLocaleDateString()):"Unlimited";
+    $("sidebarUsageLimitText").textContent=limit?"bu ay":"bu ay çağrı";
+    $("sidebarUsageReset").textContent=limit?("Yenilenme: "+new Date(j.resetAt).toLocaleDateString("tr-TR")):"Sınırsız";
     const warn=!!limit&&pct>=90;
     $("quotaAlert").classList.toggle("visible",warn);
     $("quotaMessage").textContent=pct>=100
@@ -1452,7 +1464,7 @@ function wcToggleMenu(id,trigger){
 }
 function wcOsMarkup(platform){
   const p=String(platform||"").toLowerCase();
-  if(/win/.test(p))return '<span class="wc-os-icon win" aria-label="Windows"><svg viewBox="0 0 36 36" aria-hidden="true"><path fill="currentColor" d="M2 7.2 16.5 5v13H2Zm17-2.6L34 2v16H19ZM2 20h14.5v13L2 30.8Zm17 0h15v16l-15-2.6Z"/></svg></span>';
+  if(/^(win|windows|win32)/.test(p))return '<span class="wc-os-icon win" aria-label="Windows"><svg viewBox="0 0 36 36" aria-hidden="true"><path fill="currentColor" d="M2 7.2 16.5 5v13H2Zm17-2.6L34 2v16H19ZM2 20h14.5v13L2 30.8Zm17 0h15v16l-15-2.6Z"/></svg></span>';
   if(/linux|ubuntu|debian/.test(p))return '<span class="wc-os-icon linux" title="Linux" aria-label="Linux">🐧</span>';
   if(/mac|darwin|apple/.test(p))return '<span class="wc-os-icon mac" aria-label="macOS"><svg viewBox="0 0 40 46" aria-hidden="true"><path fill="currentColor" d="M30 3c-5 0-8 4-8 9 5 .2 9-4 8-9Zm5 25c-.8 4-4.5 12.8-9 13.1-2.3.2-3.8-1.5-6.6-1.5-2.9 0-4.6 1.6-6.8 1.5C8.1 40.9 3 31 3 24c0-6.8 4.1-11 9.4-11 2.8 0 5.2 1.7 7.1 1.7 1.8 0 4.6-1.7 7.8-1.7 3.5 0 6.5 1.7 8.1 4.3-7.2 4.3-6 13.7-.4 17.7Z"/></svg></span>';
   return '<span class="wc-os-icon" aria-label="Cihaz">'+wcIcon("devices")+'</span>';
@@ -1505,7 +1517,7 @@ function wcRenderActivity(items){
   const icon=type==="alert"?"alert":type==="files"?"files":type==="tasks"?"tasks":"terminal";
   const prefix=x.device_name?x.device_name+": ":"";
   const label=prefix+wcToolLabel(x.tool,x.outcome);
-  return '<div class="wc-activity-row"><span class="wc-activity-glyph '+type+'">'+wcIcon(icon)+'</span>'+
+  return '<div class="wc-activity-row"><span class="wc-activity-glyph wc-type-'+type+'">'+wcIcon(icon)+'</span>'+
     '<span class="wc-activity-description" title="'+wcEscape(label)+'">'+wcEscape(label)+'</span>'+
     '<time datetime="'+wcEscape(x.created_at||"")+'" title="'+wcEscape(wcFullDate(x.created_at))+'">'+wcEscape(wcRelativeDate(x.created_at))+'</time></div>';
  }).join(""):'<div class="wc-empty-state">Henüz kaydedilmiş bir aktivite bulunmuyor.</div>';
