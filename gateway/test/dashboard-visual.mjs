@@ -97,6 +97,7 @@ try{
  };
  await call("Page.enable");await call("Runtime.enable");
  await call("Emulation.setDeviceMetricsOverride",{width:1536,height:1024,deviceScaleFactor:1,mobile:false});
+ await call("Emulation.setEmulatedMedia",{features:[{name:"prefers-color-scheme",value:"dark"}]});
  await call("Page.navigate",{url:base+"/app"});
  let desktop;
  for(let i=0;i<90;i++){
@@ -105,6 +106,19 @@ try{
   if(desktop?.active&&desktop.deviceRows===3&&desktop.barCount===7)break;
  }
  assert.ok(desktop?.active,"Dashboard is not active: "+JSON.stringify(desktop));
+ const getPalette=()=>evalJs("(()=>{const css=s=>getComputedStyle(document.querySelector(s));const color=c=>c.backgroundColor;return {light:document.body.classList.contains('light'),body:color(document.body),sidebar:color(css('.wc-sidebar')),card:color(css('.wc-devices-panel')),button:color(css('#wcQuickTask')),buttonInk:css('#wcQuickTask').color,link:css('.wc-link-button').color,mainText:css('#wcDashboardTitle').color,meta:document.querySelector('meta[name=theme-color]')?.content}})()");
+ function rgb(str){return [...String(str).matchAll(/\\d+/g)].slice(0,3).map(x=>Number(x[0]))}
+ function luminance(c){const xs=rgb(c).map(n=>{const y=n/255;return y<=.04045?y/12.92:((y+.055)/1.055)**2.4});return xs[0]*.2126+xs[1]*.7152+xs[2]*.0722}
+ function contrast(a,b){const l=[luminance(a),luminance(b)].sort((x,y)=>y-x);return (l[0]+.05)/(l[1]+.05)}
+ const darkPalette=await getPalette();
+ assert.equal(darkPalette.light,false,"Windows dark mode expected from emulated OS");
+ assert.equal(darkPalette.body,"rgb(32, 32, 32)","Windows dark base brush differs");
+ assert.equal(darkPalette.sidebar,"rgb(28, 28, 28)","Windows dark sidebar differs");
+ assert.equal(darkPalette.card,"rgb(44, 44, 44)","Windows dark card surface differs");
+ assert.equal(darkPalette.button,"rgb(96, 205, 255)","Windows dark accent differs");
+ assert.equal(darkPalette.meta,"#202020","Windows dark browser theme color differs");
+ assert.ok(contrast(darkPalette.button,darkPalette.buttonInk)>=4.5,"Windows dark button contrast below WCAG AA");
+ assert.ok(contrast(darkPalette.body,darkPalette.mainText)>=4.5,"Windows dark heading contrast below WCAG AA");
  assert.equal(desktop.deviceRows,3,"Device rows did not render");
  assert.equal(desktop.activityRows,6,"Live activity feed did not render");
  assert.equal(desktop.barCount,7,"Seven-day chart did not render");
@@ -131,9 +145,36 @@ try{
  assert.equal(theme.blackVisible,true,"Black logo not visible in light mode");
  assert.equal(theme.whiteHidden,true,"White logo should be hidden in light mode");
  assert.equal(theme.loaded,true,"Black logo failed to load");
- assert.equal(theme.bg,"rgb(242, 246, 251)","Light mode page background remains dark");
+ assert.equal(theme.bg,"rgb(243, 243, 243)","Windows light base brush differs");
+ const lightPalette=await getPalette();
+ assert.equal(lightPalette.sidebar,"rgb(249, 249, 249)","Windows light sidebar differs");
+ assert.equal(lightPalette.card,"rgb(255, 255, 255)","Windows light card differs");
+ assert.equal(lightPalette.button,"rgb(0, 103, 192)","Windows light accent differs");
+ assert.equal(lightPalette.meta,"#f3f3f3","Windows light browser theme color differs");
+ assert.ok(contrast(lightPalette.button,lightPalette.buttonInk)>=4.5,"Windows light button contrast below WCAG AA");
+ assert.ok(contrast(lightPalette.body,lightPalette.mainText)>=4.5,"Windows light heading contrast below WCAG AA");
  const lightPng=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
  writeFileSync(join(shots,"dashboard-light.png"),Buffer.from(lightPng.data,"base64"));
+ await evalJs("document.querySelector('#wcThemeToggle').click()");
+ // Without a stored override, the Windows/system preference controls the app.
+ await evalJs("localStorage.removeItem('wecommander-theme')");
+ await call("Emulation.setEmulatedMedia",{features:[{name:"prefers-color-scheme",value:"light"}]});
+ await call("Page.reload",{ignoreCache:true});
+ let systemLight=false;
+ for(let i=0;i<35;i++){
+  await delay(120);
+  systemLight=await evalJs("document.body.classList.contains('light')");
+  if(systemLight)break;
+ }
+ assert.equal(systemLight,true,"Application did not follow OS light preference");
+ await call("Emulation.setEmulatedMedia",{features:[{name:"prefers-color-scheme",value:"dark"}]});
+ await delay(150);
+ assert.equal(await evalJs("document.body.classList.contains('light')"),false,"Application did not follow OS dark preference");
+ await evalJs("document.querySelector('#wcThemeToggle').click()");
+ assert.equal(await evalJs("localStorage.getItem('wecommander-theme')"),"light","Manual theme preference not persisted");
+ await call("Emulation.setEmulatedMedia",{features:[{name:"prefers-color-scheme",value:"dark"}]});
+ await delay(160);
+ assert.equal(await evalJs("document.body.classList.contains('light')"),true,"Manual light preference must override OS dark");
  await evalJs("document.querySelector('#wcThemeToggle').click()");
 
  await call("Page.navigate",{url:base+"/"});
@@ -146,7 +187,18 @@ try{
  assert.equal(landingBrandLoaded,true,"Official landing wordmark or hero icon failed to load");
  const landingPng=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
  writeFileSync(join(shots,"landing-brand-desktop.png"),Buffer.from(landingPng.data,"base64"));
+ let landingDarkPalette=await evalJs("({light:document.body.classList.contains('light'),bg:getComputedStyle(document.body).backgroundColor,logoLoaded:document.querySelector('.brand-wordmark')?.naturalWidth>0})");
+ assert.deepEqual(landingDarkPalette,{light:false,bg:"rgb(32, 32, 32)",logoLoaded:true},"Landing does not use Windows dark brush");
+ await evalJs("document.querySelector('#landingThemeToggle').click()");
+ await delay(190);
+ const landingLightPalette=await evalJs("({light:document.body.classList.contains('light'),bg:getComputedStyle(document.body).backgroundColor,logoVisible:getComputedStyle(document.querySelector('.brand-wordmark-black')).display!=='none',logoLoaded:document.querySelector('.brand-wordmark-black')?.naturalWidth>0,accent:getComputedStyle(document.querySelector('.nav-actions .btn')).backgroundColor})");
+ assert.deepEqual(landingLightPalette,{light:true,bg:"rgb(243, 243, 243)",logoVisible:true,logoLoaded:true,accent:"rgb(0, 103, 192)"},"Landing does not use Windows light colors");
+ const landingLightPng=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
+ writeFileSync(join(shots,"landing-windows-light.png"),Buffer.from(landingLightPng.data,"base64"));
  await call("Page.navigate",{url:base+"/app"});
+ for(let i=0;i<20;i++){if(await evalJs("document.body.classList.contains('light')"))break;await delay(80)}
+ assert.equal(await evalJs("document.body.classList.contains('light')"),true,"Theme selected on landing did not persist into app");
+ await evalJs("document.querySelector('#wcThemeToggle').click()");
 
  await call("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:1,mobile:true});
  await call("Page.reload",{ignoreCache:true});
