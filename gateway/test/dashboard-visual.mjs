@@ -200,8 +200,32 @@ try{
  await call("Page.navigate",{url:base+"/app"});
  for(let i=0;i<20;i++){if(await evalJs("document.body.classList.contains('light')"))break;await delay(80)}
  assert.equal(await evalJs("document.body.classList.contains('light')"),true,"Theme selected on landing did not persist into app");
- await evalJs("document.querySelector('#wcThemeToggle').click()");
 
+ // User-reported 1840 × 830 Windows desktop: dashboard should fit without zooming.
+ await call("Emulation.setDeviceMetricsOverride",{width:1840,height:830,deviceScaleFactor:1,mobile:false});
+ await call("Page.reload",{ignoreCache:true});
+ for(let i=0;i<70;i++){
+   await delay(120);
+   if(await evalJs("document.querySelectorAll('.wc-device-row').length===3"))break;
+ }
+ const compactMetrics=()=>evalJs("(()=>{const r=s=>document.querySelector(s)?.getBoundingClientRect();const get=s=>{const b=r(s);return b?{top:b.top,bottom:b.bottom,height:b.height}:null};return {active:document.querySelector('#dashboardPage')?.classList.contains('active'),viewport:innerHeight,body:document.documentElement.scrollHeight,overflowX:document.documentElement.scrollWidth-innerWidth,sidebar:get('.wc-sidebar'),sidePlan:get('.wc-side-plan'),sideUsage:get('.sidebar-usage'),top:get('.wc-dashboard-top'),intro:get('.wc-dash-heading'),signin:get('#wcSignInPrompt'),stats:get('.wc-stat-grid'),main:get('.wc-dash-main'),bottom:get('.wc-dash-bottom'),font:getComputedStyle(document.querySelector('.wc-dash-heading h1')).fontSize}})()");
+ const shortSignedIn=await compactMetrics();
+ assert.ok(shortSignedIn.active,"Compact viewport dashboard missing");
+ assert.ok(shortSignedIn.bottom?.bottom<=830,"1840×830 signed-in dashboard cut off: "+JSON.stringify(shortSignedIn));
+ assert.ok(shortSignedIn.sideUsage?.bottom<=830,"1840×830 left sidebar cut off: "+JSON.stringify(shortSignedIn));
+ assert.ok(shortSignedIn.overflowX<=2,"1840×830 horizontal overflow");
+ assert.ok(parseFloat(shortSignedIn.font)>=27,"Heading text becomes too small on compact viewport");
+ const shortSignedInPng=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
+ writeFileSync(join(shots,"dashboard-1840x830-signed-in.png"),Buffer.from(shortSignedInPng.data,"base64"));
+ await evalJs("(()=>{currentIdentity=null;document.querySelector('#key').value='';wcLoadDashboard()})()");
+ await delay(130);
+ const shortGuest=await compactMetrics();
+ assert.ok(!await evalJs("document.querySelector('#wcSignInPrompt').hidden"),"Guest sign-in banner should be visible");
+ assert.ok(shortGuest.bottom?.bottom<=830,"1840×830 guest dashboard cut off: "+JSON.stringify(shortGuest));
+ assert.ok(shortGuest.sideUsage?.bottom<=830,"1840×830 guest sidebar cut off");
+ assert.ok(shortGuest.overflowX<=2,"1840×830 guest horizontal overflow");
+ const shortGuestPng=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
+ writeFileSync(join(shots,"dashboard-1840x830-guest.png"),Buffer.from(shortGuestPng.data,"base64"));
  await call("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:1,mobile:true});
  await call("Page.reload",{ignoreCache:true});
  let mobile;
