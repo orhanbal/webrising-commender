@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>WECOMMANDER</title>
+  <link rel="icon" href="/assets/wecommander-favicon.svg" type="image/svg+xml" sizes="any">
+  <meta name="theme-color" content="#071524">
   <style>
 :root{
   font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
@@ -575,13 +577,38 @@ body.light .wc-device-row,body.light .wc-activity-row,body.light .wc-operation-r
 html{scrollbar-width:none}html::-webkit-scrollbar{display:none}
 @media(max-width:820px){.sidebar-usage{margin-bottom:24px!important}}
 .wc-device-row{padding:10px 2px!important;min-height:74px!important}
+
+/* Official user-provided brand assets; use monochrome artwork in the appropriate theme. */
+.wc-brand .wc-brand-lockup{display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:4px;width:100%;max-width:100%;color:inherit;text-decoration:none}
+.wc-brand .wc-brand-lockup img{display:block;width:min(248px,100%);height:auto;max-height:33px;object-fit:contain;object-position:left center;aspect-ratio:28020/3360}
+.wc-brand .wc-brand-black{display:none!important}
+.wc-brand .wc-brand-subtitle{font-size:12px;line-height:1.2;color:#9ebad5;letter-spacing:.01em}
+body.light .wc-brand .wc-brand-white{display:none!important}
+body.light .wc-brand .wc-brand-black{display:block!important}
+body.light .wc-brand .wc-brand-subtitle{color:#46617e}
+body.light .wc-sidebar{background:#f7fbff!important;border-right-color:#d3e0ef!important}
+body.light .wc-nav .side-nav-item:not(.active){color:#284564!important}
+body.light .wc-side-plan,body.light .sidebar-usage{background:#fff!important;border-color:#d5e3f1!important}
+body.light .wc-side-plan strong,body.light .sidebar-usage-head{color:#263e55!important}
+body.light .sidebar-usage-copy,body.light .sidebar-usage-reset,body.light .wc-side-plan small{color:#48627a!important}
+body.light .wc-side-plan button{background:#e9f3ff!important;border-color:#bcd4ec!important;color:#17375a!important}
+body.light .wc-dashboard-top{border-color:#d3e1ed!important}
+body.light .wc-icon-button{color:#294d70!important}
+body.light .wc-top-profile-text strong{color:#1a3550!important}
+body.light .wc-top-profile-text small{color:#53718d!important}
+body.light .wc-profile-button{color:#1a3550!important}
+body.light .wc-breadcrumb,body.light .wc-dash-heading p{color:#5a738d!important}
+body.light .wc-search-shell{border-color:#bcd4e7!important}
 </style>
 </head>
 <body>
 <aside class="wc-sidebar" aria-label="Primary">
   <div class="wc-brand">
-    <div class="wc-logo" aria-hidden="true"><svg viewBox="0 0 48 44" class="wc-wordmark-icon" focusable="false"><defs><linearGradient id="wcBrandGradient" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#1da9ff"/><stop offset="1" stop-color="#1764e8"/></linearGradient></defs><path d="M4 9 14.8 33 24 19.3 33.2 33 44 9" stroke="url(#wcBrandGradient)" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="m19 27 5-7.7 5 7.7" stroke="#0d418b" stroke-width="5" stroke-linecap="round" fill="none"/></svg></div>
-    <div class="wc-brand-text"><strong>WECOMMANDER</strong><span>Remote MCP</span></div>
+    <a href="/" class="wc-brand-lockup" aria-label="WECOMMANDER ana sayfa">
+      <img class="wc-brand-white" src="/assets/wecommander-white.svg" alt="" width="248" height="30">
+      <img class="wc-brand-black" src="/assets/wecommander-black.svg" alt="" width="248" height="30">
+      <span class="wc-brand-subtitle">Remote MCP</span>
+    </a>
   </div>
   <nav class="wc-nav"><button class="side-nav-item" data-page-target="dashboard"><span class="wc-nav-icon">⌂</span><span>Ana Sayfa</span></button>
     <button class="side-nav-item active" data-page-target="devices">
