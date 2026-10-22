@@ -65,3 +65,16 @@ test("server provides real daily, monthly, operations and safe activity feeds", 
   assert.match(backend, /select a\.tool,a\.outcome,a\.created_at,a\.device_id,d\.name as device_name/);
   assert.doesNotMatch(backend.slice(backend.indexOf('url.pathname === "/api/activity"'),backend.indexOf('url.pathname === "/api/audit"')),/a\.detail|a\.actor/);
 });
+
+test("official SVG logo and favicon files are available", () => {
+  for (const asset of ["wecommander-white.svg", "wecommander-black.svg", "wecommander-favicon.svg"]) {
+    const source = readFileSync(new URL("../public/assets/" + asset, import.meta.url), "utf8");
+    assert.ok(source.includes("viewBox="), asset);
+    assert.ok(source.startsWith("<svg "), asset);
+    assert.ok(html.includes(asset), asset);
+  }
+  const landing=readFileSync(new URL("../public/index.html",import.meta.url),"utf8");
+  assert.equal((landing.match(/class="brand-wordmark"/g)||[]).length, 2);
+  assert.ok(landing.includes("center-brand-icon"));
+  assert.ok(landing.includes("wecommander-favicon.svg"));
+});
