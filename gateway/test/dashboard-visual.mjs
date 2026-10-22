@@ -8,6 +8,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 const html=readFileSync(new URL("../public/app.html",import.meta.url),"utf8");
+const landingHtml=readFileSync(new URL("../public/index.html",import.meta.url),"utf8");
 const shots=resolve(fileURLToPath(new URL("../test-artifacts",import.meta.url)));
 mkdirSync(shots,{recursive:true});
 const dates=Array.from({length:7},(_,i)=>{
@@ -42,13 +43,8 @@ const server=createServer((req,res)=>{
  if(pathname==="/app"||pathname==="/app/"){
   res.writeHead(200,{"content-type":"text/html; charset=utf-8","cache-control":"no-store"});res.end(html);return;
  }
+ if(pathname==="/"){res.writeHead(200,{"content-type":"text/html; charset=utf-8"});res.end(landingHtml);return}
  if(pathname==="/health"){res.writeHead(200,{"content-type":"application/json"});res.end(JSON.stringify({ok:true}));return}
- const name=pathname.startsWith("/assets/")?pathname.slice("/assets/".length):"";
- if(["wecommander-white.svg","wecommander-black.svg","wecommander-favicon.svg"].includes(name)){
-   res.writeHead(200,{"content-type":"image/svg+xml; charset=utf-8"});
-   res.end(readFileSync(new URL("../public/assets/"+name,import.meta.url)));
-   return;
- }
  const brandAsset=pathname.startsWith("/assets/")?pathname.slice("/assets/".length):"";
  if(["wecommander-white.svg","wecommander-black.svg","wecommander-favicon.svg"].includes(brandAsset)){
   res.writeHead(200,{"content-type":"image/svg+xml; charset=utf-8"});
@@ -128,6 +124,18 @@ try{
  assert.ok(desktop.overflow<=2,"Horizontal scrolling detected on desktop: "+desktop.overflow);
  const png=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
  writeFileSync(join(shots,"dashboard-desktop.png"),Buffer.from(png.data,"base64"));
+ await call("Page.navigate",{url:base+"/"});
+ let landingBrandLoaded=false;
+ for(let i=0;i<60;i++){
+   await delay(120);
+   landingBrandLoaded=await evalJs("(()=>{const logos=[...document.querySelectorAll('.brand-wordmark')];return logos.length===2&&logos.every(x=>x.complete&&x.naturalWidth>0)&&document.querySelector('.center-brand-icon')?.naturalWidth>0})()");
+   if(landingBrandLoaded)break;
+ }
+ assert.equal(landingBrandLoaded,true,"Official landing wordmark or hero icon failed to load");
+ const landingPng=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
+ writeFileSync(join(shots,"landing-brand-desktop.png"),Buffer.from(landingPng.data,"base64"));
+ await call("Page.navigate",{url:base+"/app"});
+
  await call("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:1,mobile:true});
  await call("Page.reload",{ignoreCache:true});
  let mobile;
