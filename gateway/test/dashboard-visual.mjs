@@ -106,7 +106,7 @@ try{
   if(desktop?.active&&desktop.deviceRows===3&&desktop.barCount===7)break;
  }
  assert.ok(desktop?.active,"Dashboard is not active: "+JSON.stringify(desktop));
- const getPalette=()=>evalJs("(()=>{const css=s=>getComputedStyle(document.querySelector(s));const color=c=>c.backgroundColor;return {light:document.body.classList.contains('light'),body:color(document.body),sidebar:color(css('.wc-sidebar')),card:color(css('.wc-devices-panel')),button:color(css('#wcQuickTask')),buttonInk:css('#wcQuickTask').color,link:css('.wc-link-button').color,mainText:css('#wcDashboardTitle').color,meta:document.querySelector('meta[name=theme-color]')?.content}})()");
+ const getPalette=()=>evalJs("(()=>{const css=s=>getComputedStyle(document.querySelector(s));const color=c=>c.backgroundColor;return {light:document.body.classList.contains('light'),body:color(css('body')),sidebar:color(css('.wc-sidebar')),card:color(css('.wc-devices-panel')),button:color(css('#wcQuickTask')),buttonInk:css('#wcQuickTask').color,link:css('.wc-link-button').color,mainText:css('#wcDashboardTitle').color,meta:document.querySelector('meta[name=theme-color]')?.content}})()");
  function rgb(str){return [...String(str).matchAll(/\\d+/g)].slice(0,3).map(x=>Number(x[0]))}
  function luminance(c){const xs=rgb(c).map(n=>{const y=n/255;return y<=.04045?y/12.92:((y+.055)/1.055)**2.4});return xs[0]*.2126+xs[1]*.7152+xs[2]*.0722}
  function contrast(a,b){const l=[luminance(a),luminance(b)].sort((x,y)=>y-x);return (l[0]+.05)/(l[1]+.05)}
