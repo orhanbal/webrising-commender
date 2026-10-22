@@ -98,7 +98,7 @@ test("Windows 11 Fluent colors match both appearance modes", () => {
 
 test("Windows appearance toggle scripts parse without changing business logic", () => {
  const landing=readFileSync(new URL("../public/index.html",import.meta.url),"utf8");
- const landingScripts=[...landing.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/g)].map(x=>x[1]);
+ const landingScripts=landing.split("<script>").slice(1).map(part=>part.split("</script>")[0]);
  assert.equal(landingScripts.length,1,"Landing only needs a single theme controller");
  assert.doesNotThrow(()=>new Script(landingScripts[0],{filename:"index.html"}));
  assert.match(landing,/id="landingThemeToggle"/);
