@@ -43,6 +43,12 @@ const server=createServer((req,res)=>{
   res.writeHead(200,{"content-type":"text/html; charset=utf-8","cache-control":"no-store"});res.end(html);return;
  }
  if(pathname==="/health"){res.writeHead(200,{"content-type":"application/json"});res.end(JSON.stringify({ok:true}));return}
+ const name=pathname.startsWith("/assets/")?pathname.slice("/assets/".length):"";
+ if(["wecommander-white.svg","wecommander-black.svg","wecommander-favicon.svg"].includes(name)){
+   res.writeHead(200,{"content-type":"image/svg+xml; charset=utf-8"});
+   res.end(readFileSync(new URL("../public/assets/"+name,import.meta.url)));
+   return;
+ }
  const data=mock[pathname];
  if(data){res.writeHead(200,{"content-type":"application/json","cache-control":"no-store"});res.end(JSON.stringify(data));return}
  res.writeHead(404,{"content-type":"application/json"});res.end(JSON.stringify({error:"not_found"}));
@@ -93,7 +99,7 @@ try{
  let desktop;
  for(let i=0;i<90;i++){
   await delay(180);
-  desktop=await evalJs("(()=>{const box=s=>{const r=document.querySelector(s)?.getBoundingClientRect();return r?{x:r.x,y:r.y,w:r.width,h:r.height}:null};return {active:document.querySelector('#dashboardPage')?.classList.contains('active'),deviceRows:document.querySelectorAll('.wc-device-row').length,activityRows:document.querySelectorAll('.wc-activity-row').length,barCount:document.querySelectorAll('.wc-chart-column').length,operationRows:document.querySelectorAll('.wc-operation-row').length,macIcons:document.querySelectorAll('.wc-os-icon.mac').length,terminalIcons:document.querySelectorAll('.wc-activity-glyph.wc-type-terminal svg').length,planTitle:box('#wcPlanTitle'),sidebar:box('.wc-sidebar'),hero:box('.wc-dash-heading'),stats:[...document.querySelectorAll('.wc-stat')].map(x=>{const r=x.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width}}),main:[box('.wc-devices-panel'),box('.wc-activity-panel')],bottom:[box('.wc-chart-panel'),box('.wc-operations-panel'),box('.wc-plan-panel')],overflow:document.documentElement.scrollWidth-innerWidth}})()");
+  desktop=await evalJs("(()=>{const box=s=>{const r=document.querySelector(s)?.getBoundingClientRect();return r?{x:r.x,y:r.y,w:r.width,h:r.height}:null};return {active:document.querySelector('#dashboardPage')?.classList.contains('active'),deviceRows:document.querySelectorAll('.wc-device-row').length,activityRows:document.querySelectorAll('.wc-activity-row').length,barCount:document.querySelectorAll('.wc-chart-column').length,brandLoaded:document.querySelector('.wc-brand-white')?.complete&&document.querySelector('.wc-brand-white')?.naturalWidth>0,operationRows:document.querySelectorAll('.wc-operation-row').length,macIcons:document.querySelectorAll('.wc-os-icon.mac').length,terminalIcons:document.querySelectorAll('.wc-activity-glyph.wc-type-terminal svg').length,planTitle:box('#wcPlanTitle'),sidebar:box('.wc-sidebar'),hero:box('.wc-dash-heading'),stats:[...document.querySelectorAll('.wc-stat')].map(x=>{const r=x.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width}}),main:[box('.wc-devices-panel'),box('.wc-activity-panel')],bottom:[box('.wc-chart-panel'),box('.wc-operations-panel'),box('.wc-plan-panel')],overflow:document.documentElement.scrollWidth-innerWidth}})()");
   if(desktop?.active&&desktop.deviceRows===3&&desktop.barCount===7)break;
  }
  assert.ok(desktop?.active,"Dashboard is not active: "+JSON.stringify(desktop));
@@ -101,6 +107,7 @@ try{
  assert.equal(desktop.activityRows,6,"Live activity feed did not render");
  assert.equal(desktop.barCount,7,"Seven-day chart did not render");
  assert.equal(desktop.operationRows,5,"Operation breakdown did not render");
+ assert.ok(desktop.brandLoaded,"Official wordmark was not loaded in Chrome");
  assert.equal(desktop.macIcons,1,"macOS device must have its own icon, not Windows");
  assert.equal(desktop.terminalIcons,2,"Terminal activity SVGs should render without terminal-pane styling");
  assert.ok(desktop.main[0].h<=335,"Device panel is too tall versus reference: "+desktop.main[0].h);
