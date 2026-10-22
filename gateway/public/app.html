@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>WECOMMANDER</title>
   <link rel="icon" href="/assets/wecommander-favicon.svg" type="image/svg+xml" sizes="any">
-  <meta name="theme-color" content="#071524">
+  <meta name="theme-color" content="#202020">
   <style>
 :root{
   font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
@@ -624,6 +624,272 @@ body.light .wc-plan-expiry{border-color:#d3e1ef!important}
 body.light .wc-head-actions .wc-button-secondary{background:#fff!important;color:#1d3d60!important;border-color:#bed4e9!important}
 body.light .wc-panel-head select{background:#fff!important;color:#26435f!important;border-color:#bed4e9!important}
 body.light .wc-dash-panel .wc-empty-state{color:#5a7590!important}
+
+/* Windows 11 Fluent light/dark colors (Microsoft solid/surface brushes).
+   Theme tokens are scoped to body so app and browser theme stay synchronized.
+   This layer supersedes the older navy dashboards without altering layout. */
+body{
+  color-scheme:dark;
+  --win-bg:#202020;--win-sidebar:#1c1c1c;--win-surface:#2c2c2c;
+  --win-surface-alt:#333333;--win-surface-raised:#383838;
+  --win-hover:#3c3c3c;--win-selected:#383838;--win-stroke:#454545;
+  --win-stroke-soft:#3c3c3c;--win-text:#f5f5f5;--win-muted:#c8c8c8;
+  --win-subtle:#ababab;--win-accent:#60cdff;--win-accent-hover:#8bdcff;
+  --win-accent-text:#00364e;--win-accent-tint:#143947;
+  --win-success:#6ccb5f;--win-danger:#ff99a4;--win-warning:#ffca77;
+  --win-input:#292929;--win-shadow:rgba(0,0,0,.28);
+  --bg:var(--win-bg);--surface:var(--win-surface);--surface-2:var(--win-surface-alt);
+  --surface-3:var(--win-sidebar);--line:var(--win-stroke);--line-soft:var(--win-stroke-soft);
+  --text:var(--win-text);--muted:var(--win-muted);--subtle:var(--win-subtle);
+  --blue:var(--win-accent);--blue-2:var(--win-accent-hover);
+  --green:var(--win-success);--red:var(--win-danger);--amber:var(--win-warning);
+  background:var(--win-bg)!important;color:var(--win-text)!important;
+}
+body.light{
+  color-scheme:light;
+  --win-bg:#f3f3f3;--win-sidebar:#f9f9f9;--win-surface:#ffffff;
+  --win-surface-alt:#f9f9f9;--win-surface-raised:#ffffff;
+  --win-hover:#eeeeee;--win-selected:#e9e9e9;--win-stroke:#d1d1d1;
+  --win-stroke-soft:#e5e5e5;--win-text:#1a1a1a;--win-muted:#555555;
+  --win-subtle:#666666;--win-accent:#0067c0;--win-accent-hover:#005ba8;
+  --win-accent-text:#ffffff;--win-accent-tint:#e4f1fb;
+  --win-success:#0f7b0f;--win-danger:#c42b1c;--win-warning:#a74a0b;
+  --win-input:#ffffff;--win-shadow:rgba(0,0,0,.11);
+  --bg:var(--win-bg);--surface:var(--win-surface);--surface-2:var(--win-surface-alt);
+  --surface-3:var(--win-sidebar);--line:var(--win-stroke);--line-soft:var(--win-stroke-soft);
+  --text:var(--win-text);--muted:var(--win-muted);--subtle:var(--win-subtle);
+  --blue:var(--win-accent);--blue-2:var(--win-accent-hover);
+  --green:var(--win-success);--red:var(--win-danger);--amber:var(--win-warning);
+  background:var(--win-bg)!important;color:var(--win-text)!important;
+}
+body .wc-sidebar{
+ background:var(--win-sidebar)!important;border-right-color:var(--win-stroke)!important;color:var(--win-text);
+}
+body .wc-brand{border-bottom-color:var(--win-stroke-soft)!important}
+body .wc-brand .wc-brand-subtitle{color:var(--win-muted)!important}
+body .wc-nav .side-nav-item:not(.active){
+  background:transparent!important;color:var(--win-muted)!important;
+}
+body .wc-nav .side-nav-item:not(.active):hover{
+  background:var(--win-hover)!important;color:var(--win-text)!important;
+}
+body .wc-nav .side-nav-item.active{
+  background:var(--win-selected)!important;color:var(--win-text)!important;
+}
+body .wc-nav .side-nav-item.active:before{background:var(--win-accent)!important}
+body .wc-nav .side-nav-item svg,body .wc-nav .wc-nav-icon{color:inherit!important}
+body .wc-side-plan,body .sidebar-usage{
+  background:var(--win-surface)!important;border-color:var(--win-stroke)!important;color:var(--win-text)!important;
+}
+body .wc-side-plan strong,body .sidebar-usage-head{color:var(--win-text)!important}
+body .wc-side-plan small,body .sidebar-usage-copy,body .sidebar-usage-reset{
+  color:var(--win-muted)!important;
+}
+body .wc-side-plan button{
+  background:var(--win-surface-alt)!important;color:var(--win-accent)!important;border-color:var(--win-stroke)!important;
+}
+body .wc-side-plan button:hover{background:var(--win-hover)!important}
+body .sidebar-upgrade{color:var(--win-accent)!important;background:transparent!important}
+body .sidebar-usage .meter,body .meter,body .wc-stat-meter{
+  background:var(--win-stroke)!important;
+}
+body .sidebar-usage .meter span,body .meter>span,body .usage-progress span,body .wc-stat-meter span{
+  background:var(--win-accent)!important;
+}
+body .wc-dashboard-top{border-bottom-color:var(--win-stroke-soft)!important}
+body .wc-search-shell{
+  background:var(--win-input)!important;border-color:var(--win-stroke)!important;
+  color:var(--win-muted)!important;
+}
+body .wc-search-shell:focus-within{
+  outline-color:var(--win-accent)!important;
+}
+body .wc-search-shell input.wc-search{
+  background:transparent!important;color:var(--win-text)!important;
+}
+body .wc-search-shell input::placeholder{color:var(--win-subtle)!important}
+body .wc-search-glyph{color:var(--win-muted)!important}
+body .wc-search-shell kbd{
+  background:var(--win-surface-alt)!important;color:var(--win-muted)!important;
+  border-color:var(--win-stroke)!important;
+}
+body .wc-search-results,body .wc-top-popover{
+  background:var(--win-surface-raised)!important;color:var(--win-text)!important;
+  border-color:var(--win-stroke)!important;
+  box-shadow:0 16px 40px var(--win-shadow)!important;
+}
+body .wc-search-results button,body .wc-top-popover button{
+  color:var(--win-text)!important;
+}
+body .wc-search-results button:hover,body .wc-top-popover button:hover{
+  background:var(--win-hover)!important;
+}
+body .wc-search-results button small,body .wc-top-popover .wc-popover-line{
+  color:var(--win-muted)!important;border-color:var(--win-stroke-soft)!important;
+}
+body .wc-icon-button,body .wc-profile-button,body .wc-menu-chevron{
+  color:var(--win-muted)!important;
+}
+body .wc-icon-button:hover,body.light .wc-icon-button:hover{
+  background:var(--win-hover)!important;
+}
+body .wc-account-anchor{border-left-color:var(--win-stroke-soft)!important}
+body .wc-top-profile-text strong{color:var(--win-text)!important}
+body .wc-top-profile-text small{color:var(--win-muted)!important}
+body .wc-profile-button .avatar,body .avatar{
+  background:var(--win-accent-tint)!important;
+  border-color:var(--win-stroke)!important;
+  color:var(--win-accent)!important;
+}
+body .wc-breadcrumb,body .wc-dash-heading p,body .page-head p{
+  color:var(--win-muted)!important;
+}
+body .wc-dash-heading h1,body .wc-dashboard h1,body .page-head h1{
+  color:var(--win-text)!important;
+}
+body .wc-dash-heading h1 span#wcWelcome{color:var(--win-accent)!important}
+body .wc-dash-panel,body .wc-dash-panel.wc-stat,body .login,body .card,
+body .metric-card,body .chart-card,body .plan-card,body .team-strip{
+  background:var(--win-surface)!important;
+  color:var(--win-text)!important;
+  border-color:var(--win-stroke)!important;
+  box-shadow:0 1px 2px var(--win-shadow)!important;
+}
+body .wc-dash-panel h2,body .wc-dash-panel strong,body .wc-device-title,
+body .wc-plan-name,body .wc-operation-row strong{
+  color:var(--win-text)!important;
+}
+body .wc-dash-panel .wc-stat-label,body .wc-dash-panel .wc-stat small,
+body .wc-dash-panel .wc-empty-state{
+  color:var(--win-muted)!important;
+}
+body .wc-stat-link:hover,body.light .wc-stat-link:hover{
+  background:var(--win-hover)!important;border-color:var(--win-accent)!important;
+}
+body .wc-stat>.wc-svg-arrow{color:var(--win-muted)!important}
+body .wc-stat-icon{
+  background:var(--win-accent-tint)!important;color:var(--win-accent)!important;
+}
+body .wc-stat-icon.wc-stat-green{background:var(--win-surface-alt)!important;color:var(--win-success)!important}
+body .wc-stat-icon.wc-stat-amber{background:var(--win-surface-alt)!important;color:var(--win-warning)!important}
+body .wc-stat-icon.wc-stat-cyan{background:var(--win-surface-alt)!important;color:var(--win-accent)!important}
+body .wc-button-primary,body .wc-head-actions .wc-button-primary,
+body .wc-connect-button,body button:not(.side-nav-item):not(.wc-icon-button):not(.wc-profile-button):not(.wc-link-button):not(.wc-device-more):not(.wc-button-secondary):not(.secondary):not(.danger):not(.sidebar-upgrade):not(.wc-theme-button):not(.wc-side-plan button){
+  background:var(--win-accent)!important;
+  color:var(--win-accent-text)!important;
+  border-color:var(--win-accent)!important;
+}
+body .wc-button-primary:hover,body .wc-connect-button:not(:disabled):hover{
+  filter:brightness(1.05)!important;
+}
+body .wc-head-actions .wc-button-secondary,body .wc-button-secondary,
+body button.secondary,body .tab{
+  background:var(--win-surface-alt)!important;color:var(--win-text)!important;
+  border-color:var(--win-stroke)!important;
+}
+body .wc-button-secondary:hover,body button.secondary:hover,body .tab:hover{
+  background:var(--win-hover)!important;
+}
+body .wc-connect-button:disabled{
+  background:var(--win-surface-alt)!important;
+  color:var(--win-subtle)!important;
+  border-color:var(--win-stroke)!important;
+}
+body .wc-link-button,body .quota-alert button,body .client-row a{
+  color:var(--win-accent)!important;
+}
+body .wc-device-row,body .wc-activity-row,body .wc-operation-row,
+body .wc-usage-line,body .client-row+.client-row,body .kv,body .file,body .device{
+  border-color:var(--win-stroke-soft)!important;
+}
+body .wc-device-copy small,body .wc-device-seen,body .wc-device-seen small,
+body .wc-device-badge,body .wc-activity-row .wc-activity-description,
+body .wc-activity-row time,body .wc-operation-name,
+body .wc-plan-price,body .wc-plan-expiry,body .wc-plan-feature{
+  color:var(--win-muted)!important;
+}
+body .wc-device-badge.online,body .wc-online,body .wc-plan-feature:before{
+  color:var(--win-success)!important;
+}
+body .wc-device-badge.online:before,body .status.online{
+  background:var(--win-success)!important;
+}
+body .wc-activity-glyph,body .wc-activity-glyph.wc-type-terminal,
+body .wc-activity-glyph.wc-type-tasks,body .wc-operation-icon,
+body .wc-operation-icon.mcp{
+  background:var(--win-accent-tint)!important;color:var(--win-accent)!important;
+}
+body .wc-activity-glyph.wc-type-files,body .wc-operation-icon.system{
+  background:var(--win-surface-alt)!important;color:var(--win-success)!important;
+}
+body .wc-activity-glyph.wc-type-alert,body .wc-operation-icon.files{
+  background:var(--win-surface-alt)!important;color:var(--win-danger)!important;
+}
+body .wc-chart-grid{
+  border-color:var(--win-stroke)!important;
+  background:linear-gradient(to bottom,var(--win-stroke-soft) 1px,transparent 1px) 0 0/100% 50%!important;
+}
+body .wc-chart-axis,body .wc-chart-labels{color:var(--win-subtle)!important}
+body .wc-chart-fill,body .chart-bar{
+  background:var(--win-accent)!important;
+}
+body .wc-chart-panel select,body select,body input,body textarea{
+  background:var(--win-input)!important;
+  color:var(--win-text)!important;
+  border-color:var(--win-stroke)!important;
+}
+body .wc-chart-panel select:focus-visible,body input:focus,body textarea:focus,
+body button:focus-visible,body a:focus-visible{
+  outline:2px solid var(--win-accent)!important;outline-offset:2px;
+}
+body .wc-plan-expiry{border-color:var(--win-stroke-soft)!important}
+body .wc-plan-crown,body .wc-crown{
+  background:var(--win-surface-alt)!important;color:var(--win-warning)!important;
+}
+body .wc-signin-prompt,body .quota-alert{
+  background:var(--win-surface-alt)!important;
+  border-color:var(--win-stroke)!important;color:var(--win-text)!important;
+}
+body .wc-signin-prompt p{color:var(--win-muted)!important}
+body .wc-activity-dialog{
+  background:var(--win-surface-raised)!important;color:var(--win-text)!important;
+  border-color:var(--win-stroke)!important;box-shadow:0 28px 65px var(--win-shadow)!important;
+}
+body .wc-dialog-head,body .wc-dialog-activity{border-color:var(--win-stroke)!important}
+body .wc-dialog-activity small{color:var(--win-muted)!important}
+body .device:hover,body .file:hover{background:var(--win-hover)!important}
+body .device.selected,body .tab.active{
+  background:var(--win-selected)!important;
+  border-color:var(--win-stroke)!important;color:var(--win-accent)!important;
+}
+body .state-badge{background:var(--win-surface-alt)!important;color:var(--win-muted)!important}
+body .state-badge.online,body .pill.ok{
+  background:var(--win-surface-alt)!important;color:var(--win-success)!important;
+}
+body .pill.bad{background:var(--win-surface-alt)!important;color:var(--win-danger)!important}
+body .row-action.reconnect{
+  background:var(--win-accent-tint)!important;color:var(--win-accent)!important;
+  border-color:var(--win-stroke)!important;
+}
+body .row-action.remove,body .error{color:var(--win-danger)!important}
+body .success,body .feature .check{color:var(--win-success)!important}
+body .terminal{background:#0c0c0c!important;color:#f5f5f5!important;border-color:var(--win-stroke)!important}
+body pre{background:var(--win-surface-alt)!important;color:var(--win-text)!important;border-color:var(--win-stroke)!important}
+body .label,body .device-copy small,body .client-info span,body .setting-card p,
+body .settings-message,body .hint,body .metric-card .metric-label,body .metric-note,
+body .plan-copy,body .feature,body .team-strip span,body .faq-row{
+ color:var(--win-muted)!important;
+}
+body .plan-card.pro,body.light .plan-card.pro{
+  background:var(--win-surface)!important;border-color:var(--win-accent)!important;
+}
+body .current-badge,body .theme-switch button.active{
+  background:var(--win-accent)!important;
+  border-color:var(--win-accent)!important;
+  color:var(--win-accent-text)!important;
+}
+body .usage-chart:before,body .usage-chart:after,body .usage-chart{border-color:var(--win-stroke)!important}
+
 </style>
 </head>
 <body>
@@ -1392,16 +1658,26 @@ $("settingsChangePassword").onclick=async()=>{try{
   $("settingsMessage").textContent="A secure password-reset link has been queued for "+email+".";
 }catch(e){$("settingsMessage").textContent=e.message||String(e)}};
 
-function setTheme(theme){
+const wcSystemTheme=window.matchMedia("(prefers-color-scheme: dark)");
+function setTheme(theme,remember=true){
   const light=theme==="light";
   document.body.classList.toggle("light",light);
-  localStorage.setItem("wecommander-theme",light?"light":"dark");
+  document.documentElement.style.colorScheme=light?"light":"dark";
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content",light?"#f3f3f3":"#202020");
+  if(remember)localStorage.setItem("wecommander-theme",light?"light":"dark");
   $("themeDark").className=light?"secondary":"active";
   $("themeLight").className=light?"active":"secondary";
+  $("wcThemeToggle").setAttribute("aria-label",light?"Koyu temaya geç":"Açık temaya geç");
+  $("wcThemeToggle").setAttribute("title",light?"Koyu temaya geç":"Açık temaya geç");
 }
 $("themeDark").onclick=()=>setTheme("dark");
 $("themeLight").onclick=()=>setTheme("light");
-setTheme(localStorage.getItem("wecommander-theme")==="light"?"light":"dark");
+function wcSyncSystemTheme(){
+  const saved=localStorage.getItem("wecommander-theme");
+  setTheme(saved==="light"||saved==="dark"?saved:(wcSystemTheme.matches?"dark":"light"),false);
+}
+wcSystemTheme.addEventListener?.("change",()=>{if(!localStorage.getItem("wecommander-theme"))wcSyncSystemTheme()});
+wcSyncSystemTheme();
 
 function formatCount(n){return Number(n||0).toLocaleString()}
 function monthLabel(key){const d=new Date(key+"-01T00:00:00");return d.toLocaleDateString(undefined,{month:"short"})}
