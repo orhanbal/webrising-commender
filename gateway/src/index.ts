@@ -292,6 +292,41 @@ async function servePublicHtml(
   json(res, 404, { error: notFoundError });
 }
 
+const brandSvgNames = new Set([
+  "wecommander-white.svg",
+  "wecommander-black.svg",
+  "wecommander-favicon.svg",
+]);
+
+async function serveBrandSvg(res: ServerResponse, fileName: string) {
+  if (!brandSvgNames.has(fileName)) {
+    return void json(res, 404, { error: "asset_not_found" });
+  }
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    path.resolve(here, "../public/assets", fileName),
+    path.resolve(here, "../../public/assets", fileName),
+  ];
+  for (const filePath of candidates) {
+    try {
+      const svg = await fs.readFile(filePath);
+      res.writeHead(200, {
+        ...securityHeaders(),
+        "content-type": "image/svg+xml; charset=utf-8",
+        "content-length": svg.length,
+        "cache-control": "public, max-age=3600",
+        "x-content-type-options": "nosniff",
+        "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+      });
+      res.end(svg);
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  return void json(res, 404, { error: "asset_not_found" });
+}
+
 async function serveLanding(res: ServerResponse) {
   return servePublicHtml(res, "index.html", "landing-not-found");
 }
@@ -304,6 +339,15 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
   try {
     const url = new URL(req.url || "/", publicBaseUrl);
 
+    if (req.method === "GET" && url.pathname.startsWith("/assets/")) {
+      const name = url.pathname.slice("/assets/".length);
+      if (brandSvgNames.has(name)) return void (await serveBrandSvg(res, name));
+    }
+    if (req.method === "GET" && url.pathname === "/favicon.ico") {
+      res.writeHead(302, { location: "/assets/wecommander-favicon.svg", ...securityHeaders() });
+      res.end();
+      return;
+    }
     if (req.method === "GET" && url.pathname === "/") return void (await serveLanding(res));
     if (req.method === "GET" && (url.pathname === "/app" || url.pathname === "/app/")) {
       return void (await serveConsole(res));
@@ -1477,7 +1521,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     if (req.method === "GET" && url.pathname === "/api/usage") {
       if (!requireRole(principal!, "viewer", res)) return;
       const organizationId = principal!.organizationId;
-      const [snapshot, current, history, reset] = await Promise.all([
+      const [snapshot, current, history, reset, daily, topTools] = await Promise.all([
         billingSnapshot(organizationId),
         db.query<{ month_calls: string; days_elapsed: string }>(
           `select
@@ -1516,6 +1560,36 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         db.query<{ reset_at: string }>(
           "select (date_trunc('month',now()) + interval '1 month')::timestamptz::text as reset_at",
         ),
+        db.query<{ day: string; calls: string }>(
+          `with days as (
+             select generate_series(
+               date_trunc('day',now()) - interval '6 days',
+               date_trunc('day',now()), interval '1 day'
+             ) as day
+           ),
+           counts as (
+             select date_trunc('day',created_at) as day,count(*)::bigint as calls
+               from audit_logs
+              where organization_id=$1
+                and created_at >= date_trunc('day',now()) - interval '6 days'
+                and (tool not like '%.%' or tool like 'direct.%')
+              group by 1
+           )
+           select to_char(days.day,'YYYY-MM-DD') as day,
+                  coalesce(counts.calls,0)::text as calls
+             from days left join counts using(day)
+            order by days.day asc`,
+          [organizationId],
+        ),
+        db.query<{ tool: string; calls: string }>(
+          `select tool,count(*)::text as calls
+             from audit_logs
+            where organization_id=$1
+              and created_at >= date_trunc('month',now())
+              and (tool not like '%.%' or tool like 'direct.%')
+            group by tool order by count(*) desc, tool asc limit 25`,
+          [organizationId],
+        ),
       ]);
 
       const monthCalls = Number(current.rows[0]?.month_calls ?? 0);
@@ -1545,6 +1619,14 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         resetAt: reset.rows[0]?.reset_at ?? null,
         months: history.rows.map((row) => ({
           month: row.month,
+          calls: Number(row.calls ?? 0),
+        })),
+        daily: daily.rows.map((row) => ({
+          day: row.day,
+          calls: Number(row.calls ?? 0),
+        })),
+        topTools: topTools.rows.map((row) => ({
+          tool: row.tool,
           calls: Number(row.calls ?? 0),
         })),
       });
@@ -2634,6 +2716,21 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         await auditControl(principal!, body.deviceId, `direct.${action.kind}`, risk, "error", detail);
         return void json(res, 502, { ok: false, error: detail });
       }
+    }
+
+    // Viewer-safe activity feed: do not expose audit detail, actor or risk metadata.
+    if (req.method === "GET" && url.pathname === "/api/activity") {
+      if (!requireRole(principal!, "viewer", res)) return;
+      const limit = queryLimit(url, 6, 30);
+      const recent = await db.query(
+        `select a.tool,a.outcome,a.created_at,a.device_id,d.name as device_name
+           from audit_logs a
+           left join devices d on d.id=a.device_id and d.organization_id=a.organization_id
+          where a.organization_id=$1
+          order by a.created_at desc limit $2`,
+        [principal!.organizationId, limit],
+      );
+      return void json(res, 200, { items: recent.rows });
     }
 
     if (req.method === "GET" && url.pathname === "/api/audit") {

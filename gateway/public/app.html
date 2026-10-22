@@ -1,9 +1,11 @@
 <!doctype html>
-<html lang="en">
+<html lang="tr">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>WECOMMANDER</title>
+  <link rel="icon" href="/assets/wecommander-favicon.svg" type="image/svg+xml" sizes="any">
+  <meta name="theme-color" content="#071524">
   <style>
 :root{
   font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
@@ -291,44 +293,458 @@ body.light .wc-device-title{color:#1c3045}
 @media(max-width:820px){.wc-dash-two,.wc-dash-three{grid-template-columns:1fr}.wc-dash-three>.wc-dash-panel:last-child{grid-column:auto}.wc-dashboard-top{height:70px}.wc-dash-heading{flex-direction:column;align-items:flex-start}.wc-dash-heading h1{font-size:29px}}
 @media(max-width:500px){.wc-stat-grid{grid-template-columns:1fr}.wc-dashboard-top .wc-top-right{gap:5px}.wc-dashboard-top .wc-top-right button{padding:7px}.wc-device-item{grid-template-columns:1fr auto}.wc-device-item .wc-dash-note{display:none}.wc-dash-heading .row{flex-wrap:wrap}}
 
+
+/* Pixel-oriented dashboard refinement, preserving all existing tools */
+:root{--sidebar:292px;--content:1480px}
+.wc-sidebar{background:linear-gradient(180deg,#081626,#091725)!important}
+.wc-brand{border-bottom:1px solid #1d3449;padding:21px 20px!important}
+.wc-brand-text strong{font-size:21px!important}
+.wc-nav{gap:2px!important;padding:18px 16px!important}
+.side-nav-item{min-height:49px!important;border-radius:7px!important;gap:13px!important;font-weight:550!important;color:#c3d6ee!important}
+.side-nav-item.active{border-left:5px solid #1984ff!important;background:linear-gradient(90deg,#0a3d81,#073366)!important;box-shadow:none!important}
+.wc-nav-icon{width:23px;text-align:center;font-size:23px;color:#b2d2f8}
+.wc-side-plan{margin:0 16px 14px;padding:14px 16px;border:1px solid #213b54;border-radius:12px;background:linear-gradient(145deg,#0c253c,#0a1b2c)}
+.wc-side-plan>div{display:flex;align-items:center;gap:10px}.wc-crown{display:grid;place-items:center;width:35px;height:35px;border-radius:9px;background:#453a24;color:#ffd26b;font-size:25px}
+.wc-side-plan strong{font-size:14px}.wc-side-plan small{display:block;color:#9bb4d0;margin:5px 0 11px 45px;font-size:12px}
+.wc-side-plan button{width:100%;background:#103963;border:1px solid #315c86;font-size:13px}
+.sidebar-usage{margin:0 16px 14px!important;background:#0b2033!important;border-color:#203c56!important}
+.sidebar-usage .meter{height:10px!important}.sidebar-usage .meter span{background:#1488ff!important}
+.sidebar-upgrade{background:transparent!important;color:#50b5ff!important;text-align:left!important;padding:8px 0!important}
+.wc-dashboard-top{height:86px!important;margin-bottom:26px!important}
+.wc-search{height:45px;max-width:640px!important}
+.wc-notifications{font-size:24px;color:#c5dfff;margin-right:8px}
+.wc-account-top{display:flex;align-items:center;gap:12px;padding-left:15px;border-left:1px solid #24394f}
+.wc-account-top .avatar{width:43px!important;height:43px!important;background:#2a58a4}
+.wc-account-top strong{display:block;font-size:14px}.wc-account-top small{display:block;color:#91aed2;font-size:12px;margin-top:3px}
+.wc-dash-heading{margin:12px 0 24px!important}
+.wc-dash-heading h1{font-size:35px!important;margin:7px 0!important}
+.wc-stat-grid{gap:16px!important;margin-bottom:20px!important}
+.wc-dash-panel{background:linear-gradient(140deg,#102539,#0b1d2f)!important;border:1px solid #1d3a53!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.025)}
+.wc-stat{min-height:135px!important;align-items:center!important}
+.wc-stat-icon{width:57px!important;height:57px!important}
+.wc-stat strong{font-size:28px!important}
+.wc-dash-two{grid-template-columns:1.42fr 1fr!important}
+.wc-dash-three{grid-template-columns:1.16fr 1fr .9fr!important}
+.wc-device-item{min-height:67px;border-top:1px solid #19384e!important}
+.wc-device-item button{min-width:90px}
+.wc-bar-chart{height:184px!important;background:repeating-linear-gradient(to top,transparent 0,transparent 44px,#203b51 45px)}
+.wc-panel-head select{width:auto;min-width:130px;background:#10283e;color:#d4e8ff;border-color:#2b4b65;padding:7px 10px;font-size:13px}
+.wc-usage-line{min-height:39px}
+.wc-operation-row{display:grid;grid-template-columns:24px minmax(0,1fr) 32% 35px;align-items:center;gap:9px;border-bottom:1px solid #203b50;padding:10px 0;font-size:12px}
+.wc-operation-icon{color:#61b4ff;background:#123f6c;border-radius:7px;padding:5px;text-align:center}
+.wc-operation-row .meter{height:8px;background:#21394e}.wc-operation-row .meter span{background:#268bff}
+.wc-operation-row strong{text-align:right}
+.wc-plan-feature{padding:6px 0;font-size:13px;color:#d1e3f6}.wc-plan-feature:before{content:'✓';color:#1ed38c;margin-right:9px}
+.wc-dash-plan-name{font-size:17px;font-weight:750}.wc-dash-plan-price{color:#b4c9df;font-size:13px;margin:6px 0 12px}
+@media(max-width:1200px){.wc-dash-two,.wc-dash-three{grid-template-columns:1fr!important}.wc-dash-three>.wc-dash-panel:last-child{grid-column:auto!important}}
+@media(max-width:820px){.wc-account-top>div:last-child{display:none}.wc-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){.wc-stat-grid{grid-template-columns:1fr}.wc-dash-heading h1{font-size:27px!important}}
+
+/* WECOMMANDER approved dashboard reference — full component styling, v2 */
+:root{--sidebar:294px;--content:1500px;--wc-deep:#071626;--wc-panel:#0c2235;--wc-line:#1c3851;--wc-blue:#137eff;--wc-text:#f0f7ff;--wc-muted:#a2bbda}
+html{scroll-behavior:smooth}
+body{background:#071524;color:var(--wc-text)}
+.wc-sidebar{width:var(--sidebar)!important;background:linear-gradient(#071727,#08192a)!important;border-right:1px solid #1a3147!important}
+.wc-brand{height:87px;padding:18px 20px!important;gap:10px!important;border-bottom:1px solid #19344d!important;flex:none}
+.wc-brand .wc-logo{height:43px!important;width:45px!important;box-shadow:none!important;background:none!important;border:none!important;border-radius:0!important;display:block}
+.wc-wordmark-icon{width:45px!important;height:43px!important}
+.wc-brand-text strong{font-size:21px!important;white-space:nowrap;font-weight:790!important;letter-spacing:-.035em!important}
+.wc-brand-text span{font-size:13px!important;color:#9cb7d3!important;margin-top:5px}
+.wc-nav{padding:22px 15px 12px!important;gap:2px!important}
+.wc-nav .side-nav-item{font-size:15px!important;font-weight:550!important;padding:10px 15px!important;border-radius:7px!important;height:49px!important;min-height:49px!important;gap:15px!important;position:relative}
+.wc-nav .side-nav-item svg{width:22px!important;height:22px!important;flex:none;stroke-width:1.8!important}
+.wc-nav .side-nav-item.active{box-shadow:none!important;border:none!important;background:linear-gradient(100deg,#0b3b79,#093467)!important;color:#fff!important}
+.wc-nav .side-nav-item.active:before{content:"";position:absolute;left:-15px;top:0;bottom:0;border-radius:0 4px 4px 0;width:5px;background:#1584ff}
+.wc-nav .side-nav-item:hover:not(.active){background:#102c46!important;color:#fff!important}
+.sidebar-spacer{min-height:8px}
+.wc-side-plan{margin:0 16px 15px!important;background:#0b2033!important;padding:16px!important}
+.wc-side-plan strong{font-size:14px!important}
+.wc-side-plan small{font-size:12px!important;margin:4px 0 11px 45px!important}
+.wc-side-plan button{padding:10px!important;border-radius:7px!important}
+.sidebar-usage{margin:0 16px 26px!important;padding:17px 18px!important;background:#0b2033!important;border-color:#234058!important}
+.sidebar-usage-head{font-size:15px!important;font-weight:650!important}
+.sidebar-usage-copy,.sidebar-usage-reset{font-family:inherit!important;font-size:13px!important;color:#9fb9d7!important}
+.sidebar-usage .meter{height:10px!important;background:#1b354e!important}
+.sidebar-usage .meter span{background:#0f86ff!important}
+.sidebar-upgrade{font-weight:500!important;background:transparent!important;color:#39a7ff!important;text-align:left!important;padding:4px!important}
+.sidebar-account{display:none!important}
+.shell{margin-left:var(--sidebar)!important;width:calc(100% - var(--sidebar))!important;padding:0 26px 55px 32px!important;max-width:none!important}
+.content-frame{max-width:1500px!important;margin:0 auto!important}
+.wc-dashboard-top{height:87px!important;margin:0 0 26px!important;border-bottom:1px solid #1b354b!important;display:flex!important;gap:18px!important}
+.wc-search-wrap{position:relative;width:min(100%,610px)}
+.wc-search-shell{height:45px;display:flex;align-items:center;gap:12px;background:#0d2235;border:1px solid #2a4963;border-radius:10px;padding:0 12px;color:#8eb0d0}
+.wc-search-shell:focus-within{outline:2px solid #1b81ff;outline-offset:1px}
+.wc-search-glyph{font-size:26px;line-height:1;color:#aac8e7}
+.wc-search-shell input.wc-search{height:100%!important;border:0!important;box-shadow:none!important;background:transparent!important;padding:0!important;color:#ecf7ff!important;max-width:none!important;font-size:14px!important}
+.wc-search-shell kbd{font:12px inherit;white-space:nowrap;color:#a2bad5;border:1px solid #34516a;border-radius:5px;padding:4px 7px;background:#112940}
+.wc-search-results{position:absolute;top:52px;left:0;right:0;background:#0e263b;border:1px solid #2c4e68;border-radius:10px;padding:6px;box-shadow:0 14px 35px #020b13d9;z-index:72}
+.wc-search-results button{display:flex;align-items:center;justify-content:space-between;width:100%;padding:12px;background:transparent;text-align:left;border:0;color:#e4f1ff}
+.wc-search-results button:hover,.wc-search-results button:focus-visible{background:#153c60}
+.wc-search-results button small{color:#93b0cb;font-weight:400}
+.wc-dashboard-top .wc-top-right{margin-left:auto!important;gap:13px!important}
+.wc-icon-button{width:40px;height:42px;display:grid;place-items:center;flex:none;background:transparent!important;border:0!important;border-radius:8px!important;color:#bbd9f8!important;font-size:24px!important;padding:0!important}
+.wc-icon-button:hover{background:#16314a!important}
+.wc-notify-button{position:relative}.wc-notify-button i{position:absolute;top:5px;right:5px;width:9px;height:9px;background:#fa4c6d;border-radius:50%}
+.wc-account-anchor{padding-left:15px;border-left:1px solid #254059}
+.wc-profile-button{background:transparent!important;border:0!important;display:flex;align-items:center;gap:11px;padding:2px 4px!important;min-width:145px;text-align:left}
+.wc-profile-button .avatar{width:44px!important;height:44px!important;background:#2855aa!important;border:1px solid #4779cb!important;font-size:17px}
+.wc-top-profile-text strong,.wc-top-profile-text small{display:block;white-space:nowrap;overflow:hidden;max-width:132px;text-overflow:ellipsis}
+.wc-top-profile-text strong{font-size:14px}.wc-top-profile-text small{font-size:12px;color:#8caacb;margin-top:4px}
+.wc-menu-chevron{color:#adc9e9;font-size:22px;margin-left:4px}
+.wc-menu-anchor{position:relative}
+.wc-top-popover{position:absolute;right:0;top:56px;z-index:80;background:#0e2539;border:1px solid #31526b;padding:10px;border-radius:12px;min-width:250px;box-shadow:0 20px 40px #030a13a6}
+.wc-top-popover .wc-popover-line{padding:10px 9px;color:#bdcfe1;border-bottom:1px solid #274259;font-size:13px}
+.wc-top-popover button{display:block;background:transparent;text-align:left;border:0;border-radius:6px;padding:11px;width:100%;font-size:13px;font-weight:500}
+.wc-top-popover button:hover{background:#173a59}
+.wc-mobile-menu,.wc-mobile-backdrop{display:none}
+.wc-dash-heading{margin:0 0 24px!important;display:flex!important;align-items:center!important;gap:25px}
+.wc-breadcrumb{font-size:14px;color:#a5bfde;margin:0 0 12px}
+.wc-dash-heading h1{font-size:35px!important;letter-spacing:-.035em!important;line-height:1.15!important;margin:0 0 11px!important;font-weight:790!important}
+.wc-dash-heading h1 span#wcWelcome{color:#379bff!important}
+.wc-wave{font-size:29px;vertical-align:3px}
+.wc-dash-heading p{font-size:16px!important;color:#a4bcda!important;margin:0!important}
+.wc-head-actions{display:flex;gap:14px;align-items:center;flex:none;margin-left:auto}
+.wc-button{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:44px;font-size:14px;border-radius:8px;padding:11px 20px;font-weight:650}
+.wc-button svg{width:19px;height:19px}
+.wc-button-primary{background:#096eef!important;border:1px solid #248cff!important;color:#fff!important;min-width:170px}
+.wc-button-secondary{background:#0b1b2a!important;border:1px solid #2e4c65!important;min-width:156px}
+.wc-signin-prompt{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 19px;margin-bottom:18px;background:#102d46;border:1px solid #2c5878;border-radius:12px}
+.wc-signin-prompt[hidden]{display:none}.wc-signin-prompt p{margin:5px 0 0;color:#aac3df;font-size:13px}
+.wc-signin-prompt button{display:flex;align-items:center;gap:8px;white-space:nowrap}.wc-signin-prompt button svg{width:17px;height:17px}
+.wc-stat-grid{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:16px!important;margin:0 0 20px!important}
+.wc-dash-panel{background:linear-gradient(140deg,#0d2336,#0b1c2e)!important;border:1px solid #1e3b53!important;border-radius:11px!important;min-width:0;overflow:hidden;box-shadow:none!important}
+.wc-stat{min-height:135px!important;padding:18px 19px!important;display:flex!important;align-items:flex-start!important;gap:16px!important;position:relative;text-align:left}
+.wc-stat-link{cursor:pointer!important;color:inherit}
+.wc-stat-link:hover{border-color:#3279b5!important;background:#10304a!important}
+.wc-stat>.wc-svg-arrow{position:absolute;right:16px;top:23px;width:15px;height:15px;color:#a4bddb}
+.wc-stat-icon{width:58px!important;height:58px!important;border-radius:17px!important;display:grid;place-items:center;flex:none;margin:0!important}
+.wc-stat-icon svg{width:31px;height:31px}
+.wc-stat-blue{background:linear-gradient(125deg,#184471,#104071);color:#5fb7ff}
+.wc-stat-amber{background:#41361e;color:#ffbd39}
+.wc-stat-amber svg{fill:#ffbe35;stroke:#ffbe35}
+.wc-stat-cyan{background:#123a57;color:#45b7ed}
+.wc-stat-green{background:#0d403a;color:#29e0a0}
+.wc-stat-body{display:flex;flex-direction:column;align-items:flex-start;min-width:0;flex:1}
+.wc-stat-label{font-size:14px!important;color:#a9c0da!important;margin:4px 0 7px}
+.wc-stat strong{font-size:28px!important;line-height:1!important;font-weight:790}
+.wc-stat small{font-size:12px!important;color:#94b3d4!important;margin:11px 0 0!important;white-space:normal;line-height:1.45}
+.wc-stat-meter{margin-top:10px;width:100%;height:7px;background:#213f57;border-radius:100px;overflow:hidden}
+.wc-stat-meter span{display:block;height:100%;width:0;background:linear-gradient(90deg,#117aff,#32a5ff);border-radius:100px;transition:width .35s}
+.wc-dash-main{display:grid!important;grid-template-columns:1.4fr 1fr;gap:18px;margin-bottom:18px}
+.wc-dash-bottom{display:grid!important;grid-template-columns:1.16fr .98fr .86fr;gap:18px}
+.wc-panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0!important;padding:17px 19px 14px}
+.wc-panel-head h2{font-size:18px!important;font-weight:760!important;margin:0!important;letter-spacing:-.02em}
+.wc-link-button{border:0!important;background:transparent!important;color:#35a6ff!important;font-size:13px!important;font-weight:550!important;padding:5px!important;white-space:nowrap}
+.wc-link-button:hover{text-decoration:underline}
+.wc-devices-panel,.wc-activity-panel{min-height:307px}
+.wc-device-list,.wc-activity-list{padding:0 19px 8px}
+.wc-device-row{display:grid;grid-template-columns:48px minmax(135px,1fr) minmax(100px,.63fr) auto auto;align-items:center;gap:12px;padding:15px 2px;border-top:1px solid #19384d;min-height:74px}
+.wc-os-icon{width:42px;height:42px;display:grid;place-items:center;font-size:35px;line-height:1}
+.wc-os-icon svg{width:33px;height:33px}
+.wc-os-icon.win{color:#169dff}.wc-os-icon.mac{color:#c8dafa}.wc-os-icon.linux{color:#f4f8ff}
+.wc-device-title{display:block;font-size:14px!important;font-weight:760;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wc-device-copy small,.wc-device-seen small{display:block;color:#98b6d5;font-size:12px;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wc-device-seen{font-size:12px;color:#bfcee2;white-space:nowrap}
+.wc-device-badge{display:inline-flex;align-items:center;gap:6px;color:#8eb7d6;margin-left:7px;font-size:12px;font-weight:450}
+.wc-device-badge:before{content:"";width:10px;height:10px;border-radius:100%;background:#8399b2}
+.wc-device-badge.online{color:#21dc96}.wc-device-badge.online:before{background:#19cb7d}
+.wc-connect-button{padding:9px 13px!important;min-width:84px;border-radius:7px!important;background:#096bef!important;font-size:13px!important}
+.wc-connect-button:disabled{background:#15345a!important;border:1px solid #315d8a!important;color:#9bb6d0!important;opacity:1}
+.wc-device-more{background:transparent!important;border:0!important;color:#9ebbdc;font-size:22px;padding:3px 7px}
+.wc-activity-row{display:grid!important;grid-template-columns:31px minmax(0,1fr) auto;align-items:center;gap:11px;padding:5px 1px!important;border-top:1px solid #1b374a;font-size:13px!important;min-height:38px}
+.wc-activity-glyph{width:29px;height:29px;display:grid;place-items:center;border-radius:8px;background:#183f61;color:#61b5ff;font-size:16px}
+.wc-activity-glyph.files{background:#153f42;color:#2adca8}
+.wc-activity-glyph.tasks{background:#133c75;color:#55a5ff}
+.wc-activity-glyph.alert{background:#5b2436;color:#ff7291}
+.wc-activity-row .wc-activity-description{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#d0dfef}
+.wc-activity-row time{color:#91acd0;white-space:nowrap;font-size:12px}
+.wc-chart-panel,.wc-operations-panel,.wc-plan-panel{min-height:274px}
+.wc-chart-panel .wc-panel-head,.wc-operations-panel .wc-panel-head,.wc-plan-panel .wc-panel-head{padding-bottom:5px}
+.wc-chart-panel select{width:auto!important;min-width:122px!important;padding:7px 12px!important;border-radius:7px!important;font-size:12px!important;background:#102b43;color:#bbd8fa}
+.wc-chart-plot{position:relative;height:180px;display:grid;grid-template-columns:35px 1fr;padding:6px 19px 0}
+.wc-chart-axis{display:flex;flex-direction:column;justify-content:space-between;color:#97b4d0;font-size:11px;padding:0 7px 0 0;text-align:right}
+.wc-chart-grid{position:relative;display:flex;align-items:end;gap:10px;border-left:1px solid #26465c;border-bottom:1px solid #26465c;background:linear-gradient(to bottom,#224054 1px,transparent 1px) 0 0/100% 50%}
+.wc-chart-column{flex:1;min-width:0;height:100%;display:flex;align-items:end;justify-content:center}
+.wc-chart-fill{width:min(100%,38px);min-height:2px;border-radius:5px 5px 0 0;background:linear-gradient(180deg,#339fff,#1265c9);transition:height .3s;position:relative}
+.wc-chart-fill[title]:hover{filter:brightness(1.18)}
+.wc-chart-labels{display:flex!important;gap:10px!important;padding:7px 19px 0 54px;color:#96b1d0;font-size:11px}
+.wc-chart-labels span{flex:1;text-align:center;white-space:nowrap}
+.wc-operations-list{padding:9px 19px}
+.wc-operation-row{display:grid!important;grid-template-columns:29px minmax(0,1fr) minmax(65px,30%) 28px!important;gap:9px!important;min-height:40px;border-bottom:1px solid #1c384c!important;padding:5px 0!important;align-items:center}
+.wc-operation-icon{display:grid;place-items:center;width:29px;height:29px;background:#163f6c;color:#54b5ff;font-size:15px;padding:0!important;border-radius:7px}
+.wc-operation-icon.files{background:#4d2333;color:#ff7c95}.wc-operation-icon.system{background:#0c4b3a;color:#22d99a}.wc-operation-icon.mcp{background:#123f59;color:#69bfff}
+.wc-operation-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#cddcf0}
+.wc-operation-row .meter{height:8px;background:#203c56}.wc-operation-row .meter span{background:#258fff}
+.wc-operation-row strong{color:#dfecf8;font-size:12px;text-align:right}
+.wc-plan-body{padding:10px 19px 16px}
+.wc-plan-heading{display:flex;align-items:center;gap:10px}
+.wc-plan-crown{display:grid;place-items:center;width:32px;height:32px;border-radius:8px;background:#40381f;color:#ffd05c;font-size:21px}
+.wc-plan-info{flex:1;min-width:0}
+.wc-plan-name{font-size:16px;font-weight:760;color:#fff}
+.wc-plan-price{font-size:13px;color:#9cb8d6;margin-top:4px}
+.wc-plan-expiry{font-size:12px;color:#93aecb;padding:8px 0 9px;border-bottom:1px solid #224058}
+.wc-plan-features{padding-top:7px}
+.wc-plan-feature{font-size:12px!important;color:#c2d7ed;display:flex;gap:9px;align-items:center;padding:4px 0!important}
+.wc-plan-feature:before{content:"✓";display:grid;place-items:center;color:#fff;background:#11bd75;border-radius:50%;width:16px;height:16px;flex:none;margin:0!important;font-size:10px}
+.wc-empty-state{padding:20px 4px;color:#9fb8d6;font-size:14px;line-height:1.5}
+.wc-activity-panel .wc-empty-state,.wc-devices-panel .wc-empty-state{padding-top:27px}
+.wc-mobile-backdrop[hidden]{display:none!important}
+body.light .wc-dash-panel{background:#fff!important;color:#16324e!important;border-color:#d2dfeb!important}
+body.light .wc-dash-panel h2,body.light .wc-stat strong,body.light .wc-plan-name,body.light .wc-device-title,body.light .wc-operation-row strong{color:#152b45!important}
+body.light .wc-dash-heading h1{color:#152b45}
+body.light .wc-search-shell{background:#fff!important}
+body.light .wc-search-shell input.wc-search{color:#122942!important}
+body.light .wc-stat-label,body.light .wc-stat small,body.light .wc-activity-description,body.light .wc-operation-name{color:#465e75!important}
+body.light .wc-device-row,body.light .wc-activity-row,body.light .wc-operation-row{border-color:#d5e2ee!important}
+@media(max-width:1370px){
+ .wc-dash-bottom{grid-template-columns:1fr 1fr}
+ .wc-plan-panel{grid-column:1/-1}
+ .wc-device-row{grid-template-columns:39px minmax(100px,1fr) auto auto;gap:8px}
+ .wc-device-seen{display:none}
+}
+@media(max-width:1080px){
+ .wc-dash-main,.wc-dash-bottom{grid-template-columns:1fr}
+ .wc-plan-panel{grid-column:auto}
+ .wc-dash-heading{align-items:flex-start!important;flex-direction:column!important}
+ .wc-head-actions{margin:0}
+ .wc-device-seen{display:block}
+ .wc-device-row{grid-template-columns:48px minmax(120px,1fr) minmax(90px,.55fr) auto auto}
+}
+@media(max-width:820px){
+ .shell{margin-left:0!important;width:100%!important;padding:0 18px 45px!important}
+ .wc-sidebar{transform:translateX(-105%);transition:transform .23s;z-index:100!important;box-shadow:14px 0 35px #0008}
+ body.wc-mobile-nav-open .wc-sidebar{transform:translateX(0)}
+ body.wc-mobile-nav-open .wc-mobile-backdrop{position:fixed;inset:0;background:#010a13a9;display:block;z-index:90}
+ .wc-mobile-menu{display:grid!important}
+ .wc-dashboard-top{gap:12px!important}
+ .wc-profile-button{min-width:0!important}
+ .wc-top-profile-text,.wc-menu-chevron{display:none!important}
+ .wc-account-anchor{padding-left:7px}
+ .wc-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+}
+@media(max-width:550px){
+ .wc-stat-grid{grid-template-columns:1fr!important}
+ .wc-dash-heading h1{font-size:28px!important}
+ .wc-device-row{grid-template-columns:36px minmax(0,1fr) auto auto}
+ .wc-device-seen{display:none}
+ .wc-device-badge{display:block;margin:6px 0 0}
+ .wc-search-shell kbd{display:none}
+ .wc-icon-button{width:34px;font-size:21px!important}
+ .wc-top-right{gap:3px!important}
+ .wc-head-actions{width:100%}
+ .wc-head-actions button{flex:1;min-width:0}
+ .wc-activity-row{grid-template-columns:26px 1fr;gap:8px}
+ .wc-activity-row time{grid-column:2;line-height:1.2}
+ .wc-signin-prompt{align-items:flex-start;flex-direction:column}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.wc-chart-fill,.wc-stat-meter span{transition:none}}
+
+/* Responsive drawer, explicit online badges, accessible activity dialog */
+.wc-device-copy .wc-device-badge{display:inline-flex;font-size:11px;margin:6px 0 0;line-height:1.2}
+.wc-device-badge:before{width:8px;height:8px}
+.wc-online{color:#22cf8e}
+.wc-activity-glyph svg,.wc-operation-icon svg{width:16px;height:16px}
+.wc-activity-dialog{border:1px solid #2b506f;border-radius:14px;background:#0b2133;color:#e5f2ff;padding:20px 24px;width:min(590px,calc(100vw - 30px));max-height:80vh;overflow-y:auto;box-shadow:0 28px 65px #000c}
+.wc-activity-dialog::backdrop{background:#0009}
+.wc-dialog-head{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #31516b;padding-bottom:12px;margin-bottom:10px}
+.wc-dialog-head h2{margin:0;font-size:21px}.wc-dialog-head button{background:transparent;font-size:20px;border:0}
+.wc-dialog-activity{padding:11px 3px;border-bottom:1px solid #213f56}.wc-dialog-activity strong{display:block;font-size:14px}.wc-dialog-activity small{display:block;color:#9eb9d6;margin-top:6px;font-size:12px}
+@media(max-width:820px){
+ .wc-sidebar{position:fixed!important;inset:0 auto 0 0!important;height:100dvh!important;width:294px!important;display:flex!important;flex-direction:column!important;overflow-y:auto!important}
+ .wc-nav{flex-direction:column!important;overflow:visible!important}
+ .sidebar-spacer{display:block!important;min-height:12px}
+ .sidebar-usage{display:block!important}
+ .wc-side-plan{display:block!important}
+ .wc-dashboard-top{height:72px!important}
+}
+@media(max-width:430px){
+ .wc-dash-heading p{font-size:14px!important}
+ .wc-panel-head h2{font-size:16px!important}
+ .wc-head-actions{gap:8px}
+ .wc-button{font-size:12px;padding:9px}
+ .wc-stat{min-height:121px!important}
+}
+
+/* Visual acceptance refinements from real Chrome 1536 × 1024 screenshots */
+.wc-devices-panel,.wc-activity-panel,.wc-chart-panel,.wc-operations-panel,.wc-plan-panel{padding:0!important}
+.wc-activity-glyph.wc-type-files{background:#153f42!important;color:#2adca8!important}
+.wc-activity-glyph.wc-type-tasks{background:#133c75!important;color:#55a5ff!important}
+.wc-activity-glyph.wc-type-alert{background:#5b2436!important;color:#ff7291!important}
+.wc-activity-glyph.wc-type-terminal{background:#153960!important;color:#69b4ff!important;padding:0!important;font:inherit!important;white-space:normal!important;border:0!important;overflow:visible!important}
+.wc-activity-glyph svg{width:17px!important;height:17px!important}
+.wc-sidebar>.sidebar-spacer{flex:1}
+.sidebar-usage{margin-bottom:76px!important}
+html{scrollbar-width:none}html::-webkit-scrollbar{display:none}
+@media(max-width:820px){.sidebar-usage{margin-bottom:24px!important}}
+.wc-device-row{padding:10px 2px!important;min-height:74px!important}
+
+/* Official user-provided brand assets; use monochrome artwork in the appropriate theme. */
+.wc-brand .wc-brand-lockup{display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:4px;width:100%;max-width:100%;color:inherit;text-decoration:none}
+.wc-brand .wc-brand-lockup img{display:block;width:min(248px,100%);height:auto;max-height:33px;object-fit:contain;object-position:left center;aspect-ratio:28020/3360}
+.wc-brand .wc-brand-black{display:none!important}
+.wc-brand .wc-brand-subtitle{font-size:12px;line-height:1.2;color:#9ebad5;letter-spacing:.01em}
+body.light .wc-brand .wc-brand-white{display:none!important}
+body.light .wc-brand .wc-brand-black{display:block!important}
+body.light .wc-brand .wc-brand-subtitle{color:#46617e}
+body.light .wc-sidebar{background:#f7fbff!important;border-right-color:#d3e0ef!important}
+body.light .wc-nav .side-nav-item:not(.active){color:#284564!important}
+body.light .wc-side-plan,body.light .sidebar-usage{background:#fff!important;border-color:#d5e3f1!important}
+body.light .wc-side-plan strong,body.light .sidebar-usage-head{color:#263e55!important}
+body.light .sidebar-usage-copy,body.light .sidebar-usage-reset,body.light .wc-side-plan small{color:#48627a!important}
+body.light .wc-side-plan button{background:#e9f3ff!important;border-color:#bcd4ec!important;color:#17375a!important}
+body.light .wc-dashboard-top{border-color:#d3e1ed!important}
+body.light .wc-icon-button{color:#294d70!important}
+body.light .wc-top-profile-text strong{color:#1a3550!important}
+body.light .wc-top-profile-text small{color:#53718d!important}
+body.light .wc-profile-button{color:#1a3550!important}
+body.light .wc-breadcrumb,body.light .wc-dash-heading p{color:#5a738d!important}
+body.light .wc-search-shell{border-color:#bcd4e7!important}
+
+/* Final light-theme contrast and surface correction verified from Chromium captures. */
+body.light{background:#f2f6fb!important;color:#1e3550!important}
+body.light .wc-dashboard{color:#1e3550!important}
+body.light .wc-dash-heading h1,body.light .wc-dash-intro h1{color:#152c48!important}
+body.light .wc-dashboard-top .wc-icon-button:hover{background:#e2ebf4!important}
+body.light .wc-search-shell kbd{background:#edf5fc;color:#52708c;border-color:#c6d9eb}
+body.light .wc-dash-panel.wc-stat{background:#fff!important;color:#19334d!important;border-color:#cfdfed!important}
+body.light .wc-stat-link:hover{background:#f1f8ff!important;border-color:#8cbfe8!important}
+body.light .wc-dash-panel .wc-stat-label,body.light .wc-dash-panel .wc-stat small{color:#486682!important}
+body.light .wc-stat>.wc-svg-arrow{color:#607f9d!important}
+body.light .wc-stat-meter{background:#dce9f5!important}
+body.light .wc-device-copy small,body.light .wc-device-seen,body.light .wc-device-seen small,body.light .wc-device-badge{color:#4c6988!important}
+body.light .wc-device-badge.online{color:#138456!important}
+body.light .wc-activity-row .wc-activity-description{color:#294662!important}
+body.light .wc-activity-row time{color:#526d86!important}
+body.light .wc-chart-grid{border-color:#b6d0e6!important;background:linear-gradient(to bottom,#d1e2ef 1px,transparent 1px) 0 0/100% 50%!important}
+body.light .wc-chart-axis,body.light .wc-chart-labels{color:#506f8e!important}
+body.light .wc-operation-name{color:#35516c!important}
+body.light .wc-operation-row .meter{background:#d7e6f2!important}
+body.light .wc-plan-price,body.light .wc-plan-expiry,body.light .wc-plan-feature{color:#3c5774!important}
+body.light .wc-plan-expiry{border-color:#d3e1ef!important}
+body.light .wc-head-actions .wc-button-secondary{background:#fff!important;color:#1d3d60!important;border-color:#bed4e9!important}
+body.light .wc-panel-head select{background:#fff!important;color:#26435f!important;border-color:#bed4e9!important}
+body.light .wc-dash-panel .wc-empty-state{color:#5a7590!important}
 </style>
 </head>
 <body>
 <aside class="wc-sidebar" aria-label="Primary">
   <div class="wc-brand">
-    <div class="wc-logo" aria-hidden="true">
-      <svg viewBox="0 0 24 24"><path d="M3 5h7a5 5 0 0 1 0 10H3V5Z" fill="none" stroke="#f1f3f5" stroke-width="2"/><path d="M14 8.5 19 5v4h2v6h-2v4l-5-3.5" fill="none" stroke="#f1f3f5" stroke-width="2"/></svg>
-    </div>
-    <div class="wc-brand-text"><strong>WECOMMANDER</strong><span>Remote MCP</span></div>
+    <a href="/" class="wc-brand-lockup" aria-label="WECOMMANDER ana sayfa">
+      <img class="wc-brand-white" src="/assets/wecommander-white.svg" alt="" width="248" height="30">
+      <img class="wc-brand-black" src="/assets/wecommander-black.svg" alt="" width="248" height="30">
+      <span class="wc-brand-subtitle">Remote MCP</span>
+    </a>
   </div>
-  <nav class="wc-nav"><button class="side-nav-item" data-page-target="dashboard">⌂ <span>Ana Sayfa</span></button>
+  <nav class="wc-nav"><button class="side-nav-item" data-page-target="dashboard"><span class="wc-nav-icon">⌂</span><span>Ana Sayfa</span></button>
     <button class="side-nav-item active" data-page-target="devices">
-      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="1.5"/><path d="M8 21h8M12 17v4"/></svg><span>Devices</span>
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="1.5"/><path d="M8 21h8M12 17v4"/></svg><span>Cihazlar</span>
     </button>
-    <button class="side-nav-item" data-page-target="usage">
-      <svg viewBox="0 0 24 24"><path d="M5 19V9M9 19V5M13 19v-7M17 19V3M21 19V8"/></svg><span>Usage</span>
+    <button class="side-nav-item" data-page-target="terminal"><span class="wc-nav-icon">⌘</span><span>Terminal</span></button><button class="side-nav-item" data-page-target="files"><span class="wc-nav-icon">▱</span><span>Dosyalar</span></button><button class="side-nav-item" data-page-target="tasks"><span class="wc-nav-icon">☑</span><span>Görevler</span></button><button class="side-nav-item" data-page-target="mcp"><span class="wc-nav-icon">⚙</span><span>MCP</span></button><button class="side-nav-item" data-page-target="usage">
+      <svg viewBox="0 0 24 24"><path d="M5 19V9M9 19V5M13 19v-7M17 19V3M21 19V8"/></svg><span>Kullanım</span>
     </button>
     <button class="side-nav-item" data-page-target="billing">
-      <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h5M7 13h10"/></svg><span>Plan &amp; billing</span>
+      <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h5M7 13h10"/></svg><span>Paket &amp; Faturalama</span>
     </button>
     <button class="side-nav-item" data-page-target="settings">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.6v-.1A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3V9.6h.1A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.1A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.22.35.5.68.6 1 .1.35.1.73.1 1.1V13c-.37 0-.75 0-1.1.1-.32.1-.65.38-1 .6"/></svg><span>Settings</span>
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.6v-.1A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3V9.6h.1A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.1A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.22.35.5.68.6 1 .1.35.1.73.1 1.1V13c-.37 0-.75 0-1.1.1-.32.1-.65.38-1 .6"/></svg><span>Ayarlar</span>
     </button>
   </nav>
-  <div class="sidebar-spacer"></div>
+  <div class="sidebar-spacer"></div><section class="wc-side-plan"><div><span class="wc-crown">♛</span><strong id="wcSidePlanName">Paket Bilgisi</strong></div><small id="wcSidePlanDetail">Güncel planını görüntüle</small><button id="wcSidePlanButton" type="button">Paketleri Gör →</button></section>
   <section class="sidebar-usage">
-    <div class="sidebar-usage-head"><span>Tool calls</span><span id="sidebarUsagePercent">0%</span></div>
+    <div class="sidebar-usage-head"><span>Bu Ay Kullanım</span><span id="sidebarUsagePercent">0%</span></div>
     <div class="meter"><span id="sidebarUsageMeter"></span></div>
     <div class="sidebar-usage-copy"><span id="sidebarUsageCount">0</span> <span id="sidebarUsageLimitText">this month</span></div>
     <div id="sidebarUsageReset" class="sidebar-usage-reset">Loading usage…</div>
-    <button id="sidebarUpgrade" class="sidebar-upgrade">↗ Upgrade to Pro</button>
+    <button id="sidebarUpgrade" class="sidebar-upgrade">Kota Detayları →</button>
   </section>
   <footer class="sidebar-account">
     <div class="account-row"><div id="sidebarInitials" class="avatar">WC</div><span id="sidebarEmail">Not signed in</span></div>
     <div class="sidebar-links"><a href="/terms">Terms</a><span>|</span><a href="/privacy">Privacy</a><span>|</span><a href="/status">Status</a></div>
   </footer>
 </aside>
-<main class="shell"><div class="content-frame"><div class="wc-dashboard-top"><input id="wcGlobalSearch" class="wc-search" type="search" placeholder="Cihaz, görev, dosya veya komut ara…" aria-label="Panelde ara"><div class="wc-top-right"><button id="wcRefreshDash" title="Verileri yenile" aria-label="Verileri yenile">↻</button><button id="wcThemeToggle" title="Temayı değiştir" aria-label="Temayı değiştir">☼</button><div id="wcTopAvatar" class="avatar">WC</div></div></div><section id="dashboardPage" class="page-view"><div class="wc-dash-heading"><div><div class="wc-dash-note">Ana Sayfa</div><h1>Tekrar hoş geldin, <span id="wcWelcome">WECOMMANDER</span> 👋</h1><p>Cihazlarını yönet, görevlerini çalıştır ve sistemlerini her yerden kontrol et.</p></div><div class="row"><button id="wcAddDevice" class="secondary">＋ Cihaz Ekle</button><button id="wcQuickTask">▷ Hızlı Görev</button></div></div><div class="wc-stat-grid"><div class="wc-dash-panel wc-stat"><div class="wc-stat-icon">▣</div><div><label>Toplam Cihaz</label><strong id="wcDeviceCount">—</strong><small id="wcDeviceStatus">Veriler yükleniyor</small></div></div><div class="wc-dash-panel wc-stat"><div class="wc-stat-icon gold">ϟ</div><div><label>Bu Ay Görev</label><strong id="wcTaskCount">—</strong><small id="wcTaskLimit">Gerçek kullanım verisi</small></div></div><div class="wc-dash-panel wc-stat"><div class="wc-stat-icon">▤</div><div><label>Depolama</label><strong>—</strong><small>Sunucudan ölçüm sağlanmıyor</small></div></div><div class="wc-dash-panel wc-stat"><div class="wc-stat-icon green">⌁</div><div><label>Çevrimiçi Süre</label><strong>—</strong><small>Uptime verisi mevcut değil</small></div></div></div><div class="wc-dash-two"><div class="wc-dash-panel"><div class="wc-panel-head"><h2>Cihazlarım</h2><button data-dash-page="devices">Tüm Cihazlar →</button></div><div id="wcDashDevices" class="wc-empty">Cihazlar yükleniyor…</div></div><div class="wc-dash-panel"><div class="wc-panel-head"><h2>Son Aktiviteler</h2><button id="wcOpenAudit">Tümünü Gör →</button></div><div id="wcDashActivity" class="wc-empty">Etkinlikler yükleniyor…</div></div></div><div class="wc-dash-three"><div class="wc-dash-panel"><div class="wc-panel-head"><h2>Kullanım Grafiği</h2><button data-dash-page="usage">Detaylar →</button></div><div id="wcDashChart" class="wc-bar-chart"></div><div id="wcDashChartLabels" class="wc-bar-labels"></div></div><div class="wc-dash-panel"><div class="wc-panel-head"><h2>Kullanım Özeti</h2><button data-dash-page="usage">Kullanım →</button></div><div id="wcDashUsage" class="wc-empty">Kullanım verileri yükleniyor…</div></div><div class="wc-dash-panel"><div class="wc-panel-head"><h2>Paket Bilgisi</h2><button data-dash-page="billing">Paketleri Gör →</button></div><div id="wcDashPlan" class="wc-empty">Paket bilgisi yükleniyor…</div></div></div></section>
+<main class="shell"><div class="content-frame"><header class="wc-dashboard-top" role="banner">
+  <button id="wcMobileMenu" class="wc-icon-button wc-mobile-menu" type="button" aria-label="Menüyü aç" aria-expanded="false">☰</button>
+  <div class="wc-search-wrap">
+    <label class="wc-search-shell" for="wcGlobalSearch"><span class="wc-search-glyph" aria-hidden="true">⌕</span><input id="wcGlobalSearch" class="wc-search" type="search" autocomplete="off" placeholder="Cihaz, görev, dosya veya komut ara…" aria-controls="wcSearchResults" aria-expanded="false"><kbd>Ctrl K</kbd></label>
+    <div id="wcSearchResults" class="wc-search-results" hidden role="listbox" aria-label="Arama sonuçları"></div>
+  </div>
+  <div class="wc-top-right">
+    <div class="wc-menu-anchor"><button id="wcNotificationsButton" class="wc-icon-button wc-notify-button" type="button" aria-label="Son bildirimler" aria-expanded="false"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"/></svg><i id="wcNotifyIndicator" hidden></i></button><div id="wcNotificationsMenu" class="wc-top-popover" hidden></div></div>
+    <button id="wcThemeToggle" class="wc-icon-button wc-theme-button" type="button" aria-label="Görünümü değiştir">☼</button>
+    <div class="wc-menu-anchor wc-account-anchor"><button id="wcProfileButton" class="wc-profile-button" type="button" aria-label="Hesap menüsü" aria-expanded="false"><span id="wcTopAvatar" class="avatar">WC</span><span class="wc-top-profile-text"><strong id="wcTopName">Misafir</strong><small id="wcTopPlan">Oturum açılmadı</small></span><span aria-hidden="true" class="wc-menu-chevron">⌄</span></button><div id="wcProfileMenu" class="wc-top-popover" hidden></div></div>
+  </div>
+</header>
+<div id="wcMobileBackdrop" class="wc-mobile-backdrop" hidden></div>
+<section id="dashboardPage" class="page-view wc-dashboard" aria-labelledby="wcDashboardTitle">
+  <header class="wc-dash-heading">
+    <div class="wc-dash-intro">
+      <div class="wc-breadcrumb">Ana Sayfa</div>
+      <h1 id="wcDashboardTitle">Tekrar hoş geldin, <span id="wcWelcome">WECOMMANDER</span> <span class="wc-wave" aria-hidden="true">👋</span></h1>
+      <p>Cihazlarını yönet, görevlerini çalıştır ve sistemlerini her yerden kontrol et.</p>
+    </div>
+    <div class="wc-head-actions">
+      <button id="wcAddDevice" class="wc-button wc-button-secondary" type="button"><svg class="wc-svg wc-svg-plus" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg><span>Cihaz Ekle</span></button>
+      <button id="wcQuickTask" class="wc-button wc-button-primary" type="button"><svg class="wc-svg wc-svg-play" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m8 5 11 7-11 7Z"/></svg><span>Hızlı Görev</span></button>
+    </div>
+  </header>
+  <div id="wcSignInPrompt" class="wc-signin-prompt" hidden>
+    <div><strong>Panelini kişiselleştirmek için giriş yap</strong><p>Cihazların, görevlerin, kullanımın ve abonelik bilgilerin güvenli oturum açtıktan sonra görüntülenir.</p></div>
+    <button id="wcOpenLogin" type="button">Giriş Yap <svg class="wc-svg wc-svg-arrow" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
+  </div>
+  <div class="wc-stat-grid">
+    <button type="button" class="wc-dash-panel wc-stat wc-stat-link" data-wc-dest="devices">
+      <span class="wc-stat-icon wc-stat-blue"><svg class="wc-svg wc-svg-monitor" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 22h8M12 18v4"/></svg></span><span class="wc-stat-body">
+        <span class="wc-stat-label">Toplam Cihaz</span><strong id="wcDeviceCount">—</strong>
+        <small id="wcDeviceStatus">Cihazlar kontrol ediliyor</small>
+      </span><svg class="wc-svg wc-svg-arrow" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+    </button>
+    <button type="button" class="wc-dash-panel wc-stat wc-stat-link" data-wc-dest="usage">
+      <span class="wc-stat-icon wc-stat-amber"><svg class="wc-svg wc-svg-bolt" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m13 2-9 12h7l-1 8 10-12h-7l0-8Z"/></svg></span><span class="wc-stat-body">
+        <span class="wc-stat-label">Bu Ay İşlem</span><strong id="wcTaskCount">—</strong>
+        <small id="wcTaskLimit">Kullanım verileri yükleniyor</small><span class="wc-stat-meter"><span id="wcTaskMeter"></span></span>
+      </span><svg class="wc-svg wc-svg-arrow" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+    </button>
+    <div class="wc-dash-panel wc-stat">
+      <span class="wc-stat-icon wc-stat-cyan"><svg class="wc-svg wc-svg-drive" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 14h18"/><circle cx="16.5" cy="17" r="1"/></svg></span><span class="wc-stat-body">
+        <span class="wc-stat-label">Depolama</span><strong id="wcStorageValue">—</strong>
+        <small id="wcStorageHint">Cihaz depolama verisi yok</small>
+      </span>
+    </div>
+    <div class="wc-dash-panel wc-stat">
+      <span class="wc-stat-icon wc-stat-green"><svg class="wc-svg wc-svg-pulse" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h4l3-8 5 16 3-8h5"/></svg></span><span class="wc-stat-body">
+        <span class="wc-stat-label">Çevrimiçi Süre</span><strong id="wcUptimeValue">—</strong>
+        <small id="wcUptimeHint">Geçmiş uptime verisi yok</small>
+      </span>
+    </div>
+  </div>
+  <div class="wc-dash-main">
+    <section class="wc-dash-panel wc-devices-panel" aria-labelledby="wcDevicesTitle">
+      <div class="wc-panel-head"><h2 id="wcDevicesTitle">Cihazlarım</h2><button type="button" class="wc-link-button" data-wc-dest="devices">Tüm Cihazlar →</button></div>
+      <div id="wcDashDevices" class="wc-device-list"><div class="wc-empty-state">Cihazlar yükleniyor…</div></div>
+    </section>
+    <section class="wc-dash-panel wc-activity-panel" aria-labelledby="wcActivityTitle">
+      <div class="wc-panel-head"><h2 id="wcActivityTitle">Son Aktiviteler</h2><button type="button" id="wcOpenAudit" class="wc-link-button">Tümünü Gör →</button></div>
+      <div id="wcDashActivity" class="wc-activity-list"><div class="wc-empty-state">Aktiviteler yükleniyor…</div></div>
+    </section>
+  </div>
+  <div class="wc-dash-bottom">
+    <section class="wc-dash-panel wc-chart-panel" aria-labelledby="wcChartTitle">
+      <div class="wc-panel-head"><h2 id="wcChartTitle">Kullanım Grafiği</h2>
+        <select id="wcChartRange" aria-label="Grafik aralığı"><option value="7">Son 7 Gün</option><option value="6">Son 6 Ay</option></select>
+      </div>
+      <div id="wcDashChart" class="wc-chart-plot" role="img" aria-label="Kullanım grafiği"></div>
+      <div id="wcDashChartLabels" class="wc-chart-labels" aria-hidden="true"></div>
+    </section>
+    <section class="wc-dash-panel wc-operations-panel" aria-labelledby="wcOperationsTitle">
+      <div class="wc-panel-head"><h2 id="wcOperationsTitle">En Çok Kullanılan İşlemler</h2></div>
+      <div id="wcDashUsage" class="wc-operations-list"><div class="wc-empty-state">İşlemler yükleniyor…</div></div>
+    </section>
+    <section class="wc-dash-panel wc-plan-panel" aria-labelledby="wcPlanTitle">
+      <div class="wc-panel-head"><h2 id="wcPlanTitle">Paket Bilgisi</h2><button class="wc-link-button" type="button" data-wc-dest="billing">Paketleri Gör →</button></div>
+      <div id="wcDashPlan"><div class="wc-empty-state">Paket bilgisi yükleniyor…</div></div>
+    </section>
+  </div>
+</section>
 <div id="quotaAlert" class="quota-alert">
   <div class="quota-copy">
     <svg viewBox="0 0 24 24"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 9v5M12 17.5h.01"/></svg>
@@ -755,8 +1171,8 @@ async function refreshIdentity(){
     if(!$("key").value.trim())$("devices").innerHTML='<p class="hint">Sign in or enter an API token.</p>';
   }
 }
-$("loginButton").onclick=async()=>{try{clearError();sessionStorage.removeItem("commender-key");$("key").value="";const r=await fetch("/api/auth/login",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("loginEmail").value.trim(),password:$("loginPassword").value})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(body.error||("HTTP "+r.status));$("loginPassword").value="";await refreshIdentity()}catch(e){showError(e)}}
-$("logoutButton").onclick=async()=>{try{if(currentIdentity)await api("/api/auth/logout",{method:"POST",body:"{}"});sessionStorage.removeItem("commender-key");$("key").value="";selected=null;currentIdentity=null;syncSelection();await refreshIdentity()}catch(e){showError(e)}}
+$("loginButton").onclick=async()=>{try{clearError();sessionStorage.removeItem("commender-key");$("key").value="";const r=await fetch("/api/auth/login",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("loginEmail").value.trim(),password:$("loginPassword").value})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(body.error||("HTTP "+r.status));$("loginPassword").value="";await refreshIdentity();showPage("dashboard")}catch(e){showError(e)}}
+$("logoutButton").onclick=async()=>{try{if(currentIdentity)await api("/api/auth/logout",{method:"POST",body:"{}"});sessionStorage.removeItem("commender-key");$("key").value="";selected=null;currentIdentity=null;syncSelection();await refreshIdentity();showPage("dashboard")}catch(e){showError(e)}}
 $("signupOpen").onclick=()=>{$("signupCard").classList.remove("hidden");$("signupError").textContent="";$("signupStatus").textContent=""}
 $("signupClose").onclick=()=>{$("signupCard").classList.add("hidden")}
 $("signupSubmit").onclick=async()=>{try{$("signupError").textContent="";$("signupStatus").textContent="";const email=$("signupEmail").value.trim();const workspaceName=$("signupWorkspace").value.trim();const password=$("signupPassword").value;if(!email||!workspaceName||password.length<12)throw new Error("Enter an email, workspace name and a password of at least 12 characters.");const r=await fetch("/api/auth/signup",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,workspaceName,password})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(apiError(body,r.status));$("signupPassword").value="";$("signupStatus").textContent="If signup is available for this address, check your email for the verification link."}catch(e){$("signupError").textContent=e.message||String(e)}}
@@ -934,20 +1350,35 @@ function syncAccountUi(){
   if($("settingsAuthKind"))$("settingsAuthKind").textContent=currentIdentity?(currentIdentity.authKind==="session"?"Signed in with WECOMMANDER":"Connected with API token"):"Account unavailable";
   if($("settingsSignout"))$("settingsSignout").disabled=!currentIdentity&&!$("key").value.trim();
 }
+
 function showPage(page){
-  const target=["dashboard","devices","usage","billing","settings"].includes(page)?page:"devices";
+  const subTabs={terminal:"terminal",files:"files",tasks:"tasks",mcp:"access"};
+  const requested=["dashboard","devices","usage","billing","settings"].includes(page)||subTabs[page]?page:"dashboard";
+  const target=subTabs[requested]?"devices":requested;
   document.querySelectorAll(".page-view").forEach(x=>x.classList.remove("active"));
   $(target+"Page")?.classList.add("active");
-  document.querySelectorAll("[data-page-target]").forEach(x=>x.classList.toggle("active",x.dataset.pageTarget===target));
-  history.replaceState(null,"",location.pathname+location.search+(location.hash||""));
+  document.querySelectorAll("[data-page-target]").forEach(x=>x.classList.toggle("active",x.dataset.pageTarget===requested));
+  document.body.dataset.wcPage=requested;
   if(target==="dashboard")wcLoadDashboard();
   if(target==="usage")loadUsage();
   if(target==="billing"&&currentIdentity)loadBilling().catch(showError);
   if(target==="settings")syncAccountUi();
+  if(subTabs[requested]){
+    const tab=document.querySelector('[data-tab="'+subTabs[requested]+'"]');
+    if(tab&&!tab.classList.contains("hidden"))tab.click();
+    const workbench=document.querySelector(".workspace");
+    if(tab&&!tab.classList.contains("hidden"))workbench?.scrollIntoView({behavior:"smooth",block:"start"});
+    else if(requested==="mcp")document.querySelector(".where-card")?.scrollIntoView({behavior:"smooth",block:"start"});
+  }else window.scrollTo({top:0,behavior:"instant"});
+  document.body.classList.remove("wc-mobile-nav-open");
+  if($("wcMobileMenu"))$("wcMobileMenu").setAttribute("aria-expanded","false");
+  if($("wcMobileBackdrop"))$("wcMobileBackdrop").hidden=true;
 }
+
 document.querySelectorAll("[data-page-target]").forEach(button=>button.onclick=()=>showPage(button.dataset.pageTarget));
 $("addDeviceTop").onclick=async()=>{try{$("pair").click();setTimeout(()=>$("pairing").scrollIntoView({behavior:"smooth",block:"center"}),120)}catch(e){showError(e)}};
-$("sidebarUpgrade").onclick=$("quotaUpgrade").onclick=()=>showPage("billing");
+$("sidebarUpgrade").onclick=()=>showPage("usage");
+$("quotaUpgrade").onclick=()=>showPage("billing");
 $("upgradeButton").onclick=()=>{$("settingsMessage").textContent="Online checkout is not configured on this deployment yet.";showPage("settings")};
 $("teamContact").onclick=()=>{location.href="mailto:support@webrising.tr?subject=WECOMMANDER%20team%20plan"};
 $("settingsSignout").onclick=()=>$("logoutButton").click();
@@ -989,8 +1420,8 @@ async function loadUsage(){
     $("sidebarUsagePercent").textContent=limit?(pct+"%"):"∞";
     $("sidebarUsageMeter").style.width=(limit?pct:100)+"%";
     $("sidebarUsageCount").textContent=formatCount(used)+(limit?(" of "+formatCount(limit)):"");
-    $("sidebarUsageLimitText").textContent=limit?"this month":"calls this month";
-    $("sidebarUsageReset").textContent=limit?("Resets "+new Date(j.resetAt).toLocaleDateString()):"Unlimited";
+    $("sidebarUsageLimitText").textContent=limit?"bu ay":"bu ay çağrı";
+    $("sidebarUsageReset").textContent=limit?("Yenilenme: "+new Date(j.resetAt).toLocaleDateString("tr-TR")):"Sınırsız";
     const warn=!!limit&&pct>=90;
     $("quotaAlert").classList.toggle("visible",warn);
     $("quotaMessage").textContent=pct>=100
@@ -1006,45 +1437,328 @@ async function loadUsage(){
 }
 
 
-/* Dashboard uses the same authenticated API as the existing console; never invent metrics. */
-function wcEscape(v){return escapeHtml(String(v??""))}
-function wcDate(v){if(!v)return "Henüz görülmedi";const d=new Date(v);return Number.isNaN(d.valueOf())?"Bilinmiyor":d.toLocaleString("tr-TR")}
-async function wcLoadDashboard(){
-  if(!currentIdentity&&!$("key").value.trim()){ $("wcDashDevices").textContent="Verileri görmek için giriş yapın.";return }
-  const email=currentIdentity?.email||currentIdentity?.actor||"";
-  $("wcWelcome").textContent=email.split("@")[0]||"WECOMMANDER";
-  $("wcTopAvatar").textContent=initials(email);
-  const requests=await Promise.allSettled([api("/api/devices"),api("/api/usage"),api("/api/audit?limit=6")]);
-  const [dev,usage,audit]=requests.map(x=>x.status==="fulfilled"?x.value:null);
-  if(dev){
-    const items=Array.isArray(dev.items)?dev.items:[];
-    $("wcDeviceCount").textContent=String(items.length);
-    $("wcDeviceStatus").textContent=items.filter(x=>x.online&&!x.revoked_at).length+" çevrimiçi · "+items.filter(x=>!x.online||x.revoked_at).length+" çevrimdışı";
-    $("wcDashDevices").innerHTML=items.length?items.slice(0,5).map(x=>'<div class="wc-device-item"><div><div class="wc-device-title">'+wcEscape(x.name)+'</div><div class="wc-device-sub '+(x.online&&!x.revoked_at?'wc-online':'wc-offline')+'">'+(x.online&&!x.revoked_at?'● Çevrimiçi':'● Çevrimdışı')+' · '+wcEscape(wcDate(x.last_seen_at))+'</div></div><span class="wc-dash-note">'+wcEscape(x.id.slice(0,8))+'</span><button type="button" data-wc-device="'+wcEscape(x.id)+'">Aç</button></div>').join(""):'<p class="wc-empty">Henüz cihaz eklenmedi.</p>';
-    $("wcDashDevices").querySelectorAll("[data-wc-device]").forEach(btn=>btn.onclick=()=>{showPage("devices");const el=[...document.querySelectorAll(".device")].find(x=>x.dataset.id===btn.dataset.wcDevice);if(el)el.click()});
-  }else{$("wcDashDevices").textContent="Cihaz verileri alınamadı."}
-  if(usage){
-    const used=Number(usage.monthCalls||0),limit=usage.limit===null?null:Number(usage.limit);
-    $("wcTaskCount").textContent=used.toLocaleString("tr-TR");
-    $("wcTaskLimit").textContent=limit===null?"Limitsiz kullanım":used.toLocaleString("tr-TR")+" / "+limit.toLocaleString("tr-TR")+" çağrı";
-    $("wcDashUsage").innerHTML='<div class="wc-usage-line"><span>Bu ay API çağrısı</span><strong>'+wcEscape(used.toLocaleString("tr-TR"))+'</strong></div><div class="wc-usage-line"><span>Günlük ortalama</span><strong>'+wcEscape(Number(usage.dailyAverage||0).toLocaleString("tr-TR"))+'</strong></div><div class="wc-usage-line"><span>Kota</span><strong>'+wcEscape(limit===null?"Limitsiz":String(limit))+'</strong></div>';
-    const months=Array.isArray(usage.months)?usage.months.slice(-7):[],max=Math.max(1,...months.map(x=>Number(x.calls)||0));
-    $("wcDashChart").innerHTML=months.map(x=>'<div class="wc-bar-wrap"><div class="wc-bar" title="'+wcEscape(x.calls)+' çağrı" style="height:'+Math.max(2,Math.round((Number(x.calls)||0)/max*100))+'%"></div></div>').join("");
-    $("wcDashChartLabels").innerHTML=months.map(x=>'<span>'+wcEscape(x.month)+'</span>').join("");
-  }else{$("wcTaskCount").textContent="—";$("wcDashUsage").textContent="Kullanım verisi alınamadı."}
-  $("wcDashActivity").innerHTML=audit&&Array.isArray(audit.items)?(audit.items.length?audit.items.slice(0,6).map(x=>'<div class="wc-activity-row"><span>'+wcEscape(x.tool||x.outcome||"İşlem")+'</span><span>'+wcEscape(wcDate(x.created_at))+'</span></div>').join(""):'<p class="wc-empty">Henüz aktivite bulunmuyor.</p>'):'<p class="wc-empty">Aktiviteler bu hesap için kullanılamıyor.</p>';
-  $("wcDashPlan").innerHTML='<div class="wc-dash-note">Güncel paket ve abonelik ayrıntıları için paket yönetimini açın.</div><button type="button" data-dash-page="billing" style="margin-top:16px">Paket Yönetimi →</button>';
-  $("wcDashPlan").querySelector("button").onclick=()=>showPage("billing");
-}
-$("wcAddDevice").onclick=()=>{showPage("devices");$("addDeviceTop").click()};
-$("wcQuickTask").onclick=()=>{showPage("devices");document.querySelector('[data-tab="tasks"]')?.click();document.querySelector(".workspace")?.scrollIntoView({behavior:"smooth"})};
-$("wcOpenAudit").onclick=()=>{showPage("devices");document.querySelector('[data-tab="audit"]')?.click();document.querySelector(".workspace")?.scrollIntoView({behavior:"smooth"})};
-$("wcRefreshDash").onclick=wcLoadDashboard;
-$("wcThemeToggle").onclick=()=>setTheme(document.body.classList.contains("light")?"dark":"light");
-$("wcGlobalSearch").oninput=e=>{const q=e.target.value.toLocaleLowerCase("tr-TR");$("wcDashDevices").querySelectorAll(".wc-device-item").forEach(x=>x.style.display=x.textContent.toLocaleLowerCase("tr-TR").includes(q)?"":"none")};
-document.querySelectorAll("[data-dash-page]").forEach(b=>b.onclick=()=>showPage(b.dataset.dashPage));
 
-health();setInterval(health,15000);loadPublicConfig();prepareSignupVerification();preparePasswordReset();loadInvitePreview();refreshIdentity().then(()=>{loadUsage();if(currentIdentity)showPage("dashboard")})
+/* Dashboard UI v2 — API-backed, safe, and independent from screenshot mock values. */
+const WC_PATHS={
+  home:'<path d="m3 11 9-8 9 8v10h-7v-7h-4v7H3Z"/>',
+  devices:'<rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 22h8M12 18v4"/>',
+  terminal:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3m5 4h5"/>',
+  files:'<path d="M3 7a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v9H3Z"/>',
+  tasks:'<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/>',
+  mcp:'<circle cx="12" cy="12" r="3"/><circle cx="12" cy="3.5" r="1.5"/><circle cx="19.4" cy="16" r="1.5"/><circle cx="4.6" cy="16" r="1.5"/><path d="M12 9V5m2.6 8.4 3.5 2m-8.7-2-3.5 2"/>',
+  usage:'<path d="M4 20v-7m5 7V6m5 14v-11m5 11V3"/>',
+  billing:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18m-13 5h4"/>',
+  settings:'<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.2-1.6l2-1.6-2-3.5-2.4 1a7 7 0 0 0-2.8-1.6L13 2h-2l-.6 2.7a7 7 0 0 0-2.8 1.6l-2.4-1-2 3.5 2 1.6a7 7 0 0 0 0 3.2l-2 1.6 2 3.5 2.4-1a7 7 0 0 0 2.8 1.6L11 22h2l.6-2.7a7 7 0 0 0 2.8-1.6l2.4 1 2-3.5-2-1.6A7 7 0 0 0 19 12Z"/>',
+  arrow:'<path d="m9 18 6-6-6-6"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  monitor:'<rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 22h8M12 18v4"/>',
+  upload:'<path d="M12 17V3m-5 5 5-5 5 5M4 17v3h16v-3"/>',
+  alert:'<path d="M12 3 2 21h20L12 3Z"/><path d="M12 9v5m0 3h.01"/>',
+  check:'<path d="m5 12 4 4L19 6"/>'
+};
+function wcIcon(name,css=""){return '<svg class="wc-svg '+css+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(WC_PATHS[name]||WC_PATHS.monitor)+'</svg>'}
+function wcEscape(v){return escapeHtml(String(v??""))}
+function wcNumber(v){const n=Number(v);return Number.isFinite(n)?n:0}
+function wcDate(iso){const d=new Date(iso||"");return Number.isNaN(+d)?null:d}
+function wcRelativeDate(iso){
+  const d=wcDate(iso);if(!d)return "Henüz görülmedi";
+  const diff=Math.max(0,Date.now()-d.getTime()),minutes=Math.floor(diff/60000);
+  if(minutes<1)return "Az önce";if(minutes<60)return minutes+" dk önce";
+  const hours=Math.floor(minutes/60);if(hours<24)return hours+" sa önce";
+  const days=Math.floor(hours/24);if(days<14)return days+" gün önce";
+  return d.toLocaleDateString("tr-TR",{day:"numeric",month:"short"});
+}
+function wcFullDate(iso){return wcDate(iso)?.toLocaleString("tr-TR")||"Tarih yok"}
+function wcSignedIn(){return !!currentIdentity||!!$("key").value.trim()}
+let wcDashboardDevices=[],wcDashboardActivities=[],wcDashboardRequest=0,wcSearchTargets=[];
+const wcTopLinks=[
+  ["dashboard","Ana Sayfa"],["devices","Cihazlar"],["terminal","Terminal"],["files","Dosyalar"],
+  ["tasks","Görevler"],["mcp","MCP"],["usage","Kullanım"],["billing","Paket & Faturalama"],["settings","Ayarlar"]
+];
+for(const button of document.querySelectorAll(".wc-nav [data-page-target]")){
+  const id=button.dataset.pageTarget;
+  if(WC_PATHS[id]){
+    const oldIcon=button.querySelector("svg,.wc-nav-icon");
+    if(oldIcon)oldIcon.outerHTML=wcIcon(id,"wc-nav-svg");
+    else button.insertAdjacentHTML("afterbegin",wcIcon(id,"wc-nav-svg"));
+  }
+}
+function wcUpdateIdentity(){
+  const email=currentIdentity?.email||currentIdentity?.actor||"";
+  const name=(currentIdentity?.name||email.split("@")[0]||"Misafir").trim();
+  $("wcWelcome").textContent=wcSignedIn()?name:"WECOMMANDER";
+  $("wcTopName").textContent=wcSignedIn()?name:"Misafir";
+  $("wcTopAvatar").textContent=wcSignedIn()?initials(name):"WC";
+  $("wcTopPlan").textContent=wcSignedIn()?"Paket yükleniyor":"Giriş yapılmadı";
+  $("wcSignInPrompt").hidden=wcSignedIn();
+  $("wcProfileMenu").innerHTML=
+    '<div class="wc-popover-line">'+wcEscape(email||"Oturum açılmadı")+'</div>'+
+    (wcSignedIn()?'<button type="button" data-profile-action="settings">Hesap ayarları</button><button type="button" data-profile-action="logout">Çıkış yap</button>':'<button type="button" data-profile-action="login">Giriş yap</button>');
+  $("wcProfileMenu").querySelectorAll("[data-profile-action]").forEach(btn=>btn.onclick=()=>{
+    wcCloseTopMenus();
+    if(btn.dataset.profileAction==="settings")showPage("settings");
+    if(btn.dataset.profileAction==="logout")$("logoutButton").click();
+    if(btn.dataset.profileAction==="login")wcOpenLogin();
+  });
+}
+function wcOpenLogin(){
+  showPage("devices");
+  $("loginCard")?.scrollIntoView({behavior:"smooth",block:"center"});
+  $("loginEmail")?.focus();
+}
+function wcCloseTopMenus(){
+  for(const [id,trigger] of [["wcProfileMenu","wcProfileButton"],["wcNotificationsMenu","wcNotificationsButton"]]){
+    $(id).hidden=true;$(trigger).setAttribute("aria-expanded","false");
+  }
+}
+function wcToggleMenu(id,trigger){
+  const opened=$(id).hidden;wcCloseTopMenus();
+  $(id).hidden=!opened;$(trigger).setAttribute("aria-expanded",String(opened));
+}
+function wcOsMarkup(platform){
+  const p=String(platform||"").toLowerCase();
+  if(/^(win|windows|win32)/.test(p))return '<span class="wc-os-icon win" aria-label="Windows"><svg viewBox="0 0 36 36" aria-hidden="true"><path fill="currentColor" d="M2 7.2 16.5 5v13H2Zm17-2.6L34 2v16H19ZM2 20h14.5v13L2 30.8Zm17 0h15v16l-15-2.6Z"/></svg></span>';
+  if(/linux|ubuntu|debian/.test(p))return '<span class="wc-os-icon linux" title="Linux" aria-label="Linux">🐧</span>';
+  if(/mac|darwin|apple/.test(p))return '<span class="wc-os-icon mac" aria-label="macOS"><svg viewBox="0 0 40 46" aria-hidden="true"><path fill="currentColor" d="M30 3c-5 0-8 4-8 9 5 .2 9-4 8-9Zm5 25c-.8 4-4.5 12.8-9 13.1-2.3.2-3.8-1.5-6.6-1.5-2.9 0-4.6 1.6-6.8 1.5C8.1 40.9 3 31 3 24c0-6.8 4.1-11 9.4-11 2.8 0 5.2 1.7 7.1 1.7 1.8 0 4.6-1.7 7.8-1.7 3.5 0 6.5 1.7 8.1 4.3-7.2 4.3-6 13.7-.4 17.7Z"/></svg></span>';
+  return '<span class="wc-os-icon" aria-label="Cihaz">'+wcIcon("devices")+'</span>';
+}
+function wcRenderDevices(dev){
+ const all=Array.isArray(dev?.items)?dev.items.filter(x=>!x.revoked_at):[];
+ wcDashboardDevices=all;
+ $("wcDeviceCount").textContent=String(all.length);
+ const online=all.filter(x=>x.online).length;
+ $("wcDeviceStatus").innerHTML='<span class="wc-online">'+online+' çevrimiçi</span> · '+(all.length-online)+' çevrimdışı';
+ $("wcDashDevices").innerHTML=all.length?all.slice(0,4).map(x=>{
+  const sub=[x.platform,x.hostname].filter(Boolean).join(" · ")||"Platform bilgisi yok";
+  return '<div class="wc-device-row" data-device-id="'+wcEscape(x.id)+'">'+
+   wcOsMarkup(x.platform)+'<div class="wc-device-copy"><span class="wc-device-title">'+wcEscape(x.name||"İsimsiz cihaz")+'</span>'+
+   '<small>'+wcEscape(sub)+'</small><span class="wc-device-badge '+(x.online?'online':'')+'">'+(x.online?'Çevrimiçi':'Çevrimdışı')+'</span></div>'+
+   '<div class="wc-device-seen"><span>Son görülme</span><small title="'+wcEscape(wcFullDate(x.last_seen_at))+'">'+wcEscape(wcRelativeDate(x.last_seen_at))+'</small></div>'+
+   '<button type="button" class="wc-connect-button" data-wc-connect="'+wcEscape(x.id)+'" '+(x.online?"":"disabled title=\"Cihaz çevrimdışı\"")+'>'+
+   (x.online?"Bağlan":"Çevrimdışı")+'</button>'+
+   '<button type="button" class="wc-device-more" data-wc-detail="'+wcEscape(x.id)+'" aria-label="Cihaz ayrıntıları">···</button></div>';
+ }).join(""):'<div class="wc-empty-state">Henüz bağlı cihaz bulunmuyor. Cihaz Ekle düğmesiyle başlayabilirsin.</div>';
+ $("wcDashDevices").querySelectorAll("[data-wc-connect],[data-wc-detail]").forEach(b=>b.onclick=()=>wcOpenDevice(b.dataset.wcConnect||b.dataset.wcDetail));
+}
+function wcOpenDevice(id){
+ showPage("devices");
+ const device=Array.from(document.querySelectorAll(".device")).find(el=>el.dataset.id===id);
+ if(device)device.click();
+ document.querySelector("#selectedDeviceCard")?.scrollIntoView({behavior:"smooth",block:"center"});
+}
+function wcActivityType(tool,outcome){
+ const t=String(tool||"").toLowerCase(),o=String(outcome||"").toLowerCase();
+ if(/error|fail|denied|blocked|reject/.test(o))return "alert";
+ if(/file|folder|upload|download|fs\./.test(t))return "files";
+ if(/task|job|approval/.test(t))return "tasks";
+ return "terminal";
+}
+function wcToolLabel(tool,outcome){
+ const raw=String(tool||"işlem");
+ const t=raw.toLowerCase(),success=/success|ok|done|allow|complete/.test(String(outcome||"").toLowerCase());
+ if(/file|folder|upload|download|fs\./.test(t))return success?"Dosya işlemi tamamlandı":"Dosya işlemi";
+ if(/terminal|shell|exec|command/.test(t))return success?"Terminal komutu çalıştırıldı":"Terminal işlemi";
+ if(/task|job/.test(t))return success?"Görev tamamlandı":"Görev işlemi";
+ if(/approval/.test(t))return "Onay isteği işlendi";
+ if(/system|process|service/.test(t))return "Sistem işlemi";
+ return raw.replace(/^direct\./,"");
+}
+function wcRenderActivity(items){
+ wcDashboardActivities=Array.isArray(items)?items:[];
+ $("wcDashActivity").innerHTML=wcDashboardActivities.length?wcDashboardActivities.slice(0,6).map(x=>{
+  const type=wcActivityType(x.tool,x.outcome);
+  const icon=type==="alert"?"alert":type==="files"?"files":type==="tasks"?"tasks":"terminal";
+  const prefix=x.device_name?x.device_name+": ":"";
+  const label=prefix+wcToolLabel(x.tool,x.outcome);
+  return '<div class="wc-activity-row"><span class="wc-activity-glyph wc-type-'+type+'">'+wcIcon(icon)+'</span>'+
+    '<span class="wc-activity-description" title="'+wcEscape(label)+'">'+wcEscape(label)+'</span>'+
+    '<time datetime="'+wcEscape(x.created_at||"")+'" title="'+wcEscape(wcFullDate(x.created_at))+'">'+wcEscape(wcRelativeDate(x.created_at))+'</time></div>';
+ }).join(""):'<div class="wc-empty-state">Henüz kaydedilmiş bir aktivite bulunmuyor.</div>';
+}
+function wcRenderChart(data){
+ const six=$("wcChartRange").value==="6";
+ const series=(six?data?.months:data?.daily)||[];
+ if(!Array.isArray(series)||!series.length){
+  $("wcDashChart").innerHTML='<div class="wc-empty-state">Grafik verisi bulunamadı.</div>';
+  $("wcDashChartLabels").innerHTML="";return;
+ }
+ const max=Math.max(1,...series.map(x=>wcNumber(x.calls)));
+ const bound=max<=5?5:Math.ceil(max/5)*5;
+ const labels=series.map(x=>{
+  if(six){const d=wcDate(x.month+"-01T00:00:00");return d?d.toLocaleDateString("tr-TR",{month:"short"}):x.month}
+  const d=wcDate(x.day+"T00:00:00");return d?d.toLocaleDateString("tr-TR",{day:"numeric",month:"short"}):x.day;
+ });
+ $("wcDashChart").innerHTML='<div class="wc-chart-axis"><span>'+wcEscape(bound)+'</span><span>'+wcEscape(Math.round(bound/2))+'</span><span>0</span></div>'+
+  '<div class="wc-chart-grid">'+series.map(x=>{
+    const count=wcNumber(x.calls);
+    return '<div class="wc-chart-column"><div class="wc-chart-fill" style="height:'+Math.min(100,100*count/bound)+'%" title="'+wcEscape(count.toLocaleString("tr-TR"))+' işlem"></div></div>';
+  }).join("")+'</div>';
+ $("wcDashChartLabels").innerHTML=labels.map(x=>'<span>'+wcEscape(x)+'</span>').join("");
+ $("wcDashChart").setAttribute("aria-label",(six?"Son altı ay":"Son yedi gün")+" kullanım verileri: "+series.map((x,i)=>labels[i]+" "+wcNumber(x.calls)).join(", "));
+}
+function wcOperationCategory(tool){
+ const s=String(tool||"").toLowerCase();
+ if(/terminal|shell|command|execute|exec/.test(s))return "terminal";
+ if(/file|folder|upload|download|fs\.|directory/.test(s))return "files";
+ if(/mcp|tool/.test(s))return "mcp";
+ if(/system|process|service|network|device|status/.test(s))return "system";
+ return "other";
+}
+function wcRenderOperations(tools){
+ if(!Array.isArray(tools)){ $("wcDashUsage").innerHTML='<div class="wc-empty-state">İşlem dağılımı alınamadı.</div>';return }
+ const groups=new Map([["terminal",0],["files",0],["mcp",0],["system",0],["other",0]]);
+ for(const item of tools)groups.set(wcOperationCategory(item.tool),groups.get(wcOperationCategory(item.tool))+wcNumber(item.calls));
+ const labels={terminal:"Terminal Komutları",files:"Dosya İşlemleri",mcp:"MCP Görevleri",system:"Sistem Yönetimi",other:"Diğer"};
+ const icons={terminal:"terminal",files:"files",mcp:"mcp",system:"settings",other:"devices"};
+ const max=Math.max(1,...groups.values());
+ $("wcDashUsage").innerHTML=[...groups].map(([key,count])=>
+  '<div class="wc-operation-row"><span class="wc-operation-icon '+key+'">'+wcIcon(icons[key])+'</span>'+
+  '<span class="wc-operation-name" title="'+labels[key]+'">'+labels[key]+'</span>'+
+  '<div class="meter"><span style="width:'+(count?Math.max(3,Math.round(count/max*100)):0)+'%"></span></div>'+
+  '<strong>'+count.toLocaleString("tr-TR")+'</strong></div>').join("");
+}
+function wcPlanPrice(b){
+ const meta=b?.plan?.metadata||{};
+ const price=meta.monthlyPriceTry??meta.monthlyPriceTRY??meta.monthlyPrice??meta.pricePerMonth??null;
+ const currency=String(meta.currency||"TRY");
+ if(price===null||price===undefined||price==="")return b?.mode==="self_hosted"?"Kendi sunucunda ücretsiz":"Fiyat bilgisi tanımlı değil";
+ return (typeof price==="number"?price.toLocaleString("tr-TR"):String(price))+" "+currency+" / ay";
+}
+function wcRenderBilling(b){
+ const plan=b?.plan;
+ const name=plan?.name||"Aktif paket bulunmuyor";
+ const limit=b?.limits||{};
+ const deviceLimit=limit.maxDevices===null?"Sınırsız cihaz":limit.maxDevices===undefined?"Cihaz limiti belirtilmedi":limit.maxDevices+" cihaz";
+ const tokenLimit=limit.maxApiTokens===null?"Sınırsız API anahtarı":limit.maxApiTokens===undefined?"API anahtarı limiti belirtilmedi":limit.maxApiTokens+" API anahtarı";
+ const memberLimit=limit.maxMembers===null?"Sınırsız üye":limit.maxMembers===undefined?"Üye limiti belirtilmedi":limit.maxMembers+" üye";
+ const renewal=b?.subscription?.currentPeriodEnd?("Dönem sonu: "+wcFullDate(b.subscription.currentPeriodEnd)):(b?.mode==="self_hosted"?"Kendi sunucunda yönetiliyor":"Sonraki ödeme tarihi bildirilmedi");
+ $("wcTopPlan").textContent=name;
+ $("wcSidePlanName").textContent=name;
+ $("wcSidePlanDetail").textContent=wcPlanPrice(b);
+ $("wcDashPlan").innerHTML='<div class="wc-plan-body"><div class="wc-plan-heading"><span class="wc-plan-crown">♛</span><div class="wc-plan-info">'+
+  '<div class="wc-plan-name">'+wcEscape(name)+'</div><div class="wc-plan-price">'+wcEscape(wcPlanPrice(b))+'</div></div></div>'+
+  '<div class="wc-plan-expiry">'+wcEscape(renewal)+'</div><div class="wc-plan-features">'+
+  [deviceLimit,tokenLimit,memberLimit,"Güvenli MCP bağlantıları"].map(x=>'<div class="wc-plan-feature">'+wcEscape(x)+'</div>').join("")+
+  '</div></div>';
+}
+function wcRenderSignedOut(){
+ wcDashboardDevices=[];wcDashboardActivities=[];
+ $("wcDeviceCount").textContent="—";$("wcDeviceStatus").textContent="Giriş gerekli";
+ $("wcTaskCount").textContent="—";$("wcTaskLimit").textContent="Giriş gerekli";
+ $("wcTaskMeter").style.width="0";
+ $("wcDashDevices").innerHTML='<div class="wc-empty-state">Cihazlarını görüntülemek için giriş yap.</div>';
+ $("wcDashActivity").innerHTML='<div class="wc-empty-state">Son işlemler için giriş yap.</div>';
+ $("wcDashUsage").innerHTML='<div class="wc-empty-state">İşlem istatistikleri için giriş yap.</div>';
+ $("wcDashChart").innerHTML='<div class="wc-empty-state">Gerçek kullanım grafiğin oturum açtıktan sonra görünecek.</div>';
+ $("wcDashChartLabels").innerHTML="";
+ $("wcDashPlan").innerHTML='<div class="wc-empty-state">Paket bilgilerini görmek için giriş yap.</div>';
+ $("wcSidePlanName").textContent="Paket Bilgisi";$("wcSidePlanDetail").textContent="Giriş yaparak görüntüle";
+ $("wcStorageValue").textContent="—";$("wcUptimeValue").textContent="—";
+}
+async function wcLoadDashboard(){
+ const request=++wcDashboardRequest;
+ wcUpdateIdentity();
+ if(!wcSignedIn()){wcRenderSignedOut();return}
+ const results=await Promise.allSettled([
+   api("/api/devices"),api("/api/usage"),api("/api/activity?limit=8"),api("/api/billing")
+ ]);
+ if(request!==wcDashboardRequest)return;
+ const [devices,usage,activity,billing]=results.map(x=>x.status==="fulfilled"?x.value:null);
+ if(devices)wcRenderDevices(devices);
+ else{$("wcDeviceCount").textContent="—";$("wcDeviceStatus").textContent="Cihaz verisi alınamadı";$("wcDashDevices").innerHTML='<div class="wc-empty-state">Cihazlar yüklenemedi. Bağlantını kontrol edip yeniden dene.</div>'}
+ if(usage){
+  const used=wcNumber(usage.monthCalls),limit=usage.limit===null?null:wcNumber(usage.limit);
+  $("wcTaskCount").textContent=used.toLocaleString("tr-TR");
+  $("wcTaskLimit").textContent=limit===null?"Sınırsız işlem":used.toLocaleString("tr-TR")+" / "+limit.toLocaleString("tr-TR")+" işlem";
+  $("wcTaskMeter").style.width=limit===null?"0%":Math.min(100,Math.round(limit?used/limit*100:0))+"%";
+  wcRenderChart(usage);wcRenderOperations(usage.topTools);
+ }else{$("wcTaskCount").textContent="—";$("wcTaskLimit").textContent="Kullanım verisi alınamadı";$("wcDashChart").innerHTML='<div class="wc-empty-state">Kullanım verisi alınamadı.</div>';$("wcDashChartLabels").innerHTML="";$("wcDashUsage").innerHTML='<div class="wc-empty-state">Kullanım verisi alınamadı.</div>'}
+ if(activity)wcRenderActivity(activity.items);
+ else $("wcDashActivity").innerHTML='<div class="wc-empty-state">Son aktiviteler şu anda alınamıyor.</div>';
+ if(billing)wcRenderBilling(billing);
+ else $("wcDashPlan").innerHTML='<div class="wc-empty-state">Paket bilgisi alınamadı.</div>';
+ // These indicators need agent-side historical telemetry; the API does not yet provide it.
+ $("wcStorageValue").textContent="—";$("wcStorageHint").textContent="Cihaz telemetrisi bulunmuyor";
+ $("wcUptimeValue").textContent="—";$("wcUptimeHint").textContent="Geçmiş uptime ölçümü yok";
+ wcNotificationsRefresh();
+}
+function wcNotificationsRefresh(){
+ const recent=wcDashboardActivities.slice(0,6);
+ const errors=recent.filter(x=>/error|fail|denied|blocked/.test(String(x.outcome||"").toLowerCase()));
+ $("wcNotifyIndicator").hidden=errors.length===0;
+ $("wcNotificationsMenu").innerHTML='<div class="wc-popover-line">Son Aktiviteler</div>'+
+  (recent.length?recent.map(x=>'<div class="wc-popover-line">'+wcEscape(wcToolLabel(x.tool,x.outcome))+' · '+wcEscape(wcRelativeDate(x.created_at))+'</div>').join(""):'<div class="wc-popover-line">Yeni aktivite yok</div>')+
+  '<button id="wcAllActivity" type="button">Tüm aktiviteler →</button>';
+ $("wcAllActivity").onclick=()=>{wcCloseTopMenus();wcShowAllActivities()};
+}
+async function wcShowAllActivities(){
+ if(!wcSignedIn()){wcOpenLogin();return}
+ try{
+  const j=await api("/api/activity?limit=30");
+  let dialog=$("wcActivityDialog");
+  if(!dialog){dialog=document.createElement("dialog");dialog.id="wcActivityDialog";dialog.className="wc-activity-dialog";document.body.appendChild(dialog)}
+  const items=Array.isArray(j.items)?j.items:[];
+  dialog.innerHTML='<div class="wc-dialog-head"><h2>Son Aktiviteler</h2><button id="wcCloseActivity" aria-label="Kapat">✕</button></div>'+
+   (items.length?items.map(x=>'<div class="wc-dialog-activity"><strong>'+wcEscape(wcToolLabel(x.tool,x.outcome))+'</strong><small>'+wcEscape(x.device_name||"")+' · '+wcEscape(wcFullDate(x.created_at))+' · '+wcEscape(x.outcome||"")+'</small></div>').join(""):'<p>Henüz aktivite yok.</p>');
+  $("wcCloseActivity").onclick=()=>dialog.close();dialog.showModal();
+ }catch(e){showError(e)}
+}
+function wcSearchItems(query){
+ const q=String(query||"").trim().toLocaleLowerCase("tr-TR");
+ if(!q)return [];
+ const pages=wcTopLinks.filter(x=>x[1].toLocaleLowerCase("tr-TR").includes(q)).map(x=>({label:x[1],hint:"Bölüm",page:x[0]}));
+ const devices=wcDashboardDevices.filter(x=>[x.name,x.platform,x.hostname].some(v=>String(v||"").toLocaleLowerCase("tr-TR").includes(q)))
+   .map(x=>({label:x.name||"Cihaz",hint:x.online?"Çevrimiçi cihaz":"Çevrimdışı cihaz",device:x.id}));
+ return [...pages,...devices].slice(0,9);
+}
+function wcSearchRender(){
+ const input=$("wcGlobalSearch"),query=input.value.trim();wcSearchTargets=wcSearchItems(query);
+ const panel=$("wcSearchResults");
+ panel.hidden=!query;
+ input.setAttribute("aria-expanded",String(!!query));
+ if(!query){panel.innerHTML="";return}
+ panel.innerHTML=wcSearchTargets.length?wcSearchTargets.map((x,i)=>
+  '<button role="option" type="button" data-search-index="'+i+'"><span>'+wcEscape(x.label)+'</span><small>'+wcEscape(x.hint)+'</small></button>').join(""):
+  '<div class="wc-popover-line">Eşleşen sonuç bulunamadı.</div>';
+ panel.querySelectorAll("[data-search-index]").forEach(btn=>btn.onclick=()=>wcSearchChoose(Number(btn.dataset.searchIndex)));
+}
+function wcSearchChoose(i){
+ const target=wcSearchTargets[i];if(!target)return;
+ $("wcGlobalSearch").value="";wcSearchRender();
+ if(target.device)wcOpenDevice(target.device);
+ if(target.page)showPage(target.page);
+}
+$("wcGlobalSearch").addEventListener("input",wcSearchRender);
+$("wcGlobalSearch").addEventListener("keydown",e=>{
+ if(e.key==="Escape"){$("wcGlobalSearch").value="";wcSearchRender();$("wcGlobalSearch").blur()}
+ if(e.key==="Enter"&&wcSearchTargets.length){e.preventDefault();wcSearchChoose(0)}
+});
+document.addEventListener("keydown",e=>{
+ if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();$("wcGlobalSearch").focus();$("wcGlobalSearch").select()}
+ if(e.key==="Escape")wcCloseTopMenus();
+});
+document.addEventListener("click",e=>{
+ if(!e.target.closest(".wc-menu-anchor"))wcCloseTopMenus();
+ if(!e.target.closest(".wc-search-wrap")){$("wcSearchResults").hidden=true;$("wcGlobalSearch").setAttribute("aria-expanded","false")}
+});
+$("wcProfileButton").onclick=()=>wcToggleMenu("wcProfileMenu","wcProfileButton");
+$("wcNotificationsButton").onclick=()=>wcToggleMenu("wcNotificationsMenu","wcNotificationsButton");
+$("wcThemeToggle").onclick=()=>setTheme(document.body.classList.contains("light")?"dark":"light");
+$("wcOpenLogin").onclick=wcOpenLogin;
+$("wcAddDevice").onclick=()=>{showPage("devices");if(wcSignedIn())$("addDeviceTop").click();else wcOpenLogin()};
+$("wcQuickTask").onclick=()=>{if(wcSignedIn())showPage("tasks");else wcOpenLogin()};
+$("wcOpenAudit").onclick=wcShowAllActivities;
+$("wcChartRange").onchange=()=>wcLoadDashboard();
+$("wcMobileMenu").onclick=()=>{
+ const open=document.body.classList.toggle("wc-mobile-nav-open");
+ $("wcMobileBackdrop").hidden=!open;$("wcMobileMenu").setAttribute("aria-expanded",String(open));
+};
+$("wcMobileBackdrop").onclick=()=>{document.body.classList.remove("wc-mobile-nav-open");$("wcMobileBackdrop").hidden=true;$("wcMobileMenu").setAttribute("aria-expanded","false")};
+document.querySelectorAll("[data-wc-dest]").forEach(btn=>btn.onclick=()=>showPage(btn.dataset.wcDest));
+$("wcSidePlanButton").onclick=()=>showPage("billing");
+setInterval(()=>{if($("dashboardPage").classList.contains("active")&&wcSignedIn())wcLoadDashboard()},60000);
+
+health();setInterval(health,15000);loadPublicConfig();prepareSignupVerification();preparePasswordReset();loadInvitePreview();refreshIdentity().then(()=>{loadUsage();if(!verificationToken&&!passwordResetToken&&!invitationToken)showPage("dashboard")})
 
 </script>
 </body>

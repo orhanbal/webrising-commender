@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="description" content="WECOMMANDER lets AI clients securely use your computer through an outbound native agent, MCP, approvals and audit logs.">
 <title>WECOMMANDER — Use your computer from chat</title>
+<link rel="icon" href="/assets/wecommander-favicon.svg" type="image/svg+xml" sizes="any">
+<meta name="theme-color" content="#0b0f16">
 <style>
 :root{
   font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
@@ -61,12 +63,19 @@ h1{font-size:60px;line-height:.98;letter-spacing:-.05em;margin:0 0 22px;max-widt
 footer{padding:44px 0 24px;background:#151b26;border-top:1px solid #222b39}.footer-grid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:45px}.footer-brand p{font-size:12.5px;line-height:1.55;color:#7d8899;max-width:270px}.footer-col strong{font-size:12px}.footer-col a{display:block;font-size:12px;color:#808b9c;margin-top:8px}.copyright{margin-top:30px;padding-top:20px;border-top:1px solid #232c3a;color:#626e80;font-size:11px;display:flex;justify-content:space-between}
 @media(max-width:900px){.nav-links{display:none}.hero,.machine{grid-template-columns:1fr}.hero{gap:18px}.hero-visual{order:-1;height:240px}.network{transform:scale(.86)}.install-grid,.pricing-grid{grid-template-columns:1fr}.use-grid,.steps,.client-grid,.proof-cards{grid-template-columns:1fr 1fr}.proof-strip{width:100%;margin-left:0;transform:none}.footer-grid{grid-template-columns:1fr}}
 @media(max-width:560px){.container{width:min(100% - 28px,1080px)}.nav-action{display:none}.hero{padding-top:38px}.hero h1{font-size:42px}.hero-lead{font-size:13.5px}.use-grid,.steps,.client-grid,.proof-cards,.proof-stats{grid-template-columns:1fr}.machine{gap:28px}.device-stage{transform:scale(.82);margin:-20px}.section{padding:54px 0}.copyright{display:block}.copyright span{display:block;margin-top:5px}}
+
+/* Official WECOMMANDER wordmark and icon; avoid placeholder WC lettering. */
+.brand{display:inline-flex;align-items:center;flex:none;gap:0}
+.brand-wordmark{display:block;width:218px;max-width:100%;height:auto;max-height:30px;object-fit:contain;object-position:left center;aspect-ratio:28020/3360}
+.center-node .center-brand-icon{display:block;width:45px;height:45px;object-fit:contain;border-radius:9px}
+.footer-brand .brand-wordmark{width:211px}
+@media(max-width:560px){.brand-wordmark{width:174px}.center-node .center-brand-icon{width:42px;height:42px}}
 </style>
 </head>
 <body>
 <header class="nav">
   <div class="container nav-inner">
-    <a class="brand" href="/"><span class="mark">WC</span><span>WECOMMANDER</span></a>
+    <a class="brand" href="/" aria-label="WECOMMANDER ana sayfa"><img class="brand-wordmark" src="/assets/wecommander-white.svg" alt="WECOMMANDER" width="218" height="26"></a>
     <nav class="nav-links"><a href="#product">Product</a><a href="#mcp">MCP</a><a href="#pricing">Pricing</a><a href="#resources">Resources</a></nav>
     <div class="nav-actions"><a class="nav-action" href="/app">Manage devices</a><a class="btn" href="/app">Install</a></div>
   </div>
@@ -84,7 +93,7 @@ footer{padding:44px 0 24px;background:#151b26;border-top:1px solid #222b39}.foot
     <div class="network">
       <svg viewBox="0 0 360 255" aria-hidden="true"><path d="M57 42 C95 65 120 90 176 142"/><path d="M180 27 C180 70 180 95 180 142"/><path d="M306 51 C255 73 230 101 183 143"/><path d="M180 176 C180 193 137 205 103 220"/><path d="M180 176 C180 196 180 204 180 220"/><path d="M180 176 C180 193 221 205 270 220"/></svg>
       <div class="ai-node n1">GPT<small>ChatGPT</small></div><div class="ai-node n2">C<small>Claude</small></div><div class="ai-node n3">AI<small>MCP client</small></div>
-      <div class="center-node"><span class="mark">WC</span></div>
+      <div class="center-node"><img class="center-brand-icon" src="/assets/wecommander-favicon.svg" alt="WECOMMANDER" width="48" height="48"></div>
       <div class="capability cap1">Files</div><div class="capability cap2">Terminal</div><div class="capability cap3">Processes</div>
     </div>
   </div>
@@ -129,6 +138,6 @@ footer{padding:44px 0 24px;background:#151b26;border-top:1px solid #222b39}.foot
 
 <section class="final-cta"><div class="container"><h2>Put your computer in the chat.</h2><p>Keep the machine under your control while giving your AI a secure way to get real work done.</p><div class="final-actions"><a class="btn" href="/app">Install</a><a class="btn secondary" href="/app">Manage devices</a></div></div></section>
 </main>
-<footer><div class="container"><div class="footer-grid"><div class="footer-brand"><a class="brand" href="/"><span class="mark">WC</span><span>WECOMMANDER</span></a><p>Secure, persistent AI-to-device control with a native outbound agent, MCP, approvals and audit.</p></div><div class="footer-col"><strong>Product</strong><a href="#product">Overview</a><a href="#mcp">MCP</a><a href="/app">Device console</a><a href="#pricing">Pricing</a></div><div class="footer-col"><strong>Resources</strong><a href="#resources">Workflows</a><a href="/health">Health</a><a href="/app">Sign in</a></div></div><div class="copyright"><span>© 2026 WECOMMANDER</span><span>Self-hostable · MCP-native · outbound-only agent</span></div></div></footer>
+<footer><div class="container"><div class="footer-grid"><div class="footer-brand"><a class="brand" href="/" aria-label="WECOMMANDER ana sayfa"><img class="brand-wordmark" src="/assets/wecommander-white.svg" alt="WECOMMANDER" width="218" height="26"></a><p>Secure, persistent AI-to-device control with a native outbound agent, MCP, approvals and audit.</p></div><div class="footer-col"><strong>Product</strong><a href="#product">Overview</a><a href="#mcp">MCP</a><a href="/app">Device console</a><a href="#pricing">Pricing</a></div><div class="footer-col"><strong>Resources</strong><a href="#resources">Workflows</a><a href="/health">Health</a><a href="/app">Sign in</a></div></div><div class="copyright"><span>© 2026 WECOMMANDER</span><span>Self-hostable · MCP-native · outbound-only agent</span></div></div></footer>
 </body>
 </html>
