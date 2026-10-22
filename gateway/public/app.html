@@ -1076,6 +1076,20 @@ body.light .wc-device-badge.online{color:var(--win-success)!important}
   }
 }
 
+
+/* Fit the document backdrop to the actual Windows browser viewport. */
+body{min-height:100vh!important}
+html{background:#202020}
+html:has(body.light){background:#f3f3f3}
+/* Empty chart occupies both grid columns; never collapse into the 35px Y-axis. */
+body .wc-chart-plot>.wc-empty-state{
+  grid-column:1/-1;align-self:start;min-width:0;
+  max-width:100%;white-space:normal;overflow-wrap:break-word;
+  line-height:1.45!important;
+}
+@media (min-width:1371px) and (max-height:900px) {
+  body .wc-chart-plot>.wc-empty-state{padding:13px 6px!important}
+}
 </style>
 </head>
 <body>
@@ -2115,6 +2129,12 @@ function wcRenderSignedOut(){
  $("wcDashChartLabels").innerHTML="";
  $("wcDashPlan").innerHTML='<div class="wc-empty-state">Paket bilgilerini görmek için giriş yap.</div>';
  $("wcSidePlanName").textContent="Paket Bilgisi";$("wcSidePlanDetail").textContent="Giriş yaparak görüntüle";
+ // Do not retain another account's usage in the sidebar after logout.
+ $("sidebarUsagePercent").textContent="—";
+ $("sidebarUsageMeter").style.width="0%";
+ $("sidebarUsageCount").textContent="—";
+ $("sidebarUsageLimitText").textContent="giriş gerekli";
+ $("sidebarUsageReset").textContent="Kullanımı görmek için giriş yap.";
  $("wcStorageValue").textContent="—";$("wcUptimeValue").textContent="—";
 }
 async function wcLoadDashboard(){
