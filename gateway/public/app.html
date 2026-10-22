@@ -941,6 +941,155 @@ body.light .wc-operation-name,body.light .wc-plan-feature,body.light .wc-plan-pr
 body .wc-os-icon.mac{color:#e1e1e1!important}
 body.light .wc-os-icon.mac{color:#696969!important}
 body.light .wc-device-badge.online{color:var(--win-success)!important}
+
+/*
+ * Compact desktop dashboard for reduced-height Windows displays.
+ * Preserve normal-sized text and the full layout at taller viewports.
+ * Content lists scroll inside their cards instead of sending the bottom
+ * dashboard row below the user's screen. No zoom/transform scaling.
+ */
+@media (min-width:821px) and (max-height:900px) {
+  body .wc-brand {
+    height:72px!important;min-height:72px!important;
+    padding:11px 18px!important;
+  }
+  body .wc-brand .wc-brand-lockup img {max-height:28px!important;width:min(225px,100%)!important}
+  body .wc-brand .wc-brand-subtitle{font-size:12px!important;margin:0!important}
+  body .wc-nav {padding:10px 14px 8px!important;gap:1px!important}
+  body .wc-nav .side-nav-item {
+    height:42px!important;min-height:42px!important;
+    padding:6px 14px!important;font-size:14px!important;gap:12px!important;
+  }
+  body .wc-nav .side-nav-item svg {width:20px!important;height:20px!important}
+  body .wc-side-plan {margin:0 14px 9px!important;padding:11px 13px!important}
+  body .wc-side-plan .wc-crown {width:28px;height:28px;font-size:21px}
+  body .wc-side-plan strong{font-size:13px!important}
+  body .wc-side-plan small {margin:2px 0 6px 38px!important;font-size:11.5px!important}
+  body .wc-side-plan button {min-height:31px;padding:6px 8px!important;font-size:12px!important}
+  body .sidebar-usage {margin:0 14px 13px!important;padding:10px 13px!important}
+  body .sidebar-usage-head {margin-bottom:6px!important}
+  body .sidebar-usage-copy{margin:6px 0!important}
+  body .sidebar-usage-reset{margin:0 0 5px!important;font-size:11.5px!important}
+  body .sidebar-upgrade{font-size:12px!important;padding:4px 0!important}
+  body .wc-sidebar {overflow-y:auto!important;scrollbar-width:thin}
+  body .wc-sidebar>.sidebar-spacer {min-height:6px;flex:1 0 6px}
+}
+@media (min-width:1371px) and (max-height:900px) {
+  body .shell {padding-bottom:12px!important}
+  body .wc-dashboard-top {
+    height:64px!important;min-height:64px!important;
+    margin-bottom:13px!important;
+  }
+  body .wc-dashboard-top .wc-search-shell{height:39px!important}
+  body .wc-dashboard-top .wc-profile-button .avatar{width:36px!important;height:36px!important}
+  body .wc-dashboard-top .wc-icon-button{height:37px!important}
+  body .wc-dash-heading {
+    margin:0 0 14px!important;gap:14px!important;
+  }
+  body .wc-breadcrumb {font-size:13px!important;margin-bottom:5px!important}
+  body .wc-dash-heading h1{
+    font-size:29px!important;margin:0 0 7px!important;
+    line-height:1.16!important;
+  }
+  body .wc-wave{font-size:23px!important}
+  body .wc-dash-heading p{font-size:14px!important;line-height:1.35!important}
+  body .wc-head-actions .wc-button{
+    min-height:38px!important;padding:8px 13px!important;font-size:13px!important;
+  }
+  body .wc-signin-prompt{
+    padding:10px 15px!important;min-height:58px!important;
+    margin:0 0 13px!important;
+  }
+  body .wc-signin-prompt strong{font-size:13px!important}
+  body .wc-signin-prompt p{font-size:12px!important;line-height:1.25!important;margin:3px 0 0!important}
+  body .wc-signin-prompt button{padding:7px 11px!important;font-size:13px!important}
+  body .wc-stat-grid{gap:12px!important;margin-bottom:13px!important}
+  body .wc-stat{
+    height:112px!important;min-height:112px!important;
+    padding:12px 14px!important;gap:12px!important;
+  }
+  body .wc-stat-icon{
+    width:46px!important;height:46px!important;border-radius:12px!important;
+  }
+  body .wc-stat-icon svg{width:27px!important;height:27px!important}
+  body .wc-stat-label{font-size:13px!important;margin:2px 0 5px!important}
+  body .wc-stat strong{font-size:23px!important}
+  body .wc-stat small{
+    font-size:12px!important;margin:6px 0 0!important;
+    line-height:1.3!important;
+  }
+  body .wc-stat-meter{margin-top:5px!important;height:5px!important}
+  body .wc-dash-main{
+    gap:13px!important;margin-bottom:13px!important;
+    grid-template-columns:1.4fr 1fr!important;
+  }
+  body .wc-devices-panel,body .wc-activity-panel{
+    min-height:181px!important;height:181px!important;
+    display:flex;flex-direction:column;
+  }
+  body .wc-panel-head{padding:11px 14px 8px!important;gap:8px!important;flex:none}
+  body .wc-panel-head h2{font-size:16px!important}
+  body .wc-panel-head .wc-link-button{font-size:12px!important}
+  body .wc-device-list,body .wc-activity-list{
+    min-height:0;flex:1;overflow-y:auto;
+    padding:0 14px 6px!important;
+    scrollbar-width:thin;
+  }
+  body .wc-device-row{min-height:50px!important;padding:6px 2px!important}
+  body .wc-os-icon{width:34px!important;height:34px!important}
+  body .wc-os-icon svg{width:28px!important;height:28px!important}
+  body .wc-device-title{font-size:13px!important}
+  body .wc-device-copy small{font-size:11px!important;margin-top:2px!important}
+  body .wc-device-copy .wc-device-badge{margin-top:3px!important;font-size:11px!important}
+  body .wc-device-seen{font-size:11px!important}
+  body .wc-device-seen small{margin-top:2px!important}
+  body .wc-connect-button{padding:6px 9px!important;min-width:76px!important;font-size:12px!important}
+  body .wc-activity-row{min-height:30px!important;padding:2px!important;font-size:12px!important}
+  body .wc-activity-glyph{width:24px!important;height:24px!important}
+  body .wc-activity-glyph svg{width:15px!important;height:15px!important}
+  body .wc-activity-row time{font-size:11px!important}
+  body .wc-dash-bottom{gap:13px!important;grid-template-columns:1.16fr .98fr .86fr!important}
+  body .wc-chart-panel,body .wc-operations-panel,body .wc-plan-panel{
+    min-height:196px!important;height:196px!important;
+    display:flex;flex-direction:column;
+  }
+  body .wc-chart-plot{height:130px!important;flex:1;min-height:0;padding:5px 14px 0!important}
+  body .wc-chart-labels{padding:5px 14px 7px 49px!important;font-size:11px!important}
+  body .wc-operations-list{
+    flex:1;min-height:0;overflow-y:auto;
+    padding:3px 14px 6px!important;scrollbar-width:thin;
+  }
+  body .wc-operation-row{min-height:29px!important;padding:3px 0!important}
+  body .wc-operation-icon{width:23px!important;height:23px!important}
+  body .wc-operation-icon svg{width:14px!important;height:14px!important}
+  body .wc-plan-body{
+    flex:1;min-height:0;overflow-y:auto;
+    padding:7px 14px 9px!important;scrollbar-width:thin;
+  }
+  body .wc-plan-name{font-size:14px!important}
+  body .wc-plan-price{margin-top:1px!important;font-size:12px!important}
+  body .wc-plan-expiry{padding:6px 0!important}
+  body .wc-plan-feature{padding:3px 0!important}
+  body .wc-empty-state{padding:10px 4px!important;font-size:13px!important}
+  body .wc-activity-panel .wc-empty-state,body .wc-devices-panel .wc-empty-state{
+    padding-top:15px!important;
+  }
+}
+
+
+/* Fit the document backdrop to the actual Windows browser viewport. */
+body{min-height:100vh!important}
+html{background:#202020!important}
+html:has(body.light){background:#f3f3f3!important}
+/* Empty chart occupies both grid columns; never collapse into the 35px Y-axis. */
+body .wc-chart-plot>.wc-empty-state{
+  grid-column:1/-1;align-self:start;min-width:0;
+  max-width:100%;white-space:normal;overflow-wrap:break-word;
+  line-height:1.45!important;
+}
+@media (min-width:1371px) and (max-height:900px) {
+  body .wc-chart-plot>.wc-empty-state{padding:13px 6px!important}
+}
 </style>
 </head>
 <body>
@@ -1980,6 +2129,12 @@ function wcRenderSignedOut(){
  $("wcDashChartLabels").innerHTML="";
  $("wcDashPlan").innerHTML='<div class="wc-empty-state">Paket bilgilerini görmek için giriş yap.</div>';
  $("wcSidePlanName").textContent="Paket Bilgisi";$("wcSidePlanDetail").textContent="Giriş yaparak görüntüle";
+ // Do not retain another account's usage in the sidebar after logout.
+ $("sidebarUsagePercent").textContent="—";
+ $("sidebarUsageMeter").style.width="0%";
+ $("sidebarUsageCount").textContent="—";
+ $("sidebarUsageLimitText").textContent="giriş gerekli";
+ $("sidebarUsageReset").textContent="Kullanımı görmek için giriş yap.";
  $("wcStorageValue").textContent="—";$("wcUptimeValue").textContent="—";
 }
 async function wcLoadDashboard(){
