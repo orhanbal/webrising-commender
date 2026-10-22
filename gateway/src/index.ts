@@ -292,6 +292,41 @@ async function servePublicHtml(
   json(res, 404, { error: notFoundError });
 }
 
+const brandSvgNames = new Set([
+  "wecommander-white.svg",
+  "wecommander-black.svg",
+  "wecommander-favicon.svg",
+]);
+
+async function serveBrandSvg(res: ServerResponse, fileName: string) {
+  if (!brandSvgNames.has(fileName)) {
+    return void json(res, 404, { error: "asset_not_found" });
+  }
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    path.resolve(here, "../public/assets", fileName),
+    path.resolve(here, "../../public/assets", fileName),
+  ];
+  for (const filePath of candidates) {
+    try {
+      const svg = await fs.readFile(filePath);
+      res.writeHead(200, {
+        "content-type": "image/svg+xml; charset=utf-8",
+        "content-length": svg.length,
+        "cache-control": "public, max-age=3600",
+        "x-content-type-options": "nosniff",
+        ...securityHeaders(),
+        "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+      });
+      res.end(svg);
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  return void json(res, 404, { error: "asset_not_found" });
+}
+
 async function serveLanding(res: ServerResponse) {
   return servePublicHtml(res, "index.html", "landing-not-found");
 }
@@ -304,6 +339,15 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
   try {
     const url = new URL(req.url || "/", publicBaseUrl);
 
+    if (req.method === "GET" && url.pathname.startsWith("/assets/")) {
+      const name = url.pathname.slice("/assets/".length);
+      if (brandSvgNames.has(name)) return void (await serveBrandSvg(res, name));
+    }
+    if (req.method === "GET" && url.pathname === "/favicon.ico") {
+      res.writeHead(302, { location: "/assets/wecommander-favicon.svg", ...securityHeaders() });
+      res.end();
+      return;
+    }
     if (req.method === "GET" && url.pathname === "/") return void (await serveLanding(res));
     if (req.method === "GET" && (url.pathname === "/app" || url.pathname === "/app/")) {
       return void (await serveConsole(res));
