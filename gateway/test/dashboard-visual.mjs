@@ -124,6 +124,12 @@ try{
  assert.ok(desktop.overflow<=2,"Horizontal scrolling detected on desktop: "+desktop.overflow);
  const png=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
  writeFileSync(join(shots,"dashboard-desktop.png"),Buffer.from(png.data,"base64"));
+ const theme=await evalJs("(()=>{document.querySelector('#wcThemeToggle').click();const dark=document.querySelector('.wc-brand-white');const light=document.querySelector('.wc-brand-black');return {active:document.body.classList.contains('light'),blackVisible:getComputedStyle(light).display!=='none',whiteHidden:getComputedStyle(dark).display==='none',loaded:light.complete&&light.naturalWidth>0}})()");
+ assert.deepEqual(theme,{active:true,blackVisible:true,whiteHidden:true,loaded:true},"Light mode must show the official black logo");
+ const lightPng=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
+ writeFileSync(join(shots,"dashboard-light.png"),Buffer.from(lightPng.data,"base64"));
+ await evalJs("document.querySelector('#wcThemeToggle').click()");
+
  await call("Page.navigate",{url:base+"/"});
  let landingBrandLoaded=false;
  for(let i=0;i<60;i++){
