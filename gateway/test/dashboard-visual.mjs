@@ -124,8 +124,14 @@ try{
  assert.ok(desktop.overflow<=2,"Horizontal scrolling detected on desktop: "+desktop.overflow);
  const png=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
  writeFileSync(join(shots,"dashboard-desktop.png"),Buffer.from(png.data,"base64"));
- const theme=await evalJs("(()=>{document.querySelector('#wcThemeToggle').click();const dark=document.querySelector('.wc-brand-white');const light=document.querySelector('.wc-brand-black');return {active:document.body.classList.contains('light'),blackVisible:getComputedStyle(light).display!=='none',whiteHidden:getComputedStyle(dark).display==='none',loaded:light.complete&&light.naturalWidth>0}})()");
- assert.deepEqual(theme,{active:true,blackVisible:true,whiteHidden:true,loaded:true},"Light mode must show the official black logo");
+ await evalJs("document.querySelector('#wcThemeToggle').click()");
+ await delay(250);
+ const theme=await evalJs("(()=>{const dark=document.querySelector('.wc-brand-white');const light=document.querySelector('.wc-brand-black');const bg=getComputedStyle(document.body).backgroundColor;const whiteCard=getComputedStyle(document.querySelector('.wc-devices-panel')).backgroundColor;return {active:document.body.classList.contains('light'),blackVisible:getComputedStyle(light).display!=='none',whiteHidden:getComputedStyle(dark).display==='none',loaded:light.complete&&light.naturalWidth>0,bg,whiteCard}})()");
+ assert.equal(theme.active,true,"Light mode did not activate");
+ assert.equal(theme.blackVisible,true,"Black logo not visible in light mode");
+ assert.equal(theme.whiteHidden,true,"White logo should be hidden in light mode");
+ assert.equal(theme.loaded,true,"Black logo failed to load");
+ assert.equal(theme.bg,"rgb(242, 246, 251)","Light mode page background remains dark");
  const lightPng=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
  writeFileSync(join(shots,"dashboard-light.png"),Buffer.from(lightPng.data,"base64"));
  await evalJs("document.querySelector('#wcThemeToggle').click()");
