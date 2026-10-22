@@ -20,6 +20,20 @@ assert.match(appHtml, />Devices</);
 assert.match(appHtml, /Plan &amp; billing/);
 assert.match(appHtml, />Settings</);
 
+for (const name of ["wecommander-white.svg","wecommander-black.svg","wecommander-favicon.svg"]) {
+  const asset = await fetch(base + "/assets/" + name);
+  assert.equal(asset.status, 200);
+  assert.ok((asset.headers.get("content-type")||"").includes("image/svg+xml"));
+  const source = await asset.text();
+  assert.ok(source.includes("viewBox="));
+}
+assert.ok(appHtml.includes("wecommander-favicon.svg"));
+const landingAssetCheck = await fetch(base + "/");
+assert.equal(landingAssetCheck.status, 200);
+const landingAssetMarkup = await landingAssetCheck.text();
+assert.ok(landingAssetMarkup.includes("wecommander-white.svg"));
+assert.ok(landingAssetMarkup.includes("wecommander-favicon.svg"));
+
 const smtpCapture = process.env.SMTP_TEST_OUTPUT || "/tmp/commender-smtp.jsonl";
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
