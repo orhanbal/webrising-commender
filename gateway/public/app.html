@@ -536,6 +536,32 @@ body.light .wc-device-row,body.light .wc-activity-row,body.light .wc-operation-r
  .wc-signin-prompt{align-items:flex-start;flex-direction:column}
 }
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.wc-chart-fill,.wc-stat-meter span{transition:none}}
+
+/* Responsive drawer, explicit online badges, accessible activity dialog */
+.wc-device-copy .wc-device-badge{display:inline-flex;font-size:11px;margin:6px 0 0;line-height:1.2}
+.wc-device-badge:before{width:8px;height:8px}
+.wc-online{color:#22cf8e}
+.wc-activity-glyph svg,.wc-operation-icon svg{width:16px;height:16px}
+.wc-activity-dialog{border:1px solid #2b506f;border-radius:14px;background:#0b2133;color:#e5f2ff;padding:20px 24px;width:min(590px,calc(100vw - 30px));max-height:80vh;overflow-y:auto;box-shadow:0 28px 65px #000c}
+.wc-activity-dialog::backdrop{background:#0009}
+.wc-dialog-head{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #31516b;padding-bottom:12px;margin-bottom:10px}
+.wc-dialog-head h2{margin:0;font-size:21px}.wc-dialog-head button{background:transparent;font-size:20px;border:0}
+.wc-dialog-activity{padding:11px 3px;border-bottom:1px solid #213f56}.wc-dialog-activity strong{display:block;font-size:14px}.wc-dialog-activity small{display:block;color:#9eb9d6;margin-top:6px;font-size:12px}
+@media(max-width:820px){
+ .wc-sidebar{position:fixed!important;inset:0 auto 0 0!important;height:100dvh!important;width:294px!important;display:flex!important;flex-direction:column!important;overflow-y:auto!important}
+ .wc-nav{flex-direction:column!important;overflow:visible!important}
+ .sidebar-spacer{display:block!important;min-height:12px}
+ .sidebar-usage{display:block!important}
+ .wc-side-plan{display:block!important}
+ .wc-dashboard-top{height:72px!important}
+}
+@media(max-width:430px){
+ .wc-dash-heading p{font-size:14px!important}
+ .wc-panel-head h2{font-size:16px!important}
+ .wc-head-actions{gap:8px}
+ .wc-button{font-size:12px;padding:9px}
+ .wc-stat{min-height:121px!important}
+}
 </style>
 </head>
 <body>
@@ -578,7 +604,7 @@ body.light .wc-device-row,body.light .wc-activity-row,body.light .wc-operation-r
     <div id="wcSearchResults" class="wc-search-results" hidden role="listbox" aria-label="Arama sonuçları"></div>
   </div>
   <div class="wc-top-right">
-    <div class="wc-menu-anchor"><button id="wcNotificationsButton" class="wc-icon-button wc-notify-button" type="button" aria-label="Son bildirimler" aria-expanded="false"><span aria-hidden="true">♧</span><i id="wcNotifyIndicator" hidden></i></button><div id="wcNotificationsMenu" class="wc-top-popover" hidden></div></div>
+    <div class="wc-menu-anchor"><button id="wcNotificationsButton" class="wc-icon-button wc-notify-button" type="button" aria-label="Son bildirimler" aria-expanded="false"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"/></svg><i id="wcNotifyIndicator" hidden></i></button><div id="wcNotificationsMenu" class="wc-top-popover" hidden></div></div>
     <button id="wcThemeToggle" class="wc-icon-button wc-theme-button" type="button" aria-label="Görünümü değiştir">☼</button>
     <div class="wc-menu-anchor wc-account-anchor"><button id="wcProfileButton" class="wc-profile-button" type="button" aria-label="Hesap menüsü" aria-expanded="false"><span id="wcTopAvatar" class="avatar">WC</span><span class="wc-top-profile-text"><strong id="wcTopName">Misafir</strong><small id="wcTopPlan">Oturum açılmadı</small></span><span aria-hidden="true" class="wc-menu-chevron">⌄</span></button><div id="wcProfileMenu" class="wc-top-popover" hidden></div></div>
   </div>
@@ -1081,7 +1107,7 @@ async function refreshIdentity(){
   }
 }
 $("loginButton").onclick=async()=>{try{clearError();sessionStorage.removeItem("commender-key");$("key").value="";const r=await fetch("/api/auth/login",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("loginEmail").value.trim(),password:$("loginPassword").value})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(body.error||("HTTP "+r.status));$("loginPassword").value="";await refreshIdentity();showPage("dashboard")}catch(e){showError(e)}}
-$("logoutButton").onclick=async()=>{try{if(currentIdentity)await api("/api/auth/logout",{method:"POST",body:"{}"});sessionStorage.removeItem("commender-key");$("key").value="";selected=null;currentIdentity=null;syncSelection();await refreshIdentity()}catch(e){showError(e)}}
+$("logoutButton").onclick=async()=>{try{if(currentIdentity)await api("/api/auth/logout",{method:"POST",body:"{}"});sessionStorage.removeItem("commender-key");$("key").value="";selected=null;currentIdentity=null;syncSelection();await refreshIdentity();showPage("dashboard")}catch(e){showError(e)}}
 $("signupOpen").onclick=()=>{$("signupCard").classList.remove("hidden");$("signupError").textContent="";$("signupStatus").textContent=""}
 $("signupClose").onclick=()=>{$("signupCard").classList.add("hidden")}
 $("signupSubmit").onclick=async()=>{try{$("signupError").textContent="";$("signupStatus").textContent="";const email=$("signupEmail").value.trim();const workspaceName=$("signupWorkspace").value.trim();const password=$("signupPassword").value;if(!email||!workspaceName||password.length<12)throw new Error("Enter an email, workspace name and a password of at least 12 characters.");const r=await fetch("/api/auth/signup",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,workspaceName,password})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(apiError(body,r.status));$("signupPassword").value="";$("signupStatus").textContent="If signup is available for this address, check your email for the verification link."}catch(e){$("signupError").textContent=e.message||String(e)}}
@@ -1275,12 +1301,13 @@ function showPage(page){
   if(subTabs[requested]){
     const tab=document.querySelector('[data-tab="'+subTabs[requested]+'"]');
     if(tab&&!tab.classList.contains("hidden"))tab.click();
-    const workbench=requested==="mcp"&&!tab?.classList.contains("hidden")?document.querySelector(".workspace"):document.querySelector(".workspace");
+    const workbench=document.querySelector(".workspace");
     if(tab&&!tab.classList.contains("hidden"))workbench?.scrollIntoView({behavior:"smooth",block:"start"});
     else if(requested==="mcp")document.querySelector(".where-card")?.scrollIntoView({behavior:"smooth",block:"start"});
   }else window.scrollTo({top:0,behavior:"instant"});
   document.body.classList.remove("wc-mobile-nav-open");
   if($("wcMobileMenu"))$("wcMobileMenu").setAttribute("aria-expanded","false");
+  if($("wcMobileBackdrop"))$("wcMobileBackdrop").hidden=true;
 }
 
 document.querySelectorAll("[data-page-target]").forEach(button=>button.onclick=()=>showPage(button.dataset.pageTarget));
@@ -1437,11 +1464,10 @@ function wcRenderDevices(dev){
  const online=all.filter(x=>x.online).length;
  $("wcDeviceStatus").innerHTML='<span class="wc-online">'+online+' çevrimiçi</span> · '+(all.length-online)+' çevrimdışı';
  $("wcDashDevices").innerHTML=all.length?all.slice(0,4).map(x=>{
-  const label=x.online?"Çevrimiçi":"Çevrimdışı";
   const sub=[x.platform,x.hostname].filter(Boolean).join(" · ")||"Platform bilgisi yok";
   return '<div class="wc-device-row" data-device-id="'+wcEscape(x.id)+'">'+
    wcOsMarkup(x.platform)+'<div class="wc-device-copy"><span class="wc-device-title">'+wcEscape(x.name||"İsimsiz cihaz")+'</span>'+
-   '<small>'+wcEscape(sub)+'</small></div>'+
+   '<small>'+wcEscape(sub)+'</small><span class="wc-device-badge '+(x.online?'online':'')+'">'+(x.online?'Çevrimiçi':'Çevrimdışı')+'</span></div>'+
    '<div class="wc-device-seen"><span>Son görülme</span><small title="'+wcEscape(wcFullDate(x.last_seen_at))+'">'+wcEscape(wcRelativeDate(x.last_seen_at))+'</small></div>'+
    '<button type="button" class="wc-connect-button" data-wc-connect="'+wcEscape(x.id)+'" '+(x.online?"":"disabled title=\"Cihaz çevrimdışı\"")+'>'+
    (x.online?"Bağlan":"Çevrimdışı")+'</button>'+
