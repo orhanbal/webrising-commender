@@ -1208,6 +1208,19 @@ assert.equal(tinyUsage.limit, null);
 assert.equal(Array.isArray(tinyUsage.months), true);
 assert.equal(tinyUsage.months.length, 6);
 assert.equal(typeof tinyUsage.resetAt, "string");
+assert.equal(Array.isArray(tinyUsage.daily), true);
+assert.equal(tinyUsage.daily.length, 7);
+assert.equal(typeof tinyUsage.daily[0]?.day, "string");
+assert.equal(typeof tinyUsage.daily[0]?.calls, "number");
+assert.equal(Array.isArray(tinyUsage.topTools), true);
+const tinyActivity = await jsonFetch("/api/activity?limit=6", { headers: tinyHeaders });
+assert.equal(Array.isArray(tinyActivity.items), true);
+for (const item of tinyActivity.items) {
+  assert.equal(typeof item.tool, "string");
+  assert.equal(Object.hasOwn(item, "detail"), false, "Activity must not leak audit detail");
+  assert.equal(Object.hasOwn(item, "actor"), false, "Activity must not leak actor");
+}
+
 
 const eventPlan = await jsonFetch("/api/admin/billing/plans", {
   method: "POST",
