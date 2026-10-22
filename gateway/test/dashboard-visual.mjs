@@ -53,7 +53,7 @@ const bins=["google-chrome","google-chrome-stable","chromium","chromium-browser"
 const browser=bins.find(cmd=>spawnSync("which",[cmd],{encoding:"utf8"}).status===0);
 if(!browser){server.close();throw Error("Headless Chromium/Chrome not available on CI runner")}
 const profile=mkdtempSync(join(tmpdir(),"wc-dashboard-"));
-const child=spawn(browser,["--headless=new","--no-sandbox","--disable-dev-shm-usage","--disable-gpu","--no-first-run","--remote-debugging-port=0","--user-data-dir="+profile,"about:blank"],{stdio:["ignore","ignore","pipe"]});
+const child=spawn(browser,["--headless=new","--no-sandbox","--disable-dev-shm-usage","--disable-gpu","--no-first-run","--remote-debugging-port=0","--remote-allow-origins=*","--user-data-dir="+profile,"about:blank"],{stdio:["ignore","ignore","pipe"]});
 let chromeError="";child.stderr.on("data",chunk=>chromeError+=String(chunk).slice(-2500));
 let ws;
 const pending=new Map(),browserErrors=[];
@@ -136,5 +136,5 @@ try{
  try{ws?.close()}catch{}
  child.kill("SIGTERM");
  server.close();
- rmSync(profile,{force:true,recursive:true});
+ try{rmSync(profile,{force:true,recursive:true})}catch{}
 }
