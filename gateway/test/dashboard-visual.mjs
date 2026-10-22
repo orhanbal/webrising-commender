@@ -93,7 +93,7 @@ try{
  let desktop;
  for(let i=0;i<90;i++){
   await delay(180);
-  desktop=await evalJs("(()=>{const box=s=>{const r=document.querySelector(s)?.getBoundingClientRect();return r?{x:r.x,y:r.y,w:r.width,h:r.height}:null};return {active:document.querySelector('#dashboardPage')?.classList.contains('active'),deviceRows:document.querySelectorAll('.wc-device-row').length,activityRows:document.querySelectorAll('.wc-activity-row').length,barCount:document.querySelectorAll('.wc-chart-column').length,operationRows:document.querySelectorAll('.wc-operation-row').length,sidebar:box('.wc-sidebar'),hero:box('.wc-dash-heading'),stats:[...document.querySelectorAll('.wc-stat')].map(x=>{const r=x.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width}}),main:[box('.wc-devices-panel'),box('.wc-activity-panel')],bottom:[box('.wc-chart-panel'),box('.wc-operations-panel'),box('.wc-plan-panel')],overflow:document.documentElement.scrollWidth-innerWidth}})()");
+  desktop=await evalJs("(()=>{const box=s=>{const r=document.querySelector(s)?.getBoundingClientRect();return r?{x:r.x,y:r.y,w:r.width,h:r.height}:null};return {active:document.querySelector('#dashboardPage')?.classList.contains('active'),deviceRows:document.querySelectorAll('.wc-device-row').length,activityRows:document.querySelectorAll('.wc-activity-row').length,barCount:document.querySelectorAll('.wc-chart-column').length,operationRows:document.querySelectorAll('.wc-operation-row').length,macIcons:document.querySelectorAll('.wc-os-icon.mac').length,terminalIcons:document.querySelectorAll('.wc-activity-glyph.wc-type-terminal svg').length,planTitle:box('#wcPlanTitle'),sidebar:box('.wc-sidebar'),hero:box('.wc-dash-heading'),stats:[...document.querySelectorAll('.wc-stat')].map(x=>{const r=x.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width}}),main:[box('.wc-devices-panel'),box('.wc-activity-panel')],bottom:[box('.wc-chart-panel'),box('.wc-operations-panel'),box('.wc-plan-panel')],overflow:document.documentElement.scrollWidth-innerWidth}})()");
   if(desktop?.active&&desktop.deviceRows===3&&desktop.barCount===7)break;
  }
  assert.ok(desktop?.active,"Dashboard is not active: "+JSON.stringify(desktop));
@@ -101,6 +101,11 @@ try{
  assert.equal(desktop.activityRows,6,"Live activity feed did not render");
  assert.equal(desktop.barCount,7,"Seven-day chart did not render");
  assert.equal(desktop.operationRows,5,"Operation breakdown did not render");
+ assert.equal(desktop.macIcons,1,"macOS device must have its own icon, not Windows");
+ assert.equal(desktop.terminalIcons,2,"Terminal activity SVGs should render without terminal-pane styling");
+ assert.ok(desktop.main[0].h<=335,"Device panel is too tall versus reference: "+desktop.main[0].h);
+ assert.ok(desktop.bottom[0].y<755,"Bottom panels start too low: "+desktop.bottom[0].y);
+ assert.ok(desktop.planTitle.h<34,"Plan heading wrapped unexpectedly");
  assert.equal(desktop.stats.length,4,"Expected four stats");
  assert.ok(desktop.sidebar.w>=285&&desktop.sidebar.w<=310,"Sidebar reference width drift: "+desktop.sidebar.w);
  assert.ok(desktop.stats.every(x=>Math.abs(x.y-desktop.stats[0].y)<2),"Stat cards are not on same row");
