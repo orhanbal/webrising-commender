@@ -773,8 +773,9 @@ body .wc-stat-icon{
 body .wc-stat-icon.wc-stat-green{background:var(--win-surface-alt)!important;color:var(--win-success)!important}
 body .wc-stat-icon.wc-stat-amber{background:var(--win-surface-alt)!important;color:var(--win-warning)!important}
 body .wc-stat-icon.wc-stat-cyan{background:var(--win-surface-alt)!important;color:var(--win-accent)!important}
+body button{background:var(--win-accent);color:var(--win-accent-text)}
 body .wc-button-primary,body .wc-head-actions .wc-button-primary,
-body .wc-connect-button,body button:not(.side-nav-item):not(.wc-icon-button):not(.wc-profile-button):not(.wc-link-button):not(.wc-device-more):not(.wc-button-secondary):not(.secondary):not(.danger):not(.sidebar-upgrade):not(.wc-theme-button):not(.wc-side-plan button){
+body .wc-connect-button,body .theme-switch button.active{
   background:var(--win-accent)!important;
   color:var(--win-accent-text)!important;
   border-color:var(--win-accent)!important;
@@ -889,6 +890,35 @@ body .current-badge,body .theme-switch button.active{
   color:var(--win-accent-text)!important;
 }
 body .usage-chart:before,body .usage-chart:after,body .usage-chart{border-color:var(--win-stroke)!important}
+
+
+/* Precedence over historical body.light component overrides. */
+body.light .wc-sidebar{background:var(--win-sidebar)!important;border-color:var(--win-stroke)!important}
+body.light .wc-nav .side-nav-item:not(.active){color:var(--win-muted)!important}
+body.light .wc-side-plan,body.light .sidebar-usage{
+  background:var(--win-surface)!important;border-color:var(--win-stroke)!important
+}
+body.light .wc-side-plan strong,body.light .sidebar-usage-head{color:var(--win-text)!important}
+body.light .wc-side-plan small,body.light .sidebar-usage-copy,body.light .sidebar-usage-reset{
+  color:var(--win-muted)!important
+}
+body.light .wc-side-plan button{background:var(--win-surface-alt)!important;color:var(--win-accent)!important}
+body.light .wc-brand .wc-brand-subtitle{color:var(--win-muted)!important}
+body.light .wc-dash-heading h1,body.light .wc-dashboard h1{color:var(--win-text)!important}
+body.light .wc-dash-panel h2,body.light .wc-dash-panel strong{color:var(--win-text)!important}
+body.light .wc-dash-panel .wc-stat-label,body.light .wc-dash-panel .wc-stat small{
+  color:var(--win-muted)!important
+}
+body.light .wc-head-actions .wc-button-secondary{background:var(--win-surface-alt)!important;color:var(--win-text)!important;border-color:var(--win-stroke)!important}
+body.light .wc-chart-panel select{background:var(--win-input)!important;color:var(--win-text)!important;border-color:var(--win-stroke)!important}
+body.light .wc-chart-grid{background:linear-gradient(to bottom,var(--win-stroke-soft) 1px,transparent 1px) 0 0/100% 50%!important;border-color:var(--win-stroke)!important}
+body.light .wc-chart-axis,body.light .wc-chart-labels{color:var(--win-subtle)!important}
+body.light .wc-activity-row .wc-activity-description,body.light .wc-operation-name,body.light .wc-device-copy small{
+ color:var(--win-muted)!important
+}
+body.light .wc-plan-price,body.light .wc-plan-expiry,body.light .wc-plan-feature{color:var(--win-muted)!important}
+body.light .wc-stat-link:hover{background:var(--win-hover)!important}
+body.light .wc-activity-glyph.wc-type-terminal{background:var(--win-accent-tint)!important;color:var(--win-accent)!important}
 
 </style>
 </head>
