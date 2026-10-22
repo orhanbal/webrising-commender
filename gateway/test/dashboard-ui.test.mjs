@@ -40,6 +40,24 @@ test("UI uses API-backed metrics, no fabricated screenshot values", () => {
   assert.doesNotMatch(html, /12\.4 GB|99\.8%|Venture-Windows|MacBook-Pro/);
 });
 
+test("official light/dark wordmarks and favicon are intact and integrated", () => {
+  const assets=["wecommander-white.svg","wecommander-black.svg","wecommander-favicon.svg"];
+  for(const asset of assets){
+    const svg=readFileSync(new URL("../public/assets/"+asset,import.meta.url),"utf8");
+    assert.match(svg,/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
+    assert.match(svg, /viewBox="[0-9 ]+"/);
+    assert.doesNotMatch(svg, /<script|<!DOCTYPE|<foreignObject|xlink:href/i);
+    assert.match(html,new RegExp(asset.replace(".","\\.")));
+  }
+  assert.match(html,/class="wc-brand-white"/);
+  assert.match(html,/class="wc-brand-black"/);
+  assert.match(html,/body\.light \.wc-brand \.wc-brand-white\{display:none!important\}/);
+  const landing=readFileSync(new URL("../public/index.html",import.meta.url),"utf8");
+  assert.equal((landing.match(/class="brand-wordmark"/g)||[]).length,2);
+  assert.match(landing,/class="center-brand-icon"/);
+  assert.match(landing,/href="\/assets\/wecommander-favicon\.svg"/);
+});
+
 test("server provides real daily, monthly, operations and safe activity feeds", () => {
   for (const key of ["daily: daily.rows.map","topTools: topTools.rows.map","/api/activity","viewer"]) {
     assert.ok(backend.includes(key), key);
