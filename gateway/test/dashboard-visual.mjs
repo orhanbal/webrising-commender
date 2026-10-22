@@ -208,12 +208,13 @@ try{
    await delay(120);
    if(await evalJs("document.querySelectorAll('.wc-device-row').length===3"))break;
  }
- const compactMetrics=()=>evalJs("(()=>{const r=s=>document.querySelector(s)?.getBoundingClientRect();const get=s=>{const b=r(s);return b?{top:b.top,bottom:b.bottom,height:b.height}:null};return {active:document.querySelector('#dashboardPage')?.classList.contains('active'),viewport:innerHeight,body:document.documentElement.scrollHeight,overflowX:document.documentElement.scrollWidth-innerWidth,sidebar:get('.wc-sidebar'),sidePlan:get('.wc-side-plan'),sideUsage:get('.sidebar-usage'),top:get('.wc-dashboard-top'),intro:get('.wc-dash-heading'),signin:get('#wcSignInPrompt'),stats:get('.wc-stat-grid'),main:get('.wc-dash-main'),bottom:get('.wc-dash-bottom'),font:getComputedStyle(document.querySelector('.wc-dash-heading h1')).fontSize}})()");
+ const compactMetrics=()=>evalJs("(()=>{const r=s=>document.querySelector(s)?.getBoundingClientRect();const get=s=>{const b=r(s);return b?{top:b.top,bottom:b.bottom,height:b.height,width:b.width}:null};return {active:document.querySelector('#dashboardPage')?.classList.contains('active'),viewport:innerHeight,body:document.documentElement.scrollHeight,bodyBox:get('body'),bodyBackground:getComputedStyle(document.body).backgroundColor,rootBackground:getComputedStyle(document.documentElement).backgroundColor,overflowX:document.documentElement.scrollWidth-innerWidth,sidebar:get('.wc-sidebar'),sidePlan:get('.wc-side-plan'),sideUsage:get('.sidebar-usage'),top:get('.wc-dashboard-top'),intro:get('.wc-dash-heading'),signin:get('#wcSignInPrompt'),stats:get('.wc-stat-grid'),main:get('.wc-dash-main'),bottom:get('.wc-dash-bottom'),chartMessage:get('.wc-chart-plot>.wc-empty-state'),sidebarCount:document.querySelector('#sidebarUsageCount')?.textContent,font:getComputedStyle(document.querySelector('.wc-dash-heading h1')).fontSize}})()");
  const shortSignedIn=await compactMetrics();
  assert.ok(shortSignedIn.active,"Compact viewport dashboard missing");
  assert.ok(shortSignedIn.bottom?.bottom<=830,"1840×830 signed-in dashboard cut off: "+JSON.stringify(shortSignedIn));
  assert.ok(shortSignedIn.sideUsage?.bottom<=830,"1840×830 left sidebar cut off: "+JSON.stringify(shortSignedIn));
  assert.ok(shortSignedIn.overflowX<=2,"1840×830 horizontal overflow");
+ assert.ok(shortSignedIn.bodyBox?.height>=830,"Body background does not fill 830px desktop viewport");
  assert.ok(parseFloat(shortSignedIn.font)>=27,"Heading text becomes too small on compact viewport");
  const shortSignedInPng=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
  writeFileSync(join(shots,"dashboard-1840x830-signed-in.png"),Buffer.from(shortSignedInPng.data,"base64"));
@@ -224,6 +225,14 @@ try{
  assert.ok(shortGuest.bottom?.bottom<=830,"1840×830 guest dashboard cut off: "+JSON.stringify(shortGuest));
  assert.ok(shortGuest.sideUsage?.bottom<=830,"1840×830 guest sidebar cut off");
  assert.ok(shortGuest.overflowX<=2,"1840×830 guest horizontal overflow");
+ assert.ok(shortGuest.chartMessage?.width>=220,"Empty chart message squashed into Y-axis column");
+ assert.equal(shortGuest.sidebarCount,"—","Guest sidebar must not leak previous account usage");
+ assert.ok(shortGuest.bodyBox?.height>=830,"Guest page background leaves a black gap");
+ await evalJs("setTheme('dark')");
+ await delay(90);
+ const darkGuest=await compactMetrics();
+ assert.equal(darkGuest.bodyBackground,"rgb(32, 32, 32)","Windows dark background not applied");
+ assert.equal(darkGuest.rootBackground,"rgb(32, 32, 32)","Dark root background should reach viewport bottom");
  const shortGuestPng=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
  writeFileSync(join(shots,"dashboard-1840x830-guest.png"),Buffer.from(shortGuestPng.data,"base64"));
  await call("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:1,mobile:true});
