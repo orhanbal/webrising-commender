@@ -1282,13 +1282,7 @@ function showPage(page){
   document.body.classList.remove("wc-mobile-nav-open");
   if($("wcMobileMenu"))$("wcMobileMenu").setAttribute("aria-expanded","false");
 }
-document.querySelectorAll("[data-page-target]").forEach(x=>x.classList.toggle("active",x.dataset.pageTarget===target));
-  history.replaceState(null,"",location.pathname+location.search+(location.hash||""));
-  if(target==="dashboard")wcLoadDashboard();
-  if(target==="usage")loadUsage();
-  if(target==="billing"&&currentIdentity)loadBilling().catch(showError);
-  if(target==="settings")syncAccountUi();
-}
+
 document.querySelectorAll("[data-page-target]").forEach(button=>button.onclick=()=>showPage(button.dataset.pageTarget));
 $("addDeviceTop").onclick=async()=>{try{$("pair").click();setTimeout(()=>$("pairing").scrollIntoView({behavior:"smooth",block:"center"}),120)}catch(e){showError(e)}};
 $("sidebarUpgrade").onclick=()=>showPage("usage");
