@@ -288,7 +288,7 @@ pub fn read(policy: &PathPolicy, raw: &str, max_bytes: Option<usize>) -> Result<
 
     let mut bytes = Vec::with_capacity((metadata.len() as usize).min(limit));
     let mut file = fs::File::open(&path)?;
-    file.by_ref()
+    std::io::Read::by_ref(&mut file)
         .take((limit + 1) as u64)
         .read_to_end(&mut bytes)?;
     if bytes.len() > limit {
