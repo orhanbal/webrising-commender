@@ -54,20 +54,10 @@ $button.Add_Click({
     $config = Join-Path $env:APPDATA 'webrising-commender\agent.json'
     if (-not (Test-Path $config)) { throw 'Agent configuration was not created.' }
     $account = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-    [System.Windows.Forms.MessageBox]::Show(
-      "Cihaz eslestirildi. Simdi $account hesabinin Windows parolasini girin; hizmet bu hesapla calisacak.",
-      'WECOMMANDER'
-    ) | Out-Null
-    $credential = Get-Credential -UserName $account -Message 'WECOMMANDER Windows hizmeti kimlik bilgileri'
-    if ($null -eq $credential) { throw 'Windows service installation cancelled.' }
-    # Windows PowerShell elevation cannot securely pass a PSCredential across
-    # a newly elevated process. Require onboarding to be elevated explicitly.
-    $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
-    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-      throw 'Cihaz eslestirildi. Hizmet icin Baslat menusundeki WECOMMANDER Cihaz Baglantisi kisayolunu Yonetici olarak calistirin.'
-    }
-    & (Join-Path $PSScriptRoot 'install-windows.ps1') -BinaryPath $exe -ConfigPath $config -Credential $credential
-    if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'Service installation failed.' }
+    $helper = Join-Path $PSScriptRoot 'Install-Service-Interactive.ps1'
+    $params = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -ConfigPath "{1}" -BinaryPath "{2}" -Account "{3}"' -f $helper,$config,$exe,$account
+    $process = Start-Process -FilePath 'powershell.exe' -ArgumentList $params -Verb RunAs -Wait -PassThru
+    if ($process.ExitCode -ne 0) { throw 'Windows hizmeti kurulumu iptal edildi veya basarisiz oldu.' }
     [System.Windows.Forms.MessageBox]::Show('WECOMMANDER Windows hizmeti kuruldu ve baslatildi.','WECOMMANDER') | Out-Null
     $form.Close()
   } catch {
