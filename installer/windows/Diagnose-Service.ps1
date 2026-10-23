@@ -17,6 +17,15 @@ $lines.Add("Startup: $($svc.StartMode)")
 $lines.Add("Account: $($svc.StartName)")
 $lines.Add("Exit code: $($svc.ExitCode)")
 $lines.Add("Specific exit code: $($svc.ServiceSpecificExitCode)")
+if ($svc.ExitCode -eq 1069) {
+  $lines.Add("CAUSE: Service logon failed. Check the account password (not a Windows Hello PIN) and Log on as a service permission.")
+} elseif ($svc.ServiceSpecificExitCode -eq 1) {
+  $lines.Add("CAUSE: Agent config could not be loaded by the service account (missing file, invalid JSON, or inaccessible allowed root).")
+} elseif ($svc.ServiceSpecificExitCode -eq 2) {
+  $lines.Add("CAUSE: Agent runtime initialization failed.")
+} elseif ($svc.ServiceSpecificExitCode -eq 3) {
+  $lines.Add("CAUSE: Agent stopped after starting due to an internal runtime error.")
+}
 # PathName contains only a binary path and an agent configuration path. It
 # must not contain command-line credentials in a supported installation.
 # Only report whether the referenced executable/config exist; never print config.
