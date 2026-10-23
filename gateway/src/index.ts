@@ -1378,6 +1378,27 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           activeDevices: Number(metrics.rows[0]?.active_devices || 0),
         });
       }
+      if (req.method === "POST" && url.pathname === "/api/console/users/set-disabled") {
+        const payload=z.object({userId:z.string().uuid(),disabled:z.boolean(),currentPassword:z.string().min(12).max(256)}).parse(await readJson(req));
+        if (payload.userId===principal.userId) return void json(res,403,{error:"cannot_modify_own_admin_account"});
+        const owner=await db.query<{password_hash:string}>("select password_hash from users where id=$1 and disabled_at is null",[principal.userId]);
+        if(!owner.rows[0]||!(await verifyPassword(payload.currentPassword,owner.rows[0].password_hash)))
+          return void json(res,403,{error:"reauthentication_failed"});
+        const client=await db.connect();
+        try {
+          await client.query("begin");
+          const user=await client.query("select id from users where id=$1 for update",[payload.userId]);
+          if(!user.rowCount){await client.query("rollback");return void json(res,404,{error:"user_not_found"});}
+          const platform=await client.query("select 1 from platform_administrators where user_id=$1 and revoked_at is null",[payload.userId]);
+          if(platform.rowCount){await client.query("rollback");return void json(res,403,{error:"cannot_modify_platform_admin"});}
+          await client.query("update users set disabled_at=$2 where id=$1",[payload.userId,payload.disabled?new Date():null]);
+          if(payload.disabled)await client.query("update browser_sessions set revoked_at=coalesce(revoked_at,now()) where user_id=$1 and revoked_at is null",[payload.userId]);
+          await client.query("insert into platform_admin_audit(actor_user_id,action,detail) values($1,$2,$3)",
+             [principal.userId,payload.disabled?"user.disable":"user.enable","user:"+payload.userId]);
+          await client.query("commit");
+        }catch(error){await client.query("rollback");throw error}finally{client.release()}
+        return void json(res,200,{ok:true});
+      }
       if (req.method === "GET" && url.pathname === "/api/console/users") {
         const limit = Math.min(100,Math.max(1,Number(url.searchParams.get("limit")||25)||25));
         const offset = Math.min(100000,Math.max(0,Number(url.searchParams.get("offset")||0)||0));
