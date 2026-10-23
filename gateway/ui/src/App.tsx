@@ -26,11 +26,12 @@ export default function App(){
  const [account,setAccount]=useState<Account|null>(null);
  const [checking,setChecking]=useState(true);
  const [pricing,setPricing]=useState<Pricing|null>(null);
+ const [signupEnabled,setSignupEnabled]=useState<boolean|null>(null);
  const [mobile,setMobile]=useState(false);
  useEffect(()=>{const fn=()=>{setPath(getPath());setMobile(false)};window.addEventListener("popstate",fn);return()=>window.removeEventListener("popstate",fn)},[]);
  useEffect(()=>{const mq=matchMedia("(prefers-color-scheme: dark)");const sync=()=>{if(!localStorage.getItem("wecommander-theme"))setTheme(mq.matches?"dark":"light")};mq.addEventListener("change",sync);return()=>mq.removeEventListener("change",sync)},[]);
  useEffect(()=>{document.documentElement.classList.toggle("light",theme==="light");document.documentElement.style.colorScheme=theme;document.querySelector('meta[name="theme-color"]')?.setAttribute("content",theme==="light"?"#f3f3f3":"#202020")},[theme]);
- useEffect(()=>{getMe().then(me=>{setAccount(me);setChecking(false)});api<Pricing>("/api/public/plans").then(setPricing).catch(()=>setPricing(null))},[]);
+ useEffect(()=>{getMe().then(me=>{setAccount(me);setChecking(false)});api<Pricing>("/api/public/plans").then(setPricing).catch(()=>setPricing(null));api<{signupEnabled:boolean}>("/api/public/config").then(config=>setSignupEnabled(config.signupEnabled)).catch(()=>setSignupEnabled(null))},[]);
  const navigate:Nav=to=>{
   const u=new URL(to,location.origin);
   if(u.origin!==location.origin){location.assign(to);return}
@@ -46,11 +47,11 @@ export default function App(){
  const logout=async()=>{try{await api("/api/auth/logout",{method:"POST"})}catch{}setAccount(null);navigate("/login")};
  const globalHeader=!["/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage"].includes(path);
  return <div className="app-shell">
-  {globalHeader&&<header className="site-header"><div className="container-w"><Brand onClick={()=>navigate("/")}/><nav className="site-nav" aria-label="Ana gezinme"><NavLink to="/features" nav={navigate} className="hide-sm">Özellikler</NavLink><NavLink to="/how-it-works" nav={navigate} className="hide-sm">Nasıl çalışır?</NavLink><NavLink to="/pricing" nav={navigate}>Fiyatlandırma</NavLink></nav><div className="nav-actions"><ThemeToggle theme={theme} onToggle={toggle}/>{account?<Button size="sm" onClick={()=>navigate("/dashboard")}>Panelim <ArrowRight className="size-4"/></Button>:<><Button size="sm" variant="ghost" className="hide-sm" onClick={()=>navigate("/login")}>Giriş Yap</Button><Button size="sm" onClick={()=>navigate("/register")}>Başlayın <ArrowUpRight className="size-4"/></Button></>}<button type="button" aria-label="Menü" className="mobile-menu" onClick={()=>setMobile(x=>!x)}>{mobile?<X/>:<Menu/>}</button></div></div>{mobile&&<div className="px-6 py-4 border-t border-[var(--stroke)] bg-[var(--surface)] flex gap-4"><NavLink to="/features" nav={navigate}>Özellikler</NavLink><NavLink to="/pricing" nav={navigate}>Paketler</NavLink><NavLink to="/login" nav={navigate}>Giriş</NavLink></div>}</header>}
-  {["/","/features","/how-it-works"].includes(path)&&<Landing nav={navigate} pricing={pricing}/>}
-  {["/login","/register","/forgot-password","/reset-password","/verify"].includes(path)&&<AuthPage path={path} nav={navigate} refresh={refresh} pricing={pricing}/>}
-  {path==="/pricing"&&<PlansPage nav={navigate} pricing={pricing} account={account}/>}
-  {path==="/checkout"&&<PlansPage nav={navigate} pricing={pricing} account={account} checkoutMode theme={theme}/>}
+  {globalHeader&&<header className="site-header"><div className="container-w"><Brand onClick={()=>navigate("/")}/><nav className="site-nav" aria-label="Ana gezinme"><NavLink to="/features" nav={navigate} className="hide-sm">Özellikler</NavLink><NavLink to="/how-it-works" nav={navigate} className="hide-sm">Nasıl çalışır?</NavLink><NavLink to="/pricing" nav={navigate}>Fiyatlandırma</NavLink></nav><div className="nav-actions"><ThemeToggle theme={theme} onToggle={toggle}/>{account?<Button size="sm" onClick={()=>navigate("/dashboard")}>Panelim <ArrowRight className="size-4"/></Button>:<><Button size="sm" variant="ghost" className="hide-sm" onClick={()=>navigate("/login")}>Giriş Yap</Button><Button size="sm" onClick={()=>navigate(signupEnabled===false?"/login":"/register")}>{signupEnabled===false?"Giriş Yap":"Başlayın"} <ArrowUpRight className="size-4"/></Button></>}<button type="button" aria-label="Menü" className="mobile-menu" onClick={()=>setMobile(x=>!x)}>{mobile?<X/>:<Menu/>}</button></div></div>{mobile&&<div className="px-6 py-4 border-t border-[var(--stroke)] bg-[var(--surface)] flex gap-4"><NavLink to="/features" nav={navigate}>Özellikler</NavLink><NavLink to="/pricing" nav={navigate}>Paketler</NavLink><NavLink to="/login" nav={navigate}>Giriş</NavLink></div>}</header>}
+  {["/","/features","/how-it-works"].includes(path)&&<Landing nav={navigate} pricing={pricing} signupEnabled={signupEnabled}/>}
+  {["/login","/register","/forgot-password","/reset-password","/verify"].includes(path)&&<AuthPage path={path} nav={navigate} refresh={refresh} pricing={pricing} signupEnabled={signupEnabled}/>}
+  {path==="/pricing"&&<PlansPage nav={navigate} pricing={pricing} account={account} signupEnabled={signupEnabled}/>}
+  {path==="/checkout"&&<PlansPage nav={navigate} pricing={pricing} account={account} signupEnabled={signupEnabled} checkoutMode theme={theme}/>}
   {path==="/dashboard"&&<DashboardPage nav={navigate} path={path} account={account} checking={checking} refresh={refresh} logout={logout} theme={theme} toggle={toggle}/>}
   {path==="/billing"&&<BillingPage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout} pricing={pricing}/>}
   {path==="/account"&&<AccountPage nav={navigate} account={account} checking={checking} refresh={refresh} logout={logout} theme={theme} toggle={toggle}/>} 
