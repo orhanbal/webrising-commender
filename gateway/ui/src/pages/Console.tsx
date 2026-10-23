@@ -24,6 +24,25 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
  const [confirmPassword,setConfirmPassword]=useState("");
  const [userActionBusy,setUserActionBusy]=useState(false);
  const [userActionError,setUserActionError]=useState("");
+ const [sessionUser,setSessionUser]=useState<{id:string;email:string}|null>(null);
+ const [sessionRows,setSessionRows]=useState<Array<{id:string;organization_name:string;created_at:string;expires_at:string;revoked_at:string|null}>>([]);
+ const [sessionPassword,setSessionPassword]=useState("");
+ const [sessionError,setSessionError]=useState("");
+ const [sessionBusy,setSessionBusy]=useState(false);
+ const openSessions=async(user:{id:string;email:string})=>{
+   setSessionUser(user);setSessionRows([]);setSessionError("");setSessionBusy(true);
+   try{const data=await api<{items:typeof sessionRows}>("/api/console/users/sessions?userId="+encodeURIComponent(user.id));setSessionRows(data.items)}
+   catch(e){setSessionError(String(e))}finally{setSessionBusy(false)}
+ };
+ const revokeUserSession=async(sessionId:string)=>{
+   if(!sessionUser)return;setSessionBusy(true);setSessionError("");
+   try{
+     await api("/api/console/users/sessions/revoke",{method:"POST",body:JSON.stringify({sessionId,currentPassword:sessionPassword})});
+     const data=await api<{items:typeof sessionRows}>("/api/console/users/sessions?userId="+encodeURIComponent(sessionUser.id));
+     setSessionRows(data.items);setSessionPassword("");
+   }catch(e){setSessionError(String(e))}finally{setSessionBusy(false)}
+ };
+
  const [memberWorkspace,setMemberWorkspace]=useState<{id:string;name:string}|null>(null);
  const [memberRows,setMemberRows]=useState<Array<{user_id:string;email:string;role:string;disabled:boolean}>>([]);
  const [memberError,setMemberError]=useState("");
@@ -141,6 +160,18 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
    <div className="dash-sidebar-bottom"><p className="text-sm muted">Platform administration is separate from workspace ownership.</p><button className="mt-5 text-sm flex items-center gap-2" onClick={()=>nav("/dashboard")}><ArrowLeft size={17}/> User dashboard</button></div>
   </aside>
   <div className="dash-main">
+   {sessionUser&&<div className="fixed inset-0 z-[225] bg-black/65 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="User sessions">
+    <div className="w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-6">
+      <div className="flex items-center justify-between gap-4 mb-5"><div><h2 className="text-xl font-bold">Sessions — {sessionUser.email}</h2><p className="muted text-sm mt-1">Revoking a session immediately signs that browser out.</p></div><button className="rounded-xl border border-[var(--stroke)] px-4 py-2" onClick={()=>{setSessionUser(null);setSessionPassword("")}}>Close</button></div>
+      {sessionError&&<p role="alert" className="text-[var(--danger)] mb-4">{sessionError}</p>}
+      {sessionBusy&&<p className="muted text-sm mb-3">Updating sessions…</p>}
+      <label className="block font-semibold text-sm mb-4">Current administrator password<input type="password" autoComplete="current-password" className="block mt-2 w-full rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-3" value={sessionPassword} onChange={e=>setSessionPassword(e.target.value)}/></label>
+      <div className="grid gap-3">{sessionRows.length===0?<p className="muted">No sessions found.</p>:sessionRows.map(item=><div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--stroke)] p-4" key={item.id}>
+        <div className="text-sm"><strong>{item.organization_name}</strong><p className="muted mt-1">Started {new Date(item.created_at).toLocaleString()}</p><p className="muted mt-1">{item.revoked_at?"Revoked":new Date(item.expires_at).getTime()<Date.now()?"Expired":"Active"}</p></div>
+        <button className="rounded-lg border border-[var(--stroke)] px-4 py-2 disabled:opacity-40" disabled={sessionBusy||sessionPassword.length<12||!!item.revoked_at||new Date(item.expires_at).getTime()<Date.now()||sessionUser.id===admin.userId} onClick={()=>void revokeUserSession(item.id)}>Revoke</button>
+      </div>)}</div>
+    </div>
+   </div>}
    {memberWorkspace&&<div className="fixed inset-0 z-[225] bg-black/65 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Organization members">
      <div className="w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-6">
        <div className="flex items-center justify-between gap-4 mb-4">
@@ -225,7 +256,7 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
        <p className="muted mt-2">User management, billing, landing CMS, brand assets and system settings will be enabled only after their secured APIs and acceptance tests are complete.</p>
       </div></>:<div className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-5 overflow-x-auto">
         {section==="Users"&&<div className="flex flex-wrap gap-3 mb-5"><input className="flex-1 min-w-[220px] rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 text-sm" placeholder="Search user email" aria-label="Search user email" value={userSearch} onChange={e=>{setUserPage(0);setUserSearch(e.target.value)}}/><button type="button" disabled={userPage===0} onClick={()=>setUserPage(x=>Math.max(0,x-1))} className="rounded-xl border border-[var(--stroke)] px-4 disabled:opacity-40">Previous</button><span className="self-center text-sm muted">Page {userPage+1}</span><button type="button" disabled={records.length<25} onClick={()=>setUserPage(x=>x+1)} className="rounded-xl border border-[var(--stroke)] px-4 disabled:opacity-40">Next</button></div>}
-        {recordsBusy?<p className="muted py-8">Loading records…</p>:recordsError?<p role="alert" className="text-[var(--danger)]">{recordsError}</p>:records.length===0?<p className="muted py-8">No records.</p>:<table className="w-full text-sm text-left"><thead><tr>{Object.keys(records[0]||{}).map(k=><th key={k} className="px-3 py-3 border-b border-[var(--stroke)] whitespace-nowrap">{k.replaceAll("_"," ")}</th>)}</tr></thead><tbody>{records.map((row,i)=><tr key={String(row.id||i)}>{Object.values(row).map((value,j)=><td key={j} className="px-3 py-3 border-b border-[var(--stroke)] whitespace-nowrap">{value===null?"—":typeof value==="boolean"?(value?"Yes":"No"):String(value)}</td>)}{section==="Organizations"&&<td className="px-3 py-3 border-b border-[var(--stroke)]"><button className="rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm" onClick={()=>{const q=(row.quota_overrides||{}) as Record<string,number|null>;setOrgError("");setOrgEdit({id:String(row.id),name:String(row.name),maxDevices:q.maxDevices==null?"":String(q.maxDevices),maxMembers:q.maxMembers==null?"":String(q.maxMembers),maxApiTokens:q.maxApiTokens==null?"":String(q.maxApiTokens)})}}>Edit quotas</button><button className="ml-2 rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm" onClick={()=>void openMembers({id:String(row.id),name:String(row.name)})}>Members</button></td>}{section==="Users"&&<td className="px-3 py-3 border-b border-[var(--stroke)]"><button onClick={()=>{setUserActionError("");setTargetUser({id:String(row.id),email:String(row.email),disabled:Boolean(row.disabled)})}} className="rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm">{row.disabled?"Enable":"Disable"}</button></td>}</tr>)}</tbody></table>}
+        {recordsBusy?<p className="muted py-8">Loading records…</p>:recordsError?<p role="alert" className="text-[var(--danger)]">{recordsError}</p>:records.length===0?<p className="muted py-8">No records.</p>:<table className="w-full text-sm text-left"><thead><tr>{Object.keys(records[0]||{}).map(k=><th key={k} className="px-3 py-3 border-b border-[var(--stroke)] whitespace-nowrap">{k.replaceAll("_"," ")}</th>)}</tr></thead><tbody>{records.map((row,i)=><tr key={String(row.id||i)}>{Object.values(row).map((value,j)=><td key={j} className="px-3 py-3 border-b border-[var(--stroke)] whitespace-nowrap">{value===null?"—":typeof value==="boolean"?(value?"Yes":"No"):String(value)}</td>)}{section==="Organizations"&&<td className="px-3 py-3 border-b border-[var(--stroke)]"><button className="rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm" onClick={()=>{const q=(row.quota_overrides||{}) as Record<string,number|null>;setOrgError("");setOrgEdit({id:String(row.id),name:String(row.name),maxDevices:q.maxDevices==null?"":String(q.maxDevices),maxMembers:q.maxMembers==null?"":String(q.maxMembers),maxApiTokens:q.maxApiTokens==null?"":String(q.maxApiTokens)})}}>Edit quotas</button><button className="ml-2 rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm" onClick={()=>void openMembers({id:String(row.id),name:String(row.name)})}>Members</button></td>}{section==="Users"&&<td className="px-3 py-3 border-b border-[var(--stroke)]"><button onClick={()=>{setUserActionError("");setTargetUser({id:String(row.id),email:String(row.email),disabled:Boolean(row.disabled)})}} className="rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm">{row.disabled?"Enable":"Disable"}</button><button type="button" className="ml-2 rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm" onClick={()=>void openSessions({id:String(row.id),email:String(row.email)})}>Sessions</button></td>}</tr>)}</tbody></table>}
         <p className="muted text-xs mt-5">Read-only records. Administrative changes require audited controls.</p>
        </div>}
     </main>
