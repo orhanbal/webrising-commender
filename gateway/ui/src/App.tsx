@@ -71,6 +71,7 @@ export default function App(){
    <NavLink to="/pricing" nav={navigate}>{translate("Fiyatlandırma")}</NavLink>
    <NavLink to={account?"/dashboard":"/login"} nav={navigate}>{account?translate("Panelim"):translate("Giriş Yap")}</NavLink>
    <NavLink to="/install" nav={navigate}>Install <ArrowUpRight size={15}/></NavLink>
+   <LanguageSwitcher compact/>
   </nav>}
  </header>}
    {["/","/features","/how-it-works"].includes(path)&&<Landing nav={navigate} pricing={pricing} signupEnabled={signupEnabled}/>}
