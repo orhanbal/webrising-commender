@@ -418,7 +418,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     if (req.method === "POST" && url.pathname === "/webhooks/paddle") {
       const raw=await readBody(req);
       const signature=Array.isArray(req.headers["paddle-signature"])?
-        req.headers["paddle-signature"][0]:String(req.headers["paddle-signature"]||"");
+        String(req.headers["paddle-signature"][0]||""):String(req.headers["paddle-signature"]||"");
       return void json(res,200,await consumePaddleWebhook(raw,signature));
     }
     if (req.method === "GET" && url.pathname === "/api/public/config") {
