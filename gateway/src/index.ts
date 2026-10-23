@@ -1446,6 +1446,40 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         }catch(error){await client.query("rollback");throw error}finally{client.release()}
         return void json(res,200,{ok:true});
       }
+      if (req.method === "GET" && url.pathname === "/api/console/users/sessions") {
+        const userId=z.string().uuid().parse(url.searchParams.get("userId"));
+        const sessions=await db.query(
+          `select s.id,s.organization_id,o.name as organization_name,s.created_at,s.last_seen_at,s.expires_at,s.revoked_at
+            from browser_sessions s join organizations o on o.id=s.organization_id
+            where s.user_id=$1 order by s.created_at desc limit 100`,[userId]);
+        return void json(res,200,{items:sessions.rows});
+      }
+      if (req.method === "POST" && url.pathname === "/api/console/users/sessions/revoke") {
+        const payload=z.object({sessionId:z.string().uuid(),currentPassword:z.string().min(12).max(256)}).parse(await readJson(req));
+        const operator=await db.query<{password_hash:string}>(
+          "select password_hash from users where id=$1 and disabled_at is null",[principal.userId]);
+        if(!operator.rows[0]||!(await verifyPassword(payload.currentPassword,operator.rows[0].password_hash)))
+          return void json(res,403,{error:"reauthentication_failed"});
+        const client=await db.connect();
+        try{
+          await client.query("begin");
+          const session=await client.query<{user_id:string}>(
+            "select user_id from browser_sessions where id=$1 for update",[payload.sessionId]);
+          if(!session.rows[0]){await client.query("rollback");return void json(res,404,{error:"session_not_found"});}
+          if(session.rows[0].user_id===principal.userId){await client.query("rollback");return void json(res,403,{error:"cannot_revoke_own_session_here"});}
+          const platform=await client.query(
+            "select 1 from platform_administrators where user_id=$1 and revoked_at is null",[session.rows[0].user_id]);
+          if(platform.rowCount){await client.query("rollback");return void json(res,403,{error:"platform_admin_protected"});}
+          await client.query(
+            "update browser_sessions set revoked_at=coalesce(revoked_at,now()) where id=$1",[payload.sessionId]);
+          await client.query(
+            "insert into platform_admin_audit(actor_user_id,action,detail) values($1,'session.revoke',$2)",
+            [principal.userId,"session:"+payload.sessionId],
+          );
+          await client.query("commit");
+        }catch(error){await client.query("rollback");throw error}finally{client.release()}
+        return void json(res,200,{ok:true});
+      }
       if (req.method === "GET" && url.pathname === "/api/console/users") {
         const limit = Math.min(100,Math.max(1,Number(url.searchParams.get("limit")||25)||25));
         const offset = Math.min(100000,Math.max(0,Number(url.searchParams.get("offset")||0)||0));
