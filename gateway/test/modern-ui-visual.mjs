@@ -177,6 +177,15 @@ try{
  await visit("/account","Change password","modern-account");
  await visit("/console","Platform Overview","modern-console-overview");
  assert.equal(await evalJs("document.querySelectorAll('aside .dash-nav button').length"),10,"Console navigation should expose all configured sections");
+ await evalJs("document.querySelector('.dash-toolbar .locale-trigger').click()");
+ await evalJs("document.querySelector('.dash-toolbar .locale-option[role=menuitemradio]:last-child').click()");
+ await sleep(120);
+ assert.equal(await evalJs("document.documentElement.lang"),"tr","Super admin locale must change");
+ assert.ok(await evalJs("document.body.textContent.includes('Genel Bakış')&&document.body.textContent.includes('Platform araçları')"),"Super admin overview should be translated");
+ await evalJs("document.querySelector('.dash-toolbar .locale-trigger').click()");
+ await evalJs("document.querySelector('.dash-toolbar .locale-option[role=menuitemradio]:first-child').click()");
+ await sleep(120);
+
  await visit("/console/organizations","Organizations","modern-console-organizations");
  await evalJs("([...document.querySelectorAll('button')].find(x=>x.textContent.trim()==='Members'))?.click()");
  await sleep(120);
