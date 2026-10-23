@@ -14,9 +14,27 @@ Status: automated Linux CI must pass, followed by **real Ubuntu server acceptanc
 
 **Security:** This service runs commands only with the Unix permissions of `wecommander`. Path policy restricts file operations, but commands may still read files accessible to this account: grant the account access only to intended data. Never install the agent with `root`, `/root` or Docker group membership. A production server should start with an isolated workspace and only add narrow ACLs after explicit review.
 
+## Direct Ubuntu installation (recommended)
+
+No manual GitHub artifact download, ZIP extraction, or SCP is required. After a successful CI run, the automatic **ubuntu-distribution** workflow publishes a signed-off-by-CI **preview** Debian package and a SHA-256 checksum to GitHub Releases. Verify that [Ubuntu preview Releases](https://github.com/orhanbal/webrising-commender/releases) contains an asset named `wecommander-agent_VERSION_amd64.deb` before attempting installation.
+
+On **Ubuntu 24.04 amd64**, run this single command in the SSH terminal:
+
+```bash
+curl -fsSLo /tmp/wecommander-install.sh https://raw.githubusercontent.com/orhanbal/webrising-commender/main/scripts/install-ubuntu-online.sh && sudo bash /tmp/wecommander-install.sh
+```
+
+You can inspect `/tmp/wecommander-install.sh` before running `sudo`, especially on a production server. The script fetches only a prerelease whose GitHub Actions CI passed on `main`, checks the exact `.deb` checksum against its release `SHA256SUMS.txt`, installs through `apt-get`, and starts device approval. It will fail closed if no release exists, the package is wrong, or the checksum does not match.
+
+After installation, the terminal shows a WECOMMANDER browser approval URL. Open it **on your own computer**, sign in to the workspace, select the destination workspace and approve the Ubuntu device. The new device runs as unprivileged `wecommander` using systemd, without requiring the desktop or user passwords on the server.
+
+For an installation without immediate pairing, run the downloaded installer with `--package-only`; later run `sudo wecommander-setup`. For upgrades, the installer retains the existing device configuration, but a real restart/reconnect acceptance test is still required.
+
+**Note:** These are **preview builds**, not automatically production-approved releases. Verify them on a test host before attaching a critical production server. Prefer a version-pinned release asset for production change control.
+
 ## Obtain the checked build (no Rust compilation required on server)
 
-There is currently **no published GitHub Release**. Use a successful GitHub Actions CI artifact until a release is published.
+For offline/manual installation, the CI artifact procedure below remains supported. For the standard direct installation, use the method above once the new Ubuntu preview Release is published.
 
 1. On your own computer, open [GitHub Actions](https://github.com/orhanbal/webrising-commender/actions/workflows/ci.yml), open the newest *successful* run, and download the artifact **WECOMMANDER-linux-x64-acceptance** (for Ubuntu x86-64).
 2. Extract the ZIP. Its files include `webrising-commender`, `SHA256SUMS.txt`, `setup-ubuntu.sh` and `install-linux.sh`.
