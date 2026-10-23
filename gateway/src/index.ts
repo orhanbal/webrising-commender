@@ -1447,6 +1447,54 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         }catch(error){await client.query("rollback");throw error}finally{client.release()}
         return void json(res,200,{ok:true});
       }
+      if (req.method === "GET" && url.pathname === "/api/console/organizations/members") {
+        const organizationId=z.string().uuid().parse(url.searchParams.get("organizationId"));
+        const organization=await db.query("select 1 from organizations where id=$1",[organizationId]);
+        if(!organization.rowCount)return void json(res,404,{error:"organization_not_found"});
+        const members=await db.query(
+          `select m.user_id,u.email,m.role,m.created_at,(u.disabled_at is not null) as disabled
+             from organization_members m join users u on u.id=m.user_id
+            where m.organization_id=$1 order by m.created_at asc limit 250`,
+          [organizationId],
+        );
+        return void json(res,200,{items:members.rows});
+      }
+      if (req.method === "POST" && url.pathname === "/api/console/organizations/members/role") {
+        const payload=z.object({
+          organizationId:z.string().uuid(),userId:z.string().uuid(),
+          role:z.enum(["viewer","operator","admin"]),
+          currentPassword:z.string().min(12).max(256),
+        }).parse(await readJson(req));
+        if(payload.userId===principal.userId)return void json(res,403,{error:"cannot_modify_self"});
+        const operator=await db.query<{password_hash:string}>(
+          "select password_hash from users where id=$1 and disabled_at is null",[principal.userId]);
+        if(!operator.rows[0]||!(await verifyPassword(payload.currentPassword,operator.rows[0].password_hash)))
+          return void json(res,403,{error:"reauthentication_failed"});
+        const client=await db.connect();
+        try{
+          await client.query("begin");
+          const organization=await client.query("select id from organizations where id=$1 for update",[payload.organizationId]);
+          if(!organization.rowCount){await client.query("rollback");return void json(res,404,{error:"organization_not_found"});}
+          const member=await client.query<{role:Role}>(
+            "select role from organization_members where organization_id=$1 and user_id=$2 for update",
+            [payload.organizationId,payload.userId]);
+          if(!member.rows[0]){await client.query("rollback");return void json(res,404,{error:"membership_not_found"});}
+          if(member.rows[0].role==="owner"){await client.query("rollback");return void json(res,403,{error:"owner_role_protected"});}
+          const platform=await client.query(
+            "select 1 from platform_administrators where user_id=$1 and revoked_at is null",[payload.userId]);
+          if(platform.rowCount){await client.query("rollback");return void json(res,403,{error:"platform_admin_protected"});}
+          await client.query(
+            "update organization_members set role=$3 where organization_id=$1 and user_id=$2",
+            [payload.organizationId,payload.userId,payload.role],
+          );
+          await client.query(
+            "insert into platform_admin_audit(actor_user_id,action,detail) values($1,'membership.role_change',$2)",
+            [principal.userId,"organization:"+payload.organizationId+" user:"+payload.userId+" role:"+payload.role],
+          );
+          await client.query("commit");
+        }catch(error){await client.query("rollback");throw error}finally{client.release()}
+        return void json(res,200,{ok:true});
+      }
       if (req.method === "GET" && url.pathname === "/api/console/organizations") {
         const records = await db.query(
           `select o.id,o.name,o.created_at,count(distinct m.user_id)::int as members,
