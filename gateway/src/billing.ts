@@ -3,7 +3,7 @@ import { db } from "./db.js";
 import { sha256 } from "./crypto-utils.js";
 
 export type DeploymentMode = "self_hosted" | "saas";
-export type SubscriptionStatus = "trialing" | "active" | "past_due" | "canceled";
+export type SubscriptionStatus = "trialing" | "active" | "past_due" | "paused" | "canceled";
 export type AllocationResource = "device" | "member" | "member_accept" | "api_token";
 
 type Queryable = typeof db | PoolClient;
