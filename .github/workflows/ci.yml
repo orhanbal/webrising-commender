@@ -598,6 +598,29 @@ jobs:
           Get-FileHash "dist\webrising-commender.exe" -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash.ToLower())  webrising-commender.exe" } |
             Set-Content -Encoding ascii "dist\SHA256SUMS.txt"
+      - name: Build Windows graphical setup
+        shell: pwsh
+        run: |
+          Copy-Item "installer\windows\WECOMMANDER.iss" "dist\WECOMMANDER.iss"
+          Copy-Item "installer\windows\WECOMMANDER-Onboarding.ps1" "dist\WECOMMANDER-Onboarding.ps1"
+          Copy-Item "installer\windows\Install-Service-Interactive.ps1" "dist\Install-Service-Interactive.ps1"
+          foreach ($script in @("dist\WECOMMANDER-Onboarding.ps1", "dist\Install-Service-Interactive.ps1")) {
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script),[ref]$null,[ref]$errors)
+            if ($errors.Count -gt 0) { $errors | Format-List; exit 1 }
+          }
+          choco install innosetup --yes --no-progress
+          $compiler = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $compiler)) { throw "Inno Setup compiler missing: $compiler" }
+          Push-Location dist
+          try {
+            & $compiler "/DAppVersion=0.1.0" "WECOMMANDER.iss"
+            if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed" }
+          } finally { Pop-Location }
+          Copy-Item "dist\output\WECOMMANDER-Setup-windows-x64.exe" "dist\WECOMMANDER-Setup-windows-x64.exe"
+          Get-FileHash "dist\WECOMMANDER-Setup-windows-x64.exe" -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  WECOMMANDER-Setup-windows-x64.exe" } |
+            Add-Content -Encoding ascii "dist\SHA256SUMS.txt"
       - uses: actions/upload-artifact@v4
         with:
           name: WECOMMANDER-windows-x64-acceptance
