@@ -40,7 +40,7 @@ done
 [[ "$EXPECTED_SHA256" =~ ^[[:xdigit:]]{64}$ ]] || { echo "Provide artifact SHA256 using --sha256." >&2; exit 1; }
 [[ "$CONTROL_URL" =~ ^https://[a-zA-Z0-9.-]+(:[0-9]{1,5})?/?$ ]] || { echo "HTTPS control URL required." >&2; exit 1; }
 CONTROL_URL="${CONTROL_URL%/}"
-for dependency in curl python3 runuser systemctl useradd id sha256sum install readlink; do
+for dependency in curl python3 runuser systemctl useradd id sha256sum install readlink flock; do
   command -v "$dependency" >/dev/null || { echo "Missing: $dependency" >&2; exit 1; }
 done
 test -d /run/systemd/system || { echo "systemd required." >&2; exit 1; }
@@ -48,6 +48,13 @@ BINARY="$(readlink -f -- "$BINARY")"
 actual_sha="$(sha256sum -- "$BINARY" | awk '{print $1}')"
 [[ "${actual_sha,,}" == "${EXPECTED_SHA256,,}" ]] || { echo "SHA256 mismatch, aborting." >&2; exit 1; }
 "$BINARY" --version >/dev/null
+# The verified artifact may be in /root and unreadable to the restricted user.
+# Use a temporary root-owned executable in a traversable directory for enroll.
+exec 9>/run/lock/webrising-commender-ubuntu-install.lock
+flock -n 9 || { echo "Another WECOMMANDER installer is active." >&2; exit 1; }
+STAGED_BINARY="/usr/local/bin/.webrising-commender-enrollment"
+install -m 0755 "$BINARY" "$STAGED_BINARY"
+trap 'rm -f -- "$STAGED_BINARY"' EXIT
 if ! id "$SERVICE_USER" >/dev/null 2>&1; then
   useradd --system --home-dir "$DATA_DIR" --no-create-home --shell /usr/sbin/nologin "$SERVICE_USER"
 fi
@@ -105,11 +112,11 @@ else
   unset body request_secret response result
   [[ "${#pairing_code}" -ge 20 ]] || { echo "Timed out without approval." >&2; exit 1; }
   echo "Approved. Enrolling as unprivileged service user..."
-  runuser -u "$SERVICE_USER" -- "$BINARY" --config "$CONFIG" enroll \
+  runuser -u "$SERVICE_USER" -- "$STAGED_BINARY" --config "$CONFIG" enroll \
     --control-url "$CONTROL_URL" --pairing-code "$pairing_code" --allowed-root "$ALLOWED_ROOT"
   unset pairing_code
 fi
-runuser -u "$SERVICE_USER" -- "$BINARY" --config "$CONFIG" doctor >/dev/null
+runuser -u "$SERVICE_USER" -- "$STAGED_BINARY" --config "$CONFIG" doctor >/dev/null
 bash "$SCRIPT_DIR/install-linux.sh" "$BINARY" "$CONFIG" "$SERVICE_USER"
 echo "Installed. Check: sudo systemctl is-active webrising-commender"
 echo "No inbound port required. Verify the new server in WECOMMANDER > Devices."
