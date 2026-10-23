@@ -434,9 +434,14 @@ const mediaUploaded=await fetch(base+"/api/console/media/upload",{
 });
 assert.equal(mediaUploaded.status,201);
 const mediaId=(await mediaUploaded.json()).id;
-const mediaBytes=await fetch(base+"/api/public/media/"+mediaId);
-assert.equal(mediaBytes.status,200);
-assert.equal(mediaBytes.headers.get("content-type"),"image/png");
+const draftMediaResponse=await fetch(base+"/api/public/media/"+mediaId);
+assert.equal(draftMediaResponse.status,404,"Unpublished CMS images must not be publicly readable");
+const forbiddenDraftPreview=await fetch(base+"/api/console/media/"+mediaId);
+assert.equal(forbiddenDraftPreview.status,401,"Draft images must require a super-admin session");
+const adminDraftPreview=await fetch(base+"/api/console/media/"+mediaId,{headers:{Cookie:browserCookies}});
+assert.equal(adminDraftPreview.status,200);
+assert.equal(adminDraftPreview.headers.get("content-type"),"image/png");
+assert.match(adminDraftPreview.headers.get("cache-control")||"",/no-store/);
 const mediaInventory=await fetch(base+"/api/console/media",{headers:{Cookie:browserCookies}});
 assert.equal(mediaInventory.status,200);
 assert.ok((await mediaInventory.json()).items.some(row=>row.id===mediaId));
@@ -467,6 +472,9 @@ const unauthenticatedPublish=await fetch(base+"/api/console/site-content/publish
 });
 assert.equal(unauthenticatedPublish.status,403,"Publishing site content requires current admin password");
 assert.equal((await cmsPublish(cmsFirstId)).status,200);
+const publishedMedia=await fetch(base+"/api/public/media/"+mediaId);
+assert.equal(publishedMedia.status,200,"Published landing images become publicly readable");
+assert.equal(publishedMedia.headers.get("content-type"),"image/png");
 const publicFirst=await jsonFetch("/api/public/site-content?locale=en");
 assert.equal(publicFirst.item.hero_title,"Integration Draft One");
 assert.equal(publicFirst.item.overrides["Cihaz yönetiminde"],"Managed capabilities heading");
@@ -482,6 +490,8 @@ assert.equal((await jsonFetch("/api/public/site-content?locale=en")).item.hero_t
 assert.equal((await cmsPublish(cmsFirstId)).status,200,"Older revision must be republishable for rollback");
 assert.equal((await jsonFetch("/api/public/site-content?locale=en")).item.hero_title,"Integration Draft One");
 await acceptanceDb.query("delete from site_content_revisions where id=any($1::bigint[])",[[cmsFirstId,cmsSecondId]]);
+assert.equal((await fetch(base+"/api/public/media/"+mediaId)).status,404,
+ "Unreferenced media must no longer be public when its published CMS revision is removed");
 await acceptanceDb.query("delete from site_media_assets where id=$1",[mediaId]);
 
 const legalDraft=async(title)=>fetch(base+"/api/console/legal",{
