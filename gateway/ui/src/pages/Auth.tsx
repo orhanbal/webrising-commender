@@ -4,7 +4,7 @@ import{ArrowLeft,ArrowRight,Check,Eye,EyeOff,KeyRound,LockKeyhole,Monitor,Shield
 import{Button,Badge,Input}from"../components/ui";import{api,type Account,type Pricing}from"../api";import type{Nav}from"../App";import{NavLink}from"../App";
 type Mode="/login"|"/register"|"/forgot-password"|"/reset-password"|"/verify";
 export function AuthPage({path,nav,refresh,pricing,signupEnabled}:{path:string;nav:Nav;refresh:()=>Promise<Account|null>;pricing:Pricing|null;signupEnabled:boolean|null}){
- useLocale();
+ const language=useLocale();
  const mode=path as Mode;
  const [email,setEmail]=useState("");
  const [password,setPassword]=useState("");
@@ -73,7 +73,7 @@ export function AuthPage({path,nav,refresh,pricing,signupEnabled}:{path:string;n
    <h1>{titles[mode]}</h1><p>{descriptions[mode]}</p>
    {mode==="/register"&&(pricing?.mode==="self_hosted"||signupEnabled===false)&&<div className="form-error mb-5">{translate("Bu kurulumda genel kayıt kapalıdır. Self-hosted yönetici hesabınızla giriş yapın.")}</div>}
    <form onSubmit={submit} className="form-stack" autoComplete="on">
-    {["/login","/register","/forgot-password"].includes(mode)&&<label><span className="field-label">E-posta adresi</span><Input autoComplete="email" type="email" placeholder="siz@ornek.com" required maxLength={320} value={email} onChange={e=>setEmail(e.target.value)}/></label>}
+    {["/login","/register","/forgot-password"].includes(mode)&&<label><span className="field-label">{translate("E-posta adresi")}</span><Input autoComplete="email" type="email" placeholder={translate("siz@ornek.com")} required maxLength={320} value={email} onChange={e=>setEmail(e.target.value)}/></label>}
     {mode==="/register"&&<label><span className="field-label">{translate("Çalışma alanı adı")}</span><Input placeholder={translate("Örn. Benim Çalışma Alanım")} autoComplete="organization" required minLength={2} maxLength={120} value={workspace} onChange={e=>setWorkspace(e.target.value)}/></label>}
     {!["/forgot-password"].includes(mode)&&<label><span className="flex items-center justify-between mb-2"><span className="field-label !mb-0">{mode==="/reset-password"?translate("Yeni şifre"):translate("Şifre")}</span>{mode==="/login"&&<NavLink nav={nav} to="/forgot-password" className="text-xs text-[var(--accent)] font-semibold">{translate("Şifremi unuttum")}</NavLink>}</span><span className="relative block"><Input placeholder="••••••••••••" type={show?"text":"password"} required minLength={mode==="/verify"?1:12} maxLength={256} autoComplete={mode==="/login"?"current-password":"new-password"} value={password} onChange={e=>setPassword(e.target.value)} className="pr-12"/><button type="button" onClick={()=>setShow(!show)} className="absolute top-2 right-3 size-7 grid place-items-center text-[var(--muted)]" aria-label={show?translate("Şifreyi gizle"):translate("Şifreyi göster")}>{show?<EyeOff size={17}/>:<Eye size={17}/>}</button></span>{mode==="/register"&&<small className="form-help">{translate("En az 12 karakter; güçlü bir parola kullanın.")}</small>}</label>}
     {error&&<div role="alert" className="form-error">{error}</div>}
@@ -84,7 +84,7 @@ export function AuthPage({path,nav,refresh,pricing,signupEnabled}:{path:string;n
    {mode==="/register"&&<p className="text-center text-sm text-[var(--muted)] mt-8">{translate("Zaten hesabınız var mı?")} <NavLink to="/login" nav={nav} className="font-bold text-[var(--accent)]">{translate("Giriş yapın")}</NavLink></p>}
    {["/forgot-password","/reset-password","/verify"].includes(mode)&&<p className="text-center mt-8 text-sm"><NavLink to="/login" nav={nav} className="font-semibold text-[var(--accent)]">{translate("Giriş sayfasına dön")}</NavLink></p>}
    <div className="divider-text">{translate("Güvenli oturum")}</div><p className="text-xs leading-6 text-[var(--muted)] flex gap-2"><Check className="size-4 text-[var(--success)] shrink-0 mt-1"/>{translate("Oturumunuz HttpOnly çerez ile korunur. Şifreniz tarayıcıda saklanmaz.")}</p>
-   <p className="text-xs mt-8 text-[var(--faint)]">{translate("Devam ederek")} <NavLink to="/terms" nav={nav} className="underline">{translate("kullanım koşullarını")}</NavLink> ve <NavLink to="/privacy" nav={nav} className="underline">{translate("gizlilik ilkelerini")}</NavLink> {translate("kabul etmiş olursunuz.")}</p>
+   <p className="text-xs mt-8 text-[var(--faint)]">{translate("Devam ederek")} <NavLink to="/terms" nav={nav} className="underline">{translate("kullanım koşullarını")}</NavLink> {translate("ve")} <NavLink to="/privacy" nav={nav} className="underline">{translate("gizlilik ilkelerini")}</NavLink>{language==="en"?".":" kabul etmiş olursunuz."}</p>
   </div></div>
  </div>;
 }
