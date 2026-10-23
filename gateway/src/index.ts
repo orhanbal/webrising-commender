@@ -478,6 +478,15 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       res.writeHead(200,{...securityHeaders(),"content-type":asset.rows[0].content_type,"content-length":asset.rows[0].content.length,"cache-control":"no-store","x-content-type-options":"nosniff"});
       res.end(asset.rows[0].content);return;
     }
+    if (req.method === "GET" && url.pathname === "/api/public/legal") {
+      const page=z.enum(["privacy","terms"]).parse(url.searchParams.get("page"));
+      const locale=url.searchParams.get("locale")==="tr"?"tr":"en";
+      const result=await db.query(
+        "select id,page,locale,title,body from legal_page_revisions where page=$1 and locale=$2 and state='published' limit 1",
+        [page,locale],
+      );
+      return void json(res,200,{item:result.rows[0]||null});
+    }
     if (req.method === "GET" && url.pathname === "/api/public/site-content") {
       const locale = url.searchParams.get("locale")==="tr"?"tr":"en";
       const published = await db.query(
@@ -1723,6 +1732,54 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           deploymentMode,mailQueue:counts.rows[0],
           database:"connected",operations:operations.rows[0],checkedAt:new Date().toISOString(),
         });
+      }
+      if (req.method === "GET" && url.pathname === "/api/console/legal") {
+        const page=z.enum(["privacy","terms"]).parse(url.searchParams.get("page"));
+        const locale=url.searchParams.get("locale")==="tr"?"tr":"en";
+        const result=await db.query(
+          "select id,page,locale,title,body,state,created_at from legal_page_revisions where page=$1 and locale=$2 order by id desc limit 30",
+          [page,locale],
+        );
+        return void json(res,200,{items:result.rows});
+      }
+      if (req.method === "POST" && url.pathname === "/api/console/legal") {
+        const body=z.object({
+          page:z.enum(["privacy","terms"]),locale:z.enum(["en","tr"]),
+          title:z.string().trim().min(1).max(160),body:z.string().trim().min(20).max(30000),
+        }).parse(await readJson(req));
+        const result=await db.query(
+          "insert into legal_page_revisions(page,locale,title,body,created_by) values($1,$2,$3,$4,$5) returning id",
+          [body.page,body.locale,body.title,body.body,principal.userId],
+        );
+        await db.query("insert into platform_admin_audit(actor_user_id,action,detail) values($1,'legal.draft',$2)",
+          [principal.userId,body.page+":"+body.locale+":"+result.rows[0].id]);
+        return void json(res,201,{id:result.rows[0].id});
+      }
+      if (req.method === "POST" && url.pathname === "/api/console/legal/publish") {
+        const payload=z.object({
+          id:z.union([z.number().int().positive().safe(),z.string().regex(/^[1-9][0-9]*$/).max(20)]),
+          currentPassword:z.string().min(12).max(256),
+        }).parse(await readJson(req));
+        const publisher=await db.query<{password_hash:string}>(
+          "select password_hash from users where id=$1 and disabled_at is null",[principal.userId]);
+        if(!publisher.rows[0]||!(await verifyPassword(payload.currentPassword,publisher.rows[0].password_hash)))
+          return void json(res,403,{error:"reauthentication_failed"});
+        const client=await db.connect();
+        try{
+          await client.query("begin");
+          await client.query("select pg_advisory_xact_lock(hashtext('wecommander:legal:publish'))");
+          const selected=await client.query<{page:string;locale:string}>(
+            "select page,locale from legal_page_revisions where id=$1 for update",[payload.id]);
+          if(!selected.rows[0]){await client.query("rollback");return void json(res,404,{error:"revision_not_found"});}
+          await client.query(
+            "update legal_page_revisions set state='draft' where page=$1 and locale=$2 and state='published'",
+            [selected.rows[0].page,selected.rows[0].locale]);
+          await client.query("update legal_page_revisions set state='published' where id=$1",[payload.id]);
+          await client.query("insert into platform_admin_audit(actor_user_id,action,detail) values($1,'legal.publish',$2)",
+            [principal.userId,selected.rows[0].page+":"+selected.rows[0].locale+":"+payload.id]);
+          await client.query("commit");
+        }catch(error){await client.query("rollback");throw error}finally{client.release()}
+        return void json(res,200,{ok:true});
       }
       if (req.method === "GET" && url.pathname === "/api/console/site-content") {
         const locale = url.searchParams.get("locale")==="tr"?"tr":"en";
