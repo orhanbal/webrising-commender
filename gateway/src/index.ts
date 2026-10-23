@@ -343,7 +343,11 @@ const modernExtensions: Record<string,string> = {
   ".svg":"image/svg+xml",
   ".png":"image/png", ".webp":"image/webp", ".woff2":"font/woff2",
 };
-async function serveModernFile(res: ServerResponse, fileName:string, isIndex=false) {
+function htmlEscape(value:string) {
+  return value.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+}
+async function serveModernFile(res: ServerResponse, fileName:string, isIndex=false, seo?:{title:string;description:string}) {
   const here=path.dirname(fileURLToPath(import.meta.url));
   for(const root of [path.resolve(here,"../public/modern"),path.resolve(here,"../../public/modern")]){
     const target=path.resolve(root,fileName);
@@ -351,7 +355,22 @@ async function serveModernFile(res: ServerResponse, fileName:string, isIndex=fal
     const type=isIndex?"text/html; charset=utf-8":modernExtensions[path.extname(target)];
     if(!type)break;
     try{
-      const body=await fs.readFile(target);
+      let body=await fs.readFile(target);
+      if(isIndex && seo && (seo.title || seo.description)) {
+        let html=body.toString("utf8");
+        if(seo.title)html=html.replace(/<title>[^<]*<\/title>/i,"<title>"+htmlEscape(seo.title)+"</title>");
+        if(seo.description)html=html.replace(/<meta name="description" content="[^"]*"\s*\/?\s*>/i,
+          '<meta name="description" content="'+htmlEscape(seo.description)+'">');
+        const canonical=htmlEscape(publicBaseUrl.replace(/\/$/,"")+"/");
+        const safeTitle=htmlEscape(seo.title||"WECOMMANDER");
+        const safeDescription=htmlEscape(seo.description||"Remote MCP and AI workspace");
+        html=html.replace("</head>",'<link rel="canonical" href="'+canonical+'">'+
+          '<meta property="og:type" content="website">'+
+          '<meta property="og:title" content="'+safeTitle+'">'+
+          '<meta property="og:description" content="'+safeDescription+'">'+
+          '<meta property="og:url" content="'+canonical+'"></head>');
+        body=Buffer.from(html);
+      }
       res.writeHead(200,{
         ...securityHeaders(),
         "content-type":type,
@@ -397,7 +416,15 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       return void json(res,404,{error:"asset_not_found"});
     }
     if (req.method === "GET" && modernPages.has(url.pathname)) {
-      if (await serveModernFile(res,"index.html",true)) return;
+      let seo:{title:string;description:string}|undefined;
+      if(url.pathname==="/") {
+        try{
+          const result=await db.query<{seo_title:string;seo_description:string}>(
+            "select seo_title,seo_description from site_content_revisions where locale='en' and state='published' limit 1");
+          if(result.rows[0])seo={title:result.rows[0].seo_title,description:result.rows[0].seo_description};
+        }catch { /* Keep the public landing available if the CMS is temporarily unavailable. */ }
+      }
+      if (await serveModernFile(res,"index.html",true,seo)) return;
       if (url.pathname === "/") return void (await serveLanding(res));
       return void json(res,503,{error:"modern_frontend_not_built"});
     }
