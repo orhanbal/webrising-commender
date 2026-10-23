@@ -1690,6 +1690,67 @@ const noPriceBilling=await jsonFetch(
  "/api/admin/organizations/"+paddleOrg.item.id+"/billing",{headers:authHeaders});
 assert.equal(noPriceBilling.plan.key,"ci-paddle-plus","Reject unknown price rather than change entitlement");
 
+// Owner-initiated Paddle support cases are internal records, never provider actions.
+await acceptanceDb.query(
+ `insert into organization_subscriptions(organization_id,plan_key,status,provider)
+  values($1,'ci-paddle','active','paddle')
+  on conflict(organization_id) do update set plan_key='ci-paddle',status='active',provider='paddle'`,
+ [browserMe.organizationId],
+);
+const supportSessionHeaders={Cookie:browserCookies,"Content-Type":"application/json","X-CSRF-Token":browserLogin.csrfToken};
+const supportPayload=JSON.stringify({type:"refund",message:"I would like a refund review, please."});
+const requestFromApiKey=await fetch(base+"/api/billing/support-requests",{
+ method:"POST",headers:{"Content-Type":"application/json",...authHeaders},body:supportPayload,
+});
+assert.equal(requestFromApiKey.status,403,"Support requests must originate from a human owner session");
+const supportSubmitted=await fetch(base+"/api/billing/support-requests",{
+ method:"POST",headers:supportSessionHeaders,body:supportPayload,
+});
+assert.equal(supportSubmitted.status,201);
+const requestId=(await supportSubmitted.json()).item.id;
+const duplicateSupport=await fetch(base+"/api/billing/support-requests",{
+ method:"POST",headers:supportSessionHeaders,body:supportPayload,
+});
+assert.equal(duplicateSupport.status,409,"Duplicate open refund requests are blocked");
+const customerRequests=await fetch(base+"/api/billing/support-requests",{headers:{Cookie:browserCookies}});
+assert.equal(customerRequests.status,200);
+assert.ok((await customerRequests.json()).items.some(item=>item.id===requestId&&item.status==="pending"));
+await acceptanceDb.query(
+ "insert into platform_administrators(user_id,granted_by) values($1,'integration-test') on conflict(user_id) do update set revoked_at=null",
+ [browserMe.userId],
+);
+const adminRequestView=await fetch(base+"/api/console/billing/requests",{headers:{Cookie:browserCookies}});
+assert.equal(adminRequestView.status,200);
+assert.ok((await adminRequestView.json()).items.some(item=>item.id===requestId));
+const reviewBody=(currentPassword,status="in_review")=>JSON.stringify({
+ id:requestId,status,note:"The request is being checked against provider records.",currentPassword,
+});
+const wrongReview=await fetch(base+"/api/console/billing/requests/review",{
+ method:"POST",headers:supportSessionHeaders,body:reviewBody("wrong-password-value"),
+});
+assert.equal(wrongReview.status,403,"Support review must require fresh administrator password");
+const review=await fetch(base+"/api/console/billing/requests/review",{
+ method:"POST",headers:supportSessionHeaders,body:reviewBody("correct-horse-battery-staple"),
+});
+assert.equal(review.status,200);
+assert.equal((await review.json()).providerActionPerformed,false);
+const reviewed=await acceptanceDb.query(
+ "select status from billing_support_requests where id=$1",[requestId]);
+assert.equal(reviewed.rows[0].status,"in_review");
+const unchangedSubscription=await acceptanceDb.query(
+ "select status from organization_subscriptions where organization_id=$1",[browserMe.organizationId]);
+assert.equal(unchangedSubscription.rows[0].status,"active","Review cannot mutate Paddle entitlement");
+const closeRequest=await fetch(base+"/api/console/billing/requests/review",{
+ method:"POST",headers:supportSessionHeaders,body:reviewBody("correct-horse-battery-staple","closed"),
+});
+assert.equal(closeRequest.status,200);
+const secondClose=await fetch(base+"/api/console/billing/requests/review",{
+ method:"POST",headers:supportSessionHeaders,body:reviewBody("correct-horse-battery-staple","closed"),
+});
+assert.equal(secondClose.status,409);
+await acceptanceDb.query("delete from billing_support_requests where id=$1",[requestId]);
+await acceptanceDb.query("update platform_administrators set revoked_at=now() where user_id=$1",[browserMe.userId]);
+
 const browserLogoutResponse = await fetch(base + "/api/auth/logout", {
   method: "POST",
   headers: {
