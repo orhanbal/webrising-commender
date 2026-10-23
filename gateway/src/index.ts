@@ -440,6 +440,26 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       if (url.pathname === "/") return void (await serveLanding(res));
       return void json(res,503,{error:"modern_frontend_not_built"});
     }
+    if (req.method === "GET" && url.pathname === "/connect-device") {
+      const here = path.dirname(fileURLToPath(import.meta.url));
+      const candidates = [
+        path.resolve(here, "../public/connect-device.html"),
+        path.resolve(here, "../../public/connect-device.html"),
+      ];
+      for (const candidate of candidates) {
+        try {
+          const body = await fs.readFile(candidate);
+          res.writeHead(200, {
+            "content-type": "text/html; charset=utf-8",
+            "content-length": body.length,
+            ...securityHeaders(),
+            "content-security-policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'",
+          });
+          return void res.end(body);
+        } catch { /* continue to next packaged path */ }
+      }
+      return void json(res, 503, { error: "device_approval_page_missing" });
+    }
     if (req.method === "GET" && url.pathname === "/legacy") return void (await serveLanding(res));
     if (req.method === "GET" && (url.pathname === "/app" || url.pathname === "/app/")) {
       if (await serveModernFile(res,"index.html",true)) return;
