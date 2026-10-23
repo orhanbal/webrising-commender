@@ -1883,6 +1883,19 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           overrides:z.record(z.string().max(300),z.string().max(800)).refine(data=>Object.keys(data).length<=150).default({}),
           seoTitle:z.string().trim().max(70).default(''),seoDescription:z.string().trim().max(170).default(''),
         }).parse(await readJson(req));
+        // Only immutable uploaded media identifiers may be referenced from a CMS revision.
+        const mediaReferences=Object.entries(payload.overrides)
+          .filter(([key])=>key.startsWith("media:"));
+        for(const [key,value] of mediaReferences){
+          if(!/^media:feature:[0-5]$/.test(key)||!z.string().uuid().safeParse(value).success)
+            return void json(res,400,{error:"invalid_media_reference"});
+        }
+        if(mediaReferences.length){
+          const ids=Array.from(new Set(mediaReferences.map(([,value])=>value)));
+          const available=await db.query<{n:number}>(
+            "select count(*)::int as n from site_media_assets where id=any($1::uuid[])",[ids]);
+          if(available.rows[0]?.n!==ids.length)return void json(res,400,{error:"media_not_found"});
+        }
         const saved=await db.query(
           "insert into site_content_revisions(locale,hero_title,hero_subtitle,overrides,seo_title,seo_description,created_by) values($1,$2,$3,$4::jsonb,$5,$6,$7) returning id",
           [payload.locale,payload.heroTitle,payload.heroSubtitle,JSON.stringify(payload.overrides),payload.seoTitle,payload.seoDescription,principal.userId],
