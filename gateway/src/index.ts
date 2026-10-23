@@ -402,6 +402,10 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     }
     if (req.method === "GET" && url.pathname === "/legacy") return void (await serveLanding(res));
     if (req.method === "GET" && (url.pathname === "/app" || url.pathname === "/app/")) {
+      if (await serveModernFile(res,"index.html",true)) return;
+      return void (await serveConsole(res));
+    }
+    if (req.method === "GET" && (url.pathname === "/advanced" || url.pathname === "/advanced/")) {
       return void (await serveConsole(res));
     }
     if (req.method === "GET" && url.pathname === "/health/live") return void json(res, 200, { status: "ok", service: "commender-gateway" });
