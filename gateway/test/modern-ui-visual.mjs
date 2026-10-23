@@ -186,6 +186,11 @@ try{
  await visit("/console/billing","Subscriptions","modern-console-billing");
  assert.ok(await evalJs("document.body.textContent.includes('Cancellation & refund requests')"),"Super admin must expose support-request queue");
  await visit("/console/brand","Brand assets","modern-console-brand");
+ await visit("/console/legal","Privacy & terms editor","modern-console-legal");
+ assert.ok(await evalJs("document.querySelectorAll('textarea').length>=1"),"Legal editor must have a text editor");
+ await visit("/privacy","Privacy Policy","modern-privacy");
+ await visit("/terms","Terms of Service","modern-terms");
+
 
  await visit("/features","A new standard in","modern-features-scroll");
  assert.equal(await evalJs("document.querySelectorAll('.features-grid .feature-card').length"),6,"Landing content cards must be present");
