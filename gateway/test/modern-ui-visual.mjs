@@ -80,8 +80,9 @@ try{
  assert.equal(guestHeader.login,1,"Guest header must not render duplicate sign-in actions");
  assert.equal(guestHeader.install,1,"Header must show one Install CTA");
  assert.equal(await evalJs("document.documentElement.lang"),"en","English must be the default regardless of browser language");
- assert.equal(await evalJs("document.querySelector('.site-header .locale-switcher select')?.value"),"en","English is selected by default");
- await evalJs("(()=>{const selector=document.querySelector('.site-header .locale-switcher select');selector.value='tr';selector.dispatchEvent(new Event('change',{bubbles:true}))})()");
+ assert.ok(await evalJs("document.querySelector('.site-header .locale-trigger')?.textContent.includes('English (EN)')"),"English is selected by default");
+ await evalJs("document.querySelector('.site-header .locale-trigger').click()");
+ await evalJs("document.querySelector('.site-header .locale-option[role=menuitemradio]:last-child').click()");
  await sleep(120);
  assert.equal(await evalJs("document.documentElement.lang"),"tr","Switching to Turkish must update html lang");
  assert.ok(await evalJs("document.querySelector('h1')?.textContent.includes('Tüm cihazların.')"),"Turkish landing translation was not applied");
