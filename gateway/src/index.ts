@@ -1663,10 +1663,17 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           `select count(*) filter (where sent_at is null and failed_at is null)::int as pending,
              count(*) filter (where sent_at is not null)::int as delivered,
              count(*) filter (where failed_at is not null)::int as failed from mail_outbox`);
+        const operations=await db.query(
+          `select
+            (select count(*)::int from relay_nodes) as relay_nodes,
+            (select count(*)::int from relay_nodes where enabled and not drain and last_seen_at>now()-interval '2 minutes') as healthy_relays,
+            (select count(*)::int from browser_sessions where revoked_at is null and expires_at>now()) as active_sessions,
+            (select count(*)::int from approval_requests where status='pending') as pending_approvals`);
         return void json(res,200,{
           mailConfigured:mailConfigured(),
           signupEnabled:deploymentMode==="saas"&&publicSignupEnabled()&&mailConfigured(),
           deploymentMode,mailQueue:counts.rows[0],
+          database:"connected",operations:operations.rows[0],checkedAt:new Date().toISOString(),
         });
       }
       if (req.method === "GET" && url.pathname === "/api/console/site-content") {
