@@ -196,6 +196,39 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
  const publishCms=async(id:string)=>{setCmsBusy(true);setCmsMessage("");try{await api("/api/console/site-content/publish",{method:"POST",body:JSON.stringify({id,currentPassword:cmsPublishPassword})});await reloadCms();setCmsPublishPassword("");setCmsMessage("Published. You can now refresh the landing page.")}catch(e){setCmsMessage(String(e))}finally{setCmsBusy(false)}};
  const [profileOpen,setProfileOpen]=useState(false);
  const profileRef=useRef<HTMLDivElement>(null);
+ // Native keyboard semantics for the existing accessible admin modal surfaces.
+ useEffect(()=>{
+   if(![sessionUser,memberWorkspace,orgEdit,reviewTarget,planEdit,targetUser].some(Boolean))return;
+   const dialog=document.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]');
+   if(!dialog)return;
+   const previous=document.activeElement instanceof HTMLElement?document.activeElement:null;
+   const oldOverflow=document.body.style.overflow;
+   document.body.style.overflow="hidden";
+   const elements=()=>Array.from(dialog.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex]:not([tabindex="-1"])')).filter(x=>x.getClientRects().length>0);
+   elements()[0]?.focus();
+   const onKey=(event:KeyboardEvent)=>{
+     if(event.key==="Escape"){
+       event.preventDefault();
+       if(reviewTarget){setReviewTarget(null);setReviewPassword("");setReviewMessage("")}
+       else if(planEdit){setPlanEdit(null);setPlanPassword("")}
+       else if(orgEdit){setOrgEdit(null);setOrgPassword("")}
+       else if(targetUser){setTargetUser(null);setConfirmPassword("")}
+       else if(memberWorkspace){setMemberTarget(null);setMemberWorkspace(null);setMemberPassword("")}
+       else if(sessionUser){setSessionUser(null);setSessionPassword("")}
+       return;
+     }
+     if(event.key!=="Tab")return;
+     const list=elements();
+     if(!list.length){event.preventDefault();return}
+     const first=list[0],last=list[list.length-1];
+     if(!dialog.contains(document.activeElement)){event.preventDefault();first.focus()}
+     else if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}
+     else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}
+   };
+   document.addEventListener("keydown",onKey);
+   return()=>{document.removeEventListener("keydown",onKey);document.body.style.overflow=oldOverflow;previous?.focus()};
+ },[sessionUser,memberWorkspace,orgEdit,reviewTarget,planEdit,targetUser]);
+
  useEffect(()=>{if(!profileOpen)return;const outside=(event:PointerEvent)=>{if(profileRef.current&&!profileRef.current.contains(event.target as Node))setProfileOpen(false)};const escape=(event:KeyboardEvent)=>{if(event.key==="Escape")setProfileOpen(false)};document.addEventListener("pointerdown",outside);document.addEventListener("keydown",escape);return()=>{document.removeEventListener("pointerdown",outside);document.removeEventListener("keydown",escape)}},[profileOpen]);
  useEffect(()=>{
    let active=true;
