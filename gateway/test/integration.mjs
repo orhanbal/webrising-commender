@@ -475,6 +475,7 @@ assert.equal((await cmsPublish(cmsFirstId)).status,200);
 const publishedMedia=await fetch(base+"/api/public/media/"+mediaId);
 assert.equal(publishedMedia.status,200,"Published landing images become publicly readable");
 assert.equal(publishedMedia.headers.get("content-type"),"image/png");
+assert.match(publishedMedia.headers.get("cache-control")||"",/no-store/,"Published media must not remain cached after unpublish");
 const publicFirst=await jsonFetch("/api/public/site-content?locale=en");
 assert.equal(publicFirst.item.hero_title,"Integration Draft One");
 assert.equal(publicFirst.item.overrides["Cihaz yönetiminde"],"Managed capabilities heading");
