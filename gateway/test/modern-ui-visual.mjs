@@ -29,6 +29,7 @@ const fixtures={
  "/api/console/billing":{plans:[{key:"pro",name:"Pro",max_devices:5,max_members:2,max_api_tokens:4,active:true}],subscriptions:[]},
  "/api/console/billing/requests":{items:[{id:"123e4567-e89b-42d3-a456-426614174000",organization:"Test Workspace",requested_by_email:"test@example.com",type:"refund",message:"Please review my payment",status:"pending",resolution_note:"",created_at:new Date().toISOString()}]},
  "/api/console/system":{mailConfigured:false,signupEnabled:false,deploymentMode:"saas",mailQueue:{pending:0,delivered:0,failed:0}},
+ "/api/console/incidents":{items:[]},
  "/api/console/site-content":{items:[]},
  "/api/auth/organizations":{items:[{id:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",name:"Test Workspace",role:"owner"}]},
  "/api/organization":{item:{id:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",name:"Test Workspace"}},
@@ -206,6 +207,7 @@ try{
 
  await visit("/console/system","System status","modern-console-system");
  assert.ok(await evalJs("document.body.textContent.includes('Active browser sessions')"),"System view must show live operational counters");
+ assert.ok(await evalJs("document.body.textContent.includes('Incident triage')"),"System view must expose audited incident triage");
  assert.ok(await evalJs("document.body.textContent.includes('Branded SMTP')"),"System view must show a credential-safe configuration summary");
  await visit("/console/billing","Subscriptions","modern-console-billing");
  assert.ok(await evalJs("document.body.textContent.includes('Cancellation & refund requests')"),"Super admin must expose support-request queue");
