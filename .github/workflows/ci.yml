@@ -10,6 +10,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  windows-powershell-preflight:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse every Windows installer and maintenance script
+        shell: pwsh
+        run: |
+          $scripts = @(
+            Get-ChildItem installer/windows -Filter '*.ps1' -File
+            Get-ChildItem scripts -Filter '*-windows.ps1' -File
+          )
+          foreach ($script in $scripts) {
+            $tokens = $null
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($script.FullName,[ref]$tokens,[ref]$parseErrors)
+            if (@($parseErrors).Count -gt 0) {
+              $parseErrors | ForEach-Object { Write-Error "$($script.Name): $($_.Message)" }
+              throw "PowerShell syntax is invalid: $($script.Name)"
+            }
+            Write-Host "Parsed $($script.Name)"
+          }
   rust:
     runs-on: ubuntu-latest
     steps:
