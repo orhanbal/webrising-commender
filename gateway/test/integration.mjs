@@ -495,6 +495,19 @@ const memberId=memberSeed.rows[0].id;
 await acceptanceDb.query(
   "insert into organization_members(organization_id,user_id,role) values($1,$2,'viewer')",
   [membershipOrg,memberId]);
+const userDirectory=await fetch(base+"/api/console/users?limit=1&offset=0&q=console-role-fixture",{
+ headers:{Cookie:browserCookies},
+});
+assert.equal(userDirectory.status,200);
+const userDirectoryResult=await userDirectory.json();
+assert.equal(userDirectoryResult.limit,1);
+assert.ok(Number.isInteger(userDirectoryResult.total));
+assert.equal(userDirectoryResult.items.length<=1,true);
+const noMatchingUsers=await fetch(base+"/api/console/users?limit=25&q=__no_such_user_923abcc__",{
+ headers:{Cookie:browserCookies},
+});
+assert.equal(noMatchingUsers.status,200);
+assert.equal((await noMatchingUsers.json()).total,0);
 const workspaceDirectory=await fetch(base+"/api/console/organizations?limit=1&offset=0&q=Test",{headers:{Cookie:browserCookies}});
 assert.equal(workspaceDirectory.status,200);
 const workspaceDirectoryData=await workspaceDirectory.json();
