@@ -149,6 +149,18 @@ export const consoleTurkish:Record<string,string> = {
   "Review required": "İnceleme gerekli",
   "Reviewed at": "İnceleme zamanı",
   "Mark reviewed": "İncelendi olarak işaretle",
-  "Confirm review": "İncelemeyi onayla"
+  "Confirm review": "İncelemeyi onayla",
+  "Landing media library": "Açılış sayfası medya kütüphanesi",
+  "Upload up to 500 KB PNG/WebP or rasterize SVG locally, then assign an image to a feature card. Published content changes only after CMS publication.": "En fazla 500 KB PNG/WebP yükleyin veya SVG'yi tarayıcıda PNG'ye dönüştürün; ardından görseli özellik kartına atayın. Değişiklikler CMS yayınlanınca canlıya geçer.",
+  "Accessible image description": "Görsel için alternatif açıklama",
+  "Image file": "Görsel dosyası",
+  "Upload to library": "Kütüphaneye yükle",
+  "Target feature card": "Hedef özellik kartı",
+  "Feature card": "Özellik kartı",
+  "No library images yet.": "Kütüphanede henüz görsel yok.",
+  "Selected": "Seçildi",
+  "Use in card": "Kartta kullan",
+  "Image uploaded. Assign it below and publish the CMS revision to make it live.": "Görsel yüklendi. Aşağıdaki kartlardan birine atayın ve yayına almak için CMS revizyonunu yayınlayın.",
+  "Library assets are retained to preserve the integrity of previously published revisions.": "Önceden yayınlanmış revizyonların bütünlüğü için görseller saklanır."
 };
 export function consoleText(source:string,locale:"en"|"tr"):string {return locale==="tr"?(consoleTurkish[source]??source):source;}
