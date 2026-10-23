@@ -31,6 +31,7 @@ import {
 import { db, housekeeping, migrate, ready } from "./db.js";
 import { getPublicPlans, publicPaddleConfig, createPaddleCheckout, createPaddlePortal, consumePaddleWebhook } from "./paddle.js";
 import { getDownloads } from "./downloads.js";
+import { createDeviceLink, getDeviceLinkStatus, approveDeviceLink } from "./device-link.js";
 import { DeviceRouter } from "./device-router.js";
 import { enqueueMail, mailConfigured, publicSignupEnabled, startMailWorker } from "./mail.js";
 import { handleMcp } from "./mcp.js";
@@ -1323,6 +1324,21 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         csrfToken: material.csrfToken,
         expiresInSeconds: maxAge,
       });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/device-link/start") {
+      const limit = enrollRateLimit.hit(remoteKey(req), 12, 10 * 60_000);
+      if (!limit.allowed) return void json(res, 429, { error: "rate_limited" });
+      return void json(res, 201, await createDeviceLink());
+    }
+    if (req.method === "POST" && url.pathname === "/api/device-link/poll") {
+      const limit = enrollRateLimit.hit(remoteKey(req), 180, 10 * 60_000);
+      if (!limit.allowed) return void json(res, 429, { error: "rate_limited" });
+      const body = z.object({
+        requestId: z.string().uuid(),
+        requestSecret: z.string().min(20).max(200),
+      }).parse(await readJson(req));
+      return void json(res, 200, await getDeviceLinkStatus(body.requestId, body.requestSecret));
     }
 
     if (req.method === "POST" && url.pathname === "/api/agent/enroll") {
@@ -3244,6 +3260,17 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         JSON.stringify({ tokenId, role: targetToken.role }),
       );
       return void json(res, 200, { ok: true, item: revoked.rows[0] });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/device-link/approve") {
+      const limit = pairingRateLimit.hit(remoteKey(req), 15, 10 * 60_000);
+      if (!limit.allowed) return void json(res, 429, { error: "rate_limited" });
+      const body = z.object({
+        requestId: z.string().uuid(),
+        organizationId: z.string().uuid(),
+      }).parse(await readJson(req));
+      const result = await approveDeviceLink(body.requestId, principal!, body.organizationId);
+      return void json(res, result.status, result);
     }
 
     if (req.method === "POST" && url.pathname === "/api/pairing") {
