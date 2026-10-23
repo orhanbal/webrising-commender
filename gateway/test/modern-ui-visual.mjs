@@ -11,7 +11,7 @@ mkdirSync(artifacts,{recursive:true});
 assert.ok(existsSync(join(root,"index.html")),"Frontend must be built before browser tests");
 const fixtures={
  "/api/auth/me":{email:"test@example.com",actor:"test-user",role:"owner",authKind:"session",global:false,organizationId:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"},
- "/api/public/plans":{mode:"saas",paddle:{clientToken:null,checkoutEnabled:false,environment:"sandbox"},plans:[{key:"pro",name:"Pro",description:"Örnek test paketi",featured:true,priceLabel:"$12 / ay",priceId:null,features:["5 cihaz"],maxDevices:5,maxMembers:2,maxApiTokens:4}]},
+ "/api/public/plans":{mode:"saas",paddle:{clientToken:null,checkoutEnabled:false,environment:"sandbox"},plans:[{key:"pro",name:"Pro",description:"Example test plan",featured:true,priceLabel:"$12 / month",priceId:null,features:["5 devices"],maxDevices:5,maxMembers:2,maxApiTokens:4}]},
  "/api/devices":{items:[{id:"11111111-1111-4111-8111-111111111111",name:"Test Windows Device",platform:"windows",online:true,last_seen_at:new Date().toISOString()}]},
  "/api/usage":{monthCalls:42,limit:100,dailyAverage:6,resetAt:"2026-11-01T00:00:00Z",daily:[1,2,3,4,5,6,7].map((n)=>({day:"2026-10-"+String(10+n),calls:n*2})),months:[],topTools:[]},
  "/api/activity":{items:[{tool:"direct.command",outcome:"success",created_at:new Date().toISOString()}]},
@@ -71,14 +71,30 @@ try{
   const image=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
   writeFileSync(join(artifacts,screenshot+".png"),Buffer.from(image.data,"base64"));
  }
- await visit("/","Tüm cihazların","modern-landing-dark");
+ await visit("/","All your devices.","modern-landing-dark");
  // Reference acceptance: exactly one guest sign-in and one blue Install CTA.
  const signedIn=fixtures["/api/auth/me"];
  delete fixtures["/api/auth/me"];
- await visit("/","Tüm cihazların","modern-landing-guest");
- const guestHeader=await evalJs("(()=>{const h=document.querySelector('.site-header');const buttons=[...h.querySelectorAll('button')];return {login:buttons.filter(b=>b.textContent.trim()==='Giriş Yap').length,install:buttons.filter(b=>b.textContent.includes('Install')).length}})()");
+ await visit("/","All your devices.","modern-landing-guest");
+ const guestHeader=await evalJs("(()=>{const h=document.querySelector('.site-header');const buttons=[...h.querySelectorAll('button')];return {login:buttons.filter(b=>b.textContent.trim()==='Sign in').length,install:buttons.filter(b=>b.textContent.includes('Install')).length}})()");
  assert.equal(guestHeader.login,1,"Guest header must not render duplicate sign-in actions");
  assert.equal(guestHeader.install,1,"Header must show one Install CTA");
+ assert.equal(await evalJs("document.documentElement.lang"),"en","English must be the default regardless of browser language");
+ assert.equal(await evalJs("document.querySelector('.site-header .locale-switcher select')?.value"),"en","English is selected by default");
+ await evalJs("(()=>{const selector=document.querySelector('.site-header .locale-switcher select');selector.value='tr';selector.dispatchEvent(new Event('change',{bubbles:true}))})()");
+ await sleep(120);
+ assert.equal(await evalJs("document.documentElement.lang"),"tr","Switching to Turkish must update html lang");
+ assert.ok(await evalJs("document.querySelector('h1')?.textContent.includes('Tüm cihazların.')"),"Turkish landing translation was not applied");
+ assert.equal(await evalJs("localStorage.getItem('wecommander-language')"),"tr","Locale selection must be persisted");
+ const turkishImage=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
+ writeFileSync(join(artifacts,"modern-landing-turkish.png"),Buffer.from(turkishImage.data,"base64"));
+ await visit("/","Tüm cihazların.","modern-landing-turkish-persisted");
+ assert.equal(await evalJs("document.querySelector('.site-header .locale-switcher select')?.value"),"tr","Language must survive page navigation");
+ await evalJs("(()=>{const selector=document.querySelector('.site-header .locale-switcher select');selector.value='en';selector.dispatchEvent(new Event('change',{bubbles:true}))})()");
+ await sleep(120);
+ assert.ok(await evalJs("document.querySelector('h1')?.textContent.includes('All your devices.')"),"Reverting to English must restore native copy");
+ assert.equal(await evalJs("localStorage.getItem('wecommander-language')"),"en");
+
  await evalJs("document.querySelector('.wc-nav-install').click()");
  for(let i=0;i<60;i++){await sleep(80);if(await evalJs("location.pathname==='/install' && document.querySelectorAll('.install-client-card').length===2"))break}
  assert.equal(await evalJs("location.pathname"),"/install","Install button must navigate to /install");
@@ -88,7 +104,7 @@ try{
  await evalJs("document.querySelector('.install-client-action').click()");
  await sleep(160);
  assert.ok(await evalJs("document.querySelector('[role=dialog]')?.textContent.includes('ChatGPT')"),"ChatGPT setup must open actionable guide");
- await visit("/install","Konuştuğun yerde","modern-install-desktop");
+ await visit("/install","Use it where you","modern-install-desktop");
  assert.equal(await evalJs("document.querySelectorAll('.install-platform').length"),3,"Install offers three operating systems");
  await evalJs("document.querySelector('.install-platforms button:nth-child(2)').click()");
  assert.ok(await evalJs("document.querySelector('.install-code-wrap pre')?.textContent.includes('target/release/webrising-commender')"),"macOS guide must show build command");
@@ -104,36 +120,46 @@ try{
  await sleep(90);
  assert.equal(await evalJs("document.documentElement.classList.contains('light')"),false);
  fixtures["/api/auth/me"]=signedIn;
- await visit("/","Tüm cihazların","modern-landing-dark");
+ await visit("/","All your devices.","modern-landing-dark");
 
  await evalJs("document.querySelector('.theme-button').click()");
  await sleep(200);
  assert.equal(await evalJs("document.documentElement.classList.contains('light')"),true,"Windows light mode toggle broken");
  let image=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
  writeFileSync(join(artifacts,"modern-landing-light.png"),Buffer.from(image.data,"base64"));
- await visit("/login","Tekrar hoş geldiniz","modern-login");
- await visit("/register","Hesabınızı oluşturun","modern-register");
- await visit("/forgot-password","Şifrenizi sıfırlayın","modern-forgot-password");
+ await visit("/login","Welcome back","modern-login");
+ await visit("/register","Create your account","modern-register");
+ await visit("/forgot-password","Reset your password","modern-forgot-password");
  await visit("/pricing","Self-hosted","modern-pricing");
  await visit("/checkout?plan=pro","Paddle","modern-checkout");
- await visit("/dashboard","Tekrar hoş geldin","modern-dashboard");
- await visit("/billing","Paket ve Faturalama","modern-billing");
- await visit("/devices","Bağlı Makineler","modern-devices");
- await visit("/terminal","Çalışma Ortamı","modern-terminal");
- await visit("/files","Dosyaları Listele","modern-files");
- await visit("/tasks","Aktif Görevleri Listele","modern-tasks");
- await visit("/mcp","API Erişim Anahtarları","modern-mcp");
- await visit("/usage","Kullanım ve Raporlar","modern-usage");
- await visit("/account","Şifremi Değiştir","modern-account");
- await visit("/features","Cihaz yönetiminde","modern-features-scroll");
+ await visit("/dashboard","Welcome back","modern-dashboard");
+ const languagePicker=await evalJs("document.querySelector('.dash-toolbar .locale-switcher select')!==null");
+ assert.equal(languagePicker,true,"Dashboard needs its own language picker");
+ await evalJs("(()=>{const s=document.querySelector('.dash-toolbar .locale-switcher select');s.value='tr';s.dispatchEvent(new Event('change',{bubbles:true}))})()");
+ await sleep(110);
+ assert.ok(await evalJs("document.body.textContent.includes('Tekrar hoş geldin')"),"Dashboard must switch to Turkish");
+ await evalJs("(()=>{const s=document.querySelector('.dash-toolbar .locale-switcher select');s.value='en';s.dispatchEvent(new Event('change',{bubbles:true}))})()");
+ await sleep(110);
+ assert.ok(await evalJs("document.body.textContent.includes('Welcome back')"),"Dashboard must switch back to English");
+ assert.equal(await evalJs("document.documentElement.lang"),"en");
+
+ await visit("/billing","Plans & billing","modern-billing");
+ await visit("/devices","Connected machines","modern-devices");
+ await visit("/terminal","Workspace","modern-terminal");
+ await visit("/files","List files","modern-files");
+ await visit("/tasks","List active tasks","modern-tasks");
+ await visit("/mcp","API access tokens","modern-mcp");
+ await visit("/usage","Usage & reports","modern-usage");
+ await visit("/account","Change password","modern-account");
+ await visit("/features","A new standard in","modern-features-scroll");
  assert.equal(await evalJs("location.hash"),"","Landing section URLs must have no hash");
- await visit("/how-it-works","Karmaşıklığı kaldır","modern-how-it-works");
+ await visit("/how-it-works","Less complexity.","modern-how-it-works");
  await call("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:1,mobile:true});
- await visit("/","Tüm cihazların","modern-landing-mobile");
- await visit("/dashboard","Tekrar hoş geldin","modern-dashboard-mobile");
- await visit("/devices","Bağlı Makineler","modern-devices-mobile");
- await visit("/install","Konuştuğun yerde","modern-install-mobile");
+ await visit("/","All your devices.","modern-landing-mobile");
+ await visit("/dashboard","Welcome back","modern-dashboard-mobile");
+ await visit("/devices","Connected machines","modern-devices-mobile");
+ await visit("/install","Use it where you","modern-install-mobile");
  assert.ok(await evalJs("document.querySelector('.wc-nav-install')!==null"),"Mobile Install CTA missing");
- await visit("/account","Şifremi Değiştir","modern-account-mobile");
+ await visit("/account","Change password","modern-account-mobile");
  console.log("PASS modern shadcn landing, account, device/workbench, usage, pricing, checkout and billing desktop/mobile");
 }finally{ws?.close();proc.kill("SIGTERM");server.close();try{rmSync(profile,{recursive:true,force:true})}catch{}}
