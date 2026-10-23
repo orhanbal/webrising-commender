@@ -83,7 +83,7 @@ The same CI-approved prerelease also provides `WECOMMANDER-Setup-windows-x64.exe
 **Windows PowerShell (run as your normal user):**
 
 ```powershell
-Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/orhanbal/webrising-commender/main/scripts/install-windows-online.ps1 -OutFile "$env:TEMP\\wecommander-install.ps1"; & "$env:TEMP\\wecommander-install.ps1"
+Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/orhanbal/webrising-commender/main/scripts/install-windows-online.ps1 -OutFile "$env:TEMP\\wecommander-install.ps1"; powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\\wecommander-install.ps1"
 ```
 
 The Windows Setup itself requests UAC if needed. The terminal installer downloads and checksums the Setup executable, installs it and opens browser-based account linking. It does not ask for the Windows service account password. Release previews are unsigned, and Windows SmartScreen might warn about the publisher.
