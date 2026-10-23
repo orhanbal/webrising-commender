@@ -17,9 +17,14 @@ const appResponse = await fetch(base + "/app");
 assert.equal(appResponse.status, 200);
 const appHtml = await appResponse.text();
 assert.match(appHtml, /WECOMMANDER/);
-assert.match(appHtml, />Devices</);
-assert.match(appHtml, /Plan &amp; billing/);
-assert.match(appHtml, />Settings</);
+assert.ok(appHtml.includes('id="root"'),"Modern /app must deliver the React shell");
+assert.match(appHtml, /\/modern\/assets\/index-[^"]+\.js/);
+const advancedResponse=await fetch(base+"/advanced");
+assert.equal(advancedResponse.status,200);
+const advancedHtml=await advancedResponse.text();
+assert.match(advancedHtml, />Devices</);
+assert.match(advancedHtml, /Plan &amp; billing/);
+assert.match(advancedHtml, />Settings</);
 
 for (const name of ["wecommander-white.svg","wecommander-black.svg","wecommander-favicon.svg"]) {
   const asset = await fetch(base + "/assets/" + name);
