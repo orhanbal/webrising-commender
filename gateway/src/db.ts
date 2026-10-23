@@ -161,6 +161,11 @@ export async function migrate() {
       granted_by text not null,
       revoked_at timestamptz
     );
+    create table if not exists platform_incident_acknowledgements (
+      fingerprint text primary key check (length(fingerprint) between 3 and 240),
+      acknowledged_by uuid references users(id) on delete set null,
+      acknowledged_at timestamptz not null default now()
+    );
     create table if not exists platform_admin_audit (
       id bigserial primary key,
       actor_user_id uuid references users(id) on delete set null,
