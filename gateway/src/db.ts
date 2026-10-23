@@ -55,9 +55,9 @@ export async function migrate() {
     );
     create unique index if not exists users_email_lower_uidx on users(lower(email));
 
+    -- Never automatically verify accounts in recurring migrations.
+    -- Backfills must be an explicit, audited one-off migration.
     alter table users add column if not exists email_verified_at timestamptz;
-    update users set email_verified_at=coalesce(email_verified_at,created_at,now())
-      where email_verified_at is null;
 
     create table if not exists pending_signups (
       id uuid primary key default gen_random_uuid(),
