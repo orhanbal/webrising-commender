@@ -31,8 +31,18 @@ assert.ok(appHtml.includes("wecommander-favicon.svg"));
 const landingAssetCheck = await fetch(base + "/");
 assert.equal(landingAssetCheck.status, 200);
 const landingAssetMarkup = await landingAssetCheck.text();
-assert.ok(landingAssetMarkup.includes("wecommander-white.svg"));
+assert.ok(landingAssetMarkup.includes('id="root"'));
 assert.ok(landingAssetMarkup.includes("wecommander-favicon.svg"));
+assert.match(landingAssetMarkup, /\/modern\/assets\/index-[^"]+\.js/);
+const publicPlans=await jsonFetch("/api/public/plans");
+assert.equal(publicPlans.mode,"saas");
+assert.equal(typeof publicPlans.paddle.checkoutEnabled,"boolean");
+assert.equal(Array.isArray(publicPlans.plans),true);
+const missingPaddle=await fetch(base+"/api/billing/paddle/checkout",{
+ method:"POST",
+ headers:{"Content-Type":"application/json"}
+});
+assert.equal(missingPaddle.status,401,"Checkout requires login");
 
 const smtpCapture = process.env.SMTP_TEST_OUTPUT || "/tmp/commender-smtp.jsonl";
 const databaseUrl = process.env.DATABASE_URL;
