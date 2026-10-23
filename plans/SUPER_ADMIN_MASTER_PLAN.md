@@ -1,6 +1,6 @@
 # WECOMMANDER — Super Admin Master Plan
 
-Status: IN PROGRESS (2026-10-23). Phase A backend committed, not yet accepted by CI or real login.
+Status: IN PROGRESS (2026-10-23). Platform read-only modules and first revisioned hero CMS implemented; final CI and production acceptance outstanding.
 
 ## Decision
 
@@ -51,18 +51,18 @@ Status: IN PROGRESS (2026-10-23). Phase A backend committed, not yet accepted by
 - [ ] Explicit customer authorization for privileged support actions.
 
 ### Phase E — Billing
-- [ ] Product plans, prices, quota defaults, subscription states and Paddle webhook health.
+- [ ] Read-only plans/subscriptions panel and API implemented; provider health, editing and quota controls remain.
 - [ ] Preserve Paddle as payment source of truth; no manual fake-paid switches.
 - [ ] Refund/cancellation workflows with provider confirmation and audit.
 
 ### Phase F — Landing CMS
-- [ ] Revisioned, schema-validated content: hero, features, installation, pricing explanations, FAQ, CTA, footer and legal pages.
+- [ ] Revisioned EN/TR hero title and description editor, draft/publish and live rendering implemented; other landing sections, branding, SEO, legal pages remain.
 - [ ] Preview, draft, publish and rollback; safe media uploads and asset versioning.
 - [ ] Logo (light/dark), favicon, social metadata, canonical SEO, navigation without hash links.
 - [ ] Page-cache invalidation after publish. Preserve layout constraints and responsive checks.
 
 ### Phase G — System settings
-- [ ] Brand and public configuration, gateway/relay summaries, mail delivery status and integration health.
+- [ ] Redacted system/mail status panel implemented; configuration UI, gateway/relay visibility and integrations remain.
 - [ ] Store sensitive values only through approved secret management; redact on read.
 - [ ] Alerting, backups, retention, security posture and maintenance actions.
 
