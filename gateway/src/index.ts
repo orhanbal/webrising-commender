@@ -1629,16 +1629,31 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         return void json(res,200,{items:records.rows});
       }
       if (req.method === "GET" && url.pathname === "/api/console/audit") {
-        const records = await db.query(
-          `select item_id,tool,outcome,risk,created_at,organization_name from (
- select 'tenant:'||a.id::text as item_id,a.tool,a.outcome,a.risk,a.created_at,o.name as organization_name
- from audit_logs a left join organizations o on o.id=a.organization_id
- union all
- select 'platform:'||p.id::text as item_id,p.action as tool,'success'::text as outcome,'high'::text as risk,p.created_at,'WECOMMANDER Platform'::text as organization_name
- from platform_admin_audit p
- ) combined order by created_at desc limit 100`,
-        );
-        return void json(res,200,{items:records.rows});
+        const q=(url.searchParams.get("q")||"").trim().slice(0,160);
+        const source=z.enum(["all","tenant","platform"]).parse(url.searchParams.get("source")||"all");
+        const risk=z.enum(["all","low","medium","high","critical"]).parse(url.searchParams.get("risk")||"all");
+        const limit=z.coerce.number().int().min(1).max(100).parse(url.searchParams.get("limit")||"25");
+        const offset=z.coerce.number().int().min(0).max(100000).parse(url.searchParams.get("offset")||"0");
+        // Unite tenant and platform audit entries without exposing their private detail fields.
+        const union=`select 'tenant:'||a.id::text as item_id,a.tool,a.outcome,a.risk,a.created_at,
+                       coalesce(o.name,'Deleted organization') as organization_name,'tenant'::text as source
+                     from audit_logs a left join organizations o on o.id=a.organization_id
+                     union all
+                     select 'platform:'||p.id::text as item_id,p.action as tool,'success'::text as outcome,
+                       'high'::text as risk,p.created_at,
+                       'WECOMMANDER Platform'::text as organization_name,'platform'::text as source
+                     from platform_admin_audit p`;
+        const filtered=`from (${union}) combined
+          where ($1::text='' or tool ilike '%'||$1||'%' or organization_name ilike '%'||$1||'%')
+            and ($2::text='all' or source=$2)
+            and ($3::text='all' or risk=$3)`;
+        const [page,total]=await Promise.all([
+          db.query(`select item_id,tool,outcome,risk,created_at,organization_name,source ${filtered}
+                    order by created_at desc,item_id desc limit $4 offset $5`,
+                   [q,source,risk,limit,offset]),
+          db.query<{total:number}>(`select count(*)::int as total ${filtered}`,[q,source,risk]),
+        ]);
+        return void json(res,200,{items:page.rows,total:total.rows[0]?.total??0,limit,offset});
       }
       if (req.method === "POST" && url.pathname === "/api/console/plans/limits") {
         const payload=z.object({
