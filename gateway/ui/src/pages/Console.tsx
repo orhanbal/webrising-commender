@@ -10,6 +10,11 @@ import type {Nav,Theme} from "../App";
 
 type Overview={users:number;organizations:number;devices:number;activeDevices:number};
 type Admin={email:string;userId:string;platformRole:string};
+const faqCopy=landingCopySections.find(group=>group.name==="FAQ")?.keys??[];
+const faqPairs=Array.from({length:Math.floor((faqCopy.length-2)/2)},(_,i)=>({
+ question:faqCopy[2+i*2],answer:faqCopy[3+i*2],
+})).filter((item):item is {question:string;answer:string}=>!!item.question&&!!item.answer);
+
 const routes:Record<string,string>={Overview:"/console",Users:"/console/users",Organizations:"/console/organizations",Devices:"/console/devices",Operations:"/console/operations","Landing CMS":"/console/landing",Billing:"/console/billing",System:"/console/system",Brand:"/console/brand","Legal CMS":"/console/legal"};
 export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;theme:Theme;toggle:()=>void;logout:()=>void}){
  const currentLocale=useLocale();
@@ -289,7 +294,19 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
   <input className="block mt-2 w-full rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-3" value={cmsFilter} onChange={e=>setCmsFilter(e.target.value)} placeholder="Search editable copy"/>
  </label>
 </div>
-<div className="grid gap-4">{landingCopySections.find(group=>group.name===cmsSection)?.keys.filter(key=>!cmsFilter||key.toLocaleLowerCase("tr").includes(cmsFilter.toLocaleLowerCase("tr"))).map(key=><label key={key} className="block">
+<div className="grid gap-4">{cmsSection==="FAQ"?<>
+ <p className="muted text-sm">Questions and answers are paired so publishing cannot separate a question from its answer.</p>
+ {faqCopy.slice(0,2).map(key=><label key={key} className="block"><span className="font-semibold text-sm">{translate(key)}</span><textarea rows={2} maxLength={800} className="w-full rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-3 mt-2" value={cmsOverrides[key]||""} placeholder={translate(key)} onChange={e=>setCmsOverrides(old=>({...old,[key]:e.target.value}))}/></label>)}
+ {faqPairs.filter(pair=>!cmsFilter||[pair.question,pair.answer].some(key=>key.toLocaleLowerCase("tr").includes(cmsFilter.toLocaleLowerCase("tr")))).map((pair,i)=><fieldset key={pair.question} className="rounded-xl border border-[var(--stroke)] p-5">
+  <legend className="font-semibold px-2">FAQ {i+1}</legend>
+  <label className="block text-sm font-semibold mb-3">Question
+   <textarea rows={2} maxLength={800} className="block mt-2 w-full rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-3" value={cmsOverrides[pair.question]||""} placeholder={translate(pair.question)} onChange={e=>setCmsOverrides(old=>({...old,[pair.question]:e.target.value}))}/>
+  </label>
+  <label className="block text-sm font-semibold">Answer
+   <textarea rows={4} maxLength={800} className="block mt-2 w-full rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-3" value={cmsOverrides[pair.answer]||""} placeholder={translate(pair.answer)} onChange={e=>setCmsOverrides(old=>({...old,[pair.answer]:e.target.value}))}/>
+  </label>
+ </fieldset>)}
+ </>:landingCopySections.find(group=>group.name===cmsSection)?.keys.filter(key=>!cmsFilter||key.toLocaleLowerCase("tr").includes(cmsFilter.toLocaleLowerCase("tr"))).map(key=><label key={key} className="block">
  <span className="font-semibold text-sm">{translate(key)}</span>
  <span className="block muted text-xs my-1">{key}</span>
  <textarea rows={2} maxLength={800} className="w-full rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-3" value={cmsOverrides[key]||""} placeholder={translate(key)} onChange={e=>setCmsOverrides(old=>({...old,[key]:e.target.value}))}/>
