@@ -1470,9 +1470,13 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (req.method === "GET" && url.pathname === "/api/console/audit") {
         const records = await db.query(
-          `select a.id,a.tool,a.outcome,a.risk,a.created_at,o.name as organization_name
-             from audit_logs a join organizations o on o.id=a.organization_id
-            order by a.created_at desc limit 100`,
+          `select item_id,tool,outcome,risk,created_at,organization_name from (
+ select 'tenant:'||a.id::text as item_id,a.tool,a.outcome,a.risk,a.created_at,o.name as organization_name
+ from audit_logs a left join organizations o on o.id=a.organization_id
+ union all
+ select 'platform:'||p.id::text as item_id,p.action as tool,'success'::text as outcome,'high'::text as risk,p.created_at,'WECOMMANDER Platform'::text as organization_name
+ from platform_admin_audit p
+ ) combined order by created_at desc limit 100`,
         );
         return void json(res,200,{items:records.rows});
       }
