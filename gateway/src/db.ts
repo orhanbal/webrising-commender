@@ -125,6 +125,7 @@ export async function migrate() {
       created_by uuid references users(id) on delete set null,
       created_at timestamptz not null default now()
     );
+    alter table site_content_revisions add column if not exists overrides jsonb not null default '{}'::jsonb;
     create unique index if not exists site_content_one_published_per_locale
       on site_content_revisions(locale) where state='published';
     create table if not exists platform_administrators (
