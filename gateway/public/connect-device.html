@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WECOMMANDER — Cihazı bağla</title>
+<style>body{font:16px system-ui,Segoe UI,sans-serif;margin:0;background:#f4f6fa;color:#172136;display:grid;place-items:center;min-height:100vh}main{max-width:500px;width:calc(100% - 48px);padding:30px;background:#fff;border:1px solid #d9e0ec;border-radius:18px;box-shadow:0 12px 40px #152a4812}h1{font-size:28px;margin:0 0 12px}p{line-height:1.55;color:#4b5870}button{padding:14px 22px;background:#2563eb;border:0;color:#fff;border-radius:9px;font-size:16px;cursor:pointer}button:disabled{opacity:.5;cursor:not-allowed}select{display:block;padding:12px;width:100%;margin:14px 0 20px}#state{padding:10px 0;min-height:24px}a{color:#2563eb}</style></head>
+<body><main><h1>WECOMMANDER</h1><h2>Bilgisayarını bağla</h2>
+<p>Yalnızca kendi bilgisayarında başlattığın bağlantı isteğini onayla. Onayladığında bu cihaz seçtiğin çalışma alanına eklenir.</p>
+<div id="state">Hesap oturumu kontrol ediliyor…</div>
+<div id="panel" hidden><label for="org">Çalışma alanı</label><select id="org"></select>
+<button id="approve">Bu cihazı bağla</button></div>
+<p><a href="/login" id="login" hidden>Hesabınla giriş yap</a></p>
+</main><script>
+(async()=>{
+ const state=document.getElementById('state'),panel=document.getElementById('panel'),org=document.getElementById('org'),login=document.getElementById('login');
+ const requestId=new URLSearchParams(location.search).get('requestId');
+ if(!requestId||!/^[0-9a-f-]{36}$/i.test(requestId)){state.textContent='Geçersiz cihaz bağlantı isteği.';return;}
+ let me;
+ try{const r=await fetch('/api/auth/me',{credentials:'same-origin'});if(!r.ok)throw Error();me=await r.json();}
+ catch{state.textContent='Devam etmek için önce hesabınla oturum aç.';login.hidden=false;login.href='/login?next='+encodeURIComponent(location.pathname+location.search);return;}
+ if(me.authKind!=='session'){state.textContent='Hesabınla tarayıcı oturumu açmalısın.';login.hidden=false;return;}
+ let organizations=[];
+ try{
+   const r=await fetch('/api/access/workspaces',{credentials:'same-origin'});
+   if(r.ok){const data=await r.json();organizations=data.items||[];}
+ }catch{}
+ if(!organizations.length&&me.organizationId)organizations=[{id:me.organizationId,name:'Mevcut çalışma alanı',role:me.role}];
+ for(const o of organizations){
+   if(o.role&&!['owner','admin','operator'].includes(o.role))continue;
+   const option=document.createElement('option');option.value=o.id;option.textContent=o.name||o.id;org.appendChild(option);
+ }
+ if(!org.options.length){state.textContent='Cihaz bağlama yetkin olan çalışma alanı bulunamadı.';return;}
+ panel.hidden=false;state.textContent='Onaylamak istediğin çalışma alanını seç.';
+ document.getElementById('approve').addEventListener('click',async()=>{
+   const button=document.getElementById('approve');button.disabled=true;state.textContent='Onay gönderiliyor…';
+   const csrf=(document.cookie.split('; ').find(c=>c.startsWith('commender_csrf='))||'').split('=').slice(1).join('=');
+   try{
+     const r=await fetch('/api/device-link/approve',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json','x-csrf-token':decodeURIComponent(csrf)},body:JSON.stringify({requestId,organizationId:org.value})});
+     if(!r.ok){const body=await r.json();throw Error(body.error||'Onay başarısız');}
+     state.textContent='Cihaz onaylandı. Windows uygulamasında bağlantı tamamlanacak.';panel.hidden=true;
+   }catch(e){state.textContent=e.message;button.disabled=false;}
+ });
+})();
+</script></body></html>
