@@ -10,7 +10,7 @@ type ManagedDevice=Device&{revoked_at?:string|null;agent_version?:string|null;ca
 export function DevicesPage({nav,account,checking,theme,toggle,logout}:{nav:Nav;account:Account|null;checking:boolean;theme:Theme;toggle:()=>void;logout:()=>void}){
  const [devices,setDevices]=useState<ManagedDevice[]>([]);
  const [loading,setLoading]=useState(false);
- const [filter,setFilter]=useState("");
+ const [filter,setFilter]=useState(new URLSearchParams(location.search).get("search")||"");
  const [showRevoked,setShowRevoked]=useState(false);
  const [error,setError]=useState("");
  const [info,setInfo]=useState("");
@@ -21,7 +21,7 @@ export function DevicesPage({nav,account,checking,theme,toggle,logout}:{nav:Nav;
  const [selected,setSelected]=useState<ManagedDevice|null>(null);
  const [name,setName]=useState("");
  const [busy,setBusy]=useState(false);
- const canOperator=["operator","admin","owner"].includes(account?.role||"")||account?.actor?.startsWith("global:")===true;
+ const canOperator=["operator","admin","owner"].includes(account?.role||"")||account?.global===true;
  const canAdmin=["admin","owner"].includes(account?.role||"")||account?.actor?.startsWith("global:")===true;
  async function load(){
   if(!account)return;
