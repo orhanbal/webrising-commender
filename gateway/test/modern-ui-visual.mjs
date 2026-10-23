@@ -24,7 +24,7 @@ const fixtures={
  "/api/console/users":{items:[{id:"44444444-4444-4444-8444-444444444444",email:"member@example.test",disabled:false,verified:true,workspace_count:1}]},
  "/api/console/organizations":{items:[{id:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",name:"Test Workspace",members:2,devices:1,quota_overrides:{}}]},
  "/api/console/organizations/members":{items:[{user_id:"55555555-5555-4555-8555-555555555555",email:"member@example.test",role:"viewer",disabled:false}]},
- "/api/console/devices":{items:[{id:"11111111-1111-4111-8111-111111111111",name:"Test Windows Device",organization_name:"Test Workspace",platform:"windows"}]},
+ "/api/console/devices":{items:[{id:"11111111-1111-4111-8111-111111111111",name:"Test Windows Device",organization_name:"Test Workspace",platform:"windows"}],total:1,limit:25,offset:0},
  "/api/console/audit":{items:[{item_id:"platform:1",tool:"membership.role_change",outcome:"success",risk:"high",source:"platform",organization_name:"WECOMMANDER Platform"}],total:1,limit:25,offset:0},
  "/api/console/billing":{plans:[{key:"pro",name:"Pro",max_devices:5,max_members:2,max_api_tokens:4,active:true}],subscriptions:[]},
  "/api/console/billing/requests":{items:[{id:"123e4567-e89b-42d3-a456-426614174000",organization:"Test Workspace",requested_by_email:"test@example.com",type:"refund",message:"Please review my payment",status:"pending",resolution_note:"",created_at:new Date().toISOString()}]},
@@ -211,6 +211,9 @@ try{
  assert.ok(await evalJs("document.body.textContent.includes('Active browser sessions')"),"System view must show live operational counters");
  assert.ok(await evalJs("document.body.textContent.includes('Incident triage')"),"System view must expose audited incident triage");
  assert.ok(await evalJs("document.body.textContent.includes('Branded SMTP')"),"System view must show a credential-safe configuration summary");
+ await visit("/console/devices","Devices","modern-console-devices");
+ assert.ok(await evalJs("document.querySelector('input[aria-label=\"Search devices\"]')!==null"),"Device inventory should have a name/platform/workspace search");
+ assert.equal(await evalJs("document.querySelectorAll('select[aria-label=\"Device status\"] option').length"),3,"Device state filtering must be explicit");
  await visit("/console/operations","Operations","modern-console-operations");
  assert.ok(await evalJs("document.querySelector('input[aria-label=\"Search audit records\"]')!==null"),"Audit table needs its own search box");
  assert.equal(await evalJs("document.querySelectorAll('select[aria-label=\"Audit source\"] option').length"),3,"Audit source filter lists tenant/platform");
