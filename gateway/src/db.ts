@@ -116,6 +116,20 @@ export async function migrate() {
     );
     create index if not exists organization_members_user_idx on organization_members(user_id);
 
+    create table if not exists platform_administrators (
+      user_id uuid primary key references users(id) on delete cascade,
+      granted_at timestamptz not null default now(),
+      granted_by text not null,
+      revoked_at timestamptz
+    );
+    create table if not exists platform_admin_audit (
+      id bigserial primary key,
+      actor_user_id uuid references users(id) on delete set null,
+      action text not null,
+      detail text not null,
+      created_at timestamptz not null default now()
+    );
+
     create table if not exists browser_sessions (
       id uuid primary key default gen_random_uuid(),
       user_id uuid not null references users(id) on delete cascade,
