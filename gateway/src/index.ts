@@ -29,6 +29,7 @@ import {
   type AllocationResource,
 } from "./billing.js";
 import { db, housekeeping, migrate, ready } from "./db.js";
+import { getPublicPlans, publicPaddleConfig, createPaddleCheckout, createPaddlePortal, consumePaddleWebhook } from "./paddle.js";
 import { DeviceRouter } from "./device-router.js";
 import { enqueueMail, mailConfigured, publicSignupEnabled, startMailWorker } from "./mail.js";
 import { handleMcp } from "./mcp.js";
@@ -327,6 +328,46 @@ async function serveBrandSvg(res: ServerResponse, fileName: string) {
   return void json(res, 404, { error: "asset_not_found" });
 }
 
+
+const modernPages = new Set([
+  "/", "/login", "/register", "/forgot-password", "/verify",
+  "/reset-password", "/pricing", "/checkout", "/dashboard", "/account", "/billing",
+  "/privacy", "/terms",
+]);
+const modernExtensions: Record<string,string> = {
+  ".js":"text/javascript; charset=utf-8",
+  ".css":"text/css; charset=utf-8",
+  ".svg":"image/svg+xml",
+  ".png":"image/png", ".webp":"image/webp", ".woff2":"font/woff2",
+};
+async function serveModernFile(res: ServerResponse, fileName:string, isIndex=false) {
+  const here=path.dirname(fileURLToPath(import.meta.url));
+  for(const root of [path.resolve(here,"../public/modern"),path.resolve(here,"../../public/modern")]){
+    const target=path.resolve(root,fileName);
+    if(!isIndex && !target.startsWith(root+path.sep)) continue;
+    const type=isIndex?"text/html; charset=utf-8":modernExtensions[path.extname(target)];
+    if(!type)break;
+    try{
+      const body=await fs.readFile(target);
+      res.writeHead(200,{
+        ...securityHeaders(),
+        "content-type":type,
+        "content-length":body.length,
+        "cache-control":isIndex?"no-store":"public, max-age=3600",
+        "content-security-policy":
+          "default-src 'self'; script-src 'self' https://cdn.paddle.com; "+
+          "style-src 'self' 'unsafe-inline' https://cdn.paddle.com; "+
+          "img-src 'self' data: https:; font-src 'self' data:; "+
+          "connect-src 'self' https://*.paddle.com wss:; "+
+          "frame-src https://*.paddle.com; "+
+          "base-uri 'self'; form-action 'self' https://*.paddle.com; frame-ancestors 'none'",
+      });
+      res.end(body);
+      return true;
+    }catch(error){if((error as NodeJS.ErrnoException).code!=="ENOENT")throw error}
+  }
+  return false;
+}
 async function serveLanding(res: ServerResponse) {
   return servePublicHtml(res, "index.html", "landing-not-found");
 }
@@ -348,7 +389,16 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       res.end();
       return;
     }
-    if (req.method === "GET" && url.pathname === "/") return void (await serveLanding(res));
+    if (req.method === "GET" && url.pathname.startsWith("/modern/assets/")) {
+      if (await serveModernFile(res,url.pathname.slice("/modern/".length))) return;
+      return void json(res,404,{error:"asset_not_found"});
+    }
+    if (req.method === "GET" && modernPages.has(url.pathname)) {
+      if (await serveModernFile(res,"index.html",true)) return;
+      if (url.pathname === "/") return void (await serveLanding(res));
+      return void json(res,503,{error:"modern_frontend_not_built"});
+    }
+    if (req.method === "GET" && url.pathname === "/legacy") return void (await serveLanding(res));
     if (req.method === "GET" && (url.pathname === "/app" || url.pathname === "/app/")) {
       return void (await serveConsole(res));
     }
@@ -362,6 +412,15 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       });
     }
 
+    if (req.method === "GET" && url.pathname === "/api/public/plans") {
+      return void json(res,200,{mode:deploymentMode,plans:await getPublicPlans(),paddle:publicPaddleConfig()});
+    }
+    if (req.method === "POST" && url.pathname === "/webhooks/paddle") {
+      const raw=await readBody(req);
+      const signature=Array.isArray(req.headers["paddle-signature"])?
+        req.headers["paddle-signature"][0]:String(req.headers["paddle-signature"]||"");
+      return void json(res,200,await consumePaddleWebhook(raw,signature));
+    }
     if (req.method === "GET" && url.pathname === "/api/public/config") {
       return void json(res, 200, {
         deploymentMode,
@@ -611,7 +670,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       const ttlHours = Number.isFinite(ttlHoursRaw)
         ? Math.min(168, Math.max(1, Math.floor(ttlHoursRaw)))
         : 24;
-      const verifyUrl = `${publicBaseUrl}/app#verify=${encodeURIComponent(token)}`;
+      const verifyUrl = `${publicBaseUrl}/verify#verify=${encodeURIComponent(token)}`;
 
       const client = await db.connect();
       try {
@@ -835,7 +894,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         const ttlMinutes = Number.isFinite(ttlMinutesRaw)
           ? Math.min(1440, Math.max(10, Math.floor(ttlMinutesRaw)))
           : 60;
-        const resetUrl = `${publicBaseUrl}/app#reset=${encodeURIComponent(token)}`;
+        const resetUrl = `${publicBaseUrl}/reset-password#reset=${encodeURIComponent(token)}`;
 
         const client = await db.connect();
         try {
@@ -1513,6 +1572,15 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       return void json(res, 201, { item: created.rows[0] });
     }
 
+    if (req.method === "POST" && url.pathname === "/api/billing/paddle/checkout") {
+      if (!requireRole(principal!,"owner",res)) return;
+      const body=z.object({planKey:z.string().regex(/^[a-z0-9][a-z0-9_-]{1,63}$/)}).parse(await readJson(req));
+      return void json(res,201,await createPaddleCheckout(principal!.organizationId,body.planKey));
+    }
+    if (req.method === "POST" && url.pathname === "/api/billing/paddle/portal") {
+      if (!requireRole(principal!,"owner",res)) return;
+      return void json(res,200,await createPaddlePortal(principal!.organizationId));
+    }
     if (req.method === "GET" && url.pathname === "/api/billing") {
       if (!requireRole(principal!, "viewer", res)) return;
       return void json(res, 200, await billingSnapshot(principal!.organizationId));
