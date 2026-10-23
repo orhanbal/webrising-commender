@@ -295,9 +295,9 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
   {menu&&<button className="fixed inset-0 bg-black/60 z-[92] md:hidden" aria-label="Close navigation" onClick={()=>setMenu(false)}/>}
   <aside className={"dashboard-sidebar "+(menu?"open":"")} aria-label="Platform administration">
    <div className="px-3 pt-2"><Brand onClick={()=>nav("/")}/></div>
-   <div className="px-4 py-5"><div className="flex items-center gap-2 text-[var(--accent)] text-sm font-bold"><ShieldCheck size={18}/> SUPER ADMIN</div></div>
+   <div className="px-4 py-5"><div className="flex items-center gap-2 text-[var(--accent)] text-sm font-bold"><ShieldCheck size={18}/> {ui("SUPER ADMIN")}</div></div>
    <nav className="dash-nav">{items.map(item=><button type="button" key={item.label} onClick={()=>{setSection(item.label);setMenu(false);nav(routes[item.label])}} className={"dash-link text-left "+(section===item.label?"active":"")} aria-current={section===item.label?"page":undefined} title={item.label}><item.icon size={19}/><span>{ui(item.label)}</span></button>)}</nav>
-   <div className="dash-sidebar-bottom"><p className="text-sm muted">{ui("Platform administration is separate from workspace ownership.")}</p><button className="mt-5 text-sm flex items-center gap-2" onClick={()=>nav("/dashboard")}><ArrowLeft size={17}/> User dashboard</button></div>
+   <div className="dash-sidebar-bottom"><p className="text-sm muted">{ui("Platform administration is separate from workspace ownership.")}</p><button className="mt-5 text-sm flex items-center gap-2" onClick={()=>nav("/dashboard")}><ArrowLeft size={17}/> {ui("User dashboard")}</button></div>
   </aside>
   <div className="dash-main">
    {detailUserId&&<ConsoleUserDetail userId={detailUserId} onClose={()=>setDetailUserId(null)} onSessions={user=>void openSessions(user)}/>}
@@ -373,21 +373,21 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
  </div>)}</div>}
 </section><p className="muted text-sm">{ui("Paddle remains the only source of truth for paid subscription status.")}</p></div>:section==="System"?<SystemStatus data={system}/>:section==="Landing CMS"?<div className="rounded-2xl bg-[var(--surface)] border border-[var(--stroke)] p-6 max-w-4xl"><h2 className="font-bold text-xl mb-4">{ui("Landing content editor")}</h2><p className="muted mb-4 text-sm">{ui("Edit localized hero copy, save revisions, then publish. Published revisions can be restored by publishing them again.")}</p><label className="block text-sm font-semibold mb-2">{ui("Language")}</label><select className="w-full rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 mb-4" value={cmsLocale} onChange={e=>{setCmsLocale(e.target.value as "en"|"tr");setCmsTitle("");setCmsSubtitle("");setCmsSeoTitle("");setCmsSeoDescription("");setCmsOverrides({});setCmsMessage("")}}><option value="en">{ui("English")}</option><option value="tr">{ui("Türkçe")}</option></select><label className="block text-sm font-semibold mb-2">{ui("Hero title")}</label><input maxLength={160} className="w-full rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 mb-4" value={cmsTitle} onChange={e=>setCmsTitle(e.target.value)}/><label className="block text-sm font-semibold mb-2">{ui("Hero description")}</label><textarea maxLength={500} className="w-full rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 mb-4" rows={4} value={cmsSubtitle} onChange={e=>setCmsSubtitle(e.target.value)}/><h3 className="text-lg font-bold mt-7 mb-3">{ui("Search and sharing metadata")}</h3>
 <p className="muted mb-4 text-sm">{ui("Optional localized title and description, shown in search results and social previews. Leave blank to keep the defaults.")}</p>
-<label className="block text-sm font-semibold mb-3">SEO title (up to 70 characters)
+<label className="block text-sm font-semibold mb-3">{ui("SEO title (up to 70 characters)")}
  <input maxLength={70} value={cmsSeoTitle} onChange={e=>setCmsSeoTitle(e.target.value)} className="block mt-2 w-full rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-3"/>
 </label>
-<label className="block text-sm font-semibold mb-5">Meta description (up to 170 characters)
+<label className="block text-sm font-semibold mb-5">{ui("Meta description (up to 170 characters)")}
  <textarea rows={3} maxLength={170} value={cmsSeoDescription} onChange={e=>setCmsSeoDescription(e.target.value)} className="block mt-2 w-full rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-3"/>
 </label>
 <h3 className="text-lg font-bold mt-7 mb-3">{ui("All landing sections")}</h3>
 <p className="muted text-sm mb-4">{ui("106 editable strings across hero, cards, security, pricing, FAQ and footer. Empty fields use the built-in translation.")}</p>
 <div className="grid sm:grid-cols-2 gap-3 mb-5">
- <label className="block text-sm font-semibold">Content section
+ <label className="block text-sm font-semibold">{ui("Content section")}
   <select className="block mt-2 w-full rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-3" value={cmsSection} onChange={e=>setCmsSection(e.target.value)}>
    {landingCopySections.map(group=><option key={group.name} value={group.name}>{group.name} ({group.keys.length})</option>)}
   </select>
  </label>
- <label className="block text-sm font-semibold">Filter text
+ <label className="block text-sm font-semibold">{ui("Filter text")}
   <input className="block mt-2 w-full rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-3" value={cmsFilter} onChange={e=>setCmsFilter(e.target.value)} placeholder="Search editable copy"/>
  </label>
 </div>
@@ -415,7 +415,7 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
 </div>
 <MediaLibrary selected={cmsOverrides} onUse={(id,slot)=>setCmsOverrides(old=>({...old,["media:feature:"+slot]:id}))}/>
 <button disabled={cmsBusy||!cmsTitle.trim()||!cmsSubtitle.trim()} onClick={()=>void saveCms()} className="px-5 py-3 bg-[var(--accent)] text-[var(--accent-ink)] rounded-xl font-bold disabled:opacity-50">{ui("Save draft")}</button><p role="status" className="text-sm mt-3">{cmsMessage}</p><h3 className="text-lg font-bold mt-8 mb-3">{ui("Revisions")}</h3>
-<label className="block mb-4 text-sm font-semibold">Current password to publish or restore a revision
+<label className="block mb-4 text-sm font-semibold">{ui("Current password to publish or restore a revision")}
  <input type="password" autoComplete="current-password" value={cmsPublishPassword} onChange={e=>setCmsPublishPassword(e.target.value)} className="block w-full mt-2 rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-3"/>
 </label>{cmsItems.map(item=><div key={item.id} className="flex flex-wrap items-center justify-between border-t border-[var(--stroke)] py-4 gap-4"><div className="min-w-0"><button className="font-semibold text-left hover:underline" title="Load this revision into editor" onClick={()=>{setCmsTitle(item.hero_title);setCmsSubtitle(item.hero_subtitle);setCmsSeoTitle(item.seo_title||"");setCmsSeoDescription(item.seo_description||"");setCmsOverrides(item.overrides||{});setCmsMessage("Revision loaded into editor.")}}>{item.hero_title}</button><div className="muted text-sm">{item.state} · revision {item.id}</div></div><button disabled={cmsBusy||cmsPublishPassword.length<12||item.state==="published"} className="rounded-xl border border-[var(--stroke)] px-4 py-2 disabled:opacity-50" onClick={()=>void publishCms(item.id)}>{item.state==="published"?"Published":"Publish"}</button></div>)}</div>:section==="Overview"?<><div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
        {([{label:"Total users",value:overview?.users,icon:Users},{label:"Organizations",value:overview?.organizations,icon:Building2},{label:"Registered devices",value:overview?.devices,icon:Monitor},{label:"Recently active devices",value:overview?.activeDevices,icon:Activity}]).map(item=><section key={item.label} className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-6">
