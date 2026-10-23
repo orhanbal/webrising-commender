@@ -1,5 +1,5 @@
-import {useEffect,useState} from "react";
-import {Activity,ArrowLeft,Building2,LayoutDashboard,LogOut,Menu,Monitor,ShieldCheck,Users,X} from "lucide-react";
+import {useEffect,useRef,useState} from "react";
+import {Activity,ArrowLeft,Building2,ChevronDown,LayoutDashboard,LogOut,Menu,Monitor,Settings2,ShieldCheck,Users,X} from "lucide-react";
 import {api} from "../api";
 import {LanguageSwitcher,t as translate,useLocale} from "../i18n";
 import {Brand,ThemeToggle} from "../App";
@@ -14,6 +14,9 @@ export function ConsolePage({nav,theme,toggle,logout}:{nav:Nav;theme:Theme;toggl
  const [error,setError]=useState("");
  const [loading,setLoading]=useState(true);
  const [menu,setMenu]=useState(false);
+ const [profileOpen,setProfileOpen]=useState(false);
+ const profileRef=useRef<HTMLDivElement>(null);
+ useEffect(()=>{if(!profileOpen)return;const outside=(event:PointerEvent)=>{if(profileRef.current&&!profileRef.current.contains(event.target as Node))setProfileOpen(false)};const escape=(event:KeyboardEvent)=>{if(event.key==="Escape")setProfileOpen(false)};document.addEventListener("pointerdown",outside);document.addEventListener("keydown",escape);return()=>{document.removeEventListener("pointerdown",outside);document.removeEventListener("keydown",escape)}},[profileOpen]);
  useEffect(()=>{
    let active=true;
    Promise.all([api<Admin>("/api/console/me"),api<Overview>("/api/console/overview")])
@@ -43,7 +46,15 @@ export function ConsolePage({nav,theme,toggle,logout}:{nav:Nav;theme:Theme;toggl
   <div className="dash-main">
     <div className="dash-topbar">
       <div className="flex items-center gap-3"><button className="mobile-dash-open size-9 place-items-center rounded-lg border border-[var(--stroke)]" onClick={()=>setMenu(true)} aria-label="Open navigation">{menu?<X/>:<Menu/>}</button><span className="text-sm muted">Administration / <strong className="text-[var(--text)]">Overview</strong></span></div>
-      <div className="dash-toolbar"><ThemeToggle theme={theme} onToggle={toggle}/><LanguageSwitcher compact/><button onClick={logout} className="rounded-xl border border-[var(--stroke)] p-2" title="Sign out" aria-label="Sign out"><LogOut size={19}/></button></div>
+      <div className="dash-toolbar"><ThemeToggle theme={theme} onToggle={toggle}/><LanguageSwitcher compact/><div ref={profileRef} className="relative">
+<button type="button" onClick={()=>setProfileOpen(v=>!v)} aria-haspopup="menu" aria-expanded={profileOpen} aria-label={translate("Hesap menüsü")} className="flex items-center gap-2 rounded-xl border border-[var(--stroke)] p-1 pr-3 hover:bg-[var(--hover)]"><span className="size-9 rounded-lg grid place-items-center bg-[var(--subtle-surface)] text-[var(--accent)] font-bold">{admin.email.slice(0,2).toUpperCase()}</span><span className="hidden sm:block text-sm max-w-[135px] truncate">{admin.email.split("@")[0]}</span><ChevronDown size={15} className={profileOpen?"rotate-180":""}/></button>
+{profileOpen&&<div role="menu" aria-label={translate("Hesap menüsü")} className="absolute right-0 top-[calc(100%+9px)] z-[120] w-[265px] rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-2 shadow-2xl">
+<div className="px-3 py-3 border-b border-[var(--stroke)] mb-1 text-sm font-semibold truncate">{admin.email}</div>
+<button type="button" role="menuitem" className="w-full text-left px-3 py-3 flex gap-3 rounded-lg hover:bg-[var(--hover)] text-sm" onClick={()=>{setProfileOpen(false);nav("/account")}}><Settings2 size={17}/>{translate("Hesap Ayarları")}</button>
+<button type="button" role="menuitem" className="w-full text-left px-3 py-3 flex gap-3 rounded-lg hover:bg-[var(--hover)] text-sm" onClick={()=>{setProfileOpen(false);nav("/account")}}><Users size={17}/>{translate("Çalışma Alanları")}</button>
+<div className="border-t border-[var(--stroke)] my-1"/>
+<button type="button" role="menuitem" className="w-full text-left px-3 py-3 flex gap-3 rounded-lg hover:bg-[var(--hover)] text-sm" onClick={()=>{setProfileOpen(false);logout()}}><LogOut size={17}/>{translate("Çıkış Yap")}</button>
+</div>}</div></div>
     </div>
     <main className="dash-content">
       <p className="text-sm font-semibold text-[var(--accent)] mb-2">WECOMMANDER CONTROL CENTER</p>
