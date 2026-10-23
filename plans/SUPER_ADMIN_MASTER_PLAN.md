@@ -1,6 +1,6 @@
 # WECOMMANDER — Super Admin Master Plan
 
-Status: IN PROGRESS (2026-10-23). User detail and localized administration tables committed; Gateway and integration checks passed. Cross-platform latest full CI and production browser acceptance remain open.
+Status: IN PROGRESS (2026-10-23). User detail and localized administration tables committed. Full cross-platform CI #513 for `c35e0b61b4363f0371d6abec4dec2e276e513063` passed all 16 jobs. Production browser and external acceptance remain open.
 
 ## Decision
 
@@ -92,10 +92,17 @@ Legend: [x] implementation committed, [ ] acceptance or implementation still req
 ### Phase H — Release gates
 - [x] GitHub workflow runs gateway, integration, agent/relay E2E and cross-platform packaging jobs.
 - [x] New API/browser acceptance assertions added; final full-workflow verification pending.
-- [ ] Confirm **latest** full CI success and exact commit match after the current audit, media-hardening and responsive-table work (prior `214da4dd` baseline succeeded).
+- [x] Confirm full CI #513 success for the audited `c35e0b61` implementation baseline (16/16 successful jobs). This verifies the baseline, not subsequent documentation commits or production deployment.
 - [ ] End-to-end accepted user login, workspace role changes, admin CMS/SEO publish, Paddle and live agent controls.
 - [ ] Verified production backup/restore and rollback drills.
 - [ ] Confirm no tenant data leaking into privileged support operations.
+
+## Verified acceptance checkpoint — 2026-10-23
+
+- GitHub Actions workflow `ci` run [#513](https://github.com/orhanbal/webrising-commender/actions/runs/40001754534) completed with `success`, HEAD `c35e0b61b4363f0371d6abec4dec2e276e513063`. All 16 jobs succeeded: gateway, integration, relay/agent E2E, Rust, installer syntax, Windows service smoke, platform builds/artifacts, Compose and TLS.
+- Do **not** interpret successful CI as authenticated production browser acceptance, production backup recovery, real-device acceptance or live payment reconciliation.
+- Production deployment SHA/health for this specific commit must be verified independently in Coolify; CI alone does not establish it.
+- The older `FINAL_ACCEPTANCE_PLAN.md` describes v1 core with external billing excluded; this super-admin plan explicitly includes Paddle administration. Keep the product scopes distinct until billing rollout scope is reconciled; do not silently mark payment accepted.
 
 ## Implementation order
 
