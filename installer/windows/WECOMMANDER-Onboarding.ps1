@@ -40,6 +40,7 @@ $form.Controls.Add($button)
 $script:approvalUrl = $null
 $approvalLink = New-Object System.Windows.Forms.LinkLabel
 $approvalLink.Text = 'Tarayicida cihaz onayini ac'
+$approvalLink.LinkArea = [System.Windows.Forms.LinkArea]::new(0, $approvalLink.Text.Length)
 $approvalLink.Location = New-Object System.Drawing.Point(20,278)
 $approvalLink.Width = 500
 $approvalLink.Height = 32
@@ -125,7 +126,13 @@ $timer.Add_Tick({
         $timer.Stop()
         $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
         $notice.Text = 'Onay alindi. Windows hizmeti kuruluyor...'
-        Finish-Enrollment $reply.pairingCode
+        try {
+          Finish-Enrollment $reply.pairingCode
+        } catch {
+          $button.Enabled = $true
+          $notice.Text = 'Onay alindi; hizmet kurulumu tamamlanamadi.'
+          [System.Windows.Forms.MessageBox]::Show($_.Exception.Message,'WECOMMANDER - Kurulum Hatasi') | Out-Null
+        }
       }
       default {
         $timer.Stop(); $button.Enabled = $true
