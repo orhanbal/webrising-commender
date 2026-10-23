@@ -156,8 +156,12 @@ try{
  await visit("/usage","Usage & reports","modern-usage");
  await visit("/account","Change password","modern-account");
  await visit("/features","A new standard in","modern-features-scroll");
+ assert.equal(await evalJs("document.querySelectorAll('.features-grid .feature-card').length"),6,"Landing content cards must be present");
+ assert.ok(await evalJs("([...document.querySelectorAll('.features-grid .feature-card')].every(el=>{const css=getComputedStyle(el);return css.opacity==='1'&&css.display!=='none'&&css.visibility!=='hidden'}))"),"Landing cards must never be hidden by reveal effects");
  assert.equal(await evalJs("location.hash"),"","Landing section URLs must have no hash");
  await visit("/how-it-works","Less complexity.","modern-how-it-works");
+ assert.equal(await evalJs("document.querySelectorAll('.steps-grid .step').length"),3,"Landing content cards must be present");
+ assert.ok(await evalJs("([...document.querySelectorAll('.steps-grid .step')].every(el=>{const css=getComputedStyle(el);return css.opacity==='1'&&css.display!=='none'&&css.visibility!=='hidden'}))"),"Landing cards must never be hidden by reveal effects");
  await call("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:1,mobile:true});
  await visit("/","All your devices.","modern-landing-mobile");
  await visit("/dashboard","Welcome back","modern-dashboard-mobile");
