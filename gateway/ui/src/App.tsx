@@ -19,7 +19,7 @@ const routes=new Set(["/","/features","/how-it-works","/login","/register","/for
 export function Brand({onClick,subtitle=false}:{onClick?:()=>void;subtitle?:boolean}){return <a href="/" onClick={e=>{if(onClick){e.preventDefault();onClick()}}} aria-label="WECOMMANDER ana sayfa" className="inline-flex flex-col gap-1 items-start"><img className="logo-light" src="/assets/wecommander-white.svg" alt="WECOMMANDER"/><img className="logo-dark" src="/assets/wecommander-black.svg" alt="" aria-hidden="true"/>{subtitle&&<span className="text-[11px] tracking-wide text-[var(--muted)]">Remote MCP · AI Workspace</span>}</a>}
 export function NavLink({to,nav,children,className}:{to:string;nav:Nav;children:ReactNode;className?:string}){return <a href={to} className={className} onClick={e=>{if(e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey){e.preventDefault();nav(to)}}}>{children}</a>}
 export function ThemeToggle({theme,onToggle}:{theme:Theme;onToggle:()=>void}){return <button type="button" className="theme-button" onClick={onToggle} aria-label={theme==="dark"?"Açık temaya geç":"Koyu temaya geç"} title={theme==="dark"?"Windows açık tema":"Windows koyu tema"}>{theme==="dark"?<Sun className="size-[19px]"/>:<Moon className="size-[19px]"/>}</button>}
-function getPath(){const p=window.location.pathname;return routes.has(p)?p:"/"}
+function getPath(){const p=window.location.pathname;if(p==="/app"||p==="/app/")return "/dashboard";return routes.has(p)?p:"/"}
 export default function App(){
  const [path,setPath]=useState(getPath);
  const [theme,setTheme]=useState<Theme>(()=>{const saved=localStorage.getItem("wecommander-theme");return saved==="dark"||saved==="light"?saved:matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"});
