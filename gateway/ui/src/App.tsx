@@ -1,6 +1,6 @@
 import {useEffect,useState} from "react";
 import type {ReactNode} from "react";
-import {ArrowRight,ArrowUpRight,Command,Menu,Moon,ShieldCheck,Sun,X} from "lucide-react";
+import {ArrowUpRight,Command,Menu,Moon,ShieldCheck,Sun,X} from "lucide-react";
 import {Button,Badge} from "./components/ui";
 import {getMe,api,type Account,type Pricing} from "./api";
 import {Landing} from "./pages/Landing";
