@@ -10,7 +10,6 @@ export type DeviceLinkPrincipal = {
 };
 
 const deviceLinkTtlMinutes = 10;
-const permittedRoles = new Set(["operator", "admin", "owner"]);
 
 export async function createDeviceLink() {
   const secret = randomToken(32);
@@ -75,9 +74,6 @@ export async function approveDeviceLink(
   if (principal.authKind !== "session" || !principal.userId) {
     return { status: 403, error: "browser_session_required" };
   }
-  if (!permittedRoles.has(principal.role) && principal.organizationId === organizationId) {
-    return { status: 403, error: "operator_role_required" };
-  }
   const membership = await db.query(
     `select 1 from organization_members m join users u on u.id=m.user_id
      where m.user_id=$1 and m.organization_id=$2
@@ -94,7 +90,7 @@ export async function approveDeviceLink(
   );
   if (!result.rowCount) return { status: 409, error: "invalid_or_expired_request" };
   await db.query(
-    `insert into audit_logs(organization_id,actor,action,risk,result,details)
+    `insert into audit_logs(organization_id,actor,tool,risk,outcome,detail)
       values($1,$2,'device_link.approve','medium','success',$3)`,
     [organizationId, principal.userId, JSON.stringify({ requestId: id })],
   );
