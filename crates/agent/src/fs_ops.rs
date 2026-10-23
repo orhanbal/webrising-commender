@@ -2,7 +2,8 @@ use crate::policy::PathPolicy;
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde_json::{json, Value};
-use std::{fs, io::Read, path::Path};
+use std::{fs, io::{Read, Write}, path::Path};
+use uuid::Uuid;
 
 const DEFAULT_READ_MAX: usize = 1024 * 1024;
 const MAX_PAGED_FILE: u64 = 32 * 1024 * 1024;
@@ -371,7 +372,7 @@ pub fn write(
             fs::create_dir_all(parent)?;
         }
     }
-    fs::write(&path, &bytes)?;
+    atomic_write(&path, &bytes)?;
     Ok(json!({ "ok": true, "path": path.to_string_lossy(), "size": bytes.len() }))
 }
 
@@ -421,13 +422,38 @@ pub fn replace_text(
         ));
     }
 
-    fs::write(&path, updated.as_bytes())?;
+    atomic_write(&path, updated.as_bytes())?;
     Ok(json!({
         "ok": true,
         "path": path.to_string_lossy(),
         "replacements": if replace_all { matches } else { 1 },
         "size": updated.len()
     }))
+}
+
+/// Stage writes beside their target so incomplete writes never truncate
+/// an existing file. Keep the original intact if rename cannot replace it.
+fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
+    let parent = path.parent().ok_or_else(|| anyhow!("missing parent directory"))?;
+    let temporary = parent.join(format!(".wecommander-{}.tmp", Uuid::new_v4()));
+    let result = (|| -> Result<()> {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        if let Ok(existing) = fs::metadata(path) {
+            file.set_permissions(existing.permissions())?;
+        }
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&temporary, path).context("atomic replace failed")?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
 }
 
 pub fn move_path(policy: &PathPolicy, source: &str, destination: &str) -> Result<Value> {
