@@ -85,6 +85,14 @@ export async function billingSnapshot(organizationId: string, queryable: Queryab
     apiTokens: count(usageRow?.api_tokens),
   };
 
+  const limitOverride=await queryable.query<{limits:Record<string,number|null>}>(
+    "select limits from organization_quota_overrides where organization_id=$1",[organizationId]);
+  const overrides=limitOverride.rows[0]?.limits ?? {};
+  const quotaLimits=(defaults:{maxDevices:number|null;maxMembers:number|null;maxApiTokens:number|null})=>({
+    maxDevices:Object.hasOwn(overrides,"maxDevices")?overrides.maxDevices:defaults.maxDevices,
+    maxMembers:Object.hasOwn(overrides,"maxMembers")?overrides.maxMembers:defaults.maxMembers,
+    maxApiTokens:Object.hasOwn(overrides,"maxApiTokens")?overrides.maxApiTokens:defaults.maxApiTokens,
+  });
   if (deploymentMode === "self_hosted") {
     return {
       mode: deploymentMode,
@@ -102,11 +110,7 @@ export async function billingSnapshot(organizationId: string, queryable: Queryab
         currentPeriodEnd: null,
         cancelAtPeriodEnd: false,
       },
-      limits: {
-        maxDevices: null,
-        maxMembers: null,
-        maxApiTokens: null,
-      },
+      limits: quotaLimits({maxDevices:null,maxMembers:null,maxApiTokens:null}),
       usage,
     };
   }
@@ -197,11 +201,7 @@ export async function billingSnapshot(organizationId: string, queryable: Queryab
       providerEventId: row.provider_event_id,
       updatedAt: row.updated_at,
     },
-    limits: {
-      maxDevices: row.max_devices,
-      maxMembers: row.max_members,
-      maxApiTokens: row.max_api_tokens,
-    },
+    limits: quotaLimits({maxDevices:row.max_devices,maxMembers:row.max_members,maxApiTokens:row.max_api_tokens}),
     usage,
   };
 }
