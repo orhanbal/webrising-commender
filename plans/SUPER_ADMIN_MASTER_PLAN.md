@@ -37,17 +37,17 @@ Status: IN PROGRESS (2026-10-23). Phase A backend committed, not yet accepted by
 - [x] `/console` route and responsive shell implemented; production browser acceptance pending.
 - [ ] Fluent design, both themes, EN/TR locale, keyboard/mobile accessibility.
 - [x] Overview backed by admin-scoped real DB counts; operational acceptance pending.
-- [ ] Admin profile, session controls, reauthentication and activity timeline.
+- [ ] Shared account/profile dropdown implemented; session controls, reauthentication and activity timeline remain.
 
 ### Phase C — Users / tenants
-- [ ] Paginated user and organization lists, search and scoped detail pages.
+- [ ] User and organization management: first read-only listings/API committed; pagination, detail and search acceptance remain.
 - [ ] Memberships, roles, active/disabled state, plan/quota overrides, sessions.
 - [ ] Confirmations and audit trail for every mutation; no silent privilege escalation.
 - [ ] Separate platform role from tenant role in API and UI.
 
 ### Phase D — Devices / operations
-- [ ] Fleet health, enrollment status, agents, relay and gateway health.
-- [ ] Aggregated usage, tasks, incidents, errors and audit reports.
+- [ ] Device listing committed (read-only); fleet health, enrollment, relay and gateway monitoring remain.
+- [ ] Audit listing committed (read-only); aggregation, incidents and operational reports remain.
 - [ ] Explicit customer authorization for privileged support actions.
 
 ### Phase E — Billing
