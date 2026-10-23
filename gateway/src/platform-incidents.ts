@@ -26,7 +26,7 @@ export async function activePlatformIncidents():Promise<PlatformIncident[]>{
   ]);
   const result:Array<Omit<PlatformIncident,"acknowledgedAt">>=[];
   const mail=failedMail.rows[0];
-  if(mail?.n>0)result.push({
+  if(mail && mail.n>0)result.push({
     fingerprint:fingerprint("mail_delivery_failed",mail.n+":"+(mail.last_failure||"")),
     kind:"mail_delivery_failed",severity:"warning",
     title:"Mail delivery failures",
