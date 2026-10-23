@@ -1337,6 +1337,27 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       }
     }
 
+    if (url.pathname.startsWith("/api/console/")) {
+      if (!principal || principal.authKind !== "session" || !principal.userId) {
+        return void json(res, 403, { error: "platform_admin_session_required" });
+      }
+      const access = await db.query(
+        `select 1 from platform_administrators p
+           join users u on u.id=p.user_id
+          where p.user_id=$1 and p.revoked_at is null and u.disabled_at is null
+          limit 1`, [principal.userId],
+      );
+      if (!access.rowCount) return void json(res, 403, { error: "platform_admin_required" });
+      if (req.method === "GET" && url.pathname === "/api/console/me") {
+        return void json(res, 200, {
+          email: principal.email,
+          platformRole: "super_admin",
+          userId: principal.userId,
+        });
+      }
+      return void json(res, 404, { error: "not_found" });
+    }
+
     if (req.method === "GET" && url.pathname === "/api/auth/me") {
       return void json(res, 200, {
         organizationId: principal!.organizationId,
