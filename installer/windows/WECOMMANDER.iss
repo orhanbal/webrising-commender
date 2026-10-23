@@ -33,6 +33,6 @@ Source: "uninstall-windows.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{group}\WECOMMANDER Cihaz Bağlantısı"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\WECOMMANDER-Onboarding.ps1"""; WorkingDir: "{app}"
 Name: "{group}\WECOMMANDER Panel"; Filename: "https://wecommander.webrising.tr/dashboard"
 [Run]
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\WECOMMANDER-Onboarding.ps1"""; Description: "Cihazımı bağla / Connect my device"; Flags: postinstall skipifsilent nowait
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\WECOMMANDER-Onboarding.ps1"""; Description: "Cihazımı bağla / Connect my device"; Flags: postinstall skipifsilent nowait runasoriginaluser
 [UninstallRun]
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\uninstall-windows.ps1"""; Flags: runhidden; RunOnceId: "stop-agent-service"
