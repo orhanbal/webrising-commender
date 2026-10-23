@@ -1370,6 +1370,50 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           activeDevices: Number(metrics.rows[0]?.active_devices || 0),
         });
       }
+      if (req.method === "GET" && url.pathname === "/api/console/users") {
+        const limit = Math.min(100,Math.max(1,Number(url.searchParams.get("limit")||25)||25));
+        const offset = Math.min(100000,Math.max(0,Number(url.searchParams.get("offset")||0)||0));
+        const search = (url.searchParams.get("q")||"").trim().slice(0,160);
+        const records = await db.query(
+          `select u.id,u.email,u.created_at,u.last_login_at,
+              (u.disabled_at is not null) as disabled,
+              (u.email_verified_at is not null) as verified,
+              count(m.organization_id)::int as workspace_count
+           from users u left join organization_members m on m.user_id=u.id
+           where ($1::text='' or u.email ilike '%'||$1||'%')
+           group by u.id order by u.created_at desc limit $2 offset $3`,
+          [search,limit,offset],
+        );
+        return void json(res,200,{items:records.rows,limit,offset});
+      }
+      if (req.method === "GET" && url.pathname === "/api/console/organizations") {
+        const records = await db.query(
+          `select o.id,o.name,o.created_at,count(distinct m.user_id)::int as members,
+              count(distinct d.id)::int as devices
+           from organizations o
+           left join organization_members m on m.organization_id=o.id
+           left join devices d on d.organization_id=o.id and d.revoked_at is null
+           group by o.id order by o.created_at desc limit 100`,
+        );
+        return void json(res,200,{items:records.rows});
+      }
+      if (req.method === "GET" && url.pathname === "/api/console/devices") {
+        const records = await db.query(
+          `select d.id,d.name,d.platform,d.agent_version,d.last_seen_at,
+                  d.revoked_at,o.name as organization_name
+             from devices d join organizations o on o.id=d.organization_id
+            order by d.created_at desc limit 100`,
+        );
+        return void json(res,200,{items:records.rows});
+      }
+      if (req.method === "GET" && url.pathname === "/api/console/audit") {
+        const records = await db.query(
+          `select a.id,a.tool,a.outcome,a.risk,a.created_at,o.name as organization_name
+             from audit_logs a join organizations o on o.id=a.organization_id
+            order by a.created_at desc limit 100`,
+        );
+        return void json(res,200,{items:records.rows});
+      }
       return void json(res, 404, { error: "not_found" });
     }
 
