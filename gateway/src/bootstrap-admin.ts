@@ -28,6 +28,7 @@ async function main() {
       "insert into organizations(name) values($1) returning id",
       ["WECOMMANDER Admin"],
     );
+    if (!workspace.rows[0]) throw new Error("Could not create administration workspace");
     await client.query("insert into organization_members(organization_id,user_id,role) values($1,$2,'owner')",
       [workspace.rows[0].id,user.rows[0].id]);
     await client.query("insert into platform_administrators(user_id,granted_by) values($1,$2)",
