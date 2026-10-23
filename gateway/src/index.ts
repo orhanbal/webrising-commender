@@ -479,6 +479,16 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       res.writeHead(200,{...securityHeaders(),"content-type":asset.rows[0].content_type,"content-length":asset.rows[0].content.length,"cache-control":"no-store","x-content-type-options":"nosniff"});
       res.end(asset.rows[0].content);return;
     }
+    if (req.method === "GET" && url.pathname.startsWith("/api/public/media/")) {
+      const id=z.string().uuid().parse(url.pathname.slice("/api/public/media/".length));
+      const result=await db.query<{content_type:string;content:Buffer}>(
+        "select content_type,content from site_media_assets where id=$1",[id]);
+      if(!result.rows[0])return void json(res,404,{error:"not_found"});
+      res.writeHead(200,{...securityHeaders(),"content-type":result.rows[0].content_type,
+        "content-length":result.rows[0].content.length,"cache-control":"public,max-age=3600",
+        "x-content-type-options":"nosniff"});
+      res.end(result.rows[0].content);return;
+    }
     if (req.method === "GET" && url.pathname === "/api/public/legal") {
       const page=z.enum(["privacy","terms"]).parse(url.searchParams.get("page"));
       const locale=url.searchParams.get("locale")==="tr"?"tr":"en";
@@ -1701,6 +1711,41 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
            from organization_subscriptions s join organizations o on o.id=s.organization_id
            order by o.name limit 100`);
         return void json(res,200,{plans:plans.rows,subscriptions:subscriptions.rows});
+      }
+      if (req.method === "GET" && url.pathname === "/api/console/media") {
+        const rows=await db.query(
+          "select id,alt_text,content_type,octet_length(content)::int as bytes,created_at from site_media_assets order by created_at desc limit 100",
+        );
+        return void json(res,200,{items:rows.rows});
+      }
+      if (req.method === "POST" && url.pathname === "/api/console/media/upload") {
+        const payload=z.object({
+          alt:z.string().trim().min(1).max(180),
+          mime:z.enum(["image/png","image/webp"]),
+          base64:z.string().min(32).max(750000).regex(/^[A-Za-z0-9+/]+={0,2}$/),
+          currentPassword:z.string().min(12).max(256),
+        }).parse(await readJson(req));
+        const operator=await db.query<{password_hash:string}>(
+          "select password_hash from users where id=$1 and disabled_at is null",[principal.userId]);
+        if(!operator.rows[0]||!(await verifyPassword(payload.currentPassword,operator.rows[0].password_hash)))
+          return void json(res,403,{error:"reauthentication_failed"});
+        const bytes=Buffer.from(payload.base64,"base64");
+        if(bytes.length>500000)return void json(res,413,{error:"asset_too_large"});
+        const png=bytes.length>24&&bytes.subarray(0,8).equals(Buffer.from("89504e470d0a1a0a","hex"));
+        const webp=bytes.length>16&&bytes.toString("ascii",0,4)==="RIFF"&&bytes.toString("ascii",8,12)==="WEBP";
+        if(!(payload.mime==="image/png"?png:webp))return void json(res,400,{error:"invalid_image_header"});
+        const client=await db.connect();
+        try{
+          await client.query("begin");
+          const created=await client.query<{id:string}>(
+            "insert into site_media_assets(alt_text,content_type,content,uploaded_by) values($1,$2,$3,$4) returning id",
+            [payload.alt,payload.mime,bytes,principal.userId]);
+          await client.query(
+            "insert into platform_admin_audit(actor_user_id,action,detail) values($1,'cms.media_upload',$2)",
+            [principal.userId,"media:"+created.rows[0]!.id]);
+          await client.query("commit");
+          return void json(res,201,{id:created.rows[0]!.id});
+        }catch(error){await client.query("rollback");throw error}finally{client.release()}
       }
       if (req.method === "POST" && url.pathname === "/api/console/brand/upload") {
         const payload=z.object({
