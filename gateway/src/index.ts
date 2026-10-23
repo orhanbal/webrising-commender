@@ -36,6 +36,7 @@ import { enqueueMail, mailConfigured, publicSignupEnabled, startMailWorker } fro
 import { handleMcp } from "./mcp.js";
 import { actionRisk, parseAgentAction } from "./protocol.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
+import {activePlatformIncidents} from "./platform-incidents.js";
 import { AgentHub } from "./relay.js";
 import {
   assignRelayForDevice,
@@ -1727,6 +1728,36 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           await client.query("commit");
         }catch(error){await client.query("rollback");throw error}finally{client.release()}
         return void json(res,200,{ok:true});
+      }
+      if (req.method === "GET" && url.pathname === "/api/console/incidents") {
+        return void json(res,200,{items:await activePlatformIncidents()});
+      }
+      if (req.method === "POST" && url.pathname === "/api/console/incidents/acknowledge") {
+        const payload=z.object({
+          fingerprint:z.string().min(3).max(240),
+          currentPassword:z.string().min(12).max(256),
+        }).parse(await readJson(req));
+        const operator=await db.query<{password_hash:string}>(
+          "select password_hash from users where id=$1 and disabled_at is null",[principal.userId]);
+        if(!operator.rows[0]||!(await verifyPassword(payload.currentPassword,operator.rows[0].password_hash)))
+          return void json(res,403,{error:"reauthentication_failed"});
+        const active=await activePlatformIncidents();
+        if(!active.some(entry=>entry.fingerprint===payload.fingerprint))
+          return void json(res,409,{error:"incident_not_active"});
+        const client=await db.connect();
+        try{
+          await client.query("begin");
+          await client.query(`insert into platform_incident_acknowledgements(fingerprint,acknowledged_by)
+             values($1,$2) on conflict(fingerprint)
+             do update set acknowledged_by=excluded.acknowledged_by,acknowledged_at=now()`,
+            [payload.fingerprint,principal.userId]);
+          await client.query(
+            "insert into platform_admin_audit(actor_user_id,action,detail) values($1,'incident.acknowledge',$2)",
+            [principal.userId,payload.fingerprint],
+          );
+          await client.query("commit");
+        }catch(error){await client.query("rollback");throw error}finally{client.release()}
+        return void json(res,200,{ok:true,conditionResolved:false});
       }
       if (req.method === "GET" && url.pathname === "/api/console/system") {
         const counts=await db.query(
