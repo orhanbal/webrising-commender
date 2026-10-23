@@ -301,6 +301,25 @@ export async function migrate() {
     alter table organization_subscriptions
       add column if not exists provider_event_id text;
 
+    -- Support requests are never themselves Paddle transactions or proof of a refund.
+    create table if not exists billing_support_requests (
+      id uuid primary key default gen_random_uuid(),
+      organization_id uuid not null references organizations(id) on delete cascade,
+      requested_by uuid not null references users(id) on delete restrict,
+      type text not null check (type in ('cancellation','refund')),
+      message text not null check (length(message) between 5 and 2000),
+      status text not null default 'pending'
+        check (status in ('pending','in_review','closed')),
+      resolution_note text not null default '',
+      reviewed_by uuid references users(id) on delete set null,
+      reviewed_at timestamptz,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create unique index if not exists billing_support_one_open_request
+      on billing_support_requests(organization_id,type) where status<>'closed';
+    create index if not exists billing_support_requests_created_idx
+      on billing_support_requests(created_at desc);
     -- Checkout intents bind Paddle-created transaction IDs to authenticated
     -- workspaces. Webhooks may never provision from untrusted browser metadata.
     create table if not exists paddle_checkout_intents (
