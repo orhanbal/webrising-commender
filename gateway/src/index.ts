@@ -1908,7 +1908,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       const organizationId = subscriptionMatch[1]!;
       const body = z.object({
         planKey: z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9_-]{1,63}$/),
-        status: z.enum(["trialing", "active", "past_due", "canceled"]),
+        status: z.enum(["trialing", "active", "past_due", "paused", "canceled"]),
         currentPeriodEnd: z.string().datetime({ offset: true }).nullable().optional(),
         cancelAtPeriodEnd: z.boolean().default(false),
       }).parse(await readJson(req));
