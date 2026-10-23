@@ -1,6 +1,6 @@
 # WECOMMANDER — Super Admin Master Plan
 
-Status: PLANNED (2026-10-23). This document is not evidence of implementation or production acceptance.
+Status: IN PROGRESS (2026-10-23). Phase A backend committed, not yet accepted by CI or real login.
 
 ## Decision
 
@@ -26,9 +26,9 @@ Status: PLANNED (2026-10-23). This document is not evidence of implementation or
 ## Phases and acceptance
 
 ### Phase A — Auth and first account
-- [ ] DB migration: independent platform admin grant and platform action audit tables.
-- [ ] Server-local bootstrap CLI for first account (`orhanbal@gmail.com`), no SMTP dependency.
-- [ ] Dedicated `/api/console/me` authentication and permission checks.
+- [x] DB migration: independent platform admin grant and platform action audit tables (code committed; production acceptance pending).
+- [x] Server-local bootstrap CLI for first account (`orhanbal@gmail.com`), no SMTP dependency (code committed; execution pending).
+- [x] Dedicated `/api/console/me` authentication and permission checks (code committed; tests pending).
 - [ ] Tests: unauthenticated=401, ordinary owner=403, real platform admin=200, revoked/disabled=403.
 - [ ] Real owner login with existing browser session mechanism.
 - [ ] Verify persistence across redeploy; no data deletion or volume replacement.
