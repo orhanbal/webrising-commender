@@ -99,6 +99,7 @@ const deviceRouter = new DeviceRouter(hub);
 const enrollRateLimit = new FixedWindowRateLimiter();
 const agentRouteRateLimit = new FixedWindowRateLimiter();
 const pairingRateLimit = new FixedWindowRateLimiter();
+const checkoutRateLimit = new FixedWindowRateLimiter();
 const loginIpRateLimit = new FixedWindowRateLimiter();
 const loginAccountRateLimit = new FixedWindowRateLimiter();
 const invitationPreviewRateLimit = new FixedWindowRateLimiter();
@@ -1574,6 +1575,11 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
 
     if (req.method === "POST" && url.pathname === "/api/billing/paddle/checkout") {
       if (!requireRole(principal!,"owner",res)) return;
+      const limit=checkoutRateLimit.hit(principal!.organizationId,8,15*60_000);
+      if(!limit.allowed){
+        res.setHeader("Retry-After",String(limit.retryAfterSeconds));
+        return void json(res,429,{error:"rate_limited"});
+      }
       const body=z.object({planKey:z.string().regex(/^[a-z0-9][a-z0-9_-]{1,63}$/)}).parse(await readJson(req));
       return void json(res,201,await createPaddleCheckout(principal!.organizationId,body.planKey));
     }
