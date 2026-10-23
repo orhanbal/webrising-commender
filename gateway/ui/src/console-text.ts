@@ -161,6 +161,18 @@ export const consoleTurkish:Record<string,string> = {
   "Selected": "Seçildi",
   "Use in card": "Kartta kullan",
   "Image uploaded. Assign it below and publish the CMS revision to make it live.": "Görsel yüklendi. Aşağıdaki kartlardan birine atayın ve yayına almak için CMS revizyonunu yayınlayın.",
-  "Library assets are retained to preserve the integrity of previously published revisions.": "Önceden yayınlanmış revizyonların bütünlüğü için görseller saklanır."
+  "Library assets are retained to preserve the integrity of previously published revisions.": "Önceden yayınlanmış revizyonların bütünlüğü için görseller saklanır.",
+  "Search audit records": "Denetim kayıtlarında ara",
+  "Search action or workspace": "İşlem veya çalışma alanında ara",
+  "Audit source": "Kayıt kaynağı",
+  "All sources": "Tüm kaynaklar",
+  "Workspace activity": "Çalışma alanı işlemleri",
+  "Platform activity": "Platform işlemleri",
+  "Risk filter": "Risk filtresi",
+  "All risks": "Tüm risk seviyeleri",
+  "Low": "Düşük",
+  "Medium": "Orta",
+  "High": "Yüksek",
+  "Critical": "Kritik"
 };
 export function consoleText(source:string,locale:"en"|"tr"):string {return locale==="tr"?(consoleTurkish[source]??source):source;}
