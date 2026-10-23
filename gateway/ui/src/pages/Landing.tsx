@@ -1,8 +1,9 @@
-import {useEffect,useRef} from "react";
+import {useEffect,useRef,useState} from "react";
 import { t as translate,useLocale } from "../i18n";
 import {ArrowRight,ArrowUpRight,Bot,Check,CheckCheck,ChevronRight,Command,Database,Globe2,HardDrive,KeyRound,LockKeyhole,Monitor,MousePointerClick,ShieldCheck,Sparkles,TerminalSquare,Workflow,Zap} from "lucide-react";
 import type{Nav}from"../App";import type{Pricing}from"../api";
-import{Button,Card,Badge}from"../components/ui";import{Brand,NavLink}from"../App";
+import{Button,Card,Badge}from"../components/ui";
+import {api} from "../api";import{Brand,NavLink}from"../App";
 
 const features=[
 {icon:Monitor,title:"Tek panelden bütün cihazlar",text:"Windows, macOS ve Linux makinelerini aynı çalışma alanında izleyin. Bağlantı durumlarını görün, cihazlar arasında geçiş yapın."},
@@ -18,6 +19,9 @@ const steps=[
 {num:"03 / YÖNET",title:"İstediğiniz yerden çalışın",desc:"Paneli veya desteklenen MCP istemcilerini kullanarak terminal, dosya ve görev operasyonlarınızı yürütün.",icon:Zap}
 ];
 export function Landing({nav,pricing,signupEnabled}:{nav:Nav;pricing:Pricing|null;signupEnabled:boolean|null}){
+ const [siteCopy,setSiteCopy]=useState<{hero_title:string;hero_subtitle:string}|null>(null);
+ const language=useLocale();
+ useEffect(()=>{let mounted=true;api<{item:{hero_title:string;hero_subtitle:string}|null}>("/api/public/site-content?locale="+language).then(r=>{if(mounted)setSiteCopy(r.item)}).catch(()=>{if(mounted)setSiteCopy(null)});return()=>{mounted=false}},[language]);
  useLocale();
  const progress=useRef<HTMLDivElement>(null);
  useEffect(()=>{
@@ -36,8 +40,8 @@ export function Landing({nav,pricing,signupEnabled}:{nav:Nav;pricing:Pricing|nul
    <div className="container-w hero-grid">
     <div className="hero-copy">
      <div className="hero-badge"><i/> {translate("WECOMMANDER · Yapay zekâ için uzak çalışma alanı")} <ArrowUpRight size={13}/></div>
-     <h1 className="h1">{translate("Tüm cihazların.")}<br/><span className="text-gradient">{translate("Tek komuta.")}</span></h1>
-     <p>{translate("Windows, macOS ve Linux cihazlarını güvenle bağla. Terminal, dosya ve görevlerini modern bir panelden veya MCP destekli yapay zekâ araçlarınla yönet.")}</p>
+     <h1 className="h1">{siteCopy?.hero_title||<>{translate("Tüm cihazların.")}<br/><span className="text-gradient">{translate("Tek komuta.")}</span></>}</h1>
+     <p>{siteCopy?.hero_subtitle||translate("Windows, macOS ve Linux cihazlarını güvenle bağla. Terminal, dosya ve görevlerini modern bir panelden veya MCP destekli yapay zekâ araçlarınla yönet.")}</p>
      <div className="hero-actions"><Button size="lg" onClick={()=>nav(signupEnabled===false?"/login":"/register")}>{signupEnabled===false?translate("Giriş Yap"):translate("Hesap oluştur")} <ArrowRight size={19}/></Button><Button size="lg" variant="outline" onClick={()=>nav("/dashboard")}>{translate("Paneli keşfet")} <ArrowUpRight size={18}/></Button></div>
      <div className="hero-proof"><span><Check/> {translate("Güvenli erişim")}</span><span><Check/> {translate("Tek çalışma alanı")}</span><span><Check/> Windows · macOS · Linux</span></div>
     </div>
