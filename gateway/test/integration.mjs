@@ -40,6 +40,17 @@ const landingAssetMarkup = await landingAssetCheck.text();
 assert.ok(landingAssetMarkup.includes('id="root"'));
 assert.ok(landingAssetMarkup.includes("wecommander-favicon.svg"));
 assert.match(landingAssetMarkup, /\/modern\/assets\/index-[^"]+\.js/);
+const installResponse=await fetch(base+"/install");
+assert.equal(installResponse.status,200,"Install route must be publicly accessible");
+const installHtml=await installResponse.text();
+assert.ok(installHtml.includes('id="root"'),"Install route must load the React app");
+assert.match(installHtml,/\/modern\/assets\/index-[^"]+\.js/);
+const publishedAgents=await jsonFetch("/api/public/downloads");
+assert.equal(typeof publishedAgents.available,"boolean");
+assert.equal(Array.isArray(publishedAgents.assets),true);
+assert.ok(publishedAgents.assets.every(asset=>
+  asset.url.startsWith("https://github.com/orhanbal/webrising-commender/releases/download/")
+),"Download links must always point to verified project release assets");
 const publicPlans=await jsonFetch("/api/public/plans");
 assert.equal(publicPlans.mode,"saas");
 assert.equal(typeof publicPlans.paddle.checkoutEnabled,"boolean");
