@@ -16,6 +16,7 @@ const tools = [
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   tool("system_info", "Read system information from a device.", {}),
+  tool("policy_info", "Read agent-enforced allowed directories and resource limits. Read-only.", {}),
   tool("get_recent_tool_calls", "Read paginated sanitized recent tool history for your actor and selected device.", { limit: integer(), offset: integer() }),
   tool("get_usage_stats", "Count this actor's tool executions by name over the past 30 days, scoped to the selected device.", {}),
   tool("fs_list", "List a directory inside an agent allowlisted root.", { path: str() }, ["path"]),
@@ -191,6 +192,7 @@ function tool(name: string, description: string, properties: Record<string, unkn
 function actionFromTool(name: string, a: any): AgentAction {
   switch (name) {
     case "system_info": return { kind: "system_info" };
+    case "policy_info": return { kind: "policy_info" };
     case "fs_list": return { kind: "fs_list", path: String(a.path) };
     case "fs_stat": return { kind: "fs_stat", path: String(a.path) };
     case "fs_read": return { kind: "fs_read", path: String(a.path), ...(a.max_bytes ? { maxBytes: Number(a.max_bytes) } : {}) };

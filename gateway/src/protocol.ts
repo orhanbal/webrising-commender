@@ -4,6 +4,7 @@ export type Risk = "low" | "medium" | "high";
 
 export type AgentAction =
   | { kind: "system_info" }
+  | { kind: "policy_info" }
   | { kind: "fs_list"; path: string }
   | { kind: "fs_stat"; path: string }
   | { kind: "fs_read"; path: string; maxBytes?: number }
@@ -38,6 +39,7 @@ const timeoutSchema = z.number().int().min(100).max(24 * 60 * 60 * 1000);
 
 export const agentActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("system_info") }).strict(),
+  z.object({ kind: z.literal("policy_info") }).strict(),
   z.object({ kind: z.literal("fs_list"), path: pathSchema }).strict(),
   z.object({ kind: z.literal("fs_stat"), path: pathSchema }).strict(),
   z.object({
@@ -191,6 +193,7 @@ export type AgentMessage =
 export function actionRisk(kind: AgentAction["kind"] | string): Risk {
   switch (kind) {
     case "system_info":
+    case "policy_info":
     case "fs_list":
     case "fs_stat":
     case "fs_read":

@@ -30,6 +30,7 @@ pub enum GatewayMessage {
 )]
 pub enum AgentAction {
     SystemInfo,
+    PolicyInfo,
     FsList {
         path: String,
     },
@@ -184,6 +185,7 @@ impl AgentAction {
     pub fn kind_name(&self) -> &'static str {
         match self {
             Self::SystemInfo => "system_info",
+            Self::PolicyInfo => "policy_info",
             Self::FsList { .. } => "fs_list",
             Self::FsStat { .. } => "fs_stat",
             Self::FsRead { .. } => "fs_read",
@@ -217,6 +219,7 @@ impl AgentAction {
     pub fn risk(&self) -> Risk {
         match self {
             Self::SystemInfo
+            | Self::PolicyInfo
             | Self::FsList { .. }
             | Self::FsStat { .. }
             | Self::FsRead { .. }

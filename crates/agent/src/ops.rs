@@ -27,6 +27,13 @@ pub async fn execute(
 
     match action {
         AgentAction::SystemInfo => system_ops::info(),
+        AgentAction::PolicyInfo => Ok(serde_json::json!({
+            "allowedRoots": policy.roots().iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>(),
+            "agentMode": "restricted",
+            "maximumSingleReadBytes": 4 * 1024 * 1024,
+            "maximumSingleWriteBytes": 8 * 1024 * 1024,
+            "maximumTerminalBufferedBytes": 1024 * 1024
+        })),
         AgentAction::FsList { path } => fs_ops::list(policy, &path),
         AgentAction::FsStat { path } => fs_ops::stat(policy, &path),
         AgentAction::FsRead { path, max_bytes } => fs_ops::read(policy, &path, max_bytes),

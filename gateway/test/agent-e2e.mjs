@@ -117,6 +117,10 @@ try {
   const info = await tool(101, "system_info", { device_id: deviceId });
   assert.equal(typeof info.cpuCount, "number");
 
+  const policyInfo = await tool(210, "policy_info", { device_id: deviceId });
+  assert.equal(policyInfo.agentMode, "restricted");
+  assert.ok(policyInfo.allowedRoots.includes(tempRoot));
+
   const filePath = path.join(tempRoot, "hello.txt");
   const content = Buffer.from("hello-from-real-agent", "utf8").toString("base64");
 
