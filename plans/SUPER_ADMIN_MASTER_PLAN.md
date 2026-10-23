@@ -1,6 +1,6 @@
 # WECOMMANDER — Super Admin Master Plan
 
-Status: IN PROGRESS (2026-10-23). New administration pagination, translations, FAQ, SVG rasterization and restore-drill checks committed. Production acceptance, real devices, Paddle and offsite disaster recovery are not closed.
+Status: IN PROGRESS (2026-10-23). Platform incident review, administration views and safety tests implemented; latest full CI and production acceptance are pending. Live device, external billing, backup and SMTP gates remain.
 
 ## Decision
 
@@ -56,7 +56,8 @@ Legend: [x] implementation committed, [ ] acceptance or implementation still req
 - [x] Cross-workspace read-only device inventory and unified tenant/platform audit timeline.
 - [x] Live system counts for relay health, active sessions, pending approvals and mail queue.
 - [ ] Agent enrollment/heartbeat/relay failover and terminal/file/task operations on real Windows, macOS and Linux devices.
-- [ ] Incident investigation, alerting and explicit customer-authorized support controls.
+- [x] Live incident detection for mail failures and stale relay heartbeats, audited password-confirmed incident acknowledgement (no automatic repair or suppression).
+- [ ] Off-platform alert delivery, incident history/retention, customer-authorized remote support controls and real-device acceptance.
 
 ### Phase E — Billing
 - [x] Read-only plans/subscriptions reporting and password-confirmed plan/organization quota editors.
@@ -76,6 +77,7 @@ Legend: [x] implementation committed, [ ] acceptance or implementation still req
 
 ### Phase G — System settings
 - [x] Safe read-only mail queue, active sessions, relay, approval, deployment mode and signup health reporting.
+- [x] Visual system health dashboard, warning indicators and incident-review controls.
 - [x] Canonical Compose backup script hardened against overwrites, with non-destructive isolated restore drill and separate test-database CI backup/restore acceptance.
 - [ ] Off-host encrypted production backup schedule and real recovery drill, SMTP activation with WECOMMANDER sender (deferred to launch), credential settings, active alert delivery.
 - [ ] Provider credentials must remain redacted and outside version control.
