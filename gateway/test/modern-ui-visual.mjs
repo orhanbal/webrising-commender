@@ -22,6 +22,7 @@ const fixtures={
  "/api/console/me":{email:"test@example.com",userId:"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",platformRole:"super_admin"},
  "/api/console/overview":{users:4,organizations:2,devices:1,activeDevices:1},
  "/api/console/users":{items:[{id:"44444444-4444-4444-8444-444444444444",email:"member@example.test",disabled:false,verified:true,workspace_count:1}]},
+ "/api/console/users/detail":{user:{id:"44444444-4444-4444-8444-444444444444",email:"member@example.test",disabled:false,verified:true,platform_administrator:false,created_at:"2026-10-01T10:00:00.000Z",last_login_at:null,active_sessions:1,revoked_sessions:0},organizations:[{id:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",name:"Test Workspace",role:"viewer",created_at:"2026-10-01T10:00:00.000Z"}]},
  "/api/console/organizations":{items:[{id:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",name:"Test Workspace",members:2,devices:1,quota_overrides:{}}]},
  "/api/console/organizations/members":{items:[{user_id:"55555555-5555-4555-8555-555555555555",email:"member@example.test",role:"viewer",disabled:false}]},
  "/api/console/devices":{items:[{id:"11111111-1111-4111-8111-111111111111",name:"Test Windows Device",organization_name:"Test Workspace",platform:"windows"}],total:1,limit:25,offset:0},
@@ -188,6 +189,15 @@ try{
  await evalJs("document.querySelector('.dash-toolbar .locale-option[role=menuitemradio]:first-child').click()");
  await sleep(120);
 
+ await visit("/console/users","Users","modern-console-users");
+ await evalJs("([...document.querySelectorAll('button')].find(x=>x.textContent.trim()==='Details'))?.click()");
+ await sleep(150);
+ assert.ok(await evalJs("document.querySelector('[role=dialog]')?.textContent.includes('member@example.test')"),"User details show the selected account");
+ assert.ok(await evalJs("document.querySelector('[role=dialog]')?.textContent.includes('Test Workspace')"),"User details must include workspace memberships");
+ assert.ok(await evalJs("!document.querySelector('[role=dialog]')?.textContent.includes('password_hash')"),"User details must not expose secrets");
+ await evalJs("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
+ await sleep(90);
+ assert.equal(await evalJs("document.querySelector('[role=dialog]')===null"),true,"Escape closes the user details modal");
  await visit("/console/organizations","Organizations","modern-console-organizations");
  assert.ok(await evalJs("!document.body.textContent.includes('[object Object]')"),"Workspace quota objects must be formatted for humans");
  await evalJs("([...document.querySelectorAll('button')].find(x=>x.textContent.trim()==='Members'))?.click()");
