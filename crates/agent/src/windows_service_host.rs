@@ -51,7 +51,10 @@ fn run_service() -> Result<()> {
         .context("failed to register Windows service control handler")?;
 
     status_handle
-        .set_service_status(status(ServiceState::StartPending, ServiceControlAccept::empty()))
+        .set_service_status(status(
+            ServiceState::StartPending,
+            ServiceControlAccept::empty(),
+        ))
         .context("failed to report Windows service StartPending state")?;
 
     // Initialize before marking the Windows service Running. A bad config
