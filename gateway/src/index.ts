@@ -101,6 +101,8 @@ const enrollRateLimit = new FixedWindowRateLimiter();
 const agentRouteRateLimit = new FixedWindowRateLimiter();
 const pairingRateLimit = new FixedWindowRateLimiter();
 const checkoutRateLimit = new FixedWindowRateLimiter();
+const consoleMutationAccountLimit = new FixedWindowRateLimiter();
+const consoleMutationIpLimit = new FixedWindowRateLimiter();
 const loginIpRateLimit = new FixedWindowRateLimiter();
 const loginAccountRateLimit = new FixedWindowRateLimiter();
 const invitationPreviewRateLimit = new FixedWindowRateLimiter();
@@ -1393,6 +1395,14 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           limit 1`, [principal.userId],
       );
       if (!access.rowCount) return void json(res, 403, { error: "platform_admin_required" });
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        const accountGuard=consoleMutationAccountLimit.hit(principal.userId,30,10*60_000);
+        const ipGuard=consoleMutationIpLimit.hit(remoteKey(req),120,10*60_000);
+        if(!accountGuard.allowed||!ipGuard.allowed){
+          res.setHeader("Retry-After",String(Math.max(accountGuard.retryAfterSeconds,ipGuard.retryAfterSeconds)));
+          return void json(res,429,{error:"rate_limited"});
+        }
+      }
       if (req.method === "GET" && url.pathname === "/api/console/me") {
         return void json(res, 200, {
           email: principal.email,
