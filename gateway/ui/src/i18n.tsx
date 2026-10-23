@@ -1,5 +1,5 @@
-import { useSyncExternalStore } from "react";
-import { Globe2 } from "lucide-react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Check, ChevronDown, Globe2 } from "lucide-react";
 import { commonEnglish } from "./i18n-common";
 import { marketingEnglish } from "./i18n-marketing";
 import { productEnglish } from "./i18n-product";
@@ -42,13 +42,48 @@ export function localizedDate(value:string|Date|number|undefined|null,options?:I
 }
 export function LanguageSwitcher({compact=false}:{compact?:boolean}){
   const current=useLocale();
-  return <label className={"locale-switcher"+(compact?" locale-switcher-compact":"")}>
-    <Globe2 size={17} aria-hidden="true"/>
-    <span className="sr-only">{current==="en"?"Language":"Dil"}</span>
-    <select aria-label={current==="en"?"Select language":"Dil seçin"} value={current}
-      onChange={e=>setLocale(e.target.value as Locale)}>
-      <option value="en">English (EN)</option>
-      <option value="tr">Türkçe (TR)</option>
-    </select>
-  </label>;
+  const [open,setOpen]=useState(false);
+  const root=useRef<HTMLDivElement>(null);
+  const trigger=useRef<HTMLButtonElement>(null);
+  const choices=useRef<Array<HTMLButtonElement|null>>([]);
+  const options:[Locale,string][]=[["en","English (EN)"],["tr","Türkçe (TR)"]];
+  useEffect(()=>{
+    if(!open)return;
+    const onPointer=(event:PointerEvent)=>{
+      if(root.current && !root.current.contains(event.target as Node))setOpen(false);
+    };
+    const onKey=(event:KeyboardEvent)=>{
+      if(event.key==="Escape"){setOpen(false);trigger.current?.focus();}
+    };
+    document.addEventListener("pointerdown",onPointer);
+    document.addEventListener("keydown",onKey);
+    return ()=>{document.removeEventListener("pointerdown",onPointer);document.removeEventListener("keydown",onKey)};
+  },[open]);
+  const choose=(next:Locale)=>{setLocale(next);setOpen(false);trigger.current?.focus()};
+  const focusOption=(index:number)=>choices.current[(index+options.length)%options.length]?.focus();
+  return <div ref={root} className={"locale-switcher"+(compact?" locale-switcher-compact":"")}>
+    <button ref={trigger} type="button" className="locale-trigger"
+      aria-label={current==="en"?"Select language":"Dil seçin"} aria-haspopup="menu" aria-expanded={open}
+      onClick={()=>setOpen(value=>!value)}
+      onKeyDown={event=>{if(event.key==="ArrowDown"||event.key==="ArrowUp"){event.preventDefault();setOpen(true);requestAnimationFrame(()=>focusOption(event.key==="ArrowDown"?0:options.length-1))}}}>
+      <Globe2 size={17} aria-hidden="true"/>
+      <span>{current==="en"?"English (EN)":"Türkçe (TR)"}</span>
+      <ChevronDown size={15} className={"locale-chevron"+(open?" locale-chevron-open":"")} aria-hidden="true"/>
+    </button>
+    {open&&<div className="locale-menu" role="menu" aria-label={current==="en"?"Language":"Dil"}>
+      {options.map(([code,label],index)=><button key={code} type="button" role="menuitemradio"
+        aria-checked={current===code} ref={node=>{choices.current[index]=node}}
+        className={"locale-option"+(current===code?" locale-option-active":"")}
+        onClick={()=>choose(code)}
+        onKeyDown={event=>{
+          if(event.key==="ArrowDown"||event.key==="ArrowUp"){event.preventDefault();focusOption(index+(event.key==="ArrowDown"?1:-1))}
+          if(event.key==="Home"){event.preventDefault();focusOption(0)}
+          if(event.key==="End"){event.preventDefault();focusOption(options.length-1)}
+          if(event.key==="Tab")setOpen(false);
+        }}>
+        <span>{label}</span>
+        {current===code&&<Check size={16} aria-hidden="true"/>}
+      </button>)}
+    </div>}
+  </div>;
 }
