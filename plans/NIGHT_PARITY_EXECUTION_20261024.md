@@ -39,3 +39,13 @@
 ## Bitirme tanımı
 
 Tüm maddeleri *kodlandı* diye tamamlandı sayma. `Desktop Commander parity achieved` kararı ancak resmi plan matrisi ve platform kabulünden sonra verilebilir. Harici imzalama ve fiziksel makine testleri kullanıcının erişimini gerektiriyorsa açık kanıt/komutları üret; bunları tamamlanmış saymadan kalan görevleri kodlamaya devam et.
+
+## 02.00 oturumu — CI/P0 kabul notu (2026-10-24)
+
+- **PASS / önceki baseline:** `930b5e79` üzerindeki GitHub Actions `ci #40036280462`: 17/17 job başarılı; `platform-distribution #40036735981` başarılı.
+- **Kod/test değişikliği:** `97e584f8` — gerçek Linux Agent E2E'de 10 dosya okuma sınırı, 11 dosya reddi, küçük byte limiti, arama oturumu yaşam döngüsü ve geçersiz sayfa negatif testleri.
+- **Plan kaydı:** `plans/DESKTOP_COMMANDER_PARITY_PLAN.md` güncellendi; geçmiş PASS ile yeni HEAD testlerini birbirinden ayırıyor.
+- **PENDING:** Yeni E2E testlerinin bulunduğu HEAD için GitHub CI; bu not, son HEAD'in PASS olduğunu iddia etmez.
+- **P0 açık:** Native gerçek akışlı/askıya alınabilir arama, yeniden başlatma sonrası oturum devamlılığı, tam PTY geçmişi, rollback/sürümleme.
+- **BLOCKED_EXTERNAL:** Gerçek ChatGPT/Claude canlı istemci, macOS/Ubuntu fiziksel kurulum ve Windows/macOS kod imzalama kabulü.
+- **Sonraki adım:** Önce yeni CI kırmızıysa kök nedeni düzelt; yeşilse 03.00 P0 arama/sayfalama açıklarına geç.
