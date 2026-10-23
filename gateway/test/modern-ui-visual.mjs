@@ -16,6 +16,7 @@ const fixtures={
  "/api/usage":{monthCalls:42,limit:100,dailyAverage:6,resetAt:"2026-11-01T00:00:00Z",daily:[1,2,3,4,5,6,7].map((n)=>({day:"2026-10-"+String(10+n),calls:n*2})),months:[],topTools:[]},
  "/api/activity":{items:[{tool:"direct.command",outcome:"success",created_at:new Date().toISOString()}]},
  "/api/billing":{mode:"saas",entitled:true,plan:{key:"pro",name:"Pro"},subscription:{status:"active",provider:"paddle",currentPeriodEnd:new Date().toISOString()},usage:{devices:1}},
+ "/api/public/downloads":{available:false,releaseUrl:"https://github.com/orhanbal/webrising-commender/releases",tagName:null,assets:[]},
  "/api/auth/organizations":{items:[{id:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",name:"Test Workspace",role:"owner"}]},
  "/api/organization":{item:{id:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",name:"Test Workspace"}},
  "/api/tokens":{items:[{id:"22222222-2222-4222-8222-222222222222",name:"Test MCP",role:"operator",created_at:new Date().toISOString(),last_used_at:null,revoked_at:null}]},
@@ -71,6 +72,36 @@ try{
   writeFileSync(join(artifacts,screenshot+".png"),Buffer.from(image.data,"base64"));
  }
  await visit("/","Tüm cihazların","modern-landing-dark");
+ // Reference acceptance: exactly one guest sign-in and one blue Install CTA.
+ const signedIn=fixtures["/api/auth/me"];
+ delete fixtures["/api/auth/me"];
+ await visit("/","Tüm cihazların","modern-landing-guest");
+ const guestHeader=await evalJs("(()=>{const h=document.querySelector('.site-header');const buttons=[...h.querySelectorAll('button')];return {login:buttons.filter(b=>b.textContent.trim()==='Giriş Yap').length,install:buttons.filter(b=>b.textContent.includes('Install')).length}})()");
+ assert.equal(guestHeader.login,1,"Guest header must not render duplicate sign-in actions");
+ assert.equal(guestHeader.install,1,"Header must show one Install CTA");
+ await evalJs("document.querySelector('.wc-nav-install').click()");
+ for(let i=0;i<60;i++){await sleep(80);if(await evalJs("location.pathname==='/install' && document.querySelectorAll('.install-client-card').length===2"))break}
+ assert.equal(await evalJs("location.pathname"),"/install","Install button must navigate to /install");
+ assert.equal(await evalJs("document.querySelectorAll('.install-client-card').length"),2,"Install shows ChatGPT and Claude cards");
+ const installShot=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
+ writeFileSync(join(artifacts,"modern-install-guest-dark.png"),Buffer.from(installShot.data,"base64"));
+ await evalJs("document.querySelector('.install-client-action').click()");
+ await sleep(160);
+ assert.ok(await evalJs("document.querySelector('[role=dialog]')?.textContent.includes('ChatGPT')"),"ChatGPT setup must open actionable guide");
+ await visit("/install","Konuştuğun yerde","modern-install-desktop");
+ assert.equal(await evalJs("document.querySelectorAll('.install-platform').length"),3,"Install offers three operating systems");
+ await evalJs("document.querySelector('.install-platforms button:nth-child(2)').click()");
+ assert.ok(await evalJs("document.querySelector('.install-code-wrap pre')?.textContent.includes('target/release/webrising-commender')"),"macOS guide must show build command");
+ await evalJs("document.querySelector('.install-option-head').click()");
+ assert.ok(await evalJs("document.querySelector('.install-copy-field')?.textContent.includes('/mcp')"),"Remote MCP endpoint must be copyable");
+ await evalJs("document.querySelector('.theme-button').click()");
+ await sleep(130);
+ assert.equal(await evalJs("document.documentElement.classList.contains('light')"),true,"Install light mode toggle failed");
+ const installLight=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
+ writeFileSync(join(artifacts,"modern-install-light.png"),Buffer.from(installLight.data,"base64"));
+ fixtures["/api/auth/me"]=signedIn;
+ await visit("/","Tüm cihazların","modern-landing-dark");
+
  await evalJs("document.querySelector('.theme-button').click()");
  await sleep(200);
  assert.equal(await evalJs("document.documentElement.classList.contains('light')"),true,"Windows light mode toggle broken");
@@ -97,6 +128,8 @@ try{
  await visit("/","Tüm cihazların","modern-landing-mobile");
  await visit("/dashboard","Tekrar hoş geldin","modern-dashboard-mobile");
  await visit("/devices","Bağlı Makineler","modern-devices-mobile");
+ await visit("/install","Konuştuğun yerde","modern-install-mobile");
+ assert.ok(await evalJs("document.querySelector('.wc-nav-install')!==null"),"Mobile Install CTA missing");
  await visit("/account","Şifremi Değiştir","modern-account-mobile");
  console.log("PASS modern shadcn landing, account, device/workbench, usage, pricing, checkout and billing desktop/mobile");
 }finally{ws?.close();proc.kill("SIGTERM");server.close();try{rmSync(profile,{recursive:true,force:true})}catch{}}
