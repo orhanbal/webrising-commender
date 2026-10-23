@@ -161,18 +161,37 @@ export async function consumePaddleWebhook(raw:Buffer,signature:string) {
   const record=fromIntent?.rows[0]||fromExisting.rows[0];
   if(!record)return {ok:true,ignored:true};
   const price=data.items?.[0]?.price?.id;
-  if(fromIntent?.rows[0] && price!==fromIntent.rows[0].price_id){
+  if(!price||!pricePattern.test(price)){
+    throw Object.assign(new Error("invalid_paddle_price"),{status:400});
+  }
+  if(fromIntent?.rows[0]&&price!==fromIntent.rows[0].price_id){
     throw Object.assign(new Error("paddle_price_mismatch"),{status:400});
   }
+  // A customer may switch packages using Paddle's customer portal. Apply
+  // updated plan limits from the signed subscription price, never from
+  // custom_data supplied by a client or a stale original checkout intent.
+  const mappedPlans=await db.query<{key:string}>(
+    "select key from billing_plans where coalesce(metadata->>'paddlePriceId',metadata->>'paddle_price_id')=$1 order by created_at limit 2",
+    [price]
+  );
+  if(mappedPlans.rows.length!==1){
+    throw Object.assign(new Error("paddle_price_unmapped_or_duplicated"),{status:409});
+  }
+  if(fromIntent?.rows[0] && mappedPlans.rows[0]!.key!==fromIntent.rows[0].plan_key){
+    throw Object.assign(new Error("paddle_checkout_plan_mismatch"),{status:400});
+  }
   const status=(data.status||"").toLowerCase();
-  const mapped=status==="active"?"active":status==="trialing"?"trialing":status==="canceled"?"canceled":"past_due";
+  if(!["active","trialing","past_due","paused","canceled"].includes(status)){
+    throw Object.assign(new Error("unrecognized_paddle_subscription_status"),{status:400});
+  }
+  const mapped=status as "active"|"trialing"|"past_due"|"paused"|"canceled";
   const occurredAt=new Date(event.occurred_at);
   if(!Number.isFinite(occurredAt.getTime()))throw Object.assign(new Error("invalid_paddle_date"),{status:400});
   const result=await applyNormalizedBillingEvent({
     provider:"paddle",eventId:event.event_id,eventType:event.event_type,
     occurredAt:occurredAt.toISOString(),organizationId:record.organization_id,
     subscription:{
-      planKey:record.plan_key,status:mapped,
+      planKey:mappedPlans.rows[0]!.key,status:mapped,
       externalSubscriptionId:data.id,
       externalCustomerId:data.customer_id&&customerPattern.test(data.customer_id)?data.customer_id:null,
       currentPeriodEnd:data.current_billing_period?.ends_at??null,
