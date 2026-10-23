@@ -5,7 +5,7 @@ umask 077
 OUTPUT_DIR="${1:-${BACKUP_DIR:-./backups}}"
 DB_USER="${POSTGRES_USER:-commender}"
 DB_NAME="${POSTGRES_DB:-commender}"
-RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
+RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-0}"
 
 if ! [[ "$DB_NAME" =~ ^[A-Za-z0-9_]+$ && "$DB_USER" =~ ^[A-Za-z0-9_]+$ ]]; then
   echo "POSTGRES_DB and POSTGRES_USER must contain only letters, numbers or underscore." >&2
@@ -37,9 +37,11 @@ sha256_file() {
 }
 
 mkdir -p "$OUTPUT_DIR"
+chmod 700 "$OUTPUT_DIR"
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-archive="$OUTPUT_DIR/commender-$timestamp.dump"
+archive="$OUTPUT_DIR/commender-$timestamp-$.dump"
 partial="$archive.partial"
+if [[ -e "$archive" || -e "$partial" ]]; then echo "Refusing to overwrite an existing backup." >&2; exit 1; fi
 checksum_file="$archive.sha256"
 manifest="$archive.manifest"
 
@@ -73,6 +75,7 @@ bytes=$bytes
 EOF
 
 if [[ "$RETENTION_DAYS" =~ ^[0-9]+$ ]] && (( RETENTION_DAYS > 0 )); then
+  echo "CAUTION: opt-in retention will remove backups older than $RETENTION_DAYS days. Ensure verified off-host copies." >&2
   while IFS= read -r -d '' old; do
     rm -f "$old" "$old.sha256" "$old.manifest"
   done < <(find "$OUTPUT_DIR" -maxdepth 1 -type f -name 'commender-*.dump' -mtime +"$RETENTION_DAYS" -print0)
