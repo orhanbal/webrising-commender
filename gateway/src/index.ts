@@ -420,11 +420,18 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     if (req.method === "GET" && modernPages.has(url.pathname)) {
       let seo:{title:string;description:string}|undefined;
       if(url.pathname==="/") {
+        seo={
+          title:"WECOMMANDER · AI Remote Workspace",
+          description:"WECOMMANDER — securely connect devices and manage files, terminals and workflows with your AI tools.",
+        };
         try{
           const result=await db.query<{seo_title:string;seo_description:string}>(
             "select seo_title,seo_description from site_content_revisions where locale='en' and state='published' limit 1");
-          if(result.rows[0])seo={title:result.rows[0].seo_title,description:result.rows[0].seo_description};
-        }catch { /* Keep the public landing available if the CMS is temporarily unavailable. */ }
+          if(result.rows[0])seo={
+            title:result.rows[0].seo_title||seo.title,
+            description:result.rows[0].seo_description||seo.description,
+          };
+        }catch { /* Public landing retains safe default metadata if the CMS is unavailable. */ }
       }
       if (await serveModernFile(res,"index.html",true,seo)) return;
       if (url.pathname === "/") return void (await serveLanding(res));
