@@ -204,6 +204,9 @@ try{
  assert.equal(await evalJs("document.querySelectorAll('fieldset').length"),5,"CMS must show five correctly paired FAQ editor cards");
  assert.ok(await evalJs("[...document.querySelectorAll('fieldset')].every(f=>f.querySelectorAll('textarea').length===2)"),"Every FAQ editor card must have a question and answer");
 
+ await visit("/console/system","System status","modern-console-system");
+ assert.ok(await evalJs("document.body.textContent.includes('Active browser sessions')"),"System view must show live operational counters");
+ assert.ok(await evalJs("document.body.textContent.includes('Branded SMTP')"),"System view must show a credential-safe configuration summary");
  await visit("/console/billing","Subscriptions","modern-console-billing");
  assert.ok(await evalJs("document.body.textContent.includes('Cancellation & refund requests')"),"Super admin must expose support-request queue");
  await visit("/console/brand","Brand assets","modern-console-brand");
