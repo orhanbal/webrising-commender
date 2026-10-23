@@ -459,6 +459,33 @@ assert.equal((await jsonFetch("/api/public/site-content?locale=en")).item.hero_t
 assert.equal((await cmsPublish(cmsFirstId)).status,200,"Older revision must be republishable for rollback");
 assert.equal((await jsonFetch("/api/public/site-content?locale=en")).item.hero_title,"Integration Draft One");
 await acceptanceDb.query("delete from site_content_revisions where id=any($1::bigint[])",[[cmsFirstId,cmsSecondId]]);
+
+const legalDraft=async(title)=>fetch(base+"/api/console/legal",{
+ method:"POST",headers:cmsSessionHeaders,
+ body:JSON.stringify({page:"privacy",locale:"en",title,body:"Legal plain text content with <script>alert(1)</script> markup rendered as text."}),
+});
+const firstLegal=await legalDraft("Privacy Revision One");
+assert.equal(firstLegal.status,201);
+const legalFirstId=(await firstLegal.json()).id;
+assert.equal((await jsonFetch("/api/public/legal?page=privacy&locale=en")).item,null,"Draft legal content must not be public");
+const publishLegal=async(id,currentPassword)=>fetch(base+"/api/console/legal/publish",{
+ method:"POST",headers:cmsSessionHeaders,body:JSON.stringify({id,currentPassword}),
+});
+assert.equal((await publishLegal(legalFirstId,"wrong-password-value")).status,403);
+assert.equal((await publishLegal(legalFirstId,"correct-horse-battery-staple")).status,200);
+const legalPublished=await jsonFetch("/api/public/legal?page=privacy&locale=en");
+assert.equal(legalPublished.item.title,"Privacy Revision One");
+assert.equal(legalPublished.item.body.includes("<script>"),true,"Legal editor preserves literal text, React must escape rendering");
+assert.equal((await jsonFetch("/api/public/legal?page=terms&locale=en")).item,null,"Privacy publish cannot overwrite terms");
+const secondLegal=await legalDraft("Privacy Revision Two");
+assert.equal(secondLegal.status,201);
+const legalSecondId=(await secondLegal.json()).id;
+assert.equal((await publishLegal(legalSecondId,"correct-horse-battery-staple")).status,200);
+assert.equal((await jsonFetch("/api/public/legal?page=privacy&locale=en")).item.title,"Privacy Revision Two");
+assert.equal((await publishLegal(legalFirstId,"correct-horse-battery-staple")).status,200,"Legal rollback must restore previous revision");
+assert.equal((await jsonFetch("/api/public/legal?page=privacy&locale=en")).item.title,"Privacy Revision One");
+await acceptanceDb.query("delete from legal_page_revisions where id=any($1::bigint[])",[[legalFirstId,legalSecondId]]);
+
 const membershipOrg=browserMe.organizationId;
 const memberSeed=await acceptanceDb.query(
   `insert into users(email,password_hash,email_verified_at)
