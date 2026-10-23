@@ -1422,6 +1422,25 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         );
         return void json(res,200,{items:records.rows});
       }
+      if (req.method === "GET" && url.pathname === "/api/console/billing") {
+        const plans=await db.query("select key,name,max_devices,max_members,max_api_tokens,active from billing_plans order by name");
+        const subscriptions=await db.query(
+          `select o.name as organization,s.plan_key,s.status,s.provider,s.current_period_end,s.cancel_at_period_end
+           from organization_subscriptions s join organizations o on o.id=s.organization_id
+           order by o.name limit 100`);
+        return void json(res,200,{plans:plans.rows,subscriptions:subscriptions.rows});
+      }
+      if (req.method === "GET" && url.pathname === "/api/console/system") {
+        const counts=await db.query(
+          `select count(*) filter (where sent_at is null and failed_at is null)::int as pending,
+             count(*) filter (where sent_at is not null)::int as delivered,
+             count(*) filter (where failed_at is not null)::int as failed from mail_outbox`);
+        return void json(res,200,{
+          mailConfigured:mailConfigured(),
+          signupEnabled:deploymentMode==="saas"&&publicSignupEnabled()&&mailConfigured(),
+          deploymentMode,mailQueue:counts.rows[0],
+        });
+      }
       if (req.method === "GET" && url.pathname === "/api/console/site-content") {
         const locale = url.searchParams.get("locale")==="tr"?"tr":"en";
         const revisions=await db.query(
