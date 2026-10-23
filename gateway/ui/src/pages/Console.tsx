@@ -21,6 +21,9 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
  useEffect(()=>setSection(Object.keys(routes).find(label=>routes[label]===path)||"Overview"),[path]);
  const [userSearch,setUserSearch]=useState("");
  const [userPage,setUserPage]=useState(0);
+ const [organizationSearch,setOrganizationSearch]=useState("");
+ const [organizationPage,setOrganizationPage]=useState(0);
+ const [organizationTotal,setOrganizationTotal]=useState(0);
  const [targetUser,setTargetUser]=useState<{id:string;email:string;disabled:boolean}|null>(null);
  const [confirmPassword,setConfirmPassword]=useState("");
  const [userActionBusy,setUserActionBusy]=useState(false);
@@ -80,7 +83,7 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
   const values=[orgEdit.maxDevices,orgEdit.maxMembers,orgEdit.maxApiTokens];
   if(values.some(v=>v.trim()&&(!Number.isInteger(Number(v))||Number(v)<0||Number(v)>1000000)))throw Error("Enter limits from 0 to 1000000, or blank to inherit.");
   await api("/api/console/organizations/quotas",{method:"POST",body:JSON.stringify({organizationId:orgEdit.id,maxDevices:parse(orgEdit.maxDevices),maxMembers:parse(orgEdit.maxMembers),maxApiTokens:parse(orgEdit.maxApiTokens),currentPassword:orgPassword})});
-  const data=await api<{items:Array<Record<string,unknown>>}>("/api/console/organizations");setRecords(data.items);setOrgEdit(null);setOrgPassword("");
+  const data=await api<{items:Array<Record<string,unknown>>;total:number}>("/api/console/organizations?limit=25&offset="+(organizationPage*25)+"&q="+encodeURIComponent(organizationSearch));setRecords(data.items);setOrganizationTotal(data.total);setOrgEdit(null);setOrgPassword("");
  }catch(e){setOrgError(String(e))}finally{setOrgBusy(false)}};
 
  const refreshUsers=async()=>{const result=await api<{items:Array<Record<string,unknown>>}>("/api/console/users?limit=25&offset="+(userPage*25)+"&q="+encodeURIComponent(userSearch));setRecords(result.items)};
@@ -163,7 +166,18 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
     .finally(()=>{if(active)setLoading(false);});
    return()=>{active=false};
  },[]);
- useEffect(()=>{const names:Record<string,string>={Users:"users",Organizations:"organizations",Devices:"devices",Operations:"audit"};if(!admin||!names[section])return;let active=true;setRecordsBusy(true);setRecordsError("");api<{items:Array<Record<string,unknown>>}>("/api/console/"+names[section]+(section==="Users"?"?limit=25&offset="+(userPage*25)+"&q="+encodeURIComponent(userSearch):"")).then(data=>{if(active)setRecords(data.items)}).catch(e=>{if(active)setRecordsError(String(e))}).finally(()=>{if(active)setRecordsBusy(false)});return()=>{active=false}},[section,admin,userSearch,userPage]);
+ useEffect(()=>{
+  const names:Record<string,string>={Users:"users",Organizations:"organizations",Devices:"devices",Operations:"audit"};
+  if(!admin||!names[section])return;
+  let active=true;setRecordsBusy(true);setRecordsError("");
+  const suffix=section==="Users"?"?limit=25&offset="+(userPage*25)+"&q="+encodeURIComponent(userSearch):
+               section==="Organizations"?"?limit=25&offset="+(organizationPage*25)+"&q="+encodeURIComponent(organizationSearch):"";
+  api<{items:Array<Record<string,unknown>>;total?:number}>("/api/console/"+names[section]+suffix)
+    .then(data=>{if(active){setRecords(data.items);if(section==="Organizations")setOrganizationTotal(data.total??0)}})
+    .catch(e=>{if(active)setRecordsError(String(e))})
+    .finally(()=>{if(active)setRecordsBusy(false)});
+  return()=>{active=false}
+ },[section,admin,userSearch,userPage,organizationSearch,organizationPage]);
  if(loading)return <div className="min-h-screen grid place-items-center text-lg">{translate("Yükleniyor…")}</div>;
  if(error||!admin)return <div className="container-w py-24 max-w-xl">
    <div className="rounded-2xl bg-[var(--surface)] border border-[var(--stroke)] p-8">
@@ -298,7 +312,13 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
        <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">{items.filter(item=>item.label!=="Overview").map(item=><button type="button" key={item.label} onClick={()=>{setSection(item.label);nav(routes[item.label])}} className="rounded-xl border border-[var(--stroke)] bg-[var(--surface-2)] p-4 text-left hover:border-[var(--accent)] flex items-center gap-3"><item.icon size={20} className="text-[var(--accent)]"/><span className="font-semibold">{item.label}</span></button>)}</div>
       </div></>:<div className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-5 overflow-x-auto">
         {section==="Users"&&<div className="flex flex-wrap gap-3 mb-5"><input className="flex-1 min-w-[220px] rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 text-sm" placeholder="Search user email" aria-label="Search user email" value={userSearch} onChange={e=>{setUserPage(0);setUserSearch(e.target.value)}}/><button type="button" disabled={userPage===0} onClick={()=>setUserPage(x=>Math.max(0,x-1))} className="rounded-xl border border-[var(--stroke)] px-4 disabled:opacity-40">Previous</button><span className="self-center text-sm muted">Page {userPage+1}</span><button type="button" disabled={records.length<25} onClick={()=>setUserPage(x=>x+1)} className="rounded-xl border border-[var(--stroke)] px-4 disabled:opacity-40">Next</button></div>}
-        {recordsBusy?<p className="muted py-8">Loading records…</p>:recordsError?<p role="alert" className="text-[var(--danger)]">{recordsError}</p>:records.length===0?<p className="muted py-8">No records.</p>:<table className="w-full text-sm text-left"><thead><tr>{Object.keys(records[0]||{}).map(k=><th key={k} className="px-3 py-3 border-b border-[var(--stroke)] whitespace-nowrap">{k.replaceAll("_"," ")}</th>)}</tr></thead><tbody>{records.map((row,i)=><tr key={String(row.id||i)}>{Object.values(row).map((value,j)=><td key={j} className="px-3 py-3 border-b border-[var(--stroke)] whitespace-nowrap">{value===null?"—":typeof value==="boolean"?(value?"Yes":"No"):String(value)}</td>)}{section==="Organizations"&&<td className="px-3 py-3 border-b border-[var(--stroke)]"><button className="rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm" onClick={()=>{const q=(row.quota_overrides||{}) as Record<string,number|null>;setOrgError("");setOrgEdit({id:String(row.id),name:String(row.name),maxDevices:q.maxDevices==null?"":String(q.maxDevices),maxMembers:q.maxMembers==null?"":String(q.maxMembers),maxApiTokens:q.maxApiTokens==null?"":String(q.maxApiTokens)})}}>Edit quotas</button><button className="ml-2 rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm" onClick={()=>void openMembers({id:String(row.id),name:String(row.name)})}>Members</button></td>}{section==="Users"&&<td className="px-3 py-3 border-b border-[var(--stroke)]"><button onClick={()=>{setUserActionError("");setTargetUser({id:String(row.id),email:String(row.email),disabled:Boolean(row.disabled)})}} className="rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm">{row.disabled?"Enable":"Disable"}</button><button type="button" className="ml-2 rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm" onClick={()=>void openSessions({id:String(row.id),email:String(row.email)})}>Sessions</button></td>}</tr>)}</tbody></table>}
+        {section==="Organizations"&&<div className="flex flex-wrap gap-3 mb-5">
+  <input className="flex-1 min-w-[220px] rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 text-sm" placeholder="Search workspaces" aria-label="Search organizations" value={organizationSearch} onChange={e=>{setOrganizationSearch(e.target.value);setOrganizationPage(0)}}/>
+  <button type="button" disabled={organizationPage===0||recordsBusy} onClick={()=>setOrganizationPage(x=>Math.max(0,x-1))} className="rounded-xl border border-[var(--stroke)] px-4 disabled:opacity-40">Previous</button>
+  <span className="self-center text-sm muted">Page {organizationPage+1} / {Math.max(1,Math.ceil(organizationTotal/25))} · {organizationTotal} total</span>
+  <button type="button" disabled={recordsBusy||(organizationPage+1)*25>=organizationTotal} onClick={()=>setOrganizationPage(x=>x+1)} className="rounded-xl border border-[var(--stroke)] px-4 disabled:opacity-40">Next</button>
+ </div>}
+{recordsBusy?<p className="muted py-8">Loading records…</p>:recordsError?<p role="alert" className="text-[var(--danger)]">{recordsError}</p>:records.length===0?<p className="muted py-8">No records.</p>:<table className="w-full text-sm text-left"><thead><tr>{Object.keys(records[0]||{}).map(k=><th key={k} className="px-3 py-3 border-b border-[var(--stroke)] whitespace-nowrap">{k.replaceAll("_"," ")}</th>)}</tr></thead><tbody>{records.map((row,i)=><tr key={String(row.id||i)}>{Object.values(row).map((value,j)=><td key={j} className="px-3 py-3 border-b border-[var(--stroke)] whitespace-nowrap">{value===null?"—":typeof value==="boolean"?(value?"Yes":"No"):String(value)}</td>)}{section==="Organizations"&&<td className="px-3 py-3 border-b border-[var(--stroke)]"><button className="rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm" onClick={()=>{const q=(row.quota_overrides||{}) as Record<string,number|null>;setOrgError("");setOrgEdit({id:String(row.id),name:String(row.name),maxDevices:q.maxDevices==null?"":String(q.maxDevices),maxMembers:q.maxMembers==null?"":String(q.maxMembers),maxApiTokens:q.maxApiTokens==null?"":String(q.maxApiTokens)})}}>Edit quotas</button><button className="ml-2 rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm" onClick={()=>void openMembers({id:String(row.id),name:String(row.name)})}>Members</button></td>}{section==="Users"&&<td className="px-3 py-3 border-b border-[var(--stroke)]"><button onClick={()=>{setUserActionError("");setTargetUser({id:String(row.id),email:String(row.email),disabled:Boolean(row.disabled)})}} className="rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm">{row.disabled?"Enable":"Disable"}</button><button type="button" className="ml-2 rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm" onClick={()=>void openSessions({id:String(row.id),email:String(row.email)})}>Sessions</button></td>}</tr>)}</tbody></table>}
         <p className="muted text-xs mt-5">Read-only records. Administrative changes require audited controls.</p>
        </div>}
     </main>
