@@ -604,7 +604,8 @@ jobs:
           Copy-Item "installer\windows\WECOMMANDER.iss" "dist\WECOMMANDER.iss"
           Copy-Item "installer\windows\WECOMMANDER-Onboarding.ps1" "dist\WECOMMANDER-Onboarding.ps1"
           Copy-Item "installer\windows\Install-Service-Interactive.ps1" "dist\Install-Service-Interactive.ps1"
-          foreach ($script in @("dist\WECOMMANDER-Onboarding.ps1", "dist\Install-Service-Interactive.ps1")) {
+          Copy-Item "installer\windows\Diagnose-Service.ps1" "dist\Diagnose-Service.ps1"
+          foreach ($script in @("dist\WECOMMANDER-Onboarding.ps1", "dist\Install-Service-Interactive.ps1", "dist\Diagnose-Service.ps1")) {
             $errors = $null
             [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script),[ref]$null,[ref]$errors)
             if ($errors.Count -gt 0) { $errors | Format-List; exit 1 }
