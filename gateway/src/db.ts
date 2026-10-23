@@ -261,6 +261,18 @@ export async function migrate() {
       created_at timestamptz not null default now()
     );
 
+    create table if not exists device_link_requests (
+      id uuid primary key,
+      secret_hash text not null,
+      organization_id uuid references organizations(id) on delete cascade,
+      approved_by uuid references users(id) on delete set null,
+      approved_at timestamptz,
+      consumed_at timestamptz,
+      expires_at timestamptz not null,
+      created_at timestamptz not null default now()
+    );
+    create index if not exists device_link_requests_expiry_idx on device_link_requests(expires_at);
+
     create table if not exists approvals (
       id uuid primary key default gen_random_uuid(),
       organization_id uuid not null references organizations(id) on delete cascade,
