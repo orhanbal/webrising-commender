@@ -116,6 +116,18 @@ export async function migrate() {
     );
     create index if not exists organization_members_user_idx on organization_members(user_id);
 
+    create table if not exists legal_page_revisions (
+      id bigserial primary key,
+      page text not null check(page in ('privacy','terms')),
+      locale text not null check(locale in ('en','tr')),
+      title text not null check(length(title) between 1 and 160),
+      body text not null check(length(body) between 20 and 30000),
+      state text not null default 'draft' check(state in ('draft','published')),
+      created_by uuid references users(id) on delete set null,
+      created_at timestamptz not null default now()
+    );
+    create unique index if not exists legal_page_one_published
+      on legal_page_revisions(page,locale) where state='published';
     create table if not exists site_content_revisions (
       id bigserial primary key,
       locale text not null check(locale in ('en','tr')),
