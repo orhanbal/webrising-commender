@@ -1,5 +1,5 @@
 import {useEffect,useState} from "react";import type{ReactNode}from"react";
-import {Activity,ArrowRight,ArrowUpRight,Bell,ChevronDown,Clock3,Command,CreditCard,FileText,HardDrive,LayoutDashboard,LockKeyhole,LogOut,Menu,Monitor,Plus,Search,Server,Settings2,ShieldCheck,TerminalSquare,Workflow,X,Zap}from"lucide-react";
+import {Activity,ArrowRight,ArrowUpRight,Bell,ChevronDown,Clock3,Command,CreditCard,FileText,HardDrive,LayoutDashboard,LockKeyhole,LogOut,Menu,Monitor,Plus,Search,Server,Settings2,ShieldCheck,TerminalSquare,Workflow,Zap}from"lucide-react";
 import{Button,Card,CardContent,CardDescription,CardHeader,CardTitle,Badge}from"../components/ui";
 import{api,type Account,type Device,type Usage,type Billing}from"../api";
 import{dateText,formatCount}from"../lib";
@@ -36,7 +36,7 @@ export function DashboardShell({nav,path,account,theme,toggle,logout,children}:{
   </div>
  </div>
 }
-export function DashboardPage({nav,path,account,checking,refresh,logout,theme,toggle}:{nav:Nav;path:string;account:Account|null;checking:boolean;refresh:()=>Promise<Account|null>;logout:()=>void;theme:Theme;toggle:()=>void}){
+export function DashboardPage({nav,path,account,checking,logout,theme,toggle}:{nav:Nav;path:string;account:Account|null;checking:boolean;refresh:()=>Promise<Account|null>;logout:()=>void;theme:Theme;toggle:()=>void}){
  const [devices,setDevices]=useState<Device[]>([]);
  const [usage,setUsage]=useState<Usage|null>(null);
  const [bill,setBill]=useState<Billing|null>(null);
