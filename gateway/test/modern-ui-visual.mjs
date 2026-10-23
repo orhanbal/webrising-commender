@@ -189,6 +189,7 @@ try{
  await sleep(120);
 
  await visit("/console/organizations","Organizations","modern-console-organizations");
+ assert.ok(await evalJs("!document.body.textContent.includes('[object Object]')"),"Workspace quota objects must be formatted for humans");
  await evalJs("([...document.querySelectorAll('button')].find(x=>x.textContent.trim()==='Members'))?.click()");
  await sleep(120);
  assert.ok(await evalJs("document.querySelector('[role=dialog]')?.textContent.includes('member@example.test')"),"Workspace member inspector must show server-backed members");
