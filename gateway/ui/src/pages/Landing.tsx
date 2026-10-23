@@ -36,7 +36,7 @@ export function Landing({nav,pricing}:{nav:Nav;pricing:Pricing|null}){
      <div className="hero-badge"><i/> WECOMMANDER · Yapay zekâ için uzak çalışma alanı <ArrowUpRight size={13}/></div>
      <h1 className="h1">Tüm cihazların.<br/><span className="text-gradient">Tek komuta.</span></h1>
      <p>Windows, macOS ve Linux cihazlarını güvenle bağla. Terminal, dosya ve görevlerini modern bir panelden veya MCP destekli yapay zekâ araçlarınla yönet.</p>
-     <div className="hero-actions"><Button size="lg" onClick={()=>nav("/register")}>Ücretsiz hesap oluştur <ArrowRight size={19}/></Button><Button size="lg" variant="outline" onClick={()=>nav("/dashboard")}>Paneli keşfet <ArrowUpRight size={18}/></Button></div>
+     <div className="hero-actions"><Button size="lg" onClick={()=>nav("/register")}>Hesap oluştur <ArrowRight size={19}/></Button><Button size="lg" variant="outline" onClick={()=>nav("/dashboard")}>Paneli keşfet <ArrowUpRight size={18}/></Button></div>
      <div className="hero-proof"><span><Check/> Güvenli erişim</span><span><Check/> Tek çalışma alanı</span><span><Check/> Windows · macOS · Linux</span></div>
     </div>
     <div className="preview-outer" aria-label="WECOMMANDER örnek arayüzü">
