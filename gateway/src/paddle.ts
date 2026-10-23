@@ -70,7 +70,7 @@ async function paddleApi<T>(route: string, options: {method?: string; body?: unk
     const res=await fetch(host+route,{
       method:options.method||"GET",
       headers:{"Authorization":"Bearer "+apiKey,"Content-Type":"application/json"},
-      body:options.body===undefined?undefined:JSON.stringify(options.body),
+      ...(options.body===undefined?{}:{body:JSON.stringify(options.body)}),
       signal:controller.signal,
     });
     if(!res.ok){
