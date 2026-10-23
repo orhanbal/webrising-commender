@@ -101,6 +101,7 @@ const enrollRateLimit = new FixedWindowRateLimiter();
 const agentRouteRateLimit = new FixedWindowRateLimiter();
 const pairingRateLimit = new FixedWindowRateLimiter();
 const checkoutRateLimit = new FixedWindowRateLimiter();
+const billingSupportRateLimit = new FixedWindowRateLimiter();
 const consoleMutationAccountLimit = new FixedWindowRateLimiter();
 const consoleMutationIpLimit = new FixedWindowRateLimiter();
 const loginIpRateLimit = new FixedWindowRateLimiter();
@@ -1630,6 +1631,46 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         }catch(error){await client.query("rollback");throw error}finally{client.release()}
         return void json(res,200,{ok:true});
       }
+      if (req.method === "GET" && url.pathname === "/api/console/billing/requests") {
+        const items=await db.query(
+          `select r.id,r.type,r.message,r.status,r.resolution_note,r.created_at,r.reviewed_at,
+              o.name as organization,u.email as requested_by_email
+           from billing_support_requests r
+           join organizations o on o.id=r.organization_id
+           join users u on u.id=r.requested_by
+           order by case when r.status='pending' then 0 when r.status='in_review' then 1 else 2 end,
+                    r.created_at desc limit 200`);
+        return void json(res,200,{items:items.rows});
+      }
+      if (req.method === "POST" && url.pathname === "/api/console/billing/requests/review") {
+        const body=z.object({
+          id:z.string().uuid(),status:z.enum(["in_review","closed"]),
+          note:z.string().trim().min(10).max(2000),
+          currentPassword:z.string().min(12).max(256),
+        }).parse(await readJson(req));
+        const operator=await db.query<{password_hash:string}>(
+          "select password_hash from users where id=$1 and disabled_at is null",[principal.userId]);
+        if(!operator.rows[0]||!(await verifyPassword(body.currentPassword,operator.rows[0].password_hash)))
+          return void json(res,403,{error:"reauthentication_failed"});
+        const client=await db.connect();
+        try{
+          await client.query("begin");
+          const request=await client.query<{status:string,type:string}>(
+            "select status,type from billing_support_requests where id=$1 for update",[body.id]);
+          if(!request.rows[0]){await client.query("rollback");return void json(res,404,{error:"request_not_found"});}
+          if(request.rows[0].status==="closed"){await client.query("rollback");return void json(res,409,{error:"request_already_closed"});}
+          await client.query(
+            `update billing_support_requests set status=$2,resolution_note=$3,reviewed_by=$4,
+                  reviewed_at=now(),updated_at=now() where id=$1`,
+            [body.id,body.status,body.note,principal.userId]);
+          await client.query(
+            "insert into platform_admin_audit(actor_user_id,action,detail) values($1,'billing.support_request_review',$2)",
+            [principal.userId,"request:"+body.id+" status:"+body.status],
+          );
+          await client.query("commit");
+        }catch(error){await client.query("rollback");throw error}finally{client.release()}
+        return void json(res,200,{ok:true,providerActionPerformed:false});
+      }
       if (req.method === "GET" && url.pathname === "/api/console/billing") {
         const plans=await db.query("select key,name,max_devices,max_members,max_api_tokens,active from billing_plans order by name");
         const subscriptions=await db.query(
@@ -1985,6 +2026,39 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     if (req.method === "POST" && url.pathname === "/api/billing/paddle/portal") {
       if (!requireRole(principal!,"owner",res)) return;
       return void json(res,200,await createPaddlePortal(principal!.organizationId));
+    }
+    if (req.method === "GET" && url.pathname === "/api/billing/support-requests") {
+      if (!requireRole(principal!,"viewer",res)) return;
+      const items=await db.query(
+        `select id,type,message,status,resolution_note,created_at,reviewed_at
+           from billing_support_requests where organization_id=$1
+          order by created_at desc limit 50`,
+        [principal!.organizationId],
+      );
+      return void json(res,200,{items:items.rows});
+    }
+    if (req.method === "POST" && url.pathname === "/api/billing/support-requests") {
+      if(!requireRole(principal!,"owner",res))return;
+      if(principal!.authKind!=="session"||!principal!.userId)
+        return void json(res,403,{error:"browser_owner_session_required"});
+      const rate=billingSupportRateLimit.hit(principal!.organizationId,5,60*60_000);
+      if(!rate.allowed){
+        res.setHeader("Retry-After",String(rate.retryAfterSeconds));
+        return void json(res,429,{error:"rate_limited"});
+      }
+      const body=z.object({type:z.enum(["cancellation","refund"]),message:z.string().trim().min(5).max(2000)}).parse(await readJson(req));
+      const subscription=await db.query(
+        "select 1 from organization_subscriptions where organization_id=$1 and provider='paddle'",
+        [principal!.organizationId],
+      );
+      if(!subscription.rowCount)return void json(res,409,{error:"paddle_subscription_required"});
+      const saved=await db.query(
+        `insert into billing_support_requests(organization_id,requested_by,type,message)
+         values($1,$2,$3,$4) on conflict do nothing returning id,status,created_at`,
+        [principal!.organizationId,principal!.userId,body.type,body.message],
+      );
+      if(!saved.rows[0])return void json(res,409,{error:"request_already_open"});
+      return void json(res,201,{item:saved.rows[0]});
     }
     if (req.method === "GET" && url.pathname === "/api/billing") {
       if (!requireRole(principal!, "viewer", res)) return;
