@@ -434,8 +434,13 @@ const cmsFirstId=(await cmsCreated.json()).id;
 const draftDoesNotPublish=await jsonFetch("/api/public/site-content?locale=en");
 assert.equal(draftDoesNotPublish.item,null);
 const cmsPublish=async(id)=>fetch(base+"/api/console/site-content/publish",{
-  method:"POST",headers:cmsSessionHeaders,body:JSON.stringify({id}),
+  method:"POST",headers:cmsSessionHeaders,body:JSON.stringify({id,currentPassword:"correct-horse-battery-staple"}),
 });
+const unauthenticatedPublish=await fetch(base+"/api/console/site-content/publish",{
+  method:"POST",headers:cmsSessionHeaders,
+  body:JSON.stringify({id:cmsFirstId,currentPassword:"incorrect-password-value"}),
+});
+assert.equal(unauthenticatedPublish.status,403,"Publishing site content requires current admin password");
 assert.equal((await cmsPublish(cmsFirstId)).status,200);
 const publicFirst=await jsonFetch("/api/public/site-content?locale=en");
 assert.equal(publicFirst.item.hero_title,"Integration Draft One");
