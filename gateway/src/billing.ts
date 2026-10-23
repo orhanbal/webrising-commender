@@ -89,9 +89,9 @@ export async function billingSnapshot(organizationId: string, queryable: Queryab
     "select limits from organization_quota_overrides where organization_id=$1",[organizationId]);
   const overrides=limitOverride.rows[0]?.limits ?? {};
   const quotaLimits=(defaults:{maxDevices:number|null;maxMembers:number|null;maxApiTokens:number|null})=>({
-    maxDevices:Object.hasOwn(overrides,"maxDevices")?overrides.maxDevices:defaults.maxDevices,
-    maxMembers:Object.hasOwn(overrides,"maxMembers")?overrides.maxMembers:defaults.maxMembers,
-    maxApiTokens:Object.hasOwn(overrides,"maxApiTokens")?overrides.maxApiTokens:defaults.maxApiTokens,
+    maxDevices:Object.hasOwn(overrides,"maxDevices")?overrides.maxDevices!:defaults.maxDevices,
+    maxMembers:Object.hasOwn(overrides,"maxMembers")?overrides.maxMembers!:defaults.maxMembers,
+    maxApiTokens:Object.hasOwn(overrides,"maxApiTokens")?overrides.maxApiTokens!:defaults.maxApiTokens,
   });
   if (deploymentMode === "self_hosted") {
     return {
