@@ -530,6 +530,9 @@ jobs:
           bash -n scripts/build-ubuntu-deb.sh
           bash -n scripts/wecommander-setup-wrapper.sh
           bash -n scripts/install-ubuntu-online.sh
+          bash -n scripts/setup-macos.sh
+          bash -n scripts/build-macos-pkg.sh
+          bash -n scripts/install-macos-online.sh
           bash scripts/setup-ubuntu.sh --help >/dev/null
           bash -n scripts/uninstall-linux.sh
           bash -n scripts/install-macos.sh
@@ -601,13 +604,16 @@ jobs:
             target/aarch64-apple-darwin/release/webrising-commender \
             -output dist/webrising-commender
           lipo -info dist/webrising-commender
+          bash scripts/build-macos-pkg.sh dist/webrising-commender "0.1.${GITHUB_RUN_NUMBER}" dist
+          pkgutil --payload-files "dist/WECOMMANDER-macos-universal.pkg" | grep -q 'wecommander-setup'
+          bash scripts/setup-macos.sh --help >/dev/null
       - name: Package macOS acceptance bundle
         run: |
           cp scripts/install-macos.sh dist/
           cp scripts/uninstall-macos.sh dist/
           cp docs/QUICKSTART.md dist/
           cd dist
-          shasum -a 256 webrising-commender > SHA256SUMS.txt
+          shasum -a 256 webrising-commender WECOMMANDER-macos-universal.pkg > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: WECOMMANDER-macos-universal-acceptance

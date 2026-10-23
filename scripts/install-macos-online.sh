@@ -21,7 +21,7 @@ json_lines="$(/usr/bin/osascript -l JavaScript -e '
 function run(argv) {
  ObjC.import("Foundation");
  var raw = $.NSData.dataWithContentsOfFile(argv[0]);
- if (!raw || raw.isNil()) throw Error("Cannot load release metadata");
+ if (!raw) throw Error("Cannot load release metadata");
  var body = ObjC.unwrap($.NSString.alloc.initWithDataEncoding(raw, $.NSUTF8StringEncoding));
  var releases = JSON.parse(body);
  var repo = argv[1], name = "WECOMMANDER-macos-universal.pkg";

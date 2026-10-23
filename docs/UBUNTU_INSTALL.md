@@ -75,3 +75,25 @@ The agent automatically reconnects on transient network failures. Verify this an
 - The same script recognizes an existing `agent.json` and uses it rather than creating a new identity. Update the verified binary with the same command. systemd restarts against the new binary.
 - `sudo bash ./uninstall-linux.sh` removes the service only; the executable and device config are intentionally preserved until you explicitly revoke the device in the WECOMMANDER dashboard.
 - For sensitive hosts, back up the device authorization file securely. Never paste its contents into a chat or terminal log.
+
+## Windows and macOS terminal installation
+
+The same CI-approved prerelease also provides `WECOMMANDER-Setup-windows-x64.exe` and `WECOMMANDER-macos-universal.pkg`. Both have SHA-256 checksums in the same release manifest and can be installed directly from a terminal (no manual ZIP extraction).
+
+**Windows PowerShell (run as your normal user):**
+
+```powershell
+Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/orhanbal/webrising-commender/main/scripts/install-windows-online.ps1 -OutFile "$env:TEMP\\wecommander-install.ps1"; & "$env:TEMP\\wecommander-install.ps1"
+```
+
+The Windows Setup itself requests UAC if needed. The terminal installer downloads and checksums the Setup executable, installs it and opens browser-based account linking. It does not ask for the Windows service account password. Release previews are unsigned, and Windows SmartScreen might warn about the publisher.
+
+**macOS Terminal (run as your normal user):**
+
+```bash
+curl -fsSLo /tmp/wecommander-macos-install.sh https://raw.githubusercontent.com/orhanbal/webrising-commender/main/scripts/install-macos-online.sh && bash /tmp/wecommander-macos-install.sh
+```
+
+The Mac installer verifies the PKG checksum, uses Apple's `installer` command with a sudo prompt to install application files, and then runs account authorization as your normal signed-in macOS user. The Agent runs as your user via `launchd`, not as root. The downloaded preview PKG is **not Developer ID signed/notarized**; Gatekeeper may restrict installation. Do not disable Gatekeeper or remove quarantine protection automatically. Production distribution requires signed/notarized releases.
+
+All three platform installers are designed to fail safely when no complete verified-release asset is available; check [GitHub Releases](https://github.com/orhanbal/webrising-commender/releases) for a published multiplatform preview before use.
