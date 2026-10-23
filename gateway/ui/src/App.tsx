@@ -1,6 +1,6 @@
 import {useEffect,useState} from "react";
 import type {ReactNode} from "react";
-import {ArrowUpRight,Command,Menu,Moon,ShieldCheck,Sun,X} from "lucide-react";
+import {ArrowUpRight,Command,Menu,Moon,Sun,X} from "lucide-react";
 import {Button,Badge} from "./components/ui";
 import {getMe,api,type Account,type Pricing} from "./api";
 import {Landing} from "./pages/Landing";
@@ -14,6 +14,7 @@ import {UsagePage} from "./pages/Usage";
 import {AccountPage} from "./pages/Account";
 import {InstallPage} from "./pages/Install";
 import {ConsolePage} from "./pages/Console";
+import {LegalPage} from "./pages/Legal";
 import { LanguageSwitcher,useLocale,t as translate } from "./i18n";
 
 export type Nav=(path:string)=>void;
@@ -88,7 +89,6 @@ export default function App(){
   {["/terminal","/files","/tasks","/mcp"].includes(path)&&<WorkspacePage nav={navigate} path={path.slice(1) as "terminal"|"files"|"tasks"|"mcp"} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
   {path==="/usage"&&<UsagePage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
 
-  {path==="/privacy"&&<div className="container-w section-modern"><Badge><ShieldCheck size={14}/> {translate("Gizlilik")}</Badge><h1 className="h2 mt-6">{translate("Gizlilik")}</h1><p className="muted mt-6 max-w-2xl">Hesap oturumları güvenli HttpOnly çerezleriyle korunur. Ödeme verileri WECOMMANDER sunucularında saklanmaz; ödeme Paddle tarafından işlenir. Ayrıntılı gizlilik koşulları yayımlanana kadar veri işleme taahhütleri hakkında destek ekibiyle iletişime geçebilirsiniz.</p></div>}
-  {path==="/terms"&&<div className="container-w section-modern"><Badge><Command size={14}/> {translate("Koşullar")}</Badge><h1 className="h2 mt-6">{translate("Kullanım koşulları")}</h1><p className="muted mt-6 max-w-2xl">Hizmeti kullanırken yalnızca erişim yetkiniz olan cihazları bağlayın. Abonelik ve faturalama işlemleri Paddle üzerinden yürütülür. Sözleşme metninin tamamı henüz yayımlanmadıysa ödeme etkinleştirilmeden önce sözleşme ve iade koşulları hazırlanmalıdır.</p></div>}
+  {(path==="/privacy"||path==="/terms")&&<LegalPage page={path==="/privacy"?"privacy":"terms"}/>}
  </div>;
 }
