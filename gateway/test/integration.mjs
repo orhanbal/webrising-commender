@@ -39,6 +39,8 @@ assert.equal(landingAssetCheck.status, 200);
 const landingAssetMarkup = await landingAssetCheck.text();
 assert.ok(landingAssetMarkup.includes('id="root"'));
 assert.ok(landingAssetMarkup.includes("/api/public/brand/favicon"));
+assert.ok(landingAssetMarkup.includes('rel="canonical"'),"Landing needs canonical metadata before CMS publishes");
+assert.ok(landingAssetMarkup.includes('property="og:title"'),"Landing needs Open Graph defaults");
 assert.match(landingAssetMarkup, /\/modern\/assets\/index-[^"]+\.js/);
 const publicFavicon=await fetch(base+"/api/public/brand/favicon",{redirect:"manual"});
 assert.ok([200,302].includes(publicFavicon.status),"Branded favicon endpoint must serve an image or fallback");
