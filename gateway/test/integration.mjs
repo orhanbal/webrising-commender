@@ -570,6 +570,27 @@ const memberId=memberSeed.rows[0].id;
 await acceptanceDb.query(
   "insert into organization_members(organization_id,user_id,role) values($1,$2,'viewer')",
   [membershipOrg,memberId]);
+// Global user detail is read-only and must never include password/session secrets.
+const memberDetailResponse=await fetch(base+"/api/console/users/detail?userId="+memberId,{headers:{Cookie:browserCookies}});
+assert.equal(memberDetailResponse.status,200);
+const memberDetail=await memberDetailResponse.json();
+assert.equal(memberDetail.user.id,memberId);
+assert.equal(memberDetail.user.email,"console-role-fixture@example.test");
+assert.equal(memberDetail.user.platform_administrator,false);
+assert.equal(memberDetail.organizations.some(row=>row.id===membershipOrg&&row.role==="viewer"),true);
+assert.equal(typeof memberDetail.user.active_sessions,"number");
+assert.equal(Object.hasOwn(memberDetail.user,"password_hash"),false);
+assert.equal(Object.hasOwn(memberDetail.user,"token_hash"),false);
+assert.equal(Object.hasOwn(memberDetail.user,"csrf_hash"),false);
+const selfDetail=await fetch(base+"/api/console/users/detail?userId="+browserMe.userId,{headers:{Cookie:browserCookies}});
+assert.equal(selfDetail.status,200);
+assert.equal((await selfDetail.json()).user.platform_administrator,true);
+const deniedDetail=await fetch(base+"/api/console/users/detail?userId="+memberId);
+assert.equal(deniedDetail.status,401);
+const impossibleDetail=await fetch(base+"/api/console/users/detail?userId=00000000-0000-4000-8000-000000000000",{headers:{Cookie:browserCookies}});
+assert.equal(impossibleDetail.status,404);
+const invalidUserId=await fetch(base+"/api/console/users/detail?userId=not-a-uuid",{headers:{Cookie:browserCookies}});
+assert.equal(invalidUserId.status,400);
 // Combined audit feed supports server-side risk/source filters and page boundaries.
 const tenantAudit=await acceptanceDb.query(
   "insert into audit_logs(organization_id,actor,tool,risk,outcome,detail) values($1,'ci-actor','ci.audit.search.marker','low','success','test only') returning id",
