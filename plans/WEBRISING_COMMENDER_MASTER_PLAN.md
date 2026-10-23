@@ -138,6 +138,14 @@ Real user auth, organizations, RBAC, plans/billing, regional relays. This phase 
 
 Current milestone: organization-scoped browser users, hardened sessions, email-verified public signup/password reset through the built-in SMTP/outbox layer, workspace onboarding/access, provider-neutral billing plans/subscriptions, transactional resource entitlements, idempotent normalized billing events, provider identity binding/stale-event protection, first-party regional relay orchestration with agent route refresh/failover, and native HTTPS/WSS termination are implemented. Third-party checkout/webhook adapters are not a required runtime component and are intentionally excluded while the no-third-party rule is active.
 
+## Current delivery priority — functional tool parity
+
+Before any new differentiation or SaaS expansion, follow the actionable
+[Desktop Commander parity plan](DESKTOP_COMMANDER_PARITY_PLAN.md).
+Current remote terminal, file, device and security features remain supported,
+but rich document support, paginated file/process operations and physical OS/MCP
+acceptance must be completed before declaring comparable product maturity.
+
 ## 7. Definition of done
 
 A release is accepted only when:
