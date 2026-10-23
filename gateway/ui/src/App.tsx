@@ -12,10 +12,11 @@ import {DevicesPage} from "./pages/Devices";
 import {WorkspacePage} from "./pages/Workspace";
 import {UsagePage} from "./pages/Usage";
 import {AccountPage} from "./pages/Account";
+import {InstallPage} from "./pages/Install";
 
 export type Nav=(path:string)=>void;
 export type Theme="light"|"dark";
-const routes=new Set(["/","/features","/how-it-works","/login","/register","/forgot-password","/reset-password","/verify","/pricing","/checkout","/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage","/privacy","/terms"]);
+const routes=new Set(["/","/features","/how-it-works","/login","/register","/forgot-password","/reset-password","/verify","/pricing","/checkout","/install","/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage","/privacy","/terms"]);
 export function Brand({onClick,subtitle=false}:{onClick?:()=>void;subtitle?:boolean}){return <a href="/" onClick={e=>{if(onClick){e.preventDefault();onClick()}}} aria-label="WECOMMANDER ana sayfa" className="inline-flex flex-col gap-1 items-start"><img className="logo-light" src="/assets/wecommander-white.svg" alt="WECOMMANDER"/><img className="logo-dark" src="/assets/wecommander-black.svg" alt="" aria-hidden="true"/>{subtitle&&<span className="text-[11px] tracking-wide text-[var(--muted)]">Remote MCP · AI Workspace</span>}</a>}
 export function NavLink({to,nav,children,className}:{to:string;nav:Nav;children:ReactNode;className?:string}){return <a href={to} className={className} onClick={e=>{if(e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey){e.preventDefault();nav(to)}}}>{children}</a>}
 export function ThemeToggle({theme,onToggle}:{theme:Theme;onToggle:()=>void}){return <button type="button" className="theme-button" onClick={onToggle} aria-label={theme==="dark"?"Açık temaya geç":"Koyu temaya geç"} title={theme==="dark"?"Windows açık tema":"Windows koyu tema"}>{theme==="dark"?<Sun className="size-[19px]"/>:<Moon className="size-[19px]"/>}</button>}
@@ -47,9 +48,30 @@ export default function App(){
  const logout=async()=>{try{await api("/api/auth/logout",{method:"POST"})}catch{}setAccount(null);navigate("/login")};
  const globalHeader=!["/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage"].includes(path);
  return <div className="app-shell">
-  {globalHeader&&<header className="site-header"><div className="container-w"><Brand onClick={()=>navigate("/")}/><nav className="site-nav" aria-label="Ana gezinme"><NavLink to="/features" nav={navigate} className="hide-sm">Özellikler</NavLink><NavLink to="/how-it-works" nav={navigate} className="hide-sm">Nasıl çalışır?</NavLink><NavLink to="/pricing" nav={navigate}>Fiyatlandırma</NavLink></nav><div className="nav-actions"><ThemeToggle theme={theme} onToggle={toggle}/>{account?<Button size="sm" onClick={()=>navigate("/dashboard")}>Panelim <ArrowRight className="size-4"/></Button>:<><Button size="sm" variant="ghost" className="hide-sm" onClick={()=>navigate("/login")}>Giriş Yap</Button><Button size="sm" onClick={()=>navigate(signupEnabled===false?"/login":"/register")}>{signupEnabled===false?"Giriş Yap":"Başlayın"} <ArrowUpRight className="size-4"/></Button></>}<button type="button" aria-label="Menü" className="mobile-menu" onClick={()=>setMobile(x=>!x)}>{mobile?<X/>:<Menu/>}</button></div></div>{mobile&&<div className="px-6 py-4 border-t border-[var(--stroke)] bg-[var(--surface)] flex gap-4"><NavLink to="/features" nav={navigate}>Özellikler</NavLink><NavLink to="/pricing" nav={navigate}>Paketler</NavLink><NavLink to="/login" nav={navigate}>Giriş</NavLink></div>}</header>}
-  {["/","/features","/how-it-works"].includes(path)&&<Landing nav={navigate} pricing={pricing} signupEnabled={signupEnabled}/>}
+  {globalHeader&&<header className="site-header"><div className="container-w">
+  <Brand onClick={()=>navigate("/")}/>
+  <nav className="site-nav" aria-label="Ana gezinme">
+   <NavLink to="/features" nav={navigate} className="hide-sm">Özellikler</NavLink>
+   <NavLink to="/how-it-works" nav={navigate} className="hide-sm">Nasıl çalışır?</NavLink>
+   <NavLink to="/pricing" nav={navigate}>Fiyatlandırma</NavLink>
+  </nav>
+  <div className="nav-actions">
+   <ThemeToggle theme={theme} onToggle={toggle}/>
+   <Button size="sm" variant="ghost" className="hide-sm" onClick={()=>navigate(account?"/dashboard":"/login")}>{account?"Panelim":"Giriş Yap"}</Button>
+   <Button size="sm" className="wc-nav-install" onClick={()=>navigate("/install")}><Command className="size-4" aria-hidden="true"/> Install <ArrowUpRight className="size-4" aria-hidden="true"/></Button>
+   <button type="button" aria-label="Menü" aria-expanded={mobile} className="mobile-menu" onClick={()=>setMobile(x=>!x)}>{mobile?<X/>:<Menu/>}</button>
+  </div></div>
+  {mobile&&<nav className="wc-mobile-nav" aria-label="Mobil gezinme">
+   <NavLink to="/features" nav={navigate}>Özellikler</NavLink>
+   <NavLink to="/how-it-works" nav={navigate}>Nasıl çalışır?</NavLink>
+   <NavLink to="/pricing" nav={navigate}>Fiyatlandırma</NavLink>
+   <NavLink to={account?"/dashboard":"/login"} nav={navigate}>{account?"Panelim":"Giriş Yap"}</NavLink>
+   <NavLink to="/install" nav={navigate}>Install <ArrowUpRight size={15}/></NavLink>
+  </nav>}
+ </header>}
+   {["/","/features","/how-it-works"].includes(path)&&<Landing nav={navigate} pricing={pricing} signupEnabled={signupEnabled}/>}
   {["/login","/register","/forgot-password","/reset-password","/verify"].includes(path)&&<AuthPage path={path} nav={navigate} refresh={refresh} pricing={pricing} signupEnabled={signupEnabled}/>}
+  {path==="/install"&&<InstallPage nav={navigate}/>}
   {path==="/pricing"&&<PlansPage nav={navigate} pricing={pricing} account={account} signupEnabled={signupEnabled}/>}
   {path==="/checkout"&&<PlansPage nav={navigate} pricing={pricing} account={account} signupEnabled={signupEnabled} checkoutMode theme={theme}/>}
   {path==="/dashboard"&&<DashboardPage nav={navigate} path={path} account={account} checking={checking} refresh={refresh} logout={logout} theme={theme} toggle={toggle}/>}
