@@ -602,6 +602,30 @@ const forbiddenAudit=await fetch(base+"/api/console/audit?source=platform");
 assert.equal(forbiddenAudit.status,401,"Unprivileged clients cannot inspect global audit history");
 await acceptanceDb.query("delete from audit_logs where id=$1",[tenantAudit.rows[0].id]);
 await acceptanceDb.query("delete from platform_admin_audit where id=$1",[platformAudit.rows[0].id]);
+// Device inventory pagination, search and explicit revoked-state filtering.
+const inventoryDevice=await acceptanceDb.query(
+ `insert into devices(id,organization_id,name,hostname,platform,token_hash)
+  values(gen_random_uuid(),$1,'ci-device-inventory-marker','ci-host','linux','ci-inventory-temporary-token-hash')
+  returning id`,[browserMe.organizationId],
+);
+const inventoryHeaders={Cookie:browserCookies};
+const activeInventory=await fetch(base+"/api/console/devices?status=active&limit=1&q=ci-device-inventory-marker",{headers:inventoryHeaders});
+assert.equal(activeInventory.status,200);
+const activeInventoryData=await activeInventory.json();
+assert.equal(activeInventoryData.total,1);
+assert.equal(activeInventoryData.items.length,1);
+assert.equal(activeInventoryData.items[0].id,inventoryDevice.rows[0].id);
+const emptyInventoryPage=await fetch(base+"/api/console/devices?status=active&limit=1&offset=1&q=ci-device-inventory-marker",{headers:inventoryHeaders});
+assert.equal((await emptyInventoryPage.json()).items.length,0);
+const noRevokedInventory=await fetch(base+"/api/console/devices?status=revoked&q=ci-device-inventory-marker",{headers:inventoryHeaders});
+assert.equal((await noRevokedInventory.json()).total,0);
+await acceptanceDb.query("update devices set revoked_at=now() where id=$1",[inventoryDevice.rows[0].id]);
+const revokedInventory=await fetch(base+"/api/console/devices?status=revoked&q=ci-device-inventory-marker",{headers:inventoryHeaders});
+assert.equal((await revokedInventory.json()).total,1);
+assert.equal((await(await fetch(base+"/api/console/devices?status=active&q=ci-device-inventory-marker",{headers:inventoryHeaders})).json()).total,0);
+assert.equal((await fetch(base+"/api/console/devices?status=unsupported",{headers:inventoryHeaders})).status,400);
+assert.equal((await fetch(base+"/api/console/devices")).status,401);
+await acceptanceDb.query("delete from devices where id=$1",[inventoryDevice.rows[0].id]);
 const userDirectory=await fetch(base+"/api/console/users?limit=1&offset=0&q=console-role-fixture",{
  headers:{Cookie:browserCookies},
 });
