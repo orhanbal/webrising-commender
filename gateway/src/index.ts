@@ -30,6 +30,7 @@ import {
 } from "./billing.js";
 import { db, housekeeping, migrate, ready } from "./db.js";
 import { getPublicPlans, publicPaddleConfig, createPaddleCheckout, createPaddlePortal, consumePaddleWebhook } from "./paddle.js";
+import { getDownloads } from "./downloads.js";
 import { DeviceRouter } from "./device-router.js";
 import { enqueueMail, mailConfigured, publicSignupEnabled, startMailWorker } from "./mail.js";
 import { handleMcp } from "./mcp.js";
@@ -332,7 +333,7 @@ async function serveBrandSvg(res: ServerResponse, fileName: string) {
 
 const modernPages = new Set([
   "/", "/features", "/how-it-works", "/login", "/register", "/forgot-password", "/verify",
-  "/reset-password", "/pricing", "/checkout", "/dashboard", "/account", "/billing",
+  "/reset-password", "/pricing", "/checkout", "/install", "/dashboard", "/account", "/billing",
   "/devices", "/terminal", "/files", "/tasks", "/mcp", "/usage",
   "/privacy", "/terms",
 ]);
@@ -418,6 +419,9 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       });
     }
 
+    if (req.method === "GET" && url.pathname === "/api/public/downloads") {
+      return void json(res,200,await getDownloads());
+    }
     if (req.method === "GET" && url.pathname === "/api/public/plans") {
       return void json(res,200,{mode:deploymentMode,plans:await getPublicPlans(),paddle:publicPaddleConfig()});
     }
