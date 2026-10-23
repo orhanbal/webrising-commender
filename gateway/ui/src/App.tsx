@@ -18,7 +18,7 @@ import { LanguageSwitcher,useLocale,t as translate } from "./i18n";
 
 export type Nav=(path:string)=>void;
 export type Theme="light"|"dark";
-const routes=new Set(["/console","/","/features","/how-it-works","/login","/register","/forgot-password","/reset-password","/verify","/pricing","/checkout","/install","/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage","/privacy","/terms"]);
+const routes=new Set(["/console","/console/users","/console/organizations","/console/devices","/console/operations","/console/landing","/console/billing","/console/system","/","/features","/how-it-works","/login","/register","/forgot-password","/reset-password","/verify","/pricing","/checkout","/install","/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage","/privacy","/terms"]);
 export function Brand({onClick,subtitle=false}:{onClick?:()=>void;subtitle?:boolean}){return <a href="/" onClick={e=>{if(onClick){e.preventDefault();onClick()}}} aria-label={translate("WECOMMANDER ana sayfa")} className="inline-flex flex-col gap-1 items-start"><img className="logo-light" src="/assets/wecommander-white.svg" alt="WECOMMANDER"/><img className="logo-dark" src="/assets/wecommander-black.svg" alt="" aria-hidden="true"/>{subtitle&&<span className="text-[11px] tracking-wide text-[var(--muted)]">Remote MCP · AI Workspace</span>}</a>}
 export function NavLink({to,nav,children,className}:{to:string;nav:Nav;children:ReactNode;className?:string}){return <a href={to} className={className} onClick={e=>{if(e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey){e.preventDefault();nav(to)}}}>{children}</a>}
 export function ThemeToggle({theme,onToggle}:{theme:Theme;onToggle:()=>void}){return <button type="button" className="theme-button" onClick={onToggle} aria-label={theme==="dark"?translate("Açık temaya geç"):translate("Koyu temaya geç")} title={theme==="dark"?translate("Windows açık tema"):translate("Windows koyu tema")}>{theme==="dark"?<Sun className="size-[19px]"/>:<Moon className="size-[19px]"/>}</button>}
@@ -50,7 +50,7 @@ export default function App(){
  const toggle=()=>{setTheme(old=>{const next=old==="dark"?"light":"dark";localStorage.setItem("wecommander-theme",next);return next})};
  const logout=async()=>{try{await api("/api/auth/logout",{method:"POST"})}catch{}setAccount(null);navigate("/login")};
  useEffect(()=>{document.documentElement.lang=chosenLocale},[chosenLocale]);
- const globalHeader=!["/console","/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage"].includes(path);
+ const globalHeader=!path.startsWith("/console")&&!["/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage"].includes(path);
  return <div className="app-shell">
   {globalHeader&&<header className="site-header"><div className="container-w">
   <Brand onClick={()=>navigate("/")}/>
@@ -80,7 +80,7 @@ export default function App(){
   {path==="/install"&&<InstallPage nav={navigate}/>}
   {path==="/pricing"&&<PlansPage nav={navigate} pricing={pricing} account={account} signupEnabled={signupEnabled}/>}
   {path==="/checkout"&&<PlansPage nav={navigate} pricing={pricing} account={account} signupEnabled={signupEnabled} checkoutMode theme={theme}/>}
-  {path==="/console"&&<ConsolePage nav={navigate} theme={theme} toggle={toggle} logout={logout}/>}
+  {path.startsWith("/console")&&<ConsolePage nav={navigate} path={path} theme={theme} toggle={toggle} logout={logout}/>}
   {path==="/dashboard"&&<DashboardPage nav={navigate} path={path} account={account} checking={checking} refresh={refresh} logout={logout} theme={theme} toggle={toggle}/>}
   {path==="/billing"&&<BillingPage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout} pricing={pricing}/>}
   {path==="/account"&&<AccountPage nav={navigate} account={account} checking={checking} refresh={refresh} logout={logout} theme={theme} toggle={toggle}/>} 
