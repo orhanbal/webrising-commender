@@ -39,6 +39,10 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
  const [auditRisk,setAuditRisk]=useState<"all"|"low"|"medium"|"high"|"critical">("all");
  const [auditPage,setAuditPage]=useState(0);
  const [auditTotal,setAuditTotal]=useState(0);
+ const [deviceSearch,setDeviceSearch]=useState("");
+ const [deviceStatus,setDeviceStatus]=useState<"all"|"active"|"revoked">("all");
+ const [devicePage,setDevicePage]=useState(0);
+ const [deviceTotal,setDeviceTotal]=useState(0);
  const [targetUser,setTargetUser]=useState<{id:string;email:string;disabled:boolean}|null>(null);
  const [confirmPassword,setConfirmPassword]=useState("");
  const [userActionBusy,setUserActionBusy]=useState(false);
@@ -252,13 +256,14 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
   let active=true;setRecordsBusy(true);setRecordsError("");
   const suffix=section==="Users"?"?limit=25&offset="+(userPage*25)+"&q="+encodeURIComponent(userSearch):
                section==="Organizations"?"?limit=25&offset="+(organizationPage*25)+"&q="+encodeURIComponent(organizationSearch):
-               section==="Operations"?"?limit=25&offset="+(auditPage*25)+"&q="+encodeURIComponent(auditSearch)+"&source="+auditSource+"&risk="+auditRisk:"";
+               section==="Operations"?"?limit=25&offset="+(auditPage*25)+"&q="+encodeURIComponent(auditSearch)+"&source="+auditSource+"&risk="+auditRisk:
+               section==="Devices"?"?limit=25&offset="+(devicePage*25)+"&q="+encodeURIComponent(deviceSearch)+"&status="+deviceStatus:"";
   api<{items:Array<Record<string,unknown>>;total?:number}>("/api/console/"+names[section]+suffix)
-    .then(data=>{if(active){setRecords(data.items);if(section==="Organizations")setOrganizationTotal(data.total??0);if(section==="Users")setUserTotal(data.total??0);if(section==="Operations")setAuditTotal(data.total??0)}})
+    .then(data=>{if(active){setRecords(data.items);if(section==="Organizations")setOrganizationTotal(data.total??0);if(section==="Users")setUserTotal(data.total??0);if(section==="Operations")setAuditTotal(data.total??0);if(section==="Devices")setDeviceTotal(data.total??0)}})
     .catch(e=>{if(active)setRecordsError(String(e))})
     .finally(()=>{if(active)setRecordsBusy(false)});
   return()=>{active=false}
- },[section,admin,userSearch,userPage,organizationSearch,organizationPage,auditSearch,auditSource,auditRisk,auditPage]);
+ },[section,admin,userSearch,userPage,organizationSearch,organizationPage,auditSearch,auditSource,auditRisk,auditPage,deviceSearch,deviceStatus,devicePage]);
  if(loading)return <div className="min-h-screen grid place-items-center text-lg">{translate("Yükleniyor…")}</div>;
  if(error||!admin)return <div className="container-w py-24 max-w-xl">
    <div className="rounded-2xl bg-[var(--surface)] border border-[var(--stroke)] p-8">
@@ -411,6 +416,15 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
   <button type="button" disabled={organizationPage===0||recordsBusy} onClick={()=>setOrganizationPage(x=>Math.max(0,x-1))} className="rounded-xl border border-[var(--stroke)] px-4 disabled:opacity-40">{ui("Previous")}</button>
   <span className="self-center text-sm muted">Page {organizationPage+1} / {Math.max(1,Math.ceil(organizationTotal/25))} · {organizationTotal} total</span>
   <button type="button" disabled={recordsBusy||(organizationPage+1)*25>=organizationTotal} onClick={()=>setOrganizationPage(x=>x+1)} className="rounded-xl border border-[var(--stroke)] px-4 disabled:opacity-40">{ui("Next")}</button>
+ </div>}
+{section==="Devices"&&<div className="flex flex-wrap items-center gap-3 mb-5">
+  <input aria-label={ui("Search devices")} placeholder={ui("Search device, platform or workspace")} value={deviceSearch} onChange={e=>{setDeviceSearch(e.target.value);setDevicePage(0)}} className="flex-1 min-w-[220px] rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 text-sm"/>
+  <select aria-label={ui("Device status")} value={deviceStatus} onChange={e=>{setDeviceStatus(e.target.value as "all"|"active"|"revoked");setDevicePage(0)}} className="rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 text-sm">
+   <option value="all">{ui("All devices")}</option><option value="active">{ui("Not revoked")}</option><option value="revoked">{ui("Revoked")}</option>
+  </select>
+  <button type="button" disabled={recordsBusy||devicePage===0} onClick={()=>setDevicePage(x=>Math.max(0,x-1))} className="rounded-xl border border-[var(--stroke)] px-4 py-3 disabled:opacity-40">{ui("Previous")}</button>
+  <span className="self-center text-sm muted">{ui("Page")} {devicePage+1} / {Math.max(1,Math.ceil(deviceTotal/25))} · {deviceTotal} {ui("total")}</span>
+  <button type="button" disabled={recordsBusy||(devicePage+1)*25>=deviceTotal} onClick={()=>setDevicePage(x=>x+1)} className="rounded-xl border border-[var(--stroke)] px-4 py-3 disabled:opacity-40">{ui("Next")}</button>
  </div>}
 {section==="Operations"&&<div className="flex flex-wrap gap-3 mb-5 items-center">
   <input aria-label={ui("Search audit records")} placeholder={ui("Search action or workspace")} value={auditSearch} onChange={e=>{setAuditSearch(e.target.value);setAuditPage(0)}} className="flex-1 min-w-[220px] rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 text-sm"/>
