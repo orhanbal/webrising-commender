@@ -34,9 +34,9 @@ Status: IN PROGRESS (2026-10-23). Phase A backend committed, not yet accepted by
 - [ ] Verify persistence across redeploy; no data deletion or volume replacement.
 
 ### Phase B — Console shell
-- [ ] `/console` protected route and responsive shell with fixed navigation and readable typography.
+- [x] `/console` route and responsive shell implemented; production browser acceptance pending.
 - [ ] Fluent design, both themes, EN/TR locale, keyboard/mobile accessibility.
-- [ ] Overview from real API metrics (no invented live data).
+- [x] Overview backed by admin-scoped real DB counts; operational acceptance pending.
 - [ ] Admin profile, session controls, reauthentication and activity timeline.
 
 ### Phase C — Users / tenants
