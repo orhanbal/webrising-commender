@@ -200,6 +200,10 @@ try{
  await visit("/console/billing","Subscriptions","modern-console-billing");
  assert.ok(await evalJs("document.body.textContent.includes('Cancellation & refund requests')"),"Super admin must expose support-request queue");
  await visit("/console/brand","Brand assets","modern-console-brand");
+ await evalJs("(()=>{const field=document.querySelector('input[type=file]');const svg='<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"60\" height=\"40\"><rect width=\"60\" height=\"40\" fill=\"red\"/></svg>';const dt=new DataTransfer();dt.items.add(new File([svg],'fixture.svg',{type:'image/svg+xml'}));field.files=dt.files;field.dispatchEvent(new Event('change',{bubbles:true}))})()");
+ await sleep(300);
+ assert.ok(await evalJs("document.querySelector('img[src^=\"data:image/png;base64,\"]')!==null"),"SVG logo must become previewable raster PNG before upload");
+
  await visit("/console/legal","Privacy & terms editor","modern-console-legal");
  assert.ok(await evalJs("document.querySelectorAll('textarea').length>=1"),"Legal editor must have a text editor");
  await visit("/privacy","Privacy Policy","modern-privacy");
