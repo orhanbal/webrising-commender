@@ -592,8 +592,6 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item "target\release\webrising-commender.exe" "dist\webrising-commender.exe" -Force
-          Copy-Item "scripts\install-windows.ps1" "dist\install-windows.ps1" -Force
-          Copy-Item "scripts\uninstall-windows.ps1" "dist\uninstall-windows.ps1" -Force
           Copy-Item "docs\QUICKSTART.md" "dist\QUICKSTART.md" -Force
           Get-FileHash "dist\webrising-commender.exe" -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash.ToLower())  webrising-commender.exe" } |
