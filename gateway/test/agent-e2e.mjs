@@ -135,6 +135,37 @@ try {
   assert.equal(read.encoding, "utf8");
   assert.equal(read.content, "hello-from-real-agent");
 
+  const linesPath = path.join(tempRoot, "paged-lines.txt");
+  fs.writeFileSync(linesPath, "first\nsecond\nthird\nfourth\n", "utf8");
+  const page = await tool(201, "fs_read_lines", {
+    device_id: deviceId, path: linesPath, offset_lines: 1, limit_lines: 2,
+  });
+  assert.deepEqual(page.lines, ["second", "third"]);
+  assert.equal(page.totalLines, 4);
+  assert.equal(page.startLine, 2);
+  assert.equal(page.truncated, true);
+
+  const tail = await tool(202, "fs_read_lines", {
+    device_id: deviceId, path: linesPath, offset_lines: -2, limit_lines: 2,
+  });
+  assert.deepEqual(tail.lines, ["third", "fourth"]);
+  assert.equal(tail.endLine, 4);
+  assert.equal(tail.truncated, false);
+
+  const batch = await tool(203, "fs_read_multiple", {
+    device_id: deviceId, paths: [filePath, linesPath, path.join(tempRoot, "nonexistent.txt")],
+  });
+  assert.equal(batch.count, 3);
+  assert.equal(batch.items[0].ok, true);
+  assert.equal(batch.items[0].data.content, "hello-from-real-agent");
+  assert.equal(batch.items[1].ok, true);
+  assert.equal(batch.items[2].ok, false);
+
+  const rejectedOutsideRoot = await tool(204, "fs_read_lines", {
+    device_id: deviceId, path: path.join(os.tmpdir(), "outside-allowed-root.txt"),
+  });
+  assert.equal(typeof rejectedOutsideRoot.error, "string");
+
   const tree = await tool(114, "fs_tree", {
     device_id: deviceId,
     path: tempRoot,

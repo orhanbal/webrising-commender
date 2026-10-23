@@ -19,6 +19,18 @@ const tools = [
   tool("fs_stat", "Read file or directory metadata.", { path: str() }, ["path"]),
   tool("fs_read", "Read a file as UTF-8 text or base64 payload.", { path: str(), max_bytes: integer() }, ["path"]),
   tool(
+    "fs_read_lines",
+    "Read a page of UTF-8 lines. offset_lines is zero-based; negative offsets count back from end of file. Maximum 1000 lines and 256 KiB of output.",
+    { path: str(), offset_lines: integer(), limit_lines: integer() },
+    ["path"],
+  ),
+  tool(
+    "fs_read_multiple",
+    "Read up to five files in one call, retaining per-file errors. Each file is limited to 64 KiB.",
+    { paths: { type: "array", items: str(), minItems: 1, maxItems: 5 }, max_bytes: integer() },
+    ["paths"],
+  ),
+  tool(
     "fs_write",
     "Write base64-encoded bytes to a file inside an allowlisted root.",
     { path: str(), content_base64: str(), create_parents: bool() },
@@ -158,6 +170,7 @@ function actionFromTool(name: string, a: any): AgentAction {
     case "fs_list": return { kind: "fs_list", path: String(a.path) };
     case "fs_stat": return { kind: "fs_stat", path: String(a.path) };
     case "fs_read": return { kind: "fs_read", path: String(a.path), ...(a.max_bytes ? { maxBytes: Number(a.max_bytes) } : {}) };
+    case "fs_read_lines": return { kind: "fs_read_lines", path: String(a.path), ...(a.offset_lines !== undefined ? { offsetLines: Number(a.offset_lines) } : {}), ...(a.limit_lines !== undefined ? { limitLines: Number(a.limit_lines) } : {}) };
     case "fs_write": return { kind: "fs_write", path: String(a.path), contentBase64: String(a.content_base64), createParents: Boolean(a.create_parents) };
     case "fs_mkdir": return { kind: "fs_mkdir", path: String(a.path), recursive: Boolean(a.recursive) };
     case "fs_delete": return { kind: "fs_delete", path: String(a.path), recursive: Boolean(a.recursive) };
@@ -235,6 +248,34 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
   );
   if (!device.rowCount) {
     return ok(request.id, toolResult({ error: "device_not_found" }, true));
+  }
+
+  // Batch reads are an MCP orchestration operation: each path is checked by the
+  // native agent's existing allowlist, and one failed read does not abort others.
+  if (name === "fs_read_multiple") {
+    if (!roleAtLeast(principal, "viewer")) {
+      return ok(request.id, toolResult({ error: "forbidden", required_role: "viewer" }, true));
+    }
+    const paths: unknown = args.paths;
+    const maxBytes = args.max_bytes === undefined ? 64 * 1024 : args.max_bytes;
+    if (!Array.isArray(paths) || paths.length < 1 || paths.length > 5 ||
+        paths.some((path) => typeof path !== "string" || path.length < 1 || path.length > 4096) ||
+        typeof maxBytes !== "number" || !Number.isInteger(maxBytes) ||
+        maxBytes < 1 || maxBytes > 64 * 1024) {
+      return ok(request.id, toolResult({ error: "invalid_batch_read_arguments" }, true));
+    }
+    const items = [];
+    for (const path of paths as string[]) {
+      try {
+        const data = await router.request(deviceId, { kind: "fs_read", path, maxBytes });
+        items.push({ path, ok: true, data });
+      } catch (error) {
+        items.push({ path, ok: false, error: error instanceof Error ? error.message : "read_failed" });
+      }
+    }
+    await audit(orgId, principal.actor, deviceId, name, "low", "completed",
+      JSON.stringify({ count: items.length, failed: items.filter((item) => !item.ok).length }));
+    return ok(request.id, toolResult({ items, count: items.length }));
   }
 
   let action: AgentAction;

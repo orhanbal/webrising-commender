@@ -33,6 +33,30 @@ test("rejects oversized terminal input", () => {
   );
 });
 
+test("validates bounded paginated file read with negative tail offset", () => {
+  assert.deepEqual(parseAgentAction({
+    kind: "fs_read_lines",
+    path: "/safe/log.txt",
+    offsetLines: -20,
+    limitLines: 10,
+  }), {
+    kind: "fs_read_lines",
+    path: "/safe/log.txt",
+    offsetLines: -20,
+    limitLines: 10,
+  });
+  assert.throws(() => parseAgentAction({
+    kind: "fs_read_lines",
+    path: "/safe/log.txt",
+    limitLines: 1001,
+  }));
+  assert.throws(() => parseAgentAction({
+    kind: "fs_read_lines",
+    path: "/safe/log.txt",
+    offsetLines: 2.5,
+  }));
+});
+
 test("rejects malformed persistent task ids", () => {
   assert.throws(() =>
     parseAgentAction({

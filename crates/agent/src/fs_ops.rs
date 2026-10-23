@@ -5,6 +5,8 @@ use serde_json::{json, Value};
 use std::{fs, io::Read, path::Path};
 
 const DEFAULT_READ_MAX: usize = 1024 * 1024;
+const MAX_PAGED_FILE: u64 = 32 * 1024 * 1024;
+const MAX_PAGE_BYTES: usize = 256 * 1024;
 const HARD_READ_MAX: usize = 4 * 1024 * 1024;
 const HARD_WRITE_MAX: usize = 8 * 1024 * 1024;
 const MAX_TREE_DEPTH: usize = 20;
@@ -292,6 +294,56 @@ pub fn read(policy: &PathPolicy, raw: &str, max_bytes: Option<usize>) -> Result<
     } else {
         Ok(json!({ "encoding": "base64", "content": STANDARD.encode(&bytes), "size": bytes.len() }))
     }
+}
+
+/// Read a bounded page of UTF-8 lines, with negative offsets counting from EOF.
+pub fn read_lines(
+    policy: &PathPolicy,
+    raw: &str,
+    offset_lines: Option<i64>,
+    limit_lines: Option<usize>,
+) -> Result<Value> {
+    let path = policy.resolve_existing(raw)?;
+    if !path.is_file() {
+        return Err(anyhow!("path is not a file"));
+    }
+    let metadata = fs::metadata(&path)?;
+    if metadata.len() > MAX_PAGED_FILE {
+        return Err(anyhow!("file exceeds paginated read scan limit of {MAX_PAGED_FILE} bytes"));
+    }
+    let content = fs::read_to_string(&path).context("paginated read requires UTF-8 text")?;
+    let total = content.lines().count();
+    let offset = offset_lines.unwrap_or(0);
+    let start = if offset < 0 {
+        total.saturating_sub(offset.unsigned_abs().min(total as u64) as usize)
+    } else {
+        (offset as u64).min(total as u64) as usize
+    };
+    let page_size = limit_lines.unwrap_or(100).clamp(1, 1000);
+    let mut page = Vec::<String>::new();
+    let mut bytes = 0usize;
+    for line in content.lines().skip(start).take(page_size) {
+        let needed = line.len().saturating_add(1);
+        if bytes.saturating_add(needed) > MAX_PAGE_BYTES {
+            if page.is_empty() {
+                return Err(anyhow!("individual line exceeds paginated output limit of {MAX_PAGE_BYTES} bytes"));
+            }
+            break;
+        }
+        bytes += needed;
+        page.push(line.to_string());
+    }
+    let end = start + page.len();
+    Ok(json!({
+        "path": path.to_string_lossy(),
+        "content": page.join("\n"),
+        "lines": page,
+        "startLine": if end > start { start + 1 } else { 0 },
+        "endLine": if end > start { end } else { 0 },
+        "totalLines": total,
+        "truncated": end < total,
+        "maxPageBytes": MAX_PAGE_BYTES
+    }))
 }
 
 pub fn write(

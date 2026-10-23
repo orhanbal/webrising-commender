@@ -40,6 +40,11 @@ pub enum AgentAction {
         path: String,
         max_bytes: Option<usize>,
     },
+    FsReadLines {
+        path: String,
+        offset_lines: Option<i64>,
+        limit_lines: Option<usize>,
+    },
     FsWrite {
         path: String,
         content_base64: String,
@@ -172,6 +177,7 @@ impl AgentAction {
             Self::FsList { .. } => "fs_list",
             Self::FsStat { .. } => "fs_stat",
             Self::FsRead { .. } => "fs_read",
+            Self::FsReadLines { .. } => "fs_read_lines",
             Self::FsWrite { .. } => "fs_write",
             Self::FsMkdir { .. } => "fs_mkdir",
             Self::FsDelete { .. } => "fs_delete",
@@ -202,6 +208,7 @@ impl AgentAction {
             | Self::FsList { .. }
             | Self::FsStat { .. }
             | Self::FsRead { .. }
+            | Self::FsReadLines { .. }
             | Self::FsTree { .. }
             | Self::FsSearch { .. }
             | Self::TextSearch { .. }

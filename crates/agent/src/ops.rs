@@ -30,6 +30,11 @@ pub async fn execute(
         AgentAction::FsList { path } => fs_ops::list(policy, &path),
         AgentAction::FsStat { path } => fs_ops::stat(policy, &path),
         AgentAction::FsRead { path, max_bytes } => fs_ops::read(policy, &path, max_bytes),
+        AgentAction::FsReadLines {
+            path,
+            offset_lines,
+            limit_lines,
+        } => fs_ops::read_lines(policy, &path, offset_lines, limit_lines),
         AgentAction::FsWrite {
             path,
             content_base64,
