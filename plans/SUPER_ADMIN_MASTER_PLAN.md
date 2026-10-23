@@ -1,6 +1,6 @@
 # WECOMMANDER — Super Admin Master Plan
 
-Status: IN PROGRESS (2026-10-23). Platform incident review, administration views and safety tests implemented; latest full CI and production acceptance are pending. Live device, external billing, backup and SMTP gates remain.
+Status: IN PROGRESS (2026-10-23). Audited incident triage and revisioned landing media library implemented. The latest full CI and production acceptance must pass before the module is accepted; external release dependencies remain.
 
 ## Decision
 
@@ -73,11 +73,13 @@ Legend: [x] implementation committed, [ ] acceptance or implementation still req
 - [x] Browser and API tests for landing card visibility, revision publish/rollback, escaping and failed reauthentication.
 - [x] Plain-text EN/TR privacy and terms editor, drafts, password-confirmed publish/restore, public pages and API/browser coverage added (CI acceptance pending).
 - [x] Structured editing of existing FAQ question/answer pairs and SVG image input converted to validated PNG before upload.
-- [ ] Legally approved final documents, arbitrary FAQ creation/order, broader media library, section reordering and authenticated production browser acceptance.
+- [x] Password-protected PNG/WebP media library with SVG-to-PNG conversion, immutable asset IDs, audited uploads, and feature-card images selected through revisioned CMS publication.
+- [ ] Legally approved final documents, arbitrary FAQ creation/order, media collection lifecycle, full section reordering and authenticated production browser acceptance.
 
 ### Phase G — System settings
 - [x] Safe read-only mail queue, active sessions, relay, approval, deployment mode and signup health reporting.
 - [x] Visual system health dashboard, warning indicators and incident-review controls.
+- [x] Backend incident fingerprinting and password-confirmed acknowledgement with no automatic suppression; browser/API acceptance added.
 - [x] Canonical Compose backup script hardened against overwrites, with non-destructive isolated restore drill and separate test-database CI backup/restore acceptance.
 - [ ] Off-host encrypted production backup schedule and real recovery drill, SMTP activation with WECOMMANDER sender (deferred to launch), credential settings, active alert delivery.
 - [ ] Provider credentials must remain redacted and outside version control.
