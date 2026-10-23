@@ -176,6 +176,12 @@ export const consoleTurkish:Record<string,string> = {
   "Critical": "Kritik",
   "Actions": "İşlemler",
   "Enable": "Etkinleştir",
-  "Disable": "Devre dışı bırak"
+  "Disable": "Devre dışı bırak",
+  "Search devices": "Cihazlarda ara",
+  "Search device, platform or workspace": "Cihaz, platform veya çalışma alanında ara",
+  "Device status": "Cihaz durumu",
+  "All devices": "Tüm cihazlar",
+  "Not revoked": "İptal edilmemiş",
+  "Revoked": "İptal edilmiş"
 };
 export function consoleText(source:string,locale:"en"|"tr"):string {return locale==="tr"?(consoleTurkish[source]??source):source;}
