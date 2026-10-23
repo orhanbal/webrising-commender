@@ -37,7 +37,7 @@ export const consoleTurkish:Record<string,string> = {
   "Administration /": "Yönetim /",
   "WECOMMANDER CONTROL CENTER": "WECOMMANDER KONTROL MERKEZİ",
   "Brand assets": "Marka varlıkları",
-  "Upload PNG or WebP images up to 500 KB for dark-mode logo, light-mode logo and favicon. Original assets are kept until replaced.": "Koyu/açık tema logoları ve favicon için en fazla 500 KB PNG veya WebP yükleyin. Eski görseller yenisi yüklenene kadar korunur.",
+  "Upload PNG or WebP images up to 500 KB, or SVG up to 250 KB (converted to PNG), for dark/light logos and favicon. Original assets remain until replaced.": "Koyu/açık tema logoları ve favicon için en fazla 500 KB PNG veya WebP yükleyin. Eski görseller yenisi yüklenene kadar korunur.",
   "Asset": "Varlık",
   "Logo displayed on dark background": "Koyu arka planda gösterilen logo",
   "Logo displayed on light background": "Açık arka planda gösterilen logo",
