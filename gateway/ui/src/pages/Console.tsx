@@ -8,14 +8,16 @@ import type {Nav,Theme} from "../App";
 const cmsEditableFields=[["Feature section heading","Cihaz yönetiminde"],["Feature section subheading","yeni çalışma standardı."],["Feature introduction","Tek bir uygulama. Dağınık araçlar yerine planlı, kontrollü ve kesintisiz iş akışı."],["How it works heading","Karmaşıklığı kaldır."],["How it works subheading","Kontrolü eline al."],["How it works description","Cihazlarını bağlamaktan akıllı iş akışlarına kadar her şey aynı çalışma alanında."],["Safety headline","Yapay zekâya erişim ver."],["Safety subheadline","Kontrolü bırakma."],["Safety description","Her komutun, her cihazın ve her yetkinin hesabı belli olsun. Bağlantı kurmak kadar güvenli yönetmek de önemli."],["Pricing headline","İhtiyacın kadar kullan."],["Pricing subheadline","Şeffaf şekilde büyü."],["Footer description","Windows 11 Fluent tasarım yaklaşımı · Güvenli MCP kontrolü"]] as const;
 type Overview={users:number;organizations:number;devices:number;activeDevices:number};
 type Admin={email:string;userId:string;platformRole:string};
-export function ConsolePage({nav,theme,toggle,logout}:{nav:Nav;theme:Theme;toggle:()=>void;logout:()=>void}){
+const routes:Record<string,string>={Overview:"/console",Users:"/console/users",Organizations:"/console/organizations",Devices:"/console/devices",Operations:"/console/operations","Landing CMS":"/console/landing",Billing:"/console/billing",System:"/console/system"};
+export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;theme:Theme;toggle:()=>void;logout:()=>void}){
  useLocale();
  const [admin,setAdmin]=useState<Admin|null>(null);
  const [overview,setOverview]=useState<Overview|null>(null);
  const [error,setError]=useState("");
  const [loading,setLoading]=useState(true);
  const [menu,setMenu]=useState(false);
- const [section,setSection]=useState("Overview");
+ const [section,setSection]=useState(()=>Object.keys(routes).find(label=>routes[label]===path)||"Overview");
+ useEffect(()=>setSection(Object.keys(routes).find(label=>routes[label]===path)||"Overview"),[path]);
  const [userSearch,setUserSearch]=useState("");
  const [userPage,setUserPage]=useState(0);
  const [targetUser,setTargetUser]=useState<{id:string;email:string;disabled:boolean}|null>(null);
@@ -80,7 +82,7 @@ export function ConsolePage({nav,theme,toggle,logout}:{nav:Nav;theme:Theme;toggl
   <aside className={"dashboard-sidebar "+(menu?"open":"")} aria-label="Platform administration">
    <div className="px-3 pt-2"><Brand onClick={()=>nav("/")}/></div>
    <div className="px-4 py-5"><div className="flex items-center gap-2 text-[var(--accent)] text-sm font-bold"><ShieldCheck size={18}/> SUPER ADMIN</div></div>
-   <nav className="dash-nav">{items.map(item=><button type="button" key={item.label} onClick={()=>{setSection(item.label);setMenu(false)}} className={"dash-link text-left "+(section===item.label?"active":"")} aria-current={section===item.label?"page":undefined} title={item.label}><item.icon size={19}/><span>{item.label}</span></button>)}</nav>
+   <nav className="dash-nav">{items.map(item=><button type="button" key={item.label} onClick={()=>{setSection(item.label);setMenu(false);nav(routes[item.label])}} className={"dash-link text-left "+(section===item.label?"active":"")} aria-current={section===item.label?"page":undefined} title={item.label}><item.icon size={19}/><span>{item.label}</span></button>)}</nav>
    <div className="dash-sidebar-bottom"><p className="text-sm muted">Platform administration is separate from workspace ownership.</p><button className="mt-5 text-sm flex items-center gap-2" onClick={()=>nav("/dashboard")}><ArrowLeft size={17}/> User dashboard</button></div>
   </aside>
   <div className="dash-main">
