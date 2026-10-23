@@ -8,7 +8,7 @@ const { checkPaddleSignature } = await import("./paddle.js");
 const secret = "pdl_ntfset_signing_secret_for_unit_test";
 const ts = 1792746000;
 const body = Buffer.from(JSON.stringify({ event_id: "evt_test", event_type: "subscription.created" }));
-const sign = (payload, stamp = ts) =>
+const sign = (payload: Buffer, stamp = ts) =>
   "ts=" + stamp + ";h1=" + createHmac("sha256", secret).update(String(stamp) + ":").update(payload).digest("hex");
 
 test("Paddle webhook signatures authenticate the raw bytes and require fresh timestamps", () => {
