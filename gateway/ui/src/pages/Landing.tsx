@@ -1,5 +1,5 @@
 import {useEffect,useRef} from "react";
-import {ArrowDownRight,ArrowRight,ArrowUpRight,Bot,Check,CheckCheck,ChevronRight,Cloud,Command,Database,FileText,Globe2,HardDrive,KeyRound,LockKeyhole,Monitor,MousePointerClick,ShieldCheck,Sparkles,TerminalSquare,Workflow,Zap} from "lucide-react";
+import {ArrowRight,ArrowUpRight,Bot,Check,CheckCheck,ChevronRight,Command,Database,Globe2,HardDrive,KeyRound,LockKeyhole,Monitor,MousePointerClick,ShieldCheck,Sparkles,TerminalSquare,Workflow,Zap} from "lucide-react";
 import type{Nav}from"../App";import type{Pricing}from"../api";
 import{Button,Card,Badge}from"../components/ui";import{Brand,NavLink}from"../App";
 
