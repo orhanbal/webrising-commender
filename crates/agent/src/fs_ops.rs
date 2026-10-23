@@ -309,7 +309,9 @@ pub fn read_lines(
     }
     let metadata = fs::metadata(&path)?;
     if metadata.len() > MAX_PAGED_FILE {
-        return Err(anyhow!("file exceeds paginated read scan limit of {MAX_PAGED_FILE} bytes"));
+        return Err(anyhow!(
+            "file exceeds paginated read scan limit of {MAX_PAGED_FILE} bytes"
+        ));
     }
     let content = fs::read_to_string(&path).context("paginated read requires UTF-8 text")?;
     let total = content.lines().count();
@@ -326,7 +328,9 @@ pub fn read_lines(
         let needed = line.len().saturating_add(1);
         if bytes.saturating_add(needed) > MAX_PAGE_BYTES {
             if page.is_empty() {
-                return Err(anyhow!("individual line exceeds paginated output limit of {MAX_PAGE_BYTES} bytes"));
+                return Err(anyhow!(
+                    "individual line exceeds paginated output limit of {MAX_PAGE_BYTES} bytes"
+                ));
             }
             break;
         }
