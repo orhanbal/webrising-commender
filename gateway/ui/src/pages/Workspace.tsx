@@ -78,7 +78,7 @@ export function WorkspacePage({nav,path,account,checking,theme,toggle,logout}:{n
  async function copy(text:string){try{await navigator.clipboard.writeText(text);setCopyStatus("Kopyalandı.")}catch{setCopyStatus("Kopyalama başarısız.")}}
  const selected=devices.find(d=>d.id===deviceId);
  return <DashboardShell nav={nav}path={"/"+path}account={account}theme={theme}toggle={toggle}logout={logout}>
-  <div className="flex items-end justify-between gap-3 flex-wrap"><div><span className="dash-kicker">ARAÇLAR</span><h1 className="dash-title mt-2 flex gap-3 items-center"><page.icon className="text-[var(--accent)]"/> {page.title}</h1><p className="muted mt-2 text-sm">{page.description}</p></div><Button variant="outline" onClick={()=>window.location.assign("/app?view="+path)}>Gelişmiş Konsol <ExternalLink size={16}/></Button></div>
+  <div className="flex items-end justify-between gap-3 flex-wrap"><div><span className="dash-kicker">ARAÇLAR</span><h1 className="dash-title mt-2 flex gap-3 items-center"><page.icon className="text-[var(--accent)]"/> {page.title}</h1><p className="muted mt-2 text-sm">{page.description}</p></div><Button variant="outline" onClick={()=>window.location.assign("/advanced?view="+path)}>Gelişmiş Konsol <ExternalLink size={16}/></Button></div>
   {error&&<div role="alert" className="form-error mt-5">{error}</div>}
   {!account&&!checking&&<Card className="mt-7 p-6"><h2 className="font-semibold">Önce giriş yapın</h2><p className="muted mt-2 text-sm">Cihaz ve araçlar oturum açıldıktan sonra erişilebilir.</p><Button className="mt-4" onClick={()=>nav("/login")}>Giriş Yap <ArrowRight size={16}/></Button></Card>}
   {account&&path!=="mcp"&&<div className="grid lg:grid-cols-[1fr_.9fr] gap-5 mt-7">
