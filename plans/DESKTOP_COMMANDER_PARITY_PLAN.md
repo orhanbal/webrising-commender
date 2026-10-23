@@ -2,6 +2,13 @@
 
 Son gözden geçirme: 2026-10-24. Öncelik: eşdeğerlik > güvenilirlik/kabul > farklılaşma. Yeni SaaS/ticari özelliklere girilmeden önce aşağıdaki kapsamdaki eksikler kapatılacak.
 
+## Güncel uygulama durumu (2026-10-24, kod incelemesi)
+- **Tam CI geçip Linux Agent E2E onayı almış:** `fs_read_lines` satır aralığı ve negatif tail; ilk beş dosyalık `fs_read_multiple`. Commit `5e78ab59`.
+- **Kodlandı, güncel HEAD'in CI kabulü bekliyor:** `fs_read_multiple` on dosya, actor/tenant/cihaz izole sayfalı arama oturumları, `get_recent_tool_calls`, `get_usage_stats`, `terminal_read_page`, dosya yazma/değiştirmede geçici dosya + atomik değiştirme, `fs_append`, `fs_replace` SHA-256 önkoşul denetimi, `policy_info` salt okunur ajan politika raporu.
+- **Kısmi:** Arama oturumu sayfalama var; native Agent henüz gerçek akışlı arama/askıya alma yeteneği sunmuyor. Geçici arama sonuçları Gateway belleğinde tutuluyor ve yeniden başlatmada korunmuyor. Terminal çıktısı kaydırmalı geçmişi son 1 MiB ile sınırlı; tam kalıcı süreç çıktısı sayfalaması yok.
+- **Açık:** Excel/DOCX/PDF formatlarına özel araçlar; işlemi geri alma/sürümleme; gerçek ChatGPT/Claude MCP kabulü; üç işletim sistemi fiziksel kabulü; platform imzalama/noter; kullanıcı paneli tüm işlev kabulü.
+- `main` içindeki HEAD her zaman kabul edilmiş sürüm değildir. Güncel CI sonucuna bakılmadan tüm alt maddeleri tamamlanmış sayma.
+
 ## Karşılaştırma kaynağı
 - Desktop Commander'ın yayımlanan MCP araç listesi: https://github.com/mcp/wonderwhy-er/desktop-commander
 - Remote MCP araç listesi: https://github.com/mcp/app.desktopcommander/remote-desktop-commander
