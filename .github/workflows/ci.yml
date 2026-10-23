@@ -69,6 +69,7 @@ jobs:
           bash -n ../scripts/backup-compose.sh
           bash -n ../scripts/restore-compose.sh
           bash -n ../scripts/test-postgres-restore.sh
+          bash -n ../scripts/ci-postgres-restore.sh
           node --check ../scripts/soak-restart.mjs
           node --check ../scripts/accept-production.mjs
 
@@ -151,6 +152,9 @@ jobs:
           exit 1
       - name: Run integration acceptance
         run: npm run integration
+      - name: Verify backup restore in disposable CI database
+        working-directory: .
+        run: bash scripts/ci-postgres-restore.sh
       - name: Run production acceptance probe against local gateway
         working-directory: .
         env:
