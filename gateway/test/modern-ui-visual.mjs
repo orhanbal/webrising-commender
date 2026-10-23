@@ -190,6 +190,14 @@ try{
  await sleep(120);
 
  await visit("/console/users","Users","modern-console-users");
+ await evalJs("document.querySelector('.dash-toolbar .locale-trigger').click()");
+ await evalJs("document.querySelector('.dash-toolbar .locale-option[role=menuitemradio]:last-child').click()");
+ await sleep(120);
+ assert.ok(await evalJs("document.querySelector('th')?.textContent.includes('Kayıt kimliği')"),"Admin table column names are localized into Turkish");
+ await evalJs("document.querySelector('.dash-toolbar .locale-trigger').click()");
+ await evalJs("document.querySelector('.dash-toolbar .locale-option[role=menuitemradio]:first-child').click()");
+ await sleep(120);
+
  await evalJs("([...document.querySelectorAll('button')].find(x=>x.textContent.trim()==='Details'))?.click()");
  await sleep(150);
  assert.ok(await evalJs("document.querySelector('[role=dialog]')?.textContent.includes('member@example.test')"),"User details show the selected account");
