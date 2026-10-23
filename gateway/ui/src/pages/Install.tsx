@@ -1,4 +1,4 @@
-import {useState} from "react";
+import {useEffect,useState} from "react";
 import type{ReactNode}from"react";
 import {ArrowRight,ArrowUpRight,Check,ChevronDown,ChevronRight,ClipboardCheck,Code2,Copy,Download,ExternalLink,FolderOpen,Info,Laptop,LockKeyhole,Monitor,Plug2,ShieldCheck,TerminalSquare,Usb} from "lucide-react";
 import {Badge,Button,Card,Dialog,DialogContent,DialogDescription,DialogTitle} from "../components/ui";
@@ -6,6 +6,7 @@ import type{Nav}from"../App";
 
 type Client="chatgpt"|"claude";
 type Platform="windows"|"macos"|"linux";
+type ReleaseInfo={available:boolean;releaseUrl:string;tagName:string|null;assets:Array<{name:string;size:number;url:string;platform:Platform}>};
 const project="https://github.com/orhanbal/webrising-commender";
 const endpoint=()=>location.origin+"/mcp";
 const snippets:Record<Platform,string>={
@@ -53,8 +54,18 @@ export function InstallPage({nav}:{nav:Nav}){
  const [platform,setPlatform]=useState<Platform>("windows");
  const [expanded,setExpanded]=useState<"other"|"local"|null>(null);
  const [copied,setCopied]=useState("");
+ const [downloads,setDownloads]=useState<ReleaseInfo|null>(null);
+ useEffect(()=>{
+  const controller=new AbortController();
+  fetch("/api/public/downloads",{signal:controller.signal}).then(async r=>{
+    if(!r.ok)throw Error("release_lookup_failed");
+    return await r.json() as ReleaseInfo;
+  }).then(setDownloads).catch(()=>setDownloads({available:false,releaseUrl:project+"/releases",tagName:null,assets:[]}));
+  return()=>controller.abort();
+ },[]);
  const copy=async(value:string)=>{try{await navigator.clipboard.writeText(value);setCopied("Kopyalandı");}catch{setCopied("Panoya kopyalanamadı");} };
  const guide=active?docs[active]:null;
+ const platformAsset=downloads?.assets.find(asset=>asset.platform===platform);
  return <div className="install-page">
   <section className="install-intro container-w"><Badge className="install-eyebrow"><Plug2 size={14}/> WECOMMANDER · INSTALL</Badge><h1>Konuştuğun yerde <span className="text-gradient">kullan.</span></h1><p>Kullandığın yapay zekâ asistanını WECOMMANDER'a bağla. Sonra erişim izni verdiğin bilgisayarlara ve sunuculara güvenle ulaş.</p></section>
   <section className="install-primary mx-auto">
@@ -76,7 +87,14 @@ export function InstallPage({nav}:{nav:Nav}){
   <section className="install-download-section" id="download-agent"><div className="container-w">
    <div className="install-download-heading"><div><span className="eyebrow">CİHAZ BAĞLANTISI</span><h2>Cihazına <span className="text-gradient">WECOMMANDER Agent</span> kur.</h2><p>Asistanına bağlandıktan sonra bilgisayarını veya sunucunu eşleştir. Agent, cihazından güvenli dış bağlantı kurar; açık inbound port gerekmez.</p></div><Badge><ShieldCheck size={14}/> Açık kaynak agent</Badge></div>
    <div className="install-platforms">{platforms.map(p=><button key={p.key} type="button" className={"install-platform "+(platform===p.key?"active":"")} aria-pressed={platform===p.key} onClick={()=>setPlatform(p.key)}><p.icon size={22}/><span><strong>{p.name}</strong><small>{p.kind}</small></span>{platform===p.key&&<Check size={18} className="install-platform-check"/>}</button>)}</div>
-   <Card className="install-download-card"><div className="install-download-grid"><div><div className="flex gap-2 items-center"><Badge><Info size={14}/> Dağıtım durumu</Badge></div><h3>{platforms.find(p=>p.key===platform)?.name} için kurulum</h3><p>Projenin herkese açık GitHub Releases bölümünde henüz indirilebilir bir sürüm yayımlanmadı. Var olmayan bir indirme bağlantısına yönlendirmiyoruz. Şimdilik agent'ı kaynak koddan derleyebilir veya yayınlanan sürümleri kontrol edebilirsin.</p><div className="install-download-actions"><a className="install-primary-link" href={project+"/releases"} target="_blank" rel="noopener noreferrer"><Download size={18}/> Sürümleri kontrol et <ArrowUpRight size={16}/></a><a className="install-secondary-link" href={project+"/blob/main/docs/QUICKSTART.md"} target="_blank" rel="noopener noreferrer"><FolderOpen size={17}/> Kurulum rehberi</a></div></div><div className="install-code-wrap"><div className="install-code-top"><span><Code2 size={15}/> Kaynak koddan derleme</span><button type="button" className="install-code-copy" onClick={()=>copy(snippets[platform])}><Copy size={14}/> Kopyala</button></div><pre className="install-code">{snippets[platform]}</pre><p className="install-code-note">Rust toolchain gereklidir. Eşleştirme kodunu panelden oluştur; <code>&lt;KOD&gt;</code> alanını onunla değiştir.</p></div></div></Card>
+   <Card className="install-download-card"><div className="install-download-grid"><div><div className="flex gap-2 items-center"><Badge><Info size={14}/> Dağıtım durumu</Badge></div><h3>{platforms.find(p=>p.key===platform)?.name} için kurulum</h3><p>{platformAsset
+   ? "Doğrulanmış "+downloads?.tagName+" sürümündeki "+platforms.find(p=>p.key===platform)?.name+" agent dosyasını indirebilirsin. İndirdikten sonra aşağıdaki eşleştirme adımlarını uygula."
+   : "Bu platform için şu anda doğrulanmış bir yayın paketi listelenmiyor. GitHub Releases üzerinden sürümleri kontrol edebilir veya agent'ı kaynak koddan derleyebilirsin."}</p>
+   <div className="install-download-actions">
+    {platformAsset?<a className="install-primary-link" href={platformAsset.url} target="_blank" rel="noopener noreferrer"><Download size={18}/> {platforms.find(p=>p.key===platform)?.name} Agent indir <ArrowUpRight size={16}/></a>
+     :<a className="install-primary-link" href={downloads?.releaseUrl||project+"/releases"} target="_blank" rel="noopener noreferrer"><Download size={18}/> Sürümleri kontrol et <ArrowUpRight size={16}/></a>}
+    <a className="install-secondary-link" href={project+"/blob/main/docs/QUICKSTART.md"} target="_blank" rel="noopener noreferrer"><FolderOpen size={17}/> Kurulum rehberi</a>
+   </div></div><div className="install-code-wrap"><div className="install-code-top"><span><Code2 size={15}/> Kaynak koddan derleme</span><button type="button" className="install-code-copy" onClick={()=>copy(snippets[platform])}><Copy size={14}/> Kopyala</button></div><pre className="install-code">{snippets[platform]}</pre><p className="install-code-note">Rust toolchain gereklidir. Eşleştirme kodunu panelden oluştur; <code>&lt;KOD&gt;</code> alanını onunla değiştir.</p></div></div></Card>
    <div className="install-steps"><span><Check size={15}/> Agent'ı hazırla</span><ChevronRight size={16}/><span><Check size={15}/> <button type="button" onClick={()=>nav("/devices")}>Panelden cihaz eşleştir</button></span><ChevronRight size={16}/><span><Check size={15}/> AI istemcinle bağlan</span></div>
   </div></section>
   <section className="install-end container-w"><div className="install-end-banner"><div><span className="eyebrow">BAŞLAMAYA HAZIR MISIN?</span><h2>Tek panel. Çoklu cihaz. <span className="text-gradient">Tam kontrol.</span></h2><p>Kurulum adımlarını tamamladığında cihazlarını yönetmeye başlayabilirsin.</p></div><Button size="lg" onClick={()=>nav("/dashboard")}>Kullanıcı paneline git <ArrowRight size={17}/></Button></div></section>
