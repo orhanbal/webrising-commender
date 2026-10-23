@@ -1,7 +1,7 @@
 import {useEffect,useState}from"react";
-import{ArrowRight,Check,Copy,ExternalLink,FileText,KeyRound,LockKeyhole,Monitor,RefreshCw,Search,ShieldCheck,TerminalSquare,Workflow,Play,Info}from"lucide-react";
+import{ArrowRight,Copy,ExternalLink,FileText,KeyRound,LockKeyhole,Monitor,RefreshCw,Search,ShieldCheck,TerminalSquare,Workflow,Play,Info}from"lucide-react";
 import{api,type Account,type Device}from"../api";
-import{Badge,Button,Card,CardContent,CardDescription,CardHeader,CardTitle,Input}from"../components/ui";
+import{Button,Card,CardContent,CardDescription,CardHeader,CardTitle,Input}from"../components/ui";
 import{DashboardShell}from"./Dashboard";
 import type{Nav,Theme}from"../App";
 type Tool="terminal"|"files"|"tasks"|"mcp";
