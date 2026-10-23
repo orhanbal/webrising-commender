@@ -95,6 +95,23 @@ export const consoleTurkish:Record<string,string> = {
   "Search workspaces": "Çalışma alanlarında ara",
   "Search user email": "Kullanıcı e-postasında ara",
   "Page": "Sayfa",
-  "total": "toplam"
+  "total": "toplam",
+  "Privacy & terms editor": "Gizlilik ve kullanım koşulları editörü",
+  "Maintain EN/TR legal drafts and published versions. Only publish content reviewed by the appropriate legal owner. Text is rendered as plain paragraphs, never executable HTML.": "TR/EN hukuki taslakları ve yayınlanmış sürümleri yönetin. Yalnızca yetkili kişi tarafından incelenmiş metinleri yayınlayın. Metinler çalıştırılabilir HTML olarak değil, düz paragraf olarak görüntülenir.",
+  "Privacy policy": "Gizlilik politikası",
+  "Terms of service": "Kullanım koşulları",
+  "Page heading": "Sayfa başlığı",
+  "Full legal text (up to 30,000 characters)": "Hukuki metnin tamamı (en fazla 30.000 karakter)",
+  "Draft preview": "Taslak önizleme",
+  "Save new draft": "Yeni taslak kaydet",
+  "Revision history": "Sürüm geçmişi",
+  "Current admin password (required to publish)": "Yayınlamak için mevcut yönetici parolası",
+  "No revisions yet.": "Henüz sürüm oluşturulmadı.",
+  "Untitled legal page": "Başlıksız hukuki sayfa",
+  "Publish / restore": "Yayınla / geri yükle",
+  "Published": "Yayında",
+  "Legal page draft saved. The live page is unchanged.": "Hukuki sayfa taslağı kaydedildi. Yayındaki sayfa değişmedi.",
+  "Published legal page. The previous published revision is still available for rollback.": "Hukuki sayfa yayınlandı. Önceki yayındaki sürüm geri dönüş için saklandı.",
+  "Revision loaded for editing; save a new draft before publishing changes.": "Sürüm düzenlemek için yüklendi. Değişiklikleri yayınlamadan önce yeni taslak kaydedin."
 };
 export function consoleText(source:string,locale:"en"|"tr"):string {return locale==="tr"?(consoleTurkish[source]??source):source;}
