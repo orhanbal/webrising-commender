@@ -68,6 +68,7 @@ jobs:
         run: |
           bash -n ../scripts/backup-compose.sh
           bash -n ../scripts/restore-compose.sh
+          bash -n ../scripts/test-postgres-restore.sh
           node --check ../scripts/soak-restart.mjs
           node --check ../scripts/accept-production.mjs
 
