@@ -24,6 +24,13 @@ if (-not $Credential -and -not $AllowLocalSystem) {
 $BinaryPath = (Resolve-Path $BinaryPath).Path
 $ConfigPath = (Resolve-Path $ConfigPath).Path
 
+# Detect malformed enrollment and unreadable allowed roots before registering
+# an automatically starting Windows service. Never print the device credential.
+$doctorResult = & $BinaryPath --config $ConfigPath doctor 2>&1
+if ($LASTEXITCODE -ne 0) {
+  throw "Agent configuration preflight failed. Confirm the account can read the config and allowed folder. Doctor exit code: $LASTEXITCODE"
+}
+
 if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
   throw "Service '$ServiceName' already exists. Uninstall it first."
 }
