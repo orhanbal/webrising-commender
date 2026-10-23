@@ -16,6 +16,8 @@ const tools = [
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   tool("system_info", "Read system information from a device.", {}),
+  tool("get_recent_tool_calls", "Read paginated sanitized recent tool history for your actor and selected device.", { limit: integer(), offset: integer() }),
+  tool("get_usage_stats", "Count this actor's tool executions by name over the past 30 days, scoped to the selected device.", {}),
   tool("fs_list", "List a directory inside an agent allowlisted root.", { path: str() }, ["path"]),
   tool("fs_stat", "Read file or directory metadata.", { path: str() }, ["path"]),
   tool("fs_read", "Read a file as UTF-8 text or base64 payload.", { path: str(), max_bytes: integer() }, ["path"]),
@@ -263,6 +265,39 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
   );
   if (!device.rowCount) {
     return ok(request.id, toolResult({ error: "device_not_found" }, true));
+  }
+
+  if (name === "get_recent_tool_calls" || name === "get_usage_stats") {
+    if (!roleAtLeast(principal, "viewer")) {
+      return ok(request.id, toolResult({ error: "forbidden" }, true));
+    }
+    const limit = args.limit === undefined ? 25 : args.limit;
+    const offset = args.offset === undefined ? 0 : args.offset;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100 ||
+        !Number.isInteger(offset) || offset < 0 || offset > 10000) {
+      return ok(request.id, toolResult({ error: "invalid_history_page" }, true));
+    }
+    if (name === "get_usage_stats") {
+      const result = await db.query(
+        `select tool, count(*)::integer as calls,
+                count(*) filter (where outcome = 'error')::integer as errors
+           from audit_logs
+          where organization_id=$1 and device_id=$2 and actor=$3
+            and created_at > now() - interval '30 days'
+          group by tool order by calls desc,tool asc limit 100`,
+        [orgId, deviceId, principal.actor],
+      );
+      return ok(request.id, toolResult({ periodDays: 30, tools: result.rows }));
+    }
+    const result = await db.query(
+      `select id,tool,risk,outcome,created_at
+         from audit_logs
+        where organization_id=$1 and device_id=$2 and actor=$3
+        order by id desc limit $4 offset $5`,
+      [orgId, deviceId, principal.actor, limit, offset],
+    );
+    return ok(request.id, toolResult({ items: result.rows, limit, offset,
+      hasMore: result.rows.length === limit }));
   }
 
   // Batch reads are an MCP orchestration operation: each path is checked by the
