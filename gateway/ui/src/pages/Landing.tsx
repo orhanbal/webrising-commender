@@ -19,10 +19,19 @@ const steps=[
 {num:"03 / YÖNET",title:"İstediğiniz yerden çalışın",desc:"Paneli veya desteklenen MCP istemcilerini kullanarak terminal, dosya ve görev operasyonlarınızı yürütün.",icon:Zap}
 ];
 export function Landing({nav,pricing,signupEnabled}:{nav:Nav;pricing:Pricing|null;signupEnabled:boolean|null}){
- const [siteCopy,setSiteCopy]=useState<{hero_title:string;hero_subtitle:string;overrides:Record<string,string>}|null>(null);
+ const [siteCopy,setSiteCopy]=useState<{hero_title:string;hero_subtitle:string;overrides:Record<string,string>;seo_title:string;seo_description:string}|null>(null);
  const copy=(source:string)=>siteCopy?.overrides?.[source]||translate(source);
  const language=useLocale();
- useEffect(()=>{let mounted=true;api<{item:{hero_title:string;hero_subtitle:string;overrides:Record<string,string>}|null}>("/api/public/site-content?locale="+language).then(r=>{if(mounted)setSiteCopy(r.item)}).catch(()=>{if(mounted)setSiteCopy(null)});return()=>{mounted=false}},[language]);
+ useEffect(()=>{
+  const previousTitle=document.title;
+  const description=document.querySelector<HTMLMetaElement>('meta[name="description"]');
+  const previousDescription=description?.content;
+  if(siteCopy?.seo_title)document.title=siteCopy.seo_title;
+  if(siteCopy?.seo_description&&description)description.content=siteCopy.seo_description;
+  return()=>{document.title=previousTitle;if(description&&previousDescription!==undefined)description.content=previousDescription};
+ },[siteCopy]);
+
+ useEffect(()=>{let mounted=true;api<{item:{hero_title:string;hero_subtitle:string;overrides:Record<string,string>;seo_title:string;seo_description:string}|null}>("/api/public/site-content?locale="+language).then(r=>{if(mounted)setSiteCopy(r.item)}).catch(()=>{if(mounted)setSiteCopy(null)});return()=>{mounted=false}},[language]);
  useLocale();
  const progress=useRef<HTMLDivElement>(null);
  useEffect(()=>{
