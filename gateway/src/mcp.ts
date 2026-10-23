@@ -5,6 +5,7 @@ import { db } from "./db.js";
 import { actionRisk, type AgentAction } from "./protocol.js";
 import type { DeviceRouter } from "./device-router.js";
 import { issueApproval, redact } from "./security.js";
+import { startSearch, searchPage, listSearches, stopSearch } from "./search-sessions.js";
 
 type JsonRpcRequest = { jsonrpc?: string; id?: string | number | null; method?: string; params?: any };
 
@@ -26,8 +27,8 @@ const tools = [
   ),
   tool(
     "fs_read_multiple",
-    "Read up to five files in one call, retaining per-file errors. Each file is limited to 64 KiB.",
-    { paths: { type: "array", items: str(), minItems: 1, maxItems: 5 }, max_bytes: integer() },
+    "Read up to ten files in one call, retaining per-file errors. Each file is limited to 64 KiB.",
+    { paths: { type: "array", items: str(), minItems: 1, maxItems: 10 }, max_bytes: integer() },
     ["paths"],
   ),
   tool(
@@ -73,6 +74,20 @@ const tools = [
     { path: str(), query: str(), case_sensitive: bool(), max_results: integer() },
     ["path", "query"],
   ),
+  tool(
+    "start_search",
+    "Start a bounded, asynchronous file-name or content search. Follow with get_more_search_results when completed; maximum 500 matches.",
+    { path: str(), query: str(), search_type: { type: "string", enum: ["files", "content"] }, case_sensitive: bool() },
+    ["path", "query", "search_type"],
+  ),
+  tool(
+    "get_more_search_results",
+    "Read a paged snapshot of a search by id; result is pending until the native search completes.",
+    { search_id: str(), offset: integer(), length: integer() },
+    ["search_id"],
+  ),
+  tool("list_searches", "List active/completed recent search sessions for this actor and device.", {}),
+  tool("stop_search", "Discard a search session's results and suppress further updates.", { search_id: str() }, ["search_id"]),
   tool(
     "fs_replace",
     "Perform a guarded UTF-8 search/replace edit. By default the search must match exactly once.",
@@ -258,7 +273,7 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
     }
     const paths: unknown = args.paths;
     const maxBytes = args.max_bytes === undefined ? 64 * 1024 : args.max_bytes;
-    if (!Array.isArray(paths) || paths.length < 1 || paths.length > 5 ||
+    if (!Array.isArray(paths) || paths.length < 1 || paths.length > 10 ||
         paths.some((path) => typeof path !== "string" || path.length < 1 || path.length > 4096) ||
         typeof maxBytes !== "number" || !Number.isInteger(maxBytes) ||
         maxBytes < 1 || maxBytes > 64 * 1024) {
@@ -276,6 +291,32 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
     await audit(orgId, principal.actor, deviceId, name, "low", "completed",
       JSON.stringify({ count: items.length, failed: items.filter((item) => !item.ok).length }));
     return ok(request.id, toolResult({ items, count: items.length }));
+  }
+
+  if (["start_search", "get_more_search_results", "list_searches", "stop_search"].includes(name)) {
+    if (!roleAtLeast(principal, "viewer")) {
+      return ok(request.id, toolResult({ error: "forbidden" }, true));
+    }
+    try {
+      let data: unknown;
+      if (name === "start_search") {
+        data = await startSearch(principal, deviceId, router, args);
+      } else if (name === "get_more_search_results") {
+        data = searchPage(principal, deviceId, String(args.search_id || ""),
+          args.offset === undefined ? 0 : Number(args.offset),
+          args.length === undefined ? 50 : Number(args.length));
+      } else if (name === "stop_search") {
+        data = stopSearch(principal, deviceId, String(args.search_id || ""));
+      } else {
+        data = listSearches(principal, deviceId);
+      }
+      await audit(orgId, principal.actor, deviceId, name, "low", "success", "search_session");
+      return ok(request.id, toolResult(data));
+    } catch (error) {
+      return ok(request.id, toolResult({
+        error: error instanceof Error ? error.message : "search_failed",
+      }, true));
+    }
   }
 
   let action: AgentAction;
