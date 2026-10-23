@@ -212,6 +212,14 @@ try{
  assert.ok(await evalJs("document.querySelector('img[src^=\"data:image/png;base64,\"]')!==null"),"SVG logo must become previewable raster PNG before upload");
 
  await visit("/console/legal","Privacy & terms editor","modern-console-legal");
+ await evalJs("document.querySelector('.dash-toolbar .locale-trigger').click()");
+ await evalJs("document.querySelector('.dash-toolbar .locale-option[role=menuitemradio]:last-child').click()");
+ await sleep(120);
+ assert.ok(await evalJs("document.body.textContent.includes('Gizlilik ve kullanım koşulları editörü')"),"Legal CMS text should follow Turkish locale");
+ await evalJs("document.querySelector('.dash-toolbar .locale-trigger').click()");
+ await evalJs("document.querySelector('.dash-toolbar .locale-option[role=menuitemradio]:first-child').click()");
+ await sleep(120);
+
  assert.ok(await evalJs("document.querySelectorAll('textarea').length>=1"),"Legal editor must have a text editor");
  await visit("/privacy","Privacy Policy","modern-privacy");
  await visit("/terms","Terms of Service","modern-terms");
