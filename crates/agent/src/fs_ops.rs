@@ -2,7 +2,11 @@ use crate::policy::PathPolicy;
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde_json::{json, Value};
-use std::{fs, io::{Read, Write}, path::Path};
+use std::{
+    fs,
+    io::{Read, Write},
+    path::Path,
+};
 use uuid::Uuid;
 
 const DEFAULT_READ_MAX: usize = 1024 * 1024;
@@ -383,13 +387,18 @@ pub fn append(policy: &PathPolicy, raw: &str, content_base64: &str) -> Result<Va
         .decode(content_base64)
         .context("contentBase64 is not valid base64")?;
     if bytes.len() > HARD_WRITE_MAX {
-        return Err(anyhow!("append exceeds hard limit of {HARD_WRITE_MAX} bytes"));
+        return Err(anyhow!(
+            "append exceeds hard limit of {HARD_WRITE_MAX} bytes"
+        ));
     }
     let existing_size = fs::metadata(&path).map(|item| item.len()).unwrap_or(0);
     if existing_size.saturating_add(bytes.len() as u64) > 128 * 1024 * 1024 {
         return Err(anyhow!("append exceeds total file limit of 128 MiB"));
     }
-    let mut file = fs::OpenOptions::new().create(true).append(true).open(&path)?;
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)?;
     file.write_all(&bytes)?;
     file.sync_all()?;
     Ok(json!({ "ok": true, "path": path.to_string_lossy(), "appendedBytes": bytes.len() }))
@@ -453,7 +462,9 @@ pub fn replace_text(
 /// Stage writes beside their target so incomplete writes never truncate
 /// an existing file. Keep the original intact if rename cannot replace it.
 fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
-    let parent = path.parent().ok_or_else(|| anyhow!("missing parent directory"))?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow!("missing parent directory"))?;
     let temporary = parent.join(format!(".wecommander-{}.tmp", Uuid::new_v4()));
     let result = (|| -> Result<()> {
         let mut file = fs::OpenOptions::new()
