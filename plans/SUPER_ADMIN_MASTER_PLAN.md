@@ -1,6 +1,6 @@
 # WECOMMANDER — Super Admin Master Plan
 
-Status: IN PROGRESS (2026-10-23). Security, management, CMS and test improvements committed; completion is gated on full CI, production checks and external acceptance.
+Status: IN PROGRESS (2026-10-23). Billing support requests and legal-page CMS implemented in source. Final CI and production acceptance required; provider actions, approved legal documents and SMTP intentionally pending.
 
 ## Decision
 
@@ -59,15 +59,17 @@ Legend: [x] implementation committed, [ ] acceptance or implementation still req
 ### Phase E — Billing
 - [x] Read-only plans/subscriptions reporting and password-confirmed plan/organization quota editors.
 - [x] Existing Paddle webhook integration tests provide synthetic subscription lifecycle coverage.
-- [ ] Paddle provider status, customer cancellation and refund-request workflow, real sandbox/live checkout acceptance and reconciliation.
-- [ ] Never change provider-controlled paid status through an internal administration override.
+- [x] Owner cancellation/refund support request submission, duplicate-open protection, request history and audited super-admin review queue. These do not execute provider transactions.
+- [ ] Paddle provider status, actual cancellation/refund execution with authenticated provider reconciliation, real sandbox/live checkout acceptance.
+- [x] Support review never changes subscription status, entitlement, or executes a Paddle refund (integration assertion added).
 
 ### Phase F — Landing CMS and brand
 - [x] Versioned EN/TR hero and 106 landing copy strings with grouped editor, draft/publish/rollback, publish reauthentication and live rendering.
 - [x] SEO title/description per locale, safely escaped SSR homepage tags, canonical and Open Graph metadata.
 - [x] Light/dark PNG/WebP logos and favicon storage, safe public fallback and password-confirmed asset upload.
 - [x] Browser and API tests for landing card visibility, revision publish/rollback, escaping and failed reauthentication.
-- [ ] Legal-page content editor, section reordering, richer media library, robust SVG handling, structured FAQ editor and CMS production browser acceptance.
+- [x] Plain-text EN/TR privacy and terms editor, drafts, password-confirmed publish/restore, public pages and API/browser coverage added (CI acceptance pending).
+- [ ] Legally approved final documents, section reordering, richer media library, robust SVG handling, structured FAQ editor and CMS production browser acceptance.
 
 ### Phase G — System settings
 - [x] Safe read-only mail queue, active sessions, relay, approval, deployment mode and signup health reporting.
