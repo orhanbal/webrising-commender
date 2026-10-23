@@ -1443,6 +1443,30 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         );
         return void json(res,200,{items:records.rows});
       }
+      if (req.method === "POST" && url.pathname === "/api/console/plans/limits") {
+        const payload=z.object({
+          key:z.string().min(1).max(100),
+          maxDevices:z.number().int().min(0).nullable(),
+          maxMembers:z.number().int().min(0).nullable(),
+          maxApiTokens:z.number().int().min(0).nullable(),
+          currentPassword:z.string().min(12).max(256),
+        }).parse(await readJson(req));
+        const passwordRow=await db.query<{password_hash:string}>("select password_hash from users where id=$1 and disabled_at is null",[principal.userId]);
+        if(!passwordRow.rows[0]||!(await verifyPassword(payload.currentPassword,passwordRow.rows[0].password_hash)))
+          return void json(res,403,{error:"reauthentication_failed"});
+        const client=await db.connect();
+        try {
+          await client.query("begin");
+          const plan=await client.query("select key from billing_plans where key=$1 for update",[payload.key]);
+          if(!plan.rowCount){await client.query("rollback");return void json(res,404,{error:"plan_not_found"});}
+          await client.query(`update billing_plans set max_devices=$2,max_members=$3,max_api_tokens=$4,updated_at=now() where key=$1`,
+             [payload.key,payload.maxDevices,payload.maxMembers,payload.maxApiTokens]);
+          await client.query("insert into platform_admin_audit(actor_user_id,action,detail) values($1,'billing.plan_limits',$2)",
+             [principal.userId,"plan:"+payload.key]);
+          await client.query("commit");
+        }catch(error){await client.query("rollback");throw error}finally{client.release()}
+        return void json(res,200,{ok:true});
+      }
       if (req.method === "GET" && url.pathname === "/api/console/billing") {
         const plans=await db.query("select key,name,max_devices,max_members,max_api_tokens,active from billing_plans order by name");
         const subscriptions=await db.query(
