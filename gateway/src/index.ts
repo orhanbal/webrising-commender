@@ -1584,16 +1584,25 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         return void json(res,200,{ok:true});
       }
       if (req.method === "GET" && url.pathname === "/api/console/organizations") {
-        const records = await db.query(
-          `select o.id,o.name,o.created_at,count(distinct m.user_id)::int as members,
-              count(distinct d.id)::int as devices, coalesce(q.limits,'{}'::jsonb) as quota_overrides
-           from organizations o
-           left join organization_quota_overrides q on q.organization_id=o.id
-           left join organization_members m on m.organization_id=o.id
-           left join devices d on d.organization_id=o.id and d.revoked_at is null
-           group by o.id,q.limits order by o.created_at desc limit 100`,
-        );
-        return void json(res,200,{items:records.rows});
+        const search=(url.searchParams.get("q")||"").trim().slice(0,160);
+        const limit=Math.min(100,Math.max(1,Number(url.searchParams.get("limit")||25)||25));
+        const offset=Math.min(100000,Math.max(0,Number(url.searchParams.get("offset")||0)||0));
+        const [records,total]=await Promise.all([
+          db.query(
+            `select o.id,o.name,o.created_at,count(distinct m.user_id)::int as members,
+                count(distinct d.id)::int as devices,coalesce(q.limits,'{}'::jsonb) as quota_overrides
+             from organizations o
+             left join organization_quota_overrides q on q.organization_id=o.id
+             left join organization_members m on m.organization_id=o.id
+             left join devices d on d.organization_id=o.id and d.revoked_at is null
+             where ($1::text='' or o.name ilike '%'||$1||'%')
+             group by o.id,q.limits order by o.created_at desc,o.id desc limit $2 offset $3`,
+            [search,limit,offset],
+          ),
+          db.query<{total:number}>(
+            "select count(*)::int as total from organizations where ($1::text='' or name ilike '%'||$1||'%')",[search]),
+        ]);
+        return void json(res,200,{items:records.rows,total:total.rows[0]?.total??0,limit,offset});
       }
       if (req.method === "GET" && url.pathname === "/api/console/devices") {
         const records = await db.query(
