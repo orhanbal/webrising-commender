@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import fs from "node:fs/promises";
 import pg from "pg";
 import WebSocket from "ws";
@@ -1460,6 +1461,95 @@ const pastDueToken = await fetch(base + "/api/tokens", {
 });
 assert.equal(pastDueToken.status, 402);
 assert.equal((await pastDueToken.json()).error, "billing_required");
+
+// Full Paddle webhook lifecycle: signed subscription creation, deduplication,
+// pause (revoked entitlement) and customer-portal price upgrade.
+const paddleSecret=process.env.PADDLE_WEBHOOK_SECRET;
+assert.ok(paddleSecret,"Paddle webhook secret required for integration fixture");
+const paddlePrice="pri_"+"p".repeat(26);
+const upgradePrice="pri_"+"q".repeat(26);
+const transactionId="txn_"+"t".repeat(26);
+const subscriptionId="sub_"+"s".repeat(26);
+const customerId="ctm_"+"c".repeat(26);
+const paddlePlan=await jsonFetch("/api/admin/billing/plans",{
+ method:"POST",headers:authHeaders,
+ body:JSON.stringify({key:"ci-paddle",name:"Paddle Standard",maxDevices:3,maxMembers:1,maxApiTokens:1,
+ metadata:{paddlePriceId:paddlePrice,priceLabel:"$9 / month"},active:true}),
+});
+assert.equal(paddlePlan.item.key,"ci-paddle");
+const upgradedPlan=await jsonFetch("/api/admin/billing/plans",{
+ method:"POST",headers:authHeaders,
+ body:JSON.stringify({key:"ci-paddle-plus",name:"Paddle Plus",maxDevices:9,maxMembers:3,maxApiTokens:3,
+ metadata:{paddlePriceId:upgradePrice,priceLabel:"$19 / month"},active:true}),
+});
+assert.equal(upgradedPlan.item.key,"ci-paddle-plus");
+const paddleOrg=await jsonFetch("/api/organizations",{
+ method:"POST",headers:authHeaders,body:JSON.stringify({name:"Paddle CI Tenant"}),
+});
+await acceptanceDb.query(
+ "insert into paddle_checkout_intents(transaction_id,organization_id,plan_key,price_id) values($1,$2,$3,$4)",
+ [transactionId,paddleOrg.item.id,"ci-paddle",paddlePrice]
+);
+const unsignedPaddle=await fetch(base+"/webhooks/paddle",{
+ method:"POST",headers:{"Content-Type":"application/json"},body:"{}",
+});
+assert.equal(unsignedPaddle.status,401);
+const webhookSend=async(event)=>{
+ const payload=JSON.stringify(event);
+ const ts=String(Math.floor(Date.now()/1000));
+ const signature="ts="+ts+";h1="+createHmac("sha256",paddleSecret)
+  .update(ts+":"+payload).digest("hex");
+ const response=await fetch(base+"/webhooks/paddle",{
+  method:"POST",headers:{"Content-Type":"application/json","Paddle-Signature":signature},
+  body:payload,
+ });
+ return {status:response.status,body:await response.json()};
+};
+const eventPayload=(eventId,type,status,price,transaction)=>{
+ return {
+  event_id:eventId,event_type:type,occurred_at:new Date().toISOString(),
+  data:{
+   id:subscriptionId,status,customer_id:customerId,
+   ...(transaction?{transaction_id:transaction}:{}),
+   current_billing_period:{ends_at:new Date(Date.now()+30*86400000).toISOString()},
+   scheduled_change:null,
+   items:[{price:{id:price}}],
+  }
+ };
+};
+const first=eventPayload("evt_"+"a".repeat(26),"subscription.created","active",paddlePrice,transactionId);
+const signedCreated=await webhookSend(first);
+assert.equal(signedCreated.status,200,JSON.stringify(signedCreated.body));
+assert.equal(signedCreated.body.applied,true);
+const firstBilling=await jsonFetch(
+ "/api/admin/organizations/"+paddleOrg.item.id+"/billing",{headers:authHeaders});
+assert.equal(firstBilling.plan.key,"ci-paddle");
+assert.equal(firstBilling.entitled,true);
+assert.equal(firstBilling.subscription.externalSubscriptionId,subscriptionId);
+const replayCreated=await webhookSend(first);
+assert.equal(replayCreated.status,200);
+assert.equal(replayCreated.body.applied,false);
+const paused=await webhookSend(
+ eventPayload("evt_"+"b".repeat(26),"subscription.paused","paused",paddlePrice));
+assert.equal(paused.status,200,JSON.stringify(paused.body));
+const pausedBilling=await jsonFetch(
+ "/api/admin/organizations/"+paddleOrg.item.id+"/billing",{headers:authHeaders});
+assert.equal(pausedBilling.subscription.status,"paused");
+assert.equal(pausedBilling.entitled,false);
+const upgraded=await webhookSend(
+ eventPayload("evt_"+"d".repeat(26),"subscription.updated","active",upgradePrice));
+assert.equal(upgraded.status,200,JSON.stringify(upgraded.body));
+const upgradeBilling=await jsonFetch(
+ "/api/admin/organizations/"+paddleOrg.item.id+"/billing",{headers:authHeaders});
+assert.equal(upgradeBilling.plan.key,"ci-paddle-plus","Paddle portal upgrade must update plan");
+assert.equal(upgradeBilling.entitled,true);
+assert.equal(upgradeBilling.limits.maxDevices,9);
+const unknownPrice=await webhookSend(
+ eventPayload("evt_"+"e".repeat(26),"subscription.updated","active","pri_"+"z".repeat(26)));
+assert.equal(unknownPrice.status,409,"Unknown Paddle catalog price must not grant privileges");
+const noPriceBilling=await jsonFetch(
+ "/api/admin/organizations/"+paddleOrg.item.id+"/billing",{headers:authHeaders});
+assert.equal(noPriceBilling.plan.key,"ci-paddle-plus","Reject unknown price rather than change entitlement");
 
 const browserLogoutResponse = await fetch(base + "/api/auth/logout", {
   method: "POST",
