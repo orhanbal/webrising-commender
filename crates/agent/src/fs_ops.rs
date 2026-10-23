@@ -2,13 +2,13 @@ use crate::policy::PathPolicy;
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::{
     fs,
     io::{Read, Write},
     path::Path,
 };
 use uuid::Uuid;
-use sha2::{Digest, Sha256};
 
 const DEFAULT_READ_MAX: usize = 1024 * 1024;
 const MAX_PAGED_FILE: u64 = 32 * 1024 * 1024;
