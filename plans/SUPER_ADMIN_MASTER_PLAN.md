@@ -1,6 +1,6 @@
 # WECOMMANDER — Super Admin Master Plan
 
-Status: IN PROGRESS (2026-10-23). Billing support requests and legal-page CMS implemented in source. Final CI and production acceptance required; provider actions, approved legal documents and SMTP intentionally pending.
+Status: IN PROGRESS (2026-10-23). New administration pagination, translations, FAQ, SVG rasterization and restore-drill checks committed. Production acceptance, real devices, Paddle and offsite disaster recovery are not closed.
 
 ## Decision
 
@@ -41,14 +41,16 @@ Legend: [x] implementation committed, [ ] acceptance or implementation still req
 - [x] EN/TR language selector and light/dark toggle reused in console.
 - [x] Database-backed overview; user, organization, device, audit, billing, CMS, brand and system sections.
 - [x] Browser screenshot acceptance added for desktop/mobile console and multiple sections.
-- [ ] Full TR translation of all console-specific descriptions and controls, keyboard accessibility/contrast audit, and final browser acceptance.
+- [x] Localized console navigation/core actions and legal CMS into Turkish; modal focus/Escape keyboard acceptance added.
+- [ ] Complete Turkish audit across every dynamic admin label, responsive contrast audit and authenticated production browser acceptance.
 
 ### Phase C — Users and organizations
 - [x] User listing/search/pagination, audited disable/enable with password reauthentication.
 - [x] User session inventory and audited forced session revocation, excluding own session and protected platform administrators.
 - [x] Workspace membership browser and viewer/operator/admin role changes with step-up and owner-role protection.
 - [x] Organization-specific quota overrides and editable plan limits.
-- [ ] Organization details/large-list pagination, bulk operations, owner transfer with explicit approval, elevated-account recovery and additional lifecycle acceptance.
+- [x] Server-side organization search, 25-row pagination/total counts; user totals and pagination boundary checks.
+- [ ] Bulk operations, detailed organization lifecycle, protected owner transfer/recovery and further lifecycle acceptance.
 
 ### Phase D — Devices and operations
 - [x] Cross-workspace read-only device inventory and unified tenant/platform audit timeline.
@@ -69,17 +71,19 @@ Legend: [x] implementation committed, [ ] acceptance or implementation still req
 - [x] Light/dark PNG/WebP logos and favicon storage, safe public fallback and password-confirmed asset upload.
 - [x] Browser and API tests for landing card visibility, revision publish/rollback, escaping and failed reauthentication.
 - [x] Plain-text EN/TR privacy and terms editor, drafts, password-confirmed publish/restore, public pages and API/browser coverage added (CI acceptance pending).
-- [ ] Legally approved final documents, section reordering, richer media library, robust SVG handling, structured FAQ editor and CMS production browser acceptance.
+- [x] Structured editing of existing FAQ question/answer pairs and SVG image input converted to validated PNG before upload.
+- [ ] Legally approved final documents, arbitrary FAQ creation/order, broader media library, section reordering and authenticated production browser acceptance.
 
 ### Phase G — System settings
 - [x] Safe read-only mail queue, active sessions, relay, approval, deployment mode and signup health reporting.
-- [ ] SMTP activation with WECOMMANDER sender (intentionally deferred until launch), secrets management UI, backups, alerts and operational maintenance.
+- [x] Canonical Compose backup script hardened against overwrites, with non-destructive isolated restore drill and separate test-database CI backup/restore acceptance.
+- [ ] Off-host encrypted production backup schedule and real recovery drill, SMTP activation with WECOMMANDER sender (deferred to launch), credential settings, active alert delivery.
 - [ ] Provider credentials must remain redacted and outside version control.
 
 ### Phase H — Release gates
 - [x] GitHub workflow runs gateway, integration, agent/relay E2E and cross-platform packaging jobs.
 - [x] New API/browser acceptance assertions added; final full-workflow verification pending.
-- [ ] Green latest **full** CI after all commits and production deployed commit equality.
+- [ ] Green latest **full** CI after this change batch and production deployed commit equality (earlier baseline was green).
 - [ ] End-to-end accepted user login, workspace role changes, admin CMS/SEO publish, Paddle and live agent controls.
 - [ ] Verified production backup/restore and rollback drills.
 - [ ] Confirm no tenant data leaking into privileged support operations.
