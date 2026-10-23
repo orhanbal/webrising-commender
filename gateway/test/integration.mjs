@@ -419,6 +419,39 @@ await acceptanceDb.query(
 const platformMe=await fetch(base+"/api/console/me",{headers:{Cookie:browserCookies}});
 assert.equal(platformMe.status,200);
 assert.equal((await platformMe.json()).platformRole,"super_admin");
+// Verify revisioned CMS draft, publication, rollback and safe HTML metadata rendering.
+const cmsSessionHeaders={Cookie:browserCookies,"Content-Type":"application/json","X-CSRF-Token":browserLogin.csrfToken};
+const draftCms=async(title,metadata)=>fetch(base+"/api/console/site-content",{
+  method:"POST",headers:cmsSessionHeaders,body:JSON.stringify({
+    locale:"en",heroTitle:title,heroSubtitle:"Safe integrated landing subtitle",
+    seoTitle:metadata,seoDescription:'Description with <script> and "quotes"',
+    overrides:{"Cihaz yönetiminde":"Managed capabilities heading"},
+  }),
+});
+const cmsCreated=await draftCms("Integration Draft One","One <script>unsafe</script> & safe");
+assert.equal(cmsCreated.status,201);
+const cmsFirstId=(await cmsCreated.json()).id;
+const draftDoesNotPublish=await jsonFetch("/api/public/site-content?locale=en");
+assert.equal(draftDoesNotPublish.item,null);
+const cmsPublish=async(id)=>fetch(base+"/api/console/site-content/publish",{
+  method:"POST",headers:cmsSessionHeaders,body:JSON.stringify({id}),
+});
+assert.equal((await cmsPublish(cmsFirstId)).status,200);
+const publicFirst=await jsonFetch("/api/public/site-content?locale=en");
+assert.equal(publicFirst.item.hero_title,"Integration Draft One");
+assert.equal(publicFirst.item.overrides["Cihaz yönetiminde"],"Managed capabilities heading");
+const seoHtml=(await(await fetch(base+"/")).text());
+assert.ok(seoHtml.includes("One &lt;script&gt;unsafe&lt;/script&gt; &amp; safe"),"Published SEO title must be HTML escaped");
+assert.ok(!seoHtml.includes("<script>unsafe</script>"),"Stored CMS text must never inject HTML scripts");
+assert.ok(seoHtml.includes('property="og:description"'),"Published SEO must render OG metadata server-side");
+const cmsSecond=await draftCms("Integration Draft Two","Revised SEO title");
+assert.equal(cmsSecond.status,201);
+const cmsSecondId=(await cmsSecond.json()).id;
+assert.equal((await cmsPublish(cmsSecondId)).status,200);
+assert.equal((await jsonFetch("/api/public/site-content?locale=en")).item.hero_title,"Integration Draft Two");
+assert.equal((await cmsPublish(cmsFirstId)).status,200,"Older revision must be republishable for rollback");
+assert.equal((await jsonFetch("/api/public/site-content?locale=en")).item.hero_title,"Integration Draft One");
+await acceptanceDb.query("delete from site_content_revisions where id=any($1::bigint[])",[[cmsFirstId,cmsSecondId]]);
 const membershipOrg=browserMe.organizationId;
 const memberSeed=await acceptanceDb.query(
   `insert into users(email,password_hash,email_verified_at)
