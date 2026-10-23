@@ -17,6 +17,17 @@ const fixtures={
  "/api/activity":{items:[{tool:"direct.command",outcome:"success",created_at:new Date().toISOString()}]},
  "/api/billing":{mode:"saas",entitled:true,plan:{key:"pro",name:"Pro"},subscription:{status:"active",provider:"paddle",currentPeriodEnd:new Date().toISOString()},usage:{devices:1}},
  "/api/public/downloads":{available:false,releaseUrl:"https://github.com/orhanbal/webrising-commender/releases",tagName:null,assets:[]},
+ "/api/public/site-content":{item:null},
+ "/api/console/me":{email:"test@example.com",userId:"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",platformRole:"super_admin"},
+ "/api/console/overview":{users:4,organizations:2,devices:1,activeDevices:1},
+ "/api/console/users":{items:[{id:"44444444-4444-4444-8444-444444444444",email:"member@example.test",disabled:false,verified:true,workspace_count:1}]},
+ "/api/console/organizations":{items:[{id:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",name:"Test Workspace",members:2,devices:1,quota_overrides:{}}]},
+ "/api/console/organizations/members":{items:[{user_id:"55555555-5555-4555-8555-555555555555",email:"member@example.test",role:"viewer",disabled:false}]},
+ "/api/console/devices":{items:[{id:"11111111-1111-4111-8111-111111111111",name:"Test Windows Device",organization_name:"Test Workspace",platform:"windows"}]},
+ "/api/console/audit":{items:[{item_id:"platform:1",tool:"membership.role_change",outcome:"success",risk:"high",organization_name:"WECOMMANDER Platform"}]},
+ "/api/console/billing":{plans:[{key:"pro",name:"Pro",max_devices:5,max_members:2,max_api_tokens:4,active:true}],subscriptions:[]},
+ "/api/console/system":{mailConfigured:false,signupEnabled:false,deploymentMode:"saas",mailQueue:{pending:0,delivered:0,failed:0}},
+ "/api/console/site-content":{items:[]},
  "/api/auth/organizations":{items:[{id:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",name:"Test Workspace",role:"owner"}]},
  "/api/organization":{item:{id:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",name:"Test Workspace"}},
  "/api/tokens":{items:[{id:"22222222-2222-4222-8222-222222222222",name:"Test MCP",role:"operator",created_at:new Date().toISOString(),last_used_at:null,revoked_at:null}]},
@@ -29,6 +40,12 @@ const contentType={".js":"text/javascript",".css":"text/css",".svg":"image/svg+x
 const server=createServer((req,res)=>{
  const pathname=new URL(req.url,"http://localhost").pathname;
  const respond=(code,body,typ="application/json")=>{res.writeHead(code,{"content-type":typ});res.end(body)};
+ if(pathname.startsWith("/api/public/brand/")){
+  const fallback={logo_light:"wecommander-white.svg",logo_dark:"wecommander-black.svg",favicon:"wecommander-favicon.svg"}[pathname.split("/").at(-1)];
+  if(!fallback)return respond(404,"");
+  const file=resolve(root,"../../public/assets",fallback);
+  return existsSync(file)?respond(200,readFileSync(file),"image/svg+xml"):respond(404,"");
+ }
  if(pathname.startsWith("/api/"))return respond(fixtures[pathname]?200:404,JSON.stringify(fixtures[pathname]||{error:"not_found"}));
  if(pathname.startsWith("/modern/assets/")){
   const file=resolve(root,"assets",pathname.slice("/modern/assets/".length));
@@ -155,6 +172,17 @@ try{
  await visit("/mcp","API access tokens","modern-mcp");
  await visit("/usage","Usage & reports","modern-usage");
  await visit("/account","Change password","modern-account");
+ await visit("/console","Platform Overview","modern-console-overview");
+ assert.equal(await evalJs("document.querySelectorAll('aside .dash-nav button').length"),9,"Console navigation should expose all configured sections");
+ await visit("/console/organizations","Organizations","modern-console-organizations");
+ await evalJs("([...document.querySelectorAll('button')].find(x=>x.textContent.trim()==='Members'))?.click()");
+ await sleep(120);
+ assert.ok(await evalJs("document.querySelector('[role=dialog]')?.textContent.includes('member@example.test')"),"Workspace member inspector must show server-backed members");
+ await evalJs("([...document.querySelectorAll('[role=dialog] button')].find(x=>x.textContent.trim()==='Close'))?.click()");
+ await visit("/console/landing","Landing content editor","modern-console-landing");
+ await visit("/console/billing","Subscriptions","modern-console-billing");
+ await visit("/console/brand","Brand assets","modern-console-brand");
+
  await visit("/features","A new standard in","modern-features-scroll");
  assert.equal(await evalJs("document.querySelectorAll('.features-grid .feature-card').length"),6,"Landing content cards must be present");
  assert.ok(await evalJs("([...document.querySelectorAll('.features-grid .feature-card')].every(el=>{const css=getComputedStyle(el);return css.opacity==='1'&&css.display!=='none'&&css.visibility!=='hidden'}))"),"Landing cards must never be hidden by reveal effects");
@@ -169,5 +197,8 @@ try{
  await visit("/install","Use it where you","modern-install-mobile");
  assert.ok(await evalJs("document.querySelector('.wc-nav-install')!==null"),"Mobile Install CTA missing");
  await visit("/account","Change password","modern-account-mobile");
+ await visit("/console","Platform Overview","modern-console-mobile");
+ assert.ok(await evalJs("document.querySelector('.mobile-dash-open')!==null"),"Mobile console navigation toggle must exist");
+
  console.log("PASS modern shadcn landing, account, device/workbench, usage, pricing, checkout and billing desktop/mobile");
 }finally{ws?.close();proc.kill("SIGTERM");server.close();try{rmSync(profile,{recursive:true,force:true})}catch{}}
