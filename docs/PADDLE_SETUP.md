@@ -20,6 +20,12 @@ Paddle webhook can provision or update entitlements.
    - `PADDLE_CLIENT_TOKEN=test_...` (sandbox) or `live_...` (production).
    - `PADDLE_API_KEY=...` (server-side secret).
    - `PADDLE_WEBHOOK_SECRET=pdl_ntfset_...` (notification endpoint secret).
+   - For real payments, keep `PADDLE_LIVE_RELEASE_VERIFIED=false` until
+     the merchant account and checkout domain are approved, a genuine
+     sandbox checkout and end-to-end webhooks pass, complete legal notices
+     are published, and a live checkout acceptance has been verified.
+     Only then set this flag to `true` on the server; setting Paddle API
+     keys alone will **not** enable live payment collection.
 4. Create a Paddle notification destination at
    `https://wecommander.webrising.tr/webhooks/paddle`. Subscribe to
    `subscription.created`, `subscription.activated`, `subscription.updated`,
