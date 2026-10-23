@@ -1,6 +1,6 @@
 # WECOMMANDER — Super Admin Master Plan
 
-Status: IN PROGRESS (2026-10-23). Full CI passed on previous baseline. User detail, remaining admin translations and browser/API acceptance added; latest CI and production release gates still require verification.
+Status: IN PROGRESS (2026-10-23). User detail and localized administration tables committed; Gateway and integration checks passed. Cross-platform latest full CI and production browser acceptance remain open.
 
 ## Decision
 
@@ -48,6 +48,7 @@ Legend: [x] implementation committed, [ ] acceptance or implementation still req
 - [x] User listing/search/pagination, audited disable/enable with password reauthentication.
 - [x] User session inventory and audited forced session revocation, excluding own session and protected platform administrators.
 - [x] Password/token-free user detail panel with platform grant, verification state, workspace membership roles, session count and accessible modal; API/browser/authorization tests committed.
+- [x] Turkish/English account table labels and previously untranslated CMS headings covered in visual smoke tests.
 - [x] Workspace membership browser and viewer/operator/admin role changes with step-up and owner-role protection.
 - [x] Organization-specific quota overrides and editable plan limits.
 - [x] Server-side organization search, 25-row pagination/total counts; user totals and pagination boundary checks.
