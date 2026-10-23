@@ -76,7 +76,7 @@ Write-Output "WECOMMANDER_TASK_RUNNING"
   }
   foreach ($alias in $aliases) {
     try {
-      return (New-Object System.Security.Principal.NTAccount($alias)).Translate(
+      return ([System.Security.Principal.NTAccount]::new($alias)).Translate(
         [System.Security.Principal.SecurityIdentifier]
       ).Value
     } catch {
