@@ -495,6 +495,20 @@ const memberId=memberSeed.rows[0].id;
 await acceptanceDb.query(
   "insert into organization_members(organization_id,user_id,role) values($1,$2,'viewer')",
   [membershipOrg,memberId]);
+const workspaceDirectory=await fetch(base+"/api/console/organizations?limit=1&offset=0&q=Test",{headers:{Cookie:browserCookies}});
+assert.equal(workspaceDirectory.status,200);
+const workspaceDirectoryData=await workspaceDirectory.json();
+assert.equal(workspaceDirectoryData.items.length<=1,true,"Organization directory must honor page size");
+assert.ok(Number.isInteger(workspaceDirectoryData.total),"Organization list exposes exact total");
+const filteredUnknownOrg=await fetch(base+"/api/console/organizations?limit=25&q=__no_such_workspace_289df4__",{
+ headers:{Cookie:browserCookies},
+});
+assert.equal(filteredUnknownOrg.status,200);
+assert.equal((await filteredUnknownOrg.json()).total,0);
+const inaccessibleOrgList=await fetch(base+"/api/console/organizations?limit=25",{
+ headers:{"Authorization":"Bearer ci-control-key-0123456789-0123456789"},
+});
+assert.equal(inaccessibleOrgList.status,403,"Tenant control token must not view the platform directory");
 const membersResult=await fetch(base+"/api/console/organizations/members?organizationId="+membershipOrg,{headers:{Cookie:browserCookies}});
 assert.equal(membersResult.status,200);
 assert.ok((await membersResult.json()).items.some(item=>item.user_id===memberId));
