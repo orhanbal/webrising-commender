@@ -2,12 +2,13 @@
 
 Son gözden geçirme: 2026-10-24. Öncelik: eşdeğerlik > güvenilirlik/kabul > farklılaşma. Yeni SaaS/ticari özelliklere girilmeden önce aşağıdaki kapsamdaki eksikler kapatılacak.
 
-## Güncel uygulama durumu (2026-10-24, kod incelemesi)
-- **Tam CI geçip Linux Agent E2E onayı almış:** `fs_read_lines` satır aralığı ve negatif tail; ilk beş dosyalık `fs_read_multiple`. Commit `5e78ab59`.
-- **Kodlandı, güncel HEAD'in CI kabulü bekliyor:** `fs_read_multiple` on dosya, actor/tenant/cihaz izole sayfalı arama oturumları, `get_recent_tool_calls`, `get_usage_stats`, `terminal_read_page`, dosya yazma/değiştirmede geçici dosya + atomik değiştirme, `fs_append`, `fs_replace` SHA-256 önkoşul denetimi, `policy_info` salt okunur ajan politika raporu.
-- **Kısmi:** Arama oturumu sayfalama var; native Agent henüz gerçek akışlı arama/askıya alma yeteneği sunmuyor. Geçici arama sonuçları Gateway belleğinde tutuluyor ve yeniden başlatmada korunmuyor. Terminal çıktısı kaydırmalı geçmişi son 1 MiB ile sınırlı; tam kalıcı süreç çıktısı sayfalaması yok.
-- **Açık:** Excel/DOCX/PDF formatlarına özel araçlar; işlemi geri alma/sürümleme; gerçek ChatGPT/Claude MCP kabulü; üç işletim sistemi fiziksel kabulü; platform imzalama/noter; kullanıcı paneli tüm işlev kabulü.
-- `main` içindeki HEAD her zaman kabul edilmiş sürüm değildir. Güncel CI sonucuna bakılmadan tüm alt maddeleri tamamlanmış sayma.
+## Güncel uygulama durumu (2026-10-24 02.00 CI/P0 doğrulaması)
+- **CI PASS (kanıt):** `930b5e7931eb9d09b61b97688a6aa92e926ad79b` commit'inde `ci` run `40036280462` içindeki **17/17 job başarıyla tamamlandı** (Rust, Windows/macOS derlemeleri, Linux gerçek Agent E2E, gateway/integration, Compose, Windows service smoke, kurulum syntax, kabul artifact'leri). `platform-distribution` run `40036735981` de başarılı.
+- **Yeni test commit'i, henüz kabul değil:** `97e584f8ec7db1829c05bd5bdcf6cf7259e010f4` ile gerçek Agent E2E'ye 10 dosyalı batch, 11 dosyalı negatif sınır, dosya boyutu limiti, asenkron arama oturumu başlat/sonuç sayfalama/durdurma ve geçersiz sayfa testi eklendi. Bu commit'in CI sonucu ayrıca doğrulanmadan PASS sayılmaz.
+- **CI'da mevcut P0:** `fs_read_lines` pozitif/negatif satır sayfalama, `fs_read_multiple` (1–10), actor/tenant/cihaz izole arama oturumları, `get_recent_tool_calls`, `get_usage_stats`, `terminal_read_page`, atomik dosya yazma, `fs_append`, `fs_replace` SHA-256 önkoşulu ve `policy_info`. Her birinin kapsamı ilgili testlerin doğruladığı kadar kabul edilir.
+- **Kısmi:** Arama oturumları asenkron snapshot sağlar; Agent tarafında gerçek akışlı arama/askıya alma yok. Gateway yeniden başlatıldığında oturumlar kaybolur. PTY çıktı geçmişi son 1 MiB ile sınırlıdır; kalıcı tam çıktı sayfalama yok. Atomik yazma mevcut olsa da otomatik rollback/sürümleme yok.
+- **Açık:** Excel/DOCX/PDF formatlarına özel araçlar, gerçek ChatGPT/Claude MCP kabulü, üç OS fiziksel kabulü, platform imzalama/noter, kullanıcı paneli tam işlev kabulü.
+- `main` HEAD her zaman kabul edilmiş sürüm değildir. Her yeni commit'in CI sonucu ve Agent E2E kanıtı ayrıca doğrulanır.
 
 ## Karşılaştırma kaynağı
 - Desktop Commander'ın yayımlanan MCP araç listesi: https://github.com/mcp/wonderwhy-er/desktop-commander
