@@ -16,6 +16,7 @@ const fixtures={
  "/api/usage":{monthCalls:42,limit:100,dailyAverage:6,resetAt:"2026-11-01T00:00:00Z",daily:[1,2,3,4,5,6,7].map((n)=>({day:"2026-10-"+String(10+n),calls:n*2})),months:[],topTools:[]},
  "/api/activity":{items:[{tool:"direct.command",outcome:"success",created_at:new Date().toISOString()}]},
  "/api/billing":{mode:"saas",entitled:true,plan:{key:"pro",name:"Pro"},subscription:{status:"active",provider:"paddle",currentPeriodEnd:new Date().toISOString()},usage:{devices:1}},
+ "/api/billing/support-requests":{items:[{id:"123e4567-e89b-42d3-a456-426614174000",type:"refund",message:"Please review my payment",status:"pending",resolution_note:"",created_at:new Date().toISOString()}]},
  "/api/public/downloads":{available:false,releaseUrl:"https://github.com/orhanbal/webrising-commender/releases",tagName:null,assets:[]},
  "/api/public/site-content":{item:null},
  "/api/console/me":{email:"test@example.com",userId:"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",platformRole:"super_admin"},
@@ -26,6 +27,7 @@ const fixtures={
  "/api/console/devices":{items:[{id:"11111111-1111-4111-8111-111111111111",name:"Test Windows Device",organization_name:"Test Workspace",platform:"windows"}]},
  "/api/console/audit":{items:[{item_id:"platform:1",tool:"membership.role_change",outcome:"success",risk:"high",organization_name:"WECOMMANDER Platform"}]},
  "/api/console/billing":{plans:[{key:"pro",name:"Pro",max_devices:5,max_members:2,max_api_tokens:4,active:true}],subscriptions:[]},
+ "/api/console/billing/requests":{items:[{id:"123e4567-e89b-42d3-a456-426614174000",organization:"Test Workspace",requested_by_email:"test@example.com",type:"refund",message:"Please review my payment",status:"pending",resolution_note:"",created_at:new Date().toISOString()}]},
  "/api/console/system":{mailConfigured:false,signupEnabled:false,deploymentMode:"saas",mailQueue:{pending:0,delivered:0,failed:0}},
  "/api/console/site-content":{items:[]},
  "/api/auth/organizations":{items:[{id:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",name:"Test Workspace",role:"owner"}]},
@@ -165,6 +167,7 @@ try{
  assert.equal(await evalJs("document.documentElement.lang"),"en");
 
  await visit("/billing","Plans & billing","modern-billing");
+ assert.ok(await evalJs("document.body.textContent.includes('Cancellation')||document.body.textContent.includes('Abonelik talepleri')"),"Owner billing view must expose cancellation/refund request form");
  await visit("/devices","Connected machines","modern-devices");
  await visit("/terminal","Workspace","modern-terminal");
  await visit("/files","List files","modern-files");
@@ -181,6 +184,7 @@ try{
  await evalJs("([...document.querySelectorAll('[role=dialog] button')].find(x=>x.textContent.trim()==='Close'))?.click()");
  await visit("/console/landing","Landing content editor","modern-console-landing");
  await visit("/console/billing","Subscriptions","modern-console-billing");
+ assert.ok(await evalJs("document.body.textContent.includes('Cancellation & refund requests')"),"Super admin must expose support-request queue");
  await visit("/console/brand","Brand assets","modern-console-brand");
 
  await visit("/features","A new standard in","modern-features-scroll");
