@@ -116,21 +116,21 @@ export const landingCopySections = [
       "MCP protokolü üzerinden uyumlu yapay zekâ istemcileriyle bağlantı oluşturabilirsiniz.",
       "Paket ücretini nerede ödeyeceğim?",
       "Bulut aboneliği etkinleştirildiyse ödeme Paddle tarafından sunulan güvenli checkout ekranında tamamlanır.",
-      "Self-hosted sürümü kullanabilir miyim?"
+      "Self-hosted sürümü kullanabilir miyim?",
+      "Evet, kendi altyapınızda çalıştırma için dağıtım modu destekleniyor. Kurulum ve işletim sorumluluğu size ait olabilir."
     ]
   },
   {
     "name": "Final CTA",
     "keys": [
-      "Evet, kendi altyapınızda çalıştırma için dağıtım modu destekleniyor. Kurulum ve işletim sorumluluğu size ait olabilir.",
       "Cihazların hazır.",
-      "Sıra sende."
+      "Sıra sende.",
+      "Daha akıllı bir çalışma alanı oluşturmak için şimdi başla."
     ]
   },
   {
     "name": "Footer",
     "keys": [
-      "Daha akıllı bir çalışma alanı oluşturmak için şimdi başla.",
       "Güvenli cihaz yönetimi ve yapay zekâ araçları için tek çalışma alanı.",
       "Ürün",
       "Özellikler",
