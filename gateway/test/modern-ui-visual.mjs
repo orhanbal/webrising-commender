@@ -31,6 +31,7 @@ const fixtures={
  "/api/console/system":{mailConfigured:false,signupEnabled:false,deploymentMode:"saas",mailQueue:{pending:0,delivered:0,failed:0}},
  "/api/console/incidents":{items:[]},
  "/api/console/site-content":{items:[]},
+ "/api/console/media":{items:[]},
  "/api/auth/organizations":{items:[{id:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",name:"Test Workspace",role:"owner"}]},
  "/api/organization":{item:{id:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",name:"Test Workspace"}},
  "/api/tokens":{items:[{id:"22222222-2222-4222-8222-222222222222",name:"Test MCP",role:"operator",created_at:new Date().toISOString(),last_used_at:null,revoked_at:null}]},
@@ -200,6 +201,7 @@ try{
  assert.equal(await evalJs("document.querySelector('[role=dialog][aria-modal=true]')===null"),true,"Escape must close the admin dialog");
 
  await visit("/console/landing","Landing content editor","modern-console-landing");
+ assert.ok(await evalJs("document.body.textContent.includes('Landing media library')"),"Landing CMS must expose uploaded-media management");
  await evalJs("(()=>{const s=[...document.querySelectorAll('select')].find(el=>[...el.options].some(o=>o.value==='FAQ'));if(!s)throw new Error('FAQ section selector missing');s.value='FAQ';s.dispatchEvent(new Event('change',{bubbles:true}))})()");
  await sleep(100);
  assert.equal(await evalJs("document.querySelectorAll('fieldset').length"),5,"CMS must show five correctly paired FAQ editor cards");
