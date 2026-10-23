@@ -22,12 +22,12 @@ export async function getDownloads():Promise<ReleaseInfo>{
       headers:{"Accept":"application/vnd.github+json","User-Agent":"WECOMMANDER-Gateway"},
       signal:controller.signal,
     });
-    if(!response.ok)return noRelease;
+    if(!response.ok){cache={value:noRelease,expiresAt:Date.now()+5*60_000};return noRelease;}
     const data=await response.json() as {
       tag_name?:unknown;html_url?:unknown;draft?:unknown;prerelease?:unknown;
       assets?:Array<{name?:unknown;browser_download_url?:unknown;size?:unknown}>;
     };
-    if(data.draft===true || data.prerelease===true)return noRelease;
+    if(data.draft===true || data.prerelease===true){cache={value:noRelease,expiresAt:Date.now()+5*60_000};return noRelease;}
     const validAssets=(Array.isArray(data.assets)?data.assets:[])
       .filter(asset=>typeof asset.name==="string" && names[asset.name]!==undefined)
       .slice(0,8).flatMap(asset=>{
@@ -48,6 +48,7 @@ export async function getDownloads():Promise<ReleaseInfo>{
     cache={value,expiresAt:Date.now()+10*60_000};
     return value;
   }catch{
+    cache={value:noRelease,expiresAt:Date.now()+60_000};
     return noRelease;
   }finally{clearTimeout(timeout)}
 }
