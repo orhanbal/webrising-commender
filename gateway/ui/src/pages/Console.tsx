@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from "react";
-import {Activity,ArrowLeft,Building2,ChevronDown,LayoutDashboard,LogOut,Menu,Monitor,Settings2,ShieldCheck,Users,X} from "lucide-react";
+import {Activity,ArrowLeft,Building2,ChevronDown,LayoutDashboard,LogOut,Menu,Monitor,Settings2,ShieldCheck,FileText,Users,X} from "lucide-react";
 import {api} from "../api";
 import {LanguageSwitcher,t as translate,useLocale} from "../i18n";
 import {Brand,ThemeToggle} from "../App";
@@ -18,6 +18,16 @@ export function ConsolePage({nav,theme,toggle,logout}:{nav:Nav;theme:Theme;toggl
  const [records,setRecords]=useState<Array<Record<string,unknown>>>([]);
  const [recordsError,setRecordsError]=useState("");
  const [recordsBusy,setRecordsBusy]=useState(false);
+ const [cmsLocale,setCmsLocale]=useState<"en"|"tr">("en");
+ const [cmsTitle,setCmsTitle]=useState("");
+ const [cmsSubtitle,setCmsSubtitle]=useState("");
+ const [cmsItems,setCmsItems]=useState<Array<{id:number;hero_title:string;hero_subtitle:string;state:string}>>([]);
+ const [cmsMessage,setCmsMessage]=useState("");
+ const [cmsBusy,setCmsBusy]=useState(false);
+ const reloadCms=async()=>{const data=await api<{items:typeof cmsItems}>("/api/console/site-content?locale="+cmsLocale);setCmsItems(data.items)};
+ useEffect(()=>{if(section!=="Landing CMS"||!admin)return;void reloadCms().catch(e=>setCmsMessage(String(e)))},[section,cmsLocale,admin]);
+ const saveCms=async()=>{setCmsBusy(true);setCmsMessage("");try{await api("/api/console/site-content",{method:"POST",body:JSON.stringify({locale:cmsLocale,heroTitle:cmsTitle,heroSubtitle:cmsSubtitle})});await reloadCms();setCmsMessage("Draft saved.")}catch(e){setCmsMessage(String(e))}finally{setCmsBusy(false)}};
+ const publishCms=async(id:number)=>{setCmsBusy(true);setCmsMessage("");try{await api("/api/console/site-content/publish",{method:"POST",body:JSON.stringify({id})});await reloadCms();setCmsMessage("Published. You can now refresh the landing page.")}catch(e){setCmsMessage(String(e))}finally{setCmsBusy(false)}};
  const [profileOpen,setProfileOpen]=useState(false);
  const profileRef=useRef<HTMLDivElement>(null);
  useEffect(()=>{if(!profileOpen)return;const outside=(event:PointerEvent)=>{if(profileRef.current&&!profileRef.current.contains(event.target as Node))setProfileOpen(false)};const escape=(event:KeyboardEvent)=>{if(event.key==="Escape")setProfileOpen(false)};document.addEventListener("pointerdown",outside);document.addEventListener("keydown",escape);return()=>{document.removeEventListener("pointerdown",outside);document.removeEventListener("keydown",escape)}},[profileOpen]);
@@ -39,7 +49,7 @@ export function ConsolePage({nav,theme,toggle,logout}:{nav:Nav;theme:Theme;toggl
     <p className="text-sm mt-4">{error}</p>
     <button className="mt-6 px-5 py-3 rounded-xl bg-[var(--accent)] text-[var(--accent-ink)] font-semibold" onClick={()=>nav("/login")}>Sign in</button>
    </div></div>;
- const items=[{label:"Overview",icon:LayoutDashboard},{label:"Users",icon:Users},{label:"Organizations",icon:Building2},{label:"Devices",icon:Monitor},{label:"Operations",icon:Activity}];
+ const items=[{label:"Overview",icon:LayoutDashboard},{label:"Users",icon:Users},{label:"Organizations",icon:Building2},{label:"Devices",icon:Monitor},{label:"Operations",icon:Activity},{label:"Landing CMS",icon:FileText}];
  return <div className="dashboard-layout">
   {menu&&<button className="fixed inset-0 bg-black/60 z-[92] md:hidden" aria-label="Close navigation" onClick={()=>setMenu(false)}/>}
   <aside className={"dashboard-sidebar "+(menu?"open":"")} aria-label="Platform administration">
@@ -65,7 +75,7 @@ export function ConsolePage({nav,theme,toggle,logout}:{nav:Nav;theme:Theme;toggl
       <p className="text-sm font-semibold text-[var(--accent)] mb-2">WECOMMANDER CONTROL CENTER</p>
       <h1 className="dash-title">{section==="Overview"?"Platform Overview":section}</h1>
       <p className="muted mt-3 mb-8">Platform-wide counts from the production database. Signed in as {admin.email}.</p>
-      {section==="Overview"?<><div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      {section==="Landing CMS"?<div className="rounded-2xl bg-[var(--surface)] border border-[var(--stroke)] p-6 max-w-4xl"><h2 className="font-bold text-xl mb-4">Landing hero editor</h2><p className="muted mb-4 text-sm">Edit localized hero copy, save revisions, then publish. Published revisions can be restored by publishing them again.</p><label className="block text-sm font-semibold mb-2">Language</label><select className="w-full rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 mb-4" value={cmsLocale} onChange={e=>setCmsLocale(e.target.value as "en"|"tr")}><option value="en">English</option><option value="tr">Türkçe</option></select><label className="block text-sm font-semibold mb-2">Hero title</label><input maxLength={160} className="w-full rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 mb-4" value={cmsTitle} onChange={e=>setCmsTitle(e.target.value)}/><label className="block text-sm font-semibold mb-2">Hero description</label><textarea maxLength={500} className="w-full rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 mb-4" rows={4} value={cmsSubtitle} onChange={e=>setCmsSubtitle(e.target.value)}/><button disabled={cmsBusy||!cmsTitle.trim()||!cmsSubtitle.trim()} onClick={()=>void saveCms()} className="px-5 py-3 bg-[var(--accent)] text-[var(--accent-ink)] rounded-xl font-bold disabled:opacity-50">Save draft</button><p role="status" className="text-sm mt-3">{cmsMessage}</p><h3 className="text-lg font-bold mt-8 mb-3">Revisions</h3>{cmsItems.map(item=><div key={item.id} className="flex flex-wrap items-center justify-between border-t border-[var(--stroke)] py-4 gap-4"><div className="min-w-0"><strong>{item.hero_title}</strong><div className="muted text-sm">{item.state} · revision {item.id}</div></div><button disabled={cmsBusy||item.state==="published"} className="rounded-xl border border-[var(--stroke)] px-4 py-2 disabled:opacity-50" onClick={()=>void publishCms(item.id)}>{item.state==="published"?"Published":"Publish"}</button></div>)}</div>:section==="Overview"?<><div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
        {([{label:"Total users",value:overview?.users,icon:Users},{label:"Organizations",value:overview?.organizations,icon:Building2},{label:"Registered devices",value:overview?.devices,icon:Monitor},{label:"Recently active devices",value:overview?.activeDevices,icon:Activity}]).map(item=><section key={item.label} className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-6">
         <div className="flex justify-between items-center"><span className="muted text-sm">{item.label}</span><item.icon size={20} className="text-[var(--accent)]"/></div>
         <div className="text-4xl font-bold mt-5">{item.value?.toLocaleString()??"—"}</div>
