@@ -559,6 +559,39 @@ const memberId=memberSeed.rows[0].id;
 await acceptanceDb.query(
   "insert into organization_members(organization_id,user_id,role) values($1,$2,'viewer')",
   [membershipOrg,memberId]);
+// Combined audit feed supports server-side risk/source filters and page boundaries.
+const tenantAudit=await acceptanceDb.query(
+  "insert into audit_logs(organization_id,actor,tool,risk,outcome,detail) values($1,'ci-actor','ci.audit.search.marker','low','success','test only') returning id",
+  [browserMe.organizationId],
+);
+const platformAudit=await acceptanceDb.query(
+  "insert into platform_admin_audit(actor_user_id,action,detail) values($1,'ci.platform.audit.marker','test only') returning id",
+  [browserMe.userId],
+);
+const auditHeaders={Cookie:browserCookies};
+const auditTenant=await fetch(base+"/api/console/audit?source=tenant&risk=low&limit=1&q=ci.audit.search.marker",{headers:auditHeaders});
+assert.equal(auditTenant.status,200);
+const tenantAuditData=await auditTenant.json();
+assert.equal(tenantAuditData.total,1);
+assert.equal(tenantAuditData.items.length,1);
+assert.equal(tenantAuditData.items[0].source,"tenant");
+assert.equal(tenantAuditData.items[0].item_id,"tenant:"+tenantAudit.rows[0].id);
+const pagedAudit=await fetch(base+"/api/console/audit?source=tenant&risk=low&limit=1&offset=1&q=ci.audit.search.marker",{headers:auditHeaders});
+assert.equal(pagedAudit.status,200);
+assert.equal((await pagedAudit.json()).items.length,0);
+const auditPlatform=await fetch(base+"/api/console/audit?source=platform&risk=high&q=ci.platform.audit.marker",{headers:auditHeaders});
+assert.equal(auditPlatform.status,200);
+const platformAuditData=await auditPlatform.json();
+assert.equal(platformAuditData.total,1);
+assert.equal(platformAuditData.items[0].source,"platform");
+const mismatchedRisk=await fetch(base+"/api/console/audit?source=platform&risk=critical&q=ci.platform.audit.marker",{headers:auditHeaders});
+assert.equal((await mismatchedRisk.json()).total,0);
+const invalidAuditFilter=await fetch(base+"/api/console/audit?source=invalid",{headers:auditHeaders});
+assert.equal(invalidAuditFilter.status,400,"Audit source filter rejects unsupported values");
+const forbiddenAudit=await fetch(base+"/api/console/audit?source=platform");
+assert.equal(forbiddenAudit.status,401,"Unprivileged clients cannot inspect global audit history");
+await acceptanceDb.query("delete from audit_logs where id=$1",[tenantAudit.rows[0].id]);
+await acceptanceDb.query("delete from platform_admin_audit where id=$1",[platformAudit.rows[0].id]);
 const userDirectory=await fetch(base+"/api/console/users?limit=1&offset=0&q=console-role-fixture",{
  headers:{Cookie:browserCookies},
 });
