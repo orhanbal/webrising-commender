@@ -176,7 +176,7 @@ try{
  await visit("/usage","Usage & reports","modern-usage");
  await visit("/account","Change password","modern-account");
  await visit("/console","Platform Overview","modern-console-overview");
- assert.equal(await evalJs("document.querySelectorAll('aside .dash-nav button').length"),9,"Console navigation should expose all configured sections");
+ assert.equal(await evalJs("document.querySelectorAll('aside .dash-nav button').length"),10,"Console navigation should expose all configured sections");
  await visit("/console/organizations","Organizations","modern-console-organizations");
  await evalJs("([...document.querySelectorAll('button')].find(x=>x.textContent.trim()==='Members'))?.click()");
  await sleep(120);
