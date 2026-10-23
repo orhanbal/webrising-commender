@@ -161,7 +161,7 @@ export const commonEnglish:Record<string,string> = {
   "Güvenli kimlik doğrulama ve roller": "Secure authentication and roles",
   "Hassas işlemler için kullanıcı kontrolü": "User approval for sensitive actions",
   "WECOMMANDER · Güvenli Remote MCP": "WECOMMANDER · Secure Remote MCP",
-  "Bu kurulumda genel kayıt kapalıdır. Self-hosted yönetici hesabınızla giriş yapın.": "Public sign-up is disabled for this deployment. Sign in using your self-hosted administrator account.",
+  "Bu kurulumda genel kayıt kapalıdır. Self-hosted yönetici hesabınızla giriş yapın.": "Public sign-up is disabled for this deployment. Sign in with your self-hosted administrator account.",
   "Çalışma alanı adı": "Workspace name",
   "En az 12 karakter; güçlü bir parola kullanın.": "Use a strong password with at least 12 characters.",
   "Henüz hesabınız yok mu?": "Don't have an account?",
@@ -242,5 +242,18 @@ export const commonEnglish:Record<string,string> = {
   "Doğrulama bağlantısı geçersiz veya süresi dolmuş.": "The verification link is invalid or expired.",
   "Select language": "Select language",
   "Dil seçin": "Select language",
-  "Dil": "Language"
+  "Dil": "Language",
+  "İşlem yapılıyor…": "Working…",
+  "Ödeme hazırlanıyor…": "Preparing checkout…",
+  "Öne Çıkan": "Featured",
+  "Faturalama": "Billing",
+  "Misafir": "Guest",
+  "Yeni çalışma alanı ekle": "Add workspace",
+  "Bildirimi kapat": "Dismiss notification",
+  "Cihaz seçilmedi": "No device selected",
+  "Uygulama menüsü": "App menu",
+  "Son aktiviteler": "Recent activity",
+  "Onaylıyor musunuz?": "Do you approve?",
+  "E-posta adresi": "Email address",
+  "WECOMMANDER örnek arayüzü": "WECOMMANDER interface preview"
 };
