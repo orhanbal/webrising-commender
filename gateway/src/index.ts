@@ -1647,7 +1647,11 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         return void json(res,201,{id:saved.rows[0].id});
       }
       if (req.method === "POST" && url.pathname === "/api/console/site-content/publish") {
-        const payload=z.object({id:z.number().int().positive()}).parse(await readJson(req));
+        const payload=z.object({id:z.number().int().positive(),currentPassword:z.string().min(12).max(256)}).parse(await readJson(req));
+        const publisher=await db.query<{password_hash:string}>(
+          "select password_hash from users where id=$1 and disabled_at is null",[principal.userId]);
+        if(!publisher.rows[0]||!(await verifyPassword(payload.currentPassword,publisher.rows[0].password_hash)))
+          return void json(res,403,{error:"reauthentication_failed"});
         const client=await db.connect();
         try {
           await client.query("begin");
