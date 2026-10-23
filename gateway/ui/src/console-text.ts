@@ -199,6 +199,10 @@ export const consoleTurkish:Record<string,string> = {
   "Workspace memberships": "Çalışma alanı üyelikleri",
   "Joined": "Katılım tarihi",
   "No workspace memberships.": "Çalışma alanı üyeliği bulunamadı.",
-  "This view does not expose passwords, tokens or raw session credentials.": "Bu ekranda parolalar, tokenlar veya ham oturum kimlik bilgileri gösterilmez."
+  "This view does not expose passwords, tokens or raw session credentials.": "Bu ekranda parolalar, tokenlar veya ham oturum kimlik bilgileri gösterilmez.",
+  "Questions and answers are paired so publishing cannot separate a question from its answer.": "Sorular ve yanıtlar birlikte düzenlenir; böylece yayın sırasında birbirlerinden ayrılmazlar.",
+  "Question": "Soru",
+  "Answer": "Yanıt",
+  "FAQ": "Sık Sorulan Sorular"
 };
 export function consoleText(source:string,locale:"en"|"tr"):string {return locale==="tr"?(consoleTurkish[source]??source):source;}
