@@ -8,10 +8,13 @@ import {AuthPage} from "./pages/Auth";
 import {PlansPage} from "./pages/Plans";
 import {DashboardPage} from "./pages/Dashboard";
 import {BillingPage} from "./pages/Billing";
+import {DevicesPage} from "./pages/Devices";
+import {WorkspacePage} from "./pages/Workspace";
+import {UsagePage} from "./pages/Usage";
 
 export type Nav=(path:string)=>void;
 export type Theme="light"|"dark";
-const routes=new Set(["/","/features","/how-it-works","/login","/register","/forgot-password","/reset-password","/verify","/pricing","/checkout","/dashboard","/account","/billing","/privacy","/terms"]);
+const routes=new Set(["/","/features","/how-it-works","/login","/register","/forgot-password","/reset-password","/verify","/pricing","/checkout","/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage","/privacy","/terms"]);
 export function Brand({onClick,subtitle=false}:{onClick?:()=>void;subtitle?:boolean}){return <a href="/" onClick={e=>{if(onClick){e.preventDefault();onClick()}}} aria-label="WECOMMANDER ana sayfa" className="inline-flex flex-col gap-1 items-start"><img className="logo-light" src="/assets/wecommander-white.svg" alt="WECOMMANDER"/><img className="logo-dark" src="/assets/wecommander-black.svg" alt="" aria-hidden="true"/>{subtitle&&<span className="text-[11px] tracking-wide text-[var(--muted)]">Remote MCP · AI Workspace</span>}</a>}
 export function NavLink({to,nav,children,className}:{to:string;nav:Nav;children:ReactNode;className?:string}){return <a href={to} className={className} onClick={e=>{if(e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey){e.preventDefault();nav(to)}}}>{children}</a>}
 export function ThemeToggle({theme,onToggle}:{theme:Theme;onToggle:()=>void}){return <button type="button" className="theme-button" onClick={onToggle} aria-label={theme==="dark"?"Açık temaya geç":"Koyu temaya geç"} title={theme==="dark"?"Windows açık tema":"Windows koyu tema"}>{theme==="dark"?<Sun className="size-[19px]"/>:<Moon className="size-[19px]"/>}</button>}
@@ -40,7 +43,7 @@ export default function App(){
  const refresh=async()=>{const me=await getMe();setAccount(me);return me};
  const toggle=()=>{setTheme(old=>{const next=old==="dark"?"light":"dark";localStorage.setItem("wecommander-theme",next);return next})};
  const logout=async()=>{try{await api("/api/auth/logout",{method:"POST"})}catch{}setAccount(null);navigate("/login")};
- const globalHeader=!["/dashboard","/account","/billing"].includes(path);
+ const globalHeader=!["/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage"].includes(path);
  return <div className="app-shell">
   {globalHeader&&<header className="site-header"><div className="container-w"><Brand onClick={()=>navigate("/")}/><nav className="site-nav" aria-label="Ana gezinme"><NavLink to="/features" nav={navigate} className="hide-sm">Özellikler</NavLink><NavLink to="/how-it-works" nav={navigate} className="hide-sm">Nasıl çalışır?</NavLink><NavLink to="/pricing" nav={navigate}>Fiyatlandırma</NavLink></nav><div className="nav-actions"><ThemeToggle theme={theme} onToggle={toggle}/>{account?<Button size="sm" onClick={()=>navigate("/dashboard")}>Panelim <ArrowRight className="size-4"/></Button>:<><Button size="sm" variant="ghost" className="hide-sm" onClick={()=>navigate("/login")}>Giriş Yap</Button><Button size="sm" onClick={()=>navigate("/register")}>Başlayın <ArrowUpRight className="size-4"/></Button></>}<button type="button" aria-label="Menü" className="mobile-menu" onClick={()=>setMobile(x=>!x)}>{mobile?<X/>:<Menu/>}</button></div></div>{mobile&&<div className="px-6 py-4 border-t border-[var(--stroke)] bg-[var(--surface)] flex gap-4"><NavLink to="/features" nav={navigate}>Özellikler</NavLink><NavLink to="/pricing" nav={navigate}>Paketler</NavLink><NavLink to="/login" nav={navigate}>Giriş</NavLink></div>}</header>}
   {["/","/features","/how-it-works"].includes(path)&&<Landing nav={navigate} pricing={pricing}/>}
@@ -49,6 +52,10 @@ export default function App(){
   {path==="/checkout"&&<PlansPage nav={navigate} pricing={pricing} account={account} checkoutMode theme={theme}/>}
   {["/dashboard","/account"].includes(path)&&<DashboardPage nav={navigate} path={path} account={account} checking={checking} refresh={refresh} logout={logout} theme={theme} toggle={toggle}/>}
   {path==="/billing"&&<BillingPage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout} pricing={pricing}/>}
+  {path==="/devices"&&<DevicesPage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
+  {["/terminal","/files","/tasks","/mcp"].includes(path)&&<WorkspacePage nav={navigate} path={path.slice(1) as "terminal"|"files"|"tasks"|"mcp"} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
+  {path==="/usage"&&<UsagePage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
+
   {path==="/privacy"&&<div className="container-w section-modern"><Badge><ShieldCheck size={14}/> Gizlilik</Badge><h1 className="h2 mt-6">Gizlilik</h1><p className="muted mt-6 max-w-2xl">Hesap oturumları güvenli HttpOnly çerezleriyle korunur. Ödeme verileri WECOMMANDER sunucularında saklanmaz; ödeme Paddle tarafından işlenir. Ayrıntılı gizlilik koşulları yayımlanana kadar veri işleme taahhütleri hakkında destek ekibiyle iletişime geçebilirsiniz.</p></div>}
   {path==="/terms"&&<div className="container-w section-modern"><Badge><Command size={14}/> Koşullar</Badge><h1 className="h2 mt-6">Kullanım koşulları</h1><p className="muted mt-6 max-w-2xl">Hizmeti kullanırken yalnızca erişim yetkiniz olan cihazları bağlayın. Abonelik ve faturalama işlemleri Paddle üzerinden yürütülür. Sözleşme metninin tamamı henüz yayımlanmadıysa ödeme etkinleştirilmeden önce sözleşme ve iade koşulları hazırlanmalıdır.</p></div>}
  </div>;
