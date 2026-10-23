@@ -1,0 +1,46 @@
+import {useEffect,useState} from "react";
+import type {ReactNode} from "react";
+import {ArrowRight,ArrowUpRight,Check,ChevronDown,Command,Menu,Moon,ShieldCheck,Sun,X} from "lucide-react";
+import {Button,Badge} from "./components/ui";
+import {getMe,api,type Account,type Pricing} from "./api";
+import {Landing} from "./pages/Landing";
+import {AuthPage} from "./pages/Auth";
+import {PlansPage} from "./pages/Plans";
+import {DashboardPage} from "./pages/Dashboard";
+import {BillingPage} from "./pages/Billing";
+
+export type Nav=(path:string)=>void;
+export type Theme="light"|"dark";
+const routes=new Set(["/","/login","/register","/forgot-password","/reset-password","/verify","/pricing","/checkout","/dashboard","/account","/billing","/privacy","/terms"]);
+export function Brand({onClick,subtitle=false}:{onClick?:()=>void;subtitle?:boolean}){return <a href="/" onClick={e=>{if(onClick){e.preventDefault();onClick()}}} aria-label="WECOMMANDER ana sayfa" className="inline-flex flex-col gap-1 items-start"><img className="logo-light" src="/assets/wecommander-white.svg" alt="WECOMMANDER"/><img className="logo-dark" src="/assets/wecommander-black.svg" alt="" aria-hidden="true"/>{subtitle&&<span className="text-[11px] tracking-wide text-[var(--muted)]">Remote MCP · AI Workspace</span>}</a>}
+export function NavLink({to,nav,children,className}:{to:string;nav:Nav;children:ReactNode;className?:string}){return <a href={to} className={className} onClick={e=>{if(e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey){e.preventDefault();nav(to)}}}>{children}</a>}
+export function ThemeToggle({theme,onToggle}:{theme:Theme;onToggle:()=>void}){return <button type="button" className="theme-button" onClick={onToggle} aria-label={theme==="dark"?"Açık temaya geç":"Koyu temaya geç"} title={theme==="dark"?"Windows açık tema":"Windows koyu tema"}>{theme==="dark"?<Sun className="size-[19px]"/>:<Moon className="size-[19px]"/>}</button>}
+function getPath(){const p=window.location.pathname;return routes.has(p)?p:"/"}
+export default function App(){
+ const [path,setPath]=useState(getPath);
+ const [theme,setTheme]=useState<Theme>(()=>{const saved=localStorage.getItem("wecommander-theme");return saved==="dark"||saved==="light"?saved:matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"});
+ const [account,setAccount]=useState<Account|null>(null);
+ const [checking,setChecking]=useState(true);
+ const [pricing,setPricing]=useState<Pricing|null>(null);
+ const [mobile,setMobile]=useState(false);
+ useEffect(()=>{const fn=()=>{setPath(getPath());setMobile(false)};window.addEventListener("popstate",fn);return()=>window.removeEventListener("popstate",fn)},[]);
+ useEffect(()=>{const mq=matchMedia("(prefers-color-scheme: dark)");const sync=()=>{if(!localStorage.getItem("wecommander-theme"))setTheme(mq.matches?"dark":"light")};mq.addEventListener("change",sync);return()=>mq.removeEventListener("change",sync)},[]);
+ useEffect(()=>{document.documentElement.classList.toggle("light",theme==="light");document.documentElement.style.colorScheme=theme;document.querySelector('meta[name="theme-color"]')?.setAttribute("content",theme==="light"?"#f3f3f3":"#202020")},[theme]);
+ useEffect(()=>{getMe().then(me=>{setAccount(me);setChecking(false)});api<Pricing>("/api/public/plans").then(setPricing).catch(()=>setPricing(null))},[]);
+ const navigate:Nav=to=>{const u=new URL(to,location.origin);if(u.origin!==location.origin){location.assign(to);return}history.pushState(null,"",u.pathname+u.search+u.hash);setPath(getPath());setMobile(false);window.scrollTo({top:0,behavior:"instant"})};
+ const refresh=async()=>{const me=await getMe();setAccount(me);return me};
+ const toggle=()=>{setTheme(old=>{const next=old==="dark"?"light":"dark";localStorage.setItem("wecommander-theme",next);return next})};
+ const logout=async()=>{try{await api("/api/auth/logout",{method:"POST"})}catch{}setAccount(null);navigate("/login")};
+ const globalHeader=!["/dashboard","/account","/billing"].includes(path);
+ return <div className="app-shell">
+  {globalHeader&&<header className="site-header"><div className="container-w"><Brand onClick={()=>navigate("/")}/><nav className="site-nav" aria-label="Ana gezinme"><NavLink to="/#features" nav={navigate} className="hide-sm">Özellikler</NavLink><NavLink to="/#how-it-works" nav={navigate} className="hide-sm">Nasıl çalışır?</NavLink><NavLink to="/pricing" nav={navigate}>Fiyatlandırma</NavLink></nav><div className="nav-actions"><ThemeToggle theme={theme} onToggle={toggle}/>{account?<Button size="sm" onClick={()=>navigate("/dashboard")}>Panelim <ArrowRight className="size-4"/></Button>:<><Button size="sm" variant="ghost" className="hide-sm" onClick={()=>navigate("/login")}>Giriş Yap</Button><Button size="sm" onClick={()=>navigate("/register")}>Başlayın <ArrowUpRight className="size-4"/></Button></>}<button type="button" aria-label="Menü" className="mobile-menu" onClick={()=>setMobile(x=>!x)}>{mobile?<X/>:<Menu/>}</button></div></div>{mobile&&<div className="px-6 py-4 border-t border-[var(--stroke)] bg-[var(--surface)] flex gap-4"><NavLink to="/#features" nav={navigate}>Özellikler</NavLink><NavLink to="/pricing" nav={navigate}>Paketler</NavLink><NavLink to="/login" nav={navigate}>Giriş</NavLink></div>}</header>}
+  {path==="/"&&<Landing nav={navigate} pricing={pricing}/>}
+  {["/login","/register","/forgot-password","/reset-password","/verify"].includes(path)&&<AuthPage path={path} nav={navigate} refresh={refresh} pricing={pricing}/>}
+  {path==="/pricing"&&<PlansPage nav={navigate} pricing={pricing} account={account}/>}
+  {path==="/checkout"&&<PlansPage nav={navigate} pricing={pricing} account={account} checkoutMode theme={theme}/>}
+  {["/dashboard","/account"].includes(path)&&<DashboardPage nav={navigate} path={path} account={account} checking={checking} refresh={refresh} logout={logout} theme={theme} toggle={toggle}/>}
+  {path==="/billing"&&<BillingPage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout} pricing={pricing}/>}
+  {path==="/privacy"&&<div className="container-w section-modern"><Badge><ShieldCheck size={14}/> Gizlilik</Badge><h1 className="h2 mt-6">Gizlilik</h1><p className="muted mt-6 max-w-2xl">Hesap oturumları güvenli HttpOnly çerezleriyle korunur. Ödeme verileri WECOMMANDER sunucularında saklanmaz; ödeme Paddle tarafından işlenir. Ayrıntılı gizlilik koşulları yayımlanana kadar veri işleme taahhütleri hakkında destek ekibiyle iletişime geçebilirsiniz.</p></div>}
+  {path==="/terms"&&<div className="container-w section-modern"><Badge><Command size={14}/> Koşullar</Badge><h1 className="h2 mt-6">Kullanım koşulları</h1><p className="muted mt-6 max-w-2xl">Hizmeti kullanırken yalnızca erişim yetkiniz olan cihazları bağlayın. Abonelik ve faturalama işlemleri Paddle üzerinden yürütülür. Sözleşme metninin tamamı henüz yayımlanmadıysa ödeme etkinleştirilmeden önce sözleşme ve iade koşulları hazırlanmalıdır.</p></div>}
+ </div>;
+}
