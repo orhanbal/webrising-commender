@@ -51,26 +51,55 @@ fn run_service() -> Result<()> {
         .context("failed to register Windows service control handler")?;
 
     status_handle
-        .set_service_status(status(ServiceState::Running, ServiceControlAccept::STOP))
-        .context("failed to report Windows service Running state")?;
+        .set_service_status(status(ServiceState::StartPending, ServiceControlAccept::empty()))
+        .context("failed to report Windows service StartPending state")?;
 
-    let config_path = CONFIG_PATH
+    // Initialize before marking the Windows service Running. A bad config
+    // previously caused an immediate silent service exit with no useful status.
+    let config_result = CONFIG_PATH
         .get()
         .cloned()
-        .ok_or_else(|| anyhow!("Windows service config path is unavailable"))?;
-    let config = AgentConfig::load(&config_path)?;
+        .ok_or_else(|| anyhow!("Windows service config path is unavailable"))
+        .and_then(|path| AgentConfig::load(&path));
+    let config = match config_result {
+        Ok(config) => config,
+        Err(error) => {
+            let _ = status_handle.set_service_status(ServiceStatus {
+                exit_code: ServiceExitCode::ServiceSpecific(1), // Configuration inaccessible/invalid
+                ..status(ServiceState::Stopped, ServiceControlAccept::empty())
+            });
+            return Err(error);
+        }
+    };
 
-    let runtime = tokio::runtime::Builder::new_multi_thread()
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
-        .context("failed to create Windows service async runtime")?;
-
-    let run_result = runtime.block_on(run_until_shutdown(config, shutdown_rx));
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            let _ = status_handle.set_service_status(ServiceStatus {
+                exit_code: ServiceExitCode::ServiceSpecific(2), // Runtime initialization
+                ..status(ServiceState::Stopped, ServiceControlAccept::empty())
+            });
+            return Err(error).context("failed to create Windows service async runtime");
+        }
+    };
 
     status_handle
-        .set_service_status(status(ServiceState::Stopped, ServiceControlAccept::empty()))
+        .set_service_status(status(ServiceState::Running, ServiceControlAccept::STOP))
+        .context("failed to report Windows service Running state")?;
+    let run_result = runtime.block_on(run_until_shutdown(config, shutdown_rx));
+    status_handle
+        .set_service_status(ServiceStatus {
+            exit_code: if run_result.is_ok() {
+                ServiceExitCode::Win32(0)
+            } else {
+                ServiceExitCode::ServiceSpecific(3) // Agent runtime terminated unexpectedly
+            },
+            ..status(ServiceState::Stopped, ServiceControlAccept::empty())
+        })
         .context("failed to report Windows service Stopped state")?;
-
     run_result
 }
 
@@ -81,7 +110,10 @@ fn status(state: ServiceState, controls_accepted: ServiceControlAccept) -> Servi
         controls_accepted,
         exit_code: ServiceExitCode::Win32(0),
         checkpoint: 0,
-        wait_hint: Duration::default(),
+        wait_hint: match state {
+            ServiceState::StartPending => Duration::from_secs(15),
+            _ => Duration::default(),
+        },
         process_id: None,
     }
 }
