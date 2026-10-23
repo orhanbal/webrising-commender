@@ -1,5 +1,5 @@
 import {useEffect,useState} from "react";import type{FormEvent}from"react";
-import{ArrowLeft,ArrowRight,Check,Eye,EyeOff,KeyRound,LockKeyhole,Mail,Monitor,ShieldCheck,Sparkles}from"lucide-react";
+import{ArrowLeft,ArrowRight,Check,Eye,EyeOff,KeyRound,LockKeyhole,Monitor,ShieldCheck,Sparkles}from"lucide-react";
 import{Button,Badge,Input}from"../components/ui";import{api,type Account,type Pricing}from"../api";import type{Nav}from"../App";import{NavLink}from"../App";
 type Mode="/login"|"/register"|"/forgot-password"|"/reset-password"|"/verify";
 export function AuthPage({path,nav,refresh,pricing}:{path:string;nav:Nav;refresh:()=>Promise<Account|null>;pricing:Pricing|null}){
