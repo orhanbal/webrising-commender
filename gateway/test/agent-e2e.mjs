@@ -165,6 +165,27 @@ try {
   assert.equal(batch.items[1].ok, true);
   assert.equal(batch.items[2].ok, false);
 
+  // Exercise the advertised ten-file boundary with a real native agent.
+  const batchPaths = Array.from({ length: 10 }, (_, index) => path.join(tempRoot, `batch-${index}.txt`));
+  batchPaths.forEach((item, index) => fs.writeFileSync(item, `batch-content-${index}`, "utf8"));
+  const fullBatch = await tool(211, "fs_read_multiple", {
+    device_id: deviceId, paths: batchPaths,
+  });
+  assert.equal(fullBatch.count, 10);
+  assert.equal(fullBatch.items.length, 10);
+  fullBatch.items.forEach((item, index) => {
+    assert.equal(item.ok, true);
+    assert.equal(item.data.content, `batch-content-${index}`);
+  });
+  const oversizedBatch = await tool(212, "fs_read_multiple", {
+    device_id: deviceId, paths: [...batchPaths, filePath],
+  });
+  assert.equal(oversizedBatch.error, "invalid_batch_read_arguments");
+  const limitedBatch = await tool(213, "fs_read_multiple", {
+    device_id: deviceId, paths: [filePath], max_bytes: 3,
+  });
+  assert.equal(limitedBatch.items[0].ok, false);
+
   const rejectedOutsideRoot = await tool(204, "fs_read_lines", {
     device_id: deviceId, path: path.join(os.tmpdir(), "outside-allowed-root.txt"),
   });
@@ -204,6 +225,37 @@ try {
     max_results: 20,
   });
   assert.ok(codeSearch.items.some((item) => item.path === filePath && item.line === 1));
+
+  // A search session must expose a stable paged snapshot and become empty
+  // after explicit cancellation. This does not claim native streaming support.
+  const startedSearch = await tool(214, "start_search", {
+    device_id: deviceId, path: tempRoot, query: "hello-from-real-agent", search_type: "content",
+  });
+  assert.equal(typeof startedSearch.searchId, "string");
+  const completedSearch = await waitFor(async () => {
+    const result = await tool(215, "get_more_search_results", {
+      device_id: deviceId, search_id: startedSearch.searchId, offset: 0, length: 1,
+    });
+    return result.status === "completed" ? result : false;
+  });
+  assert.equal(completedSearch.items.length, 1);
+  assert.equal(completedSearch.items[0].path, filePath);
+  assert.equal(completedSearch.offset, 0);
+  const searches = await tool(216, "list_searches", { device_id: deviceId });
+  assert.ok(searches.items.some((item) => item.searchId === startedSearch.searchId));
+  const invalidSearchPage = await tool(217, "get_more_search_results", {
+    device_id: deviceId, search_id: startedSearch.searchId, offset: 0, length: 101,
+  });
+  assert.equal(invalidSearchPage.error, "invalid_search_page");
+  const stoppedSearch = await tool(218, "stop_search", {
+    device_id: deviceId, search_id: startedSearch.searchId,
+  });
+  assert.equal(stoppedSearch.status, "stopped");
+  const stoppedPage = await tool(219, "get_more_search_results", {
+    device_id: deviceId, search_id: startedSearch.searchId, offset: 0, length: 1,
+  });
+  assert.equal(stoppedPage.status, "stopped");
+  assert.deepEqual(stoppedPage.items, []);
 
   const replaced = await tool(117, "fs_replace", {
     device_id: deviceId,
