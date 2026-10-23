@@ -99,6 +99,10 @@ try{
  assert.equal(await evalJs("document.documentElement.classList.contains('light')"),true,"Install light mode toggle failed");
  const installLight=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
  writeFileSync(join(artifacts,"modern-install-light.png"),Buffer.from(installLight.data,"base64"));
+ // Restore dark before the pre-existing landing light-mode acceptance.
+ await evalJs("document.querySelector('.theme-button').click()");
+ await sleep(90);
+ assert.equal(await evalJs("document.documentElement.classList.contains('light')"),false);
  fixtures["/api/auth/me"]=signedIn;
  await visit("/","Tüm cihazların","modern-landing-dark");
 
