@@ -491,7 +491,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           )`,[id]);
       if(!result.rows[0])return void json(res,404,{error:"not_found"});
       res.writeHead(200,{...securityHeaders(),"content-type":result.rows[0].content_type,
-        "content-length":result.rows[0].content.length,"cache-control":"public,max-age=3600",
+        "content-length":result.rows[0].content.length,"cache-control":"no-store",
         "x-content-type-options":"nosniff"});
       res.end(result.rows[0].content);return;
     }
