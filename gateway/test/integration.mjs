@@ -408,6 +408,59 @@ assert.equal(browserMe.email, "owner@example.test");
 assert.equal(browserMe.role, "owner");
 assert.equal(browserMe.authKind, "session");
 
+// Platform admin authorization and tenant-role boundaries are verified against a real
+// cookie session, not against the globally privileged control API key.
+const ordinaryOwnerConsole=await fetch(base+"/api/console/me",{headers:{Cookie:browserCookies}});
+assert.equal(ordinaryOwnerConsole.status,403,"Workspace ownership is not platform administration");
+await acceptanceDb.query(
+  "insert into platform_administrators(user_id,granted_by) values($1,'integration-test') on conflict(user_id) do update set revoked_at=null",
+  [browserMe.userId],
+);
+const platformMe=await fetch(base+"/api/console/me",{headers:{Cookie:browserCookies}});
+assert.equal(platformMe.status,200);
+assert.equal((await platformMe.json()).platformRole,"super_admin");
+const membershipOrg=browserMe.organizationId;
+const memberSeed=await acceptanceDb.query(
+  `insert into users(email,password_hash,email_verified_at)
+   select 'console-role-fixture@example.test',password_hash,now() from users where id=$1
+   returning id`,[browserMe.userId]);
+const memberId=memberSeed.rows[0].id;
+await acceptanceDb.query(
+  "insert into organization_members(organization_id,user_id,role) values($1,$2,'viewer')",
+  [membershipOrg,memberId]);
+const membersResult=await fetch(base+"/api/console/organizations/members?organizationId="+membershipOrg,{headers:{Cookie:browserCookies}});
+assert.equal(membersResult.status,200);
+assert.ok((await membersResult.json()).items.some(item=>item.user_id===memberId));
+const roleBody=JSON.stringify({organizationId:membershipOrg,userId:memberId,role:"operator",currentPassword:"correct-horse-battery-staple"});
+const roleWithoutCsrf=await fetch(base+"/api/console/organizations/members/role",{
+  method:"POST",headers:{Cookie:browserCookies,"Content-Type":"application/json"},body:roleBody});
+assert.equal(roleWithoutCsrf.status,403,"Admin mutation must enforce CSRF");
+const roleChange=await fetch(base+"/api/console/organizations/members/role",{
+  method:"POST",headers:{Cookie:browserCookies,"Content-Type":"application/json","X-CSRF-Token":browserLogin.csrfToken},
+  body:roleBody});
+assert.equal(roleChange.status,200);
+const roleStored=await acceptanceDb.query(
+  "select role from organization_members where organization_id=$1 and user_id=$2",
+  [membershipOrg,memberId]);
+assert.equal(roleStored.rows[0].role,"operator");
+const escalateToOwner=await fetch(base+"/api/console/organizations/members/role",{
+  method:"POST",headers:{Cookie:browserCookies,"Content-Type":"application/json","X-CSRF-Token":browserLogin.csrfToken},
+  body:JSON.stringify({organizationId:membershipOrg,userId:memberId,role:"owner",currentPassword:"correct-horse-battery-staple"})});
+assert.equal(escalateToOwner.status,400,"A platform editor cannot silently assign organization ownership");
+await acceptanceDb.query("update platform_administrators set revoked_at=now() where user_id=$1",[browserMe.userId]);
+const revokedPlatform=await fetch(base+"/api/console/me",{headers:{Cookie:browserCookies}});
+assert.equal(revokedPlatform.status,403,"Revocation must take effect without signing out");
+const unverifiedSeed=await acceptanceDb.query(
+  `insert into users(email,password_hash,email_verified_at)
+   select 'unverified-console-fixture@example.test',password_hash,null from users where id=$1 returning id`,
+  [browserMe.userId]);
+await acceptanceDb.query("insert into organization_members(organization_id,user_id,role) values($1,$2,'viewer')",
+  [membershipOrg,unverifiedSeed.rows[0].id]);
+const unverifiedLogin=await fetch(base+"/api/auth/login",{
+  method:"POST",headers:{"Content-Type":"application/json"},
+  body:JSON.stringify({email:"unverified-console-fixture@example.test",password:"correct-horse-battery-staple"})});
+assert.equal(unverifiedLogin.status,401,"Unverified accounts must not log in");
+
 const browserCsrfDenied = await fetch(base + "/api/pairing", {
   method: "POST",
   headers: { Cookie: browserCookies, "Content-Type": "application/json" },
