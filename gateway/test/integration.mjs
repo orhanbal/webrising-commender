@@ -1733,6 +1733,21 @@ const requestFromApiKey=await fetch(base+"/api/billing/support-requests",{
  method:"POST",headers:{"Content-Type":"application/json",...authHeaders},body:supportPayload,
 });
 assert.equal(requestFromApiKey.status,403,"Support requests must originate from a human owner session");
+const supportViewer=await acceptanceDb.query(
+ `insert into users(email,password_hash,email_verified_at)
+  select 'billing-viewer-fixture@example.test',password_hash,now() from users where id=$1 returning id`,
+ [browserMe.userId]);
+await acceptanceDb.query(
+ "insert into organization_members(organization_id,user_id,role) values($1,$2,'viewer')",
+ [supportOrgId,supportViewer.rows[0].id]);
+const viewerLogin=await fetch(base+"/api/auth/login",{
+ method:"POST",headers:{"Content-Type":"application/json"},
+ body:JSON.stringify({email:"billing-viewer-fixture@example.test",password:"correct-horse-battery-staple"}),
+});
+assert.equal(viewerLogin.status,200);
+const viewerCookies=viewerLogin.headers.getSetCookie().map(value=>value.split(";")[0]).join("; ");
+const viewerSupportRequest=await fetch(base+"/api/billing/support-requests",{headers:{Cookie:viewerCookies}});
+assert.equal(viewerSupportRequest.status,403,"Refund details are visible only to workspace owners");
 const supportSubmitted=await fetch(base+"/api/billing/support-requests",{
  method:"POST",headers:supportSessionHeaders,body:supportPayload,
 });
@@ -1779,6 +1794,7 @@ const secondClose=await fetch(base+"/api/console/billing/requests/review",{
 });
 assert.equal(secondClose.status,409);
 await acceptanceDb.query("delete from billing_support_requests where id=$1",[requestId]);
+await acceptanceDb.query("delete from users where id=$1",[supportViewer.rows[0].id]);
 await acceptanceDb.query("update platform_administrators set revoked_at=now() where user_id=$1",[browserMe.userId]);
 
 const browserLogoutResponse = await fetch(base + "/api/auth/logout", {
