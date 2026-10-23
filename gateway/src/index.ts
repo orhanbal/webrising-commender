@@ -1608,7 +1608,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         const payload=z.object({
           locale:z.enum(["en","tr"]),heroTitle:z.string().trim().min(1).max(160),
           heroSubtitle:z.string().trim().min(1).max(500),
-          overrides:z.record(z.string().max(300),z.string().max(800)).refine(data=>Object.keys(data).length<=100).default({}),
+          overrides:z.record(z.string().max(300),z.string().max(800)).refine(data=>Object.keys(data).length<=150).default({}),
         }).parse(await readJson(req));
         const saved=await db.query(
           "insert into site_content_revisions(locale,hero_title,hero_subtitle,overrides,created_by) values($1,$2,$3,$4::jsonb,$5) returning id",
