@@ -1,6 +1,6 @@
-import {useEffect,useState} from "react";import type{ReactNode}from"react";
+import {useEffect,useRef,useState} from "react";import type{ReactNode}from"react";
 import { t as translate,useLocale,locale,LanguageSwitcher } from "../i18n";
-import {Activity,ArrowRight,ArrowUpRight,Bell,ChevronDown,Clock3,Command,CreditCard,FileText,HardDrive,LayoutDashboard,LockKeyhole,LogOut,Menu,Monitor,Plus,Search,Server,Settings2,ShieldCheck,TerminalSquare,Workflow,Zap}from"lucide-react";
+import {Activity,ArrowRight,ArrowUpRight,Bell,ChevronDown,Clock3,Command,CreditCard,FileText,HardDrive,LayoutDashboard,LockKeyhole,LogOut,Menu,Monitor,Plus,Search,Server,Settings2,ShieldCheck,TerminalSquare,Users,Workflow,Zap}from"lucide-react";
 import{Button,Card,CardContent,CardDescription,CardHeader,CardTitle,Badge}from"../components/ui";
 import{api,type Account,type Device,type Usage,type Billing}from"../api";
 import{dateText,formatCount}from"../lib";
@@ -14,14 +14,16 @@ const pages=[
 {title:"Görevler",href:"/tasks",icon:Workflow},
 {title:"MCP Araçları",href:"/mcp",icon:Command},
 {title:"Kullanım",href:"/usage",icon:Activity},
-{title:"Paket ve Ödemeler",href:"/billing",icon:CreditCard},
-{title:"Hesabım",href:"/account",icon:Settings2}
+{title:"Paket ve Ödemeler",href:"/billing",icon:CreditCard}
 ];
 export function DashboardShell({nav,path,account,theme,toggle,logout,children}:{nav:Nav;path:string;account:Account|null;theme:Theme;toggle:()=>void;logout:()=>void;children:ReactNode}){
  useLocale();
  const [mobile,setMobile]=useState(false);
  const [search,setSearch]=useState("");
- const navTo=(url:string)=>{setMobile(false);nav(url)};
+ const [profileOpen,setProfileOpen]=useState(false);
+ const profileRef=useRef<HTMLDivElement>(null);
+ useEffect(()=>{if(!profileOpen)return;const close=(event:PointerEvent)=>{if(profileRef.current&&!profileRef.current.contains(event.target as Node))setProfileOpen(false)};const escape=(event:KeyboardEvent)=>{if(event.key==="Escape")setProfileOpen(false)};document.addEventListener("pointerdown",close);document.addEventListener("keydown",escape);return()=>{document.removeEventListener("pointerdown",close);document.removeEventListener("keydown",escape)}},[profileOpen]);
+ const navTo=(url:string)=>{setMobile(false);setProfileOpen(false);nav(url)};
  return <div className="dashboard-layout">
   {mobile&&<div className="fixed inset-0 bg-black/60 z-[92] md:hidden" onClick={()=>setMobile(false)}/>}
   <aside className={"dashboard-sidebar "+(mobile?"open":"")} aria-label="Uygulama menüsü">
@@ -32,7 +34,16 @@ export function DashboardShell({nav,path,account,theme,toggle,logout,children}:{
   <div className="dash-main">
    <div className="dash-topbar">
     <div className="flex items-center gap-3 flex-1 min-w-0"><button className="mobile-dash-open size-9 place-items-center rounded-lg border border-[var(--stroke)]" onClick={()=>setMobile(true)} aria-label={translate("Menüyü aç")}><Menu size={18}/></button><div className="text-sm muted hidden sm:block">{translate("Çalışma Alanım")} <span className="mx-2">/</span> <span className="text-[var(--text)]">{path==="/dashboard"?translate("Genel Bakış"):path==="/billing"?translate("Faturalama"):translate("Hesabım")}</span></div></div>
-    <div className="dash-toolbar"><div className="relative hidden lg:block"><Search size={16} className="absolute left-3 top-2.5 text-[var(--muted)]"/><input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&search.trim())navTo("/devices?search="+encodeURIComponent(search))}} placeholder={translate("Cihazları ve araçları ara…")} className="h-10 w-[270px] rounded-xl border border-[var(--stroke)] bg-[var(--surface)] pl-10 pr-3 text-sm outline-none focus-visible:border-[var(--accent)]"/></div><ThemeToggle theme={theme} onToggle={toggle}/><LanguageSwitcher compact/><Button size="icon" variant="outline" title="Son aktiviteler" aria-label="Son aktiviteler" onClick={()=>navTo("/devices")}><Bell size={18}/></Button><button onClick={()=>navTo("/account")} className="flex items-center gap-2 rounded-xl p-1 pr-3 border border-[var(--stroke)] hover:bg-[var(--hover)]" aria-label={translate("Hesap menüsü")}><span className="size-9 rounded-lg bg-[var(--subtle-surface)] text-[var(--accent)] grid place-items-center font-bold">{(account?.email||"WC").slice(0,2).toUpperCase()}</span><span className="hidden sm:block text-sm max-w-[125px] truncate">{account?.email?.split("@")[0]||translate("Misafir")}</span><ChevronDown className="size-3.5 muted"/></button></div>
+    <div className="dash-toolbar"><div className="relative hidden lg:block"><Search size={16} className="absolute left-3 top-2.5 text-[var(--muted)]"/><input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&search.trim())navTo("/devices?search="+encodeURIComponent(search))}} placeholder={translate("Cihazları ve araçları ara…")} className="h-10 w-[270px] rounded-xl border border-[var(--stroke)] bg-[var(--surface)] pl-10 pr-3 text-sm outline-none focus-visible:border-[var(--accent)]"/></div><ThemeToggle theme={theme} onToggle={toggle}/><LanguageSwitcher compact/><Button size="icon" variant="outline" title="Son aktiviteler" aria-label="Son aktiviteler" onClick={()=>navTo("/devices")}><Bell size={18}/></Button><div ref={profileRef} className="relative">
+     <button type="button" onClick={()=>setProfileOpen(value=>!value)} aria-label={translate("Hesap menüsü")} aria-haspopup="menu" aria-expanded={profileOpen} className="flex items-center gap-2 rounded-xl p-1 pr-3 border border-[var(--stroke)] hover:bg-[var(--hover)]"><span className="size-9 rounded-lg bg-[var(--subtle-surface)] text-[var(--accent)] grid place-items-center font-bold">{(account?.email||"WC").slice(0,2).toUpperCase()}</span><span className="hidden sm:block text-sm max-w-[125px] truncate">{account?.email?.split("@")[0]||translate("Misafir")}</span><ChevronDown className={"size-3.5 muted transition-transform "+(profileOpen?"rotate-180":"")}/></button>
+     {profileOpen&&<div role="menu" aria-label={translate("Hesap menüsü")} className="absolute right-0 top-[calc(100%+9px)] z-[120] w-[265px] rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-2 shadow-2xl">
+       <div className="border-b border-[var(--stroke)] px-3 py-3 mb-1"><div className="font-semibold text-sm truncate">{account?.email||translate("Misafir")}</div><div className="text-xs muted mt-1">{translate("Çalışma Alanım")}</div></div>
+       <button type="button" role="menuitem" onClick={()=>navTo("/account")} className="flex items-center gap-3 w-full rounded-lg px-3 py-3 text-sm text-left hover:bg-[var(--hover)]"><Settings2 size={17}/>{translate("Hesap Ayarları")}</button>
+       <button type="button" role="menuitem" onClick={()=>navTo("/account")} className="flex items-center gap-3 w-full rounded-lg px-3 py-3 text-sm text-left hover:bg-[var(--hover)]"><Users size={17}/>{translate("Çalışma Alanları")}</button>
+       <div className="border-t border-[var(--stroke)] my-1"/>
+       <button type="button" role="menuitem" onClick={()=>{setProfileOpen(false);logout()}} className="flex items-center gap-3 w-full rounded-lg px-3 py-3 text-sm text-left hover:bg-[var(--hover)]"><LogOut size={17}/>{translate("Çıkış Yap")}</button>
+     </div>}
+    </div></div>
    </div>
    <main className="dash-content">{children}</main>
    <div className="border-t border-[var(--stroke)] mt-12 pt-5 pb-5 flex justify-between items-center gap-5 flex-wrap text-xs muted"><span>{translate("WECOMMANDER · Güvenli MCP Platformu")}</span><div className="flex gap-4"><button onClick={()=>navTo("/pricing")}>{translate("Planlar")}</button><button onClick={logout} className="inline-flex items-center gap-1"><LogOut size={12}/> {translate("Çıkış")}</button></div></div>
