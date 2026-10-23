@@ -58,6 +58,7 @@ services:
       # Paddle server credentials remain on the server and never enter the browser
       # except PADDLE_CLIENT_TOKEN, which is intentionally public.
       PADDLE_ENVIRONMENT: ${PADDLE_ENVIRONMENT:-sandbox}
+      PADDLE_LIVE_RELEASE_VERIFIED: ${PADDLE_LIVE_RELEASE_VERIFIED:-false}
       PADDLE_CLIENT_TOKEN: ${PADDLE_CLIENT_TOKEN:-}
       PADDLE_API_KEY: ${PADDLE_API_KEY:-}
       PADDLE_WEBHOOK_SECRET: ${PADDLE_WEBHOOK_SECRET:-}
