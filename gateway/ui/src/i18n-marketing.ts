@@ -7,7 +7,7 @@ export const marketingEnglish:Record<string,string> = {
   "Paneli keşfet": "Explore dashboard",
   "Güvenli erişim": "Secure access",
   "Tek çalışma alanı": "One workspace",
-  "WECOMMANDER · Örnek arayüz": "WECOMMANDER · Interface preview",
+  "WECOMMANDER · Örnek arayüz": "WECOMMANDER · Product preview",
   "Çalışma alanım": "My Workspace",
   "Bağlantı hazır": "Connected",
   "Görevler": "Tasks",
@@ -132,7 +132,7 @@ export const marketingEnglish:Record<string,string> = {
   "Kurulum adımlarını tamamladığında cihazlarını yönetmeye başlayabilirsin.": "Complete the setup to start managing your devices.",
   "Dokümantasyon": "Documentation",
   "API erişimini ayarla": "Configure API access",
-  " ile bağlantı": " connection",
+  " ile bağlantı": " integration",
   "MCP sunucu adresi": "MCP server address",
   "MCP": "MCP",
   "WECOMMANDER hesabınızda oturum açın, MCP Araçları bölümünden en az gerekli yetkiye sahip bir erişim anahtarı oluşturun.": "Sign in to WECOMMANDER. In MCP Tools, create an access token with only the permissions needed.",
@@ -149,5 +149,12 @@ export const marketingEnglish:Record<string,string> = {
   "Claude ile kurulum": "Set up Claude",
   "İstemci": "Client",
   "Bağlantı rehberi": "Connection guide",
-  "Dil": "Language"
+  "Dil": "Language",
+  "● Aktif": "● Online",
+  "● Beklemede": "● Pending",
+  "için kurulum": "setup",
+  "Agent indir": "Download agent",
+  "WECOMMANDER · Remote MCP kurulumu": "WECOMMANDER · Remote MCP setup",
+  " için kurulum": " setup",
+  "Windows · macOS · Linux": "Windows · macOS · Linux"
 };
