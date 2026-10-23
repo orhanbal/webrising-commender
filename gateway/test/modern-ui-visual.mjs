@@ -191,6 +191,13 @@ try{
  await sleep(120);
  assert.ok(await evalJs("document.querySelector('[role=dialog]')?.textContent.includes('member@example.test')"),"Workspace member inspector must show server-backed members");
  await evalJs("([...document.querySelectorAll('[role=dialog] button')].find(x=>x.textContent.trim()==='Close'))?.click()");
+ await evalJs("([...document.querySelectorAll('button')].find(x=>x.textContent.trim()==='Edit quotas'))?.click()");
+ await sleep(100);
+ assert.ok(await evalJs("(()=>{const dialog=document.querySelector('[role=dialog][aria-modal=true]');return !!dialog&&dialog.contains(document.activeElement)})()"),"Admin modal must capture keyboard focus");
+ await evalJs("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
+ await sleep(90);
+ assert.equal(await evalJs("document.querySelector('[role=dialog][aria-modal=true]')===null"),true,"Escape must close the admin dialog");
+
  await visit("/console/landing","Landing content editor","modern-console-landing");
  await evalJs("(()=>{const s=[...document.querySelectorAll('select')].find(el=>[...el.options].some(o=>o.value==='FAQ'));if(!s)throw new Error('FAQ section selector missing');s.value='FAQ';s.dispatchEvent(new Event('change',{bubbles:true}))})()");
  await sleep(100);
