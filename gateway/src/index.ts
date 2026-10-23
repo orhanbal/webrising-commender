@@ -1415,14 +1415,37 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         );
         return void json(res,200,{items:records.rows,limit,offset});
       }
+      if (req.method === "POST" && url.pathname === "/api/console/organizations/quotas") {
+        const limit=z.number().int().min(0).max(1000000).nullable().optional();
+        const payload=z.object({organizationId:z.string().uuid(),maxDevices:limit,maxMembers:limit,maxApiTokens:limit,currentPassword:z.string().min(12).max(256)}).parse(await readJson(req));
+        const adminPassword=await db.query<{password_hash:string}>("select password_hash from users where id=$1 and disabled_at is null",[principal.userId]);
+        if(!adminPassword.rows[0]||!(await verifyPassword(payload.currentPassword,adminPassword.rows[0].password_hash)))return void json(res,403,{error:"reauthentication_failed"});
+        const limits:Record<string,number|null>={};
+        for(const key of ["maxDevices","maxMembers","maxApiTokens"] as const)if(Object.hasOwn(payload,key)&&payload[key]!==undefined)limits[key]=payload[key]!;
+        const client=await db.connect();
+        try{
+          await client.query("begin");
+          const org=await client.query("select 1 from organizations where id=$1 for update",[payload.organizationId]);
+          if(!org.rowCount){await client.query("rollback");return void json(res,404,{error:"organization_not_found"});}
+          await client.query(`insert into organization_quota_overrides(organization_id,limits,updated_by)
+            values($1,$2::jsonb,$3) on conflict(organization_id)
+            do update set limits=excluded.limits,updated_by=excluded.updated_by,updated_at=now()`,
+            [payload.organizationId,JSON.stringify(limits),principal.userId]);
+          await client.query("insert into platform_admin_audit(actor_user_id,action,detail) values($1,'organization.quota_override',$2)",
+            [principal.userId,"organization:"+payload.organizationId]);
+          await client.query("commit");
+        }catch(error){await client.query("rollback");throw error}finally{client.release()}
+        return void json(res,200,{ok:true});
+      }
       if (req.method === "GET" && url.pathname === "/api/console/organizations") {
         const records = await db.query(
           `select o.id,o.name,o.created_at,count(distinct m.user_id)::int as members,
-              count(distinct d.id)::int as devices
+              count(distinct d.id)::int as devices, coalesce(q.limits,'{}'::jsonb) as quota_overrides
            from organizations o
+           left join organization_quota_overrides q on q.organization_id=o.id
            left join organization_members m on m.organization_id=o.id
            left join devices d on d.organization_id=o.id and d.revoked_at is null
-           group by o.id order by o.created_at desc limit 100`,
+           group by o.id,q.limits order by o.created_at desc limit 100`,
         );
         return void json(res,200,{items:records.rows});
       }
