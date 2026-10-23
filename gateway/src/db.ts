@@ -260,6 +260,18 @@ export async function migrate() {
     alter table organization_subscriptions
       add column if not exists provider_event_id text;
 
+    -- Checkout intents bind Paddle-created transaction IDs to authenticated
+    -- workspaces. Webhooks may never provision from untrusted browser metadata.
+    create table if not exists paddle_checkout_intents (
+      transaction_id text primary key,
+      organization_id uuid not null references organizations(id) on delete cascade,
+      plan_key text not null references billing_plans(key),
+      price_id text not null,
+      created_at timestamptz not null default now()
+    );
+    create index if not exists paddle_checkout_intents_org_idx
+      on paddle_checkout_intents(organization_id,created_at desc);
+
     create table if not exists billing_events (
       id bigserial primary key,
       provider text not null,
