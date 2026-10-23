@@ -1,7 +1,8 @@
 param(
   [Parameter(Mandatory=$true)][string]$BinaryPath,
   [Parameter(Mandatory=$true)][string]$ConfigPath,
-  [string]$TaskName
+  [string]$TaskName,
+  [switch]$SkipStart
 )
 $ErrorActionPreference = 'Stop'
 Import-Module ScheduledTasks -ErrorAction Stop
@@ -39,6 +40,16 @@ if ($existing) {
   Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction Stop
 }
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'WECOMMANDER agent – runs only while this Windows user is signed in; no password stored.' -ErrorAction Stop | Out-Null
+if ($SkipStart) {
+  # CI validates scheduled-task registration even on runners without an
+  # actual interactive Windows desktop. Never use this flag in onboarding.
+  $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+  if ($task.Principal.LogonType -ne 'Interactive' -or $task.Principal.RunLevel -ne 'Limited') {
+    throw 'Incorrect scheduled task security principal.'
+  }
+  Write-Output 'WECOMMANDER_TASK_REGISTERED_TEST_ONLY'
+  return
+}
 try {
   Start-ScheduledTask -TaskName $TaskName -ErrorAction Stop
   Start-Sleep -Seconds 3
