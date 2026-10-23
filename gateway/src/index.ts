@@ -407,7 +407,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       if (brandSvgNames.has(name)) return void (await serveBrandSvg(res, name));
     }
     if (req.method === "GET" && url.pathname === "/favicon.ico") {
-      res.writeHead(302, { location: "/assets/wecommander-favicon.svg", ...securityHeaders() });
+      res.writeHead(302, { location: "/api/public/brand/favicon", ...securityHeaders() });
       res.end();
       return;
     }
