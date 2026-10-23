@@ -485,6 +485,28 @@ const escalateToOwner=await fetch(base+"/api/console/organizations/members/role"
   method:"POST",headers:{Cookie:browserCookies,"Content-Type":"application/json","X-CSRF-Token":browserLogin.csrfToken},
   body:JSON.stringify({organizationId:membershipOrg,userId:memberId,role:"owner",currentPassword:"correct-horse-battery-staple"})});
 assert.equal(escalateToOwner.status,400,"A platform editor cannot silently assign organization ownership");
+const workerLogin=await fetch(base+"/api/auth/login",{
+  method:"POST",headers:{"Content-Type":"application/json"},
+  body:JSON.stringify({email:"console-role-fixture@example.test",password:"correct-horse-battery-staple"}),
+});
+assert.equal(workerLogin.status,200);
+const workerCookies=workerLogin.headers.getSetCookie().map(value=>value.split(";")[0]).join("; ");
+const adminSessions=await fetch(base+"/api/console/users/sessions?userId="+memberId,{headers:{Cookie:browserCookies}});
+assert.equal(adminSessions.status,200);
+const workerSession=(await adminSessions.json()).items.find(s=>!s.revoked_at);
+assert.ok(workerSession?.id,"Admin must see user sessions without raw credentials");
+const badSessionRevoke=await fetch(base+"/api/console/users/sessions/revoke",{
+  method:"POST",headers:cmsSessionHeaders,
+  body:JSON.stringify({sessionId:workerSession.id,currentPassword:"incorrect-password-value"}),
+});
+assert.equal(badSessionRevoke.status,403);
+const sessionRevoke=await fetch(base+"/api/console/users/sessions/revoke",{
+  method:"POST",headers:cmsSessionHeaders,
+  body:JSON.stringify({sessionId:workerSession.id,currentPassword:"correct-horse-battery-staple"}),
+});
+assert.equal(sessionRevoke.status,200);
+const blockedWorker=await fetch(base+"/api/auth/me",{headers:{Cookie:workerCookies}});
+assert.equal(blockedWorker.status,401,"Revoked session must lose access immediately");
 await acceptanceDb.query("update platform_administrators set revoked_at=now() where user_id=$1",[browserMe.userId]);
 const revokedPlatform=await fetch(base+"/api/console/me",{headers:{Cookie:browserCookies}});
 assert.equal(revokedPlatform.status,403,"Revocation must take effect without signing out");
