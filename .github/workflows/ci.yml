@@ -526,6 +526,8 @@ jobs:
         shell: bash
         run: |
           bash -n scripts/install-linux.sh
+          bash -n scripts/setup-ubuntu.sh
+          bash scripts/setup-ubuntu.sh --help >/dev/null
           bash -n scripts/uninstall-linux.sh
           bash -n scripts/install-macos.sh
           bash -n scripts/uninstall-macos.sh
@@ -562,6 +564,8 @@ jobs:
           cp target/release/webrising-commender dist/webrising-commender
           cp scripts/install-linux.sh dist/
           cp scripts/uninstall-linux.sh dist/
+          cp scripts/setup-ubuntu.sh dist/
+          cp docs/UBUNTU_INSTALL.md dist/
           cp docs/QUICKSTART.md dist/
           cd dist
           sha256sum webrising-commender > SHA256SUMS.txt

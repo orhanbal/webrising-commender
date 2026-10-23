@@ -104,6 +104,8 @@ jobs:
       - name: Add installer helpers and checksums
         run: |
           cp scripts/install-linux.sh dist/
+          cp scripts/setup-ubuntu.sh dist/
+          cp docs/UBUNTU_INSTALL.md dist/
           cp scripts/uninstall-linux.sh dist/
           cp scripts/install-macos.sh dist/
           cp scripts/uninstall-macos.sh dist/
