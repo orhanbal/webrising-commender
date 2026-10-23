@@ -1,6 +1,6 @@
 # WECOMMANDER — Super Admin Master Plan
 
-Status: IN PROGRESS (2026-10-23). Admin listing, guarded user/organization quota changes, localized copy CMS and branded assets implemented. CI and production acceptance outstanding.
+Status: IN PROGRESS (2026-10-23). Security, management, CMS and test improvements committed; completion is gated on full CI, production checks and external acceptance.
 
 ## Decision
 
@@ -25,53 +25,62 @@ Status: IN PROGRESS (2026-10-23). Admin listing, guarded user/organization quota
 
 ## Phases and acceptance
 
+Legend: [x] implementation committed, [ ] acceptance or implementation still required. A checked box does not imply verified production acceptance.
+
 ### Phase A — Auth and first account
-- [x] DB migration: independent platform admin grant and platform action audit tables (code committed; production acceptance pending).
-- [x] Server-local bootstrap CLI for first account (`orhanbal@gmail.com`), no SMTP dependency (code committed; execution pending).
-- [x] Dedicated `/api/console/me` authentication and permission checks (code committed; tests pending).
-- [ ] Tests: unauthenticated=401, ordinary owner=403, real platform admin=200, revoked/disabled=403.
-- [ ] Real owner login with existing browser session mechanism.
-- [ ] Verify persistence across redeploy; no data deletion or volume replacement.
+- [x] Independent platform grants, platform audit schema and server-only bootstrap CLI.
+- [x] Guarded console API routes; organization owner is **not** a platform administrator.
+- [x] Test coverage added for 401 unauthenticated, 403 owner/API token, 200 granted session, immediate revoked grant, CSRF and unverified account rejection.
+- [x] Repeated migration no longer automatically verifies accounts.
+- [x] Console mutations rate-limited by authenticated account and source IP.
+- [ ] Validate the production first-admin bootstrap state and account recovery with an authorized human session.
+- [ ] Prove production session persistence across a deploy; verify restorable database backups.
 
 ### Phase B — Console shell
-- [x] `/console` route and responsive shell implemented; production browser acceptance pending.
-- [ ] Fluent design, both themes, EN/TR locale, keyboard/mobile accessibility.
-- [x] Overview backed by admin-scoped real DB counts; operational acceptance pending.
-- [ ] Shared account/profile dropdown implemented; session controls, reauthentication and activity timeline remain.
+- [x] Responsive /console route, dedicated sidebar and shared profile menu.
+- [x] EN/TR language selector and light/dark toggle reused in console.
+- [x] Database-backed overview; user, organization, device, audit, billing, CMS, brand and system sections.
+- [x] Browser screenshot acceptance added for desktop/mobile console and multiple sections.
+- [ ] Full TR translation of all console-specific descriptions and controls, keyboard accessibility/contrast audit, and final browser acceptance.
 
-### Phase C — Users / tenants
-- [ ] User and organization management: first read-only listings/API committed; pagination, detail and search acceptance remain.
-- [ ] Memberships, roles, active/disabled state, plan/quota overrides, sessions.
-- [ ] Confirmations and audit trail for every mutation; no silent privilege escalation.
-- [ ] Separate platform role from tenant role in API and UI.
+### Phase C — Users and organizations
+- [x] User listing/search/pagination, audited disable/enable with password reauthentication.
+- [x] User session inventory and audited forced session revocation, excluding own session and protected platform administrators.
+- [x] Workspace membership browser and viewer/operator/admin role changes with step-up and owner-role protection.
+- [x] Organization-specific quota overrides and editable plan limits.
+- [ ] Organization details/large-list pagination, bulk operations, owner transfer with explicit approval, elevated-account recovery and additional lifecycle acceptance.
 
-### Phase D — Devices / operations
-- [ ] Device listing committed (read-only); fleet health, enrollment, relay and gateway monitoring remain.
-- [ ] Unified tenant + platform admin audit timeline committed (read-only); aggregation, incidents and operational reports remain.
-- [ ] Explicit customer authorization for privileged support actions.
+### Phase D — Devices and operations
+- [x] Cross-workspace read-only device inventory and unified tenant/platform audit timeline.
+- [x] Live system counts for relay health, active sessions, pending approvals and mail queue.
+- [ ] Agent enrollment/heartbeat/relay failover and terminal/file/task operations on real Windows, macOS and Linux devices.
+- [ ] Incident investigation, alerting and explicit customer-authorized support controls.
 
 ### Phase E — Billing
-- [ ] Plans and subscriptions viewer plus password-confirmed plan-limit editor implemented; Paddle refund/cancellation and provider health remain.
-- [ ] Preserve Paddle as payment source of truth; no manual fake-paid switches.
-- [ ] Refund/cancellation workflows with provider confirmation and audit.
+- [x] Read-only plans/subscriptions reporting and password-confirmed plan/organization quota editors.
+- [x] Existing Paddle webhook integration tests provide synthetic subscription lifecycle coverage.
+- [ ] Paddle provider status, customer cancellation and refund-request workflow, real sandbox/live checkout acceptance and reconciliation.
+- [ ] Never change provider-controlled paid status through an internal administration override.
 
-### Phase F — Landing CMS
-- [ ] Revisioned EN/TR hero and additional landing text overrides implemented, with draft/publish and live rendering; complete section inventory, SEO, legal pages and full CMS acceptance remain.
-- [ ] Preview, draft, publish and rollback; safe media uploads and asset versioning.
-- [ ] PNG/WebP light/dark logo and favicon upload API/UI implemented; social metadata, canonical SEO and comprehensive navigation checks remain.
-- [ ] Page-cache invalidation after publish. Preserve layout constraints and responsive checks.
+### Phase F — Landing CMS and brand
+- [x] Versioned EN/TR hero and 106 landing copy strings with grouped editor, draft/publish/rollback, publish reauthentication and live rendering.
+- [x] SEO title/description per locale, safely escaped SSR homepage tags, canonical and Open Graph metadata.
+- [x] Light/dark PNG/WebP logos and favicon storage, safe public fallback and password-confirmed asset upload.
+- [x] Browser and API tests for landing card visibility, revision publish/rollback, escaping and failed reauthentication.
+- [ ] Legal-page content editor, section reordering, richer media library, robust SVG handling, structured FAQ editor and CMS production browser acceptance.
 
 ### Phase G — System settings
-- [ ] Redacted system/mail status panel implemented; configuration UI, gateway/relay visibility and integrations remain.
-- [ ] Store sensitive values only through approved secret management; redact on read.
-- [ ] Alerting, backups, retention, security posture and maintenance actions.
+- [x] Safe read-only mail queue, active sessions, relay, approval, deployment mode and signup health reporting.
+- [ ] SMTP activation with WECOMMANDER sender (intentionally deferred until launch), secrets management UI, backups, alerts and operational maintenance.
+- [ ] Provider credentials must remain redacted and outside version control.
 
 ### Phase H — Release gates
-- [ ] TypeScript build, server tests, role/CSRF/security test coverage.
-- [ ] Browser acceptance across desktop/mobile EN/TR and light/dark.
-- [ ] Functional tests for admin changes, tenant isolation and CMS preview/publish/rollback.
-- [ ] Production database backup verified before migration.
-- [ ] Fresh-session real login and persistence after redeploy.
+- [x] GitHub workflow runs gateway, integration, agent/relay E2E and cross-platform packaging jobs.
+- [x] New API/browser acceptance assertions added; final full-workflow verification pending.
+- [ ] Green latest **full** CI after all commits and production deployed commit equality.
+- [ ] End-to-end accepted user login, workspace role changes, admin CMS/SEO publish, Paddle and live agent controls.
+- [ ] Verified production backup/restore and rollback drills.
+- [ ] Confirm no tenant data leaking into privileged support operations.
 
 ## Implementation order
 
