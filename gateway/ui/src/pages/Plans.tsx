@@ -8,14 +8,14 @@ function features(plan:Plan){return plan.features.length?plan.features:[
   plan.maxApiTokens===null?"Sınırsız API erişimi":plan.maxApiTokens+" API anahtarı",
   "Güvenli MCP erişimi","Denetim ve yetkilendirme"
 ]}
-export function PlansPage({nav,pricing,account,checkoutMode=false,theme="dark"}:{nav:Nav;pricing:Pricing|null;account:Account|null;checkoutMode?:boolean;theme?:Theme}){
+export function PlansPage({nav,pricing,account,checkoutMode=false,theme="dark",signupEnabled}:{nav:Nav;pricing:Pricing|null;account:Account|null;checkoutMode?:boolean;theme?:Theme;signupEnabled:boolean|null}){
  const [data,setData]=useState<Pricing|null>(pricing);
  const [busy,setBusy]=useState(false);
  const [message,setMessage]=useState("");
  const selected=new URLSearchParams(location.search).get("plan")||"";
  const plan=data?.plans.find(x=>x.key===selected);
  useEffect(()=>{if(pricing)setData(pricing);else api<Pricing>("/api/public/plans").then(setData).catch(()=>setMessage("Paket listesi alınamadı."))},[pricing]);
- function pick(key:string){if(!account){sessionStorage.setItem("wc-selected-plan",key);nav("/register");return}nav("/checkout?plan="+encodeURIComponent(key))}
+ function pick(key:string){if(!account){sessionStorage.setItem("wc-selected-plan",key);nav(signupEnabled===false?"/login":"/register");return}nav("/checkout?plan="+encodeURIComponent(key))}
  async function checkout(){
   setMessage("");if(!account){if(plan)pick(plan.key);else nav("/login");return}
   if(!data?.paddle.checkoutEnabled||!data.paddle.clientToken||!plan?.priceId){setMessage("Bu paketin Paddle ödemesi henüz yapılandırılmamış.");return}
