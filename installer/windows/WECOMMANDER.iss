@@ -27,6 +27,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Source: "webrising-commender.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "WECOMMANDER-Onboarding.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Install-Service-Interactive.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "Diagnose-Service.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "install-windows.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "uninstall-windows.ps1"; DestDir: "{app}"; Flags: ignoreversion
 [Icons]
