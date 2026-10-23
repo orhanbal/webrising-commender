@@ -57,7 +57,16 @@ async function checkLanding() {
   const text = await response.text();
   assert.equal(response.status, 200);
   assert.match(text, /WECOMMANDER/i);
-  assert.match(text, /Use your computer/i);
+  const classic=/Use your computer/i.test(text);
+  const modern=text.includes('id="root"') && /\/modern\/assets\/index-[^"]+\.js/.test(text);
+  assert.ok(classic || modern,"Landing must serve either the classic HTML or bundled React app");
+  if(modern){
+    const jsPath=text.match(/src="(\/modern\/assets\/index-[^"]+\.js)"/)?.[1];
+    assert.ok(jsPath,"Modern React bundle link is required");
+    const bundle=await fetch(new URL(jsPath,base));
+    assert.equal(bundle.status,200,"React bundle must be served");
+    assert.match(bundle.headers.get("content-type")||"",/javascript/);
+  }
   record("Public landing", true, "landing HTML served");
 }
 
@@ -66,8 +75,16 @@ async function checkConsole() {
   const text = await response.text();
   assert.equal(response.status, 200);
   assert.match(text, /WECOMMANDER/i);
-  assert.match(text, /Browser account/i);
-  record("Web console", true, "/app console HTML served");
+  if (text.includes('id="root"')) {
+    assert.match(text, /\/modern\/assets\/index-[^"]+\.js/i, "Modern console requires a built React bundle");
+    const advanced = await fetch(new URL("/advanced", base), { redirect: "manual" });
+    assert.equal(advanced.status, 200);
+    assert.match(await advanced.text(), /Browser account/i, "Power console must remain available at /advanced");
+    record("Web console", true, "React dashboard at /app; legacy power console at /advanced");
+  } else {
+    assert.match(text, /Browser account/i);
+    record("Web console", true, "/app classic console HTML served");
+  }
 }
 
 async function checkPublicConfig() {

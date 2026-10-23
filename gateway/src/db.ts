@@ -240,7 +240,7 @@ export async function migrate() {
       organization_id uuid primary key references organizations(id) on delete cascade,
       plan_key text not null references billing_plans(key),
       status text not null
-        check (status in ('trialing','active','past_due','canceled')),
+        check (status in ('trialing','active','past_due','paused','canceled')),
       provider text,
       external_customer_id text,
       external_subscription_id text,
@@ -259,6 +259,22 @@ export async function migrate() {
       add column if not exists provider_event_at timestamptz;
     alter table organization_subscriptions
       add column if not exists provider_event_id text;
+
+    -- Checkout intents bind Paddle-created transaction IDs to authenticated
+    -- workspaces. Webhooks may never provision from untrusted browser metadata.
+    create table if not exists paddle_checkout_intents (
+      transaction_id text primary key,
+      organization_id uuid not null references organizations(id) on delete cascade,
+      plan_key text not null references billing_plans(key),
+      price_id text not null,
+      created_at timestamptz not null default now()
+    );
+    create index if not exists paddle_checkout_intents_org_idx
+      on paddle_checkout_intents(organization_id,created_at desc);
+
+    alter table organization_subscriptions drop constraint if exists organization_subscriptions_status_check;
+    alter table organization_subscriptions add constraint organization_subscriptions_status_check
+      check (status in ('trialing','active','past_due','paused','canceled'));
 
     create table if not exists billing_events (
       id bigserial primary key,

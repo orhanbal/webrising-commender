@@ -2240,7 +2240,7 @@ document.querySelectorAll("[data-wc-dest]").forEach(btn=>btn.onclick=()=>showPag
 $("wcSidePlanButton").onclick=()=>showPage("billing");
 setInterval(()=>{if($("dashboardPage").classList.contains("active")&&wcSignedIn())wcLoadDashboard()},60000);
 
-health();setInterval(health,15000);loadPublicConfig();prepareSignupVerification();preparePasswordReset();loadInvitePreview();refreshIdentity().then(()=>{loadUsage();if(!verificationToken&&!passwordResetToken&&!invitationToken)showPage("dashboard")})
+health();setInterval(health,15000);loadPublicConfig();prepareSignupVerification();preparePasswordReset();loadInvitePreview();refreshIdentity().then(()=>{loadUsage();if(!verificationToken&&!passwordResetToken&&!invitationToken){const view=new URL(location.href).searchParams.get("view")||"dashboard";showPage(view)}})
 
 </script>
 </body>

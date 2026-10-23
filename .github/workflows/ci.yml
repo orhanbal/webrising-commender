@@ -48,8 +48,15 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: Install and build shadcn React web
+        run: |
+          cd ui
+          npm install --no-audit --no-fund
+          npm run build
       - name: Verify dashboard in desktop and mobile Chrome
         run: node test/dashboard-visual.mjs
+      - name: Verify new shadcn frontend rendering
+        run: node test/modern-ui-visual.mjs
       - name: Upload dashboard browser screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -97,6 +104,7 @@ jobs:
       SMTP_SECURITY: none
       SMTP_HELO_NAME: commender-ci
       SMTP_FROM: WECOMMANDER <commender@example.test>
+      PADDLE_WEBHOOK_SECRET: ci-test-secret-paddle-signatures-2026
       MAIL_OUTBOX_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       MAIL_DELIVERY_INTERVAL_MS: 250
       MAIL_DELIVERY_BATCH: 20
@@ -109,6 +117,13 @@ jobs:
           cache-dependency-path: gateway/package-lock.json
       - run: npm ci
       - run: npm run build
+      - name: Build shadcn React application
+        run: |
+          cd ui
+          npm install --no-audit --no-fund
+          npm run build
+          mkdir -p ../public/modern
+          cp -R dist/. ../public/modern/
       - name: Start local SMTP acceptance server
         run: |
           node test/fake-smtp.mjs > /tmp/commender-smtp-server.log 2>&1 &
