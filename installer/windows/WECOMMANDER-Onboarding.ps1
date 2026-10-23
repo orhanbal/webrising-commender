@@ -7,7 +7,7 @@ $exe = Join-Path $PSScriptRoot 'webrising-commender.exe'
 if (-not (Test-Path $exe)) { throw 'WECOMMANDER agent binary is missing.' }
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'WECOMMANDER | Cihaz Baglantisi'
-$form.Width = 560; $form.Height = 370
+$form.Width = 560; $form.Height = 440
 $form.StartPosition = 'CenterScreen'; $form.FormBorderStyle = 'FixedDialog'
 $form.MaximizeBox = $false
 $fields = @(
@@ -31,9 +31,49 @@ $notice.Location = New-Object System.Drawing.Point(20,232)
 $notice.Width = 510; $notice.Height = 34
 $form.Controls.Add($notice)
 $button = New-Object System.Windows.Forms.Button
-$button.Text = 'Eslestir ve Hizmeti Kur'; $button.Location = New-Object System.Drawing.Point(285,277)
+$button.Text = 'Eslestir ve Hizmeti Kur'; $button.Location = New-Object System.Drawing.Point(285,337)
 $button.Width = 235; $button.Height = 35
 $form.Controls.Add($button)
+
+# Device approval URLs contain only a random request ID, never the redemption secret.
+# A link and copy button remain available if the browser fails to surface.
+$script:approvalUrl = $null
+$approvalLink = New-Object System.Windows.Forms.LinkLabel
+$approvalLink.Text = 'Tarayicida cihaz onayini ac'
+$approvalLink.Location = New-Object System.Drawing.Point(20,278)
+$approvalLink.Width = 500
+$approvalLink.Height = 32
+$approvalLink.Visible = $false
+$form.Controls.Add($approvalLink)
+$copyButton = New-Object System.Windows.Forms.Button
+$copyButton.Text = 'Onay Baglantisini Kopyala'
+$copyButton.Location = New-Object System.Drawing.Point(20,337)
+$copyButton.Width = 248
+$copyButton.Height = 35
+$copyButton.Visible = $false
+$form.Controls.Add($copyButton)
+
+function Open-ApprovalPage {
+  if (-not $script:approvalUrl) { return }
+  try {
+    $launch = New-Object System.Diagnostics.ProcessStartInfo
+    $launch.FileName = $script:approvalUrl
+    $launch.UseShellExecute = $true
+    [void][System.Diagnostics.Process]::Start($launch)
+    $notice.Text = 'Tarayicida cihazi onaylayin.'
+    $form.WindowState = [System.Windows.Forms.FormWindowState]::Minimized
+  } catch {
+    $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+    $notice.Text = 'Tarayici acilamadi. Onay baglantisini kopyalayin.'
+  }
+}
+$approvalLink.Add_LinkClicked({ Open-ApprovalPage })
+$copyButton.Add_Click({
+  if ($script:approvalUrl) {
+    [System.Windows.Forms.Clipboard]::SetText($script:approvalUrl)
+    $notice.Text = 'Onay baglantisi panoya kopyalandi.'
+  }
+})
 
 # A login session remains in the system browser, never in the agent process.
 $script:linkRequest = $null
@@ -67,6 +107,10 @@ $timer.Add_Tick({
   if ([DateTime]::UtcNow -gt $script:linkDeadline) {
     $timer.Stop()
     $notice.Text = 'Baglanti istegi sona erdi. Yeniden deneyin.'
+    $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+    $script:approvalUrl = $null
+    $approvalLink.Visible = $false
+    $copyButton.Visible = $false
     $button.Enabled = $true
     return
   }
@@ -79,11 +123,16 @@ $timer.Add_Tick({
       'pending' { $notice.Text = 'Tarayicida hesap onayi bekleniyor...' }
       'approved' {
         $timer.Stop()
+        $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
         $notice.Text = 'Onay alindi. Windows hizmeti kuruluyor...'
         Finish-Enrollment $reply.pairingCode
       }
       default {
         $timer.Stop(); $button.Enabled = $true
+        $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+        $script:approvalUrl = $null
+        $approvalLink.Visible = $false
+        $copyButton.Visible = $false
         $notice.Text = 'Baglanti istegi gecersiz veya sona erdi.'
       }
     }
@@ -114,9 +163,11 @@ $button.Add_Click({
     $script:linkSecret = $started.requestSecret
     $script:linkDeadline = [DateTime]::UtcNow.AddSeconds([double]$started.expiresInSeconds)
     $notice.Text = 'Tarayicida WECOMMANDER hesabinla giris yap ve onayla.'
-    $approvalUrl = "$url/connect-device?requestId=$($script:linkRequest)"
-    Start-Process $approvalUrl
+    $script:approvalUrl = "$url/connect-device?requestId=$($script:linkRequest)"
+    $approvalLink.Visible = $true
+    $copyButton.Visible = $true
     $timer.Start()
+    Open-ApprovalPage
   } catch {
     $button.Enabled = $true
     [System.Windows.Forms.MessageBox]::Show($_.Exception.Message,'WECOMMANDER - Hata') | Out-Null
