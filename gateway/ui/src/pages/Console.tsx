@@ -392,7 +392,7 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
  </label>
 </div>
 <div className="grid gap-4">{cmsSection==="FAQ"?<>
- <p className="muted text-sm">Questions and answers are paired so publishing cannot separate a question from its answer.</p>
+ <p className="muted text-sm">{ui("Questions and answers are paired so publishing cannot separate a question from its answer.")}</p>
  {faqCopy.slice(0,2).map(key=><label key={key} className="block"><span className="font-semibold text-sm">{translate(key)}</span><textarea rows={2} maxLength={800} className="w-full rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-3 mt-2" value={cmsOverrides[key]||""} placeholder={translate(key)} onChange={e=>setCmsOverrides(old=>({...old,[key]:e.target.value}))}/></label>)}
  {faqPairs.filter(pair=>!cmsFilter||[pair.question,pair.answer].some(key=>key.toLocaleLowerCase("tr").includes(cmsFilter.toLocaleLowerCase("tr")))).map((pair,i)=><fieldset key={pair.question} className="rounded-xl border border-[var(--stroke)] p-5">
   <legend className="font-semibold px-2">FAQ {i+1}</legend>
