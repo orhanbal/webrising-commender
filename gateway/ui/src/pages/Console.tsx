@@ -34,6 +34,11 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
  const [organizationSearch,setOrganizationSearch]=useState("");
  const [organizationPage,setOrganizationPage]=useState(0);
  const [organizationTotal,setOrganizationTotal]=useState(0);
+ const [auditSearch,setAuditSearch]=useState("");
+ const [auditSource,setAuditSource]=useState<"all"|"tenant"|"platform">("all");
+ const [auditRisk,setAuditRisk]=useState<"all"|"low"|"medium"|"high"|"critical">("all");
+ const [auditPage,setAuditPage]=useState(0);
+ const [auditTotal,setAuditTotal]=useState(0);
  const [targetUser,setTargetUser]=useState<{id:string;email:string;disabled:boolean}|null>(null);
  const [confirmPassword,setConfirmPassword]=useState("");
  const [userActionBusy,setUserActionBusy]=useState(false);
@@ -246,13 +251,14 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
   if(!admin||!names[section])return;
   let active=true;setRecordsBusy(true);setRecordsError("");
   const suffix=section==="Users"?"?limit=25&offset="+(userPage*25)+"&q="+encodeURIComponent(userSearch):
-               section==="Organizations"?"?limit=25&offset="+(organizationPage*25)+"&q="+encodeURIComponent(organizationSearch):"";
+               section==="Organizations"?"?limit=25&offset="+(organizationPage*25)+"&q="+encodeURIComponent(organizationSearch):
+               section==="Operations"?"?limit=25&offset="+(auditPage*25)+"&q="+encodeURIComponent(auditSearch)+"&source="+auditSource+"&risk="+auditRisk:"";
   api<{items:Array<Record<string,unknown>>;total?:number}>("/api/console/"+names[section]+suffix)
-    .then(data=>{if(active){setRecords(data.items);if(section==="Organizations")setOrganizationTotal(data.total??0);if(section==="Users")setUserTotal(data.total??0)}})
+    .then(data=>{if(active){setRecords(data.items);if(section==="Organizations")setOrganizationTotal(data.total??0);if(section==="Users")setUserTotal(data.total??0);if(section==="Operations")setAuditTotal(data.total??0)}})
     .catch(e=>{if(active)setRecordsError(String(e))})
     .finally(()=>{if(active)setRecordsBusy(false)});
   return()=>{active=false}
- },[section,admin,userSearch,userPage,organizationSearch,organizationPage]);
+ },[section,admin,userSearch,userPage,organizationSearch,organizationPage,auditSearch,auditSource,auditRisk,auditPage]);
  if(loading)return <div className="min-h-screen grid place-items-center text-lg">{translate("Yükleniyor…")}</div>;
  if(error||!admin)return <div className="container-w py-24 max-w-xl">
    <div className="rounded-2xl bg-[var(--surface)] border border-[var(--stroke)] p-8">
@@ -405,6 +411,18 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
   <button type="button" disabled={organizationPage===0||recordsBusy} onClick={()=>setOrganizationPage(x=>Math.max(0,x-1))} className="rounded-xl border border-[var(--stroke)] px-4 disabled:opacity-40">{ui("Previous")}</button>
   <span className="self-center text-sm muted">Page {organizationPage+1} / {Math.max(1,Math.ceil(organizationTotal/25))} · {organizationTotal} total</span>
   <button type="button" disabled={recordsBusy||(organizationPage+1)*25>=organizationTotal} onClick={()=>setOrganizationPage(x=>x+1)} className="rounded-xl border border-[var(--stroke)] px-4 disabled:opacity-40">{ui("Next")}</button>
+ </div>}
+{section==="Operations"&&<div className="flex flex-wrap gap-3 mb-5 items-center">
+  <input aria-label={ui("Search audit records")} placeholder={ui("Search action or workspace")} value={auditSearch} onChange={e=>{setAuditSearch(e.target.value);setAuditPage(0)}} className="flex-1 min-w-[220px] rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 text-sm"/>
+  <select aria-label={ui("Audit source")} value={auditSource} onChange={e=>{setAuditSource(e.target.value as "all"|"tenant"|"platform");setAuditPage(0)}} className="rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 text-sm">
+    <option value="all">{ui("All sources")}</option><option value="tenant">{ui("Workspace activity")}</option><option value="platform">{ui("Platform activity")}</option>
+  </select>
+  <select aria-label={ui("Risk filter")} value={auditRisk} onChange={e=>{setAuditRisk(e.target.value as "all"|"low"|"medium"|"high"|"critical");setAuditPage(0)}} className="rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 text-sm">
+    <option value="all">{ui("All risks")}</option><option value="low">{ui("Low")}</option><option value="medium">{ui("Medium")}</option><option value="high">{ui("High")}</option><option value="critical">{ui("Critical")}</option>
+  </select>
+  <button type="button" disabled={recordsBusy||auditPage===0} onClick={()=>setAuditPage(x=>Math.max(0,x-1))} className="rounded-xl border border-[var(--stroke)] px-4 py-3 disabled:opacity-40">{ui("Previous")}</button>
+  <span className="self-center text-sm muted">{ui("Page")} {auditPage+1} / {Math.max(1,Math.ceil(auditTotal/25))} · {auditTotal} {ui("total")}</span>
+  <button type="button" disabled={recordsBusy||(auditPage+1)*25>=auditTotal} onClick={()=>setAuditPage(x=>x+1)} className="rounded-xl border border-[var(--stroke)] px-4 py-3 disabled:opacity-40">{ui("Next")}</button>
  </div>}
 {recordsBusy?<p className="muted py-8">{ui("Loading records…")}</p>:recordsError?<p role="alert" className="text-[var(--danger)]">{recordsError}</p>:records.length===0?<p className="muted py-8">{ui("No records.")}</p>:<table className="w-full text-sm text-left"><thead><tr>{Object.keys(records[0]||{}).map(k=><th key={k} className="px-3 py-3 border-b border-[var(--stroke)] whitespace-nowrap">{k.replaceAll("_"," ")}</th>)}</tr></thead><tbody>{records.map((row,i)=><tr key={String(row.id||i)}>{Object.values(row).map((value,j)=><td key={j} className="px-3 py-3 border-b border-[var(--stroke)] whitespace-nowrap">{value===null?"—":typeof value==="boolean"?(value?"Yes":"No"):String(value)}</td>)}{section==="Organizations"&&<td className="px-3 py-3 border-b border-[var(--stroke)]"><button className="rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm" onClick={()=>{const q=(row.quota_overrides||{}) as Record<string,number|null>;setOrgError("");setOrgEdit({id:String(row.id),name:String(row.name),maxDevices:q.maxDevices==null?"":String(q.maxDevices),maxMembers:q.maxMembers==null?"":String(q.maxMembers),maxApiTokens:q.maxApiTokens==null?"":String(q.maxApiTokens)})}}>{ui("Edit quotas")}</button><button className="ml-2 rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm" onClick={()=>void openMembers({id:String(row.id),name:String(row.name)})}>{ui("Members")}</button></td>}{section==="Users"&&<td className="px-3 py-3 border-b border-[var(--stroke)]"><button onClick={()=>{setUserActionError("");setTargetUser({id:String(row.id),email:String(row.email),disabled:Boolean(row.disabled)})}} className="rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm">{row.disabled?"Enable":"Disable"}</button><button type="button" className="ml-2 rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm" onClick={()=>void openSessions({id:String(row.id),email:String(row.email)})}>{ui("Sessions")}</button></td>}</tr>)}</tbody></table>}
         <p className="muted text-xs mt-5">{ui("Read-only records. Administrative changes require audited controls.")}</p>
