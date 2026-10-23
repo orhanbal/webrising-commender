@@ -1,4 +1,4 @@
-# WECOMMANDER first-run enrollment. Run as the user who will own the service.
+# WECOMMANDER first-run enrollment. Run in the signed-in Windows user's session.
 # Never echo pairing codes or device credentials into logs.
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -26,7 +26,7 @@ for ($i=0; $i -lt $fields.Count; $i++) {
   $form.Controls.Add($input); $inputs += $input
 }
 $notice = New-Object System.Windows.Forms.Label
-$notice.Text = 'Hesabinla baglan: tarayicida giris yap, cihaz baglantisini onayla.'
+$notice.Text = 'Hesabinla giris yap. Cihaz onayindan sonra otomatik baslatilir; Windows parolasi sorulmaz.'
 $notice.Location = New-Object System.Drawing.Point(20,232)
 $notice.Width = 510; $notice.Height = 34
 $form.Controls.Add($notice)
@@ -82,18 +82,20 @@ $script:linkSecret = $null
 $script:linkDeadline = [DateTime]::MinValue
 $script:pending = $false
 
-function Install-EnrolledService([string]$config) {
+function Install-EnrolledAgent([string]$config) {
   if (-not (Test-Path -LiteralPath $config -PathType Leaf)) {
-    throw 'Agent configuration is missing. Do not pair again until the previous service has been examined.'
+    throw 'Agent configuration is missing. Pair this device before enabling startup.'
   }
-  $account = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-  $helper = Join-Path $PSScriptRoot 'Install-Service-Interactive.ps1'
-  $params = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -ConfigPath "{1}" -BinaryPath "{2}" -Account "{3}"' -f $helper,$config,$exe,$account
-  $process = Start-Process -FilePath 'powershell.exe' -ArgumentList $params -Verb RunAs -Wait -PassThru
-  if ($process.ExitCode -ne 0) {
-    throw 'Windows service could not start. See the diagnostic message in the administrator window.'
+  $scriptPath = Join-Path $PSScriptRoot 'Install-User-Agent.ps1'
+  if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) {
+    throw 'The user-mode installer is missing. Download the latest WECOMMANDER Setup.'
   }
-  [System.Windows.Forms.MessageBox]::Show('Windows hizmeti calisiyor. Cihazin cevrimici oldugunu panelden kontrol edin.', 'WECOMMANDER') | Out-Null
+  & $scriptPath -BinaryPath $exe -ConfigPath $config
+  $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+  [System.Windows.Forms.MessageBox]::Show(
+    'WECOMMANDER arka planda calisiyor ve Windows oturum acilisinda otomatik baslayacak. Windows parolaniz gerekmiyor.',
+    'WECOMMANDER'
+  ) | Out-Null
   $form.Close()
 }
 
@@ -107,7 +109,7 @@ function Finish-Enrollment([string]$pairingCode) {
   }
   $config = Join-Path $env:APPDATA 'webrising-commender\agent.json'
   if (-not (Test-Path -LiteralPath $config)) { throw 'Agent config could not be created.' }
-  Install-EnrolledService $config
+  Install-EnrolledAgent $config
 }
 
 $timer = New-Object System.Windows.Forms.Timer
@@ -134,7 +136,7 @@ $timer.Add_Tick({
       'approved' {
         $timer.Stop()
         $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
-        $notice.Text = 'Onay alindi. Windows hizmeti kuruluyor...'
+        $notice.Text = 'Onay alindi. Arka plan agent baslatiliyor...'
         try {
           Finish-Enrollment $reply.pairingCode
         } catch {
@@ -169,16 +171,12 @@ $button.Add_Click({
   }
   $button.Enabled = $false
   try {
-    # If a service already exists, repair its startup without generating a
-    # second cloud device or overwriting the original enrollment credentials.
-    $service = Get-Service -Name 'WebRisingCommender' -ErrorAction SilentlyContinue
-    if ($service) {
-      $existingConfig = Join-Path $env:APPDATA 'webrising-commender\agent.json'
-      if (-not (Test-Path -LiteralPath $existingConfig -PathType Leaf)) {
-        throw 'Mevcut Windows hizmeti bulundu ama bu Windows hesabinin cihaz ayarlari bulunamadi. Yeniden eslestirmeden once hizmet hesabini kontrol edin.'
-      }
-      $notice.Text = 'Mevcut Windows hizmeti icin onarim deneniyor...'
-      Install-EnrolledService $existingConfig
+    # Reuse existing pairing after an upgrade or interrupted installation.
+    # Never generate a second cloud device identity for the same local config.
+    $existingConfig = Join-Path $env:APPDATA 'webrising-commender\agent.json'
+    if (Test-Path -LiteralPath $existingConfig -PathType Leaf) {
+      $notice.Text = 'Mevcut cihaz eslestirmesi kullaniliyor. Arka plan agent baslatiliyor...'
+      Install-EnrolledAgent $existingConfig
       return
     }
     $manualCode = $inputs[1].Text.Trim()
