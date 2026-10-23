@@ -75,8 +75,16 @@ async function checkConsole() {
   const text = await response.text();
   assert.equal(response.status, 200);
   assert.match(text, /WECOMMANDER/i);
-  assert.match(text, /Browser account/i);
-  record("Web console", true, "/app console HTML served");
+  if (text.includes('id="root"')) {
+    assert.match(text, /\/modern\/assets\/index-[^"]+\.js/i, "Modern console requires a built React bundle");
+    const advanced = await fetch(new URL("/advanced", base), { redirect: "manual" });
+    assert.equal(advanced.status, 200);
+    assert.match(await advanced.text(), /Browser account/i, "Power console must remain available at /advanced");
+    record("Web console", true, "React dashboard at /app; legacy power console at /advanced");
+  } else {
+    assert.match(text, /Browser account/i);
+    record("Web console", true, "/app classic console HTML served");
+  }
 }
 
 async function checkPublicConfig() {
