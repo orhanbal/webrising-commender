@@ -15,6 +15,8 @@ export function ConsolePage({nav,theme,toggle,logout}:{nav:Nav;theme:Theme;toggl
  const [loading,setLoading]=useState(true);
  const [menu,setMenu]=useState(false);
  const [section,setSection]=useState("Overview");
+ const [userSearch,setUserSearch]=useState("");
+ const [userPage,setUserPage]=useState(0);
  const [records,setRecords]=useState<Array<Record<string,unknown>>>([]);
  const [recordsError,setRecordsError]=useState("");
  const [recordsBusy,setRecordsBusy]=useState(false);
@@ -42,7 +44,7 @@ export function ConsolePage({nav,theme,toggle,logout}:{nav:Nav;theme:Theme;toggl
     .finally(()=>{if(active)setLoading(false);});
    return()=>{active=false};
  },[]);
- useEffect(()=>{const names:Record<string,string>={Users:"users",Organizations:"organizations",Devices:"devices",Operations:"audit"};if(!admin||!names[section])return;let active=true;setRecordsBusy(true);setRecordsError("");api<{items:Array<Record<string,unknown>>}>("/api/console/"+names[section]).then(data=>{if(active)setRecords(data.items)}).catch(e=>{if(active)setRecordsError(String(e))}).finally(()=>{if(active)setRecordsBusy(false)});return()=>{active=false}},[section,admin]);
+ useEffect(()=>{const names:Record<string,string>={Users:"users",Organizations:"organizations",Devices:"devices",Operations:"audit"};if(!admin||!names[section])return;let active=true;setRecordsBusy(true);setRecordsError("");api<{items:Array<Record<string,unknown>>}>("/api/console/"+names[section]+(section==="Users"?"?limit=25&offset="+(userPage*25)+"&q="+encodeURIComponent(userSearch):"")).then(data=>{if(active)setRecords(data.items)}).catch(e=>{if(active)setRecordsError(String(e))}).finally(()=>{if(active)setRecordsBusy(false)});return()=>{active=false}},[section,admin,userSearch,userPage]);
  if(loading)return <div className="min-h-screen grid place-items-center text-lg">{translate("Yükleniyor…")}</div>;
  if(error||!admin)return <div className="container-w py-24 max-w-xl">
    <div className="rounded-2xl bg-[var(--surface)] border border-[var(--stroke)] p-8">
@@ -88,6 +90,7 @@ export function ConsolePage({nav,theme,toggle,logout}:{nav:Nav;theme:Theme;toggl
        <h2 className="text-xl font-bold">Administration modules</h2>
        <p className="muted mt-2">User management, billing, landing CMS, brand assets and system settings will be enabled only after their secured APIs and acceptance tests are complete.</p>
       </div></>:<div className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-5 overflow-x-auto">
+        {section==="Users"&&<div className="flex flex-wrap gap-3 mb-5"><input className="flex-1 min-w-[220px] rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 text-sm" placeholder="Search user email" aria-label="Search user email" value={userSearch} onChange={e=>{setUserPage(0);setUserSearch(e.target.value)}}/><button type="button" disabled={userPage===0} onClick={()=>setUserPage(x=>Math.max(0,x-1))} className="rounded-xl border border-[var(--stroke)] px-4 disabled:opacity-40">Previous</button><span className="self-center text-sm muted">Page {userPage+1}</span><button type="button" disabled={records.length<25} onClick={()=>setUserPage(x=>x+1)} className="rounded-xl border border-[var(--stroke)] px-4 disabled:opacity-40">Next</button></div>}
         {recordsBusy?<p className="muted py-8">Loading records…</p>:recordsError?<p role="alert" className="text-[var(--danger)]">{recordsError}</p>:records.length===0?<p className="muted py-8">No records.</p>:<table className="w-full text-sm text-left"><thead><tr>{Object.keys(records[0]||{}).map(k=><th key={k} className="px-3 py-3 border-b border-[var(--stroke)] whitespace-nowrap">{k.replaceAll("_"," ")}</th>)}</tr></thead><tbody>{records.map((row,i)=><tr key={String(row.id||i)}>{Object.values(row).map((value,j)=><td key={j} className="px-3 py-3 border-b border-[var(--stroke)] whitespace-nowrap">{value===null?"—":typeof value==="boolean"?(value?"Yes":"No"):String(value)}</td>)}</tr>)}</tbody></table>}
         <p className="muted text-xs mt-5">Read-only records. Administrative changes require audited controls.</p>
        </div>}
