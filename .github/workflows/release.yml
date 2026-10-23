@@ -41,6 +41,36 @@ jobs:
           name: ${{ matrix.artifact }}
           path: dist/*
 
+  windows-setup:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build Windows agent
+        run: cargo build --release -p webrising-commender-agent
+      - name: Package password-free Windows setup
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item 'target\release\webrising-commender.exe' 'dist\webrising-commender.exe'
+          Copy-Item 'installer\windows\WECOMMANDER.iss' 'dist\WECOMMANDER.iss'
+          foreach ($name in @('WECOMMANDER-Onboarding.ps1','Install-User-Agent.ps1','Run-User-Agent.ps1','Uninstall-User-Agent.ps1','Migrate-Legacy-Service.ps1')) {
+            Copy-Item ("installer\windows\"+$name) ("dist\"+$name)
+          }
+          choco install innosetup --yes --no-progress
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $compiler)) { throw 'Inno Setup compiler missing.' }
+          Push-Location dist
+          try {
+            & $compiler "/DAppVersion=${env:GITHUB_REF_NAME}" "WECOMMANDER.iss"
+            if ($LASTEXITCODE -ne 0) { throw 'Windows installer compilation failed.' }
+          } finally { Pop-Location }
+          Copy-Item 'dist\output\WECOMMANDER-Setup-windows-x64.exe' 'dist\WECOMMANDER-Setup-windows-x64.exe'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WECOMMANDER-windows-setup
+          path: dist/WECOMMANDER-Setup-windows-x64.exe
+
   macos-universal:
     runs-on: macos-latest
     steps:
@@ -63,7 +93,7 @@ jobs:
           path: dist/*
 
   publish:
-    needs: [agent, macos-universal]
+    needs: [agent, macos-universal, windows-setup]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -73,13 +103,12 @@ jobs:
           merge-multiple: true
       - name: Add installer helpers and checksums
         run: |
-          cp scripts/install-windows.ps1 dist/
-          cp scripts/uninstall-windows.ps1 dist/
           cp scripts/install-linux.sh dist/
           cp scripts/uninstall-linux.sh dist/
           cp scripts/install-macos.sh dist/
           cp scripts/uninstall-macos.sh dist/
           cp docs/QUICKSTART.md dist/
+          cp docs/WINDOWS_SETUP.md dist/
           cd dist
           sha256sum * > SHA256SUMS.txt
       - name: Publish GitHub release
