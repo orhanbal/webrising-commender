@@ -1,6 +1,6 @@
 # WECOMMANDER — Super Admin Master Plan
 
-Status: IN PROGRESS (2026-10-23). Audited incident triage and revisioned landing media library implemented. The latest full CI and production acceptance must pass before the module is accepted; external release dependencies remain.
+Status: IN PROGRESS (2026-10-23). Audit pagination/filtering and unpublished CMS media isolation implemented. Latest complete CI and production browser acceptance remain release gates.
 
 ## Decision
 
@@ -54,6 +54,7 @@ Legend: [x] implementation committed, [ ] acceptance or implementation still req
 
 ### Phase D — Devices and operations
 - [x] Cross-workspace read-only device inventory and unified tenant/platform audit timeline.
+- [x] Audit timeline now supports bounded server-side search, platform/workspace source and risk filters, total counts and paginated UI with API/browser regression checks.
 - [x] Live system counts for relay health, active sessions, pending approvals and mail queue.
 - [ ] Agent enrollment/heartbeat/relay failover and terminal/file/task operations on real Windows, macOS and Linux devices.
 - [x] Live incident detection for mail failures and stale relay heartbeats, audited password-confirmed incident acknowledgement (no automatic repair or suppression).
@@ -74,6 +75,7 @@ Legend: [x] implementation committed, [ ] acceptance or implementation still req
 - [x] Plain-text EN/TR privacy and terms editor, drafts, password-confirmed publish/restore, public pages and API/browser coverage added (CI acceptance pending).
 - [x] Structured editing of existing FAQ question/answer pairs and SVG image input converted to validated PNG before upload.
 - [x] Password-protected PNG/WebP media library with SVG-to-PNG conversion, immutable asset IDs, audited uploads, and feature-card images selected through revisioned CMS publication.
+- [x] Unpublished images are not exposed by the public media endpoint; drafts use a separately authorized preview endpoint. Publication and removal boundaries have integration coverage.
 - [ ] Legally approved final documents, arbitrary FAQ creation/order, media collection lifecycle, full section reordering and authenticated production browser acceptance.
 
 ### Phase G — System settings
@@ -87,7 +89,7 @@ Legend: [x] implementation committed, [ ] acceptance or implementation still req
 ### Phase H — Release gates
 - [x] GitHub workflow runs gateway, integration, agent/relay E2E and cross-platform packaging jobs.
 - [x] New API/browser acceptance assertions added; final full-workflow verification pending.
-- [ ] Green latest **full** CI after this change batch and production deployed commit equality (earlier baseline was green).
+- [ ] Confirm **latest** full CI success and exact commit match after the current audit, media-hardening and responsive-table work (prior `214da4dd` baseline succeeded).
 - [ ] End-to-end accepted user login, workspace role changes, admin CMS/SEO publish, Paddle and live agent controls.
 - [ ] Verified production backup/restore and rollback drills.
 - [ ] Confirm no tenant data leaking into privileged support operations.
