@@ -460,6 +460,8 @@ const unverifiedLogin=await fetch(base+"/api/auth/login",{
   method:"POST",headers:{"Content-Type":"application/json"},
   body:JSON.stringify({email:"unverified-console-fixture@example.test",password:"correct-horse-battery-staple"})});
 assert.equal(unverifiedLogin.status,401,"Unverified accounts must not log in");
+await acceptanceDb.query("delete from users where id=any($1::uuid[])",[[memberId,unverifiedSeed.rows[0].id]]);
+await acceptanceDb.query("delete from platform_administrators where user_id=$1",[browserMe.userId]);
 
 const browserCsrfDenied = await fetch(base + "/api/pairing", {
   method: "POST",
