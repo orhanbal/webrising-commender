@@ -1691,11 +1691,14 @@ const noPriceBilling=await jsonFetch(
 assert.equal(noPriceBilling.plan.key,"ci-paddle-plus","Reject unknown price rather than change entitlement");
 
 // Owner-initiated Paddle support cases are internal records, never provider actions.
+const supportMeResponse=await fetch(base+"/api/auth/me",{headers:{Cookie:browserCookies}});
+assert.equal(supportMeResponse.status,200);
+const supportOrgId=(await supportMeResponse.json()).organizationId;
 await acceptanceDb.query(
  `insert into organization_subscriptions(organization_id,plan_key,status,provider)
   values($1,'ci-paddle','active','paddle')
   on conflict(organization_id) do update set plan_key='ci-paddle',status='active',provider='paddle'`,
- [browserMe.organizationId],
+ [supportOrgId],
 );
 const supportSessionHeaders={Cookie:browserCookies,"Content-Type":"application/json","X-CSRF-Token":browserLogin.csrfToken};
 const supportPayload=JSON.stringify({type:"refund",message:"I would like a refund review, please."});
@@ -1706,7 +1709,7 @@ assert.equal(requestFromApiKey.status,403,"Support requests must originate from 
 const supportSubmitted=await fetch(base+"/api/billing/support-requests",{
  method:"POST",headers:supportSessionHeaders,body:supportPayload,
 });
-assert.equal(supportSubmitted.status,201);
+assert.equal(supportSubmitted.status,201,JSON.stringify(await supportSubmitted.clone().json()));
 const requestId=(await supportSubmitted.json()).item.id;
 const duplicateSupport=await fetch(base+"/api/billing/support-requests",{
  method:"POST",headers:supportSessionHeaders,body:supportPayload,
@@ -1738,7 +1741,7 @@ const reviewed=await acceptanceDb.query(
  "select status from billing_support_requests where id=$1",[requestId]);
 assert.equal(reviewed.rows[0].status,"in_review");
 const unchangedSubscription=await acceptanceDb.query(
- "select status from organization_subscriptions where organization_id=$1",[browserMe.organizationId]);
+ "select status from organization_subscriptions where organization_id=$1",[supportOrgId]);
 assert.equal(unchangedSubscription.rows[0].status,"active","Review cannot mutate Paddle entitlement");
 const closeRequest=await fetch(base+"/api/console/billing/requests/review",{
  method:"POST",headers:supportSessionHeaders,body:reviewBody("correct-horse-battery-staple","closed"),
