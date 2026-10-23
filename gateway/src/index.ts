@@ -431,6 +431,16 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         String(req.headers["paddle-signature"][0]||""):String(req.headers["paddle-signature"]||"");
       return void json(res,200,await consumePaddleWebhook(raw,signature));
     }
+    if (req.method === "GET" && url.pathname.startsWith("/api/public/brand/")) {
+      const kind=url.pathname.slice("/api/public/brand/".length);
+      const fallbacks:Record<string,string>={logo_light:"wecommander-white.svg",logo_dark:"wecommander-black.svg",favicon:"wecommander-favicon.svg"};
+      if(!Object.hasOwn(fallbacks,kind))return void json(res,404,{error:"not_found"});
+      const asset=await db.query<{content_type:string;content:Buffer}>(
+        "select content_type,content from platform_brand_assets where kind=$1",[kind]);
+      if(!asset.rows[0]){res.writeHead(302,{location:"/assets/"+fallbacks[kind],...securityHeaders(),"cache-control":"no-store"});res.end();return;}
+      res.writeHead(200,{...securityHeaders(),"content-type":asset.rows[0].content_type,"content-length":asset.rows[0].content.length,"cache-control":"no-store","x-content-type-options":"nosniff"});
+      res.end(asset.rows[0].content);return;
+    }
     if (req.method === "GET" && url.pathname === "/api/public/site-content") {
       const locale = url.searchParams.get("locale")==="tr"?"tr":"en";
       const published = await db.query(
@@ -1497,6 +1507,33 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
            from organization_subscriptions s join organizations o on o.id=s.organization_id
            order by o.name limit 100`);
         return void json(res,200,{plans:plans.rows,subscriptions:subscriptions.rows});
+      }
+      if (req.method === "POST" && url.pathname === "/api/console/brand/upload") {
+        const payload=z.object({
+          kind:z.enum(["logo_light","logo_dark","favicon"]),
+          mime:z.enum(["image/png","image/webp"]),
+          base64:z.string().min(32).max(750000).regex(/^[A-Za-z0-9+/]+={0,2}$/),
+          currentPassword:z.string().min(12).max(256),
+        }).parse(await readJson(req));
+        const verify=await db.query<{password_hash:string}>("select password_hash from users where id=$1 and disabled_at is null",[principal.userId]);
+        if(!verify.rows[0]||!(await verifyPassword(payload.currentPassword,verify.rows[0].password_hash)))
+          return void json(res,403,{error:"reauthentication_failed"});
+        const bytes=Buffer.from(payload.base64,"base64");
+        if(bytes.length>500000)return void json(res,413,{error:"asset_too_large"});
+        const png=bytes.length>24&&bytes.subarray(0,8).equals(Buffer.from("89504e470d0a1a0a","hex"));
+        const webp=bytes.length>16&&bytes.toString("ascii",0,4)==="RIFF"&&bytes.toString("ascii",8,12)==="WEBP";
+        if(!(payload.mime==="image/png"?png:webp))return void json(res,400,{error:"invalid_image_header"});
+        const client=await db.connect();
+        try{
+          await client.query("begin");
+          await client.query(`insert into platform_brand_assets(kind,content_type,content,uploaded_by)
+            values($1,$2,$3,$4) on conflict(kind)
+            do update set content_type=excluded.content_type,content=excluded.content,uploaded_by=excluded.uploaded_by,updated_at=now()`,
+            [payload.kind,payload.mime,bytes,principal.userId]);
+          await client.query("insert into platform_admin_audit(actor_user_id,action,detail) values($1,'brand.update',$2)",[principal.userId,payload.kind]);
+          await client.query("commit");
+        }catch(error){await client.query("rollback");throw error}finally{client.release()}
+        return void json(res,200,{ok:true});
       }
       if (req.method === "GET" && url.pathname === "/api/console/system") {
         const counts=await db.query(
