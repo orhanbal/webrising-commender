@@ -434,7 +434,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     if (req.method === "GET" && url.pathname === "/api/public/site-content") {
       const locale = url.searchParams.get("locale")==="tr"?"tr":"en";
       const published = await db.query(
-        "select id,hero_title,hero_subtitle from site_content_revisions where locale=$1 and state='published' limit 1",
+        "select id,hero_title,hero_subtitle,overrides from site_content_revisions where locale=$1 and state='published' limit 1",
         [locale],
       );
       return void json(res,200,{item:published.rows[0]||null});
@@ -1489,17 +1489,18 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       if (req.method === "GET" && url.pathname === "/api/console/site-content") {
         const locale = url.searchParams.get("locale")==="tr"?"tr":"en";
         const revisions=await db.query(
-          "select id,locale,hero_title,hero_subtitle,state,created_at from site_content_revisions where locale=$1 order by created_at desc,id desc limit 30",[locale]);
+          "select id,locale,hero_title,hero_subtitle,overrides,state,created_at from site_content_revisions where locale=$1 order by created_at desc,id desc limit 30",[locale]);
         return void json(res,200,{items:revisions.rows});
       }
       if (req.method === "POST" && url.pathname === "/api/console/site-content") {
         const payload=z.object({
           locale:z.enum(["en","tr"]),heroTitle:z.string().trim().min(1).max(160),
           heroSubtitle:z.string().trim().min(1).max(500),
+          overrides:z.record(z.string().max(300),z.string().max(800)).refine(data=>Object.keys(data).length<=100).default({}),
         }).parse(await readJson(req));
         const saved=await db.query(
-          "insert into site_content_revisions(locale,hero_title,hero_subtitle,created_by) values($1,$2,$3,$4) returning id",
-          [payload.locale,payload.heroTitle,payload.heroSubtitle,principal.userId],
+          "insert into site_content_revisions(locale,hero_title,hero_subtitle,overrides,created_by) values($1,$2,$3,$4::jsonb,$5) returning id",
+          [payload.locale,payload.heroTitle,payload.heroSubtitle,JSON.stringify(payload.overrides),principal.userId],
         );
         await db.query("insert into platform_admin_audit(actor_user_id,action,detail) values($1,'cms.draft',$2)",
           [principal.userId,"revision:"+saved.rows[0].id]);
