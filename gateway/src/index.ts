@@ -1501,17 +1501,21 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         const limit = Math.min(100,Math.max(1,Number(url.searchParams.get("limit")||25)||25));
         const offset = Math.min(100000,Math.max(0,Number(url.searchParams.get("offset")||0)||0));
         const search = (url.searchParams.get("q")||"").trim().slice(0,160);
-        const records = await db.query(
-          `select u.id,u.email,u.created_at,u.last_login_at,
-              (u.disabled_at is not null) as disabled,
-              (u.email_verified_at is not null) as verified,
-              count(m.organization_id)::int as workspace_count
-           from users u left join organization_members m on m.user_id=u.id
-           where ($1::text='' or u.email ilike '%'||$1||'%')
-           group by u.id order by u.created_at desc limit $2 offset $3`,
-          [search,limit,offset],
-        );
-        return void json(res,200,{items:records.rows,limit,offset});
+        const [records,total]=await Promise.all([
+          db.query(
+            `select u.id,u.email,u.created_at,u.last_login_at,
+                (u.disabled_at is not null) as disabled,
+                (u.email_verified_at is not null) as verified,
+                count(m.organization_id)::int as workspace_count
+             from users u left join organization_members m on m.user_id=u.id
+             where ($1::text='' or u.email ilike '%'||$1||'%')
+             group by u.id order by u.created_at desc,u.id desc limit $2 offset $3`,
+            [search,limit,offset],
+          ),
+          db.query<{total:number}>(
+            "select count(*)::int as total from users where ($1::text='' or email ilike '%'||$1||'%')",[search]),
+        ]);
+        return void json(res,200,{items:records.rows,total:total.rows[0]?.total??0,limit,offset});
       }
       if (req.method === "POST" && url.pathname === "/api/console/organizations/quotas") {
         const limit=z.number().int().min(0).max(1000000).nullable().optional();
