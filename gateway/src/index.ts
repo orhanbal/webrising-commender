@@ -431,6 +431,14 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         String(req.headers["paddle-signature"][0]||""):String(req.headers["paddle-signature"]||"");
       return void json(res,200,await consumePaddleWebhook(raw,signature));
     }
+    if (req.method === "GET" && url.pathname === "/api/public/site-content") {
+      const locale = url.searchParams.get("locale")==="tr"?"tr":"en";
+      const published = await db.query(
+        "select id,hero_title,hero_subtitle from site_content_revisions where locale=$1 and state='published' limit 1",
+        [locale],
+      );
+      return void json(res,200,{item:published.rows[0]||null});
+    }
     if (req.method === "GET" && url.pathname === "/api/public/config") {
       return void json(res, 200, {
         deploymentMode,
@@ -1413,6 +1421,41 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
             order by a.created_at desc limit 100`,
         );
         return void json(res,200,{items:records.rows});
+      }
+      if (req.method === "GET" && url.pathname === "/api/console/site-content") {
+        const locale = url.searchParams.get("locale")==="tr"?"tr":"en";
+        const revisions=await db.query(
+          "select id,locale,hero_title,hero_subtitle,state,created_at from site_content_revisions where locale=$1 order by created_at desc,id desc limit 30",[locale]);
+        return void json(res,200,{items:revisions.rows});
+      }
+      if (req.method === "POST" && url.pathname === "/api/console/site-content") {
+        const payload=z.object({
+          locale:z.enum(["en","tr"]),heroTitle:z.string().trim().min(1).max(160),
+          heroSubtitle:z.string().trim().min(1).max(500),
+        }).parse(await readJson(req));
+        const saved=await db.query(
+          "insert into site_content_revisions(locale,hero_title,hero_subtitle,created_by) values($1,$2,$3,$4) returning id",
+          [payload.locale,payload.heroTitle,payload.heroSubtitle,principal.userId],
+        );
+        await db.query("insert into platform_admin_audit(actor_user_id,action,detail) values($1,'cms.draft',$2)",
+          [principal.userId,"revision:"+saved.rows[0].id]);
+        return void json(res,201,{id:saved.rows[0].id});
+      }
+      if (req.method === "POST" && url.pathname === "/api/console/site-content/publish") {
+        const payload=z.object({id:z.number().int().positive()}).parse(await readJson(req));
+        const client=await db.connect();
+        try {
+          await client.query("begin");
+          await client.query("select pg_advisory_xact_lock(hashtext('wecommander:cms:publish'))");
+          const revision=await client.query<{locale:string}>("select locale from site_content_revisions where id=$1 for update",[payload.id]);
+          if(!revision.rows[0]){await client.query("rollback");return void json(res,404,{error:"revision_not_found"});}
+          await client.query("update site_content_revisions set state='draft' where locale=$1 and state='published'",[revision.rows[0].locale]);
+          await client.query("update site_content_revisions set state='published' where id=$1",[payload.id]);
+          await client.query("insert into platform_admin_audit(actor_user_id,action,detail) values($1,'cms.publish',$2)",
+            [principal.userId,"revision:"+payload.id]);
+          await client.query("commit");
+        } catch(error) {await client.query("rollback");throw error;} finally{client.release();}
+        return void json(res,200,{ok:true});
       }
       return void json(res, 404, { error: "not_found" });
     }
