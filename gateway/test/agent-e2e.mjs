@@ -210,6 +210,19 @@ try {
   assert.equal(replaced.ok, true);
   assert.equal(replaced.replacements, 1);
 
+  assert.equal(typeof replaced.sha256, "string");
+  assert.equal(replaced.sha256.length, 64);
+
+  const staleEdit = await tool(209, "fs_replace", {
+    device_id: deviceId,
+    path: filePath,
+    search: "hello-from-search-edit",
+    replace: "should-not-be-written",
+    expected_sha256: "0".repeat(64),
+  });
+  assert.equal(typeof staleEdit.error, "string");
+  assert.equal(fs.readFileSync(filePath, "utf8"), "hello-from-search-edit");
+
   const readAfterReplace = await tool(118, "fs_read", {
     device_id: deviceId,
     path: filePath,

@@ -16,7 +16,7 @@ export type AgentAction =
   | { kind: "fs_tree"; path: string; maxDepth?: number; maxEntries?: number }
   | { kind: "fs_search"; path: string; query: string; maxResults?: number }
   | { kind: "text_search"; path: string; query: string; caseSensitive?: boolean; maxResults?: number }
-  | { kind: "fs_replace"; path: string; search: string; replace: string; replaceAll?: boolean }
+  | { kind: "fs_replace"; path: string; search: string; replace: string; replaceAll?: boolean; expectedSha256?: string }
   | { kind: "process_exec"; command: string; cwd?: string; timeoutMs?: number }
   | { kind: "process_list" }
   | { kind: "process_kill"; pid: number }
@@ -102,6 +102,7 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     search: z.string().min(1).max(256 * 1024),
     replace: z.string().max(1024 * 1024),
     replaceAll: z.boolean().optional(),
+    expectedSha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
   }).strict(),
   z.object({
     kind: z.literal("process_exec"),

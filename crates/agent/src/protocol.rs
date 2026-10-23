@@ -87,6 +87,7 @@ pub enum AgentAction {
         search: String,
         replace: String,
         replace_all: Option<bool>,
+        expected_sha256: Option<String>,
     },
     ProcessExec {
         command: String,

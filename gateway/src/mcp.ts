@@ -94,7 +94,7 @@ const tools = [
   tool(
     "fs_replace",
     "Perform a guarded UTF-8 search/replace edit. By default the search must match exactly once.",
-    { path: str(), search: str(), replace: str(), replace_all: bool() },
+    { path: str(), search: str(), replace: str(), replace_all: bool(), expected_sha256: str() },
     ["path", "search", "replace"],
   ),
   tool(
@@ -204,7 +204,7 @@ function actionFromTool(name: string, a: any): AgentAction {
     case "fs_search": return { kind: "fs_search", path: String(a.path), query: String(a.query), ...(a.max_results !== undefined ? { maxResults: Number(a.max_results) } : {}) };
     case "text_search":
     case "code_search": return { kind: "text_search", path: String(a.path), query: String(a.query), ...(a.case_sensitive !== undefined ? { caseSensitive: Boolean(a.case_sensitive) } : {}), ...(a.max_results !== undefined ? { maxResults: Number(a.max_results) } : {}) };
-    case "fs_replace": return { kind: "fs_replace", path: String(a.path), search: String(a.search), replace: String(a.replace), ...(a.replace_all !== undefined ? { replaceAll: Boolean(a.replace_all) } : {}) };
+    case "fs_replace": return { kind: "fs_replace", path: String(a.path), search: String(a.search), replace: String(a.replace), ...(a.replace_all !== undefined ? { replaceAll: Boolean(a.replace_all) } : {}), ...(a.expected_sha256 !== undefined ? { expectedSha256: String(a.expected_sha256) } : {}) };
     case "process_exec": return { kind: "process_exec", command: String(a.command), ...(a.cwd ? { cwd: String(a.cwd) } : {}), ...(a.timeout_ms ? { timeoutMs: Number(a.timeout_ms) } : {}) };
     case "process_list": return { kind: "process_list" };
     case "process_kill": return { kind: "process_kill", pid: Number(a.pid) };

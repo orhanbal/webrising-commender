@@ -86,12 +86,14 @@ pub async fn execute(
             search,
             replace,
             replace_all,
+            expected_sha256,
         } => fs_ops::replace_text(
             policy,
             &path,
             &search,
             &replace,
             replace_all.unwrap_or(false),
+            expected_sha256.as_deref(),
         ),
         AgentAction::ProcessExec {
             command,

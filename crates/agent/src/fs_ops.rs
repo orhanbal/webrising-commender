@@ -8,6 +8,7 @@ use std::{
     path::Path,
 };
 use uuid::Uuid;
+use sha2::{Digest, Sha256};
 
 const DEFAULT_READ_MAX: usize = 1024 * 1024;
 const MAX_PAGED_FILE: u64 = 32 * 1024 * 1024;
@@ -410,6 +411,7 @@ pub fn replace_text(
     search: &str,
     replacement: &str,
     replace_all: bool,
+    expected_sha256: Option<&str>,
 ) -> Result<Value> {
     if search.is_empty() {
         return Err(anyhow!("search text cannot be empty"));
@@ -429,6 +431,12 @@ pub fn replace_text(
     }
 
     let original = fs::read_to_string(&path).context("file is not valid UTF-8 text")?;
+    let previous_sha256 = format!("{:x}", Sha256::digest(original.as_bytes()));
+    if let Some(expected) = expected_sha256 {
+        if !previous_sha256.eq_ignore_ascii_case(expected) {
+            return Err(anyhow!("file_changed_since_read"));
+        }
+    }
     let matches = original.match_indices(search).count();
     if matches == 0 {
         return Err(anyhow!("search text was not found"));
@@ -455,6 +463,8 @@ pub fn replace_text(
         "ok": true,
         "path": path.to_string_lossy(),
         "replacements": if replace_all { matches } else { 1 },
+        "previousSha256": previous_sha256,
+        "sha256": format!("{:x}", Sha256::digest(updated.as_bytes())),
         "size": updated.len()
     }))
 }
