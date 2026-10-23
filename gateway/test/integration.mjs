@@ -486,6 +486,46 @@ assert.equal((await publishLegal(legalFirstId,"correct-horse-battery-staple")).s
 assert.equal((await jsonFetch("/api/public/legal?page=privacy&locale=en")).item.title,"Privacy Revision One");
 await acceptanceDb.query("delete from legal_page_revisions where id=any($1::bigint[])",[[legalFirstId,legalSecondId]]);
 
+// Live incident triage: a password-confirmed acknowledgement is audit-only and
+// never marks a relay healthy, grants device access or hides subsequent new incidents.
+const fakeRelayId="ci-stale-relay-acceptance";
+await acceptanceDb.query(
+ `insert into relay_nodes(id,region,public_ws_url,internal_base_url,enabled,drain,last_seen_at)
+  values($1,'ci','wss://relay.example.test/agent','https://relay.example.test',true,false,now()-interval '1 hour')
+  on conflict(id) do update set last_seen_at=now()-interval '1 hour',enabled=true,drain=false`,
+ [fakeRelayId],
+);
+const activeIncidents=await fetch(base+"/api/console/incidents",{headers:{Cookie:browserCookies}});
+assert.equal(activeIncidents.status,200);
+const relayIncident=(await activeIncidents.json()).items.find(i=>i.kind==="relay_unhealthy");
+assert.ok(relayIncident?.fingerprint,"Stale relay must be reported as an incident");
+const unauthorizedIncident=await fetch(base+"/api/console/incidents");
+assert.equal(unauthorizedIncident.status,401);
+const invalidReview=await fetch(base+"/api/console/incidents/acknowledge",{
+ method:"POST",headers:cmsSessionHeaders,
+ body:JSON.stringify({fingerprint:relayIncident.fingerprint,currentPassword:"wrong-password-value"}),
+});
+assert.equal(invalidReview.status,403,"Incident acknowledgements require a current admin password");
+const incidentReview=await fetch(base+"/api/console/incidents/acknowledge",{
+ method:"POST",headers:cmsSessionHeaders,
+ body:JSON.stringify({fingerprint:relayIncident.fingerprint,currentPassword:"correct-horse-battery-staple"}),
+});
+assert.equal(incidentReview.status,200);
+assert.equal((await incidentReview.json()).conditionResolved,false);
+const reviewedIncident=(await(await fetch(base+"/api/console/incidents",{headers:{Cookie:browserCookies}})).json()).items
+ .find(i=>i.kind==="relay_unhealthy");
+assert.ok(reviewedIncident?.acknowledgedAt,"Reviewed incident is auditable");
+await acceptanceDb.query("update relay_nodes set last_seen_at=now() where id=$1",[fakeRelayId]);
+const refreshedIncidents=(await(await fetch(base+"/api/console/incidents",{headers:{Cookie:browserCookies}})).json()).items;
+assert.ok(!refreshedIncidents.some(i=>i.fingerprint===relayIncident.fingerprint),
+  "Resolved/stale fingerprint should not stay active after fresh relay heartbeat");
+const staleReview=await fetch(base+"/api/console/incidents/acknowledge",{
+ method:"POST",headers:cmsSessionHeaders,
+ body:JSON.stringify({fingerprint:relayIncident.fingerprint,currentPassword:"correct-horse-battery-staple"}),
+});
+assert.equal(staleReview.status,409,"Cannot acknowledge an inactive incident");
+await acceptanceDb.query("delete from relay_nodes where id=$1",[fakeRelayId]);
+await acceptanceDb.query("delete from platform_incident_acknowledgements where fingerprint=$1",[relayIncident.fingerprint]);
 const membershipOrg=browserMe.organizationId;
 const memberSeed=await acceptanceDb.query(
   `insert into users(email,password_hash,email_verified_at)
