@@ -2,7 +2,6 @@ import {useEffect,useMemo,useState} from "react";
 import {ArrowRight,Check,Clock3,Copy,Info,Monitor,MoreHorizontal,Plus,RefreshCw,Search,ShieldCheck,Wifi,WifiOff} from "lucide-react";
 import {api,type Account,type Device} from "../api";
 import {Badge,Button,Card,CardContent,CardHeader,CardTitle,Dialog,DialogContent,DialogDescription,DialogTitle,Input} from "../components/ui";
-import {dateText} from "../lib";
 import {DashboardShell} from "./Dashboard";
 import type {Nav,Theme} from "../App";
 
