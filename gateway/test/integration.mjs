@@ -751,6 +751,82 @@ const browserPairing = await fetch(base + "/api/pairing", {
 });
 assert.equal(browserPairing.status, 201);
 
+// Account-authorized desktop pairing: only a browser session with CSRF and
+// workspace operator privileges may approve an ephemeral device request.
+const linkLanding = await fetch(base + "/connect-device?requestId=11111111-1111-4111-8111-111111111111");
+assert.equal(linkLanding.status, 200);
+assert.match(await linkLanding.text(), /Bilgisayarını bağla/);
+
+const linkStart = await jsonFetch("/api/device-link/start", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: "{}",
+});
+assert.match(linkStart.requestId, /^[0-9a-f-]{36}$/i);
+assert.ok(linkStart.requestSecret.length >= 20);
+const pollBody = JSON.stringify({
+  requestId: linkStart.requestId, requestSecret: linkStart.requestSecret,
+});
+const firstPoll = await jsonFetch("/api/device-link/poll", {
+  method: "POST", headers: { "Content-Type": "application/json" }, body: pollBody,
+});
+assert.equal(firstPoll.status, "pending");
+assert.equal(firstPoll.pairingCode, undefined, "Unapproved device must not receive pairing credentials");
+const incorrectSecret = await jsonFetch("/api/device-link/poll", {
+  method: "POST", headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({requestId:linkStart.requestId,requestSecret:"incorrect-but-long-secret-12345"}),
+});
+assert.equal(incorrectSecret.status, "expired", "Incorrect secret cannot access device-link request");
+
+const anonymousLinkApprove = await fetch(base + "/api/device-link/approve", {
+  method: "POST", headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({requestId:linkStart.requestId,organizationId:browserMe.organizationId}),
+});
+assert.equal(anonymousLinkApprove.status, 401);
+const missingLinkCsrf = await fetch(base + "/api/device-link/approve", {
+  method: "POST", headers: { Cookie: browserCookies, "Content-Type": "application/json" },
+  body: JSON.stringify({requestId:linkStart.requestId,organizationId:browserMe.organizationId}),
+});
+assert.equal(missingLinkCsrf.status, 403);
+const controlLinkApprove = await fetch(base + "/api/device-link/approve", {
+  method: "POST", headers: authHeaders,
+  body: JSON.stringify({requestId:linkStart.requestId,organizationId:browserMe.organizationId}),
+});
+assert.equal(controlLinkApprove.status, 403, "Control API tokens cannot approve desktop account linking");
+const browserLinkApprove = await fetch(base + "/api/device-link/approve", {
+  method: "POST",
+  headers: { Cookie: browserCookies, "Content-Type": "application/json", "X-CSRF-Token": browserLogin.csrfToken },
+  body: JSON.stringify({requestId:linkStart.requestId,organizationId:browserMe.organizationId}),
+});
+assert.equal(browserLinkApprove.status, 200);
+const approvedLink = await jsonFetch("/api/device-link/poll", {
+  method: "POST", headers: { "Content-Type": "application/json" }, body: pollBody,
+});
+assert.equal(approvedLink.status, "approved");
+assert.ok(approvedLink.pairingCode.length >= 20);
+const consumedLink = await jsonFetch("/api/device-link/poll", {
+  method: "POST", headers: { "Content-Type": "application/json" }, body: pollBody,
+});
+assert.equal(consumedLink.status, "consumed", "Approved authorization can only be redeemed once");
+const linkedDevice = await jsonFetch("/api/agent/enroll", {
+  method: "POST", headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    pairingCode: approvedLink.pairingCode,
+    hostname: "auto-linked-device",
+    platform: "windows",
+  }),
+});
+assert.match(linkedDevice.deviceId, /^[0-9a-f-]{36}$/i);
+const linkedTenant = await acceptanceDb.query(
+  "select organization_id from devices where id=$1", [linkedDevice.deviceId],
+);
+assert.equal(linkedTenant.rows[0].organization_id, browserMe.organizationId);
+const replayEnrollment = await fetch(base + "/api/agent/enroll", {
+  method: "POST", headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({pairingCode:approvedLink.pairingCode,hostname:"replay-device",platform:"windows"}),
+});
+assert.equal(replayEnrollment.status, 400, "Issued pairing code must be single use");
+
 const pairing = await jsonFetch("/api/pairing", {
   method: "POST",
   headers: authHeaders,
