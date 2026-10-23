@@ -527,6 +527,9 @@ jobs:
         run: |
           bash -n scripts/install-linux.sh
           bash -n scripts/setup-ubuntu.sh
+          bash -n scripts/build-ubuntu-deb.sh
+          bash -n scripts/wecommander-setup-wrapper.sh
+          bash -n scripts/install-ubuntu-online.sh
           bash scripts/setup-ubuntu.sh --help >/dev/null
           bash -n scripts/uninstall-linux.sh
           bash -n scripts/install-macos.sh
@@ -562,13 +565,19 @@ jobs:
         run: |
           mkdir -p dist
           cp target/release/webrising-commender dist/webrising-commender
+          bash scripts/build-ubuntu-deb.sh target/release/webrising-commender "0.1.${GITHUB_RUN_NUMBER}" dist
+          dpkg-deb --field "dist/wecommander-agent_0.1.${GITHUB_RUN_NUMBER}_amd64.deb" Package Version Architecture
+          sudo apt-get install -y "./dist/wecommander-agent_0.1.${GITHUB_RUN_NUMBER}_amd64.deb"
+          sudo wecommander-setup --help >/dev/null
+          test -x /opt/wecommander/bin/webrising-commender
+          test -x /usr/bin/wecommander-setup
           cp scripts/install-linux.sh dist/
           cp scripts/uninstall-linux.sh dist/
           cp scripts/setup-ubuntu.sh dist/
           cp docs/UBUNTU_INSTALL.md dist/
           cp docs/QUICKSTART.md dist/
           cd dist
-          sha256sum webrising-commender > SHA256SUMS.txt
+          sha256sum webrising-commender wecommander-agent_*.deb > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: WECOMMANDER-linux-x64-acceptance
