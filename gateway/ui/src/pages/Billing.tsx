@@ -10,9 +10,25 @@ export function BillingPage({nav,account,checking,theme,toggle,logout,pricing}:{
  const [loading,setLoading]=useState(true);
  const [error,setError]=useState("");
  const [portalBusy,setPortalBusy]=useState(false);
+ const [supportRequests,setSupportRequests]=useState<Array<{id:string;type:string;message:string;status:string;resolution_note:string;created_at:string}>>([]);
+ const [requestType,setRequestType]=useState<"refund"|"cancellation">("cancellation");
+ const [requestReason,setRequestReason]=useState("");
+ const [requestBusy,setRequestBusy]=useState(false);
+ const [requestMessage,setRequestMessage]=useState("");
+ const loadRequests=async()=>{const result=await api<{items:typeof supportRequests}>("/api/billing/support-requests");setSupportRequests(result.items)};
+ const submitRequest=async()=>{
+  setRequestBusy(true);setRequestMessage("");
+  try{
+   await api("/api/billing/support-requests",{method:"POST",body:JSON.stringify({type:requestType,message:requestReason.trim()})});
+   await loadRequests();setRequestReason("");setRequestMessage("Your request has been recorded for review. No payment or subscription change has occurred.");
+  }catch(e){setRequestMessage(e instanceof Error?e.message:String(e))}
+  finally{setRequestBusy(false)}
+ };
+
  const pending=new URLSearchParams(location.search).has("pending");
  async function refresh(){try{const item=await api<Billing>("/api/billing");setState(item);setError("");return item}catch(e){setError(e instanceof Error?e.message:"Abonelik alınamadı");return null}finally{setLoading(false)}}
  useEffect(()=>{if(!account){setLoading(false);return}void refresh()},[account]);
+ useEffect(()=>{if(!account)return;void loadRequests().catch(()=>setSupportRequests([]))},[account?.organizationId]);
  useEffect(()=>{if(!pending||!account)return;let count=0;const timer=setInterval(async()=>{count++;const item=await refresh();if((item?.entitled&&item.subscription?.provider==="paddle")||count>=12)clearInterval(timer)},5000);return()=>clearInterval(timer)},[pending,account]);
  async function openPortal(){setError("");setPortalBusy(true);try{const portal=await api<{url:string}>("/api/billing/paddle/portal",{method:"POST"});const url=new URL(portal.url);if(!url.hostname.endsWith(".paddle.com")||url.protocol!=="https:")throw new Error("Güvenli Paddle bağlantısı alınamadı.");window.location.assign(url.toString())}catch(e){setError(e instanceof Error?e.message:"Portal açılamadı")}finally{setPortalBusy(false)}}
  return <DashboardShell nav={nav} path="/billing" account={account} logout={logout} theme={theme} toggle={toggle}>
@@ -30,6 +46,14 @@ export function BillingPage({nav,account,checking,theme,toggle,logout,pricing}:{
     <Card><CardHeader><CardTitle>{translate("Faturalar ve İptaller")}</CardTitle><CardDescription>{translate("Makbuz, fatura, ödeme yöntemi ve iptal seçenekleri.")}</CardDescription></CardHeader><CardContent><div className="flex items-start gap-3 mb-5 text-sm muted"><ReceiptText size={20} className="text-[var(--accent)] shrink-0"/>{translate("Faturalarınızı Paddle müşteri portalından görüntüleyebilir, ödeme yönteminizi güncelleyebilir ve aboneliğinizi yönetebilirsiniz.")}</div><Button variant="outline" className="w-full" onClick={openPortal} disabled={!state||state.subscription?.provider!=="paddle"||portalBusy}>{translate("Müşteri portalına git")} <ExternalLink size={16}/></Button></CardContent></Card>
    </div>
   </div>}
+  {account?.role==="owner"&&state?.subscription?.provider==="paddle"&&<Card className="mt-6"><CardHeader><CardTitle>{translate("Abonelik talepleri")}</CardTitle><CardDescription>{translate("İptal veya iade talebinizi iletin. Talep oluşturmak otomatik olarak aboneliği iptal etmez veya para iadesi yapmaz.")}</CardDescription></CardHeader><CardContent>
+   <label className="block mb-3 text-sm font-semibold">{translate("Talep türü")}<select className="mt-2 w-full rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-3" value={requestType} onChange={e=>setRequestType(e.target.value as "refund"|"cancellation")}><option value="cancellation">{translate("Abonelik iptal talebi")}</option><option value="refund">{translate("Para iadesi talebi")}</option></select></label>
+   <label className="block mb-4 text-sm font-semibold">{translate("Talep açıklaması")}<textarea rows={4} maxLength={2000} className="mt-2 w-full rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-3" value={requestReason} onChange={e=>setRequestReason(e.target.value)} placeholder={translate("Talep nedeninizi kısaca yazın")}/></label>
+   <Button onClick={()=>void submitRequest()} disabled={requestBusy||requestReason.trim().length<5}>{requestBusy?translate("Gönderiliyor…"):translate("Talebi Gönder")}</Button>
+   {requestMessage&&<p role="status" className="text-sm muted mt-3">{requestMessage}</p>}
+   <h3 className="mt-6 mb-3 text-base font-bold">{translate("Önceki talepler")}</h3>
+   {supportRequests.length===0?<p className="text-sm muted">{translate("Henüz talep yok.")}</p>:<div className="grid gap-3">{supportRequests.map(item=><div key={item.id} className="rounded-xl border border-[var(--stroke)] p-4"><div className="flex flex-wrap justify-between gap-2"><strong className="text-sm">{item.type==="refund"?translate("Para iadesi"):translate("Abonelik iptali")}</strong><span className="text-sm muted">{item.status.replace("_"," ")}</span></div><p className="text-sm mt-2">{item.message}</p>{item.resolution_note&&<p className="muted mt-2 text-sm">{translate("Yönetici notu")}: {item.resolution_note}</p>}</div>)}</div>}
+  </CardContent></Card>}
   {pricing?.paddle.environment==="sandbox"&&<div className="text-xs muted mt-8 flex gap-2 items-center"><CalendarDays size={15}/> {translate("Paddle test ortamı etkin: gerçek para tahsil edilmez.")}</div>}
  </DashboardShell>;
 }
