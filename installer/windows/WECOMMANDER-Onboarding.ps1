@@ -82,6 +82,21 @@ $script:linkSecret = $null
 $script:linkDeadline = [DateTime]::MinValue
 $script:pending = $false
 
+function Install-EnrolledService([string]$config) {
+  if (-not (Test-Path -LiteralPath $config -PathType Leaf)) {
+    throw 'Agent configuration is missing. Do not pair again until the previous service has been examined.'
+  }
+  $account = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+  $helper = Join-Path $PSScriptRoot 'Install-Service-Interactive.ps1'
+  $params = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -ConfigPath "{1}" -BinaryPath "{2}" -Account "{3}"' -f $helper,$config,$exe,$account
+  $process = Start-Process -FilePath 'powershell.exe' -ArgumentList $params -Verb RunAs -Wait -PassThru
+  if ($process.ExitCode -ne 0) {
+    throw 'Windows service could not start. See the diagnostic message in the administrator window.'
+  }
+  [System.Windows.Forms.MessageBox]::Show('Windows hizmeti calisiyor. Cihazin cevrimici oldugunu panelden kontrol edin.', 'WECOMMANDER') | Out-Null
+  $form.Close()
+}
+
 function Finish-Enrollment([string]$pairingCode) {
   $url = $inputs[0].Text.TrimEnd('/')
   $root = $inputs[2].Text.Trim()
@@ -92,13 +107,7 @@ function Finish-Enrollment([string]$pairingCode) {
   }
   $config = Join-Path $env:APPDATA 'webrising-commender\agent.json'
   if (-not (Test-Path -LiteralPath $config)) { throw 'Agent config could not be created.' }
-  $account = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-  $helper = Join-Path $PSScriptRoot 'Install-Service-Interactive.ps1'
-  $params = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -ConfigPath "{1}" -BinaryPath "{2}" -Account "{3}"' -f $helper,$config,$exe,$account
-  $process = Start-Process -FilePath 'powershell.exe' -ArgumentList $params -Verb RunAs -Wait -PassThru
-  if ($process.ExitCode -ne 0) { throw 'Windows service setup failed or was cancelled.' }
-  [System.Windows.Forms.MessageBox]::Show('Cihaz baglandi ve Windows hizmeti baslatildi.','WECOMMANDER') | Out-Null
-  $form.Close()
+  Install-EnrolledService $config
 }
 
 $timer = New-Object System.Windows.Forms.Timer
@@ -160,6 +169,18 @@ $button.Add_Click({
   }
   $button.Enabled = $false
   try {
+    # If a service already exists, repair its startup without generating a
+    # second cloud device or overwriting the original enrollment credentials.
+    $service = Get-Service -Name 'WebRisingCommender' -ErrorAction SilentlyContinue
+    if ($service) {
+      $existingConfig = Join-Path $env:APPDATA 'webrising-commender\agent.json'
+      if (-not (Test-Path -LiteralPath $existingConfig -PathType Leaf)) {
+        throw 'Mevcut Windows hizmeti bulundu ama bu Windows hesabinin cihaz ayarlari bulunamadi. Yeniden eslestirmeden once hizmet hesabini kontrol edin.'
+      }
+      $notice.Text = 'Mevcut Windows hizmeti icin onarim deneniyor...'
+      Install-EnrolledService $existingConfig
+      return
+    }
     $manualCode = $inputs[1].Text.Trim()
     if ($manualCode) {
       Finish-Enrollment $manualCode
