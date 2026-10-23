@@ -11,6 +11,7 @@ import {BillingPage} from "./pages/Billing";
 import {DevicesPage} from "./pages/Devices";
 import {WorkspacePage} from "./pages/Workspace";
 import {UsagePage} from "./pages/Usage";
+import {AccountPage} from "./pages/Account";
 
 export type Nav=(path:string)=>void;
 export type Theme="light"|"dark";
@@ -50,8 +51,9 @@ export default function App(){
   {["/login","/register","/forgot-password","/reset-password","/verify"].includes(path)&&<AuthPage path={path} nav={navigate} refresh={refresh} pricing={pricing}/>}
   {path==="/pricing"&&<PlansPage nav={navigate} pricing={pricing} account={account}/>}
   {path==="/checkout"&&<PlansPage nav={navigate} pricing={pricing} account={account} checkoutMode theme={theme}/>}
-  {["/dashboard","/account"].includes(path)&&<DashboardPage nav={navigate} path={path} account={account} checking={checking} refresh={refresh} logout={logout} theme={theme} toggle={toggle}/>}
+  {path==="/dashboard"&&<DashboardPage nav={navigate} path={path} account={account} checking={checking} refresh={refresh} logout={logout} theme={theme} toggle={toggle}/>}
   {path==="/billing"&&<BillingPage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout} pricing={pricing}/>}
+  {path==="/account"&&<AccountPage nav={navigate} account={account} checking={checking} refresh={refresh} logout={logout} theme={theme} toggle={toggle}/>} 
   {path==="/devices"&&<DevicesPage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
   {["/terminal","/files","/tasks","/mcp"].includes(path)&&<WorkspacePage nav={navigate} path={path.slice(1) as "terminal"|"files"|"tasks"|"mcp"} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
   {path==="/usage"&&<UsagePage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
