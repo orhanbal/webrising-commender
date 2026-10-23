@@ -1480,6 +1480,31 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         }catch(error){await client.query("rollback");throw error}finally{client.release()}
         return void json(res,200,{ok:true});
       }
+      if (req.method === "GET" && url.pathname === "/api/console/users/detail") {
+        const userId=z.string().uuid().parse(url.searchParams.get("userId"));
+        const user=await db.query<{
+          id:string;email:string;created_at:string;last_login_at:string|null;
+          disabled:boolean;verified:boolean;platform_administrator:boolean;
+          active_sessions:number;revoked_sessions:number;
+        }>(`select u.id,u.email,u.created_at,u.last_login_at,
+                   (u.disabled_at is not null) as disabled,
+                   (u.email_verified_at is not null) as verified,
+                   exists(select 1 from platform_administrators p
+                          where p.user_id=u.id and p.revoked_at is null) as platform_administrator,
+                   (select count(*)::int from browser_sessions s
+                     where s.user_id=u.id and s.revoked_at is null and s.expires_at>now()) as active_sessions,
+                   (select count(*)::int from browser_sessions s
+                     where s.user_id=u.id and s.revoked_at is not null) as revoked_sessions
+            from users u where u.id=$1`,[userId]);
+        if(!user.rows[0])return void json(res,404,{error:"user_not_found"});
+        const organizations=await db.query(
+          `select o.id,o.name,m.role,m.created_at
+            from organization_members m join organizations o on o.id=m.organization_id
+            where m.user_id=$1 order by m.created_at asc,o.id asc limit 100`,
+          [userId],
+        );
+        return void json(res,200,{user:user.rows[0],organizations:organizations.rows});
+      }
       if (req.method === "GET" && url.pathname === "/api/console/users/sessions") {
         const userId=z.string().uuid().parse(url.searchParams.get("userId"));
         const sessions=await db.query(
