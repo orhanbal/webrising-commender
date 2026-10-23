@@ -151,3 +151,14 @@
  .install-guide-actions button,.install-guide-actions>a{width:100%}
 }
 @media(prefers-reduced-motion:reduce){.install-client-card,.install-chevron{transition:none}.install-client-card:hover{transform:none}}
+
+
+/* Compact desktop placement: both MCP client cards and help accordions
+   visible together at common 900px-high desktop resolutions. */
+@media(min-width:801px){
+ .install-intro{padding-top:35px;padding-bottom:29px}
+ .install-intro h1{margin:14px 0 12px}
+ .install-client-card{padding:27px 29px 25px}
+ .install-client-description{margin:17px 0;min-height:56px}
+ .install-benefits{gap:9px;margin-bottom:20px}
+}
