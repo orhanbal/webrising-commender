@@ -1,7 +1,7 @@
 import {useEffect,useState} from "react";
 import type {ReactNode} from "react";
 import {ArrowUpRight,Command,Menu,Moon,Sun,X} from "lucide-react";
-import {Button,Badge} from "./components/ui";
+import {Button} from "./components/ui";
 import {getMe,api,type Account,type Pricing} from "./api";
 import {Landing} from "./pages/Landing";
 import {AuthPage} from "./pages/Auth";
