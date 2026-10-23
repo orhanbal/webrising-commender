@@ -1,6 +1,6 @@
 import {useState} from "react";
 import type{ReactNode}from"react";
-import {ArrowRight,ArrowUpRight,Check,ChevronDown,ChevronRight,ClipboardCheck,Code2,Copy,Download,ExternalLink,FolderOpen,Info,Laptop,LockKeyhole,Monitor,Plug2,Server,ShieldCheck,TerminalSquare,Usb,Workflow} from "lucide-react";
+import {ArrowRight,ArrowUpRight,Check,ChevronDown,ChevronRight,ClipboardCheck,Code2,Copy,Download,ExternalLink,FolderOpen,Info,Laptop,LockKeyhole,Monitor,Plug2,ShieldCheck,TerminalSquare,Usb} from "lucide-react";
 import {Badge,Button,Card,Dialog,DialogContent,DialogDescription,DialogTitle} from "../components/ui";
 import type{Nav}from"../App";
 
