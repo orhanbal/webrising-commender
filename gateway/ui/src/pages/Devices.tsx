@@ -1,5 +1,5 @@
 import {useEffect,useMemo,useState} from "react";
-import {Activity,ArrowRight,Check,Clock3,Copy,HardDrive,Info,Monitor,MoreHorizontal,Plus,RefreshCw,Search,Server,ShieldCheck,TerminalSquare,Wifi,WifiOff} from "lucide-react";
+import {ArrowRight,Check,Clock3,Copy,Info,Monitor,MoreHorizontal,Plus,RefreshCw,Search,ShieldCheck,Wifi,WifiOff} from "lucide-react";
 import {api,type Account,type Device} from "../api";
 import {Badge,Button,Card,CardContent,CardHeader,CardTitle,Dialog,DialogContent,DialogDescription,DialogTitle,Input} from "../components/ui";
 import {dateText} from "../lib";
