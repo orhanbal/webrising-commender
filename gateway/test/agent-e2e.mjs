@@ -265,6 +265,17 @@ try {
     data_base64: Buffer.from("echo PTY_AGENT_OK\n", "utf8").toString("base64"),
   });
 
+  await waitFor(async () => {
+    const snapshot = await tool(205, "terminal_read_page", {
+      device_id: deviceId,
+      session_id: started.sessionId,
+      offset_bytes: -65536,
+      max_bytes: 65536,
+    });
+    assert.equal(typeof snapshot.bufferedBytes, "number");
+    return String(snapshot.text).includes("PTY_AGENT_OK");
+  }, 10000, 250);
+
   let terminalText = "";
   await waitFor(async () => {
     const chunk = await tool(107, "terminal_read", {

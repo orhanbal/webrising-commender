@@ -119,6 +119,11 @@ pub enum AgentAction {
         session_id: String,
         max_bytes: Option<usize>,
     },
+    TerminalReadPage {
+        session_id: String,
+        offset_bytes: Option<i64>,
+        max_bytes: Option<usize>,
+    },
     TerminalResize {
         session_id: String,
         cols: u16,
@@ -196,6 +201,7 @@ impl AgentAction {
             Self::TerminalStart { .. } => "terminal_start",
             Self::TerminalInput { .. } => "terminal_input",
             Self::TerminalRead { .. } => "terminal_read",
+            Self::TerminalReadPage { .. } => "terminal_read_page",
             Self::TerminalResize { .. } => "terminal_resize",
             Self::TerminalStop { .. } => "terminal_stop",
             Self::TerminalList => "terminal_list",
@@ -216,6 +222,7 @@ impl AgentAction {
             | Self::TaskStatus { .. }
             | Self::TaskList
             | Self::TerminalRead { .. }
+            | Self::TerminalReadPage { .. }
             | Self::TerminalList => Risk::Low,
 
             Self::FsWrite { .. }

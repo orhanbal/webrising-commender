@@ -26,6 +26,7 @@ export type AgentAction =
   | { kind: "terminal_start"; shell?: string; cwd?: string; cols?: number; rows?: number }
   | { kind: "terminal_input"; sessionId: string; dataBase64: string }
   | { kind: "terminal_read"; sessionId: string; maxBytes?: number }
+  | { kind: "terminal_read_page"; sessionId: string; offsetBytes?: number; maxBytes?: number }
   | { kind: "terminal_resize"; sessionId: string; cols: number; rows: number }
   | { kind: "terminal_stop"; sessionId: string }
   | { kind: "terminal_list" };
@@ -140,6 +141,12 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     maxBytes: z.number().int().min(1).max(256 * 1024).optional(),
   }).strict(),
   z.object({
+    kind: z.literal("terminal_read_page"),
+    sessionId: sessionIdSchema,
+    offsetBytes: z.number().int().safe().min(-1_048_576).max(1_048_576).optional(),
+    maxBytes: z.number().int().min(1).max(256 * 1024).optional(),
+  }).strict(),
+  z.object({
     kind: z.literal("terminal_resize"),
     sessionId: sessionIdSchema,
     cols: z.number().int().min(10).max(500),
@@ -188,6 +195,7 @@ export function actionRisk(kind: AgentAction["kind"] | string): Risk {
     case "task_status":
     case "task_list":
     case "terminal_read":
+    case "terminal_read_page":
     case "terminal_list":
       return "low";
     case "fs_write":

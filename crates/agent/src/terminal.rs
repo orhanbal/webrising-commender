@@ -181,6 +181,40 @@ impl TerminalManager {
         }))
     }
 
+    /// Peek at the buffered terminal output without removing it.
+    /// Negative offsets count backwards from the end of the retained buffer.
+    pub fn read_page(
+        &self,
+        id: &str,
+        offset_bytes: Option<i64>,
+        max_bytes: Option<usize>,
+    ) -> Result<Value> {
+        let session = self.get(id)?;
+        let buffer = session
+            .buffer
+            .lock()
+            .map_err(|_| anyhow!("terminal buffer lock poisoned"))?;
+        let total = buffer.len();
+        let offset = offset_bytes.unwrap_or(0);
+        let start = if offset < 0 {
+            total.saturating_sub(offset.unsigned_abs().min(total as u64) as usize)
+        } else {
+            (offset as u64).min(total as u64) as usize
+        };
+        let limit = max_bytes.unwrap_or(64 * 1024).clamp(1, 256 * 1024);
+        let bytes: Vec<u8> = buffer.iter().skip(start).take(limit).copied().collect();
+        let end = start + bytes.len();
+        Ok(json!({
+            "bytes": bytes.len(),
+            "dataBase64": STANDARD.encode(&bytes),
+            "text": String::from_utf8_lossy(&bytes),
+            "offsetBytes": start,
+            "nextOffsetBytes": end,
+            "bufferedBytes": total,
+            "hasMore": end < total
+        }))
+    }
+
     pub fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<Value> {
         let session = self.get(id)?;
         session

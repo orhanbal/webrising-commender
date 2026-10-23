@@ -140,6 +140,12 @@ const tools = [
   ),
   tool("terminal_input", "Write bytes to an existing PTY session.", { session_id: str(), data_base64: str() }, ["session_id", "data_base64"]),
   tool("terminal_read", "Read buffered PTY output.", { session_id: str(), max_bytes: integer() }, ["session_id"]),
+  tool(
+    "terminal_read_page",
+    "Non-consuming paginated PTY output; negative offset_bytes reads backward from the last retained byte (up to 1 MiB).",
+    { session_id: str(), offset_bytes: integer(), max_bytes: integer() },
+    ["session_id"],
+  ),
   tool("terminal_resize", "Resize a PTY session.", { session_id: str(), cols: integer(), rows: integer() }, ["session_id", "cols", "rows"]),
   tool(
     "terminal_stop",
@@ -207,6 +213,7 @@ function actionFromTool(name: string, a: any): AgentAction {
     case "terminal_start": return { kind: "terminal_start", ...(a.shell ? { shell: String(a.shell) } : {}), ...(a.cwd ? { cwd: String(a.cwd) } : {}), ...(a.cols ? { cols: Number(a.cols) } : {}), ...(a.rows ? { rows: Number(a.rows) } : {}) };
     case "terminal_input": return { kind: "terminal_input", sessionId: String(a.session_id), dataBase64: String(a.data_base64) };
     case "terminal_read": return { kind: "terminal_read", sessionId: String(a.session_id), ...(a.max_bytes ? { maxBytes: Number(a.max_bytes) } : {}) };
+    case "terminal_read_page": return { kind: "terminal_read_page", sessionId: String(a.session_id), ...(a.offset_bytes !== undefined ? { offsetBytes: Number(a.offset_bytes) } : {}), ...(a.max_bytes !== undefined ? { maxBytes: Number(a.max_bytes) } : {}) };
     case "terminal_resize": return { kind: "terminal_resize", sessionId: String(a.session_id), cols: Number(a.cols), rows: Number(a.rows) };
     case "terminal_stop": return { kind: "terminal_stop", sessionId: String(a.session_id) };
     case "terminal_list": return { kind: "terminal_list" };

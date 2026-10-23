@@ -124,6 +124,11 @@ pub async fn execute(
             session_id,
             max_bytes,
         } => terminals.read(&session_id, max_bytes.unwrap_or(64 * 1024)),
+        AgentAction::TerminalReadPage {
+            session_id,
+            offset_bytes,
+            max_bytes,
+        } => terminals.read_page(&session_id, offset_bytes, max_bytes),
         AgentAction::TerminalResize {
             session_id,
             cols,
