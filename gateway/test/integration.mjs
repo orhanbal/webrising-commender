@@ -33,7 +33,7 @@ for (const name of ["wecommander-white.svg","wecommander-black.svg","wecommander
   const source = await asset.text();
   assert.ok(source.includes("viewBox="));
 }
-assert.ok(appHtml.includes("wecommander-favicon.svg"));
+assert.ok(appHtml.includes("/api/public/brand/favicon"), "App must use configurable favicon");
 const landingAssetCheck = await fetch(base + "/");
 assert.equal(landingAssetCheck.status, 200);
 const landingAssetMarkup = await landingAssetCheck.text();
