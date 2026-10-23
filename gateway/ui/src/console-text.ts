@@ -116,7 +116,7 @@ export const consoleTurkish:Record<string,string> = {
   "Live operational counters from the gateway database.": "Gateway veritabanından alınan güncel operasyon sayaçları.",
   "Database connected": "Veritabanı bağlı",
   "Database status unknown": "Veritabanı durumu bilinmiyor",
-  "Mail delivery failures": "Başarısız e-posta gönderimleri",
+  "Mail delivery failures": "E-posta gönderim hataları",
   "Pending mail": "Bekleyen e-postalar",
   "Active browser sessions": "Aktif tarayıcı oturumları",
   "Pending approvals": "Bekleyen onaylar",
@@ -137,6 +137,18 @@ export const consoleTurkish:Record<string,string> = {
   "Public signup": "Herkese açık kayıt",
   "Enabled": "Etkin",
   "Disabled": "Devre dışı",
-  "Last checked": "Son kontrol"
+  "Last checked": "Son kontrol",
+  "Incident triage": "Olay inceleme",
+  "Acknowledgement records a review. It does not resolve or suppress the underlying failure.": "İncelendi işareti yalnızca değerlendirmeyi kaydeder; arızayı gidermez veya gizlemez.",
+  "Refresh incidents": "Olayları yenile",
+  "No active incidents were detected.": "Etkin olay tespit edilmedi.",
+  "Unhealthy relay nodes": "Sağlıksız relay düğümleri",
+  "Failed messages are in the outbox. Check the sender configuration and SMTP delivery logs.": "Gönderilemeyen e-postalar kuyrukta. Gönderen yapılandırmasını ve SMTP kayıtlarını inceleyin.",
+  "At least one enabled, non-draining relay has not reported a heartbeat within two minutes.": "Etkin relay düğümlerinden en az biri iki dakikadır sağlık sinyali göndermedi.",
+  "Reviewed": "İncelendi",
+  "Review required": "İnceleme gerekli",
+  "Reviewed at": "İnceleme zamanı",
+  "Mark reviewed": "İncelendi olarak işaretle",
+  "Confirm review": "İncelemeyi onayla"
 };
 export function consoleText(source:string,locale:"en"|"tr"):string {return locale==="tr"?(consoleTurkish[source]??source):source;}
