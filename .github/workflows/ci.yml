@@ -19,7 +19,7 @@ jobs:
         run: |
           $scripts = @(
             Get-ChildItem installer/windows -Filter '*.ps1' -File
-            Get-ChildItem scripts -Filter '*-windows.ps1' -File
+            Get-ChildItem scripts -Filter '*-windows*.ps1' -File
           )
           foreach ($script in $scripts) {
             $tokens = $null
