@@ -182,6 +182,23 @@ export const consoleTurkish:Record<string,string> = {
   "Device status": "Cihaz durumu",
   "All devices": "Tüm cihazlar",
   "Not revoked": "İptal edilmemiş",
-  "Revoked": "İptal edilmiş"
+  "Revoked": "İptal edilmiş",
+  "Details": "Detaylar",
+  "User details": "Kullanıcı ayrıntıları",
+  "Account status": "Hesap durumu",
+  "Active": "Aktif",
+  "Email verification": "E-posta doğrulaması",
+  "Verified": "Doğrulandı",
+  "Not verified": "Doğrulanmadı",
+  "Platform access": "Platform erişimi",
+  "Platform administrator": "Platform yöneticisi",
+  "Workspace member": "Çalışma alanı üyesi",
+  "Active sessions": "Aktif oturumlar",
+  "Created": "Oluşturulma",
+  "Last login": "Son giriş",
+  "Workspace memberships": "Çalışma alanı üyelikleri",
+  "Joined": "Katılım tarihi",
+  "No workspace memberships.": "Çalışma alanı üyeliği bulunamadı.",
+  "This view does not expose passwords, tokens or raw session credentials.": "Bu ekranda parolalar, tokenlar veya ham oturum kimlik bilgileri gösterilmez."
 };
 export function consoleText(source:string,locale:"en"|"tr"):string {return locale==="tr"?(consoleTurkish[source]??source):source;}
