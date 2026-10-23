@@ -11,9 +11,9 @@ import type {Nav,Theme} from "../App";
 type Overview={users:number;organizations:number;devices:number;activeDevices:number};
 type Admin={email:string;userId:string;platformRole:string};
 const faqCopy=landingCopySections.find(group=>group.name==="FAQ")?.keys??[];
-const faqPairs=Array.from({length:Math.floor((faqCopy.length-2)/2)},(_,i)=>({
- question:faqCopy[2+i*2],answer:faqCopy[3+i*2],
-})).filter((item):item is {question:string;answer:string}=>!!item.question&&!!item.answer);
+const faqPairs:Array<{question:string;answer:string}>=Array.from({length:Math.floor((faqCopy.length-2)/2)},(_,i)=>({
+ question:String(faqCopy[2+i*2]??""),answer:String(faqCopy[3+i*2]??""),
+})).filter(item=>item.question.length>0&&item.answer.length>0);
 
 const routes:Record<string,string>={Overview:"/console",Users:"/console/users",Organizations:"/console/organizations",Devices:"/console/devices",Operations:"/console/operations","Landing CMS":"/console/landing",Billing:"/console/billing",System:"/console/system",Brand:"/console/brand","Legal CMS":"/console/legal"};
 export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;theme:Theme;toggle:()=>void;logout:()=>void}){
