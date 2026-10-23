@@ -35,7 +35,8 @@ export function AuthPage({path,nav,refresh,pricing,signupEnabled}:{path:string;n
     // Only resume a same-origin, strictly shaped device authorization route.
     // Never navigate to an arbitrary user-supplied "next" URL.
     const next=new URLSearchParams(window.location.search).get("next");
-    if(next&&/^\\/connect-device\\?requestId=[0-9a-f-]{36}$/i.test(next)){
+    const requestId=next?.startsWith("/connect-device?requestId=")?next.slice("/connect-device?requestId=".length):"";
+    if(next&&/^[0-9a-f-]{36}$/i.test(requestId)){
       window.location.assign(next);
     }else{
       nav("/dashboard");
