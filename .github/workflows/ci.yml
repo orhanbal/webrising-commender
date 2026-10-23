@@ -603,9 +603,11 @@ jobs:
         run: |
           Copy-Item "installer\windows\WECOMMANDER.iss" "dist\WECOMMANDER.iss"
           Copy-Item "installer\windows\WECOMMANDER-Onboarding.ps1" "dist\WECOMMANDER-Onboarding.ps1"
-          Copy-Item "installer\windows\Install-Service-Interactive.ps1" "dist\Install-Service-Interactive.ps1"
-          Copy-Item "installer\windows\Diagnose-Service.ps1" "dist\Diagnose-Service.ps1"
-          foreach ($script in @("dist\WECOMMANDER-Onboarding.ps1", "dist\Install-Service-Interactive.ps1", "dist\Diagnose-Service.ps1")) {
+          Copy-Item "installer\windows\Install-User-Agent.ps1" "dist\Install-User-Agent.ps1"
+          Copy-Item "installer\windows\Run-User-Agent.ps1" "dist\Run-User-Agent.ps1"
+          Copy-Item "installer\windows\Uninstall-User-Agent.ps1" "dist\Uninstall-User-Agent.ps1"
+          Copy-Item "installer\windows\Migrate-Legacy-Service.ps1" "dist\Migrate-Legacy-Service.ps1"
+          foreach ($script in @("dist\WECOMMANDER-Onboarding.ps1", "dist\Install-User-Agent.ps1", "dist\Run-User-Agent.ps1", "dist\Uninstall-User-Agent.ps1", "dist\Migrate-Legacy-Service.ps1")) {
             $errors = $null
             [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script),[ref]$null,[ref]$errors)
             if ($errors.Count -gt 0) { $errors | Format-List; exit 1 }
@@ -669,5 +671,38 @@ jobs:
           finally {
             .\scripts\uninstall-windows.ps1 -ServiceName "WebRisingCommender"
             Start-Sleep -Seconds 2
+            Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+          }
+      - name: Register passwordless Windows user agent task
+        shell: pwsh
+        run: |
+          # This tests registration and the least-privilege interactive principal.
+          # CI runners might have no desktop login, so activation is validated
+          # by real Windows acceptance rather than launching the hidden agent.
+          $dir = Join-Path $env:TEMP 'WECOMMANDER-UserTask-CI'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $binary = Join-Path $dir 'webrising-commender.exe'
+          $config = Join-Path $dir 'agent.json'
+          Copy-Item 'target\debug\webrising-commender.exe' $binary -Force
+          @{
+            deviceId = '00000000-0000-0000-0000-000000000002'
+            deviceToken = 'ci-device-token'
+            approvalKey = 'BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc'
+            gatewayWsUrl = 'ws://127.0.0.1:9/agent'
+            controlUrl = 'http://127.0.0.1:9'
+            name = 'CI user-mode task'
+            allowedRoots = @($dir)
+          } | ConvertTo-Json -Depth 5 | Set-Content -Encoding UTF8 $config
+          try {
+            .\installer\windows\Install-User-Agent.ps1 -BinaryPath $binary -ConfigPath $config -SkipStart
+            $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+            $taskName = "WECOMMANDER-Agent-$($identity.User.Value)"
+            $task = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+            if ($task.Principal.LogonType -ne 'Interactive' -or $task.Principal.RunLevel -ne 'Limited') {
+              throw "Unexpected user-task principal: $($task.Principal.LogonType) / $($task.Principal.RunLevel)"
+            }
+            if ($task.Actions.Execute -notmatch 'powershell.exe') { throw 'Agent launcher not configured.' }
+          } finally {
+            .\installer\windows\Uninstall-User-Agent.ps1
             Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
           }
