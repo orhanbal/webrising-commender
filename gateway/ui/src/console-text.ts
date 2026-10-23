@@ -203,6 +203,20 @@ export const consoleTurkish:Record<string,string> = {
   "Questions and answers are paired so publishing cannot separate a question from its answer.": "Sorular ve yanıtlar birlikte düzenlenir; böylece yayın sırasında birbirlerinden ayrılmazlar.",
   "Question": "Soru",
   "Answer": "Yanıt",
-  "FAQ": "Sık Sorulan Sorular"
+  "FAQ": "Sık Sorulan Sorular",
+  "Record ID": "Kayıt kimliği",
+  "Email": "E-posta",
+  "Name": "Ad",
+  "Last seen": "Son görülme",
+  "Revoked at": "İptal tarihi",
+  "Workspaces": "Çalışma alanları",
+  "Platform": "Platform",
+  "Agent version": "Agent sürümü",
+  "Workspace": "Çalışma alanı",
+  "Quota limits": "Kota sınırları",
+  "Action": "İşlem",
+  "Outcome": "Sonuç",
+  "Risk": "Risk",
+  "Source": "Kaynak"
 };
 export function consoleText(source:string,locale:"en"|"tr"):string {return locale==="tr"?(consoleTurkish[source]??source):source;}
