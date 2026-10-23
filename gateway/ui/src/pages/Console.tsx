@@ -4,6 +4,7 @@ import {api} from "../api";
 import {landingCopySections} from "../landing-copy-sections";
 import {LegalEditor} from "./LegalEditor";
 import {SystemStatus} from "./SystemStatus";
+import {MediaLibrary} from "./MediaLibrary";
 import {consoleText} from "../console-text";
 import {LanguageSwitcher,t as translate,useLocale} from "../i18n";
 import {Brand,ThemeToggle} from "../App";
@@ -383,6 +384,7 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
  <h3 className="text-3xl font-bold break-words">{cmsTitle||translate("Tüm cihazların.")}</h3>
  <p className="muted mt-3 break-words">{cmsSubtitle||translate("Windows, macOS ve Linux cihazlarını güvenle bağla. Terminal, dosya ve görevlerini modern bir panelden veya MCP destekli yapay zekâ araçlarınla yönet.")}</p>
 </div>
+<MediaLibrary selected={cmsOverrides} onUse={(id,slot)=>setCmsOverrides(old=>({...old,["media:feature:"+slot]:id}))}/>
 <button disabled={cmsBusy||!cmsTitle.trim()||!cmsSubtitle.trim()} onClick={()=>void saveCms()} className="px-5 py-3 bg-[var(--accent)] text-[var(--accent-ink)] rounded-xl font-bold disabled:opacity-50">{ui("Save draft")}</button><p role="status" className="text-sm mt-3">{cmsMessage}</p><h3 className="text-lg font-bold mt-8 mb-3">{ui("Revisions")}</h3>
 <label className="block mb-4 text-sm font-semibold">Current password to publish or restore a revision
  <input type="password" autoComplete="current-password" value={cmsPublishPassword} onChange={e=>setCmsPublishPassword(e.target.value)} className="block w-full mt-2 rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-3"/>
