@@ -9,6 +9,7 @@ export type AgentAction =
   | { kind: "fs_read"; path: string; maxBytes?: number }
   | { kind: "fs_read_lines"; path: string; offsetLines?: number; limitLines?: number }
   | { kind: "fs_write"; path: string; contentBase64: string; createParents?: boolean }
+  | { kind: "fs_append"; path: string; contentBase64: string }
   | { kind: "fs_mkdir"; path: string; recursive?: boolean }
   | { kind: "fs_delete"; path: string; recursive?: boolean }
   | { kind: "fs_move"; source: string; destination: string }
@@ -55,6 +56,11 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     path: pathSchema,
     contentBase64: z.string().max(12 * 1024 * 1024),
     createParents: z.boolean().optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("fs_append"),
+    path: pathSchema,
+    contentBase64: z.string().max(12 * 1024 * 1024),
   }).strict(),
   z.object({
     kind: z.literal("fs_mkdir"),
@@ -199,6 +205,7 @@ export function actionRisk(kind: AgentAction["kind"] | string): Risk {
     case "terminal_list":
       return "low";
     case "fs_write":
+    case "fs_append":
     case "fs_mkdir":
     case "fs_move":
     case "fs_replace":

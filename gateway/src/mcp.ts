@@ -39,6 +39,7 @@ const tools = [
     { path: str(), content_base64: str(), create_parents: bool() },
     ["path", "content_base64"],
   ),
+  tool("fs_append", "Append base64-encoded bytes to a file in allowed roots.", { path: str(), content_base64: str() }, ["path", "content_base64"]),
   tool("fs_mkdir", "Create a directory.", { path: str(), recursive: bool() }, ["path"]),
   tool(
     "fs_delete",
@@ -195,6 +196,7 @@ function actionFromTool(name: string, a: any): AgentAction {
     case "fs_read": return { kind: "fs_read", path: String(a.path), ...(a.max_bytes ? { maxBytes: Number(a.max_bytes) } : {}) };
     case "fs_read_lines": return { kind: "fs_read_lines", path: String(a.path), ...(a.offset_lines !== undefined ? { offsetLines: Number(a.offset_lines) } : {}), ...(a.limit_lines !== undefined ? { limitLines: Number(a.limit_lines) } : {}) };
     case "fs_write": return { kind: "fs_write", path: String(a.path), contentBase64: String(a.content_base64), createParents: Boolean(a.create_parents) };
+    case "fs_append": return { kind: "fs_append", path: String(a.path), contentBase64: String(a.content_base64) };
     case "fs_mkdir": return { kind: "fs_mkdir", path: String(a.path), recursive: Boolean(a.recursive) };
     case "fs_delete": return { kind: "fs_delete", path: String(a.path), recursive: Boolean(a.recursive) };
     case "fs_move": return { kind: "fs_move", source: String(a.source), destination: String(a.destination) };

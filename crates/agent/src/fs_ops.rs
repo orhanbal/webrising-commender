@@ -376,6 +376,25 @@ pub fn write(
     Ok(json!({ "ok": true, "path": path.to_string_lossy(), "size": bytes.len() }))
 }
 
+/// Append without truncating, up to the configured size limits.
+pub fn append(policy: &PathPolicy, raw: &str, content_base64: &str) -> Result<Value> {
+    let path = policy.resolve_for_create(raw)?;
+    let bytes = STANDARD
+        .decode(content_base64)
+        .context("contentBase64 is not valid base64")?;
+    if bytes.len() > HARD_WRITE_MAX {
+        return Err(anyhow!("append exceeds hard limit of {HARD_WRITE_MAX} bytes"));
+    }
+    let existing_size = fs::metadata(&path).map(|item| item.len()).unwrap_or(0);
+    if existing_size.saturating_add(bytes.len() as u64) > 128 * 1024 * 1024 {
+        return Err(anyhow!("append exceeds total file limit of 128 MiB"));
+    }
+    let mut file = fs::OpenOptions::new().create(true).append(true).open(&path)?;
+    file.write_all(&bytes)?;
+    file.sync_all()?;
+    Ok(json!({ "ok": true, "path": path.to_string_lossy(), "appendedBytes": bytes.len() }))
+}
+
 pub fn replace_text(
     policy: &PathPolicy,
     raw: &str,

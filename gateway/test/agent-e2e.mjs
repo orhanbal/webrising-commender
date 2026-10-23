@@ -166,6 +166,17 @@ try {
   });
   assert.equal(typeof rejectedOutsideRoot.error, "string");
 
+  const append = await tool(206, "fs_append", {
+    device_id: deviceId,
+    path: linesPath,
+    content_base64: Buffer.from("fifth\n").toString("base64"),
+  });
+  assert.equal(append.ok, true);
+  const appendedRead = await tool(207, "fs_read_lines", {
+    device_id: deviceId, path: linesPath, offset_lines: -1, limit_lines: 1,
+  });
+  assert.deepEqual(appendedRead.lines, ["fifth"]);
+
   const tree = await tool(114, "fs_tree", {
     device_id: deviceId,
     path: tempRoot,

@@ -50,6 +50,10 @@ pub enum AgentAction {
         content_base64: String,
         create_parents: Option<bool>,
     },
+    FsAppend {
+        path: String,
+        content_base64: String,
+    },
     FsMkdir {
         path: String,
         recursive: Option<bool>,
@@ -184,6 +188,7 @@ impl AgentAction {
             Self::FsRead { .. } => "fs_read",
             Self::FsReadLines { .. } => "fs_read_lines",
             Self::FsWrite { .. } => "fs_write",
+            Self::FsAppend { .. } => "fs_append",
             Self::FsMkdir { .. } => "fs_mkdir",
             Self::FsDelete { .. } => "fs_delete",
             Self::FsMove { .. } => "fs_move",
@@ -226,6 +231,7 @@ impl AgentAction {
             | Self::TerminalList => Risk::Low,
 
             Self::FsWrite { .. }
+            | Self::FsAppend { .. }
             | Self::FsMkdir { .. }
             | Self::FsMove { .. }
             | Self::FsReplace { .. }
