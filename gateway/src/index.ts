@@ -2085,7 +2085,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       return void json(res,200,await createPaddlePortal(principal!.organizationId));
     }
     if (req.method === "GET" && url.pathname === "/api/billing/support-requests") {
-      if (!requireRole(principal!,"viewer",res)) return;
+      if (!requireRole(principal!,"owner",res)) return;
       const items=await db.query(
         `select id,type,message,status,resolution_note,created_at,reviewed_at
            from billing_support_requests where organization_id=$1
