@@ -11,6 +11,8 @@ AppPublisher=WECOMMANDER
 DefaultDirName={autopf}\WECOMMANDER
 DefaultGroupName=WECOMMANDER
 UninstallDisplayName=WECOMMANDER Agent
+; The installer is still elevated to migrate existing legacy services.
+; No password is requested for running the new signed-in-user agent.
 OutputDir=output
 OutputBaseFilename=WECOMMANDER-Setup-windows-x64
 Compression=lzma2
@@ -26,14 +28,17 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Files]
 Source: "webrising-commender.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "WECOMMANDER-Onboarding.ps1"; DestDir: "{app}"; Flags: ignoreversion
-Source: "Install-Service-Interactive.ps1"; DestDir: "{app}"; Flags: ignoreversion
-Source: "Diagnose-Service.ps1"; DestDir: "{app}"; Flags: ignoreversion
-Source: "install-windows.ps1"; DestDir: "{app}"; Flags: ignoreversion
-Source: "uninstall-windows.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "Install-User-Agent.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "Run-User-Agent.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "Uninstall-User-Agent.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "Migrate-Legacy-Service.ps1"; DestDir: "{app}"; Flags: ignoreversion
 [Icons]
 Name: "{group}\WECOMMANDER Cihaz Bağlantısı"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\WECOMMANDER-Onboarding.ps1"""; WorkingDir: "{app}"
 Name: "{group}\WECOMMANDER Panel"; Filename: "https://wecommander.webrising.tr/dashboard"
 [Run]
+; One-time elevated migration. Stops/deletes only the known legacy service,
+; while preserving each user's enrolled device config in AppData.
+Filename: "powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{app}\Migrate-Legacy-Service.ps1"""; Flags: runhidden waituntilterminated
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\WECOMMANDER-Onboarding.ps1"""; Description: "Cihazımı bağla / Connect my device"; Flags: postinstall skipifsilent nowait runasoriginaluser
 [UninstallRun]
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\uninstall-windows.ps1"""; Flags: runhidden; RunOnceId: "stop-agent-service"
+Filename: "powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{app}\Uninstall-User-Agent.ps1"""; Flags: runhidden; RunOnceId: "remove-user-agent-task"
