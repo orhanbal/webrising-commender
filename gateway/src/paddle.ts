@@ -13,10 +13,16 @@ export function publicPaddleConfig() {
   const apiKey = String(process.env.PADDLE_API_KEY || "").trim();
   const webhookSecret = String(process.env.PADDLE_WEBHOOK_SECRET || "").trim();
   const tokenOkay = paddleEnvironment === "live" ? token.startsWith("live_") : token.startsWith("test_");
+  // Live payments must be unlocked explicitly after Paddle account/domain
+  // verification, policy review, and a completed live acceptance test.
+  const liveReleaseApproved = paddleEnvironment !== "live" ||
+    process.env.PADDLE_LIVE_RELEASE_VERIFIED === "true";
+  const enabled = Boolean(deploymentMode === "saas" && tokenOkay &&
+    apiKey && webhookSecret && liveReleaseApproved);
   return {
     environment: paddleEnvironment,
-    clientToken: deploymentMode === "saas" && tokenOkay && apiKey && webhookSecret ? token : null,
-    checkoutEnabled: Boolean(deploymentMode === "saas" && tokenOkay && apiKey && webhookSecret),
+    clientToken: enabled ? token : null,
+    checkoutEnabled: enabled,
   };
 }
 
