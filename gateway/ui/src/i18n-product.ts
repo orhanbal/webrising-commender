@@ -178,7 +178,16 @@ export const productEnglish:Record<string,string> = {
   "Sadece çalışma alanı sahibi adını değiştirebilir.": "Only the workspace owner can rename it.",
   "Kimlik:": "ID:",
   "Değişiklikleri Kaydet": "Save changes",
-  "Şifreniz değiştirildi. Diğer oturumlar kapatıldı.": "Password changed. Other sessions were signed out.",
+  "Şifreniz değiştirildi. Diğer oturumlar kapatıldı.": "Your password was changed. Other sessions were signed out.",
   "● Online": "● Online",
-  "Access": "Access"
+  "Access": "Access",
+  " çevrimiçi": " online",
+  " kullanıldı": " used",
+  "Aç": "Open",
+  "Cihazın bağlantısı kesildi.": "Device disconnected.",
+  " düzenle": " edit",
+  "Cihaz seçilmedi": "No device selected",
+  "Abonelik alınamadı": "Unable to load subscription",
+  "Güvenli Paddle bağlantısı alınamadı.": "The secure Paddle link was not available.",
+  "Portal açılamadı": "Could not open portal"
 };
