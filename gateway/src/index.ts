@@ -330,7 +330,7 @@ async function serveBrandSvg(res: ServerResponse, fileName: string) {
 
 
 const modernPages = new Set([
-  "/", "/login", "/register", "/forgot-password", "/verify",
+  "/", "/features", "/how-it-works", "/login", "/register", "/forgot-password", "/verify",
   "/reset-password", "/pricing", "/checkout", "/dashboard", "/account", "/billing",
   "/privacy", "/terms",
 ]);
