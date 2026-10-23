@@ -45,7 +45,7 @@ export function ConsolePage({nav,theme,toggle,logout}:{nav:Nav;theme:Theme;toggl
   <aside className={"dashboard-sidebar "+(menu?"open":"")} aria-label="Platform administration">
    <div className="px-3 pt-2"><Brand onClick={()=>nav("/")}/></div>
    <div className="px-4 py-5"><div className="flex items-center gap-2 text-[var(--accent)] text-sm font-bold"><ShieldCheck size={18}/> SUPER ADMIN</div></div>
-   <nav className="dash-nav">{items.map((item,index)=><button type="button" key={item.label} onClick={()=>{setSection(item.label);setMenu(false)}} className={"dash-link text-left "+(section===item.label?"active":"")} aria-current={section===item.label?"page":undefined} title={item.label}><item.icon size={19}/><span>{item.label}</span></button>)}</nav>
+   <nav className="dash-nav">{items.map(item=><button type="button" key={item.label} onClick={()=>{setSection(item.label);setMenu(false)}} className={"dash-link text-left "+(section===item.label?"active":"")} aria-current={section===item.label?"page":undefined} title={item.label}><item.icon size={19}/><span>{item.label}</span></button>)}</nav>
    <div className="dash-sidebar-bottom"><p className="text-sm muted">Platform administration is separate from workspace ownership.</p><button className="mt-5 text-sm flex items-center gap-2" onClick={()=>nav("/dashboard")}><ArrowLeft size={17}/> User dashboard</button></div>
   </aside>
   <div className="dash-main">
