@@ -6,8 +6,13 @@ umask 077
 BACKUP="${1:?Usage: scripts/test-postgres-restore.sh /path/to/backup.dump}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 test -f "$BACKUP" || { echo "Backup file not found" >&2; exit 1; }
+BACKUP="$(readlink -f -- "$BACKUP")"
 command -v docker >/dev/null || { echo "docker required" >&2; exit 1; }
 cd "$ROOT"
+if ! test -f "$BACKUP.sha256"; then
+ echo "Refusing restore drill without a SHA256 manifest" >&2
+ exit 1
+fi
 if test -f "$BACKUP.sha256"; then
   (cd "$(dirname "$BACKUP")" && sha256sum -c "$(basename "$BACKUP").sha256") || exit 1
 fi
