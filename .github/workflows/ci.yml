@@ -104,6 +104,7 @@ jobs:
       SMTP_SECURITY: none
       SMTP_HELO_NAME: commender-ci
       SMTP_FROM: WECOMMANDER <commender@example.test>
+      PADDLE_WEBHOOK_SECRET: ci-test-secret-paddle-signatures-2026
       MAIL_OUTBOX_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       MAIL_DELIVERY_INTERVAL_MS: 250
       MAIL_DELIVERY_BATCH: 20
