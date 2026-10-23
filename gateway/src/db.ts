@@ -142,6 +142,15 @@ export async function migrate() {
     alter table site_content_revisions add column if not exists seo_description text not null default '';
     create unique index if not exists site_content_one_published_per_locale
       on site_content_revisions(locale) where state='published';
+    create table if not exists site_media_assets (
+      id uuid primary key default gen_random_uuid(),
+      alt_text text not null check (length(alt_text) between 1 and 180),
+      content_type text not null check (content_type in ('image/png','image/webp')),
+      content bytea not null,
+      uploaded_by uuid references users(id) on delete set null,
+      created_at timestamptz not null default now()
+    );
+    create index if not exists site_media_assets_created_idx on site_media_assets(created_at desc);
     create table if not exists platform_brand_assets (
       kind text primary key check(kind in ('logo_light','logo_dark','favicon')),
       content_type text not null check(content_type in ('image/png','image/webp')),
