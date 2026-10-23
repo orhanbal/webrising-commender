@@ -7,18 +7,19 @@ import{Brand,ThemeToggle}from"../App";import type{Nav,Theme}from"../App";
 
 const pages=[
 {title:"Genel Bakış",href:"/dashboard",icon:LayoutDashboard},
-{title:"Cihazlar",href:"/app?view=devices",icon:Monitor},
-{title:"Terminal",href:"/app?view=terminal",icon:TerminalSquare},
-{title:"Dosyalar",href:"/app?view=files",icon:FileText},
-{title:"Görevler",href:"/app?view=tasks",icon:Workflow},
-{title:"MCP Araçları",href:"/app?view=mcp",icon:Command},
+{title:"Cihazlar",href:"/devices",icon:Monitor},
+{title:"Terminal",href:"/terminal",icon:TerminalSquare},
+{title:"Dosyalar",href:"/files",icon:FileText},
+{title:"Görevler",href:"/tasks",icon:Workflow},
+{title:"MCP Araçları",href:"/mcp",icon:Command},
+{title:"Kullanım",href:"/usage",icon:Activity},
 {title:"Paket ve Ödemeler",href:"/billing",icon:CreditCard},
 {title:"Hesabım",href:"/account",icon:Settings2}
 ];
 export function DashboardShell({nav,path,account,theme,toggle,logout,children}:{nav:Nav;path:string;account:Account|null;theme:Theme;toggle:()=>void;logout:()=>void;children:ReactNode}){
  const [mobile,setMobile]=useState(false);
  const [search,setSearch]=useState("");
- const navTo=(url:string)=>{setMobile(false);if(url.startsWith("/app")){window.location.href=url;return}nav(url)};
+ const navTo=(url:string)=>{setMobile(false);nav(url)};
  return <div className="dashboard-layout">
   {mobile&&<div className="fixed inset-0 bg-black/60 z-[92] md:hidden" onClick={()=>setMobile(false)}/>}
   <aside className={"dashboard-sidebar "+(mobile?"open":"")} aria-label="Uygulama menüsü">
@@ -29,7 +30,7 @@ export function DashboardShell({nav,path,account,theme,toggle,logout,children}:{
   <div className="dash-main">
    <div className="dash-topbar">
     <div className="flex items-center gap-3 flex-1 min-w-0"><button className="mobile-dash-open size-9 place-items-center rounded-lg border border-[var(--stroke)]" onClick={()=>setMobile(true)} aria-label="Menüyü aç"><Menu size={18}/></button><div className="text-sm muted hidden sm:block">Çalışma Alanım <span className="mx-2">/</span> <span className="text-[var(--text)]">{path==="/dashboard"?"Genel Bakış":path==="/billing"?"Faturalama":"Hesabım"}</span></div></div>
-    <div className="dash-toolbar"><div className="relative hidden lg:block"><Search size={16} className="absolute left-3 top-2.5 text-[var(--muted)]"/><input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&search.trim())navTo("/app?view=devices")}} placeholder="Cihazları ve araçları ara…" className="h-10 w-[270px] rounded-xl border border-[var(--stroke)] bg-[var(--surface)] pl-10 pr-3 text-sm outline-none focus-visible:border-[var(--accent)]"/></div><ThemeToggle theme={theme} onToggle={toggle}/><Button size="icon" variant="outline" title="Son aktiviteler" aria-label="Son aktiviteler" onClick={()=>navTo("/app?view=devices")}><Bell size={18}/></Button><button onClick={()=>navTo("/account")} className="flex items-center gap-2 rounded-xl p-1 pr-3 border border-[var(--stroke)] hover:bg-[var(--hover)]" aria-label="Hesap menüsü"><span className="size-9 rounded-lg bg-[var(--subtle-surface)] text-[var(--accent)] grid place-items-center font-bold">{(account?.email||"WC").slice(0,2).toUpperCase()}</span><span className="hidden sm:block text-sm max-w-[125px] truncate">{account?.email?.split("@")[0]||"Misafir"}</span><ChevronDown className="size-3.5 muted"/></button></div>
+    <div className="dash-toolbar"><div className="relative hidden lg:block"><Search size={16} className="absolute left-3 top-2.5 text-[var(--muted)]"/><input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&search.trim())navTo("/devices?search="+encodeURIComponent(search))}} placeholder="Cihazları ve araçları ara…" className="h-10 w-[270px] rounded-xl border border-[var(--stroke)] bg-[var(--surface)] pl-10 pr-3 text-sm outline-none focus-visible:border-[var(--accent)]"/></div><ThemeToggle theme={theme} onToggle={toggle}/><Button size="icon" variant="outline" title="Son aktiviteler" aria-label="Son aktiviteler" onClick={()=>navTo("/devices")}><Bell size={18}/></Button><button onClick={()=>navTo("/account")} className="flex items-center gap-2 rounded-xl p-1 pr-3 border border-[var(--stroke)] hover:bg-[var(--hover)]" aria-label="Hesap menüsü"><span className="size-9 rounded-lg bg-[var(--subtle-surface)] text-[var(--accent)] grid place-items-center font-bold">{(account?.email||"WC").slice(0,2).toUpperCase()}</span><span className="hidden sm:block text-sm max-w-[125px] truncate">{account?.email?.split("@")[0]||"Misafir"}</span><ChevronDown className="size-3.5 muted"/></button></div>
    </div>
    <main className="dash-content">{children}</main>
    <div className="border-t border-[var(--stroke)] mt-12 pt-5 pb-5 flex justify-between items-center gap-5 flex-wrap text-xs muted"><span>WECOMMANDER · Güvenli MCP Platformu</span><div className="flex gap-4"><button onClick={()=>navTo("/pricing")}>Planlar</button><button onClick={logout} className="inline-flex items-center gap-1"><LogOut size={12}/> Çıkış</button></div></div>
@@ -48,7 +49,7 @@ export function DashboardPage({nav,path,account,checking,logout,theme,toggle}:{n
  ]).then(values=>{if(!active)return;const [d,u,a,b]=values;if(d.status==="fulfilled")setDevices(d.value.items);if(u.status==="fulfilled")setUsage(u.value);if(a.status==="fulfilled")setActivity(a.value.items);if(b.status==="fulfilled")setBill(b.value);if(values.every(x=>x.status==="rejected"))setError("Veriler yüklenemedi. Bağlantınızı kontrol edin.");setLoading(false)});return()=>{active=false}},[account]);
  const online=devices.filter(d=>d.online).length;
  const max=Math.max(1,...(usage?.daily||[]).map(x=>x.calls));
- const work=(view:string)=>window.location.assign("/app?view="+view);
+ const work=(view:string)=>nav("/"+(view==="settings"?"account":view));
  return <DashboardShell nav={nav} path={path} account={account} theme={theme} toggle={toggle} logout={logout}>
   {path==="/account"?<><span className="dash-kicker">AYARLAR</span><h1 className="dash-title mt-2">Hesabım</h1><p className="muted text-sm mt-2 mb-8">Hesap, çalışma alanı ve güvenlik seçeneklerini yönetin.</p><div className="max-w-3xl grid gap-4"><Card><CardHeader><CardTitle>Hesap Bilgileri</CardTitle><CardDescription>Mevcut oturumunuz</CardDescription></CardHeader><CardContent><div className="data-row"><LockKeyhole size={20}/><div><b>E-posta</b><small>{account?.email||"Giriş yapılmadı"}</small></div></div><div className="data-row"><Server size={20}/><div><b>Rol</b><small>{account?.role||"—"}</small></div></div><div className="data-row"><ShieldCheck size={20}/><div><b>Organizasyon</b><small>{account?.organizationId||"—"}</small></div></div><div className="flex gap-3 mt-6 flex-wrap"><Button variant="outline" onClick={()=>work("settings")}>Hesap ayarları <ArrowRight size={15}/></Button><Button variant="outline" onClick={()=>nav("/billing")}>Abonelik yönetimi <ArrowRight size={15}/></Button><Button variant="danger" onClick={logout}>Çıkış yap <LogOut size={15}/></Button></div></CardContent></Card></div></>:
   <>
