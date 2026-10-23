@@ -1626,13 +1626,20 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         return void json(res,200,{items:records.rows,total:total.rows[0]?.total??0,limit,offset});
       }
       if (req.method === "GET" && url.pathname === "/api/console/devices") {
-        const records = await db.query(
-          `select d.id,d.name,d.platform,d.agent_version,d.last_seen_at,
-                  d.revoked_at,o.name as organization_name
-             from devices d join organizations o on o.id=d.organization_id
-            order by d.created_at desc limit 100`,
-        );
-        return void json(res,200,{items:records.rows});
+        const search=(url.searchParams.get("q")||"").trim().slice(0,160);
+        const status=z.enum(["all","active","revoked"]).parse(url.searchParams.get("status")||"all");
+        const limit=z.coerce.number().int().min(1).max(100).parse(url.searchParams.get("limit")||"25");
+        const offset=z.coerce.number().int().min(0).max(100000).parse(url.searchParams.get("offset")||"0");
+        const filters=`from devices d join organizations o on o.id=d.organization_id
+          where ($1::text='' or d.name ilike '%'||$1||'%' or d.platform ilike '%'||$1||'%' or o.name ilike '%'||$1||'%')
+            and ($2::text='all' or ($2='active' and d.revoked_at is null) or ($2='revoked' and d.revoked_at is not null))`;
+        const [records,total]=await Promise.all([
+          db.query(`select d.id,d.name,d.platform,d.agent_version,d.last_seen_at,
+                   d.revoked_at,o.name as organization_name ${filters}
+                   order by d.created_at desc,d.id desc limit $3 offset $4`,[search,status,limit,offset]),
+          db.query<{total:number}>(`select count(*)::int as total ${filters}`,[search,status]),
+        ]);
+        return void json(res,200,{items:records.rows,total:total.rows[0]?.total??0,limit,offset});
       }
       if (req.method === "GET" && url.pathname === "/api/console/audit") {
         const q=(url.searchParams.get("q")||"").trim().slice(0,160);
