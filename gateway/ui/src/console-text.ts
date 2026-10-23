@@ -173,6 +173,9 @@ export const consoleTurkish:Record<string,string> = {
   "Low": "Düşük",
   "Medium": "Orta",
   "High": "Yüksek",
-  "Critical": "Kritik"
+  "Critical": "Kritik",
+  "Actions": "İşlemler",
+  "Enable": "Etkinleştir",
+  "Disable": "Devre dışı bırak"
 };
 export function consoleText(source:string,locale:"en"|"tr"):string {return locale==="tr"?(consoleTurkish[source]??source):source;}
