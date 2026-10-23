@@ -1355,6 +1355,21 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           userId: principal.userId,
         });
       }
+      if (req.method === "GET" && url.pathname === "/api/console/overview") {
+        const metrics = await db.query<{
+          users: string; organizations: string; devices: string; active_devices: string;
+        }>(`select
+          (select count(*) from users)::text as users,
+          (select count(*) from organizations)::text as organizations,
+          (select count(*) from devices where revoked_at is null)::text as devices,
+          (select count(*) from devices where revoked_at is null and last_seen_at > now() - interval '2 minutes')::text as active_devices`);
+        return void json(res, 200, {
+          users: Number(metrics.rows[0]?.users || 0),
+          organizations: Number(metrics.rows[0]?.organizations || 0),
+          devices: Number(metrics.rows[0]?.devices || 0),
+          activeDevices: Number(metrics.rows[0]?.active_devices || 0),
+        });
+      }
       return void json(res, 404, { error: "not_found" });
     }
 
