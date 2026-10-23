@@ -10,12 +10,19 @@ const artifacts=resolve(new URL("../test-artifacts/",import.meta.url).pathname);
 mkdirSync(artifacts,{recursive:true});
 assert.ok(existsSync(join(root,"index.html")),"Frontend must be built before browser tests");
 const fixtures={
- "/api/auth/me":{email:"test@example.com",actor:"test-user",role:"owner",authKind:"session",organizationId:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"},
+ "/api/auth/me":{email:"test@example.com",actor:"test-user",role:"owner",authKind:"session",global:false,organizationId:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"},
  "/api/public/plans":{mode:"saas",paddle:{clientToken:null,checkoutEnabled:false,environment:"sandbox"},plans:[{key:"pro",name:"Pro",description:"Örnek test paketi",featured:true,priceLabel:"$12 / ay",priceId:null,features:["5 cihaz"],maxDevices:5,maxMembers:2,maxApiTokens:4}]},
- "/api/devices":{items:[{id:"x",name:"Test Windows Device",platform:"windows",online:true,last_seen_at:new Date().toISOString()}]},
- "/api/usage":{monthCalls:42,limit:100,daily:[1,2,3,4,5,6,7].map((n)=>({day:"2026-10-"+String(10+n),calls:n*2})),months:[],topTools:[]},
+ "/api/devices":{items:[{id:"11111111-1111-4111-8111-111111111111",name:"Test Windows Device",platform:"windows",online:true,last_seen_at:new Date().toISOString()}]},
+ "/api/usage":{monthCalls:42,limit:100,dailyAverage:6,resetAt:"2026-11-01T00:00:00Z",daily:[1,2,3,4,5,6,7].map((n)=>({day:"2026-10-"+String(10+n),calls:n*2})),months:[],topTools:[]},
  "/api/activity":{items:[{tool:"direct.command",outcome:"success",created_at:new Date().toISOString()}]},
- "/api/billing":{mode:"saas",entitled:true,plan:{key:"pro",name:"Pro"},subscription:{status:"active",provider:"paddle",currentPeriodEnd:new Date().toISOString()},usage:{devices:1}}
+ "/api/billing":{mode:"saas",entitled:true,plan:{key:"pro",name:"Pro"},subscription:{status:"active",provider:"paddle",currentPeriodEnd:new Date().toISOString()},usage:{devices:1}},
+ "/api/auth/organizations":{items:[{id:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",name:"Test Workspace",role:"owner"}]},
+ "/api/organization":{item:{id:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",name:"Test Workspace"}},
+ "/api/tokens":{items:[{id:"22222222-2222-4222-8222-222222222222",name:"Test MCP",role:"operator",created_at:new Date().toISOString(),last_used_at:null,revoked_at:null}]},
+ "/api/device/request":{ok:true,data:{status:"ok",entries:["readme.txt","documents"]}},
+ "/api/pairing":{pairingCode:"wc-ci-pairing-code",expiresInSeconds:600},
+ "/api/approvals":{approvalToken:"approved-ci-token"},
+
 };
 const contentType={".js":"text/javascript",".css":"text/css",".svg":"image/svg+xml",".png":"image/png",".woff2":"font/woff2"};
 const server=createServer((req,res)=>{
@@ -76,8 +83,20 @@ try{
  await visit("/checkout?plan=pro","Paddle","modern-checkout");
  await visit("/dashboard","Tekrar hoş geldin","modern-dashboard");
  await visit("/billing","Paket ve Faturalama","modern-billing");
+ await visit("/devices","Bağlı Makineler","modern-devices");
+ await visit("/terminal","Çalışma Ortamı","modern-terminal");
+ await visit("/files","Dosyaları Listele","modern-files");
+ await visit("/tasks","Aktif Görevleri Listele","modern-tasks");
+ await visit("/mcp","API Erişim Anahtarları","modern-mcp");
+ await visit("/usage","Kullanım ve Raporlar","modern-usage");
+ await visit("/account","Şifremi Değiştir","modern-account");
+ await visit("/features","Cihaz yönetiminde","modern-features-scroll");
+ assert.equal(await evalJs("location.hash"),"","Landing section URLs must have no hash");
+ await visit("/how-it-works","Karmaşıklığı kaldır","modern-how-it-works");
  await call("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:1,mobile:true});
  await visit("/","Tüm cihazların","modern-landing-mobile");
  await visit("/dashboard","Tekrar hoş geldin","modern-dashboard-mobile");
- console.log("PASS modern shadcn landing, auth, pricing, checkout, dashboard, billing desktop/mobile");
+ await visit("/devices","Bağlı Makineler","modern-devices-mobile");
+ await visit("/account","Şifremi Değiştir","modern-account-mobile");
+ console.log("PASS modern shadcn landing, account, device/workbench, usage, pricing, checkout and billing desktop/mobile");
 }finally{ws?.close();proc.kill("SIGTERM");server.close();try{rmSync(profile,{recursive:true,force:true})}catch{}}
