@@ -90,7 +90,7 @@ export function MediaLibrary({onUse,selected}:{onUse:(id:string,slot:number)=>vo
   </label>
   {items.length===0?<p className="muted text-sm">{ui("No library images yet.")}</p>:<div className="grid grid-cols-2 md:grid-cols-3 gap-3">
    {items.map(item=><div className="rounded-xl border border-[var(--stroke)] p-3" key={item.id}>
-    <img src={"/api/public/media/"+item.id} alt={item.alt_text} loading="lazy" className="w-full h-28 object-contain"/>
+    <img src={"/api/console/media/"+item.id} alt={item.alt_text} loading="lazy" className="w-full h-28 object-contain"/>
     <p className="text-xs font-medium mt-2 line-clamp-2">{item.alt_text}</p>
     <button type="button" className="mt-3 border border-[var(--stroke)] rounded-lg text-xs px-3 py-2" onClick={()=>onUse(item.id,slot)}>{selected["media:feature:"+slot]===item.id?ui("Selected"):ui("Use in card")}</button>
    </div>)}
