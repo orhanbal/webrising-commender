@@ -1,6 +1,6 @@
 # WECOMMANDER — Super Admin Master Plan
 
-Status: IN PROGRESS (2026-10-23). Audit pagination/filtering and unpublished CMS media isolation implemented. Latest complete CI and production browser acceptance remain release gates.
+Status: IN PROGRESS (2026-10-23). Audit/device inventories and private draft media access implemented. Latest full CI, production acceptance, live device tests and externally authorized work remain release gates.
 
 ## Decision
 
@@ -55,6 +55,7 @@ Legend: [x] implementation committed, [ ] acceptance or implementation still req
 ### Phase D — Devices and operations
 - [x] Cross-workspace read-only device inventory and unified tenant/platform audit timeline.
 - [x] Audit timeline now supports bounded server-side search, platform/workspace source and risk filters, total counts and paginated UI with API/browser regression checks.
+- [x] Cross-workspace device inventory now supports bounded server-side search, active/revoked filtering and accurate pagination; no unverified online-status claim.
 - [x] Live system counts for relay health, active sessions, pending approvals and mail queue.
 - [ ] Agent enrollment/heartbeat/relay failover and terminal/file/task operations on real Windows, macOS and Linux devices.
 - [x] Live incident detection for mail failures and stale relay heartbeats, audited password-confirmed incident acknowledgement (no automatic repair or suppression).
