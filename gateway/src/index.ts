@@ -382,7 +382,7 @@ async function serveModernFile(res: ServerResponse, fileName:string, isIndex=fal
         "content-security-policy":
           "default-src 'self'; script-src 'self' https://cdn.paddle.com; "+
           "style-src 'self' 'unsafe-inline' https://cdn.paddle.com; "+
-          "img-src 'self' data: https:; font-src 'self' data:; "+
+          "img-src 'self' data: blob: https:; font-src 'self' data:; "+
           "connect-src 'self' https://*.paddle.com wss:; "+
           "frame-src https://*.paddle.com; "+
           "base-uri 'self'; form-action 'self' https://*.paddle.com; frame-ancestors 'none'",
