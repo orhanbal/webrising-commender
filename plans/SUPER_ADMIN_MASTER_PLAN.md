@@ -1,6 +1,6 @@
 # WECOMMANDER — Super Admin Master Plan
 
-Status: IN PROGRESS (2026-10-23). Platform read-only modules and first revisioned hero CMS implemented; final CI and production acceptance outstanding.
+Status: IN PROGRESS (2026-10-23). Admin listing, guarded user/organization quota changes, localized copy CMS and branded assets implemented. CI and production acceptance outstanding.
 
 ## Decision
 
@@ -47,18 +47,18 @@ Status: IN PROGRESS (2026-10-23). Platform read-only modules and first revisione
 
 ### Phase D — Devices / operations
 - [ ] Device listing committed (read-only); fleet health, enrollment, relay and gateway monitoring remain.
-- [ ] Audit listing committed (read-only); aggregation, incidents and operational reports remain.
+- [ ] Unified tenant + platform admin audit timeline committed (read-only); aggregation, incidents and operational reports remain.
 - [ ] Explicit customer authorization for privileged support actions.
 
 ### Phase E — Billing
-- [ ] Read-only plans/subscriptions panel and API implemented; provider health, editing and quota controls remain.
+- [ ] Plans and subscriptions viewer plus password-confirmed plan-limit editor implemented; Paddle refund/cancellation and provider health remain.
 - [ ] Preserve Paddle as payment source of truth; no manual fake-paid switches.
 - [ ] Refund/cancellation workflows with provider confirmation and audit.
 
 ### Phase F — Landing CMS
-- [ ] Revisioned EN/TR hero title and description editor, draft/publish and live rendering implemented; other landing sections, branding, SEO, legal pages remain.
+- [ ] Revisioned EN/TR hero and additional landing text overrides implemented, with draft/publish and live rendering; complete section inventory, SEO, legal pages and full CMS acceptance remain.
 - [ ] Preview, draft, publish and rollback; safe media uploads and asset versioning.
-- [ ] Logo (light/dark), favicon, social metadata, canonical SEO, navigation without hash links.
+- [ ] PNG/WebP light/dark logo and favicon upload API/UI implemented; social metadata, canonical SEO and comprehensive navigation checks remain.
 - [ ] Page-cache invalidation after publish. Preserve layout constraints and responsive checks.
 
 ### Phase G — System settings
