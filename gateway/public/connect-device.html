@@ -19,7 +19,7 @@
  if(me.authKind!=='session'){state.textContent='Hesabınla tarayıcı oturumu açmalısın.';login.hidden=false;return;}
  let organizations=[];
  try{
-   const r=await fetch('/api/access/workspaces',{credentials:'same-origin'});
+   const r=await fetch('/api/auth/organizations',{credentials:'same-origin'});
    if(r.ok){const data=await r.json();organizations=data.items||[];}
  }catch{}
  if(!organizations.length&&me.organizationId)organizations=[{id:me.organizationId,name:'Mevcut çalışma alanı',role:me.role}];
