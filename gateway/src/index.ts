@@ -482,7 +482,13 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     if (req.method === "GET" && url.pathname.startsWith("/api/public/media/")) {
       const id=z.string().uuid().parse(url.pathname.slice("/api/public/media/".length));
       const result=await db.query<{content_type:string;content:Buffer}>(
-        "select content_type,content from site_media_assets where id=$1",[id]);
+        `select m.content_type,m.content from site_media_assets m where m.id=$1::uuid
+          and exists (
+            select 1 from site_content_revisions r
+            cross join lateral jsonb_each_text(r.overrides) entry
+            where r.state='published' and entry.key like 'media:feature:%'
+              and entry.value=$1::text
+          )`,[id]);
       if(!result.rows[0])return void json(res,404,{error:"not_found"});
       res.writeHead(200,{...securityHeaders(),"content-type":result.rows[0].content_type,
         "content-length":result.rows[0].content.length,"cache-control":"public,max-age=3600",
@@ -1726,6 +1732,16 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
            from organization_subscriptions s join organizations o on o.id=s.organization_id
            order by o.name limit 100`);
         return void json(res,200,{plans:plans.rows,subscriptions:subscriptions.rows});
+      }
+      if (req.method === "GET" && url.pathname.startsWith("/api/console/media/")) {
+        const id=z.string().uuid().parse(url.pathname.slice("/api/console/media/".length));
+        const asset=await db.query<{content_type:string;content:Buffer}>(
+          "select content_type,content from site_media_assets where id=$1",[id]);
+        if(!asset.rows[0])return void json(res,404,{error:"not_found"});
+        res.writeHead(200,{...securityHeaders(),"content-type":asset.rows[0].content_type,
+          "content-length":asset.rows[0].content.length,
+          "cache-control":"private,no-store","x-content-type-options":"nosniff"});
+        res.end(asset.rows[0].content);return;
       }
       if (req.method === "GET" && url.pathname === "/api/console/media") {
         const rows=await db.query(
