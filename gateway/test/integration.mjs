@@ -423,11 +423,34 @@ assert.equal(platformMe.status,200);
 assert.equal((await platformMe.json()).platformRole,"super_admin");
 // Verify revisioned CMS draft, publication, rollback and safe HTML metadata rendering.
 const cmsSessionHeaders={Cookie:browserCookies,"Content-Type":"application/json","X-CSRF-Token":browserLogin.csrfToken};
+const tinyPng="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9YRHuwoAAAAASUVORK5CYII=";
+const mediaBody=(currentPassword)=>JSON.stringify({alt:"Integration test media",mime:"image/png",base64:tinyPng,currentPassword});
+const rejectedMedia=await fetch(base+"/api/console/media/upload",{
+ method:"POST",headers:cmsSessionHeaders,body:mediaBody("invalid-admin-password"),
+});
+assert.equal(rejectedMedia.status,403,"Media upload requires password reauthentication");
+const mediaUploaded=await fetch(base+"/api/console/media/upload",{
+ method:"POST",headers:cmsSessionHeaders,body:mediaBody("correct-horse-battery-staple"),
+});
+assert.equal(mediaUploaded.status,201);
+const mediaId=(await mediaUploaded.json()).id;
+const mediaBytes=await fetch(base+"/api/public/media/"+mediaId);
+assert.equal(mediaBytes.status,200);
+assert.equal(mediaBytes.headers.get("content-type"),"image/png");
+const mediaInventory=await fetch(base+"/api/console/media",{headers:{Cookie:browserCookies}});
+assert.equal(mediaInventory.status,200);
+assert.ok((await mediaInventory.json()).items.some(row=>row.id===mediaId));
+const invalidMediaReference=await fetch(base+"/api/console/site-content",{
+ method:"POST",headers:cmsSessionHeaders,
+ body:JSON.stringify({locale:"en",heroTitle:"Invalid draft",heroSubtitle:"Test draft should fail",
+ overrides:{"media:feature:0":"javascript:alert(1)"}}),
+});
+assert.equal(invalidMediaReference.status,400,"CMS must reject untrusted media URLs");
 const draftCms=async(title,metadata)=>fetch(base+"/api/console/site-content",{
   method:"POST",headers:cmsSessionHeaders,body:JSON.stringify({
     locale:"en",heroTitle:title,heroSubtitle:"Safe integrated landing subtitle",
     seoTitle:metadata,seoDescription:'Description with <script> and "quotes"',
-    overrides:{"Cihaz yönetiminde":"Managed capabilities heading"},
+    overrides:{"Cihaz yönetiminde":"Managed capabilities heading","media:feature:0":mediaId},
   }),
 });
 const cmsCreated=await draftCms("Integration Draft One","One <script>unsafe</script> & safe");
@@ -459,6 +482,7 @@ assert.equal((await jsonFetch("/api/public/site-content?locale=en")).item.hero_t
 assert.equal((await cmsPublish(cmsFirstId)).status,200,"Older revision must be republishable for rollback");
 assert.equal((await jsonFetch("/api/public/site-content?locale=en")).item.hero_title,"Integration Draft One");
 await acceptanceDb.query("delete from site_content_revisions where id=any($1::bigint[])",[[cmsFirstId,cmsSecondId]]);
+await acceptanceDb.query("delete from site_media_assets where id=$1",[mediaId]);
 
 const legalDraft=async(title)=>fetch(base+"/api/console/legal",{
  method:"POST",headers:cmsSessionHeaders,
