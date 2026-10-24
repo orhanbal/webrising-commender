@@ -28,6 +28,9 @@ const tools = [
     { path: str(), offset_lines: integer(), limit_lines: integer() },
     ["path"],
   ),
+  tool("docx_inspect", "Inspect DOCX paragraph/table counts without loading external resources or executing macros. Read-only, 16 MiB ZIP and 8 MiB document XML limits.", { path: str() }, ["path"]),
+  tool("docx_read_paragraphs", "Read up to 100 DOCX paragraphs as structured, bounded text. Offset is zero-based; content in tables is included.", { path: str(), offset: integer(), limit: integer() }, ["path"]),
+  tool("docx_read_table", "Read up to 50 rows of a DOCX table, max 20 cells per row; table_index and offset_rows are zero-based.", { path: str(), table_index: integer(), offset_rows: integer(), limit_rows: integer() }, ["path", "table_index"]),
   tool("xlsx_inspect", "List worksheets in an XLSX/XLSM workbook without running macros. Read-only; compressed limit 16 MiB, expanded ZIP limit 64 MiB.", { path: str() }, ["path"]),
   tool("xlsx_read_range", "Read up to 50 rows by 20 columns from one worksheet, using 1-based coordinates. Does not evaluate formulas or execute macros.",
     { path: str(), sheet: str(), start_row: integer(), start_column: integer(), row_count: integer(), column_count: integer() },
@@ -206,6 +209,9 @@ function actionFromTool(name: string, a: any): AgentAction {
     case "fs_stat": return { kind: "fs_stat", path: String(a.path) };
     case "fs_read": return { kind: "fs_read", path: String(a.path), ...(a.max_bytes ? { maxBytes: Number(a.max_bytes) } : {}) };
     case "fs_read_lines": return { kind: "fs_read_lines", path: String(a.path), ...(a.offset_lines !== undefined ? { offsetLines: Number(a.offset_lines) } : {}), ...(a.limit_lines !== undefined ? { limitLines: Number(a.limit_lines) } : {}) };
+    case "docx_inspect": return { kind: "docx_inspect", path: String(a.path) };
+    case "docx_read_paragraphs": return { kind: "docx_read_paragraphs", path: String(a.path), ...(a.offset !== undefined ? { offset: Number(a.offset) } : {}), ...(a.limit !== undefined ? { limit: Number(a.limit) } : {}) };
+    case "docx_read_table": return { kind: "docx_read_table", path: String(a.path), tableIndex: Number(a.table_index), ...(a.offset_rows !== undefined ? { offsetRows: Number(a.offset_rows) } : {}), ...(a.limit_rows !== undefined ? { limitRows: Number(a.limit_rows) } : {}) };
     case "xlsx_inspect": return { kind: "xlsx_inspect", path: String(a.path) };
     case "xlsx_read_range": return { kind: "xlsx_read_range", path: String(a.path), sheet: String(a.sheet), startRow: Number(a.start_row), startColumn: Number(a.start_column), rowCount: Number(a.row_count), columnCount: Number(a.column_count) };
     case "xlsx_write_cells": return { kind: "xlsx_write_cells", path: String(a.path), outputPath: String(a.output_path), sheet: String(a.sheet), updates: a.updates, ...(a.expected_sha256 ? { expectedSha256: String(a.expected_sha256) } : {}) };
