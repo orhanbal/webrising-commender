@@ -48,6 +48,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 struct ActiveRequest {
     handle: tokio::task::AbortHandle,
     cancelled: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
     is_search: bool,
 }
 
@@ -457,6 +458,8 @@ async fn connected_loop(
                         );
                         let cancelled = Arc::new(AtomicBool::new(false));
                         let task_cancelled = Arc::clone(&cancelled);
+                        let paused = Arc::new(AtomicBool::new(false));
+                        let task_paused = Arc::clone(&paused);
                         // Register the handle before allowing a fast task to complete.
                         let (start_tx, start_rx) = tokio::sync::oneshot::channel::<()>();
 
@@ -501,6 +504,7 @@ async fn connected_loop(
                                     approval_key: &approval_key,
                                     device_id: &device_id,
                                     cancelled: task_cancelled,
+                                    paused: task_paused,
                                     // Consume the sender on every path. If this is not a
                                     // search, then_some drops it immediately, allowing the
                                     // progress forwarder to exit instead of deadlocking the
@@ -542,6 +546,7 @@ async fn connected_loop(
                             ActiveRequest {
                                 handle: handle.abort_handle(),
                                 cancelled,
+                                paused,
                                 is_search,
                             },
                         );
@@ -556,6 +561,18 @@ async fn connected_loop(
                             if !request.is_search {
                                 active.lock().await.remove(&request_id);
                                 request.handle.abort();
+                            }
+                        }
+                    }
+                    GatewayMessage::SearchControl { request_id, paused } => {
+                        let request = active.lock().await.get(&request_id).cloned();
+                        if let Some(request) = request {
+                            if request.is_search && !request.cancelled.load(Ordering::Relaxed) {
+                                request.paused.store(paused, Ordering::Relaxed);
+                                send(&writer, AgentMessage::SearchControlAck {
+                                    request_id,
+                                    paused,
+                                }).await?;
                             }
                         }
                     }

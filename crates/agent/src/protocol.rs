@@ -16,6 +16,10 @@ pub enum GatewayMessage {
     Cancel {
         request_id: String,
     },
+    SearchControl {
+        request_id: String,
+        paused: bool,
+    },
     Ping {
         #[serde(rename = "timestamp")]
         _timestamp: String,
@@ -216,6 +220,10 @@ pub enum AgentMessage {
         items: Vec<Value>,
         scanned_entries: usize,
         scanned_bytes: u64,
+    },
+    SearchControlAck {
+        request_id: String,
+        paused: bool,
     },
     Result {
         request_id: String,

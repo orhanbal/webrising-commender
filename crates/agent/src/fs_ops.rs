@@ -27,6 +27,8 @@ const MAX_TEXT_SEARCH_BYTES: u64 = 64 * 1024 * 1024;
 // Wall-clock budget is independent of the Gateway's transport timeout.
 // Individual filesystem syscalls cannot be preempted by this synchronous scan.
 const MAX_SEARCH_DURATION: Duration = Duration::from_secs(10);
+// A paused search still occupies its quota and may never block native workers forever.
+const MAX_SEARCH_PAUSE: Duration = Duration::from_secs(15);
 
 /// Sends bounded cumulative results during a native search without holding up the scanner.
 pub type SearchProgressReporter = dyn Fn(&[Value], usize, u64) + Send + Sync;
@@ -36,7 +38,30 @@ pub type SearchProgressReporter = dyn Fn(&[Value], usize, u64) + Send + Sync;
 struct SearchExecution<'a> {
     deadline: Instant,
     cancelled: &'a AtomicBool,
+    paused: Option<&'a AtomicBool>,
     report: Option<&'a SearchProgressReporter>,
+}
+
+fn await_search_resume(
+    paused: Option<&AtomicBool>,
+    cancelled: &AtomicBool,
+    deadline: &mut Instant,
+) -> Result<()> {
+    let Some(paused) = paused else { return Ok(()); };
+    if !paused.load(Ordering::Relaxed) { return Ok(()); }
+    let started = Instant::now();
+    while paused.load(Ordering::Relaxed) {
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(anyhow!("search_cancelled"));
+        }
+        if started.elapsed() >= MAX_SEARCH_PAUSE {
+            return Err(anyhow!("search_pause_timeout"));
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // Pause time does not exhaust the native scan's active execution budget.
+    *deadline += started.elapsed();
+    Ok(())
 }
 
 pub fn list(policy: &PathPolicy, raw: &str) -> Result<Value> {
@@ -144,6 +169,24 @@ pub fn search_cancellable(
     )
 }
 
+pub fn search_cancellable_controlled(
+    policy: &PathPolicy,
+    raw: &str,
+    query: &str,
+    case_sensitive: bool,
+    max_results: Option<usize>,
+    controls: (&AtomicBool, &AtomicBool),
+    report: &SearchProgressReporter,
+) -> Result<Value> {
+    search_with_deadline_reporting(
+        policy, raw, query, case_sensitive, max_results,
+        SearchExecution {
+            deadline: Instant::now() + MAX_SEARCH_DURATION,
+            cancelled: controls.0, paused: Some(controls.1), report: Some(report),
+        },
+    )
+}
+
 pub fn search_cancellable_reporting(
     policy: &PathPolicy,
     raw: &str,
@@ -162,6 +205,7 @@ pub fn search_cancellable_reporting(
         SearchExecution {
             deadline: Instant::now() + MAX_SEARCH_DURATION,
             cancelled,
+            paused: None,
             report: Some(report),
         },
     )
@@ -185,6 +229,7 @@ fn search_with_deadline(
         SearchExecution {
             deadline,
             cancelled,
+            paused: None,
             report: None,
         },
     )
@@ -199,8 +244,9 @@ fn search_with_deadline_reporting(
     execution: SearchExecution<'_>,
 ) -> Result<Value> {
     let SearchExecution {
-        deadline,
+        mut deadline,
         cancelled,
+        paused,
         report,
     } = execution;
     if query.trim().is_empty() {
@@ -225,6 +271,7 @@ fn search_with_deadline_reporting(
     let mut next_progress = 32_usize;
 
     while let Some(path) = stack.pop() {
+        await_search_resume(paused, cancelled, &mut deadline)?;
         if cancelled.load(Ordering::Relaxed) {
             return Err(anyhow!("search_cancelled"));
         }
@@ -248,6 +295,7 @@ fn search_with_deadline_reporting(
                 Err(error) => return Err(error.into()),
             };
             for entry in entries {
+                await_search_resume(paused, cancelled, &mut deadline)?;
                 if cancelled.load(Ordering::Relaxed) {
                     return Err(anyhow!("search_cancelled"));
                 }
@@ -346,13 +394,23 @@ fn read_search_utf8<R: Read>(
     cancelled: &AtomicBool,
     deadline: Instant,
 ) -> Result<Option<String>> {
+    read_search_utf8_controlled(reader, cancelled, &mut deadline.clone(), None)
+}
+
+fn read_search_utf8_controlled<R: Read>(
+    reader: &mut R,
+    cancelled: &AtomicBool,
+    deadline: &mut Instant,
+    paused: Option<&AtomicBool>,
+) -> Result<Option<String>> {
     let mut bytes = Vec::new();
     let mut chunk = [0_u8; 16 * 1024];
     loop {
+        await_search_resume(paused, cancelled, deadline)?;
         if cancelled.load(Ordering::Relaxed) {
             return Err(anyhow!("search_cancelled"));
         }
-        if Instant::now() >= deadline {
+        if Instant::now() >= *deadline {
             return Ok(None);
         }
         let size = match reader.read(&mut chunk) {
@@ -389,6 +447,24 @@ pub fn text_search_cancellable(
     )
 }
 
+pub fn text_search_cancellable_controlled(
+    policy: &PathPolicy,
+    raw: &str,
+    query: &str,
+    case_sensitive: bool,
+    max_results: Option<usize>,
+    controls: (&AtomicBool, &AtomicBool),
+    report: &SearchProgressReporter,
+) -> Result<Value> {
+    text_search_with_deadline_reporting(
+        policy, raw, query, case_sensitive, max_results,
+        SearchExecution {
+            deadline: Instant::now() + MAX_SEARCH_DURATION,
+            cancelled: controls.0, paused: Some(controls.1), report: Some(report),
+        },
+    )
+}
+
 pub fn text_search_cancellable_reporting(
     policy: &PathPolicy,
     raw: &str,
@@ -407,6 +483,7 @@ pub fn text_search_cancellable_reporting(
         SearchExecution {
             deadline: Instant::now() + MAX_SEARCH_DURATION,
             cancelled,
+            paused: None,
             report: Some(report),
         },
     )
@@ -430,6 +507,7 @@ fn text_search_with_deadline(
         SearchExecution {
             deadline,
             cancelled,
+            paused: None,
             report: None,
         },
     )
@@ -444,8 +522,9 @@ fn text_search_with_deadline_reporting(
     execution: SearchExecution<'_>,
 ) -> Result<Value> {
     let SearchExecution {
-        deadline,
+        mut deadline,
         cancelled,
+        paused,
         report,
     } = execution;
     if query.is_empty() {
@@ -472,6 +551,7 @@ fn text_search_with_deadline_reporting(
     let mut next_progress = 32_usize;
 
     while let Some(path) = stack.pop() {
+        await_search_resume(paused, cancelled, &mut deadline)?;
         if cancelled.load(Ordering::Relaxed) {
             return Err(anyhow!("search_cancelled"));
         }
@@ -491,6 +571,7 @@ fn text_search_with_deadline_reporting(
                 Err(error) => return Err(error.into()),
             };
             for entry in entries {
+                await_search_resume(paused, cancelled, &mut deadline)?;
                 if cancelled.load(Ordering::Relaxed) {
                     return Err(anyhow!("search_cancelled"));
                 }
@@ -540,7 +621,7 @@ fn text_search_with_deadline_reporting(
             // Read in cancellable, bounded chunks. File size can change after
             // metadata(), so a one-shot read_to_string is not a memory bound.
             let text = match open_regular_read(&path) {
-                Ok(mut file) => match read_search_utf8(&mut file, cancelled, deadline)? {
+                Ok(mut file) => match read_search_utf8_controlled(&mut file, cancelled, &mut deadline, paused)? {
                     Some(value) => value,
                     None => {
                         if Instant::now() >= deadline {
@@ -560,6 +641,7 @@ fn text_search_with_deadline_reporting(
             scanned_bytes += text.len() as u64;
 
             for (index, line) in text.lines().enumerate() {
+                await_search_resume(paused, cancelled, &mut deadline)?;
                 if cancelled.load(Ordering::Relaxed) {
                     return Err(anyhow!("search_cancelled"));
                 }
@@ -989,6 +1071,40 @@ mod search_budget_tests {
         env, fs,
         sync::{atomic::AtomicUsize, Arc},
     };
+
+    #[test]
+    fn paused_scanner_blocks_until_resumed_and_preserves_active_deadline() {
+        use std::sync::Arc;
+        let paused = Arc::new(AtomicBool::new(true));
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let resume = Arc::clone(&paused);
+        let worker = std::thread::spawn(move || {
+            let start = Instant::now();
+            let mut deadline = start + Duration::from_millis(30);
+            await_search_resume(Some(&paused), &cancelled, &mut deadline).unwrap();
+            assert!(start.elapsed() >= Duration::from_millis(60));
+            assert!(deadline > Instant::now());
+        });
+        std::thread::sleep(Duration::from_millis(80));
+        resume.store(false, Ordering::Relaxed);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn paused_native_search_remains_cancellable() {
+        use std::sync::Arc;
+        let paused = Arc::new(AtomicBool::new(true));
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let (p, c) = (Arc::clone(&paused), Arc::clone(&cancelled));
+        let worker = std::thread::spawn(move || {
+            let mut deadline = Instant::now() + Duration::from_secs(2);
+            await_search_resume(Some(&p), &c, &mut deadline)
+        });
+        std::thread::sleep(Duration::from_millis(30));
+        cancelled.store(true, Ordering::Relaxed);
+        assert!(worker.join().unwrap().unwrap_err().to_string().contains("search_cancelled"));
+        assert!(paused.load(Ordering::Relaxed));
+    }
 
     #[test]
     fn native_filename_progress_streams_bounded_cumulative_snapshots() {

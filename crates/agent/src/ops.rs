@@ -20,6 +20,7 @@ pub struct ExecutionContext<'a> {
     pub approval_key: &'a str,
     pub device_id: &'a str,
     pub cancelled: Arc<AtomicBool>,
+    pub paused: Arc<AtomicBool>,
     pub search_progress: Option<mpsc::Sender<Value>>,
 }
 
@@ -32,6 +33,7 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
         approval_key,
         device_id,
         cancelled,
+        paused,
         search_progress,
     } = context;
     if action.risk() == Risk::High {
@@ -210,13 +212,13 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
                             "scannedBytes": bytes,
                         }));
                     };
-                    fs_ops::search_cancellable_reporting(
+                    fs_ops::search_cancellable_controlled(
                         &policy,
                         &path,
                         &query,
                         case_sensitive.unwrap_or(false),
                         max_results,
-                        &cancelled,
+                        (&cancelled, &paused),
                         &report,
                     )
                 } else {
@@ -248,13 +250,13 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
                             "scannedBytes": bytes,
                         }));
                     };
-                    fs_ops::text_search_cancellable_reporting(
+                    fs_ops::text_search_cancellable_controlled(
                         &policy,
                         &path,
                         &query,
                         case_sensitive.unwrap_or(false),
                         max_results,
-                        &cancelled,
+                        (&cancelled, &paused),
                         &report,
                     )
                 } else {
