@@ -14,7 +14,6 @@ const MAX_CELL_PAGE_JSON_BYTES: usize = 256 * 1024;
 const MAX_SEARCHED_CELLS: usize = 50_000;
 const MAX_SEARCH_RESULTS: usize = 100;
 
-
 fn checked_workbook(policy: &PathPolicy, raw: &str) -> Result<std::path::PathBuf> {
     let path = policy.resolve_existing(raw)?;
     if !path.is_file() {
@@ -147,14 +146,22 @@ pub fn find_cells(
     case_sensitive: bool,
     max_results: usize,
 ) -> Result<Value> {
-    if query.is_empty() || query.len() > 1024 || max_results == 0 || max_results > MAX_SEARCH_RESULTS {
+    if query.is_empty()
+        || query.len() > 1024
+        || max_results == 0
+        || max_results > MAX_SEARCH_RESULTS
+    {
         return Err(anyhow!("invalid spreadsheet search parameters"));
     }
     let path = checked_workbook(policy, raw)?;
     let mut workbook = open_workbook_auto(&path).context("cannot parse spreadsheet")?;
     let sheets = match sheet {
         Some(name) => {
-            if !workbook.sheet_names().iter().any(|candidate| candidate == name) {
+            if !workbook
+                .sheet_names()
+                .iter()
+                .any(|candidate| candidate == name)
+            {
                 return Err(anyhow!("spreadsheet sheet not found"));
             }
             vec![name.to_owned()]
@@ -348,7 +355,9 @@ fn reject_complex_edit_parts(path: &std::path::Path) -> Result<()> {
         let entry = archive.by_index(index)?;
         let name = entry.name().to_ascii_lowercase();
         if is_unsafe_edit_part(&name) {
-            return Err(anyhow!("complex workbook features require read-only access"));
+            return Err(anyhow!(
+                "complex workbook features require read-only access"
+            ));
         }
     }
     Ok(())
