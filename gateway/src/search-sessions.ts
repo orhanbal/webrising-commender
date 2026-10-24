@@ -57,6 +57,29 @@ function safeSearchError(error: unknown): string {
   ]);
   return allowed.has(code) ? code : "search_failed";
 }
+/** Keep final native results within the same durable 1 MiB / 500 item
+ * boundary even when PostgreSQL is disabled. Preserve an ordered prefix,
+ * and never report a silently shortened result as complete. */
+function boundFinalSearchItems(value: unknown): { items: unknown[]; truncated: boolean } {
+  const source = Array.isArray(value) ? value : [];
+  let items = source.slice(0, 500);
+  let truncated = source.length > items.length;
+  if (Buffer.byteLength(JSON.stringify(items), "utf8") > 1024 * 1024) {
+    let low = 0;
+    let high = items.length;
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if (Buffer.byteLength(JSON.stringify(items.slice(0, middle)), "utf8") <= 1024 * 1024) {
+        low = middle;
+      } else {
+        high = middle - 1;
+      }
+    }
+    items = items.slice(0, low);
+    truncated = true;
+  }
+  return { items, truncated };
+}
 function isCheckpointFor(
   searchType: "files" | "content", value: unknown,
 ): value is NativeFilenameCheckpoint | NativeContentCheckpoint {
@@ -232,10 +255,11 @@ export async function startSearch(
       items?: unknown[]; truncated?: boolean; timedOut?: boolean;
       scannedEntries?: number; scannedBytes?: number;
     };
+    const bounded = boundFinalSearchItems(payload?.items);
     const candidate = {
       status: "completed" as const,
-      items: Array.isArray(payload?.items) ? payload.items.slice(0, 500) : [],
-      truncated: Boolean(payload?.truncated),
+      items: bounded.items,
+      truncated: Boolean(payload?.truncated) || bounded.truncated,
       timedOut: Boolean(payload?.timedOut),
       progressUpdates: entry.progressUpdates,
       // A small native scan can complete before its first progress event.
