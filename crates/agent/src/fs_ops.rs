@@ -309,6 +309,7 @@ fn search_with_deadline_reporting(
             return Err(anyhow!("invalid_search_checkpoint"));
         }
         stack.clear();
+        let mut seen_pending = std::collections::HashSet::new();
         for dir in pending {
             let value = dir
                 .as_str()
@@ -318,6 +319,7 @@ fn search_with_deadline_reporting(
             }
             let path = std::path::PathBuf::from(value);
             if !path.starts_with(&root)
+                || !seen_pending.insert(value)
                 || !path.is_dir()
                 || fs::symlink_metadata(&path)?.file_type().is_symlink()
                 || policy.resolve_existing(value)? != path
@@ -1359,6 +1361,14 @@ mod search_budget_tests {
             "type": "file",
             "size": 999
         }]);
+        assert!(invoke(&injected)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid_search_checkpoint"));
+        // Replaying a directory twice can duplicate matches and bypass the
+        // intended bounded progress accounting after a Gateway takeover.
+        injected["items"] = json!([]);
+        injected["pending"] = json!([root.to_string_lossy(), root.to_string_lossy()]);
         assert!(invoke(&injected)
             .unwrap_err()
             .to_string()
