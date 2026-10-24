@@ -28,6 +28,7 @@ const tools = [
     { path: str(), offset_lines: integer(), limit_lines: integer() },
     ["path"],
   ),
+  tool("image_inspect", "Read PNG/JPEG/GIF or extended WebP dimensions and file metadata from headers only. Does not decode pixels or generate a preview. 32 MiB file limit; 256 KiB header scan.", { path: str() }, ["path"]),
   tool("docx_inspect", "Inspect DOCX paragraph/table counts without loading external resources or executing macros. Read-only, 16 MiB ZIP and 8 MiB document XML limits.", { path: str() }, ["path"]),
   tool("docx_read_paragraphs", "Read up to 100 DOCX paragraphs as structured, bounded text. Offset is zero-based; content in tables is included.", { path: str(), offset: integer(), limit: integer() }, ["path"]),
   tool("docx_read_table", "Read up to 50 rows of a DOCX table, max 20 cells per row; table_index and offset_rows are zero-based.", { path: str(), table_index: integer(), offset_rows: integer(), limit_rows: integer() }, ["path", "table_index"]),
@@ -209,6 +210,7 @@ function actionFromTool(name: string, a: any): AgentAction {
     case "fs_stat": return { kind: "fs_stat", path: String(a.path) };
     case "fs_read": return { kind: "fs_read", path: String(a.path), ...(a.max_bytes ? { maxBytes: Number(a.max_bytes) } : {}) };
     case "fs_read_lines": return { kind: "fs_read_lines", path: String(a.path), ...(a.offset_lines !== undefined ? { offsetLines: Number(a.offset_lines) } : {}), ...(a.limit_lines !== undefined ? { limitLines: Number(a.limit_lines) } : {}) };
+    case "image_inspect": return { kind: "image_inspect", path: String(a.path) };
     case "docx_inspect": return { kind: "docx_inspect", path: String(a.path) };
     case "docx_read_paragraphs": return { kind: "docx_read_paragraphs", path: String(a.path), ...(a.offset !== undefined ? { offset: Number(a.offset) } : {}), ...(a.limit !== undefined ? { limit: Number(a.limit) } : {}) };
     case "docx_read_table": return { kind: "docx_read_table", path: String(a.path), tableIndex: Number(a.table_index), ...(a.offset_rows !== undefined ? { offsetRows: Number(a.offset_rows) } : {}), ...(a.limit_rows !== undefined ? { limitRows: Number(a.limit_rows) } : {}) };

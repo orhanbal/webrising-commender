@@ -52,6 +52,9 @@ pub enum AgentAction {
         offset_lines: Option<i64>,
         limit_lines: Option<usize>,
     },
+    ImageInspect {
+        path: String,
+    },
     DocxInspect {
         path: String,
     },
@@ -236,6 +239,7 @@ impl AgentAction {
             Self::FsStat { .. } => "fs_stat",
             Self::FsRead { .. } => "fs_read",
             Self::FsReadLines { .. } => "fs_read_lines",
+            Self::ImageInspect { .. } => "image_inspect",
             Self::DocxInspect { .. } => "docx_inspect",
             Self::DocxReadParagraphs { .. } => "docx_read_paragraphs",
             Self::DocxReadTable { .. } => "docx_read_table",
@@ -277,6 +281,7 @@ impl AgentAction {
             | Self::FsStat { .. }
             | Self::FsRead { .. }
             | Self::FsReadLines { .. }
+            | Self::ImageInspect { .. }
             | Self::DocxInspect { .. }
             | Self::DocxReadParagraphs { .. }
             | Self::DocxReadTable { .. }

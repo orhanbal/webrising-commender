@@ -89,3 +89,12 @@ Tüm maddeleri *kodlandı* diye tamamlandı sayma. `Desktop Commander parity ach
 - **Kalan P0:** Native streaming/pause/cancel, kalıcı search session, tam PTY geçmişi, rollback.
 - **BLOCKED_EXTERNAL:** Gerçek macOS/Ubuntu kurulum ve ChatGPT/Claude canlı istemci kabulü.
 - **Sonraki öncelik:** Yeni CI hatası varsa düzelt; değilse 04.00 terminal/PTY/süreç yönetimi P0 eksiklerine geç.
+
+## 07.00 oturumu — P1 görsel üstveri aracı / P2 MCP yüzeyi (2026-10-24)
+
+- **PASS / giriş HEAD:** `c3b87ce3` GitHub Actions `ci #40056941079` **17/17 PASS**, `platform-distribution #40057255598` PASS. Böylece 06.00 DOCX okuma ve Agent E2E kabul edildi.
+- **KODLANDI, yeni CI bekliyor:** `image_inspect` MCP → Gateway Zod → Rust Agent → allowed-root hattında PNG, JPEG, GIF ve yalnız VP8X WebP header üstverisi (boyut, MIME, dosya boyutu) okur. Yalnızca üstveri; görüntü render/önizleme veya tam dosya doğrulaması **değildir**.
+- **Güvenlik:** 32 MiB dosya ve 256 KiB başlık okuma sınırı, dosya uzantısı/içerik eşleşmesi, sıfır veya aşırı boyut reddi, yalnız izinli kök, piksel çözücü yok.
+- **TEST EKLENDİ:** Rust header birim testleri, gerçek Linux Agent E2E'de PNG/GIF pozitif, bozuk başlık, sahte JPEG uzantısı ve allowed-root dışı erişim negatif testleri.
+- **PENDING:** Bu commit'in tam CI ve üç platform derleme sonucu. CI kırmızıysa 08.00 oturumunda önce hatayı düzelt.
+- **AÇIK:** Gerçek görsel önizleme, PDF okuma/düzenleme, DOCX düzenleme, fiziksel platform/ChatGPT/Claude kabulü, macOS notarization ve Windows imzalama.

@@ -2,6 +2,7 @@ mod approval;
 mod config;
 mod docx_ops;
 mod fs_ops;
+mod image_ops;
 mod ops;
 mod policy;
 mod process_ops;

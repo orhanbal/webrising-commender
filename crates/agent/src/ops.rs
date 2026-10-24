@@ -1,5 +1,5 @@
 use crate::{
-    approval, docx_ops, fs_ops,
+    approval, docx_ops, fs_ops, image_ops,
     policy::PathPolicy,
     process_ops,
     protocol::{AgentAction, Risk},
@@ -42,6 +42,10 @@ pub async fn execute(
             offset_lines,
             limit_lines,
         } => fs_ops::read_lines(policy, &path, offset_lines, limit_lines),
+        AgentAction::ImageInspect { path } => {
+            let policy = policy.clone();
+            tokio::task::spawn_blocking(move || image_ops::inspect(&policy, &path)).await?
+        }
         AgentAction::DocxInspect { path } => {
             let policy = policy.clone();
             tokio::task::spawn_blocking(move || docx_ops::inspect(&policy, &path)).await?

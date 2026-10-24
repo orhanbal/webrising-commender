@@ -122,6 +122,36 @@ try {
   assert.equal(policyInfo.agentMode, "restricted");
   assert.ok(policyInfo.allowedRoots.includes(tempRoot));
 
+  // Header-only image metadata travels through MCP/Gateway/native Agent and
+  // must reject malformed data, extension spoofing and out-of-root access.
+  const pngPath = path.join(tempRoot, "pixel.png");
+  fs.writeFileSync(pngPath, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j2m0AAAAASUVORK5CYII=", "base64"));
+  const imageInfo = await tool(260, "image_inspect", { device_id: deviceId, path: pngPath });
+  assert.equal(imageInfo.format, "PNG", JSON.stringify(imageInfo));
+  assert.equal(imageInfo.width, 1);
+  assert.equal(imageInfo.height, 1);
+  assert.equal(imageInfo.readOnly, true);
+  assert.equal(imageInfo.pixelsDecoded, false);
+  const gifPath = path.join(tempRoot, "pixel.gif");
+  fs.writeFileSync(gifPath, Buffer.from("R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=", "base64"));
+  const gifInfo = await tool(261, "image_inspect", { device_id: deviceId, path: gifPath });
+  assert.equal(gifInfo.format, "GIF", JSON.stringify(gifInfo));
+  assert.equal(gifInfo.width, 1);
+  const brokenImage = path.join(tempRoot, "broken.png");
+  fs.writeFileSync(brokenImage, Buffer.from("not a png"));
+  assert.equal(typeof (await tool(262, "image_inspect", { device_id: deviceId, path: brokenImage })).error, "string");
+  const fakeJpeg = path.join(tempRoot, "spoof.jpg");
+  fs.copyFileSync(pngPath, fakeJpeg);
+  assert.match((await tool(263, "image_inspect", { device_id: deviceId, path: fakeJpeg })).error, /extension does not match/i);
+  const outsideImageDir = fs.mkdtempSync(path.join(os.tmpdir(), "commander-outside-image-"));
+  try {
+    const outsideImage = path.join(outsideImageDir, "outside.png");
+    fs.copyFileSync(pngPath, outsideImage);
+    assert.match((await tool(264, "image_inspect", { device_id: deviceId, path: outsideImage })).error, /outside configured allowed roots/i);
+  } finally {
+    fs.rmSync(outsideImageDir, { recursive: true, force: true });
+  }
+
   // Read-only DOCX tools must preserve Unicode, decode XML entities, and enforce
   // root, archive, and pagination boundaries through the real native Agent.
   const documentPath = path.join(tempRoot, "sample.docx");

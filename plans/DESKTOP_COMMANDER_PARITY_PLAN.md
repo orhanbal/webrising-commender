@@ -46,6 +46,13 @@ Son gözden geçirme: 2026-10-24. Öncelik: eşdeğerlik > güvenilirlik/kabul >
 - **PENDING:** `3236ab30` kod commit'inin ve bu plan güncellemesinin güncel CI/Rust/Agent E2E sonucu; önceki `ci #40056654534` derlemesi clippy `cloned_ref_to_slice_refs` uyarısıyla durdu, düzeltildi. Yeni CI geçmeden PASS denmez.
 - **AÇIK:** DOCX yapılandırılmış düzenleme/biçim koruma, PDF sayfa/metin/merge, görsel önizleme, fiziksel üç OS ve canlı MCP istemci kabulü.
 
+## 07.00 P1 görüntü metaverisi (2026-10-24)
+
+- Önceki DOCX HEAD `c3b87ce3` için CI `40056941079` 17/17 PASS ve dağıtım `40057255598` PASS.
+- `image_inspect` MCP/Gateway/Rust Agent hattında başlık düzeyinde PNG/JPEG/GIF/VP8X WebP boyut ve MIME okur. Piksel çözme veya görsel önizleme **yok**. 32 MiB dosya, 256 KiB başlık, allowed-root ve uzantı kontrolü mevcut.
+- Gerçek Linux Agent E2E'ye geçerli PNG/GIF ve bozuk/spoofed/out-of-root negatif testler eklendi. **Yeni HEAD CI PENDING**; başarılı sonuç görülmeden DONE değildir.
+- PDF ve DOCX düzenleme, gerçek önizleme, fiziksel OS/ChatGPT/Claude kabulü açık.
+
 ## Karşılaştırma kaynağı
 - Desktop Commander'ın yayımlanan MCP araç listesi: https://github.com/mcp/wonderwhy-er/desktop-commander
 - Remote MCP araç listesi: https://github.com/mcp/app.desktopcommander/remote-desktop-commander
