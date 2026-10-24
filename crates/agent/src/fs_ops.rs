@@ -727,7 +727,7 @@ mod search_budget_tests {
         let root = std::env::temp_dir().join(format!("wc-search-cancel-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("sample.txt"), b"needle").unwrap();
-        let policy = PathPolicy::new(&[root.clone()]).unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
         let cancelled = AtomicBool::new(true);
         let raw = root.to_str().unwrap();
         assert!(

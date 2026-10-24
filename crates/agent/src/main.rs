@@ -465,14 +465,16 @@ async fn connected_loop(
                                 return;
                             }
                             let result = ops::execute(
-                                &task_policy,
-                                &task_terminals,
-                                &persistent_tasks,
+                                ops::ExecutionContext {
+                                    policy: &task_policy,
+                                    terminals: &task_terminals,
+                                    tasks: &persistent_tasks,
+                                    approval_token: approval_token.as_deref(),
+                                    approval_key: &approval_key,
+                                    device_id: &device_id,
+                                    cancelled: task_cancelled,
+                                },
                                 action,
-                                approval_token.as_deref(),
-                                &approval_key,
-                                &device_id,
-                                task_cancelled,
                             )
                             .await;
 

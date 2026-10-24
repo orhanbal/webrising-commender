@@ -11,16 +11,20 @@ use anyhow::{anyhow, Result};
 use serde_json::Value;
 use std::sync::{atomic::AtomicBool, Arc};
 
-pub async fn execute(
-    policy: &PathPolicy,
-    terminals: &TerminalManager,
-    tasks: &TaskManager,
-    action: AgentAction,
-    approval_token: Option<&str>,
-    approval_key: &str,
-    device_id: &str,
-    cancelled: Arc<AtomicBool>,
-) -> Result<Value> {
+pub struct ExecutionContext<'a> {
+    pub policy: &'a PathPolicy,
+    pub terminals: &'a TerminalManager,
+    pub tasks: &'a TaskManager,
+    pub approval_token: Option<&'a str>,
+    pub approval_key: &'a str,
+    pub device_id: &'a str,
+    pub cancelled: Arc<AtomicBool>,
+}
+
+pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Result<Value> {
+    let ExecutionContext {
+        policy, terminals, tasks, approval_token, approval_key, device_id, cancelled,
+    } = context;
     if action.risk() == Risk::High {
         let token = approval_token
             .ok_or_else(|| anyhow!("approval token required for high-risk action"))?;
