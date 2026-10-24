@@ -671,6 +671,32 @@ try {
       device_id: deviceId, path: tempRoot, query: "outside-content-private-keyword",
     });
     assert.deepEqual(escapedContent.items, []);
+
+    // The same allowlist must hold for direct reads, paged reads and edits.
+    // An allowed directory containing a symlink is not permission to access
+    // the symlink target outside the root.
+    const outsideFile = path.join(escapedDir, "outside-private.txt");
+    const outsideLink = path.join(tempRoot, "outside-private-link.txt");
+    fs.writeFileSync(outsideFile, "outside-private-do-not-modify", "utf8");
+    fs.symlinkSync(outsideFile, outsideLink, "file");
+    try {
+      const directRead = await tool(294, "fs_read", {
+        device_id: deviceId, path: outsideLink,
+      });
+      assert.equal(typeof directRead.error, "string");
+      const pagedRead = await tool(295, "fs_read_lines", {
+        device_id: deviceId, path: outsideLink, offset_lines: 0, limit_lines: 10,
+      });
+      assert.equal(typeof pagedRead.error, "string");
+      const directEdit = await tool(296, "fs_replace", {
+        device_id: deviceId, path: outsideLink,
+        search: "outside-private", replace: "exfiltrated",
+      });
+      assert.equal(typeof directEdit.error, "string");
+      assert.equal(fs.readFileSync(outsideFile, "utf8"), "outside-private-do-not-modify");
+    } finally {
+      fs.rmSync(outsideLink, { force: true });
+    }
   } finally {
     fs.rmSync(escapedLink, { force: true });
     fs.rmSync(escapedDir, { recursive: true, force: true });
