@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Principal } from "./auth.js";
 import type { DeviceRouter } from "./device-router.js";
-import { controlSearch, listSearches, reconcileRemoteSearchStops, searchPage, setSearchPersistence, startSearch, stopSearch } from "./search-sessions.js";
+import { controlSearch, listSearches, reconcileRemoteSearchStops, recoverInterruptedSearches, searchPage, setSearchPersistence, startSearch, stopSearch } from "./search-sessions.js";
 
 const principal: Principal = {
   organizationId: "org-a",
