@@ -152,7 +152,9 @@ export async function startSearch(
     if (!Array.isArray(progress.items) || progress.items.length > 500 ||
         !Number.isSafeInteger(progress.scannedEntries) || progress.scannedEntries < 0 ||
         !Number.isSafeInteger(progress.scannedBytes) || progress.scannedBytes < 0 ||
-        progress.scannedEntries > 100_000 || progress.scannedBytes > 64 * 1024 * 1024) return;
+        progress.scannedEntries > 100_000 || progress.scannedBytes > 64 * 1024 * 1024 ||
+        progress.scannedEntries < entry.scannedEntries ||
+        progress.scannedBytes < entry.scannedBytes) return;
     // The hub validates payload size; retain the same limit in this boundary,
     // including when a test or alternate router calls us directly.
     if (Buffer.byteLength(JSON.stringify(progress.items), "utf8") > 1024 * 1024) return;
@@ -165,8 +167,10 @@ export async function startSearch(
       void persistence.progress(entry, {
         items: progress.items, scannedEntries: progress.scannedEntries,
         scannedBytes: progress.scannedBytes, sequence,
-      }).then(committed => {
-        if (!committed && entry.status === "running" && entry.inFlight) entry.controller.abort();
+      }).then(() => {
+        // A stale out-of-order write can legitimately lose the monotone CAS.
+        // Stop/expiry revocation is database-authoritative; never cancel a
+        // healthy scanner solely because an older progress write lost the race.
       }).catch(() => {
         if (entry.status === "running" && entry.inFlight) entry.controller.abort();
       });

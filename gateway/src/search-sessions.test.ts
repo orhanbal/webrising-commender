@@ -20,6 +20,43 @@ const remote = {
   }),
 } as unknown as DeviceRouter;
 
+test("an out-of-order durable progress CAS does not cancel a healthy native scan", async () => {
+  const actor = { ...principal, actor: "stale-progress-actor" };
+  let signal!: AbortSignal;
+  let emit!: (progress: { items: unknown[]; scannedEntries: number; scannedBytes: number }) => void;
+  let settle!: (data: { items: unknown[]; truncated: boolean }) => void;
+  const router = {
+    request: async (_device: string, _action: unknown, _approval: unknown,
+      controller: AbortSignal, onProgress: typeof emit) => {
+      signal = controller;
+      emit = onProgress;
+      return new Promise<{ items: unknown[]; truncated: boolean }>(resolve => { settle = resolve; });
+    },
+  } as unknown as DeviceRouter;
+  const persistence = {
+    create: async () => {},
+    progress: async () => false, // Old sequence lost its PostgreSQL CAS race.
+    finish: async () => true,
+  };
+  setSearchPersistence(persistence as never);
+  try {
+    const started = await startSearch(actor, "stale-progress-device", router, {
+      path: "/safe", query: "sample", search_type: "files",
+    });
+    assert.equal(started.status, "running");
+    emit({ items: [{ path: "/safe/first" }], scannedEntries: 32, scannedBytes: 0 });
+    // Reject a rewind even before PostgreSQL is contacted.
+    emit({ items: [{ path: "/safe/old" }], scannedEntries: 8, scannedBytes: 0 });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(signal.aborted, false);
+    settle({ items: [{ path: "/safe/final" }], truncated: false });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(signal.aborted, false);
+  } finally {
+    setSearchPersistence(undefined);
+  }
+});
+
 test("native progress exposes scoped live pages and cannot resurrect stopped results", async () => {
   const actor = { ...principal, actor: "progress-actor" };
   let progress!: (value: { items: unknown[]; scannedEntries: number; scannedBytes: number }) => void;
