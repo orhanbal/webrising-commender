@@ -184,7 +184,9 @@ impl TerminalManager {
         });
         let active_and_pending = sessions.len() + self.pending_starts.load(Ordering::SeqCst);
         if active_and_pending >= MAX_SESSIONS {
-            return Err(anyhow!("too many terminal sessions; limit is {MAX_SESSIONS}"));
+            return Err(anyhow!(
+                "too many terminal sessions; limit is {MAX_SESSIONS}"
+            ));
         }
         self.pending_starts.fetch_add(1, Ordering::SeqCst);
         Ok(StartReservation(Arc::clone(&self.pending_starts)))
