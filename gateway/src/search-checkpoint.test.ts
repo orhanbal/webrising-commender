@@ -57,6 +57,14 @@ test("content checkpoint validator rejects replay of match-bearing or over-budge
   assert.equal(isNativeContentCheckpoint(validContent), true);
   assert.equal(isNativeFilenameCheckpoint(validContent), false);
   assert.equal(isNativeContentCheckpoint({ ...validContent, items: [{ preview: "forged" }] }), false);
+  const matched = { ...validContent, items: [
+    { path: "/safe/matched.txt", line: 1, preview: "needle line" },
+  ] };
+  assert.equal(isNativeContentCheckpoint(matched), true);
+  assert.equal(isNativeContentCheckpoint({ ...matched,
+    items: [{ path: "/safe/matched.txt", line: 0, preview: "needle" }] }), false);
+  assert.equal(isNativeContentCheckpoint({ ...matched,
+    items: [{ path: "/safe/matched.txt", line: 1, preview: "x".repeat(1001) }] }), false);
   assert.equal(isNativeContentCheckpoint({ ...validContent, scannedBytes: -1 }), false);
   assert.equal(isNativeContentCheckpoint({ ...validContent, scannedBytes: 64 * 1024 * 1024 + 1 }), false);
   assert.equal(isNativeContentCheckpoint({ ...validContent, scannedBytes: 1.5 }), false);

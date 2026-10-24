@@ -73,7 +73,9 @@ try {
   };
   const savedContent = {
     version: 1, searchType: "content", root: "/ci", query: "content-fixture",
-    caseSensitive: false, pending: ["/ci/unvisited-text.txt"], items: [],
+    caseSensitive: false, pending: ["/ci/unvisited-text.txt"],
+    items: [{ path: "/ci/previous-text.txt", line: 1,
+      preview: "content-fixture already matched" }],
     scannedEntries: 32, scannedBytes: 64,
   };
   let didResumeNativeCheckpoint = false;
@@ -89,14 +91,15 @@ try {
           didResumeNativeContent = true;
           ws.send(JSON.stringify({
             type: "result", requestId: request.requestId, ok: true,
-            data: { items: [{ path: "/ci/unvisited-text.txt", line: 1,
-              preview: "content-fixture matched" }],
+            data: { items: [...savedContent.items,
+              { path: "/ci/unvisited-text.txt", line: 1,
+                preview: "content-fixture matched" }],
               truncated: false, timedOut: false, scannedEntries: 64, scannedBytes: 96 },
           }));
         } else {
           ws.send(JSON.stringify({
             type: "search_progress", requestId: request.requestId,
-            items: [], scannedEntries: 32, scannedBytes: 64,
+            items: savedContent.items, scannedEntries: 32, scannedBytes: 64,
             checkpoint: savedContent,
           }));
         }
@@ -245,6 +248,7 @@ try {
   assert.equal(resumedContent.searchId, contentSession.searchId);
   assert.equal(resumedContent.scannedBytes, 96);
   assert.deepEqual(resumedContent.items, [
+    ...savedContent.items,
     { path: "/ci/unvisited-text.txt", line: 1,
       preview: "content-fixture matched" },
   ]);

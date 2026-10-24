@@ -27,12 +27,21 @@ export function isNativeFilenameCheckpoint(value: unknown): value is NativeFilen
     !("searchType" in value) && !("scannedBytes" in value);
 }
 
-/** Conservative text resume: never replay unverifiable old line previews. */
+/** Prior text previews are only hints: Rust re-reads every saved file and
+ * verifies its complete matching-line set under the allowlist before replay.
+ */
 export function isNativeContentCheckpoint(value: unknown): value is NativeContentCheckpoint {
   if (!isBaseCheckpoint(value)) return false;
   const candidate = value as NativeContentCheckpoint;
   return candidate.searchType === "content" &&
-    Array.isArray(candidate.items) && candidate.items.length === 0 &&
     Number.isSafeInteger(candidate.scannedBytes) &&
-    candidate.scannedBytes >= 0 && candidate.scannedBytes <= 64 * 1024 * 1024;
+    candidate.scannedBytes >= 0 && candidate.scannedBytes <= 64 * 1024 * 1024 &&
+    candidate.items.every(item => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+      const line = item as Record<string, unknown>;
+      return Object.keys(line).length === 3 &&
+        typeof line.path === "string" && line.path.length > 0 && line.path.length <= 4096 &&
+        Number.isSafeInteger(line.line) && Number(line.line) > 0 &&
+        typeof line.preview === "string" && line.preview.length <= 1000;
+    });
 }
