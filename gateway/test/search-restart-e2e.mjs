@@ -66,18 +66,47 @@ try {
     socket.once("open", resolve);
     socket.once("error", reject);
   });
-  socket.on("message", raw => {
-    const request = JSON.parse(raw.toString());
-    if (request.type !== "request" || request.action?.kind !== "fs_search") return;
-    if (request.action.query !== "saved-fixture") return;
-    socket.send(JSON.stringify({
-      type: "result", requestId: request.requestId, ok: true,
-      data: {
-        items: [{ path: "/ci/saved-fixture.txt" }],
-        truncated: false, timedOut: false,
-      },
-    }));
-  });
+  const savedCheckpoint = {
+    version: 1, root: "/ci", query: "checkpoint-fixture",
+    caseSensitive: false, pending: ["/ci/not-yet-visited"],
+    items: [{ path: "/ci/checkpoint-first.txt" }], scannedEntries: 32,
+  };
+  let didResumeNativeCheckpoint = false;
+  function installResponder(ws) {
+    ws.on("message", raw => {
+      const request = JSON.parse(raw.toString());
+      if (request.type !== "request" || request.action?.kind !== "fs_search") return;
+      if (request.action.query === "saved-fixture") {
+        ws.send(JSON.stringify({
+          type: "result", requestId: request.requestId, ok: true,
+          data: { items: [{ path: "/ci/saved-fixture.txt" }],
+            truncated: false, timedOut: false },
+        }));
+      } else if (request.action.query === "checkpoint-fixture") {
+        if (request.action.resumeCheckpoint) {
+          assert.deepEqual(request.action.resumeCheckpoint, savedCheckpoint);
+          didResumeNativeCheckpoint = true;
+          ws.send(JSON.stringify({
+            type: "result", requestId: request.requestId, ok: true,
+            data: {
+              items: [savedCheckpoint.items[0],
+                { path: "/ci/checkpoint-second.txt" }],
+              scannedEntries: 64, truncated: false, timedOut: false,
+            },
+          }));
+        } else {
+          // A real persisted progress checkpoint from the Agent protocol.
+          // Intentionally leave the worker unfinished across SIGKILL.
+          ws.send(JSON.stringify({
+            type: "search_progress", requestId: request.requestId,
+            items: savedCheckpoint.items, scannedEntries: 32,
+            scannedBytes: 0, checkpoint: savedCheckpoint,
+          }));
+        }
+      }
+    });
+  }
+  installResponder(socket);
   socket.send(JSON.stringify({
     type: "hello", deviceId, hostname: "ci-restart-agent",
     os: "linux", version: "CI", capabilities: ["fs_search"],
@@ -98,6 +127,17 @@ try {
     return result.status === "completed" && result.items?.length === 1;
   });
 
+  const checkpointed = await tool(908, "start_search", {
+    device_id: deviceId, path: "/ci", query: "checkpoint-fixture", search_type: "files",
+  });
+  assert.equal(checkpointed.status, "running");
+  await until(async () => {
+    const page = await tool(909, "get_more_search_results", {
+      device_id: deviceId, search_id: checkpointed.searchId,
+    });
+    return page.status === "running" && page.progressUpdates > 0 &&
+      page.items.length === 1 ? page : null;
+  });
   const orphan = await tool(903, "start_search", {
     device_id: deviceId, path: "/ci", query: "unanswered-fixture", search_type: "files",
   });
@@ -129,6 +169,39 @@ try {
     return health.database === "ok";
   }, 30_000);
 
+  // The new process must reacquire the device before reclaiming the stale
+  // database lease. No new session ID is allocated during recovery.
+  socket = new WebSocket(base.replace(/^http/, "ws") + "/agent", {
+    headers: {
+      "x-device-id": deviceId,
+      Authorization: `Bearer ${device.deviceToken}`,
+    },
+  });
+  socket.on("error", () => {});
+  installResponder(socket);
+  await new Promise((resolve, reject) => {
+    socket.once("open", resolve);
+    socket.once("error", reject);
+  });
+  socket.send(JSON.stringify({
+    type: "hello", deviceId, hostname: "ci-restart-agent",
+    os: "linux", version: "CI", capabilities: ["fs_search"],
+  }));
+  await until(async () => {
+    const status = await api("/api/devices");
+    return status.items.some(item => item.id === deviceId && item.online);
+  });
+  const resumedCheckpoint = await until(async () => {
+    const page = await tool(910, "get_more_search_results", {
+      device_id: deviceId, search_id: checkpointed.searchId,
+    });
+    return page.status === "completed" ? page : null;
+  }, 35_000);
+  assert.equal(didResumeNativeCheckpoint, true);
+  assert.equal(resumedCheckpoint.searchId, checkpointed.searchId);
+  assert.deepEqual(resumedCheckpoint.items, [
+    { path: "/ci/checkpoint-first.txt" }, { path: "/ci/checkpoint-second.txt" },
+  ]);
   const recovered = await tool(904, "get_more_search_results", {
     device_id: deviceId, search_id: completed.searchId,
   });
@@ -153,7 +226,7 @@ try {
   });
   assert.equal(afterStop.status, "stopped");
   assert.deepEqual(afterStop.items, []);
-  console.log("search-restart-e2e: PASS (real SIGKILL/restart, recovery, lease expiry, stop)");
+  console.log("search-restart-e2e: PASS (real SIGKILL/restart, checkpoint takeover, lease expiry, stop)");
 } finally {
   socket?.terminate();
 }
