@@ -3,6 +3,7 @@ import type { AgentAction, SearchProgress } from "./protocol.js";
 import type { AgentHub } from "./relay.js";
 import {
   callRelay,
+  callRelayStream,
   connectedRelayForDevice,
   relayOnlineDeviceIds,
   regionalRelayEnabled,
@@ -68,18 +69,27 @@ export class DeviceRouter {
     if (signal) signal.addEventListener("abort", onAbort, { once: true });
     try {
       if (signal?.aborted) onAbort();
-      const response = await callRelay<{
-        ok: boolean;
-        data?: unknown;
-        error?: string;
-      }>(relay.internalBaseUrl, "/internal/relay/request", {
+      const payload = {
         deviceId,
         requestId,
         action,
         ...(searchSessionId !== undefined ? { searchSessionId } : {}),
         ...(startPaused !== undefined ? { startPaused } : {}),
         ...(approvalToken !== undefined ? { approvalToken } : {}),
-      });
+        ...(onProgress ? { streamProgress: true } : {}),
+      };
+      if (onProgress) {
+        // Keep one signed HTTP request open while the remote Agent streams
+        // progress. The final result is returned only after a complete frame.
+        return callRelayStream<unknown>(
+          relay.internalBaseUrl, "/internal/relay/request", payload, onProgress,
+        );
+      }
+      const response = await callRelay<{
+        ok: boolean;
+        data?: unknown;
+        error?: string;
+      }>(relay.internalBaseUrl, "/internal/relay/request", payload);
       if (!response.ok) {
         throw new Error(response.error || "relay_request_failed");
       }
