@@ -471,6 +471,35 @@ try {
   assert.ok(foldedNameSearch.items.some((item) => item.path === mixedCaseName));
   assert.ok(foldedNameSearch.items.some((item) => item.path === lowerCaseName));
 
+  // 1C: content search must preserve case sensitivity across MCP, Gateway
+  // and native Rust, including the asynchronous search-session path.
+  fs.writeFileSync(mixedCaseName, "Mixed-Content-Needle\\n", "utf8");
+  fs.writeFileSync(lowerCaseName, "mixed-content-needle\\n", "utf8");
+  const exactContent = await tool(284, "text_search", {
+    device_id: deviceId, path: tempRoot, query: "Mixed-Content-Needle",
+    case_sensitive: true,
+  });
+  assert.ok(exactContent.items.some(item => item.path === mixedCaseName));
+  assert.ok(!exactContent.items.some(item => item.path === lowerCaseName));
+  const foldedContent = await tool(285, "text_search", {
+    device_id: deviceId, path: tempRoot, query: "Mixed-Content-Needle",
+    case_sensitive: false,
+  });
+  assert.ok(foldedContent.items.some(item => item.path === mixedCaseName));
+  assert.ok(foldedContent.items.some(item => item.path === lowerCaseName));
+  const exactContentSession = await tool(286, "start_search", {
+    device_id: deviceId, path: tempRoot, query: "Mixed-Content-Needle",
+    search_type: "content", case_sensitive: true,
+  });
+  const exactContentPage = await waitFor(async () => {
+    const page = await tool(287, "get_more_search_results", {
+      device_id: deviceId, search_id: exactContentSession.searchId, offset: 0, length: 10,
+    });
+    return page.status === "completed" ? page : false;
+  });
+  assert.ok(exactContentPage.items.some(item => item.path === mixedCaseName));
+  assert.ok(!exactContentPage.items.some(item => item.path === lowerCaseName));
+
   const caseSession = await tool(222, "start_search", {
     device_id: deviceId, path: tempRoot, query: "CaseMatch",
     search_type: "files", case_sensitive: true,
