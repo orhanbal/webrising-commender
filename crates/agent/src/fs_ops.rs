@@ -102,6 +102,7 @@ pub fn search(
     policy: &PathPolicy,
     raw: &str,
     query: &str,
+    case_sensitive: bool,
     max_results: Option<usize>,
 ) -> Result<Value> {
     if query.trim().is_empty() {
@@ -113,7 +114,7 @@ pub fn search(
 
     let root = policy.resolve_existing(raw)?;
     let result_limit = max_results.unwrap_or(100).clamp(1, MAX_SEARCH_RESULTS);
-    let needle = query.to_lowercase();
+    let needle = if case_sensitive { query.to_owned() } else { query.to_lowercase() };
     let mut results = Vec::new();
     let mut scanned = 0_usize;
     let mut stack = vec![root.clone()];
@@ -123,7 +124,7 @@ pub fn search(
         let metadata = fs::symlink_metadata(&path)?;
         if metadata.is_file() {
             scanned += 1;
-            if file_name_matches(&path, &needle) {
+            if file_name_matches(&path, &needle, case_sensitive) {
                 results.push(search_item(&path, &metadata));
             }
         } else if metadata.is_dir() {
@@ -136,7 +137,7 @@ pub fn search(
                 }
 
                 let file_type = entry.file_type()?;
-                if file_name_matches(&entry.path(), &needle) {
+                if file_name_matches(&entry.path(), &needle, case_sensitive) {
                     let metadata = fs::symlink_metadata(entry.path())?;
                     results.push(search_item(&entry.path(), &metadata));
                     if results.len() >= result_limit {
@@ -158,6 +159,7 @@ pub fn search(
     Ok(json!({
         "path": root.to_string_lossy(),
         "query": query,
+        "caseSensitive": case_sensitive,
         "items": results,
         "truncated": truncated,
         "scannedEntries": scanned.min(MAX_SCAN_ENTRIES)
@@ -557,9 +559,16 @@ fn entry_type(file_type: &fs::FileType) -> &'static str {
     }
 }
 
-fn file_name_matches(path: &Path, needle: &str) -> bool {
+fn file_name_matches(path: &Path, needle: &str, case_sensitive: bool) -> bool {
     path.file_name()
-        .map(|name| name.to_string_lossy().to_lowercase().contains(needle))
+        .map(|name| {
+            let name = name.to_string_lossy();
+            if case_sensitive {
+                name.contains(needle)
+            } else {
+                name.to_lowercase().contains(needle)
+            }
+        })
         .unwrap_or(false)
 }
 
