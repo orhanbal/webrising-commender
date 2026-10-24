@@ -109,11 +109,24 @@ export class PgSearchPersistence implements SearchPersistence {
   }
 
   async finish(s: SearchKey, result: SearchCompletion) {
+    // Retain the longest ordered prefix that fits the durable 1 MiB cap.
+    // Dropping the entire snapshot when one result crosses the cap loses
+    // otherwise valid pages and makes large-directory pagination unusable.
     let items = result.status === "completed" ? result.items.slice(0, 500) : [];
-    let truncated = result.truncated;
-    const serialized = JSON.stringify(items);
-    if (Buffer.byteLength(serialized, "utf8") > 1024 * 1024) {
-      items = [];
+    let truncated = result.truncated || (result.status === "completed" && result.items.length > 500);
+    const maxBytes = 1024 * 1024;
+    if (Buffer.byteLength(JSON.stringify(items), "utf8") > maxBytes) {
+      let low = 0;
+      let high = items.length;
+      while (low < high) {
+        const mid = Math.ceil((low + high) / 2);
+        if (Buffer.byteLength(JSON.stringify(items.slice(0, mid)), "utf8") <= maxBytes) {
+          low = mid;
+        } else {
+          high = mid - 1;
+        }
+      }
+      items = items.slice(0, low);
       truncated = true;
     }
     const updated = await this.pool.query(
