@@ -123,6 +123,128 @@ pub fn read_range(
     }))
 }
 
+/// Write into a new .xlsx file, never overwrite the source or an existing output.
+/// XLSM writing is intentionally excluded until macro-preservation is verified.
+pub fn write_cells(
+    policy: &PathPolicy,
+    raw: &str,
+    output_raw: &str,
+    sheet: &str,
+    updates: &[crate::protocol::SpreadsheetCellUpdate],
+    expected_sha256: Option<&str>,
+) -> Result<Value> {
+    use sha2::{Digest, Sha256};
+    use std::collections::HashSet;
+
+    if updates.is_empty() || updates.len() > 100 {
+        return Err(anyhow!("cell update count must be between 1 and 100"));
+    }
+    if sheet.is_empty() || sheet.len() > 255 {
+        return Err(anyhow!("invalid sheet name"));
+    }
+    let source = checked_workbook(policy, raw)?;
+    if !source.extension().and_then(|ext| ext.to_str()).unwrap_or_default().eq_ignore_ascii_case("xlsx") {
+        return Err(anyhow!("macro-enabled XLSM workbooks are read-only"));
+    }
+    let output = policy.resolve_for_create(output_raw)?;
+    if !output.extension().and_then(|ext| ext.to_str()).unwrap_or_default().eq_ignore_ascii_case("xlsx") {
+        return Err(anyhow!("output must be a new .xlsx file"));
+    }
+    if output == source || output.exists() {
+        return Err(anyhow!("output must not overwrite an existing file"));
+    }
+    let parent = output.parent().ok_or_else(|| anyhow!("missing output parent"))?;
+    if !parent.is_dir() {
+        return Err(anyhow!("output parent directory does not exist"));
+    }
+
+    let mut seen = HashSet::new();
+    for update in updates {
+        validate_cell_address(&update.cell)?;
+        if !seen.insert(update.cell.as_str()) {
+            return Err(anyhow!("duplicate spreadsheet cell address"));
+        }
+        match &update.value {
+            Value::String(v) if v.len() <= 8192 => {}
+            Value::Bool(_) => {}
+            Value::Number(n) if n.as_f64().is_some_and(f64::is_finite) => {}
+            _ => return Err(anyhow!("cell value must be a string <=8192 bytes, finite number, or boolean")),
+        }
+    }
+
+    let original = fs::read(&source)?;
+    let previous_sha256 = format!("{:x}", Sha256::digest(&original));
+    if let Some(expected) = expected_sha256 {
+        if !previous_sha256.eq_ignore_ascii_case(expected) {
+            return Err(anyhow!("file_changed_since_read"));
+        }
+    }
+    let mut book = umya_spreadsheet::reader::xlsx::read(&source)
+        .map_err(|error| anyhow!("cannot read XLSX for editing: {error}"))?;
+    let worksheet = book
+        .get_sheet_by_name_mut(sheet)
+        .ok_or_else(|| anyhow!("spreadsheet sheet not found"))?;
+    for update in updates {
+        let cell = worksheet.get_cell_mut(update.cell.as_str());
+        match &update.value {
+            Value::String(v) => {
+                cell.set_value_string(v);
+            }
+            Value::Bool(v) => {
+                cell.set_value_bool(*v);
+            }
+            Value::Number(v) => {
+                cell.set_value_number(v.as_f64().ok_or_else(|| anyhow!("invalid numeric cell value"))?);
+            }
+            _ => return Err(anyhow!("unsupported cell value")),
+        }
+    }
+
+    let temporary = parent.join(format!(".wecommander-{}.xlsx", uuid::Uuid::new_v4()));
+    let result = (|| -> Result<Value> {
+        umya_spreadsheet::writer::xlsx::write(&book, &temporary)
+            .map_err(|error| anyhow!("cannot save XLSX: {error}"))?;
+        checked_workbook(policy, temporary.to_str().ok_or_else(|| anyhow!("invalid temporary path"))?)?;
+        // Publish without replacement: hard_link is atomic and fails if a
+        // concurrent writer has already created the output path.
+        fs::File::open(&temporary)?.sync_all()?;
+        let output_bytes = fs::read(&temporary)?;
+        fs::hard_link(&temporary, &output).context("atomic output publish failed")?;
+        Ok(json!({
+            "ok": true,
+            "path": output.to_string_lossy(),
+            "sourcePath": source.to_string_lossy(),
+            "updatedCells": updates.len(),
+            "previousSha256": previous_sha256,
+            "sha256": format!("{:x}", Sha256::digest(&output_bytes)),
+            "size": output_bytes.len()
+        }))
+    })();
+    let _ = fs::remove_file(&temporary);
+    result
+}
+
+fn validate_cell_address(cell: &str) -> Result<()> {
+    let split = cell
+        .bytes()
+        .position(|byte| byte.is_ascii_digit())
+        .ok_or_else(|| anyhow!("invalid cell address"))?;
+    let (letters, digits) = cell.split_at(split);
+    if letters.is_empty() || letters.len() > 3 || !letters.bytes().all(|byte| byte.is_ascii_uppercase()) ||
+        digits.is_empty() || digits.starts_with('0') || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(anyhow!("invalid cell address"));
+    }
+    let mut column = 0_u32;
+    for byte in letters.bytes() {
+        column = column * 26 + u32::from(byte - b'A' + 1);
+    }
+    let row: u32 = digits.parse().context("invalid cell row")?;
+    if column > 16_384 || row == 0 || row > 1_048_576 {
+        return Err(anyhow!("cell address outside XLSX bounds"));
+    }
+    Ok(())
+}
+
 fn cell_value(value: &Data) -> Value {
     match value {
         Data::Empty => Value::Null,
