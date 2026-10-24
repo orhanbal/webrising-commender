@@ -671,9 +671,8 @@ fn text_search_with_deadline_reporting(
     let mut scanned_entries = 0_usize;
     let mut scanned_bytes = 0_u64;
     if let Some(checkpoint) = resume {
-        // The first content checkpoint format intentionally retains no prior
-        // matches. Replaying unverified line previews after file changes
-        // could publish stale or injected content; refuse rather than guess.
+        // Prior matches are untrusted. Every line preview is recomputed from
+        // a bounded, allowlisted regular file before accepting a checkpoint.
         if serde_json::to_vec(checkpoint)?.len() > MAX_CHECKPOINT_BYTES
             || checkpoint["version"] != 1
             || checkpoint["searchType"] != "content"
@@ -695,7 +694,7 @@ fn text_search_with_deadline_reporting(
         let bytes = checkpoint["scannedBytes"]
             .as_u64()
             .ok_or_else(|| anyhow!("invalid_search_checkpoint"))?;
-        if !prior.is_empty()
+        if prior.len() > result_limit
             || pending.is_empty()
             || pending.len() > 4096
             || entries > MAX_SCAN_ENTRIES as u64
@@ -725,6 +724,79 @@ fn text_search_with_deadline_reporting(
             }
             stack.push(pending_path.to_path_buf());
         }
+        // Revalidate complete prior file matches against current contents.
+        // A stale preview or newly added matching line invalidates the whole
+        // checkpoint; never present copied JSON as a fresh scan result.
+        let mut prior_by_file = std::collections::BTreeMap::<String, Vec<Value>>::new();
+        for item in prior {
+            let name = item["path"]
+                .as_str()
+                .ok_or_else(|| anyhow!("invalid_search_checkpoint"))?;
+            if item.as_object().map(|obj| obj.len()) != Some(3)
+                || item["line"].as_u64().is_none_or(|line| line == 0)
+                || item["preview"].as_str().is_none()
+                || name.len() > 4096
+            {
+                return Err(anyhow!("invalid_search_checkpoint"));
+            }
+            let path = Path::new(name);
+            if !path.starts_with(&root)
+                || stack.iter().any(|pending| path.starts_with(pending))
+                || fs::symlink_metadata(path)?.file_type().is_symlink()
+                || policy.resolve_existing(name)? != path
+            {
+                return Err(anyhow!("invalid_search_checkpoint"));
+            }
+            prior_by_file
+                .entry(name.to_owned())
+                .or_default()
+                .push(item.clone());
+        }
+        let mut validation_bytes = 0_u64;
+        for (name, expected) in prior_by_file {
+            let path = Path::new(&name);
+            let metadata = fs::symlink_metadata(path)?;
+            if !metadata.is_file()
+                || metadata.len() > MAX_TEXT_SEARCH_FILE
+                || validation_bytes.saturating_add(metadata.len()) > MAX_TEXT_SEARCH_BYTES
+            {
+                return Err(anyhow!("invalid_search_checkpoint"));
+            }
+            let mut file = open_regular_read(path)?;
+            let text = read_search_utf8_controlled(
+                &mut file,
+                cancelled,
+                &mut deadline,
+                paused,
+            )?
+            .ok_or_else(|| anyhow!("invalid_search_checkpoint"))?;
+            validation_bytes = validation_bytes.saturating_add(text.len() as u64);
+            if validation_bytes > MAX_TEXT_SEARCH_BYTES {
+                return Err(anyhow!("invalid_search_checkpoint"));
+            }
+            let mut actual = Vec::new();
+            for (index, line) in text.lines().enumerate() {
+                await_search_resume(paused, cancelled, &mut deadline)?;
+                if cancelled.load(Ordering::Relaxed) {
+                    return Err(anyhow!("search_cancelled"));
+                }
+                let matches = if case_sensitive {
+                    line.contains(query)
+                } else {
+                    line.to_lowercase().contains(&needle)
+                };
+                if matches {
+                    actual.push(json!({
+                        "path": name, "line": index + 1,
+                        "preview": preview_line(line)
+                    }));
+                }
+            }
+            if actual != expected {
+                return Err(anyhow!("invalid_search_checkpoint"));
+            }
+        }
+        results = prior.clone();
         scanned_entries = entries as usize;
         scanned_bytes = bytes;
     }
@@ -865,9 +937,9 @@ fn text_search_with_deadline_reporting(
             }
         }
 
-        // A completed path is a safe replay boundary. Until saved hits can
-        // be revalidated, checkpoint only scans with zero matches.
-        if !truncated && results.is_empty() && !stack.is_empty() {
+        // A completed path is a safe replay boundary. Any saved matching
+        // lines are fully revalidated on the next process before reuse.
+        if !truncated && !stack.is_empty() {
             if let Some(report) = report {
                 let checkpoint = json!({
                     "version": 1,
@@ -876,7 +948,7 @@ fn text_search_with_deadline_reporting(
                     "query": query,
                     "caseSensitive": case_sensitive,
                     "pending": stack.iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>(),
-                    "items": [],
+                    "items": results,
                     "scannedEntries": scanned_entries.min(MAX_SCAN_ENTRIES),
                     "scannedBytes": scanned_bytes
                 });
@@ -1367,6 +1439,75 @@ mod search_budget_tests {
         .unwrap();
         assert_eq!(original["items"], replay["items"]);
         assert_eq!(original["scannedBytes"], replay["scannedBytes"]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn matched_content_checkpoint_revalidates_lines_and_rejects_changed_files() {
+        let root = env::temp_dir().join(format!("wc-content-matches-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join("first")).unwrap();
+        fs::create_dir_all(root.join("second")).unwrap();
+        fs::write(root.join("first/one.txt"), b"needle original").unwrap();
+        fs::write(root.join("second/two.txt"), b"needle second").unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let checkpoints = Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+        let sink = Arc::clone(&checkpoints);
+        let report = move |_: &[Value], _: usize, _: u64, cp: Option<&Value>| {
+            if let Some(cp) = cp {
+                sink.lock().unwrap().push(cp.clone());
+            }
+        };
+        let first = text_search_cancellable_controlled(
+            &policy,
+            root.to_str().unwrap(),
+            "needle",
+            false,
+            Some(100),
+            (&AtomicBool::new(false), &AtomicBool::new(false), None),
+            &report,
+        )
+        .unwrap();
+        let cp = checkpoints
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|cp| !cp["items"].as_array().unwrap().is_empty())
+            .cloned()
+            .unwrap();
+        let resumed = text_search_cancellable_controlled(
+            &policy,
+            root.to_str().unwrap(),
+            "needle",
+            false,
+            Some(100),
+            (
+                &AtomicBool::new(false),
+                &AtomicBool::new(false),
+                Some(&cp),
+            ),
+            &report,
+        )
+        .unwrap();
+        assert_eq!(resumed["items"], first["items"]);
+        let previous_file = cp["items"][0]["path"].as_str().unwrap();
+        fs::write(previous_file, b"needle changed").unwrap();
+        let rejected = text_search_cancellable_controlled(
+            &policy,
+            root.to_str().unwrap(),
+            "needle",
+            false,
+            Some(100),
+            (
+                &AtomicBool::new(false),
+                &AtomicBool::new(false),
+                Some(&cp),
+            ),
+            &report,
+        );
+        assert!(rejected
+            .unwrap_err()
+            .to_string()
+            .contains("invalid_search_checkpoint"));
         fs::remove_dir_all(root).unwrap();
     }
 
