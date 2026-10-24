@@ -190,7 +190,11 @@ try {
       if (page.status === "completed") {
         throw new Error("stale saved content was incorrectly accepted");
       }
-      return page.status === "error" ? page : false;
+      // A dead Gateway is briefly exposed as search_interrupted until the
+      // replacement Gateway wins the 15-second heartbeat/recovery CAS.
+      // That transient read is not the Rust Agent's final security verdict.
+      return page.status === "error" && page.error !== "search_interrupted"
+        ? page : false;
     }, 30000, 100);
     assert.equal(rejected.error, "search_failed");
     assert.deepEqual(rejected.items, []);
