@@ -392,6 +392,25 @@ try {
 
   // 1D: paged reads reject oversized and invalid UTF-8 files instead of
   // attempting unbounded allocation or returning a partial secret.
+  // 1D: paged Unicode lines must retain complete code points and the
+  // expected one-based line bounds when CRLF input is normalized to lines.
+  const unicodePagedPath = path.join(tempRoot, "unicode-paged.txt");
+  fs.writeFileSync(unicodePagedPath, "Başlangıç 🧪\r\nİkinci satır\r\nSon ✨\r\n", "utf8");
+  const unicodePaged = await tool(304, "fs_read_lines", {
+    device_id: deviceId, path: unicodePagedPath, offset_lines: 1, limit_lines: 2,
+  });
+  assert.deepEqual(unicodePaged.lines, ["İkinci satır", "Son ✨"]);
+  assert.equal(unicodePaged.startLine, 2);
+  assert.equal(unicodePaged.endLine, 3);
+  assert.equal(unicodePaged.totalLines, 3);
+  assert.equal(unicodePaged.truncated, false);
+  const unicodeTail = await tool(305, "fs_read_lines", {
+    device_id: deviceId, path: unicodePagedPath, offset_lines: -1, limit_lines: 1,
+  });
+  assert.deepEqual(unicodeTail.lines, ["Son ✨"]);
+  assert.equal(unicodeTail.startLine, 3);
+  assert.equal(unicodeTail.endLine, 3);
+
   const oversizedPagedPath = path.join(tempRoot, "oversized-paged.txt");
   fs.writeFileSync(oversizedPagedPath, Buffer.alloc(32 * 1024 * 1024 + 1, 0x61));
   const oversizedPaged = await tool(292, "fs_read_lines", {
