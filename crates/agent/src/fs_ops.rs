@@ -1030,10 +1030,24 @@ pub fn read_multiple(
     if !(1..=64 * 1024).contains(&limit) || paths.iter().any(|p| p.is_empty() || p.len() > 4096) {
         return Err(anyhow!("invalid_batch_read_arguments"));
     }
+    // Cap the combined raw payload even when every individual file satisfies
+    // its own limit. Keep per-file failures isolated and fail closed once the
+    // aggregate budget is exhausted.
+    const MAX_BATCH_TOTAL_BYTES: usize = 256 * 1024;
+    let mut remaining = MAX_BATCH_TOTAL_BYTES;
     let mut items = Vec::with_capacity(paths.len());
     for path in paths {
-        match read(policy, path, Some(limit)) {
-            Ok(data) => items.push(json!({ "path": path, "ok": true, "data": data })),
+        let result = if remaining == 0 {
+            Err(anyhow!("batch byte budget exhausted"))
+        } else {
+            read(policy, path, Some(limit.min(remaining)))
+        };
+        match result {
+            Ok(data) => {
+                let size = data["size"].as_u64().unwrap_or(0) as usize;
+                remaining = remaining.saturating_sub(size);
+                items.push(json!({ "path": path, "ok": true, "data": data }));
+            }
             Err(_) => items.push(json!({ "path": path, "ok": false, "error": "read_failed" })),
         }
     }
