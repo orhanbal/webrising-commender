@@ -1003,6 +1003,47 @@ try {
   assert.match(reassembled, /PTY_PAGED_BEGIN\r?\n0{20000}\r?\nPTY_PAGED_END/);
   console.log("agent-e2e: real PTY paged output reassembled without byte gaps");
 
+  // 2A: exercise a real interactive REPL, not a simulated ">>> " fixture.
+  // Prompt metadata is advisory; command completion and authorization must
+  // never be inferred solely from output controlled by the subprocess.
+  await tool(304, "terminal_input", {
+    device_id: deviceId,
+    session_id: started.sessionId,
+    data_base64: Buffer.from("python3 -q\\n", "utf8").toString("base64"),
+  });
+  const replPrompt = await waitFor(async () => {
+    const page = await tool(305, "terminal_read_page", {
+      device_id: deviceId,
+      session_id: started.sessionId,
+      offset_bytes: -8192,
+      max_bytes: 8192,
+    });
+    return page.promptKind === "python" && page.promptDetected === true &&
+      String(page.text).includes(">>> ") ? page : false;
+  }, 15000, 250);
+  assert.equal(replPrompt.promptKind, "python");
+  await tool(306, "terminal_input", {
+    device_id: deviceId,
+    session_id: started.sessionId,
+    data_base64: Buffer.from("print('REPL_AGENT_OK')\\n", "utf8").toString("base64"),
+  });
+  await waitFor(async () => {
+    const page = await tool(307, "terminal_read_page", {
+      device_id: deviceId,
+      session_id: started.sessionId,
+      offset_bytes: -8192,
+      max_bytes: 8192,
+    });
+    return page.promptKind === "python" &&
+      String(page.text).includes("REPL_AGENT_OK") ? page : false;
+  }, 15000, 250);
+  await tool(308, "terminal_input", {
+    device_id: deviceId,
+    session_id: started.sessionId,
+    data_base64: Buffer.from("exit()\\n", "utf8").toString("base64"),
+  });
+  console.log("agent-e2e: real Python REPL prompt metadata observed through MCP");
+
   const stopToken = await approval(deviceId, {
     kind: "terminal_stop",
     sessionId: started.sessionId,
