@@ -13,11 +13,59 @@ use uuid::Uuid;
 const BUFFER_CAP: usize = 1024 * 1024;
 const MAX_SESSIONS: usize = 32;
 
+// A bounded, non-consuming history independent of the destructive PTY read queue.
+// Offsets refer to the absolute byte position in the session's output stream.
+#[derive(Default)]
+struct OutputHistory {
+    bytes: VecDeque<u8>,
+    total_bytes: u64,
+}
+
+impl OutputHistory {
+    fn push(&mut self, chunk: &[u8]) {
+        self.total_bytes = self.total_bytes.saturating_add(chunk.len() as u64);
+        self.bytes.extend(chunk.iter().copied());
+        let excess = self.bytes.len().saturating_sub(BUFFER_CAP);
+        self.bytes.drain(..excess);
+    }
+
+    fn page(&self, offset_bytes: Option<i64>, max_bytes: Option<usize>) -> Value {
+        let retained_start = self.total_bytes.saturating_sub(self.bytes.len() as u64);
+        let requested = match offset_bytes.unwrap_or(0) {
+            offset if offset < 0 => self.total_bytes.saturating_sub(offset.unsigned_abs()),
+            offset => offset as u64,
+        };
+        let start = requested.clamp(retained_start, self.total_bytes);
+        let limit = max_bytes.unwrap_or(64 * 1024).clamp(1, 256 * 1024);
+        let bytes: Vec<u8> = self
+            .bytes
+            .iter()
+            .skip((start - retained_start) as usize)
+            .take(limit)
+            .copied()
+            .collect();
+        let end = start + bytes.len() as u64;
+        json!({
+            "bytes": bytes.len(),
+            "dataBase64": STANDARD.encode(&bytes),
+            "text": String::from_utf8_lossy(&bytes),
+            "offsetBytes": start,
+            "nextOffsetBytes": end,
+            "bufferedBytes": self.bytes.len(),
+            "retainedStartBytes": retained_start,
+            "totalOutputBytes": self.total_bytes,
+            "truncatedBeforeOffset": requested < retained_start,
+            "hasMore": end < self.total_bytes
+        })
+    }
+}
+
 struct Session {
     master: Mutex<Box<dyn MasterPty + Send>>,
     writer: Mutex<Box<dyn Write + Send>>,
     child: Mutex<Box<dyn Child + Send + Sync>>,
     buffer: Arc<Mutex<VecDeque<u8>>>,
+    history: Arc<Mutex<OutputHistory>>,
 }
 
 #[derive(Clone, Default)]
@@ -76,6 +124,8 @@ impl TerminalManager {
         let writer = pair.master.take_writer()?;
         let buffer = Arc::new(Mutex::new(VecDeque::new()));
         let read_buffer = Arc::clone(&buffer);
+        let history = Arc::new(Mutex::new(OutputHistory::default()));
+        let read_history = Arc::clone(&history);
 
         std::thread::spawn(move || {
             let mut chunk = [0_u8; 8192];
@@ -91,6 +141,9 @@ impl TerminalManager {
                                 queue.pop_front();
                             }
                         }
+                        if let Ok(mut retained) = read_history.lock() {
+                            retained.push(&chunk[..size]);
+                        }
                     }
                 }
             }
@@ -102,6 +155,7 @@ impl TerminalManager {
             writer: Mutex::new(writer),
             child: Mutex::new(child),
             buffer,
+            history,
         });
 
         self.sessions
@@ -181,8 +235,9 @@ impl TerminalManager {
         }))
     }
 
-    /// Peek at the buffered terminal output without removing it.
-    /// Negative offsets count backwards from the end of the retained buffer.
+    /// Peek at retained output even after terminal_read has consumed the live queue.
+    /// Nonnegative offsets are absolute stream byte positions; negative offsets
+    /// count back from the end. Eviction is explicitly reported to the caller.
     pub fn read_page(
         &self,
         id: &str,
@@ -190,29 +245,11 @@ impl TerminalManager {
         max_bytes: Option<usize>,
     ) -> Result<Value> {
         let session = self.get(id)?;
-        let buffer = session
-            .buffer
+        let history = session
+            .history
             .lock()
-            .map_err(|_| anyhow!("terminal buffer lock poisoned"))?;
-        let total = buffer.len();
-        let offset = offset_bytes.unwrap_or(0);
-        let start = if offset < 0 {
-            total.saturating_sub(offset.unsigned_abs().min(total as u64) as usize)
-        } else {
-            (offset as u64).min(total as u64) as usize
-        };
-        let limit = max_bytes.unwrap_or(64 * 1024).clamp(1, 256 * 1024);
-        let bytes: Vec<u8> = buffer.iter().skip(start).take(limit).copied().collect();
-        let end = start + bytes.len();
-        Ok(json!({
-            "bytes": bytes.len(),
-            "dataBase64": STANDARD.encode(&bytes),
-            "text": String::from_utf8_lossy(&bytes),
-            "offsetBytes": start,
-            "nextOffsetBytes": end,
-            "bufferedBytes": total,
-            "hasMore": end < total
-        }))
+            .map_err(|_| anyhow!("terminal history lock poisoned"))?;
+        Ok(history.page(offset_bytes, max_bytes))
     }
 
     pub fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<Value> {
@@ -265,5 +302,31 @@ fn default_shell() -> String {
     #[cfg(not(windows))]
     {
         std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_owned())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retained_history_uses_absolute_offsets_and_reports_eviction() {
+        let mut history = OutputHistory::default();
+        history.push(b"abcdef");
+        let first = history.page(Some(0), Some(3));
+        assert_eq!(first["text"], "abc");
+        assert_eq!(first["nextOffsetBytes"], 3);
+        assert_eq!(first["hasMore"], true);
+
+        history.push(&vec![b'x'; BUFFER_CAP]);
+        let expired = history.page(Some(0), Some(3));
+        assert_eq!(expired["retainedStartBytes"], 6);
+        assert_eq!(expired["offsetBytes"], 6);
+        assert_eq!(expired["truncatedBeforeOffset"], true);
+        assert_eq!(expired["text"], "xxx");
+        let tail = history.page(Some(-4), Some(4));
+        assert_eq!(tail["text"], "xxxx");
+        assert_eq!(tail["nextOffsetBytes"], (BUFFER_CAP + 6) as u64);
+        assert_eq!(tail["hasMore"], false);
     }
 }
