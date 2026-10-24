@@ -62,3 +62,20 @@ test("search failure is retained without leaking sessions to other actors", asyn
   assert.equal(result.status, "error");
   assert.equal(result.error, "device-offline");
 });
+
+test("file search sessions forward case sensitivity to the native device action", async () => {
+  const observed: Array<{ kind: string; caseSensitive?: boolean }> = [];
+  const capturing = {
+    request: async (_deviceId: string, action: { kind: string; caseSensitive?: boolean }) => {
+      observed.push(action);
+      return { items: [], truncated: false };
+    },
+  } as unknown as DeviceRouter;
+  const session = await startSearch(principal, "device-case-sensitive", capturing, {
+    path: "/safe", query: "MixedCase", search_type: "files", case_sensitive: true,
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(searchPage(principal, "device-case-sensitive", session.searchId, 0, 10).status, "completed");
+  assert.deepEqual(observed, [{ kind: "fs_search", path: "/safe", query: "MixedCase",
+    caseSensitive: true, maxResults: 500 }]);
+});
