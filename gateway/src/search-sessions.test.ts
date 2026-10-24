@@ -80,19 +80,63 @@ test("file search sessions forward case sensitivity to the native device action"
     caseSensitive: true, maxResults: 500 }]);
 });
 
-test("stopping a search releases its per-actor concurrency slot", async () => {
+test("in-flight search quotas survive stop until native request settles", async () => {
   const p = { ...principal, actor: "quota-search-user" };
   const args = { path: "/safe", query: "sample", search_type: "files" };
+  const pending: Array<(value: { items: unknown[]; truncated: boolean }) => void> = [];
+  const delayed = {
+    request: async () => new Promise<{ items: unknown[]; truncated: boolean }>(resolve => {
+      pending.push(resolve);
+    }),
+  } as unknown as DeviceRouter;
   const created = [];
   for (let index = 0; index < 8; index += 1) {
-    created.push(await startSearch(p, "quota-device", remote, args));
+    created.push(await startSearch(p, "quota-device", delayed, args));
   }
-  await assert.rejects(startSearch(p, "quota-device", remote, args), /search_session_limit/);
+  await assert.rejects(startSearch(p, "quota-device", delayed, args), /search_session_limit/);
   const stopped = stopSearch(p, "quota-device", created[0]!.searchId);
   assert.equal(stopped.status, "stopped");
-  const replacement = await startSearch(p, "quota-device", remote, args);
+  // stop_search discards the result, but does not cancel the native request.
+  // It must not permit unbounded concurrent native scans.
+  await assert.rejects(startSearch(p, "quota-device", delayed, args), /search_session_limit/);
+  pending[0]!({ items: [{ path: "/safe/secret" }], truncated: false });
+  await new Promise(resolve => setImmediate(resolve));
+  const replacement = await startSearch(p, "quota-device", delayed, args);
   assert.equal(typeof replacement.searchId, "string");
   assert.equal(searchPage(p, "quota-device", created[0]!.searchId, 0, 1).status, "stopped");
+  assert.deepEqual(searchPage(p, "quota-device", created[0]!.searchId, 0, 1).items, []);
+  // A completed search also frees its execution slot while preserving its page.
+  pending[1]!({ items: [{ path: "/safe/completed" }], truncated: false });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(searchPage(p, "quota-device", created[1]!.searchId, 0, 1).status, "completed");
+  const afterCompleted = await startSearch(p, "quota-device", delayed, args);
+  assert.equal(typeof afterCompleted.searchId, "string");
+  for (const resolve of pending) resolve({ items: [], truncated: false });
+});
+
+test("completed searches do not consume native concurrency quota", async () => {
+  const p = { ...principal, actor: "completed-quota-user" };
+  const args = { path: "/safe", query: "txt", search_type: "files" };
+  for (let index = 0; index < 10; index += 1) {
+    const started = await startSearch(p, "completed-quota-device", remote, args);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(searchPage(p, "completed-quota-device", started.searchId, 0, 10).status, "completed");
+  }
+});
+
+test("search errors do not expose native filesystem or secret details", async () => {
+  const p = { ...principal, actor: "error-redaction-user" };
+  const failing = {
+    request: async () => { throw new Error("secret_token=never-leak path=/sensitive/private"); },
+  } as unknown as DeviceRouter;
+  const started = await startSearch(p, "redaction-device", failing, {
+    path: "/safe", query: "needle", search_type: "content",
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  const result = searchPage(p, "redaction-device", started.searchId, 0, 1);
+  assert.equal(result.status, "error");
+  assert.equal(result.error, "search_failed");
+  assert.ok(!JSON.stringify(result).includes("never-leak"));
 });
 
 test("stopped search cannot resurrect results from an in-flight agent response", async () => {
