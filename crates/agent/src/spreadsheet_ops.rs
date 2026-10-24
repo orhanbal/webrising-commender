@@ -422,6 +422,27 @@ mod tests {
     }
 
     #[test]
+    fn complex_workbook_parts_are_not_silently_dropped() {
+        assert!(is_unsafe_edit_part("xl/pivottables/pivottable1.xml"));
+        assert!(is_unsafe_edit_part("xl/charts/chart1.xml"));
+        assert!(is_unsafe_edit_part("xl/drawings/drawing1.xml"));
+        assert!(is_unsafe_edit_part("xl/externallinks/externallink1.xml"));
+        assert!(is_unsafe_edit_part("xl/calcchain.xml"));
+        assert!(is_unsafe_edit_part("xl/vbaproject.bin"));
+        assert!(!is_unsafe_edit_part("xl/styles.xml"));
+        assert!(!is_unsafe_edit_part("xl/worksheets/sheet1.xml"));
+    }
+
+    #[test]
+    fn cell_address_validation_checks_excel_bounds() {
+        assert!(validate_cell_address("A1").is_ok());
+        assert!(validate_cell_address("XFD1048576").is_ok());
+        for cell in ["A0", "A01", "a1", "XFE1", "A1048577", "ZZZZ1", "A", "1A"] {
+            assert!(validate_cell_address(cell).is_err(), "{cell}");
+        }
+    }
+
+    #[test]
     fn non_spreadsheet_is_rejected() {
         let root = std::env::temp_dir().join(format!("commander-xlsx-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
