@@ -21,6 +21,8 @@ type SearchEntry = {
   status: "running" | "completed" | "error" | "stopped";
   items: unknown[];
   truncated: boolean;
+  /** A stopped search still occupies its native execution slot until its request settles. */
+  inFlight: boolean;
   error?: string;
 };
 const MAX_SESSIONS = 64;
@@ -29,7 +31,19 @@ const TTL_MS = 5 * 60_000;
 const sessions = new Map<string, SearchEntry>();
 
 function expire(now = Date.now()) {
-  for (const [id, s] of sessions) if (now - s.createdAt > TTL_MS) sessions.delete(id);
+  for (const [id, s] of sessions) {
+    if (!s.inFlight && now - s.createdAt > TTL_MS) sessions.delete(id);
+  }
+}
+function safeSearchError(error: unknown): string {
+  const code = error instanceof Error ? error.message : "";
+  // Native errors can include filenames or file contents. Never echo them into
+  // session summaries or a model's tool result.
+  const allowed = new Set([
+    "device-offline", "device-request-timeout", "device-request-limit",
+    "gateway-overloaded", "relay_request_failed",
+  ]);
+  return allowed.has(code) ? code : "search_failed";
 }
 function owner(s: SearchEntry, p: Principal, deviceId: string) {
   return s.organizationId === p.organizationId && s.actor === p.actor && s.deviceId === deviceId;
@@ -60,15 +74,20 @@ export async function startSearch(
       (arg.case_sensitive !== undefined && typeof arg.case_sensitive !== "boolean")) {
     throw new Error("invalid_search_arguments");
   }
-  // Stopped sessions are still briefly readable as tombstones, but must not
-  // exhaust an actor's concurrency quota. Reclaim them at the global cap.
+  // Only active native requests consume concurrency slots. Completed searches
+  // must not block the actor for the entire result-retention TTL. A stopped
+  // search remains in-flight until the agent settles: stop_search currently
+  // suppresses results but does not physically cancel native scanning.
+  const matches = [...sessions.values()].filter(s =>
+    owner(s, principal, deviceId) && s.inFlight);
+  // Evict the oldest settled snapshots only if the global retention cap is hit.
+  // Never evict active scans to admit more concurrent work.
   if (sessions.size >= MAX_SESSIONS) {
     for (const [id, session] of sessions) {
-      if (session.status === "stopped") sessions.delete(id);
+      if (sessions.size < MAX_SESSIONS) break;
+      if (!session.inFlight) sessions.delete(id);
     }
   }
-  const matches = [...sessions.values()].filter(s =>
-    owner(s, principal, deviceId) && s.status !== "stopped");
   if (matches.length >= PER_ACTOR_LIMIT || sessions.size >= MAX_SESSIONS) {
     throw new Error("search_session_limit");
   }
@@ -84,6 +103,7 @@ export async function startSearch(
     status: "running",
     items: [],
     truncated: false,
+    inFlight: true,
   };
   sessions.set(entry.id, entry);
   const action: AgentAction = entry.searchType === "files"
@@ -93,15 +113,17 @@ export async function startSearch(
         caseSensitive: Boolean(arg.case_sensitive), maxResults: 500 };
   // Do not block the MCP request; a follow-up call collects paged results.
   void router.request(deviceId, action).then(data => {
+    entry.inFlight = false;
     if (entry.status !== "running") return;
     const payload = data as { items?: unknown[]; truncated?: boolean };
     entry.items = Array.isArray(payload?.items) ? payload.items.slice(0, 500) : [];
     entry.truncated = Boolean(payload?.truncated);
     entry.status = "completed";
   }, error => {
+    entry.inFlight = false;
     if (entry.status !== "running") return;
     entry.status = "error";
-    entry.error = error instanceof Error ? error.message.slice(0, 240) : "search_failed";
+    entry.error = safeSearchError(error);
   });
   return summary(entry);
 }
