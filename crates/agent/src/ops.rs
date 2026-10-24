@@ -59,6 +59,20 @@ pub async fn execute(
             row_count,
             column_count,
         ),
+        AgentAction::XlsxWriteCells {
+            path,
+            output_path,
+            sheet,
+            updates,
+            expected_sha256,
+        } => spreadsheet_ops::write_cells(
+            policy,
+            &path,
+            &output_path,
+            &sheet,
+            &updates,
+            expected_sha256.as_deref(),
+        ),
         AgentAction::FsWrite {
             path,
             content_base64,
