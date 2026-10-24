@@ -76,7 +76,13 @@ pub async fn execute(
             query,
             case_sensitive,
             max_results,
-        } => fs_ops::search(policy, &path, &query, case_sensitive.unwrap_or(false), max_results),
+        } => fs_ops::search(
+            policy,
+            &path,
+            &query,
+            case_sensitive.unwrap_or(false),
+            max_results,
+        ),
         AgentAction::TextSearch {
             path,
             query,
