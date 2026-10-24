@@ -515,6 +515,42 @@ try {
   assert.equal(bulkPage.truncated, true);
   assert.deepEqual(bulkPage.items.map(item => item.path).length, 10);
 
+  // 1A: two real Agent scans may overlap. Stopping one session must never
+  // cancel, overwrite or leak results from its concurrently running peer.
+  // This proves MCP session isolation, not native streaming/pause acceptance.
+  const [cancelCandidate, survivor] = await Promise.all([
+    tool(278, "start_search", {
+      device_id: deviceId, path: bulkDir, query: "bulk-match", search_type: "files",
+    }),
+    tool(279, "start_search", {
+      device_id: deviceId, path: bulkDir, query: "bulk-match", search_type: "files",
+    }),
+  ]);
+  assert.notEqual(cancelCandidate.searchId, survivor.searchId);
+  const cancelled = await tool(280, "stop_search", {
+    device_id: deviceId, search_id: cancelCandidate.searchId,
+  });
+  assert.equal(cancelled.status, "stopped");
+  const cancelledPage = await tool(281, "get_more_search_results", {
+    device_id: deviceId, search_id: cancelCandidate.searchId, offset: 0, length: 1,
+  });
+  assert.equal(cancelledPage.status, "stopped");
+  assert.deepEqual(cancelledPage.items, []);
+  const survivorPage = await waitFor(async () => {
+    const page = await tool(282, "get_more_search_results", {
+      device_id: deviceId, search_id: survivor.searchId, offset: 0, length: 1,
+    });
+    return page.status === "completed" ? page : false;
+  });
+  assert.equal(survivorPage.resultCount, 500);
+  assert.equal(survivorPage.items.length, 1);
+  assert.equal(survivorPage.truncated, true);
+  const cancelledAfterPeer = await tool(283, "get_more_search_results", {
+    device_id: deviceId, search_id: cancelCandidate.searchId, offset: 0, length: 1,
+  });
+  assert.equal(cancelledAfterPeer.status, "stopped");
+  assert.deepEqual(cancelledAfterPeer.items, []);
+
   const invalidBulkOffset = await tool(273, "get_more_search_results", {
     device_id: deviceId, search_id: bulkSession.searchId, offset: 501, length: 1,
   });
