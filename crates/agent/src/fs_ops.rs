@@ -693,13 +693,30 @@ mod search_budget_tests {
         let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
         let raw = root.to_str().unwrap();
         let past = Instant::now() - Duration::from_millis(1);
-        let names = search_with_deadline(&policy, raw, "needle", false, Some(10), past, &AtomicBool::new(false)).unwrap();
+        let names = search_with_deadline(
+            &policy,
+            raw,
+            "needle",
+            false,
+            Some(10),
+            past,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
         assert_eq!(names["timedOut"], true);
         assert_eq!(names["truncated"], true);
         assert_eq!(names["scannedEntries"], 0);
         assert_eq!(names["items"].as_array().unwrap().len(), 0);
-        let content =
-            text_search_with_deadline(&policy, raw, "needle", false, Some(10), past, &AtomicBool::new(false)).unwrap();
+        let content = text_search_with_deadline(
+            &policy,
+            raw,
+            "needle",
+            false,
+            Some(10),
+            past,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
         assert_eq!(content["timedOut"], true);
         assert_eq!(content["truncated"], true);
         assert_eq!(content["scannedEntries"], 0);
@@ -713,11 +730,18 @@ mod search_budget_tests {
         let policy = PathPolicy::new(&[root.clone()]).unwrap();
         let cancelled = AtomicBool::new(true);
         let raw = root.to_str().unwrap();
-        assert!(search_cancellable(&policy, raw, "sample", false, Some(10), &cancelled)
-            .unwrap_err().to_string().contains("search_cancelled"));
-        assert!(text_search_cancellable(&policy, raw, "needle", false, Some(10), &cancelled)
-            .unwrap_err().to_string().contains("search_cancelled"));
+        assert!(
+            search_cancellable(&policy, raw, "sample", false, Some(10), &cancelled)
+                .unwrap_err()
+                .to_string()
+                .contains("search_cancelled")
+        );
+        assert!(
+            text_search_cancellable(&policy, raw, "needle", false, Some(10), &cancelled)
+                .unwrap_err()
+                .to_string()
+                .contains("search_cancelled")
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
-
 }

@@ -23,7 +23,10 @@ use protocol::{AgentAction, AgentError, AgentMessage, GatewayMessage};
 use std::{
     collections::HashMap,
     path::PathBuf,
-    sync::{atomic::{AtomicBool, Ordering}, Arc},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use task_manager::TaskManager;
@@ -207,9 +210,7 @@ pub(crate) async fn run_until_shutdown(
     let policy = Arc::new(PathPolicy::new(&config.allowed_roots)?);
     let terminals = TerminalManager::default();
     let tasks = TaskManager::default();
-    let active = Arc::new(Mutex::new(
-        HashMap::<String, ActiveRequest>::new(),
-    ));
+    let active = Arc::new(Mutex::new(HashMap::<String, ActiveRequest>::new()));
 
     let mut backoff = Duration::from_secs(1);
     let mut gateway_ws_url = config.gateway_ws_url.clone();
@@ -332,7 +333,12 @@ async fn refresh_gateway_route(config: &AgentConfig) -> Option<String> {
 }
 
 async fn abort_active(active: &Arc<Mutex<HashMap<String, ActiveRequest>>>) {
-    let handles: Vec<_> = active.lock().await.drain().map(|(_, request)| request).collect();
+    let handles: Vec<_> = active
+        .lock()
+        .await
+        .drain()
+        .map(|(_, request)| request)
+        .collect();
     for request in handles {
         request.cancelled.store(true, Ordering::Relaxed);
         request.handle.abort();
@@ -445,14 +451,19 @@ async fn connected_loop(
                         let id_for_task = request_id.clone();
                         let approval_key = config.approval_key.clone();
                         let device_id = config.device_id.clone();
-                        let is_search = matches!(&action, AgentAction::FsSearch { .. } | AgentAction::TextSearch { .. });
+                        let is_search = matches!(
+                            &action,
+                            AgentAction::FsSearch { .. } | AgentAction::TextSearch { .. }
+                        );
                         let cancelled = Arc::new(AtomicBool::new(false));
                         let task_cancelled = Arc::clone(&cancelled);
                         // Register the handle before allowing a fast task to complete.
                         let (start_tx, start_rx) = tokio::sync::oneshot::channel::<()>();
 
                         let handle = tokio::spawn(async move {
-                            if start_rx.await.is_err() { return; }
+                            if start_rx.await.is_err() {
+                                return;
+                            }
                             let result = ops::execute(
                                 &task_policy,
                                 &task_terminals,
@@ -491,7 +502,11 @@ async fn connected_loop(
 
                         active.lock().await.insert(
                             request_id,
-                            ActiveRequest { handle: handle.abort_handle(), cancelled, is_search },
+                            ActiveRequest {
+                                handle: handle.abort_handle(),
+                                cancelled,
+                                is_search,
+                            },
                         );
                         let _ = start_tx.send(());
                     }

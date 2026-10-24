@@ -194,7 +194,7 @@ pub async fn execute(
                 )
             })
             .await?
-        },
+        }
         AgentAction::TextSearch {
             path,
             query,
@@ -213,7 +213,7 @@ pub async fn execute(
                 )
             })
             .await?
-        },
+        }
         AgentAction::FsReplace {
             path,
             search,
