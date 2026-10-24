@@ -753,20 +753,27 @@ try {
     fs.rmSync(escapedDir, { recursive: true, force: true });
   }
 
+  // Other acceptance fixtures may contain large documents and directories.
+  // Keep this search's 10-second native deadline independent of unrelated
+  // fixtures while still exercising the real allowlisted Rust scanner.
+  const searchDir = path.join(tempRoot, "content-search-acceptance");
+  fs.mkdirSync(searchDir);
+  const searchFile = path.join(searchDir, "hello.txt");
+  fs.copyFileSync(filePath, searchFile);
   const codeSearch = await tool(116, "code_search", {
     device_id: deviceId,
-    path: tempRoot,
+    path: searchDir,
     query: "hello-from-real-agent",
     max_results: 20,
   });
-  assert.ok(codeSearch.items.some((item) => item.path === filePath && item.line === 1));
+  assert.ok(codeSearch.items.some((item) => item.path === searchFile && item.line === 1));
   assert.equal(codeSearch.timedOut, false);
   assert.ok(codeSearch.scannedBytes > 0);
 
   // A search session must expose a stable paged snapshot and become empty
   // after explicit cancellation. This does not claim native streaming support.
   const startedSearch = await tool(214, "start_search", {
-    device_id: deviceId, path: tempRoot, query: "hello-from-real-agent", search_type: "content",
+    device_id: deviceId, path: searchDir, query: "hello-from-real-agent", search_type: "content",
   });
   assert.equal(typeof startedSearch.searchId, "string");
   const completedSearch = await waitFor(async () => {
@@ -777,7 +784,7 @@ try {
   });
   assert.equal(completedSearch.items.length, 1);
   assert.equal(completedSearch.timedOut, false);
-  assert.equal(completedSearch.items[0].path, filePath);
+  assert.equal(completedSearch.items[0].path, searchFile);
   assert.equal(completedSearch.offset, 0);
   const searches = await tool(216, "list_searches", { device_id: deviceId });
   assert.ok(searches.items.some((item) => item.searchId === startedSearch.searchId));
