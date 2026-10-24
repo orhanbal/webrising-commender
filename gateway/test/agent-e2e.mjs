@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -176,6 +177,56 @@ try {
   });
   assert.deepEqual(macroInfo.sheets, ["Sample"]);
   assert.equal(macroInfo.macrosExecuted, false);
+
+  // XLSX edits must create a distinct output file, never modify the source.
+  const originalWorkbookHash = createHash("sha256").update(fs.readFileSync(workbookPath)).digest("hex");
+  const editedWorkbookPath = path.join(tempRoot, "edited.xlsx");
+  const editedWorkbook = await tool(237, "xlsx_write_cells", {
+    device_id: deviceId, path: workbookPath, output_path: editedWorkbookPath,
+    sheet: "Sample", expected_sha256: originalWorkbookHash,
+    updates: [
+      { cell: "B2", value: 77 },
+      { cell: "A2", value: "Beta" },
+      { cell: "B3", value: true },
+    ],
+  });
+  assert.equal(editedWorkbook.ok, true);
+  assert.equal(editedWorkbook.updatedCells, 3);
+  assert.equal(editedWorkbook.previousSha256, originalWorkbookHash);
+  assert.equal(createHash("sha256").update(fs.readFileSync(workbookPath)).digest("hex"), originalWorkbookHash);
+  const editedCells = await tool(238, "xlsx_read_range", {
+    device_id: deviceId, path: editedWorkbookPath, sheet: "Sample",
+    start_row: 1, start_column: 1, row_count: 3, column_count: 2,
+  });
+  assert.ok(editedCells.cells.some((cell) => cell.row === 2 && cell.column === 2 && cell.data.value === 77));
+  assert.ok(editedCells.cells.some((cell) => cell.row === 2 && cell.column === 1 && cell.data.value === "Beta"));
+  assert.ok(editedCells.cells.some((cell) => cell.row === 3 && cell.column === 2 && cell.data.value === true));
+  assert.ok(editedCells.cells.some((cell) => cell.row === 1 && cell.column === 1 && cell.data.value === "Label"));
+  const existingOutput = await tool(239, "xlsx_write_cells", {
+    device_id: deviceId, path: workbookPath, output_path: editedWorkbookPath,
+    sheet: "Sample", updates: [{ cell: "B2", value: 99 }],
+  });
+  assert.equal(typeof existingOutput.error, "string");
+  const staleOutputPath = path.join(tempRoot, "stale-output.xlsx");
+  const staleWorkbookEdit = await tool(240, "xlsx_write_cells", {
+    device_id: deviceId, path: workbookPath, output_path: staleOutputPath,
+    sheet: "Sample", updates: [{ cell: "B2", value: 99 }],
+    expected_sha256: "0".repeat(64),
+  });
+  assert.match(staleWorkbookEdit.error, /file_changed_since_read/);
+  assert.equal(fs.existsSync(staleOutputPath), false);
+  const macroOutput = await tool(241, "xlsx_write_cells", {
+    device_id: deviceId, path: macroNamedWorkbook,
+    output_path: path.join(tempRoot, "macro-output.xlsx"),
+    sheet: "Sample", updates: [{ cell: "B2", value: 99 }],
+  });
+  assert.match(macroOutput.error, /read-only/);
+  const invalidCellOutput = await tool(242, "xlsx_write_cells", {
+    device_id: deviceId, path: workbookPath,
+    output_path: path.join(tempRoot, "invalid-cell.xlsx"),
+    sheet: "Sample", updates: [{ cell: "XFE1", value: "bad" }],
+  });
+  assert.equal(typeof invalidCellOutput.error, "string");
 
   const filePath = path.join(tempRoot, "hello.txt");
   const content = Buffer.from("hello-from-real-agent", "utf8").toString("base64");
