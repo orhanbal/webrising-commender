@@ -42,7 +42,10 @@ pub async fn execute(
             offset_lines,
             limit_lines,
         } => fs_ops::read_lines(policy, &path, offset_lines, limit_lines),
-        AgentAction::XlsxInspect { path } => spreadsheet_ops::inspect(policy, &path),
+        AgentAction::XlsxInspect { path } => {
+            let policy = policy.clone();
+            tokio::task::spawn_blocking(move || spreadsheet_ops::inspect(&policy, &path)).await?
+        }
         AgentAction::XlsxReadRange {
             path,
             sheet,
@@ -50,29 +53,55 @@ pub async fn execute(
             start_column,
             row_count,
             column_count,
-        } => spreadsheet_ops::read_range(
-            policy,
-            &path,
-            &sheet,
-            start_row,
-            start_column,
-            row_count,
-            column_count,
-        ),
+        } => {
+            let policy = policy.clone();
+            tokio::task::spawn_blocking(move || {
+                spreadsheet_ops::read_range(
+                    &policy, &path, &sheet, start_row, start_column, row_count, column_count,
+                )
+            })
+            .await?
+        },
+        AgentAction::XlsxFind {
+            path,
+            sheet,
+            query,
+            case_sensitive,
+            max_results,
+        } => {
+            let policy = policy.clone();
+            tokio::task::spawn_blocking(move || {
+                spreadsheet_ops::find_cells(
+                    &policy,
+                    &path,
+                    sheet.as_deref(),
+                    &query,
+                    case_sensitive.unwrap_or(false),
+                    max_results.unwrap_or(50),
+                )
+            })
+            .await?
+        },
         AgentAction::XlsxWriteCells {
             path,
             output_path,
             sheet,
             updates,
             expected_sha256,
-        } => spreadsheet_ops::write_cells(
-            policy,
-            &path,
-            &output_path,
-            &sheet,
-            &updates,
-            expected_sha256.as_deref(),
-        ),
+        } => {
+            let policy = policy.clone();
+            tokio::task::spawn_blocking(move || {
+                spreadsheet_ops::write_cells(
+                    &policy,
+                    &path,
+                    &output_path,
+                    &sheet,
+                    &updates,
+                    expected_sha256.as_deref(),
+                )
+            })
+            .await?
+        },
         AgentAction::FsWrite {
             path,
             content_base64,
