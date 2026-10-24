@@ -63,6 +63,13 @@ pub enum AgentAction {
         row_count: u32,
         column_count: u32,
     },
+    XlsxFind {
+        path: String,
+        sheet: Option<String>,
+        query: String,
+        case_sensitive: Option<bool>,
+        max_results: Option<usize>,
+    },
     XlsxWriteCells {
         path: String,
         output_path: String,
@@ -218,6 +225,7 @@ impl AgentAction {
             Self::XlsxInspect { .. } => "xlsx_inspect",
             Self::XlsxReadRange { .. } => "xlsx_read_range",
             Self::XlsxWriteCells { .. } => "xlsx_write_cells",
+            Self::XlsxFind { .. } => "xlsx_find",
             Self::FsWrite { .. } => "fs_write",
             Self::FsAppend { .. } => "fs_append",
             Self::FsMkdir { .. } => "fs_mkdir",
@@ -254,6 +262,7 @@ impl AgentAction {
             | Self::FsReadLines { .. }
             | Self::XlsxInspect { .. }
             | Self::XlsxReadRange { .. }
+            | Self::XlsxFind { .. }
             | Self::FsTree { .. }
             | Self::FsSearch { .. }
             | Self::TextSearch { .. }
