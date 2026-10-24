@@ -676,7 +676,8 @@ mod search_budget_tests {
         assert_eq!(names["truncated"], true);
         assert_eq!(names["scannedEntries"], 0);
         assert_eq!(names["items"].as_array().unwrap().len(), 0);
-        let content = text_search_with_deadline(&policy, raw, "needle", false, Some(10), past).unwrap();
+        let content =
+            text_search_with_deadline(&policy, raw, "needle", false, Some(10), past).unwrap();
         assert_eq!(content["timedOut"], true);
         assert_eq!(content["truncated"], true);
         assert_eq!(content["scannedEntries"], 0);
