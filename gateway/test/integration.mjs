@@ -948,6 +948,15 @@ try {
     "select checkpoint from search_sessions where id=$1", [recoveryKey.id],
   );
   assert.deepEqual(persistedCheckpoint.rows[0].checkpoint, nativeCheckpoint);
+  // A partial scanner update is intentionally newer than the checkpoint.
+  // It must be discarded on takeover, not displayed as recovered output.
+  assert.equal(await durableStore.progress(recoveryKey, {
+    items: [...nativeCheckpoint.items, { path: "/ci/unsafe-partial.txt" }],
+    scannedEntries: 48, scannedBytes: 0, sequence: 2,
+  }), true);
+  const beforeTakeover = await durableStore.page(recoveryKey, recoveryKey.id, 0, 10);
+  assert.equal(beforeTakeover.scannedEntries, 48);
+  assert.equal(beforeTakeover.items.length, 2);
   const takeover = new PgSearchPersistence(searchPool);
   const recoveryRows = await takeover.recoveryCandidates();
   assert.ok(recoveryRows.some(item => item.id === recoveryKey.id));
@@ -955,7 +964,13 @@ try {
     ...recoveryKey, actor: "wrong-actor",
   }), null);
   const claimedSequence = await takeover.claimRecovery(recoveryKey);
-  assert.ok(Number.isSafeInteger(claimedSequence) && claimedSequence > 1);
+  assert.ok(Number.isSafeInteger(claimedSequence) && claimedSequence > 2);
+  const safeRecovery = await takeover.page(recoveryKey, recoveryKey.id, 0, 10);
+  assert.equal(safeRecovery.status, "running");
+  assert.deepEqual(safeRecovery.items, nativeCheckpoint.items,
+    "The abandoned partial result must be rolled back atomically");
+  assert.equal(safeRecovery.scannedEntries, nativeCheckpoint.scannedEntries);
+  assert.equal(safeRecovery.progressUpdates, claimedSequence);
   assert.equal(await durableStore.finish(recoveryKey, {
     status: "completed", items: [{ path: "/ci/stale-native" }],
     truncated: false, timedOut: false,

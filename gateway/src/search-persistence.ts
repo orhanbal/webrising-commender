@@ -211,7 +211,13 @@ export class PgSearchPersistence implements SearchPersistence {
   async claimRecovery(s: SearchKey): Promise<number | null> {
     const result = await this.pool.query<{ progress_sequence: number }>(
       `update search_sessions s
-          set origin_instance=$5,progress_sequence=s.progress_sequence+1
+          set origin_instance=$5,progress_sequence=s.progress_sequence+1,
+              -- Later in-flight updates are not durable directory boundaries.
+              -- Restore exactly the last complete checkpoint atomically with
+              -- the ownership fence, before a new native worker is dispatched.
+              items=s.checkpoint->'items',
+              scanned_entries=(s.checkpoint->>'scannedEntries')::bigint,
+              scanned_bytes=0,truncated=false,timed_out=false
         where s.id=$1 and s.organization_id=$2 and s.actor=$3 and s.device_id=$4
           and s.status='running' and s.search_type='files' and s.paused=false
           and s.native_inflight=true and s.checkpoint is not null

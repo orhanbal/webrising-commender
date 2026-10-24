@@ -363,6 +363,8 @@ test("checkpoint takeover is gated on the original Gateway lease and scoped devi
   assert.match(statements[0]!.sql, /last_heartbeat_at<now\(\)-interval '15 seconds'/);
   assert.equal(await store.claimRecovery({ ...owner, id }), 12);
   assert.match(statements[1]!.sql, /s.origin_instance<>\$5/);
+  assert.match(statements[1]!.sql, /items=s.checkpoint->'items'/);
+  assert.match(statements[1]!.sql, /scanned_entries=\(s.checkpoint->>'scannedEntries'\)::bigint/);
   assert.match(statements[1]!.sql, /s.organization_id=\$2 and s.actor=\$3 and s.device_id=\$4/);
   assert.match(statements[1]!.sql, /not exists\(select 1 from search_gateway_instances/);
   assert.deepEqual(statements[1]!.args.slice(0, 4),
