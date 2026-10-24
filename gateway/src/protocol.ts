@@ -9,6 +9,8 @@ export type AgentAction =
   | { kind: "fs_stat"; path: string }
   | { kind: "fs_read"; path: string; maxBytes?: number }
   | { kind: "fs_read_lines"; path: string; offsetLines?: number; limitLines?: number }
+  | { kind: "xlsx_inspect"; path: string }
+  | { kind: "xlsx_read_range"; path: string; sheet: string; startRow: number; startColumn: number; rowCount: number; columnCount: number }
   | { kind: "fs_write"; path: string; contentBase64: string; createParents?: boolean }
   | { kind: "fs_append"; path: string; contentBase64: string }
   | { kind: "fs_mkdir"; path: string; recursive?: boolean }
@@ -52,6 +54,16 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     path: pathSchema,
     offsetLines: z.number().int().safe().min(-2_147_483_648).max(2_147_483_647).optional(),
     limitLines: z.number().int().min(1).max(1000).optional(),
+  }).strict(),
+  z.object({ kind: z.literal("xlsx_inspect"), path: pathSchema }).strict(),
+  z.object({
+    kind: z.literal("xlsx_read_range"),
+    path: pathSchema,
+    sheet: z.string().min(1).max(255),
+    startRow: z.number().int().min(1).max(1_048_576),
+    startColumn: z.number().int().min(1).max(16_384),
+    rowCount: z.number().int().min(1).max(50),
+    columnCount: z.number().int().min(1).max(20),
   }).strict(),
   z.object({
     kind: z.literal("fs_write"),
@@ -199,6 +211,8 @@ export function actionRisk(kind: AgentAction["kind"] | string): Risk {
     case "fs_stat":
     case "fs_read":
     case "fs_read_lines":
+    case "xlsx_inspect":
+    case "xlsx_read_range":
     case "fs_tree":
     case "fs_search":
     case "text_search":
