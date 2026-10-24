@@ -18,7 +18,7 @@ const sampleRow = {
 };
 
 test("completed search page survives new gateway persistence instance and is actor scoped", async () => {
-  const queries: Array<{ statement: string; parameters?: unknown[] }> = [];
+  const queries: Array<{ statement: string; parameters: unknown[] | undefined }> = [];
   const fake = {
     query: async (statement: string, parameters?: unknown[]) => {
       queries.push({ statement, parameters });
