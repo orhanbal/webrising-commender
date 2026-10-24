@@ -181,6 +181,8 @@ jobs:
         env:
           COMMANDER_BASE_URL: http://127.0.0.1:8787
         run: node scripts/accept-production.mjs
+      - name: Verify search recovery across a real Gateway crash/restart
+        run: node test/search-restart-e2e.mjs
       - name: Print gateway and SMTP logs on failure
         if: failure()
         run: |
