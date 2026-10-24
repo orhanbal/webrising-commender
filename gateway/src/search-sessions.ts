@@ -60,7 +60,15 @@ export async function startSearch(
       (arg.case_sensitive !== undefined && typeof arg.case_sensitive !== "boolean")) {
     throw new Error("invalid_search_arguments");
   }
-  const matches = [...sessions.values()].filter(s => owner(s, principal, deviceId));
+  // Stopped sessions are still briefly readable as tombstones, but must not
+  // exhaust an actor's concurrency quota. Reclaim them at the global cap.
+  if (sessions.size >= MAX_SESSIONS) {
+    for (const [id, session] of sessions) {
+      if (session.status === "stopped") sessions.delete(id);
+    }
+  }
+  const matches = [...sessions.values()].filter(s =>
+    owner(s, principal, deviceId) && s.status !== "stopped");
   if (matches.length >= PER_ACTOR_LIMIT || sessions.size >= MAX_SESSIONS) {
     throw new Error("search_session_limit");
   }
