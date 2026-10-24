@@ -167,6 +167,35 @@ try {
   );
   assert.equal(typeof infoBefore.cpuCount, "number");
 
+  // Remote relay must forward *intermediate* native progress, not merely
+  // the final snapshot. A 192-file fixture crosses the Agent's 32-entry
+  // progress threshold and exercises MCP -> Gateway -> signed relay -> Rust.
+  for (let i = 0; i < 192; i += 1) {
+    fs.writeFileSync(path.join(tempRoot,
+      `relay-progress-fixture-${String(i).padStart(3, "0")}.txt`), "fixture");
+  }
+  const progressSearch = toolText(await rpc(506, "tools/call", {
+    name: "start_search",
+    arguments: {
+      device_id: deviceId, path: tempRoot,
+      query: "relay-progress-fixture", search_type: "files",
+    },
+  }));
+  const streamedSearch = await waitFor(async () => {
+    const page = toolText(await rpc(507, "tools/call", {
+      name: "get_more_search_results",
+      arguments: {
+        device_id: deviceId, search_id: progressSearch.searchId,
+        offset: 0, length: 10,
+      },
+    }));
+    return page.status === "completed" ? page : null;
+  }, 20_000);
+  assert.ok(streamedSearch.progressUpdates >= 1,
+    "remote relay must deliver at least one native progress frame");
+  assert.ok(streamedSearch.scannedEntries >= 32);
+  assert.ok(streamedSearch.items.length > 0);
+
   // Exercise real remote-relay MCP search/start/stop/page, including no-result
   // resurrection if the native worker races with the cancellation request.
   const startedSearch = toolText(await rpc(503, "tools/call", {
