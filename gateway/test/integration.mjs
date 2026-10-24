@@ -971,6 +971,29 @@ try {
     "select checkpoint from search_sessions where id=$1", [recoveryKey.id],
   )).rows[0].checkpoint, null);
 
+  // Interrupted checkpoint recovery must never bypass a user's pause or
+  // stop. These are real PostgreSQL conditional updates, not mocked SQL.
+  const deniedRecoveryKey = { ...durableKey, id: randomUUID() };
+  await durableStore.create({
+    ...deniedRecoveryKey, path: "/ci", query: "needle", searchType: "files",
+    createdAt: Date.now(),
+  });
+  assert.equal(await durableStore.progress(deniedRecoveryKey, {
+    items: nativeCheckpoint.items, scannedEntries: 32, scannedBytes: 0,
+    sequence: 1, checkpoint: nativeCheckpoint,
+  }), true);
+  assert.equal(await durableStore.setPaused(deniedRecoveryKey, true), true);
+  assert.equal(await takeover.claimRecovery(deniedRecoveryKey), null,
+    "A paused native scanner may not be recovered automatically");
+  assert.equal(await durableStore.setPaused(deniedRecoveryKey, false), true);
+  await durableStore.stop(deniedRecoveryKey);
+  assert.equal(await takeover.claimRecovery(deniedRecoveryKey), null,
+    "A stopped session may not be resurrected by another Gateway");
+  assert.equal((await acceptanceDb.query(
+    "select checkpoint from search_sessions where id=$1", [deniedRecoveryKey.id],
+  )).rows[0].checkpoint, null);
+  await durableStore.settleStopped(deniedRecoveryKey);
+
   const oversizedKey = { ...durableKey, id: randomUUID() };
   await durableStore.create({
     ...oversizedKey, path: "/ci", query: "large", searchType: "content",
