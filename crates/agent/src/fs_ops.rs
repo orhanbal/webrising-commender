@@ -963,7 +963,10 @@ fn preview_line(line: &str) -> String {
 #[cfg(test)]
 mod search_budget_tests {
     use super::*;
-    use std::{env, fs, sync::{atomic::AtomicUsize, Arc}};
+    use std::{
+        env, fs,
+        sync::{atomic::AtomicUsize, Arc},
+    };
 
     #[test]
     fn native_filename_progress_streams_bounded_cumulative_snapshots() {
