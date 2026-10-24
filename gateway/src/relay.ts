@@ -16,7 +16,7 @@ type Pending = {
   signal?: AbortSignal | undefined;
   isSearch: boolean;
   searchSessionId?: string | undefined;
-  control?: { paused: boolean; resolve: (ok: boolean) => void; timer: NodeJS.Timeout };
+  control?: { paused: boolean; resolve: (ok: boolean) => void; timer: NodeJS.Timeout } | undefined;
 };
 
 export class AgentHub {
