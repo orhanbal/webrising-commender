@@ -451,6 +451,8 @@ try {
     max_results: 20,
   });
   assert.ok(fileSearch.items.some((item) => item.path === filePath));
+  assert.equal(fileSearch.timedOut, false);
+  assert.equal(typeof fileSearch.scannedEntries, "number");
 
   // Filename matching must honor the case_sensitive flag all the way to the Rust Agent.
   const mixedCaseName = path.join(tempRoot, "CaseMatch.txt");
@@ -489,6 +491,8 @@ try {
     max_results: 20,
   });
   assert.ok(codeSearch.items.some((item) => item.path === filePath && item.line === 1));
+  assert.equal(codeSearch.timedOut, false);
+  assert.ok(codeSearch.scannedBytes > 0);
 
   // A search session must expose a stable paged snapshot and become empty
   // after explicit cancellation. This does not claim native streaming support.
@@ -503,6 +507,7 @@ try {
     return result.status === "completed" ? result : false;
   });
   assert.equal(completedSearch.items.length, 1);
+  assert.equal(completedSearch.timedOut, false);
   assert.equal(completedSearch.items[0].path, filePath);
   assert.equal(completedSearch.offset, 0);
   const searches = await tool(216, "list_searches", { device_id: deviceId });
