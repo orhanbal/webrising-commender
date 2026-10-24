@@ -1,3 +1,10 @@
+## 12.14 A–D güncellemesi — P0 arama ve 40 işlik kuyruk (2026-10-24)
+
+- **Giriş kanıtı:** `cf8387fa` üzerinde [ci #40080662828](https://github.com/orhanbal/webrising-commender/actions/runs/40080662828) 17/17 PASS ve [platform #40080948491](https://github.com/orhanbal/webrising-commender/actions/runs/40080948491) PASS. Yeni HEAD için bu sonuç geçerli sayılmaz.
+- **Yeni kod (CI PENDING):** `3db2cb23` + `e1fe01c5` search in-flight concurrency quota, stop yarışı ve güvenli hata redaksiyonu; `cf41f58f` + `5c67b09b` + `93809aaa` native 10s monotonic arama bütçesi, `timedOut` sinyali ve Rust/Agent E2E testleri.
+- **Açık:** Gerçek streaming/pause/cancel, Gateway restart sonrası arama oturumları, kalıcı PTY, rollback, belge araçları, fiziksel OS/ChatGPT/Claude kabulü. `stop_search` native scan'i hâlâ fiziksel olarak iptal etmez.
+- **Kanonik durum:** [40 alt görevlik 1A–10D kuyruk ve A/B/C/D kanıtları](HOURLY_BACKLOG_QUEUE_20261024.md). Eşdeğerlik **PENDING**.
+
 # WECOMMANDER — Desktop Commander İşlevsel Eşdeğerlik Planı
 
 ## 08.00 kapanış kontrolü — 24 Ekim 2026
