@@ -103,6 +103,17 @@ pub fn tree(
     }))
 }
 
+// Files can disappear between read_dir(), file_type() and metadata() when
+// editors or build tools rewrite a directory during a scan. A vanished entry
+// is not a policy failure; do not fail the entire bounded search.
+fn search_metadata_if_present(path: &Path) -> Result<Option<fs::Metadata>> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => Ok(Some(metadata)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
 pub fn search_cancellable(
     policy: &PathPolicy,
     raw: &str,
@@ -160,14 +171,21 @@ fn search_with_deadline(
             truncated = true;
             break;
         }
-        let metadata = fs::symlink_metadata(&path)?;
+        let Some(metadata) = search_metadata_if_present(&path)? else {
+            continue;
+        };
         if metadata.is_file() {
             scanned += 1;
             if file_name_matches(&path, &needle, case_sensitive) {
                 results.push(search_item(&path, &metadata));
             }
         } else if metadata.is_dir() {
-            for entry in fs::read_dir(&path)? {
+            let entries = match fs::read_dir(&path) {
+                Ok(entries) => entries,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error.into()),
+            };
+            for entry in entries {
                 if cancelled.load(Ordering::Relaxed) {
                     return Err(anyhow!("search_cancelled"));
                 }
@@ -176,16 +194,26 @@ fn search_with_deadline(
                     truncated = true;
                     break;
                 }
-                let entry = entry?;
+                let entry = match entry {
+                    Ok(entry) => entry,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                    Err(error) => return Err(error.into()),
+                };
                 scanned += 1;
                 if scanned > MAX_SCAN_ENTRIES {
                     truncated = true;
                     break;
                 }
 
-                let file_type = entry.file_type()?;
+                let file_type = match entry.file_type() {
+                    Ok(file_type) => file_type,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                    Err(error) => return Err(error.into()),
+                };
                 if file_name_matches(&entry.path(), &needle, case_sensitive) {
-                    let metadata = fs::symlink_metadata(entry.path())?;
+                    let Some(metadata) = search_metadata_if_present(&entry.path())? else {
+                        continue;
+                    };
                     results.push(search_item(&entry.path(), &metadata));
                     if results.len() >= result_limit {
                         truncated = true;
@@ -304,10 +332,17 @@ fn text_search_with_deadline(
             truncated = true;
             break;
         }
-        let metadata = fs::symlink_metadata(&path)?;
+        let Some(metadata) = search_metadata_if_present(&path)? else {
+            continue;
+        };
 
         if metadata.is_dir() {
-            for entry in fs::read_dir(&path)? {
+            let entries = match fs::read_dir(&path) {
+                Ok(entries) => entries,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error.into()),
+            };
+            for entry in entries {
                 if cancelled.load(Ordering::Relaxed) {
                     return Err(anyhow!("search_cancelled"));
                 }
@@ -316,14 +351,22 @@ fn text_search_with_deadline(
                     truncated = true;
                     break;
                 }
-                let entry = entry?;
+                let entry = match entry {
+                    Ok(entry) => entry,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                    Err(error) => return Err(error.into()),
+                };
                 scanned_entries += 1;
                 if scanned_entries > MAX_SCAN_ENTRIES {
                     truncated = true;
                     break;
                 }
 
-                let file_type = entry.file_type()?;
+                let file_type = match entry.file_type() {
+                    Ok(file_type) => file_type,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                    Err(error) => return Err(error.into()),
+                };
                 if file_type.is_dir() || file_type.is_file() {
                     stack.push(entry.path());
                 }
@@ -851,6 +894,28 @@ mod search_budget_tests {
         assert!(read_search_utf8(&mut invalid, &flag, deadline)
             .unwrap()
             .is_none());
+    }
+
+    #[test]
+    fn vanished_search_entries_are_ignored_without_following_symlinks() {
+        let root = env::temp_dir().join(format!("wc-search-race-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let disappearing = root.join("disappearing.txt");
+        fs::write(&disappearing, "needle").unwrap();
+        assert!(search_metadata_if_present(&disappearing).unwrap().is_some());
+        fs::remove_file(&disappearing).unwrap();
+        assert!(search_metadata_if_present(&disappearing).unwrap().is_none());
+
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let raw = root.to_str().unwrap();
+        let cancelled = AtomicBool::new(false);
+        let filenames = search_cancellable(&policy, raw, "disappearing", false, Some(10), &cancelled)
+            .unwrap();
+        assert!(filenames["items"].as_array().unwrap().is_empty());
+        let content = text_search_cancellable(&policy, raw, "needle", false, Some(10), &cancelled)
+            .unwrap();
+        assert!(content["items"].as_array().unwrap().is_empty());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
