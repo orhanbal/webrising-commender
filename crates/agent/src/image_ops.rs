@@ -49,9 +49,7 @@ fn dimensions(bytes: &[u8]) -> Result<(&'static str, &'static str, u32, u32)> {
             if length < 2 || length > bytes.len() - pos {
                 break;
             }
-            if (0xc0..=0xcf).contains(&marker)
-                && !matches!(marker, 0xc4 | 0xc8 | 0xcc)
-            {
+            if (0xc0..=0xcf).contains(&marker) && !matches!(marker, 0xc4 | 0xc8 | 0xcc) {
                 if length < 7 {
                     return Err(anyhow!("invalid JPEG frame header"));
                 }
