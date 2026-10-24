@@ -202,7 +202,7 @@ test("stopping durable search clears persisted results under exact ownership gua
   } as unknown as Pool;
   const store = new PgSearchPersistence(fake);
   await store.stop({ ...owner, id });
-  assert.match(sql[0]!.statement, /set status='stopped',paused=false,items='\[\]'::jsonb/);
+  assert.match(sql[0]!.statement, /set status='stopped',paused=false,checkpoint=null,items='\[\]'::jsonb/);
   assert.deepEqual(sql[0]!.params, [id, owner.organizationId, owner.actor, owner.deviceId]);
 });
 
