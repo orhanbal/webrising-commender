@@ -35,9 +35,11 @@ export class DeviceRouter {
     deviceId: string,
     action: AgentAction,
     approvalToken?: string | null,
+    signal?: AbortSignal,
   ) {
+    if (signal?.aborted) throw new Error("request_cancelled");
     if (this.hub.isOnline(deviceId)) {
-      return this.hub.request(deviceId, action, approvalToken);
+      return this.hub.request(deviceId, action, approvalToken, signal);
     }
     if (!regionalRelayEnabled()) {
       throw new Error("device-offline");

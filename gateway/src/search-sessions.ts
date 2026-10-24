@@ -24,6 +24,7 @@ type SearchEntry = {
   timedOut: boolean;
   /** A stopped search still occupies its native execution slot until its request settles. */
   inFlight: boolean;
+  controller: AbortController;
   error?: string;
 };
 const MAX_SESSIONS = 64;
@@ -107,6 +108,7 @@ export async function startSearch(
     truncated: false,
     timedOut: false,
     inFlight: true,
+    controller: new AbortController(),
   };
   sessions.set(entry.id, entry);
   const action: AgentAction = entry.searchType === "files"
@@ -115,7 +117,7 @@ export async function startSearch(
     : { kind: "text_search", path: arg.path, query: arg.query,
         caseSensitive: Boolean(arg.case_sensitive), maxResults: 500 };
   // Do not block the MCP request; a follow-up call collects paged results.
-  void router.request(deviceId, action).then(data => {
+  void router.request(deviceId, action, undefined, entry.controller.signal).then(data => {
     entry.inFlight = false;
     if (entry.status !== "running") return;
     const payload = data as { items?: unknown[]; truncated?: boolean; timedOut?: boolean };
@@ -163,5 +165,8 @@ export function stopSearch(principal: Principal, deviceId: string, searchId: str
   if (!s || !owner(s, principal, deviceId)) throw new Error("search_not_found");
   s.status = "stopped";
   s.items = [];
+  // The local relay sends a native cancel and keeps its request pending until
+  // the Agent confirms cooperative exit. Remote relays still need forwarding.
+  s.controller.abort();
   return summary(s);
 }

@@ -11,6 +11,7 @@ type Pending = {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
+  abortCleanup?: () => void;
 };
 
 export class AgentHub {
@@ -33,6 +34,7 @@ export class AgentHub {
     for (const [id, pending] of this.pending) {
       if (pending.deviceId !== deviceId) continue;
       clearTimeout(pending.timer);
+      pending.abortCleanup?.();
       pending.reject(new Error(reason));
       this.pending.delete(id);
     }
@@ -156,13 +158,15 @@ export class AgentHub {
       const pending = this.pending.get(message.requestId);
       if (!pending || pending.deviceId !== deviceId) return;
       clearTimeout(pending.timer);
+      pending.abortCleanup?.();
       this.pending.delete(message.requestId);
       if (message.ok) pending.resolve(message.data);
       else pending.reject(Object.assign(new Error(message.error.message), { code: message.error.code }));
     }
   }
 
-  request(deviceId: string, action: AgentAction, approvalToken?: string | null) {
+  request(deviceId: string, action: AgentAction, approvalToken?: string | null, signal?: AbortSignal) {
+    if (signal?.aborted) return Promise.reject(new Error("request_cancelled"));
     if (this.pending.size >= MAX_PENDING_TOTAL) {
       return Promise.reject(new Error("gateway-overloaded"));
     }
@@ -190,6 +194,8 @@ export class AgentHub {
 
     return new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
+        const pending = this.pending.get(requestId);
+        pending?.abortCleanup?.();
         this.pending.delete(requestId);
         try {
           const cancel: GatewayMessage = { type: "cancel", requestId };
@@ -198,13 +204,26 @@ export class AgentHub {
         reject(new Error("device-request-timeout"));
       }, this.timeoutMs);
 
-      this.pending.set(requestId, { deviceId, resolve, reject, timer });
+      // Cancellation sends a protocol message but retains the in-flight slot
+      // until the Agent acknowledges cooperative exit (or transport timeout).
+      const onAbort = () => {
+        if (!this.pending.has(requestId)) return;
+        try {
+          const cancel: GatewayMessage = { type: "cancel", requestId };
+          socket.send(JSON.stringify(cancel));
+        } catch {}
+      };
+      const abortCleanup = () => signal?.removeEventListener("abort", onAbort);
+      this.pending.set(requestId, { deviceId, resolve, reject, timer, abortCleanup });
+      if (signal) signal.addEventListener("abort", onAbort, { once: true });
       socket.send(JSON.stringify(message), (error) => {
         if (!error) return;
         clearTimeout(timer);
+        abortCleanup();
         this.pending.delete(requestId);
         reject(error);
       });
+      if (signal?.aborted) onAbort();
     });
   }
 }

@@ -156,3 +156,24 @@ test("stopped search cannot resurrect results from an in-flight agent response",
   assert.equal(result.status, "stopped");
   assert.deepEqual(result.items, []);
 });
+
+test("stop_search forwards a native cancellation signal and holds its quota slot", async () => {
+  const p = { ...principal, actor: "native-cancel-user" };
+  let seen: AbortSignal | undefined;
+  let settle!: (value: { items: unknown[]; truncated: boolean }) => void;
+  const router = {
+    request: async (_device: string, _action: unknown, _approval: unknown, signal?: AbortSignal) => {
+      seen = signal;
+      return new Promise<{ items: unknown[]; truncated: boolean }>(resolve => { settle = resolve; });
+    },
+  } as unknown as DeviceRouter;
+  const args = { path: "/safe", query: "needle", search_type: "content" };
+  const first = await startSearch(p, "native-cancel-device", router, args);
+  assert.equal(seen?.aborted, false);
+  stopSearch(p, "native-cancel-device", first.searchId);
+  assert.equal(seen?.aborted, true);
+  assert.equal(searchPage(p, "native-cancel-device", first.searchId, 0, 10).status, "stopped");
+  settle({ items: [{ path: "/safe/secret" }], truncated: false });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(searchPage(p, "native-cancel-device", first.searchId, 0, 10).items, []);
+});
