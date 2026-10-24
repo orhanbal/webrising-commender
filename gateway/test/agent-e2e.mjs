@@ -143,6 +143,28 @@ try {
   });
   assert.ok(workbookPage.cells.some((cell) =>
     cell.row === 2 && cell.column === 2 && cell.data.value === 42));
+  const workbookMatches = await tool(243, "xlsx_find", {
+    device_id: deviceId, path: workbookPath, query: "Alpha",
+    case_sensitive: true, max_results: 20,
+  });
+  assert.equal(workbookMatches.items.length, 1);
+  assert.equal(workbookMatches.items[0].row, 2);
+  assert.equal(workbookMatches.items[0].column, 1);
+  const workbookFoldedMatches = await tool(244, "xlsx_find", {
+    device_id: deviceId, path: workbookPath, query: "alpha",
+    case_sensitive: false,
+  });
+  assert.equal(workbookFoldedMatches.items.length, 1);
+  const workbookExactMiss = await tool(245, "xlsx_find", {
+    device_id: deviceId, path: workbookPath, query: "alpha",
+    case_sensitive: true,
+  });
+  assert.equal(workbookExactMiss.items.length, 0);
+  const invalidSearchLimit = await tool(246, "xlsx_find", {
+    device_id: deviceId, path: workbookPath, query: "Alpha",
+    max_results: 101,
+  });
+  assert.equal(typeof invalidSearchLimit.error, "string");
   const badWorkbookSheet = await tool(232, "xlsx_read_range", {
     device_id: deviceId, path: workbookPath, sheet: "Missing",
     start_row: 1, start_column: 1, row_count: 1, column_count: 1,
