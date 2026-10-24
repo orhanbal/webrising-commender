@@ -187,6 +187,34 @@ test("failed native pause acknowledgment cancels only the owned scan", async () 
   await new Promise(resolve => setImmediate(resolve));
 });
 
+test("pause control redacts remote relay failures and cancels the uncertain native scan", async () => {
+  const actor = { ...principal, actor: "pause-redaction-owner" };
+  let signal!: AbortSignal;
+  let settle!: (value: { items: unknown[]; truncated: boolean }) => void;
+  const router = {
+    request: async (_device: string, _action: unknown, _approval: unknown,
+      controller: AbortSignal) => {
+      signal = controller;
+      return new Promise<{ items: unknown[]; truncated: boolean }>(resolve => {
+        settle = resolve;
+      });
+    },
+    controlSearch: async () => {
+      throw new Error("internal relay https://secret.internal/?token=never-leak");
+    },
+  } as unknown as DeviceRouter;
+  const started = await startSearch(actor, "pause-redaction-device", router, {
+    path: "/safe", query: "needle", search_type: "files",
+  });
+  await assert.rejects(
+    controlSearch(actor, "pause-redaction-device", started.searchId, router, true),
+    error => error instanceof Error && error.message === "search_control_unavailable",
+  );
+  assert.equal(signal.aborted, true);
+  settle({ items: [], truncated: false });
+  await new Promise(resolve => setImmediate(resolve));
+});
+
 test("starts and pages bounded search sessions by actor and device", async () => {
   const started = await startSearch(principal, "device-a", remote, {
     path: "/safe", query: "txt", search_type: "files",
