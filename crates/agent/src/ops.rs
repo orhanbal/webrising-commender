@@ -2,9 +2,8 @@ use crate::{
     approval, fs_ops,
     policy::PathPolicy,
     process_ops,
-    spreadsheet_ops,
     protocol::{AgentAction, Risk},
-    system_ops,
+    spreadsheet_ops, system_ops,
     task_manager::TaskManager,
     terminal::TerminalManager,
 };
@@ -52,7 +51,13 @@ pub async fn execute(
             row_count,
             column_count,
         } => spreadsheet_ops::read_range(
-            policy, &path, &sheet, start_row, start_column, row_count, column_count,
+            policy,
+            &path,
+            &sheet,
+            start_row,
+            start_column,
+            row_count,
+            column_count,
         ),
         AgentAction::FsWrite {
             path,
