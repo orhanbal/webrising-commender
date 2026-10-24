@@ -79,4 +79,16 @@ test("persisted completions use a size bound and status transition guard", async
   assert.match(sql[0]!.statement, /status='running'/);
   assert.equal(sql[0]!.params[5], "[]");
   assert.equal(sql[0]!.params[6], true);
+  assert.match(sql[0]!.statement, /returning id/);
+});
+
+test("durable finish returns false when a stopped or expired row was not updated", async () => {
+  const fake = {
+    query: async () => ({ rows: [], rowCount: 0 }),
+  } as unknown as Pool;
+  const store = new PgSearchPersistence(fake);
+  assert.equal(await store.finish({ ...owner, id }, {
+    status: "completed", items: [{ path: "/allowed/must-not-reappear" }],
+    truncated: false, timedOut: false,
+  }), false);
 });

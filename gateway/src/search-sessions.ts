@@ -33,7 +33,7 @@ const PER_ACTOR_LIMIT = 8;
 const TTL_MS = 5 * 60_000;
 const sessions = new Map<string, SearchEntry>();
 let persistence: SearchPersistence | undefined;
-export function setSearchPersistence(store: SearchPersistence) { persistence = store; }
+export function setSearchPersistence(store: SearchPersistence | undefined) { persistence = store; }
 
 function expire(now = Date.now()) {
   for (const [id, s] of sessions) {
@@ -139,7 +139,13 @@ export async function startSearch(
       timedOut: Boolean(payload?.timedOut),
     };
     try {
-      await persistence?.finish(entry, candidate);
+      const committed = persistence ? await persistence.finish(entry, candidate) : true;
+      if (!committed) {
+        // Another Gateway may have stopped or expired this request; never revive results.
+        entry.status = "stopped";
+        entry.items = [];
+        return;
+      }
     } catch {
       if (entry.status === "running") {
         entry.status = "error";
@@ -157,9 +163,14 @@ export async function startSearch(
     if (entry.status !== "running") return;
     const message = safeSearchError(error);
     try {
-      await persistence?.finish(entry, {
+      const committed = persistence ? await persistence.finish(entry, {
         status: "error", items: [], truncated: false, timedOut: false, error: message,
-      });
+      }) : true;
+      if (!committed) {
+        entry.status = "stopped";
+        entry.items = [];
+        return;
+      }
     } catch {
       if (entry.status === "running") entry.error = "search_store_unavailable";
       return;
@@ -178,57 +189,55 @@ export function searchPage(
       !Number.isInteger(length) || length < 1 || length > 100) {
     throw new Error("invalid_search_page");
   }
-  const s = sessions.get(searchId);
-  if (!s || !owner(s, principal, deviceId)) {
-    if (persistence && /^[0-9a-f-]{36}$/i.test(searchId)) {
-      return persistence.page({ organizationId: principal.organizationId, actor: principal.actor, deviceId }, searchId, offset, length);
-    }
-    throw new Error("search_not_found");
+  const scope = { organizationId: principal.organizationId, actor: principal.actor, deviceId };
+  // The database is authoritative whenever enabled: another gateway may have
+  // revoked or stopped the search, even if our in-memory snapshot is stale.
+  if (persistence) {
+    if (!/^[0-9a-f-]{36}$/i.test(searchId)) throw new Error("search_not_found");
+    return persistence.page(scope, searchId, offset, length);
   }
+  const s = sessions.get(searchId);
+  if (!s || !owner(s, principal, deviceId)) throw new Error("search_not_found");
   return {
-    ...summary(s),
-    offset,
-    length,
-    items: s.items.slice(offset, offset + length),
+    ...summary(s), offset, length, items: s.items.slice(offset, offset + length),
     hasMore: offset + length < s.items.length,
   };
 }
 export function listSearches(principal: Principal, deviceId: string) {
   expire();
-  const memory = [...sessions.values()]
-    .filter(s => owner(s, principal, deviceId))
-    .map(summary);
-  if (!persistence) return { items: memory };
-  return persistence.list({ organizationId: principal.organizationId, actor: principal.actor, deviceId })
-    .then(persisted => {
-      const found = new Map(persisted.items.map(row => {
-        const record = row as { searchId: string };
-        return [record.searchId, row] as const;
-      }));
-      for (const row of memory) found.set(row.searchId, row);
-      return { items: [...found.values()].slice(-64) };
-    });
+  // Do not overlay local memory on database rows: cross-instance stop must win.
+  if (persistence) return persistence.list({
+    organizationId: principal.organizationId, actor: principal.actor, deviceId,
+  });
+  return { items: [...sessions.values()]
+    .filter(s => owner(s, principal, deviceId)).map(summary) };
 }
-export function stopSearch(principal: Principal, deviceId: string, searchId: string) {
+export async function stopSearch(principal: Principal, deviceId: string, searchId: string) {
   expire();
   const s = sessions.get(searchId);
-  if (!s || !owner(s, principal, deviceId)) {
-    if (persistence && /^[0-9a-f-]{36}$/i.test(searchId)) {
-      const scope = { organizationId: principal.organizationId, actor: principal.actor, deviceId };
-      return persistence.stop({ id: searchId, ...scope })
-        .then(() => persistence!.page(scope, searchId, 0, 1))
-.then(page => ({
-          searchId: page.searchId, path: page.path, query: page.query,
-          searchType: page.searchType, status: page.status,
-          createdAt: page.createdAt, resultCount: page.resultCount,
-          truncated: page.truncated, timedOut: page.timedOut,
-        }));
+  const scope = { organizationId: principal.organizationId, actor: principal.actor, deviceId };
+  if (persistence) {
+    if (!/^[0-9a-f-]{36}$/i.test(searchId)) throw new Error("search_not_found");
+    // Persist the stop before returning success; failure must never be masked.
+    // This also prevents a concurrently finishing native scan from reviving
+    // the stopped result in another Gateway.
+    await persistence.stop({ id: searchId, ...scope });
+    if (s && owner(s, principal, deviceId)) {
+      s.status = "stopped";
+      s.items = [];
+      s.controller.abort();
     }
-    throw new Error("search_not_found");
+    const page = await persistence.page(scope, searchId, 0, 1);
+    return {
+      searchId: page.searchId, path: page.path, query: page.query,
+      searchType: page.searchType, status: page.status,
+      createdAt: page.createdAt, resultCount: page.resultCount,
+      truncated: page.truncated, timedOut: page.timedOut,
+    };
   }
+  if (!s || !owner(s, principal, deviceId)) throw new Error("search_not_found");
   s.status = "stopped";
   s.items = [];
   s.controller.abort();
-  const saved = persistence?.stop(s);
-  return saved ? saved.then(() => summary(s)) : summary(s);
+  return summary(s);
 }

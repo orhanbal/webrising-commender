@@ -893,6 +893,16 @@ try {
   const stopped = await afterRestart.page(durableKey, durableKey.id, 0, 10);
   assert.equal(stopped.status, "stopped");
   assert.deepEqual(stopped.items, []);
+  // A completion arriving after a different Gateway stopped the search
+  // must fail its compare-and-swap and must never restore the result.
+  const resurrected = await durableStore.finish(durableKey, {
+    status: "completed", items: [{ path: "/ci/must-not-reappear" }],
+    truncated: false, timedOut: false,
+  });
+  assert.equal(resurrected, false);
+  const stillStopped = await afterRestart.page(durableKey, durableKey.id, 0, 10);
+  assert.equal(stillStopped.status, "stopped");
+  assert.deepEqual(stillStopped.items, []);
 
   const interruptedKey = { ...durableKey, id: randomUUID() };
   await durableStore.create({

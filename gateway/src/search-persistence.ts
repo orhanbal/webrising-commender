@@ -45,7 +45,8 @@ export type SearchPage = SearchSummary & {
 };
 export interface SearchPersistence {
   create(snapshot: SearchSnapshot): Promise<void>;
-  finish(key: SearchKey, result: SearchCompletion): Promise<void>;
+  /** True only when the running row was atomically transitioned to its final status. */
+  finish(key: SearchKey, result: SearchCompletion): Promise<boolean>;
   stop(key: SearchKey): Promise<void>;
   page(scope: Omit<SearchKey, "id">, id: string, offset: number, length: number): Promise<SearchPage>;
   list(scope: Omit<SearchKey, "id">): Promise<{ items: SearchSummary[] }>;
@@ -83,14 +84,16 @@ export class PgSearchPersistence implements SearchPersistence {
       items = [];
       truncated = true;
     }
-    await this.pool.query(
+    const updated = await this.pool.query(
       `update search_sessions
           set status=$5,items=$6::jsonb,truncated=$7,timed_out=$8,error_code=$9
         where id=$1 and organization_id=$2 and actor=$3 and device_id=$4
-          and status='running' and expires_at>now()`,
+          and status='running' and expires_at>now()
+        returning id`,
       [s.id, s.organizationId, s.actor, s.deviceId,
         result.status, JSON.stringify(items), truncated, result.timedOut, result.error ?? null],
     );
+    return Boolean(updated.rowCount);
   }
 
   async stop(s: SearchKey) {
