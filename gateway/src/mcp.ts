@@ -374,13 +374,13 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
       if (name === "start_search") {
         data = await startSearch(principal, deviceId, router, args);
       } else if (name === "get_more_search_results") {
-        data = searchPage(principal, deviceId, String(args.search_id || ""),
+        data = await searchPage(principal, deviceId, String(args.search_id || ""),
           args.offset === undefined ? 0 : Number(args.offset),
           args.length === undefined ? 50 : Number(args.length));
       } else if (name === "stop_search") {
-        data = stopSearch(principal, deviceId, String(args.search_id || ""));
+        data = await stopSearch(principal, deviceId, String(args.search_id || ""));
       } else {
-        data = listSearches(principal, deviceId);
+        data = await listSearches(principal, deviceId);
       }
       await audit(orgId, principal.actor, deviceId, name, "low", "success", "search_session");
       return ok(request.id, toolResult(data));

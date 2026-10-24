@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import type { AgentAction } from "./protocol.js";
 import type { DeviceRouter } from "./device-router.js";
 import type { Principal } from "./auth.js";
+import type { SearchPersistence } from "./search-persistence.js";
 
 /**
  * Bounded, tenant/actor-isolated search sessions.
@@ -31,6 +32,8 @@ const MAX_SESSIONS = 64;
 const PER_ACTOR_LIMIT = 8;
 const TTL_MS = 5 * 60_000;
 const sessions = new Map<string, SearchEntry>();
+let persistence: SearchPersistence | undefined;
+export function setSearchPersistence(store: SearchPersistence) { persistence = store; }
 
 function expire(now = Date.now()) {
   for (const [id, s] of sessions) {
@@ -111,25 +114,59 @@ export async function startSearch(
     controller: new AbortController(),
   };
   sessions.set(entry.id, entry);
+  if (persistence) {
+    try {
+      await persistence.create(entry);
+    } catch {
+      sessions.delete(entry.id);
+      throw new Error("search_store_unavailable");
+    }
+  }
   const action: AgentAction = entry.searchType === "files"
     ? { kind: "fs_search", path: arg.path, query: arg.query,
         caseSensitive: Boolean(arg.case_sensitive), maxResults: 500 }
     : { kind: "text_search", path: arg.path, query: arg.query,
         caseSensitive: Boolean(arg.case_sensitive), maxResults: 500 };
   // Do not block the MCP request; a follow-up call collects paged results.
-  void router.request(deviceId, action, undefined, entry.controller.signal).then(data => {
+  void router.request(deviceId, action, undefined, entry.controller.signal).then(async data => {
     entry.inFlight = false;
     if (entry.status !== "running") return;
     const payload = data as { items?: unknown[]; truncated?: boolean; timedOut?: boolean };
-    entry.items = Array.isArray(payload?.items) ? payload.items.slice(0, 500) : [];
-    entry.truncated = Boolean(payload?.truncated);
-    entry.timedOut = Boolean(payload?.timedOut);
+    const candidate = {
+      status: "completed" as const,
+      items: Array.isArray(payload?.items) ? payload.items.slice(0, 500) : [],
+      truncated: Boolean(payload?.truncated),
+      timedOut: Boolean(payload?.timedOut),
+    };
+    try {
+      await persistence?.finish(entry, candidate);
+    } catch {
+      if (entry.status === "running") {
+        entry.status = "error";
+        entry.error = "search_store_unavailable";
+      }
+      return;
+    }
+    if (entry.status !== "running") return;
+    entry.items = candidate.items;
+    entry.truncated = candidate.truncated;
+    entry.timedOut = candidate.timedOut;
     entry.status = "completed";
-  }, error => {
+  }, async error => {
     entry.inFlight = false;
     if (entry.status !== "running") return;
+    const message = safeSearchError(error);
+    try {
+      await persistence?.finish(entry, {
+        status: "error", items: [], truncated: false, timedOut: false, error: message,
+      });
+    } catch {
+      if (entry.status === "running") entry.error = "search_store_unavailable";
+      return;
+    }
+    if (entry.status !== "running") return;
     entry.status = "error";
-    entry.error = safeSearchError(error);
+    entry.error = message;
   });
   return summary(entry);
 }
@@ -142,7 +179,12 @@ export function searchPage(
     throw new Error("invalid_search_page");
   }
   const s = sessions.get(searchId);
-  if (!s || !owner(s, principal, deviceId)) throw new Error("search_not_found");
+  if (!s || !owner(s, principal, deviceId)) {
+    if (persistence && /^[0-9a-f-]{36}$/i.test(searchId)) {
+      return persistence.page({ organizationId: principal.organizationId, actor: principal.actor, deviceId }, searchId, offset, length);
+    }
+    throw new Error("search_not_found");
+  }
   return {
     ...summary(s),
     offset,
@@ -153,20 +195,37 @@ export function searchPage(
 }
 export function listSearches(principal: Principal, deviceId: string) {
   expire();
-  return {
-    items: [...sessions.values()]
-      .filter(s => owner(s, principal, deviceId))
-      .map(summary),
-  };
+  const memory = [...sessions.values()]
+    .filter(s => owner(s, principal, deviceId))
+    .map(summary);
+  if (!persistence) return { items: memory };
+  return persistence.list({ organizationId: principal.organizationId, actor: principal.actor, deviceId })
+    .then(persisted => {
+      const found = new Map(persisted.items.map(row => {
+        const record = row as { searchId: string };
+        return [record.searchId, row] as const;
+      }));
+      for (const row of memory) found.set(row.searchId, row);
+      return { items: [...found.values()].slice(-64) };
+    });
 }
 export function stopSearch(principal: Principal, deviceId: string, searchId: string) {
   expire();
   const s = sessions.get(searchId);
-  if (!s || !owner(s, principal, deviceId)) throw new Error("search_not_found");
+  if (!s || !owner(s, principal, deviceId)) {
+    if (persistence && /^[0-9a-f-]{36}$/i.test(searchId)) {
+      return persistence.stop({
+        id: searchId, organizationId: principal.organizationId,
+        actor: principal.actor, deviceId,
+      }).then(() => ({
+        searchId, status: "stopped", resultCount: 0,
+      }));
+    }
+    throw new Error("search_not_found");
+  }
   s.status = "stopped";
   s.items = [];
-  // The local relay sends a native cancel and keeps its request pending until
-  // the Agent confirms cooperative exit. Remote relays still need forwarding.
   s.controller.abort();
-  return summary(s);
+  const saved = persistence?.stop(s);
+  return saved ? saved.then(() => summary(s)) : summary(s);
 }

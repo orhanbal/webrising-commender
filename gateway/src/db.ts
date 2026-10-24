@@ -399,6 +399,27 @@ export async function migrate() {
       add constraint billing_events_disposition_check
       check (disposition in ('received','applied','stale','provider_mismatch','order_conflict'));
 
+    create table if not exists search_sessions (
+      id uuid primary key,
+      organization_id uuid not null references organizations(id) on delete cascade,
+      actor text not null,
+      device_id uuid not null references devices(id) on delete cascade,
+      path text not null,
+      query text not null,
+      search_type text not null check (search_type in ('files','content')),
+      status text not null check (status in ('running','completed','error','stopped')),
+      origin_instance uuid not null,
+      items jsonb not null default '[]'::jsonb,
+      truncated boolean not null default false,
+      timed_out boolean not null default false,
+      error_code text,
+      created_at timestamptz not null default now(),
+      expires_at timestamptz not null default (now()+interval '5 minutes')
+    );
+    create index if not exists search_sessions_scope_idx
+      on search_sessions(organization_id,actor,device_id,created_at desc);
+    create index if not exists search_sessions_expiry_idx on search_sessions(expires_at);
+
     create table if not exists audit_logs (
       id bigserial primary key,
       organization_id uuid references organizations(id) on delete set null,
@@ -471,6 +492,7 @@ function auditRetentionDays() {
 }
 
 export async function housekeeping() {
+  await db.query("delete from search_sessions where expires_at < now()");
   await db.query("delete from pairing_codes where expires_at < now() or used_at < now() - interval '1 day'");
   await db.query("delete from approvals where expires_at < now() - interval '1 day'");
   await db.query(

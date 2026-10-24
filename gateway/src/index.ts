@@ -33,6 +33,8 @@ import { getPublicPlans, publicPaddleConfig, createPaddleCheckout, createPaddleP
 import { getDownloads } from "./downloads.js";
 import { createDeviceLink, getDeviceLinkStatus, approveDeviceLink } from "./device-link.js";
 import { DeviceRouter } from "./device-router.js";
+import { setSearchPersistence } from "./search-sessions.js";
+import { PgSearchPersistence } from "./search-persistence.js";
 import { RelayCancellationRegistry } from "./relay-cancellation.js";
 import { enqueueMail, mailConfigured, publicSignupEnabled, startMailWorker } from "./mail.js";
 import { handleMcp } from "./mcp.js";
@@ -124,6 +126,7 @@ const resetTokenRateLimit = new FixedWindowRateLimiter();
 const trustProxyHeaders = /^(1|true|yes)$/i.test(String(process.env.TRUST_PROXY_HEADERS || ""));
 
 await migrate();
+setSearchPersistence(new PgSearchPersistence(db));
 await housekeeping();
 startMailWorker();
 
