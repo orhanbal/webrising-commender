@@ -214,6 +214,37 @@ fn search_with_deadline(
     }))
 }
 
+/// Limit bytes read from a changing file and check cancellation between
+/// bounded chunks. Invalid UTF-8 and oversized files are safely skipped.
+fn read_search_utf8<R: Read>(
+    reader: &mut R,
+    cancelled: &AtomicBool,
+    deadline: Instant,
+) -> Result<Option<String>> {
+    let mut bytes = Vec::new();
+    let mut chunk = [0_u8; 16 * 1024];
+    loop {
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(anyhow!("search_cancelled"));
+        }
+        if Instant::now() >= deadline {
+            return Ok(None);
+        }
+        let size = match reader.read(&mut chunk) {
+            Ok(size) => size,
+            Err(_) => return Ok(None),
+        };
+        if size == 0 {
+            break;
+        }
+        if bytes.len().saturating_add(size) > MAX_TEXT_SEARCH_FILE as usize {
+            return Ok(None);
+        }
+        bytes.extend_from_slice(&chunk[..size]);
+    }
+    Ok(String::from_utf8(bytes).ok())
+}
+
 pub fn text_search_cancellable(
     policy: &PathPolicy,
     raw: &str,
@@ -305,12 +336,27 @@ fn text_search_with_deadline(
                 truncated = true;
                 break;
             }
-            scanned_bytes += metadata.len();
-
-            let text = match fs::read_to_string(&path) {
-                Ok(value) => value,
+            // Read in cancellable, bounded chunks. File size can change after
+            // metadata(), so a one-shot read_to_string is not a memory bound.
+            let text = match fs::File::open(&path) {
+                Ok(mut file) => match read_search_utf8(&mut file, cancelled, deadline)? {
+                    Some(value) => value,
+                    None => {
+                        if Instant::now() >= deadline {
+                            timed_out = true;
+                            truncated = true;
+                            break;
+                        }
+                        continue;
+                    }
+                },
                 Err(_) => continue,
             };
+            if scanned_bytes.saturating_add(text.len() as u64) > MAX_TEXT_SEARCH_BYTES {
+                truncated = true;
+                break;
+            }
+            scanned_bytes += text.len() as u64;
 
             for (index, line) in text.lines().enumerate() {
                 if cancelled.load(Ordering::Relaxed) {
@@ -440,7 +486,17 @@ pub fn read_lines(
             "file exceeds paginated read scan limit of {MAX_PAGED_FILE} bytes"
         ));
     }
-    let content = fs::read_to_string(&path).context("paginated read requires UTF-8 text")?;
+    // Bound the actual read, not only the metadata check: a concurrent writer
+    // can grow a file after stat() and otherwise exhaust the Agent's memory.
+    let mut file = fs::File::open(&path)?;
+    let mut bytes = Vec::new();
+    std::io::Read::by_ref(&mut file)
+        .take(MAX_PAGED_FILE + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_PAGED_FILE {
+        return Err(anyhow!("file exceeds paginated read scan limit of {MAX_PAGED_FILE} bytes"));
+    }
+    let content = String::from_utf8(bytes).context("paginated read requires UTF-8 text")?;
     let total = content.lines().count();
     let offset = offset_lines.unwrap_or(0);
     let start = if offset < 0 {
@@ -746,6 +802,46 @@ mod search_budget_tests {
         assert_eq!(content["scannedEntries"], 0);
         fs::remove_dir_all(root).unwrap();
     }
+    #[test]
+    fn native_content_scan_bounds_reads_and_interrupts_between_chunks() {
+        use std::io::{self, Cursor};
+
+        let flag = AtomicBool::new(false);
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut oversized = Cursor::new(vec![b'x'; MAX_TEXT_SEARCH_FILE as usize + 1]);
+        assert!(read_search_utf8(&mut oversized, &flag, deadline).unwrap().is_none());
+
+        struct InterruptingReader<'a> {
+            cancelled: &'a AtomicBool,
+            emitted: bool,
+        }
+        impl Read for InterruptingReader<'_> {
+            fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+                if self.emitted {
+                    return Ok(0);
+                }
+                self.emitted = true;
+                self.cancelled.store(true, Ordering::Relaxed);
+                buf[0] = b'x';
+                Ok(1)
+            }
+        }
+        let mut reader = InterruptingReader { cancelled: &flag, emitted: false };
+        assert!(read_search_utf8(&mut reader, &flag, deadline)
+            .unwrap_err()
+            .to_string()
+            .contains("search_cancelled"));
+
+        flag.store(false, Ordering::Relaxed);
+        let mut valid = Cursor::new("Türkçe içerik".as_bytes());
+        assert_eq!(
+            read_search_utf8(&mut valid, &flag, deadline).unwrap().as_deref(),
+            Some("Türkçe içerik")
+        );
+        let mut invalid = Cursor::new([0xff, 0xfe]);
+        assert!(read_search_utf8(&mut invalid, &flag, deadline).unwrap().is_none());
+    }
+
     #[test]
     fn native_search_respects_pre_cancelled_requests() {
         let root = std::env::temp_dir().join(format!("wc-search-cancel-{}", uuid::Uuid::new_v4()));
