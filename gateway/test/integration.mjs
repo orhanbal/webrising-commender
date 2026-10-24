@@ -234,9 +234,14 @@ assert.equal(
 assert.ok(encryptedOutbox.rows[0].payload_nonce);
 assert.ok(encryptedOutbox.rows[0].payload_tag);
 
-const outboxStatus = await jsonFetch("/api/admin/mail/outbox?limit=10", {
-  headers: authHeaders,
-});
+// SMTP capture can become visible before the worker commits sent_at in PostgreSQL.
+// Wait for the durable state instead of racing the asynchronous mail worker.
+const outboxStatus = await waitFor(async () => {
+  const status = await jsonFetch("/api/admin/mail/outbox?limit=10", {
+    headers: authHeaders,
+  });
+  return status.configured && status.counts.sent >= 1 ? status : null;
+}, 8000, 100);
 assert.equal(outboxStatus.configured, true);
 assert.ok(outboxStatus.counts.sent >= 1);
 assert.equal("recipient_hash" in outboxStatus.items[0], false);
