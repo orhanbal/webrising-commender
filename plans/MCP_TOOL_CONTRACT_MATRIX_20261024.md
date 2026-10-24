@@ -1,3 +1,11 @@
+## 12.14 P0 arama sözleşmesi güncellemesi — CI bekliyor
+
+- `fs_search` ve `text_search` native Agent çıktısı artık `timedOut: boolean` taşır; `truncated` süre bütçesi aşıldığında `true` olur. 10s süre bütçesi dosya/dizin/satır döngüsünde denetlenir; tek filesystem syscall'ın zorla durdurulması değildir.
+- `start_search` → `get_more_search_results` sayfalı snapshot'ında `timedOut` raporlanır. MCP araç adı/şema sayısı **46 olarak değişmedi**.
+- In-flight concurrency slotu, `stop_search` sonrasında native istek sonuçlanıncaya kadar tutulur; tamamlanan oturumlar kota tüketmez. Hata mesajları allowlist dışındaysa `search_failed` döner.
+- Kod/test commitleri: `3db2cb23`, `e1fe01c5`, `cf41f58f`, `5c67b09b`, `93809aaa`. Güncel HEAD'in CI ve gerçek Agent E2E sonucu **PENDING**.
+- Bu değişiklik **native streaming/pause/physical cancel veya restart persistence** değildir; 1A/1B açık kalır. Bütün 46 aracın kabul durumu [40 alt görevlik kuyrukta](HOURLY_BACKLOG_QUEUE_20261024.md) izlenir.
+
 # WECOMMANDER — MCP araç sözleşmesi ve kabul matrisi
 
 Güncelleme: 24 Ekim 2026. Kaynak: `gateway/src/mcp.ts`, `gateway/src/protocol.ts`, `gateway/test/agent-e2e.mjs`. **Bu dosya koddan çıkarılan mevcut araç kaydını gösterir; rakip ürünle tam eşdeğerlik veya fiziksel cihaz kabulü kanıtı değildir.**
