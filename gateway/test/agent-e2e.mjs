@@ -122,6 +122,64 @@ try {
   assert.equal(policyInfo.agentMode, "restricted");
   assert.ok(policyInfo.allowedRoots.includes(tempRoot));
 
+  // Read-only DOCX tools must preserve Unicode, decode XML entities, and enforce
+  // root, archive, and pagination boundaries through the real native Agent.
+  const documentPath = path.join(tempRoot, "sample.docx");
+  const documentFixture = fs.readFileSync(path.join(here, "fixtures", "sample-document.docx.base64"), "utf8").trim();
+  fs.writeFileSync(documentPath, Buffer.from(documentFixture, "base64"));
+  const docInfo = await tool(250, "docx_inspect", { device_id: deviceId, path: documentPath });
+  assert.equal(docInfo.paragraphCount, 6, JSON.stringify(docInfo));
+  assert.equal(docInfo.tableCount, 1);
+  assert.equal(docInfo.readOnly, true);
+  assert.equal(docInfo.externalResourcesLoaded, false);
+  const docPage = await tool(251, "docx_read_paragraphs", {
+    device_id: deviceId, path: documentPath, offset: 0, limit: 2,
+  });
+  assert.deepEqual(docPage.items.map((item) => item.text), ["Merhaba & dünya", "Sol"]);
+  assert.equal(docPage.nextOffset, 2);
+  assert.equal(docPage.hasMore, true);
+  assert.equal(docPage.items[1].inTable, true);
+  const docTail = await tool(252, "docx_read_paragraphs", {
+    device_id: deviceId, path: documentPath, offset: 5, limit: 2,
+  });
+  assert.deepEqual(docTail.items.map((item) => item.text), ["Son"]);
+  assert.equal(docTail.hasMore, false);
+  const docTable = await tool(253, "docx_read_table", {
+    device_id: deviceId, path: documentPath, table_index: 0, offset_rows: 0, limit_rows: 1,
+  });
+  assert.deepEqual(docTable.items[0].cells.map((cell) => cell.text), ["Sol", "Sağ"]);
+  assert.equal(docTable.nextRow, 1);
+  assert.equal(docTable.hasMore, true);
+  const docTableTail = await tool(254, "docx_read_table", {
+    device_id: deviceId, path: documentPath, table_index: 0, offset_rows: 1, limit_rows: 10,
+  });
+  assert.deepEqual(docTableTail.items[0].cells.map((cell) => cell.text), ["Alt", "İki"]);
+  const docInvalidPage = await tool(255, "docx_read_paragraphs", {
+    device_id: deviceId, path: documentPath, limit: 101,
+  });
+  assert.equal(typeof docInvalidPage.error, "string");
+  const docMissingTable = await tool(256, "docx_read_table", {
+    device_id: deviceId, path: documentPath, table_index: 5,
+  });
+  assert.match(docMissingTable.error, /table not found/i);
+  const docBrokenPath = path.join(tempRoot, "broken.docx");
+  fs.writeFileSync(docBrokenPath, "not a ZIP archive");
+  const docBroken = await tool(257, "docx_inspect", {
+    device_id: deviceId, path: docBrokenPath,
+  });
+  assert.equal(typeof docBroken.error, "string");
+  const docOutsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "commander-outside-docx-"));
+  try {
+    const docOutsidePath = path.join(docOutsideDir, "outside.docx");
+    fs.copyFileSync(documentPath, docOutsidePath);
+    const docOutside = await tool(258, "docx_inspect", {
+      device_id: deviceId, path: docOutsidePath,
+    });
+    assert.match(docOutside.error, /outside configured allowed roots/i);
+  } finally {
+    fs.rmSync(docOutsideDir, { recursive: true, force: true });
+  }
+
   // Real Agent ↔ Gateway ↔ MCP Excel reading, using a deterministic XLSX fixture.
   // No Python/Office executable or hosted document service is required at runtime.
   const workbookPath = path.join(tempRoot, "sample.xlsx");
