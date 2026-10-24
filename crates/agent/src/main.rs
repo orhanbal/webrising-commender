@@ -1,5 +1,6 @@
 mod approval;
 mod config;
+mod docx_ops;
 mod fs_ops;
 mod ops;
 mod policy;
@@ -370,6 +371,7 @@ async fn connected_loop(
             capabilities: vec![
                 "fs".into(),
                 "xlsx-read".into(),
+                "docx-read".into(),
                 "process".into(),
                 "task".into(),
                 "pty".into(),
