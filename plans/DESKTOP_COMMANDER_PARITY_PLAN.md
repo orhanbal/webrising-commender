@@ -25,7 +25,7 @@ Son gözden geçirme: 2026-10-24. Öncelik: eşdeğerlik > güvenilirlik/kabul >
 - **KODLANDI:** Rust Agent PTY çıktısında tüketici `terminal_read` kuyruğu ile bağımsız, 1 MiB sınırlı, non-consuming `terminal_read_page` geçmişi. `terminal_read` geçmişi artık silmiyor; pozitif offset tüm PTY akışındaki mutlak bayt konumunu, negatif offset sondan okumayı gösteriyor.
 - **KODLANDI:** Taşma sonrası `retainedStartBytes`, `totalOutputBytes`, `truncatedBeforeOffset` alanları ile eksik geçmiş açıkça bildiriliyor. `nextOffsetBytes` mutlak imleçtir. MCP açıklaması ve Gateway güvenli tamsayı doğrulaması güncellendi.
 - **TEST:** Rust unit testi taşma, tail, mutlak sayfalama; gerçek Linux Agent E2E testi `terminal_read` sonrası geçmişin korunması ve mutlak imleçten yeniden okuma; Gateway protokol testi büyük mutlak offset ve güvenli tamsayı sınırı.
-- **CI / PENDING:** Kod HEAD `03ea7026`, GitHub Actions `ci #40048008146`; ilk gözlemde Rust, Linux Agent E2E, Gateway, entegrasyon, macOS derleme ve Compose dahil 15/17 PASS; Windows/macOS acceptance artifact işleri henüz çalışıyordu. CI tamamen bitmeden bu HEAD genel PASS sayılmaz.
+- **CI / PASS:** Kod + plan güncellemesi HEAD `03a618d2` için GitHub Actions `ci #40048337156` **17/17 PASS** (Rust, Gateway, Linux Agent E2E, Windows/macOS derlemeleri, installer/artifact işleri ve güvenlik entegrasyonu). Bu belge güncellemesi yeni HEAD oluşturacağı için onun CI'sı ayrıca doğrulanmalıdır.
 - **AÇIK:** Geçmiş yalnızca Agent RAM'inde ve 1 MiB sınırında; Agent yeniden başlatması sonrası veya daha eski çıktı için disk tabanlı tam geçmiş yok. REPL/prompt algılama, process-tree cleanup, native search cancellation ve gerçek üç platform kabulü ayrıca açık.
 
 ## Karşılaştırma kaynağı
