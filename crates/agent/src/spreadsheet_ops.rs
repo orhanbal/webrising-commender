@@ -10,6 +10,10 @@ const MAX_UNCOMPRESSED_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 512;
 const MAX_ROWS: u32 = 50;
 const MAX_COLS: u32 = 20;
+const MAX_CELL_PAGE_JSON_BYTES: usize = 256 * 1024;
+const MAX_SEARCHED_CELLS: usize = 50_000;
+const MAX_SEARCH_RESULTS: usize = 100;
+
 
 fn checked_workbook(policy: &PathPolicy, raw: &str) -> Result<std::path::PathBuf> {
     let path = policy.resolve_existing(raw)?;
@@ -98,15 +102,24 @@ pub fn read_range(
         .worksheet_range(sheet)
         .context("cannot read spreadsheet sheet")?;
     let mut cells = Vec::new();
-    for row in start_row..start_row + row_count {
+    let mut used_bytes = 0_usize;
+    let mut truncated = false;
+    'rows: for row in start_row..start_row + row_count {
         for column in start_col..start_col + col_count {
             if let Some(data) = range.get_value((row - 1, column - 1)) {
                 if !matches!(data, Data::Empty) {
-                    cells.push(json!({
+                    let item = json!({
                         "row": row,
                         "column": column,
                         "data": cell_value(data)
-                    }));
+                    });
+                    let size = serde_json::to_vec(&item)?.len();
+                    if used_bytes.saturating_add(size) > MAX_CELL_PAGE_JSON_BYTES {
+                        truncated = true;
+                        break 'rows;
+                    }
+                    used_bytes += size;
+                    cells.push(item);
                 }
             }
         }
@@ -119,6 +132,80 @@ pub fn read_range(
         "rowCount": row_count,
         "columnCount": col_count,
         "cells": cells,
+        "truncated": truncated,
+        "maxPageJsonBytes": MAX_CELL_PAGE_JSON_BYTES,
+        "readOnly": true
+    }))
+}
+
+/// Search cached spreadsheet values without evaluating formulas or macros.
+pub fn find_cells(
+    policy: &PathPolicy,
+    raw: &str,
+    sheet: Option<&str>,
+    query: &str,
+    case_sensitive: bool,
+    max_results: usize,
+) -> Result<Value> {
+    if query.is_empty() || query.len() > 1024 || max_results == 0 || max_results > MAX_SEARCH_RESULTS {
+        return Err(anyhow!("invalid spreadsheet search parameters"));
+    }
+    let path = checked_workbook(policy, raw)?;
+    let mut workbook = open_workbook_auto(&path).context("cannot parse spreadsheet")?;
+    let sheets = match sheet {
+        Some(name) => {
+            if !workbook.sheet_names().iter().any(|candidate| candidate == name) {
+                return Err(anyhow!("spreadsheet sheet not found"));
+            }
+            vec![name.to_owned()]
+        }
+        None => workbook.sheet_names(),
+    };
+    let needle = if case_sensitive {
+        query.to_owned()
+    } else {
+        query.to_lowercase()
+    };
+    let mut scanned = 0_usize;
+    let mut matches = Vec::new();
+    let mut truncated = false;
+    'sheets: for name in sheets.iter().take(30) {
+        let range = workbook.worksheet_range(name)?;
+        let (first_row, first_col) = range.start().unwrap_or((0, 0));
+        for (row, col, value) in range.used_cells() {
+            scanned += 1;
+            if scanned > MAX_SEARCHED_CELLS {
+                truncated = true;
+                break 'sheets;
+            }
+            let display = value.to_string();
+            let found = if case_sensitive {
+                display.contains(&needle)
+            } else {
+                display.to_lowercase().contains(&needle)
+            };
+            if found {
+                matches.push(json!({
+                    "sheet": name,
+                    "row": first_row + row as u32 + 1,
+                    "column": first_col + col as u32 + 1,
+                    "value": display
+                }));
+                if matches.len() >= max_results {
+                    truncated = true;
+                    break 'sheets;
+                }
+            }
+        }
+    }
+    if sheets.len() > 30 {
+        truncated = true;
+    }
+    Ok(json!({
+        "path": path.to_string_lossy(),
+        "items": matches,
+        "scannedCells": scanned.min(MAX_SEARCHED_CELLS),
+        "truncated": truncated,
         "readOnly": true
     }))
 }
@@ -195,6 +282,7 @@ pub fn write_cells(
             return Err(anyhow!("file_changed_since_read"));
         }
     }
+    reject_complex_edit_parts(&source)?;
     let mut book = umya_spreadsheet::reader::xlsx::read(&source)
         .map_err(|error| anyhow!("cannot read XLSX for editing: {error}"))?;
     let worksheet = book
@@ -219,6 +307,10 @@ pub fn write_cells(
         }
     }
 
+    // Re-check the source after parsing to reject concurrent edits before publication.
+    if format!("{:x}", Sha256::digest(fs::read(&source)?)) != previous_sha256 {
+        return Err(anyhow!("file_changed_since_read"));
+    }
     let temporary = parent.join(format!(".wecommander-{}.xlsx", uuid::Uuid::new_v4()));
     let result = (|| -> Result<Value> {
         umya_spreadsheet::writer::xlsx::write(&book, &temporary)
@@ -246,6 +338,32 @@ pub fn write_cells(
     })();
     let _ = fs::remove_file(&temporary);
     result
+}
+
+// Complex OOXML features are not reliably preserved by every XLSX writer.
+// Fail closed instead of silently deleting pivot caches, charts or signatures.
+fn reject_complex_edit_parts(path: &std::path::Path) -> Result<()> {
+    let mut archive = zip::ZipArchive::new(fs::File::open(path)?)?;
+    for index in 0..archive.len() {
+        let entry = archive.by_index(index)?;
+        let name = entry.name().to_ascii_lowercase();
+        if is_unsafe_edit_part(&name) {
+            return Err(anyhow!("complex workbook features require read-only access"));
+        }
+    }
+    Ok(())
+}
+
+fn is_unsafe_edit_part(name: &str) -> bool {
+    name.starts_with("xl/pivot")
+        || name.starts_with("xl/charts/")
+        || name.starts_with("xl/drawings/")
+        || name.starts_with("xl/externallinks/")
+        || name.starts_with("xl/embeddings/")
+        || name.starts_with("xl/media/")
+        || name.starts_with("_xmlsignatures/")
+        || name == "xl/calcchain.xml"
+        || name == "xl/vbaproject.bin"
 }
 
 fn validate_cell_address(cell: &str) -> Result<()> {
