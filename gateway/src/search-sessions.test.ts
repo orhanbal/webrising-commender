@@ -88,11 +88,11 @@ test("stopping a search releases its per-actor concurrency slot", async () => {
     created.push(await startSearch(p, "quota-device", remote, args));
   }
   await assert.rejects(startSearch(p, "quota-device", remote, args), /search_session_limit/);
-  const stopped = stopSearch(p, "quota-device", created[0].searchId);
+  const stopped = stopSearch(p, "quota-device", created[0]!.searchId);
   assert.equal(stopped.status, "stopped");
   const replacement = await startSearch(p, "quota-device", remote, args);
   assert.equal(typeof replacement.searchId, "string");
-  assert.equal(searchPage(p, "quota-device", created[0].searchId, 0, 1).status, "stopped");
+  assert.equal(searchPage(p, "quota-device", created[0]!.searchId, 0, 1).status, "stopped");
 });
 
 test("stopped search cannot resurrect results from an in-flight agent response", async () => {
