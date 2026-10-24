@@ -46,7 +46,11 @@ pub async fn execute(
             let policy = policy.clone();
             tokio::task::spawn_blocking(move || docx_ops::inspect(&policy, &path)).await?
         }
-        AgentAction::DocxReadParagraphs { path, offset, limit } => {
+        AgentAction::DocxReadParagraphs {
+            path,
+            offset,
+            limit,
+        } => {
             let policy = policy.clone();
             tokio::task::spawn_blocking(move || {
                 docx_ops::read_paragraphs(&policy, &path, offset.unwrap_or(0), limit.unwrap_or(50))
