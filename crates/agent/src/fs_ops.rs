@@ -28,6 +28,9 @@ const MAX_TEXT_SEARCH_BYTES: u64 = 64 * 1024 * 1024;
 // Individual filesystem syscalls cannot be preempted by this synchronous scan.
 const MAX_SEARCH_DURATION: Duration = Duration::from_secs(10);
 
+/// Sends bounded cumulative results during a native search without holding up the scanner.
+pub type SearchProgressReporter = dyn Fn(&[Value], usize, u64) + Send + Sync;
+
 pub fn list(policy: &PathPolicy, raw: &str) -> Result<Value> {
     let path = policy.resolve_existing(raw)?;
     if !path.is_dir() {
@@ -133,6 +136,21 @@ pub fn search_cancellable(
     )
 }
 
+pub fn search_cancellable_reporting(
+    policy: &PathPolicy,
+    raw: &str,
+    query: &str,
+    case_sensitive: bool,
+    max_results: Option<usize>,
+    cancelled: &AtomicBool,
+    report: &SearchProgressReporter,
+) -> Result<Value> {
+    search_with_deadline_reporting(
+        policy, raw, query, case_sensitive, max_results,
+        Instant::now() + MAX_SEARCH_DURATION, cancelled, Some(report),
+    )
+}
+
 fn search_with_deadline(
     policy: &PathPolicy,
     raw: &str,
@@ -141,6 +159,21 @@ fn search_with_deadline(
     max_results: Option<usize>,
     deadline: Instant,
     cancelled: &AtomicBool,
+) -> Result<Value> {
+    search_with_deadline_reporting(
+        policy, raw, query, case_sensitive, max_results, deadline, cancelled, None,
+    )
+}
+
+fn search_with_deadline_reporting(
+    policy: &PathPolicy,
+    raw: &str,
+    query: &str,
+    case_sensitive: bool,
+    max_results: Option<usize>,
+    deadline: Instant,
+    cancelled: &AtomicBool,
+    report: Option<&SearchProgressReporter>,
 ) -> Result<Value> {
     if query.trim().is_empty() {
         return Err(anyhow!("search query cannot be empty"));
@@ -161,6 +194,7 @@ fn search_with_deadline(
     let mut stack = vec![root.clone()];
     let mut truncated = false;
     let mut timed_out = false;
+    let mut next_progress = 32_usize;
 
     while let Some(path) = stack.pop() {
         if cancelled.load(Ordering::Relaxed) {
@@ -222,6 +256,12 @@ fn search_with_deadline(
                 }
                 if file_type.is_dir() {
                     stack.push(entry.path());
+                }
+                if scanned >= next_progress {
+                    if let Some(report) = report {
+                        report(&results, scanned.min(MAX_SCAN_ENTRIES), 0);
+                    }
+                    next_progress = scanned.saturating_add(32);
                 }
             }
         }
@@ -321,6 +361,21 @@ pub fn text_search_cancellable(
     )
 }
 
+pub fn text_search_cancellable_reporting(
+    policy: &PathPolicy,
+    raw: &str,
+    query: &str,
+    case_sensitive: bool,
+    max_results: Option<usize>,
+    cancelled: &AtomicBool,
+    report: &SearchProgressReporter,
+) -> Result<Value> {
+    text_search_with_deadline_reporting(
+        policy, raw, query, case_sensitive, max_results,
+        Instant::now() + MAX_SEARCH_DURATION, cancelled, Some(report),
+    )
+}
+
 fn text_search_with_deadline(
     policy: &PathPolicy,
     raw: &str,
@@ -329,6 +384,21 @@ fn text_search_with_deadline(
     max_results: Option<usize>,
     deadline: Instant,
     cancelled: &AtomicBool,
+) -> Result<Value> {
+    text_search_with_deadline_reporting(
+        policy, raw, query, case_sensitive, max_results, deadline, cancelled, None,
+    )
+}
+
+fn text_search_with_deadline_reporting(
+    policy: &PathPolicy,
+    raw: &str,
+    query: &str,
+    case_sensitive: bool,
+    max_results: Option<usize>,
+    deadline: Instant,
+    cancelled: &AtomicBool,
+    report: Option<&SearchProgressReporter>,
 ) -> Result<Value> {
     if query.is_empty() {
         return Err(anyhow!("text search query cannot be empty"));
@@ -351,6 +421,7 @@ fn text_search_with_deadline(
     let mut scanned_bytes = 0_u64;
     let mut truncated = false;
     let mut timed_out = false;
+    let mut next_progress = 32_usize;
 
     while let Some(path) = stack.pop() {
         if cancelled.load(Ordering::Relaxed) {
@@ -398,6 +469,12 @@ fn text_search_with_deadline(
                 };
                 if file_type.is_dir() || file_type.is_file() {
                     stack.push(entry.path());
+                }
+                if scanned_entries >= next_progress {
+                    if let Some(report) = report {
+                        report(&results, scanned_entries.min(MAX_SCAN_ENTRIES), scanned_bytes);
+                    }
+                    next_progress = scanned_entries.saturating_add(32);
                 }
             }
         } else if metadata.is_file() {
@@ -450,6 +527,11 @@ fn text_search_with_deadline(
                         "line": index + 1,
                         "preview": preview_line(line)
                     }));
+                    if results.len() % 32 == 0 {
+                        if let Some(report) = report {
+                            report(&results, scanned_entries.min(MAX_SCAN_ENTRIES), scanned_bytes);
+                        }
+                    }
                     if results.len() >= result_limit {
                         truncated = true;
                         break;
@@ -847,7 +929,57 @@ fn preview_line(line: &str) -> String {
 #[cfg(test)]
 mod search_budget_tests {
     use super::*;
-    use std::{env, fs};
+    use std::{env, fs, sync::atomic::AtomicUsize};
+
+    #[test]
+    fn native_filename_progress_streams_bounded_cumulative_snapshots() {
+        let root = env::temp_dir().join(format!("wc-search-progress-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        for i in 0..100 {
+            fs::write(root.join(format!("needle-{i:03}.txt")), b"needle").unwrap();
+        }
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let updates = AtomicUsize::new(0);
+        let report = |items: &[Value], scanned: usize, bytes: u64| {
+            assert!(scanned >= 32);
+            assert_eq!(bytes, 0);
+            assert!(items.len() <= 100);
+            updates.fetch_add(1, Ordering::Relaxed);
+        };
+        let found = search_cancellable_reporting(
+            &policy, root.to_str().unwrap(), "needle", false, Some(100),
+            &AtomicBool::new(false), &report,
+        )
+        .unwrap();
+        assert_eq!(found["items"].as_array().unwrap().len(), 100);
+        assert!(updates.load(Ordering::Relaxed) > 0);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn native_content_progress_emits_before_final_result() {
+        let root = env::temp_dir().join(format!("wc-content-progress-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        for i in 0..80 {
+            fs::write(root.join(format!("text-{i:03}.txt")), b"needle\n").unwrap();
+        }
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let updates = AtomicUsize::new(0);
+        let report = |items: &[Value], scanned: usize, bytes: u64| {
+            assert!(scanned >= 32 || items.len() >= 32);
+            assert!(bytes <= MAX_TEXT_SEARCH_BYTES);
+            assert!(items.len() <= 80);
+            updates.fetch_add(1, Ordering::Relaxed);
+        };
+        let found = text_search_cancellable_reporting(
+            &policy, root.to_str().unwrap(), "needle", false, Some(100),
+            &AtomicBool::new(false), &report,
+        )
+        .unwrap();
+        assert_eq!(found["items"].as_array().unwrap().len(), 80);
+        assert!(updates.load(Ordering::Relaxed) > 0);
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn expired_search_budget_returns_partial_result_marker_without_scanning() {

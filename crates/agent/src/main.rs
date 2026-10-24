@@ -464,6 +464,22 @@ async fn connected_loop(
                             if start_rx.await.is_err() {
                                 return;
                             }
+                            let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel(8);
+                            let progress_writer = Arc::clone(&task_writer);
+                            let progress_request = id_for_task.clone();
+                            let progress_forwarder = tokio::spawn(async move {
+                                while let Some(progress) = progress_rx.recv().await {
+                                    let items = progress["items"].as_array().cloned().unwrap_or_default();
+                                    let scanned_entries = progress["scannedEntries"].as_u64().unwrap_or(0) as usize;
+                                    let scanned_bytes = progress["scannedBytes"].as_u64().unwrap_or(0);
+                                    if send(&progress_writer, AgentMessage::SearchProgress {
+                                        request_id: progress_request.clone(),
+                                        items, scanned_entries, scanned_bytes,
+                                    }).await.is_err() {
+                                        break;
+                                    }
+                                }
+                            });
                             let result = ops::execute(
                                 ops::ExecutionContext {
                                     policy: &task_policy,
@@ -473,10 +489,13 @@ async fn connected_loop(
                                     approval_key: &approval_key,
                                     device_id: &device_id,
                                     cancelled: task_cancelled,
+                                    search_progress: if is_search { Some(progress_tx) } else { None },
                                 },
                                 action,
                             )
                             .await;
+                            // Flush ordered progress messages before the terminal result.
+                            let _ = progress_forwarder.await;
 
                             let message = match result {
                                 Ok(data) => AgentMessage::Result {

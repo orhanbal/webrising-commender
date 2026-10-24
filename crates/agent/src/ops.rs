@@ -8,8 +8,9 @@ use crate::{
     terminal::TerminalManager,
 };
 use anyhow::{anyhow, Result};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::sync::{atomic::AtomicBool, Arc};
+use tokio::sync::mpsc;
 
 pub struct ExecutionContext<'a> {
     pub policy: &'a PathPolicy,
@@ -19,6 +20,7 @@ pub struct ExecutionContext<'a> {
     pub approval_key: &'a str,
     pub device_id: &'a str,
     pub cancelled: Arc<AtomicBool>,
+    pub search_progress: Option<mpsc::Sender<Value>>,
 }
 
 pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Result<Value> {
@@ -30,6 +32,7 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
         approval_key,
         device_id,
         cancelled,
+        search_progress,
     } = context;
     if action.risk() == Risk::High {
         let token = approval_token
@@ -199,14 +202,24 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
         } => {
             let policy = policy.clone();
             tokio::task::spawn_blocking(move || {
-                fs_ops::search_cancellable(
-                    &policy,
-                    &path,
-                    &query,
-                    case_sensitive.unwrap_or(false),
-                    max_results,
-                    &cancelled,
-                )
+                if let Some(sender) = search_progress {
+                    let report = |items: &[Value], scanned: usize, bytes: u64| {
+                        let _ = sender.try_send(json!({
+                            "items": items,
+                            "scannedEntries": scanned,
+                            "scannedBytes": bytes,
+                        }));
+                    };
+                    fs_ops::search_cancellable_reporting(
+                        &policy, &path, &query, case_sensitive.unwrap_or(false),
+                        max_results, &cancelled, &report,
+                    )
+                } else {
+                    fs_ops::search_cancellable(
+                        &policy, &path, &query, case_sensitive.unwrap_or(false),
+                        max_results, &cancelled,
+                    )
+                }
             })
             .await?
         }
@@ -218,14 +231,24 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
         } => {
             let policy = policy.clone();
             tokio::task::spawn_blocking(move || {
-                fs_ops::text_search_cancellable(
-                    &policy,
-                    &path,
-                    &query,
-                    case_sensitive.unwrap_or(false),
-                    max_results,
-                    &cancelled,
-                )
+                if let Some(sender) = search_progress {
+                    let report = |items: &[Value], scanned: usize, bytes: u64| {
+                        let _ = sender.try_send(json!({
+                            "items": items,
+                            "scannedEntries": scanned,
+                            "scannedBytes": bytes,
+                        }));
+                    };
+                    fs_ops::text_search_cancellable_reporting(
+                        &policy, &path, &query, case_sensitive.unwrap_or(false),
+                        max_results, &cancelled, &report,
+                    )
+                } else {
+                    fs_ops::text_search_cancellable(
+                        &policy, &path, &query, case_sensitive.unwrap_or(false),
+                        max_results, &cancelled,
+                    )
+                }
             })
             .await?
         }

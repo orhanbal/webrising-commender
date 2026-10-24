@@ -211,6 +211,12 @@ pub enum AgentMessage {
     Heartbeat {
         timestamp: String,
     },
+    SearchProgress {
+        request_id: String,
+        items: Vec<Value>,
+        scanned_entries: usize,
+        scanned_bytes: u64,
+    },
     Result {
         request_id: String,
         ok: bool,
