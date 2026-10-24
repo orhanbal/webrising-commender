@@ -54,3 +54,19 @@ test("relay NDJSON bounds each frame and refuses unexpected content type", async
     JSON.stringify({ type: "result", ok: false, error: "relay_request_failed" }) + "\n",
   ]), () => {}), /relay_request_failed/);
 });
+
+test("relay stream cancels an open upstream response after invalid progress", async () => {
+  let upstreamCancelled = false;
+  const response = new Response(new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(
+        JSON.stringify({ type: "progress", data: { ...progress, scannedBytes: -1 } }) + "\n",
+      ));
+      // Intentionally leave the body open: a rejected frame must cancel the
+      // underlying stream rather than consume untrusted traffic indefinitely.
+    },
+    cancel() { upstreamCancelled = true; },
+  }), { status: 200, headers: { "content-type": "application/x-ndjson" } });
+  await assert.rejects(readRelayStream(response, () => {}), /relay_stream_invalid_progress/);
+  assert.equal(upstreamCancelled, true);
+});
