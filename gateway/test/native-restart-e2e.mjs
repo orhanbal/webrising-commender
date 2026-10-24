@@ -19,6 +19,9 @@ if (!["127.0.0.1", "localhost", "::1"].includes(target.hostname) ||
     target.protocol !== "http:") {
   throw new Error("native-restart-e2e requires loopback HTTP Gateway");
 }
+const contentMode = process.argv[2] === "content";
+if (process.argv[2] && !contentMode) throw new Error("unknown native restart test mode");
+const query = contentMode ? "native-content-recovery-needle" : "native-recovery-needle";
 const key = process.env.CONTROL_API_KEY;
 if (!key || !process.env.DATABASE_URL) throw new Error("missing CI database/control credentials");
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -80,15 +83,26 @@ try {
   // Native filename scanner processes at most 100k entries. Multiple complete
   // directories create checkpoints; tens of thousands of nonmatching entries
   // leave enough work to observe and crash the active Rust worker.
-  const matchPath = path.join(searchRoot, "part-000", "native-recovery-needle.txt");
+  const expectedPaths = [];
   for (let group = 0; group < 110; group++) {
     const dir = path.join(searchRoot, "part-" + String(group).padStart(3, "0"));
     fs.mkdirSync(dir);
     for (let index = 0; index < 420; index++) {
       fs.writeFileSync(path.join(dir, "other-" + String(index).padStart(4, "0") + ".txt"), "");
     }
+    if (contentMode) {
+      // Every completed directory contributes one real matching line, so the
+      // native checkpoint must validate previously matched *file contents*.
+      const matchPath = path.join(dir, "content-match.txt");
+      fs.writeFileSync(matchPath, query + " in group " + group);
+      expectedPaths.push(matchPath);
+    }
   }
-  fs.writeFileSync(matchPath, "native-recovery-needle");
+  if (!contentMode) {
+    const matchPath = path.join(searchRoot, "part-000", "native-recovery-needle.txt");
+    fs.writeFileSync(matchPath, query);
+    expectedPaths.push(matchPath);
+  }
   const pairing = await api("/api/pairing", "POST", {});
   const enroll = spawnSync(agentBinary, [
     "--config", config, "enroll", "--control-url", base,
@@ -105,7 +119,7 @@ try {
 
   const started = await tool(8101, "start_search", {
     device_id: deviceId, path: searchRoot,
-    query: "native-recovery-needle", search_type: "files",
+    query, search_type: contentMode ? "content" : "files",
   });
   assert.equal(started.status, "running");
   // Poll directly for a fully persisted *safe* checkpoint, rather than
@@ -118,7 +132,8 @@ try {
     const row = response.rows[0];
     return row?.status === "running" &&
       Array.isArray(row.checkpoint?.pending) &&
-      row.checkpoint.pending.length > 0 ? row : false;
+      row.checkpoint.pending.length > 0 &&
+      (!contentMode || row.checkpoint.items?.length > 0) ? row : false;
   }, 20000, 10);
   assert.ok(checkpointed.progress_sequence >= 1);
   assert.ok(!native.killed && native.exitCode === null);
@@ -162,11 +177,31 @@ try {
     return page.status === "completed" ? page : false;
   }, 50000, 150);
   assert.equal(completed.searchId, started.searchId);
-  assert.deepEqual(completed.items.map(item => item.path), [matchPath]);
+  const allItems = [];
+  let offset = 0;
+  for (;;) {
+    const page = await tool(8103 + offset, "get_more_search_results", {
+      device_id: deviceId, search_id: started.searchId, offset, length: 100,
+    });
+    assert.equal(page.status, "completed");
+    allItems.push(...page.items);
+    if (!page.hasMore) break;
+    offset += page.items.length;
+    assert.ok(offset <= 500 && page.items.length > 0);
+  }
+  assert.deepEqual(allItems.map(item => item.path).sort(), expectedPaths.sort());
+  if (contentMode) {
+    assert.equal(allItems.length, 110);
+    assert.ok(allItems.every(item => item.line === 1 &&
+      typeof item.preview === "string" && item.preview.includes(query)));
+    assert.ok(completed.scannedBytes > checkpointed.checkpoint.scannedBytes);
+  }
   assert.ok(completed.scannedEntries > 0);
   assert.ok(completed.progressUpdates > checkpointed.progress_sequence,
     "Recovered Rust Agent must publish newer session progress");
-  console.log("native-restart-e2e: PASS (real Rust Agent + Gateway SIGKILL/restart, same searchId, persisted checkpoint)");
+  console.log("native-restart-e2e: PASS (" +
+    (contentMode ? "match-bearing content" : "filename") +
+    ", real Rust Agent + Gateway SIGKILL/restart, same searchId, persisted checkpoint)");
 } catch (error) {
   console.error(error);
   console.error(nativeLog.slice(-5000));
