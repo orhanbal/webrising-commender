@@ -1224,10 +1224,11 @@ mod search_budget_tests {
         fs::write(root.join("a/needle-one.txt"), b"hello").unwrap();
         fs::write(root.join("b/needle-two.txt"), b"hello").unwrap();
         let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
-        let checkpoints = std::sync::Mutex::new(Vec::<Value>::new());
-        let emit = |_: &[Value], _: usize, _: u64, checkpoint: Option<&Value>| {
+        let checkpoints = Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+        let checkpoint_sink = Arc::clone(&checkpoints);
+        let emit = move |_: &[Value], _: usize, _: u64, checkpoint: Option<&Value>| {
             if let Some(checkpoint) = checkpoint {
-                checkpoints.lock().unwrap().push(checkpoint.clone());
+                checkpoint_sink.lock().unwrap().push(checkpoint.clone());
             }
         };
         let first = search_cancellable_controlled(
@@ -1240,13 +1241,14 @@ mod search_budget_tests {
             &emit,
         )
         .unwrap();
-        let snapshot = checkpoints
-            .lock()
-            .unwrap()
-            .iter()
-            .find(|value| !value["items"].as_array().unwrap().is_empty())
-            .cloned()
-            .unwrap_or_else(|| checkpoints.lock().unwrap()[0].clone());
+        let snapshot = {
+            let saved = checkpoints.lock().unwrap();
+            saved
+                .iter()
+                .find(|value| !value["items"].as_array().unwrap().is_empty())
+                .cloned()
+                .unwrap_or_else(|| saved[0].clone())
+        };
         let resumed = search_cancellable_controlled(
             &policy,
             root.to_str().unwrap(),
