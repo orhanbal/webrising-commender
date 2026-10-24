@@ -87,7 +87,11 @@ try {
   for (let group = 0; group < 110; group++) {
     const dir = path.join(searchRoot, "part-" + String(group).padStart(3, "0"));
     fs.mkdirSync(dir);
-    for (let index = 0; index < 420; index++) {
+    // Content searches open every file and have a strict 10-second native
+    // budget. Keep this fixture large enough to checkpoint, but small enough
+    // to finish on slow CI runners; filename scans are considerably cheaper.
+    const nonMatches = contentMode ? 75 : 420;
+    for (let index = 0; index < nonMatches; index++) {
       fs.writeFileSync(path.join(dir, "other-" + String(index).padStart(4, "0") + ".txt"), "");
     }
     if (contentMode) {
@@ -177,6 +181,10 @@ try {
     return page.status === "completed" ? page : false;
   }, 50000, 150);
   assert.equal(completed.searchId, started.searchId);
+  assert.equal(completed.timedOut, false,
+    "Native restart fixture must finish within its bounded execution budget");
+  assert.equal(completed.truncated, false,
+    "Native restart fixture must not silently truncate search results");
   const allItems = [];
   let offset = 0;
   for (;;) {
