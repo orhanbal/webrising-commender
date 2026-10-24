@@ -396,7 +396,7 @@ try {
   // expected one-based line bounds when CRLF input is normalized to lines.
   const unicodePagedPath = path.join(tempRoot, "unicode-paged.txt");
   fs.writeFileSync(unicodePagedPath, "Başlangıç 🧪\r\nİkinci satır\r\nSon ✨\r\n", "utf8");
-  const unicodePaged = await tool(304, "fs_read_lines", {
+  const unicodePaged = await tool(800, "fs_read_lines", {
     device_id: deviceId, path: unicodePagedPath, offset_lines: 1, limit_lines: 2,
   });
   assert.deepEqual(unicodePaged.lines, ["İkinci satır", "Son ✨"]);
@@ -404,7 +404,7 @@ try {
   assert.equal(unicodePaged.endLine, 3);
   assert.equal(unicodePaged.totalLines, 3);
   assert.equal(unicodePaged.truncated, false);
-  const unicodeTail = await tool(305, "fs_read_lines", {
+  const unicodeTail = await tool(801, "fs_read_lines", {
     device_id: deviceId, path: unicodePagedPath, offset_lines: -1, limit_lines: 1,
   });
   assert.deepEqual(unicodeTail.lines, ["Son ✨"]);
@@ -466,7 +466,7 @@ try {
   fs.writeFileSync(binaryParityBatchPath, binaryBatchBytes);
   const tooLargeBatchPath = path.join(tempRoot, "batch-over-limit.txt");
   fs.writeFileSync(tooLargeBatchPath, "P".repeat(65 * 1024), "utf8");
-  const mixedEncodingBatch = await tool(302, "fs_read_multiple", {
+  const mixedEncodingBatch = await tool(802, "fs_read_multiple", {
     device_id: deviceId, paths: [unicodeBatchPath, binaryParityBatchPath, tooLargeBatchPath],
   });
   assert.equal(mixedEncodingBatch.count, 3);
@@ -505,7 +505,7 @@ try {
   const aggregatePaths = Array.from({ length: 5 }, (_, i) =>
     path.join(tempRoot, `aggregate-${i}.bin`));
   aggregatePaths.forEach(p => fs.writeFileSync(p, Buffer.alloc(60 * 1024, 0x62)));
-  const aggregateRead = await tool(306, "fs_read_multiple", {
+  const aggregateRead = await tool(804, "fs_read_multiple", {
     device_id: deviceId, paths: aggregatePaths,
   });
   assert.equal(aggregateRead.count, 5);
@@ -528,7 +528,7 @@ try {
   ];
   fs.writeFileSync(remainingBudgetPaths[4], Buffer.alloc(20 * 1024, 0x43));
   fs.writeFileSync(remainingBudgetPaths[5], Buffer.alloc(8 * 1024, 0x44));
-  const remainingBudgetRead = await tool(307, "fs_read_multiple", {
+  const remainingBudgetRead = await tool(805, "fs_read_multiple", {
     device_id: deviceId, paths: remainingBudgetPaths,
   });
   assert.equal(remainingBudgetRead.count, 6);
@@ -548,7 +548,7 @@ try {
   try {
     fs.writeFileSync(outsideBatchSecret, "private-outside-batch", "utf8");
     fs.symlinkSync(outsideBatchSecret, outsideBatchLink);
-    const symlinkBatch = await tool(303, "fs_read_multiple", {
+    const symlinkBatch = await tool(803, "fs_read_multiple", {
       device_id: deviceId, paths: [filePath, outsideBatchLink, linesPath],
     });
     assert.equal(symlinkBatch.count, 3);
@@ -717,7 +717,7 @@ try {
   // page, not merely a correct last-page length.
   const allBulkPaths = [];
   for (let pageIndex = 0; pageIndex < 5; pageIndex += 1) {
-    const page = await tool(297 + pageIndex, "get_more_search_results", {
+    const page = await tool(820 + pageIndex, "get_more_search_results", {
       device_id: deviceId, search_id: bulkSession.searchId,
       offset: pageIndex * 100, length: 100,
     });
