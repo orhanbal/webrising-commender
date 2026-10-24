@@ -214,12 +214,15 @@ export function stopSearch(principal: Principal, deviceId: string, searchId: str
   const s = sessions.get(searchId);
   if (!s || !owner(s, principal, deviceId)) {
     if (persistence && /^[0-9a-f-]{36}$/i.test(searchId)) {
-      return persistence.stop({
-        id: searchId, organizationId: principal.organizationId,
-        actor: principal.actor, deviceId,
-      }).then(() => ({
-        searchId, status: "stopped", resultCount: 0,
-      }));
+      const scope = { organizationId: principal.organizationId, actor: principal.actor, deviceId };
+      return persistence.stop({ id: searchId, ...scope })
+        .then(() => persistence!.page(scope, searchId, 0, 1))
+.then(page => ({
+          searchId: page.searchId, path: page.path, query: page.query,
+          searchType: page.searchType, status: page.status,
+          createdAt: page.createdAt, resultCount: page.resultCount,
+          truncated: page.truncated, timedOut: page.timedOut,
+        }));
     }
     throw new Error("search_not_found");
   }
