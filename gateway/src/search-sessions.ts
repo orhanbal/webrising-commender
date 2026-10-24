@@ -324,7 +324,10 @@ export async function controlSearch(
   }
   if (s.controlPending) throw new Error("search_control_in_progress");
   if (persistence) {
-    const page = await persistence.page(principal, deviceId, searchId, 0, 1);
+    const page = await persistence.page(
+      { organizationId: principal.organizationId, actor: principal.actor, deviceId },
+      searchId, 0, 1,
+    );
     if (page.status !== "running") throw new Error("search_not_running");
   }
   if (s.paused === paused) return summary(s);

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Principal } from "./auth.js";
 import type { DeviceRouter } from "./device-router.js";
-import { listSearches, reconcileRemoteSearchStops, searchPage, setSearchPersistence, startSearch, stopSearch } from "./search-sessions.js";
+import { controlSearch, listSearches, reconcileRemoteSearchStops, searchPage, setSearchPersistence, startSearch, stopSearch } from "./search-sessions.js";
 
 const principal: Principal = {
   organizationId: "org-a",
@@ -119,6 +119,72 @@ test("native progress exposes scoped live pages and cannot resurrect stopped res
   const stopped = await searchPage(actor, "progress-device", started.searchId, 0, 10);
   assert.equal(stopped.status, "stopped");
   assert.deepEqual(stopped.items, []);
+});
+
+test("pause/resume only controls an owned active native search and never leaks across actor/device", async () => {
+  const actor = { ...principal, actor: "pause-owner" };
+  const controls: boolean[] = [];
+  let cancelled!: AbortSignal;
+  let settle!: (value: { items: unknown[]; truncated: boolean }) => void;
+  const router = {
+    request: async (_device: string, _action: unknown, _approval: unknown,
+      signal: AbortSignal) => {
+      cancelled = signal;
+      return new Promise<{ items: unknown[]; truncated: boolean }>(resolve => { settle = resolve; });
+    },
+    controlSearch: async (_device: string, _searchId: string, paused: boolean) => {
+      controls.push(paused);
+      return true;
+    },
+  } as unknown as DeviceRouter;
+  const started = await startSearch(actor, "pause-device", router, {
+    path: "/safe", query: "sample", search_type: "files",
+  });
+  await assert.rejects(
+    controlSearch({ ...actor, actor: "intruder" }, "pause-device", started.searchId, router, true),
+    /search_not_found/,
+  );
+  await assert.rejects(
+    controlSearch(actor, "foreign-device", started.searchId, router, true),
+    /search_not_found/,
+  );
+  assert.equal((await controlSearch(actor, "pause-device", started.searchId, router, true)).paused, true);
+  assert.equal((await searchPage(actor, "pause-device", started.searchId, 0, 10)).paused, true);
+  assert.equal((await controlSearch(actor, "pause-device", started.searchId, router, false)).paused, false);
+  assert.deepEqual(controls, [true, false]);
+  assert.equal(cancelled.aborted, false);
+  await stopSearch(actor, "pause-device", started.searchId);
+  await assert.rejects(
+    controlSearch(actor, "pause-device", started.searchId, router, true),
+    /search_not_running/,
+  );
+  settle({ items: [{ path: "/safe/must-not-appear" }], truncated: false });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual((await searchPage(actor, "pause-device", started.searchId, 0, 10)).items, []);
+});
+
+test("failed native pause acknowledgment cancels only the owned scan", async () => {
+  const actor = { ...principal, actor: "pause-reject-owner" };
+  let cancelled!: AbortSignal;
+  let settle!: (value: { items: unknown[]; truncated: boolean }) => void;
+  const router = {
+    request: async (_device: string, _action: unknown, _approval: unknown,
+      signal: AbortSignal) => {
+      cancelled = signal;
+      return new Promise(resolve => { settle = resolve; });
+    },
+    controlSearch: async () => false,
+  } as unknown as DeviceRouter;
+  const started = await startSearch(actor, "reject-device", router, {
+    path: "/safe", query: "needle", search_type: "content",
+  });
+  await assert.rejects(
+    controlSearch(actor, "reject-device", started.searchId, router, true),
+    /search_control_unavailable/,
+  );
+  assert.equal(cancelled.aborted, true);
+  settle({ items: [], truncated: false });
+  await new Promise(resolve => setImmediate(resolve));
 });
 
 test("starts and pages bounded search sessions by actor and device", async () => {

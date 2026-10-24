@@ -147,6 +147,28 @@ test("a native search owned by an unavailable gateway is never reported as compl
   assert.deepEqual(page.items, []);
 });
 
+test("paused durable search CAS is scoped to actor/device/native owner and active status", async () => {
+  const calls: Array<{ sql: string; params: unknown[] }> = [];
+  const fake = {
+    query: async (sql: string, params: unknown[]) => {
+      calls.push({ sql, params });
+      return { rows: [{ id }], rowCount: 1 };
+    },
+  } as unknown as Pool;
+  const store = new PgSearchPersistence(fake);
+  assert.equal(await store.setPaused({ ...owner, id }, true), true);
+  assert.match(calls[0]!.sql, /status='running'/);
+  assert.match(calls[0]!.sql, /native_inflight=true/);
+  assert.match(calls[0]!.sql, /origin_instance=\$6/);
+  assert.deepEqual(calls[0]!.params.slice(0, 5),
+    [id, owner.organizationId, owner.actor, owner.deviceId, true]);
+  assert.equal(typeof calls[0]!.params[5], "string");
+  const rejected = new PgSearchPersistence({
+    query: async () => ({ rows: [], rowCount: 0 }),
+  } as unknown as Pool);
+  assert.equal(await rejected.setPaused({ ...owner, id }, true), false);
+});
+
 test("stopping durable search clears persisted results under exact ownership guard", async () => {
   const sql: Array<{ statement: string; params: unknown[] }> = [];
   const fake = {
