@@ -190,7 +190,7 @@ try {
       { cell: "B3", value: true },
     ],
   });
-  assert.equal(editedWorkbook.ok, true);
+  assert.equal(editedWorkbook.ok, true, JSON.stringify(editedWorkbook));
   assert.equal(editedWorkbook.updatedCells, 3);
   assert.equal(editedWorkbook.previousSha256, originalWorkbookHash);
   assert.equal(createHash("sha256").update(fs.readFileSync(workbookPath)).digest("hex"), originalWorkbookHash);
