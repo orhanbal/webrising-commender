@@ -183,6 +183,9 @@ try {
     },
   }));
   assert.equal(progressSearch.paused, true);
+  // The async Gateway->relay request must reach the remote AgentHub before
+  // a control ACK can be requested. start_paused prevents a completion race.
+  await new Promise(resolve => setTimeout(resolve, 250));
   const resumedProgress = toolText(await rpc(508, "tools/call", {
     name: "resume_search",
     arguments: { device_id: deviceId, search_id: progressSearch.searchId },
