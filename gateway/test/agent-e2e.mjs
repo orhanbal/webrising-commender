@@ -606,6 +606,50 @@ try {
   assert.equal(bulkPage.truncated, true);
   assert.deepEqual(bulkPage.items.map(item => item.path).length, 10);
 
+  // Real native pause/resume goes through MCP -> Gateway ownership -> Agent
+  // ACK. Many nonmatching entries keep the scanner live long enough to pause
+  // without introducing artificial test-only delays into production code.
+  const pauseDir = path.join(tempRoot, "pause-acceptance");
+  fs.mkdirSync(pauseDir);
+  for (let index = 0; index < 12000; index += 1) {
+    fs.writeFileSync(path.join(pauseDir, `item-${String(index).padStart(5, "0")}.txt`), "");
+  }
+  const pauseSession = await tool(290, "start_search", {
+    device_id: deviceId, path: pauseDir,
+    query: "absent-unique-native-marker", search_type: "files",
+  });
+  assert.equal(typeof pauseSession.searchId, "string");
+  const pausedScan = await tool(291, "pause_search", {
+    device_id: deviceId, search_id: pauseSession.searchId,
+  });
+  assert.equal(pausedScan.paused, true,
+    `Agent must ACK native pause while scanning: ${JSON.stringify(pausedScan)}`);
+  assert.equal(pausedScan.status, "running");
+  const whilePaused = await tool(292, "get_more_search_results", {
+    device_id: deviceId, search_id: pauseSession.searchId,
+  });
+  assert.equal(whilePaused.paused, true);
+  const resumedScan = await tool(293, "resume_search", {
+    device_id: deviceId, search_id: pauseSession.searchId,
+  });
+  assert.equal(resumedScan.paused, false);
+  const afterResume = await waitFor(async () => {
+    const page = await tool(294, "get_more_search_results", {
+      device_id: deviceId, search_id: pauseSession.searchId,
+    });
+    return page.status === "completed" ? page : false;
+  }, 20000, 100);
+  assert.equal(afterResume.paused, false);
+  assert.equal(afterResume.timedOut, false);
+  const latePause = await tool(295, "pause_search", {
+    device_id: deviceId, search_id: pauseSession.searchId,
+  });
+  assert.equal(latePause.error, "search_not_running");
+  const wrongPause = await tool(296, "pause_search", {
+    device_id: deviceId, search_id: "00000000-0000-4000-8000-000000000999",
+  });
+  assert.equal(wrongPause.error, "search_not_found");
+
   // 1A: two real Agent scans may overlap. Stopping one session must never
   // cancel, overwrite or leak results from its concurrently running peer.
   // This proves MCP session isolation, not native streaming/pause acceptance.

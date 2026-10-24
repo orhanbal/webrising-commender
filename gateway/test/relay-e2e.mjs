@@ -215,6 +215,18 @@ try {
   );
   assert.equal(unsignedCancel.status, 401);
 
+  const unsignedPause = await fetch(
+    `http://127.0.0.1:${relayPort}/internal/relay/search-control`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        deviceId, searchSessionId: startedSearch.searchId, paused: true,
+      }),
+    },
+  );
+  assert.equal(unsignedPause.status, 401);
+
 
   const drained = await jsonFetch(
     `/api/admin/relays/${encodeURIComponent(firstRelay)}`,
