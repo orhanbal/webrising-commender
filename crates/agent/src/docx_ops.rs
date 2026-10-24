@@ -144,7 +144,9 @@ pub fn read_paragraphs(
     limit: usize,
 ) -> Result<Value> {
     if limit == 0 || limit > 100 || offset > 1_000_000 {
-        return Err(anyhow!("invalid DOCX paragraph page (offset <= 1000000, limit 1..100)"));
+        return Err(anyhow!(
+            "invalid DOCX paragraph page (offset <= 1000000, limit 1..100)"
+        ));
     }
     with_body(policy, raw, |path, body| {
         let paragraphs: Vec<_> = body
