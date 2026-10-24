@@ -25,12 +25,30 @@ export type SearchCompletion = {
   timedOut: boolean;
   error?: string;
 };
+export type SearchSummary = {
+  searchId: string;
+  path: string;
+  query: string;
+  searchType: "files" | "content";
+  status: "running" | "completed" | "error" | "stopped";
+  createdAt: string;
+  resultCount: number;
+  truncated: boolean;
+  timedOut: boolean;
+  error?: string;
+};
+export type SearchPage = SearchSummary & {
+  offset: number;
+  length: number;
+  items: unknown[];
+  hasMore: boolean;
+};
 export interface SearchPersistence {
   create(snapshot: SearchSnapshot): Promise<void>;
   finish(key: SearchKey, result: SearchCompletion): Promise<void>;
   stop(key: SearchKey): Promise<void>;
-  page(scope: Omit<SearchKey, "id">, id: string, offset: number, length: number): Promise<unknown>;
-  list(scope: Omit<SearchKey, "id">): Promise<{ items: unknown[] }>;
+  page(scope: Omit<SearchKey, "id">, id: string, offset: number, length: number): Promise<SearchPage>;
+  list(scope: Omit<SearchKey, "id">): Promise<{ items: SearchSummary[] }>;
 }
 type SearchRow = {
   id: string;

@@ -26,19 +26,19 @@ test("starts and pages bounded search sessions by actor and device", async () =>
   });
   assert.equal(started.status, "running");
   await new Promise(resolve => setImmediate(resolve));
-  const page = searchPage(principal, "device-a", started.searchId, 0, 1);
+  const page = await searchPage(principal, "device-a", started.searchId, 0, 1);
   assert.equal(page.status, "completed");
   assert.equal(page.items.length, 1);
   assert.equal(page.hasMore, true);
-  const next = searchPage(principal, "device-a", started.searchId, 1, 1);
+  const next = await searchPage(principal, "device-a", started.searchId, 1, 1);
   assert.equal(next.hasMore, false);
   assert.equal(next.items.length, 1);
-  assert.throws(() => searchPage({...principal, actor: "other"}, "device-a", started.searchId, 0, 1), /search_not_found/);
-  assert.throws(() => searchPage(principal, "other-device", started.searchId, 0, 1), /search_not_found/);
-  assert.ok(listSearches(principal, "device-a").items.some(s => s.searchId === started.searchId));
-  const stopped = stopSearch(principal, "device-a", started.searchId);
+  await assert.rejects(async () => searchPage({...principal, actor: "other"}, "device-a", started.searchId, 0, 1), /search_not_found/);
+  await assert.rejects(async () => searchPage(principal, "other-device", started.searchId, 0, 1), /search_not_found/);
+  assert.ok(await listSearches(principal, "device-a").items.some(s => s.searchId === started.searchId));
+  const stopped = await stopSearch(principal, "device-a", started.searchId);
   assert.equal(stopped.status, "stopped");
-  assert.equal(searchPage(principal, "device-a", started.searchId, 0, 1).items.length, 0);
+  assert.equal(await searchPage(principal, "device-a", started.searchId, 0, 1).items.length, 0);
 });
 
 test("rejects invalid searches and pagination bounds", async () => {
@@ -48,8 +48,8 @@ test("rejects invalid searches and pagination bounds", async () => {
   const s = await startSearch(principal, "device-b", remote, {
     path: "/safe", query: "needle", search_type: "content",
   });
-  assert.throws(() => searchPage(principal, "device-b", s.searchId, -1, 10), /invalid_search_page/);
-  assert.throws(() => searchPage(principal, "device-b", s.searchId, 0, 101), /invalid_search_page/);
+  await assert.rejects(async () => searchPage(principal, "device-b", s.searchId, -1, 10), /invalid_search_page/);
+  await assert.rejects(async () => searchPage(principal, "device-b", s.searchId, 0, 101), /invalid_search_page/);
 });
 
 test("search failure is retained without leaking sessions to other actors", async () => {
@@ -58,7 +58,7 @@ test("search failure is retained without leaking sessions to other actors", asyn
     path: "/safe", query: "foo", search_type: "files",
   });
   await new Promise(resolve => setImmediate(resolve));
-  const result = searchPage({...principal, actor: "offline-user"}, "device-c", s.searchId, 0, 10);
+  const result = await searchPage({...principal, actor: "offline-user"}, "device-c", s.searchId, 0, 10);
   assert.equal(result.status, "error");
   assert.equal(result.error, "device-offline");
 });
@@ -75,7 +75,7 @@ test("file search sessions forward case sensitivity to the native device action"
     path: "/safe", query: "MixedCase", search_type: "files", case_sensitive: true,
   });
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(searchPage(principal, "device-case-sensitive", session.searchId, 0, 10).status, "completed");
+  assert.equal(await searchPage(principal, "device-case-sensitive", session.searchId, 0, 10).status, "completed");
   assert.deepEqual(observed, [{ kind: "fs_search", path: "/safe", query: "MixedCase",
     caseSensitive: true, maxResults: 500 }]);
 });
@@ -94,7 +94,7 @@ test("in-flight search quotas survive stop until native request settles", async 
     created.push(await startSearch(p, "quota-device", delayed, args));
   }
   await assert.rejects(startSearch(p, "quota-device", delayed, args), /search_session_limit/);
-  const stopped = stopSearch(p, "quota-device", created[0]!.searchId);
+  const stopped = await stopSearch(p, "quota-device", created[0]!.searchId);
   assert.equal(stopped.status, "stopped");
   // stop_search discards the result, but does not cancel the native request.
   // It must not permit unbounded concurrent native scans.
@@ -103,12 +103,12 @@ test("in-flight search quotas survive stop until native request settles", async 
   await new Promise(resolve => setImmediate(resolve));
   const replacement = await startSearch(p, "quota-device", delayed, args);
   assert.equal(typeof replacement.searchId, "string");
-  assert.equal(searchPage(p, "quota-device", created[0]!.searchId, 0, 1).status, "stopped");
-  assert.deepEqual(searchPage(p, "quota-device", created[0]!.searchId, 0, 1).items, []);
+  assert.equal(await searchPage(p, "quota-device", created[0]!.searchId, 0, 1).status, "stopped");
+  assert.deepEqual(await searchPage(p, "quota-device", created[0]!.searchId, 0, 1).items, []);
   // A completed search also frees its execution slot while preserving its page.
   pending[1]!({ items: [{ path: "/safe/completed" }], truncated: false });
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(searchPage(p, "quota-device", created[1]!.searchId, 0, 1).status, "completed");
+  assert.equal(await searchPage(p, "quota-device", created[1]!.searchId, 0, 1).status, "completed");
   const afterCompleted = await startSearch(p, "quota-device", delayed, args);
   assert.equal(typeof afterCompleted.searchId, "string");
   for (const resolve of pending) resolve({ items: [], truncated: false });
@@ -120,7 +120,7 @@ test("completed searches do not consume native concurrency quota", async () => {
   for (let index = 0; index < 10; index += 1) {
     const started = await startSearch(p, "completed-quota-device", remote, args);
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(searchPage(p, "completed-quota-device", started.searchId, 0, 10).status, "completed");
+    assert.equal(await searchPage(p, "completed-quota-device", started.searchId, 0, 10).status, "completed");
   }
 });
 
@@ -133,7 +133,7 @@ test("search errors do not expose native filesystem or secret details", async ()
     path: "/safe", query: "needle", search_type: "content",
   });
   await new Promise(resolve => setImmediate(resolve));
-  const result = searchPage(p, "redaction-device", started.searchId, 0, 1);
+  const result = await searchPage(p, "redaction-device", started.searchId, 0, 1);
   assert.equal(result.status, "error");
   assert.equal(result.error, "search_failed");
   assert.ok(!JSON.stringify(result).includes("never-leak"));
@@ -149,10 +149,10 @@ test("stopped search cannot resurrect results from an in-flight agent response",
   const started = await startSearch(p, "cancel-race-device", delayed, {
     path: "/safe", query: "needle", search_type: "content",
   });
-  assert.equal(stopSearch(p, "cancel-race-device", started.searchId).status, "stopped");
+  assert.equal(await stopSearch(p, "cancel-race-device", started.searchId).status, "stopped");
   complete({ items: [{ path: "/safe/secret.txt" }], truncated: false });
   await new Promise(resolve => setImmediate(resolve));
-  const result = searchPage(p, "cancel-race-device", started.searchId, 0, 10);
+  const result = await searchPage(p, "cancel-race-device", started.searchId, 0, 10);
   assert.equal(result.status, "stopped");
   assert.deepEqual(result.items, []);
 });
@@ -170,10 +170,10 @@ test("stop_search forwards a native cancellation signal and holds its quota slot
   const args = { path: "/safe", query: "needle", search_type: "content" };
   const first = await startSearch(p, "native-cancel-device", router, args);
   assert.equal(seen?.aborted, false);
-  stopSearch(p, "native-cancel-device", first.searchId);
+  await stopSearch(p, "native-cancel-device", first.searchId);
   assert.equal(seen?.aborted, true);
-  assert.equal(searchPage(p, "native-cancel-device", first.searchId, 0, 10).status, "stopped");
+  assert.equal(await searchPage(p, "native-cancel-device", first.searchId, 0, 10).status, "stopped");
   settle({ items: [{ path: "/safe/secret" }], truncated: false });
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(searchPage(p, "native-cancel-device", first.searchId, 0, 10).items, []);
+  assert.deepEqual(await searchPage(p, "native-cancel-device", first.searchId, 0, 10).items, []);
 });
