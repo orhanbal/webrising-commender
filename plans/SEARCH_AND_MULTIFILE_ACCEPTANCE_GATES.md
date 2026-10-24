@@ -1,3 +1,13 @@
+
+## 2026-10-25 — Hourly work group: four bounded verification tasks
+
+1. **CI failure root cause isolated:** PR merge-preview CI #40138970984 failed at `agent-e2e` with `SyntaxError: Identifier 'binaryBatchPath' has already been declared`. The PR branch alone contained one declaration, but current `main` added another in the same scope. Commit `62a50ee0` renames the new fixture and adds a remaining-budget recovery E2E. This is **not** a successful CI verdict yet.
+2. **Native byte-budget boundary:** `1317bdcc` adds Rust unit coverage for 256 KiB exact acceptance, post-budget rejection, and continued reading after an individual over-budget item. The 256 KiB implementation was already CI-proven on `3085efe3`.
+3. **Concurrent distributed search quota:** `2d425ccb` adds nine simultaneous PostgreSQL reservations over two live Gateway persistence instances, requires exactly eight successes, checks a ninth denial and independent actor access.
+4. **Stop/settle race:** the same integration test concurrently issues stop and owner/foreign settlement, verifies stopped-unsettled quota retention, a single freed slot and rejection of a tenth worker. Gateway process restart fault injection is still pending.
+5. **Evidence discipline:** the 1D-01 full criterion remains PARTIAL because individual failures are explicit but there is no separate `truncated` flag. Physical OS/network/ChatGPT tests remain BLOCKED_EXTERNAL. All new test commits require a current-head merge-preview CI pass before marking their gates PASSED.
+
+These changes remain scoped to PR #25. No production, device or release operation was performed.
 # WECOMMANDER — 1C/1D acceptance evidence gates
 
 Baseline: main `a27c311586586e0e7a43946bb79e5fccec18c5d8` (2026-10-24).
@@ -20,16 +30,16 @@ Status convention: PASS = test result linked to exact SHA and environment; PENDI
 | 1C-01 | At least 530 fixture files; deterministic page boundaries, cap at 500 results, `truncated` correct, offset 490/length 30, no duplicate or omitted entries | Current candidate `a249abb1` agent-e2e 17/17 CI; five 100-item pages, unique results and stable re-read assertion | PASS (CI) |
 | 1C-02 | Search query overlength (1025 chars), page size >100, invalid/negative offset fail closed; no silent widening of result set | Current candidate `a249abb1` agent-e2e 17/17 CI: 501 offset, 101 page size, 1025 query | PASS (CI) |
 | 1C-03 | A symlink that escapes an allowed root never yields filename or content matches outside it | Current candidate `a249abb1` agent-e2e 17/17 CI: filename/content symlink escape | PASS (CI) |
-| 1C-04 | Eight concurrent searches for one actor across two Gateway instances succeed; ninth is denied; other actors/organizations remain isolated | PostgreSQL advisory actor lock and pool-backed E2E `f13b3f6b` / `cd339dda` | PENDING |
-| 1C-05 | Stopped but unsettled native work still holds a quota slot; only native settlement releases it | PostgreSQL E2E `cd339dda` | PENDING |
-| 1C-06 | Simultaneous stop/settle/restart does not double-release slots, duplicate results or leak scans across tenant/device | No current HEAD fault-injection evidence established | PENDING |
+| 1C-04 | Eight concurrent searches for one actor across two Gateway instances succeed; ninth is denied; other actors/organizations remain isolated | Existing sequential PostgreSQL E2E plus new actual nine-way concurrent `Promise.allSettled` cross-instance test (`gateway/test/integration.mjs`, commit `2d425ccb`); current-head CI pending. | PENDING (new CI) |
+| 1C-05 | Stopped but unsettled native work still holds a quota slot; only native settlement releases it | Existing PostgreSQL E2E plus `2d425ccb` negative test: stopped/unsettled scanner retains quota until owner settlement; current-head CI pending. | PENDING (new CI) |
+| 1C-06 | Simultaneous stop/settle/restart does not double-release slots, duplicate results or leak scans across tenant/device | `2d425ccb` concurrent stop/foreign settle/owner settle/idempotence/slot reuse test added. Process restart fault injection still missing. | PARTIAL (new CI pending) |
 | 1C-07 | Sustained large-tree search under CPU/memory budgets with pause/resume and gateway interruption, on real Windows and Ubuntu agents | Requires authorized real devices | BLOCKED_EXTERNAL |
 
 ## 1D — Bounded multi-file reading and safe edits
 
 | Gate | Acceptance criterion | Evidence so far | Status |
 | --- | --- | --- | --- |
-| 1D-01 | Multi-file read respects aggregate byte and per-file caps; partial results explicitly indicate truncation | `3085efe3` 17/17 CI: 10-file, 64 KiB per-file and 256 KiB aggregate raw budget; individual over-limit entries return explicit `read_failed` rather than truncating content. | PASS (CI) |
+| 1D-01 | Multi-file read respects aggregate byte and per-file caps; partial results explicitly indicate truncation | `3085efe3` 17/17 CI: 10-file, 64 KiB per-file and 256 KiB aggregate raw budget; over-limit items return `read_failed`. Explicit `truncated` metadata for partial batch results is **not** implemented, so full criterion remains open. | PARTIAL (caps CI PASS) |
 | 1D-02 | UTF-8 boundary, CRLF and binary files do not return invalid offsets or silently mutate contents | Current candidate `a249abb1` E2E checks Unicode/CRLF preservation, binary Base64 roundtrip, over-limit rejection. CRLF line offsets added in `79e0afd6` and exercised by `3085efe3` 17/17 CI. | PASS (CI) |
 | 1D-03 | A single invalid/unreadable path cannot expose or overwrite any file outside allowed roots | `a249abb1` native E2E checks disallowed path and symlink to private external file, with successful neighboring reads, no data leak | PASS (CI) |
 | 1D-04 | Concurrent modify/delete between metadata check and open/read is rejected or safely handled | TOCTOU regression on real native Agent required | PENDING |
