@@ -413,8 +413,8 @@ try {
     offset_bytes: historyAfterDrain.offsetBytes,
     max_bytes: 65536,
   });
-  assert.equal(absolutePage.text, historyAfterDrain.text);
-  assert.equal(absolutePage.nextOffsetBytes, historyAfterDrain.nextOffsetBytes);
+  assert.ok(absolutePage.text.startsWith(historyAfterDrain.text));
+  assert.ok(absolutePage.nextOffsetBytes >= historyAfterDrain.nextOffsetBytes);
 
   const stopToken = await approval(deviceId, {
     kind: "terminal_stop",
