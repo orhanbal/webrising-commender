@@ -1,7 +1,7 @@
 ## 24 Ekim 2026 — A/B/C/D: kalıcı arama ilerlemesi ve native sahiplik sınırı
 
 - **PASSED (kod HEAD `d7938f12`):** [CI #40115427469](https://github.com/orhanbal/webrising-commender/actions/runs/40115427469) 17/17. Mevcut **46 MCP aracı** değişmedi. `start_search` → native Agent progress → Gateway → PostgreSQL `get_more_search_results`/`list_searches` için sayaç, actor/tenant/device izolasyonu, final snapshot ve yabancı Gateway `finish` negatif kabulü güncellendi.
-- **PENDING (bu HEAD):** `stop_search` sonrasındaki `settleStopped` yalnız native origin-instance tarafından slot bırakabilir; PostgreSQL negatif E2E eklendi. Yeni HEAD CI beklenir. Gerçek pause/resume ve çalışan taramanın restart-checkpoint'i **PENDING**, fiziksel OS/istemci imza/noter **BLOCKED_EXTERNAL**. Eşdeğerlik **PENDING**.
+- **PASSED (güvenlik kod HEAD'i):** `7e549c4192e677dfb0dd14e7203a6717353c94f3`, [CI #40115863345](https://github.com/orhanbal/webrising-commender/actions/runs/40115863345) **17/17**; `stop_search` sonrasındaki `settleStopped` native origin-instance koruması ve gerçek PostgreSQL negatif E2E geçti. Dört artifact `expired=false`. Dokümantasyon HEAD CI'sı ayrıca kontrol edilir. Gerçek pause/resume ve çalışan taramanın restart-checkpoint'i **PENDING**, fiziksel OS/istemci imza/noter **BLOCKED_EXTERNAL**. Eşdeğerlik **PENDING**.
 
 ## 24 Ekim 2026 — D: yeni kod ve plan HEAD CI kabul kanıtı
 
