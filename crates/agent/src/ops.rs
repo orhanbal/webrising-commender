@@ -203,7 +203,7 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
             let policy = policy.clone();
             tokio::task::spawn_blocking(move || {
                 if let Some(sender) = search_progress {
-                    let report = |items: &[Value], scanned: usize, bytes: u64| {
+                    let report = move |items: &[Value], scanned: usize, bytes: u64| {
                         let _ = sender.try_send(json!({
                             "items": items,
                             "scannedEntries": scanned,
@@ -211,13 +211,22 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
                         }));
                     };
                     fs_ops::search_cancellable_reporting(
-                        &policy, &path, &query, case_sensitive.unwrap_or(false),
-                        max_results, &cancelled, &report,
+                        &policy,
+                        &path,
+                        &query,
+                        case_sensitive.unwrap_or(false),
+                        max_results,
+                        &cancelled,
+                        &report,
                     )
                 } else {
                     fs_ops::search_cancellable(
-                        &policy, &path, &query, case_sensitive.unwrap_or(false),
-                        max_results, &cancelled,
+                        &policy,
+                        &path,
+                        &query,
+                        case_sensitive.unwrap_or(false),
+                        max_results,
+                        &cancelled,
                     )
                 }
             })
@@ -232,7 +241,7 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
             let policy = policy.clone();
             tokio::task::spawn_blocking(move || {
                 if let Some(sender) = search_progress {
-                    let report = |items: &[Value], scanned: usize, bytes: u64| {
+                    let report = move |items: &[Value], scanned: usize, bytes: u64| {
                         let _ = sender.try_send(json!({
                             "items": items,
                             "scannedEntries": scanned,
@@ -240,13 +249,22 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
                         }));
                     };
                     fs_ops::text_search_cancellable_reporting(
-                        &policy, &path, &query, case_sensitive.unwrap_or(false),
-                        max_results, &cancelled, &report,
+                        &policy,
+                        &path,
+                        &query,
+                        case_sensitive.unwrap_or(false),
+                        max_results,
+                        &cancelled,
+                        &report,
                     )
                 } else {
                     fs_ops::text_search_cancellable(
-                        &policy, &path, &query, case_sensitive.unwrap_or(false),
-                        max_results, &cancelled,
+                        &policy,
+                        &path,
+                        &query,
+                        case_sensitive.unwrap_or(false),
+                        max_results,
+                        &cancelled,
                     )
                 }
             })

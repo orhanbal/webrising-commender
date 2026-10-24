@@ -146,8 +146,14 @@ pub fn search_cancellable_reporting(
     report: &SearchProgressReporter,
 ) -> Result<Value> {
     search_with_deadline_reporting(
-        policy, raw, query, case_sensitive, max_results,
-        Instant::now() + MAX_SEARCH_DURATION, cancelled, Some(report),
+        policy,
+        raw,
+        query,
+        case_sensitive,
+        max_results,
+        Instant::now() + MAX_SEARCH_DURATION,
+        cancelled,
+        Some(report),
     )
 }
 
@@ -161,7 +167,14 @@ fn search_with_deadline(
     cancelled: &AtomicBool,
 ) -> Result<Value> {
     search_with_deadline_reporting(
-        policy, raw, query, case_sensitive, max_results, deadline, cancelled, None,
+        policy,
+        raw,
+        query,
+        case_sensitive,
+        max_results,
+        deadline,
+        cancelled,
+        None,
     )
 }
 
@@ -371,8 +384,14 @@ pub fn text_search_cancellable_reporting(
     report: &SearchProgressReporter,
 ) -> Result<Value> {
     text_search_with_deadline_reporting(
-        policy, raw, query, case_sensitive, max_results,
-        Instant::now() + MAX_SEARCH_DURATION, cancelled, Some(report),
+        policy,
+        raw,
+        query,
+        case_sensitive,
+        max_results,
+        Instant::now() + MAX_SEARCH_DURATION,
+        cancelled,
+        Some(report),
     )
 }
 
@@ -386,7 +405,14 @@ fn text_search_with_deadline(
     cancelled: &AtomicBool,
 ) -> Result<Value> {
     text_search_with_deadline_reporting(
-        policy, raw, query, case_sensitive, max_results, deadline, cancelled, None,
+        policy,
+        raw,
+        query,
+        case_sensitive,
+        max_results,
+        deadline,
+        cancelled,
+        None,
     )
 }
 
@@ -472,7 +498,11 @@ fn text_search_with_deadline_reporting(
                 }
                 if scanned_entries >= next_progress {
                     if let Some(report) = report {
-                        report(&results, scanned_entries.min(MAX_SCAN_ENTRIES), scanned_bytes);
+                        report(
+                            &results,
+                            scanned_entries.min(MAX_SCAN_ENTRIES),
+                            scanned_bytes,
+                        );
                     }
                     next_progress = scanned_entries.saturating_add(32);
                 }
@@ -529,7 +559,11 @@ fn text_search_with_deadline_reporting(
                     }));
                     if results.len() % 32 == 0 {
                         if let Some(report) = report {
-                            report(&results, scanned_entries.min(MAX_SCAN_ENTRIES), scanned_bytes);
+                            report(
+                                &results,
+                                scanned_entries.min(MAX_SCAN_ENTRIES),
+                                scanned_bytes,
+                            );
                         }
                     }
                     if results.len() >= result_limit {
@@ -947,8 +981,13 @@ mod search_budget_tests {
             updates.fetch_add(1, Ordering::Relaxed);
         };
         let found = search_cancellable_reporting(
-            &policy, root.to_str().unwrap(), "needle", false, Some(100),
-            &AtomicBool::new(false), &report,
+            &policy,
+            root.to_str().unwrap(),
+            "needle",
+            false,
+            Some(100),
+            &AtomicBool::new(false),
+            &report,
         )
         .unwrap();
         assert_eq!(found["items"].as_array().unwrap().len(), 100);
@@ -972,8 +1011,13 @@ mod search_budget_tests {
             updates.fetch_add(1, Ordering::Relaxed);
         };
         let found = text_search_cancellable_reporting(
-            &policy, root.to_str().unwrap(), "needle", false, Some(100),
-            &AtomicBool::new(false), &report,
+            &policy,
+            root.to_str().unwrap(),
+            "needle",
+            false,
+            Some(100),
+            &AtomicBool::new(false),
+            &report,
         )
         .unwrap();
         assert_eq!(found["items"].as_array().unwrap().len(), 80);
