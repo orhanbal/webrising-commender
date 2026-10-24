@@ -4,6 +4,7 @@ import type { DeviceRouter } from "./device-router.js";
 import type { Principal } from "./auth.js";
 import type { SearchPersistence, SearchRecoveryCandidate } from "./search-persistence.js";
 import { isNativeContentCheckpoint, isNativeFilenameCheckpoint } from "./search-checkpoint.js";
+import type { NativeContentCheckpoint, NativeFilenameCheckpoint } from "./search-checkpoint.js";
 
 /**
  * Bounded, tenant/actor-isolated search sessions.
@@ -56,7 +57,9 @@ function safeSearchError(error: unknown): string {
   ]);
   return allowed.has(code) ? code : "search_failed";
 }
-function isCheckpointFor(searchType: "files" | "content", value: unknown) {
+function isCheckpointFor(
+  searchType: "files" | "content", value: unknown,
+): value is NativeFilenameCheckpoint | NativeContentCheckpoint {
   return searchType === "files"
     ? isNativeFilenameCheckpoint(value)
     : isNativeContentCheckpoint(value);
