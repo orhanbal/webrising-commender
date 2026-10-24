@@ -57,6 +57,49 @@ test("an out-of-order durable progress CAS does not cancel a healthy native scan
   }
 });
 
+test("final native pages never expose oversized in-memory snapshots", async () => {
+  // A connected Agent can send a final frame without any progress events.
+  // The Gateway must enforce the same 1 MiB/500-result cap in memory as in
+  // PostgreSQL, including deployments that intentionally omit persistence.
+  const largePreview = "x".repeat(300_000);
+  const largeResults = Array.from({ length: 6 }, (_, index) => ({
+    path: `/safe/large-${index}.txt`, preview: largePreview,
+  }));
+  const largeRouter = {
+    request: async () => ({ items: largeResults, truncated: false, scannedEntries: 6 }),
+  } as unknown as DeviceRouter;
+  const actor = { ...principal, actor: "bounded-final-actor" };
+  const large = await startSearch(actor, "bounded-final-device", largeRouter, {
+    path: "/safe", query: "large", search_type: "content",
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  const page = await searchPage(actor, "bounded-final-device", large.searchId, 0, 100);
+  assert.equal(page.status, "completed");
+  assert.equal(page.truncated, true);
+  assert.equal(page.resultCount, 3);
+  assert.equal(page.items.length, 3);
+  assert.equal(page.hasMore, false);
+  assert.ok(Buffer.byteLength(JSON.stringify(page.items), "utf8") <= 1024 * 1024);
+  const beyond = await searchPage(actor, "bounded-final-device", large.searchId, 3, 1);
+  assert.deepEqual(beyond.items, []);
+
+  const countRouter = {
+    request: async () => ({
+      items: Array.from({ length: 501 }, (_, index) => ({ path: `/safe/item-${index}.txt` })),
+      truncated: false, scannedEntries: 501,
+    }),
+  } as unknown as DeviceRouter;
+  const counted = await startSearch(actor, "bounded-final-device", countRouter, {
+    path: "/safe", query: "item", search_type: "files",
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  const tail = await searchPage(actor, "bounded-final-device", counted.searchId, 495, 20);
+  assert.equal(tail.truncated, true);
+  assert.equal(tail.resultCount, 500);
+  assert.equal(tail.items.length, 5);
+  assert.equal(tail.hasMore, false);
+});
+
 test("native completion persists final bounded counters even without a progress event", async () => {
   const actor = { ...principal, actor: "final-counter-actor" };
   const completions: Array<{ scannedEntries: number; scannedBytes: number }> = [];
