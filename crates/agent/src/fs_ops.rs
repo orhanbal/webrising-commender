@@ -242,6 +242,35 @@ fn search_with_deadline(
     }))
 }
 
+/// Open only a regular file without following a final-component symlink.
+/// A file may be swapped after the directory entry's metadata check; a plain
+/// File::open would otherwise follow that replacement outside allowed roots.
+/// Parent-directory rename races still require descriptor-relative traversal.
+fn open_regular_read(path: &Path) -> Result<fs::File> {
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(0o400000); // O_NOFOLLOW
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(0x100); // O_NOFOLLOW
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
+    }
+    let file = options.open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(anyhow!("path is not a regular file"));
+    }
+    Ok(file)
+}
+
 /// Limit bytes read from a changing file and check cancellation between
 /// bounded chunks. Invalid UTF-8 and oversized files are safely skipped.
 fn read_search_utf8<R: Read>(
@@ -381,7 +410,7 @@ fn text_search_with_deadline(
             }
             // Read in cancellable, bounded chunks. File size can change after
             // metadata(), so a one-shot read_to_string is not a memory bound.
-            let text = match fs::File::open(&path) {
+            let text = match open_regular_read(&path) {
                 Ok(mut file) => match read_search_utf8(&mut file, cancelled, deadline)? {
                     Some(value) => value,
                     None => {
@@ -473,7 +502,7 @@ pub fn read(policy: &PathPolicy, raw: &str, max_bytes: Option<usize>) -> Result<
     }
 
     let mut bytes = Vec::with_capacity((metadata.len() as usize).min(limit));
-    let mut file = fs::File::open(&path)?;
+    let mut file = open_regular_read(&path)?;
     std::io::Read::by_ref(&mut file)
         .take((limit + 1) as u64)
         .read_to_end(&mut bytes)?;
@@ -531,7 +560,7 @@ pub fn read_lines(
     }
     // Bound the actual read, not only the metadata check: a concurrent writer
     // can grow a file after stat() and otherwise exhaust the Agent's memory.
-    let mut file = fs::File::open(&path)?;
+    let mut file = open_regular_read(&path)?;
     let mut bytes = Vec::new();
     std::io::Read::by_ref(&mut file)
         .take(MAX_PAGED_FILE + 1)
@@ -652,7 +681,17 @@ pub fn replace_text(
         return Err(anyhow!("file exceeds edit limit of {HARD_READ_MAX} bytes"));
     }
 
-    let original = fs::read_to_string(&path).context("file is not valid UTF-8 text")?;
+    // Bound the actual read and reject final-component symlink replacement,
+    // even if the file changed after the earlier metadata check.
+    let mut file = open_regular_read(&path)?;
+    let mut original_bytes = Vec::new();
+    std::io::Read::by_ref(&mut file)
+        .take(HARD_READ_MAX as u64 + 1)
+        .read_to_end(&mut original_bytes)?;
+    if original_bytes.len() > HARD_READ_MAX {
+        return Err(anyhow!("file exceeds edit limit of {HARD_READ_MAX} bytes"));
+    }
+    let original = String::from_utf8(original_bytes).context("file is not valid UTF-8 text")?;
     let previous_sha256 = format!("{:x}", Sha256::digest(original.as_bytes()));
     if let Some(expected) = expected_sha256 {
         if !previous_sha256.eq_ignore_ascii_case(expected) {
@@ -915,6 +954,32 @@ mod search_budget_tests {
         let content =
             text_search_cancellable(&policy, raw, "needle", false, Some(10), &cancelled).unwrap();
         assert!(content["items"].as_array().unwrap().is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos", windows))]
+    #[test]
+    fn bounded_native_reads_reject_symlink_swapped_after_metadata() {
+        let root = env::temp_dir().join(format!("wc-open-race-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("original.txt");
+        let outside = env::temp_dir().join(format!("wc-open-secret-{}", Uuid::new_v4()));
+        fs::write(&target, "allowed").unwrap();
+        fs::write(&outside, "private-secret").unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        // Simulate the file replacement after the caller's metadata() check.
+        assert!(search_metadata_if_present(&target).unwrap().unwrap().is_file());
+        fs::remove_file(&target).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, &target).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&outside, &target).unwrap();
+        assert!(open_regular_read(&target).is_err());
+        // Ordinary tools must not read the replacement's contents either.
+        // PathPolicy rejects the symlink destination before opening it.
+        assert!(read(&policy, target.to_str().unwrap(), None).is_err());
+        fs::remove_file(target).unwrap();
+        fs::remove_file(outside).unwrap();
         fs::remove_dir_all(root).unwrap();
     }
 
