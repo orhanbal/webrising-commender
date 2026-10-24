@@ -152,10 +152,23 @@ try {
     start_row: 1, start_column: 1, row_count: 51, column_count: 1,
   });
   assert.equal(typeof badWorkbookRange.error, "string");
-  const outsideWorkbook = await tool(234, "xlsx_inspect", {
-    device_id: deviceId, path: path.join(os.tmpdir(), "outside-allowed.xlsx"),
+  const outsideWorkbookDir = fs.mkdtempSync(path.join(os.tmpdir(), "commander-outside-xlsx-"));
+  try {
+    const outsideWorkbookPath = path.join(outsideWorkbookDir, "outside.xlsx");
+    fs.copyFileSync(workbookPath, outsideWorkbookPath);
+    const outsideWorkbook = await tool(234, "xlsx_inspect", {
+      device_id: deviceId, path: outsideWorkbookPath,
+    });
+    assert.match(outsideWorkbook.error, /outside configured allowed roots/i);
+  } finally {
+    fs.rmSync(outsideWorkbookDir, { recursive: true, force: true });
+  }
+  const invalidWorkbookPath = path.join(tempRoot, "broken.xlsx");
+  fs.writeFileSync(invalidWorkbookPath, "not a ZIP file", "utf8");
+  const invalidWorkbook = await tool(236, "xlsx_inspect", {
+    device_id: deviceId, path: invalidWorkbookPath,
   });
-  assert.equal(typeof outsideWorkbook.error, "string");
+  assert.equal(typeof invalidWorkbook.error, "string");
   const macroNamedWorkbook = path.join(tempRoot, "sample.xlsm");
   fs.copyFileSync(workbookPath, macroNamedWorkbook);
   const macroInfo = await tool(235, "xlsx_inspect", {
