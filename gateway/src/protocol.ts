@@ -24,7 +24,7 @@ export type AgentAction =
   | { kind: "fs_delete"; path: string; recursive?: boolean }
   | { kind: "fs_move"; source: string; destination: string }
   | { kind: "fs_tree"; path: string; maxDepth?: number; maxEntries?: number }
-  | { kind: "fs_search"; path: string; query: string; caseSensitive?: boolean; maxResults?: number }
+  | { kind: "fs_search"; path: string; query: string; caseSensitive?: boolean; maxResults?: number; resumeCheckpoint?: unknown }
   | { kind: "text_search"; path: string; query: string; caseSensitive?: boolean; maxResults?: number }
   | { kind: "fs_replace"; path: string; search: string; replace: string; replaceAll?: boolean; expectedSha256?: string }
   | { kind: "process_exec"; command: string; cwd?: string; timeoutMs?: number }
@@ -254,7 +254,7 @@ export type AgentMessage =
     }
   | { type: "heartbeat"; timestamp: string }
   | { type: "search_control_ack"; requestId: string; paused: boolean }
-  | { type: "search_progress"; requestId: string; items: unknown[]; scannedEntries: number; scannedBytes: number }
+  | { type: "search_progress"; requestId: string; items: unknown[]; scannedEntries: number; scannedBytes: number; checkpoint?: unknown }
   | { type: "result"; requestId: string; ok: true; data: unknown }
   | { type: "result"; requestId: string; ok: false; error: { code: string; message: string } };
 

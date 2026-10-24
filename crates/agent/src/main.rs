@@ -481,6 +481,8 @@ async fn connected_loop(
                                         progress["scannedEntries"].as_u64().unwrap_or(0) as usize;
                                     let scanned_bytes =
                                         progress["scannedBytes"].as_u64().unwrap_or(0);
+                                    let checkpoint = progress.get("checkpoint")
+                                        .filter(|value| !value.is_null()).cloned();
                                     if send(
                                         &progress_writer,
                                         AgentMessage::SearchProgress {
@@ -488,6 +490,7 @@ async fn connected_loop(
                                             items,
                                             scanned_entries,
                                             scanned_bytes,
+                                            checkpoint,
                                         },
                                     )
                                     .await

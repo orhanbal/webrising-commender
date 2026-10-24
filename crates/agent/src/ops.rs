@@ -201,15 +201,17 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
             query,
             case_sensitive,
             max_results,
+            resume_checkpoint,
         } => {
             let policy = policy.clone();
             tokio::task::spawn_blocking(move || {
                 if let Some(sender) = search_progress {
-                    let report = move |items: &[Value], scanned: usize, bytes: u64| {
+                    let report = move |items: &[Value], scanned: usize, bytes: u64, checkpoint: Option<&Value>| {
                         let _ = sender.try_send(json!({
                             "items": items,
                             "scannedEntries": scanned,
                             "scannedBytes": bytes,
+                            "checkpoint": checkpoint,
                         }));
                     };
                     fs_ops::search_cancellable_controlled(
@@ -218,10 +220,13 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
                         &query,
                         case_sensitive.unwrap_or(false),
                         max_results,
-                        (&cancelled, &paused),
+                        (&cancelled, &paused, resume_checkpoint.as_ref()),
                         &report,
                     )
                 } else {
+                    if resume_checkpoint.is_some() {
+                        return Err(anyhow!("invalid_search_checkpoint"));
+                    }
                     fs_ops::search_cancellable(
                         &policy,
                         &path,
@@ -243,7 +248,7 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
             let policy = policy.clone();
             tokio::task::spawn_blocking(move || {
                 if let Some(sender) = search_progress {
-                    let report = move |items: &[Value], scanned: usize, bytes: u64| {
+                    let report = move |items: &[Value], scanned: usize, bytes: u64, _checkpoint: Option<&Value>| {
                         let _ = sender.try_send(json!({
                             "items": items,
                             "scannedEntries": scanned,

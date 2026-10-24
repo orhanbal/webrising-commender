@@ -134,6 +134,7 @@ pub enum AgentAction {
         query: String,
         case_sensitive: Option<bool>,
         max_results: Option<usize>,
+        resume_checkpoint: Option<Value>,
     },
     TextSearch {
         path: String,
@@ -221,6 +222,8 @@ pub enum AgentMessage {
         items: Vec<Value>,
         scanned_entries: usize,
         scanned_bytes: u64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        checkpoint: Option<Value>,
     },
     SearchControlAck {
         request_id: String,

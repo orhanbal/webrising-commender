@@ -31,7 +31,8 @@ const MAX_SEARCH_DURATION: Duration = Duration::from_secs(10);
 const MAX_SEARCH_PAUSE: Duration = Duration::from_secs(15);
 
 /// Sends bounded cumulative results during a native search without holding up the scanner.
-pub type SearchProgressReporter = dyn Fn(&[Value], usize, u64) + Send + Sync;
+pub type SearchProgressReporter = dyn Fn(&[Value], usize, u64, Option<&Value>) + Send + Sync;
+const MAX_CHECKPOINT_BYTES: usize = 128 * 1024;
 
 /// Bundles the deadline, cancellation signal and optional progress sink so
 /// both bounded native scanners share a small, explicit control surface.
@@ -40,6 +41,7 @@ struct SearchExecution<'a> {
     cancelled: &'a AtomicBool,
     paused: Option<&'a AtomicBool>,
     report: Option<&'a SearchProgressReporter>,
+    resume: Option<&'a Value>,
 }
 
 fn await_search_resume(
@@ -179,7 +181,7 @@ pub fn search_cancellable_controlled(
     query: &str,
     case_sensitive: bool,
     max_results: Option<usize>,
-    controls: (&AtomicBool, &AtomicBool),
+    controls: (&AtomicBool, &AtomicBool, Option<&Value>),
     report: &SearchProgressReporter,
 ) -> Result<Value> {
     search_with_deadline_reporting(
@@ -193,6 +195,7 @@ pub fn search_cancellable_controlled(
             cancelled: controls.0,
             paused: Some(controls.1),
             report: Some(report),
+            resume: controls.2,
         },
     )
 }
@@ -218,6 +221,7 @@ pub fn search_cancellable_reporting(
             cancelled,
             paused: None,
             report: Some(report),
+            resume: None,
         },
     )
 }
@@ -242,6 +246,7 @@ fn search_with_deadline(
             cancelled,
             paused: None,
             report: None,
+            resume: None,
         },
     )
 }
@@ -259,6 +264,7 @@ fn search_with_deadline_reporting(
         cancelled,
         paused,
         report,
+        resume,
     } = execution;
     if query.trim().is_empty() {
         return Err(anyhow!("search query cannot be empty"));
@@ -277,6 +283,37 @@ fn search_with_deadline_reporting(
     let mut results = Vec::new();
     let mut scanned = 0_usize;
     let mut stack = vec![root.clone()];
+    if let Some(resume) = resume {
+        if serde_json::to_vec(resume)?.len() > MAX_CHECKPOINT_BYTES ||
+            resume["version"] != 1 || resume["root"] != root.to_string_lossy().as_ref() ||
+            resume["query"] != query || resume["caseSensitive"] != case_sensitive {
+            return Err(anyhow!("invalid_search_checkpoint"));
+        }
+        let pending = resume["pending"].as_array()
+            .ok_or_else(|| anyhow!("invalid_search_checkpoint"))?;
+        let prior = resume["items"].as_array()
+            .ok_or_else(|| anyhow!("invalid_search_checkpoint"))?;
+        let counted = resume["scannedEntries"].as_u64()
+            .ok_or_else(|| anyhow!("invalid_search_checkpoint"))?;
+        if pending.is_empty() || pending.len() > 4096 ||
+            prior.len() > result_limit || counted > MAX_SCAN_ENTRIES as u64 {
+            return Err(anyhow!("invalid_search_checkpoint"));
+        }
+        stack.clear();
+        for dir in pending {
+            let value = dir.as_str().ok_or_else(|| anyhow!("invalid_search_checkpoint"))?;
+            if value.len() > 4096 { return Err(anyhow!("invalid_search_checkpoint")); }
+            let path = std::path::PathBuf::from(value);
+            if !path.starts_with(&root) || !path.is_dir() ||
+               fs::symlink_metadata(&path)?.file_type().is_symlink() ||
+               policy.resolve_existing(value)? != path {
+                return Err(anyhow!("invalid_search_checkpoint"));
+            }
+            stack.push(path);
+        }
+        results = prior.clone();
+        scanned = counted as usize;
+    }
     let mut truncated = false;
     let mut timed_out = false;
     let mut next_progress = 32_usize;
@@ -346,13 +383,32 @@ fn search_with_deadline_reporting(
                 }
                 if scanned >= next_progress {
                     if let Some(report) = report {
-                        report(&results, scanned.min(MAX_SCAN_ENTRIES), 0);
+                        report(&results, scanned.min(MAX_SCAN_ENTRIES), 0, None);
                     }
                     next_progress = scanned.saturating_add(32);
                 }
             }
         }
 
+        // Directory boundaries are durable: every entry in this directory
+        // was handled, so 'pending' contains only still-unvisited directories.
+        // Never checkpoint midway through a directory iterator.
+        if !truncated && results.len() < result_limit && !stack.is_empty() {
+            if let Some(report) = report {
+                let checkpoint = json!({
+                    "version": 1,
+                    "root": root.to_string_lossy(),
+                    "query": query,
+                    "caseSensitive": case_sensitive,
+                    "pending": stack.iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>(),
+                    "items": results,
+                    "scannedEntries": scanned.min(MAX_SCAN_ENTRIES),
+                });
+                if serde_json::to_vec(&checkpoint)?.len() <= MAX_CHECKPOINT_BYTES {
+                    report(&results, scanned.min(MAX_SCAN_ENTRIES), 0, Some(&checkpoint));
+                }
+            }
+        }
         if truncated || results.len() >= result_limit {
             break;
         }
@@ -480,6 +536,7 @@ pub fn text_search_cancellable_controlled(
             cancelled: controls.0,
             paused: Some(controls.1),
             report: Some(report),
+            resume: None,
         },
     )
 }
@@ -505,6 +562,7 @@ pub fn text_search_cancellable_reporting(
             cancelled,
             paused: None,
             report: Some(report),
+            resume: None,
         },
     )
 }
@@ -529,6 +587,7 @@ fn text_search_with_deadline(
             cancelled,
             paused: None,
             report: None,
+            resume: None,
         },
     )
 }
@@ -546,6 +605,7 @@ fn text_search_with_deadline_reporting(
         cancelled,
         paused,
         report,
+        resume: _,
     } = execution;
     if query.is_empty() {
         return Err(anyhow!("text search query cannot be empty"));
@@ -625,6 +685,7 @@ fn text_search_with_deadline_reporting(
                             &results,
                             scanned_entries.min(MAX_SCAN_ENTRIES),
                             scanned_bytes,
+                            None,
                         );
                     }
                     next_progress = scanned_entries.saturating_add(32);
@@ -690,6 +751,7 @@ fn text_search_with_deadline_reporting(
                                 &results,
                                 scanned_entries.min(MAX_SCAN_ENTRIES),
                                 scanned_bytes,
+                                None,
                             );
                         }
                     }
@@ -1135,6 +1197,63 @@ mod search_budget_tests {
     }
 
     #[test]
+    fn native_filename_checkpoint_resumes_pending_directories_without_duplicate_matches() {
+        let root = env::temp_dir().join(format!("wc-checkpoint-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join("a")).unwrap();
+        fs::create_dir_all(root.join("b")).unwrap();
+        fs::write(root.join("a/needle-one.txt"), b"hello").unwrap();
+        fs::write(root.join("b/needle-two.txt"), b"hello").unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let checkpoints = std::sync::Mutex::new(Vec::<Value>::new());
+        let emit = |_: &[Value], _: usize, _: u64, checkpoint: Option<&Value>| {
+            if let Some(checkpoint) = checkpoint {
+                checkpoints.lock().unwrap().push(checkpoint.clone());
+            }
+        };
+        let first = search_cancellable_controlled(
+            &policy, root.to_str().unwrap(), "needle", false, Some(100),
+            (&AtomicBool::new(false), &AtomicBool::new(false), None), &emit,
+        ).unwrap();
+        let snapshot = checkpoints.lock().unwrap().iter()
+            .find(|value| !value["items"].as_array().unwrap().is_empty())
+            .cloned()
+            .unwrap_or_else(|| checkpoints.lock().unwrap()[0].clone());
+        let resumed = search_cancellable_controlled(
+            &policy, root.to_str().unwrap(), "needle", false, Some(100),
+            (&AtomicBool::new(false), &AtomicBool::new(false), Some(&snapshot)), &emit,
+        ).unwrap();
+        assert_eq!(first["items"].as_array().unwrap().len(), 2);
+        assert_eq!(resumed["items"].as_array().unwrap(), first["items"].as_array().unwrap());
+        assert!(resumed["scannedEntries"].as_u64().unwrap() >= snapshot["scannedEntries"].as_u64().unwrap());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn filename_checkpoint_rejects_injected_directory_and_modified_query() {
+        let root = env::temp_dir().join(format!("wc-checkpoint-policy-{}", Uuid::new_v4()));
+        let outside = env::temp_dir().join(format!("wc-checkpoint-outside-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let forged = json!({
+            "version": 1, "root": root.to_string_lossy(), "query": "needle",
+            "caseSensitive": false, "pending": [outside.to_string_lossy()],
+            "items": [], "scannedEntries": 1
+        });
+        let noop = |_: &[Value], _: usize, _: u64, _: Option<&Value>| {};
+        let invoke = |checkpoint: &Value| search_cancellable_controlled(
+            &policy, root.to_str().unwrap(), "needle", false, Some(100),
+            (&AtomicBool::new(false), &AtomicBool::new(false), Some(checkpoint)), &noop,
+        );
+        assert!(invoke(&forged).unwrap_err().to_string().contains("invalid_search_checkpoint"));
+        let mut altered = forged.clone();
+        altered["query"] = json!("other");
+        assert!(invoke(&altered).unwrap_err().to_string().contains("invalid_search_checkpoint"));
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(outside).unwrap();
+    }
+
+    #[test]
     fn native_filename_progress_streams_bounded_cumulative_snapshots() {
         let root = env::temp_dir().join(format!("wc-search-progress-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
@@ -1144,7 +1263,7 @@ mod search_budget_tests {
         let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
         let updates = Arc::new(AtomicUsize::new(0));
         let observed = Arc::clone(&updates);
-        let report = move |items: &[Value], scanned: usize, bytes: u64| {
+        let report = move |items: &[Value], scanned: usize, bytes: u64, _checkpoint: Option<&Value>| {
             assert!(scanned >= 32);
             assert_eq!(bytes, 0);
             assert!(items.len() <= 100);
@@ -1175,7 +1294,7 @@ mod search_budget_tests {
         let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
         let updates = Arc::new(AtomicUsize::new(0));
         let observed = Arc::clone(&updates);
-        let report = move |items: &[Value], scanned: usize, bytes: u64| {
+        let report = move |items: &[Value], scanned: usize, bytes: u64, _checkpoint: Option<&Value>| {
             assert!(scanned >= 32 || items.len() >= 32);
             assert!(bytes <= MAX_TEXT_SEARCH_BYTES);
             assert!(items.len() <= 80);
