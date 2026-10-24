@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
+import { PgSearchPersistence } from "../dist/search-persistence.js";
 import fs from "node:fs/promises";
 import pg from "pg";
 import WebSocket from "ws";
@@ -846,6 +847,70 @@ const enrolled = await jsonFetch("/api/agent/enroll", {
 });
 assert.match(enrolled.deviceId, /^[0-9a-f-]{36}$/i);
 assert.equal(typeof enrolled.deviceToken, "string");
+
+// Real PostgreSQL integration for bounded search-session persistence. A newly
+// constructed store represents a gateway restart without the original Map.
+const searchOwner = await acceptanceDb.query(
+  "select organization_id from devices where id=$1", [enrolled.deviceId],
+);
+assert.equal(searchOwner.rows.length, 1);
+const durableKey = {
+  id: randomUUID(), organizationId: searchOwner.rows[0].organization_id,
+  actor: "search-ci-owner", deviceId: enrolled.deviceId,
+};
+const durableStore = new PgSearchPersistence(acceptanceDb);
+const durableCreatedAt = Date.now();
+try {
+  await durableStore.create({
+    ...durableKey, path: "/ci", query: "needle", searchType: "files",
+    createdAt: durableCreatedAt,
+  });
+  await durableStore.finish(durableKey, {
+    status: "completed",
+    items: [{ path: "/ci/one.txt" }, { path: "/ci/two.txt" }],
+    truncated: false, timedOut: false,
+  });
+  const afterRestart = new PgSearchPersistence(acceptanceDb);
+  const restored = await afterRestart.page(durableKey, durableKey.id, 1, 1);
+  assert.equal(restored.status, "completed");
+  assert.deepEqual(restored.items, [{ path: "/ci/two.txt" }]);
+  assert.equal(restored.resultCount, 2);
+  await assert.rejects(
+    afterRestart.page({ ...durableKey, actor: "foreign-actor" }, durableKey.id, 0, 10),
+    /search_not_found/,
+  );
+  await assert.rejects(
+    afterRestart.page({ ...durableKey, organizationId: "00000000-0000-4000-8000-000000000999" }, durableKey.id, 0, 10),
+    /search_not_found/,
+  );
+  await assert.rejects(
+    afterRestart.page({ ...durableKey, deviceId: "00000000-0000-4000-8000-000000000998" }, durableKey.id, 0, 10),
+    /search_not_found/,
+  );
+  const foreignList = await afterRestart.list({ ...durableKey, actor: "foreign-actor" });
+  assert.equal(foreignList.items.some(item => item.searchId === durableKey.id), false);
+  await afterRestart.stop(durableKey);
+  const stopped = await afterRestart.page(durableKey, durableKey.id, 0, 10);
+  assert.equal(stopped.status, "stopped");
+  assert.deepEqual(stopped.items, []);
+
+  const interruptedKey = { ...durableKey, id: randomUUID() };
+  await durableStore.create({
+    ...interruptedKey, path: "/ci", query: "unsettled", searchType: "content",
+    createdAt: durableCreatedAt,
+  });
+  const interrupted = await afterRestart.page(interruptedKey, interruptedKey.id, 0, 10);
+  assert.equal(interrupted.status, "error");
+  assert.equal(interrupted.error, "search_interrupted");
+  assert.deepEqual(interrupted.items, []);
+  await durableStore.stop(interruptedKey);
+} finally {
+  await acceptanceDb.query(
+    "delete from search_sessions where organization_id=$1 and actor=$2",
+    [durableKey.organizationId, durableKey.actor],
+  );
+}
+
 
 const wsUrl = base.replace(/^http/, "ws") + "/agent";
 const socket = new WebSocket(wsUrl, {
