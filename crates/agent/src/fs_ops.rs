@@ -566,7 +566,7 @@ pub fn text_search_cancellable_controlled(
     query: &str,
     case_sensitive: bool,
     max_results: Option<usize>,
-    controls: (&AtomicBool, &AtomicBool),
+    controls: (&AtomicBool, &AtomicBool, Option<&Value>),
     report: &SearchProgressReporter,
 ) -> Result<Value> {
     text_search_with_deadline_reporting(
@@ -580,7 +580,7 @@ pub fn text_search_cancellable_controlled(
             cancelled: controls.0,
             paused: Some(controls.1),
             report: Some(report),
-            resume: None,
+            resume: controls.2,
         },
     )
 }
@@ -649,7 +649,7 @@ fn text_search_with_deadline_reporting(
         cancelled,
         paused,
         report,
-        resume: _,
+        resume,
     } = execution;
     if query.is_empty() {
         return Err(anyhow!("text search query cannot be empty"));
@@ -670,6 +670,64 @@ fn text_search_with_deadline_reporting(
     let mut stack = vec![root.clone()];
     let mut scanned_entries = 0_usize;
     let mut scanned_bytes = 0_u64;
+    if let Some(checkpoint) = resume {
+        // The first content checkpoint format intentionally retains no prior
+        // matches. Replaying unverified line previews after file changes
+        // could publish stale or injected content; refuse rather than guess.
+        if serde_json::to_vec(checkpoint)?.len() > MAX_CHECKPOINT_BYTES
+            || checkpoint["version"] != 1
+            || checkpoint["searchType"] != "content"
+            || checkpoint["root"] != root.to_string_lossy().as_ref()
+            || checkpoint["query"] != query
+            || checkpoint["caseSensitive"] != case_sensitive
+        {
+            return Err(anyhow!("invalid_search_checkpoint"));
+        }
+        let pending = checkpoint["pending"]
+            .as_array()
+            .ok_or_else(|| anyhow!("invalid_search_checkpoint"))?;
+        let prior = checkpoint["items"]
+            .as_array()
+            .ok_or_else(|| anyhow!("invalid_search_checkpoint"))?;
+        let entries = checkpoint["scannedEntries"]
+            .as_u64()
+            .ok_or_else(|| anyhow!("invalid_search_checkpoint"))?;
+        let bytes = checkpoint["scannedBytes"]
+            .as_u64()
+            .ok_or_else(|| anyhow!("invalid_search_checkpoint"))?;
+        if !prior.is_empty()
+            || pending.is_empty()
+            || pending.len() > 4096
+            || entries > MAX_SCAN_ENTRIES as u64
+            || bytes > MAX_TEXT_SEARCH_BYTES
+        {
+            return Err(anyhow!("invalid_search_checkpoint"));
+        }
+        stack.clear();
+        let mut seen = std::collections::HashSet::new();
+        for entry in pending {
+            let value = entry
+                .as_str()
+                .ok_or_else(|| anyhow!("invalid_search_checkpoint"))?;
+            if value.len() > 4096 || !seen.insert(value) {
+                return Err(anyhow!("invalid_search_checkpoint"));
+            }
+            let pending_path = Path::new(value);
+            if !pending_path.starts_with(&root)
+                || fs::symlink_metadata(pending_path)?.file_type().is_symlink()
+                || policy.resolve_existing(value)? != pending_path
+            {
+                return Err(anyhow!("invalid_search_checkpoint"));
+            }
+            let metadata = fs::symlink_metadata(pending_path)?;
+            if !metadata.is_dir() && !metadata.is_file() {
+                return Err(anyhow!("invalid_search_checkpoint"));
+            }
+            stack.push(pending_path.to_path_buf());
+        }
+        scanned_entries = entries as usize;
+        scanned_bytes = bytes;
+    }
     let mut truncated = false;
     let mut timed_out = false;
     let mut next_progress = 32_usize;
@@ -807,6 +865,31 @@ fn text_search_with_deadline_reporting(
             }
         }
 
+        // A completed path is a safe replay boundary. Until saved hits can
+        // be revalidated, checkpoint only scans with zero matches.
+        if !truncated && results.is_empty() && !stack.is_empty() {
+            if let Some(report) = report {
+                let checkpoint = json!({
+                    "version": 1,
+                    "searchType": "content",
+                    "root": root.to_string_lossy(),
+                    "query": query,
+                    "caseSensitive": case_sensitive,
+                    "pending": stack.iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>(),
+                    "items": [],
+                    "scannedEntries": scanned_entries.min(MAX_SCAN_ENTRIES),
+                    "scannedBytes": scanned_bytes
+                });
+                if serde_json::to_vec(&checkpoint)?.len() <= MAX_CHECKPOINT_BYTES {
+                    report(
+                        &results,
+                        scanned_entries.min(MAX_SCAN_ENTRIES),
+                        scanned_bytes,
+                        Some(&checkpoint),
+                    );
+                }
+            }
+        }
         if truncated {
             break;
         }
@@ -1238,6 +1321,92 @@ mod search_budget_tests {
             .to_string()
             .contains("search_cancelled"));
         assert!(paused.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn native_content_checkpoint_resumes_empty_result_scan_at_safe_path_boundary() {
+        let root = env::temp_dir().join(format!("wc-content-resume-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join("first")).unwrap();
+        fs::create_dir_all(root.join("second")).unwrap();
+        fs::write(root.join("first/one.txt"), b"needle in first").unwrap();
+        fs::write(root.join("second/two.txt"), b"needle in second").unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let checkpoints = std::sync::Mutex::new(Vec::<Value>::new());
+        let report = |_: &[Value], _: usize, _: u64, candidate: Option<&Value>| {
+            if let Some(candidate) = candidate {
+                checkpoints.lock().unwrap().push(candidate.clone());
+            }
+        };
+        let original = text_search_cancellable_controlled(
+            &policy,
+            root.to_str().unwrap(),
+            "needle",
+            false,
+            Some(100),
+            (&AtomicBool::new(false), &AtomicBool::new(false), None),
+            &report,
+        )
+        .unwrap();
+        let candidate = checkpoints.lock().unwrap()[0].clone();
+        assert_eq!(candidate["searchType"], "content");
+        assert_eq!(candidate["items"], json!([]));
+        let replay = text_search_cancellable_controlled(
+            &policy,
+            root.to_str().unwrap(),
+            "needle",
+            false,
+            Some(100),
+            (
+                &AtomicBool::new(false),
+                &AtomicBool::new(false),
+                Some(&candidate),
+            ),
+            &report,
+        )
+        .unwrap();
+        assert_eq!(original["items"], replay["items"]);
+        assert_eq!(original["scannedBytes"], replay["scannedBytes"]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn native_content_checkpoint_rejects_forged_matches_and_foreign_paths() {
+        let root = env::temp_dir().join(format!("wc-content-policy-{}", Uuid::new_v4()));
+        let outside = env::temp_dir().join(format!("wc-content-outside-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let mut candidate = json!({
+            "version": 1, "searchType": "content",
+            "root": root.to_string_lossy(), "query": "needle",
+            "caseSensitive": false, "pending": [outside.to_string_lossy()],
+            "items": [], "scannedEntries": 1, "scannedBytes": 0
+        });
+        let report = |_: &[Value], _: usize, _: u64, _: Option<&Value>| {};
+        let check = |checkpoint: &Value| {
+            text_search_cancellable_controlled(
+                &policy,
+                root.to_str().unwrap(),
+                "needle",
+                false,
+                Some(100),
+                (
+                    &AtomicBool::new(false),
+                    &AtomicBool::new(false),
+                    Some(checkpoint),
+                ),
+                &report,
+            )
+        };
+        assert!(check(&candidate).is_err());
+        candidate["pending"] = json!([root.to_string_lossy()]);
+        candidate["items"] = json!([{"path": "fabricated"}]);
+        assert!(check(&candidate).is_err());
+        candidate["items"] = json!([]);
+        candidate["scannedBytes"] = json!(MAX_TEXT_SEARCH_BYTES + 1);
+        assert!(check(&candidate).is_err());
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(outside).unwrap();
     }
 
     #[test]
