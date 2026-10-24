@@ -968,7 +968,10 @@ mod search_budget_tests {
         fs::write(&outside, "private-secret").unwrap();
         let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
         // Simulate the file replacement after the caller's metadata() check.
-        assert!(search_metadata_if_present(&target).unwrap().unwrap().is_file());
+        assert!(search_metadata_if_present(&target)
+            .unwrap()
+            .unwrap()
+            .is_file());
         fs::remove_file(&target).unwrap();
         #[cfg(unix)]
         std::os::unix::fs::symlink(&outside, &target).unwrap();
