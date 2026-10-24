@@ -35,7 +35,21 @@ test("completed search page survives new gateway persistence instance and is act
   await assert.rejects(afterRestart.page({ ...owner, actor: "other" }, id, 0, 10), /search_not_found/);
   await assert.rejects(afterRestart.page({ ...owner, deviceId: "other-device" }, id, 0, 10), /search_not_found/);
   assert.ok(queries.every(({ statement }) =>
-    /organization_id=\$2 and actor=\$3 and device_id=\$4/.test(statement)));
+    /s.organization_id=\$2 and s.actor=\$3 and s.device_id=\$4/.test(statement)));
+});
+
+test("a live remote Gateway keeps its running search visible", async () => {
+  const fake = {
+    query: async () => ({
+      rows: [{ ...sampleRow, status: "running", origin_alive: true }],
+      rowCount: 1,
+    }),
+  } as unknown as Pool;
+  const observer = new PgSearchPersistence(fake);
+  const page = await observer.page(owner, id, 0, 10);
+  assert.equal(page.status, "running");
+  assert.equal(page.error, undefined);
+  assert.deepEqual(page.items, []);
 });
 
 test("a native search owned by an unavailable gateway is never reported as completed", async () => {

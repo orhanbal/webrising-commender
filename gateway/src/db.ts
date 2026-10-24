@@ -399,6 +399,13 @@ export async function migrate() {
       add constraint billing_events_disposition_check
       check (disposition in ('received','applied','stale','provider_mismatch','order_conflict'));
 
+    -- Search liveness is per Gateway process, not per user's MCP connection.
+    -- A crashed Gateway expires naturally without retaining a false running claim.
+    create table if not exists search_gateway_instances (
+      id uuid primary key,
+      last_heartbeat_at timestamptz not null default now()
+    );
+
     create table if not exists search_sessions (
       id uuid primary key,
       organization_id uuid not null references organizations(id) on delete cascade,
@@ -493,6 +500,7 @@ function auditRetentionDays() {
 
 export async function housekeeping() {
   await db.query("delete from search_sessions where expires_at < now()");
+  await db.query("delete from search_gateway_instances where last_heartbeat_at < now() - interval '10 minutes'");
   await db.query("delete from pairing_codes where expires_at < now() or used_at < now() - interval '1 day'");
   await db.query("delete from approvals where expires_at < now() - interval '1 day'");
   await db.query(

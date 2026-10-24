@@ -914,6 +914,32 @@ try {
   assert.equal(interrupted.error, "search_interrupted");
   assert.deepEqual(interrupted.items, []);
   await durableStore.stop(interruptedKey);
+
+  // A live Gateway's scanner is not a crashed/restarted scanner.
+  // A distinct observer must report running while its lease is fresh.
+  const liveOwner = new PgSearchPersistence(acceptanceDb);
+  const liveObserver = new PgSearchPersistence(acceptanceDb);
+  const liveKey = { ...durableKey, id: randomUUID() };
+  await liveOwner.activate();
+  await liveObserver.activate();
+  try {
+    await liveOwner.create({
+      ...liveKey, path: "/ci", query: "live-remote-owner", searchType: "files",
+      createdAt: Date.now(),
+    });
+    const remoteRunning = await liveObserver.page(liveKey, liveKey.id, 0, 10);
+    assert.equal(remoteRunning.status, "running");
+    assert.deepEqual(remoteRunning.items, []);
+    await liveOwner.deactivate();
+    const orphaned = await liveObserver.page(liveKey, liveKey.id, 0, 10);
+    assert.equal(orphaned.status, "error");
+    assert.equal(orphaned.error, "search_interrupted");
+    await liveObserver.stop(liveKey);
+  } finally {
+    // Safe to call on the same instance even if the normal path deactivated it.
+    await liveOwner.deactivate();
+    await liveObserver.deactivate();
+  }
 } finally {
   await acceptanceDb.query(
     "delete from search_sessions where organization_id=$1 and actor=$2",

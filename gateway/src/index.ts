@@ -126,7 +126,9 @@ const resetTokenRateLimit = new FixedWindowRateLimiter();
 const trustProxyHeaders = /^(1|true|yes)$/i.test(String(process.env.TRUST_PROXY_HEADERS || ""));
 
 await migrate();
-setSearchPersistence(new PgSearchPersistence(db));
+const searchPersistence = new PgSearchPersistence(db);
+await searchPersistence.activate();
+setSearchPersistence(searchPersistence);
 await housekeeping();
 startMailWorker();
 
@@ -3668,6 +3670,7 @@ server.listen(port, host, () => {
 async function shutdown() {
   server.close();
   for (const client of wss.clients) client.close(1001, "shutdown");
+  await searchPersistence.deactivate();
   await db.end();
   process.exit(0);
 }
