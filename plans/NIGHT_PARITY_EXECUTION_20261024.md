@@ -98,3 +98,16 @@ Tüm maddeleri *kodlandı* diye tamamlandı sayma. `Desktop Commander parity ach
 - **TEST EKLENDİ:** Rust header birim testleri, gerçek Linux Agent E2E'de PNG/GIF pozitif, bozuk başlık, sahte JPEG uzantısı ve allowed-root dışı erişim negatif testleri.
 - **PENDING:** Bu commit'in tam CI ve üç platform derleme sonucu. CI kırmızıysa 08.00 oturumunda önce hatayı düzelt.
 - **AÇIK:** Gerçek görsel önizleme, PDF okuma/düzenleme, DOCX düzenleme, fiziksel platform/ChatGPT/Claude kabulü, macOS notarization ve Windows imzalama.
+
+
+## 08.00 oturumu — son CI, MCP kontrat testi ve kabul envanteri (2026-10-24)
+
+- **Giriş HEAD:** `5c9d860a`; GitHub Actions `ci #40060563045` **17/17 PASS**, `platform-distribution #40060992297` **PASS**.
+- **Üç OS acceptance artifact mevcut:** `WECOMMANDER-windows-x64-acceptance`, `WECOMMANDER-linux-x64-acceptance`, `WECOMMANDER-macos-universal-acceptance`. Görsel test artifact'i `dashboard-visual-acceptance` da mevcut. Bu sonuç **fiziksel OS kurulumu ve imzalama değildir**.
+- **Kodlandı:** `948ed6a3` — bilinmeyen MCP araçları cihaz/tenant DB sorgusundan önce açık `unknown_tool` döndürür; mevcut `device_id_required` semantiği geçerli araçlar için korunur.
+- **Test eklendi:** `97413956` — gerçek HTTP MCP `tools/list` sözleşmesinde 46 araç adı tekilliği, JSON şema, zorunlu `device_id`, HIGH risk onay alanları ve `tools/call` bilinmeyen araç/eksik cihaz davranışı.
+- **Envanter:** `5678e5fb` — `plans/MCP_TOOL_CONTRACT_MATRIX_20261024.md` içinde 46 MCP araç ve 35 doğrudan Agent E2E test çağrısı işaretlendi. Test varlığı tam platform kabulü değildir.
+- **PENDING:** Bu yeni commit'lerin bulunduğu güncel HEAD'in CI/entegrasyon/dağıtım kabulü; en son koşu tamamlanmadan PASS olarak raporlanmaz.
+- **AÇIK:** P0 gerçek streaming/cancel, kalıcı PTY spool/rollback; P1 PDF, DOCX düzenleme, görsel önizleme ve XLSM yazma; P2 fiziksel üç OS, ChatGPT/Claude, UI tüm işlev ve imzalama.
+- **Karar:** Genel eşdeğerlik **TAMAMLANMADI**. Sonraki kod geliştirme önceliği PDF araçları ve P0 süreç/arama kalıcılığı; üretim/sunucuya dokunulmadı.
+
