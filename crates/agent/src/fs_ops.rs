@@ -963,7 +963,7 @@ fn preview_line(line: &str) -> String {
 #[cfg(test)]
 mod search_budget_tests {
     use super::*;
-    use std::{env, fs, sync::atomic::AtomicUsize};
+    use std::{env, fs, sync::{atomic::AtomicUsize, Arc}};
 
     #[test]
     fn native_filename_progress_streams_bounded_cumulative_snapshots() {
@@ -973,12 +973,13 @@ mod search_budget_tests {
             fs::write(root.join(format!("needle-{i:03}.txt")), b"needle").unwrap();
         }
         let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
-        let updates = AtomicUsize::new(0);
-        let report = |items: &[Value], scanned: usize, bytes: u64| {
+        let updates = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&updates);
+        let report = move |items: &[Value], scanned: usize, bytes: u64| {
             assert!(scanned >= 32);
             assert_eq!(bytes, 0);
             assert!(items.len() <= 100);
-            updates.fetch_add(1, Ordering::Relaxed);
+            observed.fetch_add(1, Ordering::Relaxed);
         };
         let found = search_cancellable_reporting(
             &policy,
@@ -1003,12 +1004,13 @@ mod search_budget_tests {
             fs::write(root.join(format!("text-{i:03}.txt")), b"needle\n").unwrap();
         }
         let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
-        let updates = AtomicUsize::new(0);
-        let report = |items: &[Value], scanned: usize, bytes: u64| {
+        let updates = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&updates);
+        let report = move |items: &[Value], scanned: usize, bytes: u64| {
             assert!(scanned >= 32 || items.len() >= 32);
             assert!(bytes <= MAX_TEXT_SEARCH_BYTES);
             assert!(items.len() <= 80);
-            updates.fetch_add(1, Ordering::Relaxed);
+            observed.fetch_add(1, Ordering::Relaxed);
         };
         let found = text_search_cancellable_reporting(
             &policy,
