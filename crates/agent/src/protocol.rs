@@ -46,6 +46,17 @@ pub enum AgentAction {
         offset_lines: Option<i64>,
         limit_lines: Option<usize>,
     },
+    XlsxInspect {
+        path: String,
+    },
+    XlsxReadRange {
+        path: String,
+        sheet: String,
+        start_row: u32,
+        start_column: u32,
+        row_count: u32,
+        column_count: u32,
+    },
     FsWrite {
         path: String,
         content_base64: String,
@@ -191,6 +202,8 @@ impl AgentAction {
             Self::FsStat { .. } => "fs_stat",
             Self::FsRead { .. } => "fs_read",
             Self::FsReadLines { .. } => "fs_read_lines",
+            Self::XlsxInspect { .. } => "xlsx_inspect",
+            Self::XlsxReadRange { .. } => "xlsx_read_range",
             Self::FsWrite { .. } => "fs_write",
             Self::FsAppend { .. } => "fs_append",
             Self::FsMkdir { .. } => "fs_mkdir",
@@ -225,6 +238,8 @@ impl AgentAction {
             | Self::FsStat { .. }
             | Self::FsRead { .. }
             | Self::FsReadLines { .. }
+            | Self::XlsxInspect { .. }
+            | Self::XlsxReadRange { .. }
             | Self::FsTree { .. }
             | Self::FsSearch { .. }
             | Self::TextSearch { .. }
