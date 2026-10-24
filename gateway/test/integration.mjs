@@ -73,7 +73,7 @@ assert.equal(missingPaddle.status,401,"Checkout requires login");
 const smtpCapture = process.env.SMTP_TEST_OUTPUT || "/tmp/commender-smtp.jsonl";
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
-const { Client } = pg;
+const { Client, Pool } = pg;
 const acceptanceDb = new Client({ connectionString: databaseUrl });
 await acceptanceDb.connect();
 
@@ -858,7 +858,8 @@ const durableKey = {
   id: randomUUID(), organizationId: searchOwner.rows[0].organization_id,
   actor: "search-ci-owner", deviceId: enrolled.deviceId,
 };
-const durableStore = new PgSearchPersistence(acceptanceDb);
+const searchPool = new Pool({ connectionString: databaseUrl });
+const durableStore = new PgSearchPersistence(searchPool);
 const durableCreatedAt = Date.now();
 try {
   await durableStore.create({
@@ -870,7 +871,7 @@ try {
     items: [{ path: "/ci/one.txt" }, { path: "/ci/two.txt" }],
     truncated: false, timedOut: false,
   });
-  const afterRestart = new PgSearchPersistence(acceptanceDb);
+  const afterRestart = new PgSearchPersistence(searchPool);
   const restored = await afterRestart.page(durableKey, durableKey.id, 1, 1);
   assert.equal(restored.status, "completed");
   assert.deepEqual(restored.items, [{ path: "/ci/two.txt" }]);
@@ -945,8 +946,8 @@ try {
 
   // A live Gateway's scanner is not a crashed/restarted scanner.
   // A distinct observer must report running while its lease is fresh.
-  const liveOwner = new PgSearchPersistence(acceptanceDb);
-  const liveObserver = new PgSearchPersistence(acceptanceDb);
+  const liveOwner = new PgSearchPersistence(searchPool);
+  const liveObserver = new PgSearchPersistence(searchPool);
   const liveKey = { ...durableKey, id: randomUUID() };
   await liveOwner.activate();
   await liveObserver.activate();
@@ -967,6 +968,38 @@ try {
     });
     await liveObserver.stop(remoteStopKey);
     assert.deepEqual(await liveOwner.stoppedIds([remoteStopKey.id]), [remoteStopKey.id]);
+
+    // Real PostgreSQL cross-Gateway allocation: eight native workers across
+    // two instances must block a ninth worker for the SAME actor, even after
+    // a stop that has not yet settled on the owning native Agent.
+    const sharedActive = [];
+    for (let index = 0; index < 6; index += 1) {
+      const key = { ...liveKey, id: randomUUID() };
+      const store = index % 2 === 0 ? liveOwner : liveObserver;
+      await store.create({
+        ...key, path: "/ci", query: "parallel", searchType: "files",
+        createdAt: Date.now(),
+      });
+      sharedActive.push(key);
+    }
+    const ninthKey = { ...liveKey, id: randomUUID() };
+    await assert.rejects(
+      liveObserver.create({
+        ...ninthKey, path: "/ci", query: "ninth", searchType: "files",
+        createdAt: Date.now(),
+      }),
+      /search_session_limit/,
+    );
+    await liveOwner.settleStopped(remoteStopKey);
+    await liveObserver.create({
+      ...ninthKey, path: "/ci", query: "after-native-settle", searchType: "files",
+      createdAt: Date.now(),
+    });
+    const confirmedStop = await liveObserver.page(remoteStopKey, remoteStopKey.id, 0, 10);
+    assert.equal(confirmedStop.status, "stopped");
+    assert.deepEqual(confirmedStop.items, []);
+    assert.equal(sharedActive.length, 6);
+
     await liveOwner.deactivate();
     const orphaned = await liveObserver.page(liveKey, liveKey.id, 0, 10);
     assert.equal(orphaned.status, "error");
@@ -982,6 +1015,7 @@ try {
     "delete from search_sessions where organization_id=$1 and actor=$2",
     [durableKey.organizationId, durableKey.actor],
   );
+  await searchPool.end();
 }
 
 
