@@ -79,7 +79,8 @@ export async function startSearch(
   };
   sessions.set(entry.id, entry);
   const action: AgentAction = entry.searchType === "files"
-    ? { kind: "fs_search", path: arg.path, query: arg.query, maxResults: 500 }
+    ? { kind: "fs_search", path: arg.path, query: arg.query,
+        caseSensitive: Boolean(arg.case_sensitive), maxResults: 500 }
     : { kind: "text_search", path: arg.path, query: arg.query,
         caseSensitive: Boolean(arg.case_sensitive), maxResults: 500 };
   // Do not block the MCP request; a follow-up call collects paged results.
