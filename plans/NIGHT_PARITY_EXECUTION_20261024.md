@@ -49,3 +49,14 @@ Tüm maddeleri *kodlandı* diye tamamlandı sayma. `Desktop Commander parity ach
 - **P0 açık:** Native gerçek akışlı/askıya alınabilir arama, yeniden başlatma sonrası oturum devamlılığı, tam PTY geçmişi, rollback/sürümleme.
 - **BLOCKED_EXTERNAL:** Gerçek ChatGPT/Claude canlı istemci, macOS/Ubuntu fiziksel kurulum ve Windows/macOS kod imzalama kabulü.
 - **Sonraki adım:** Önce yeni CI kırmızıysa kök nedeni düzelt; yeşilse 03.00 P0 arama/sayfalama açıklarına geç.
+
+## 03.00 oturumu — P0 arama düzeltmesi (2026-10-24)
+
+- **PASS / giriş HEAD:** `00a5fe63` CI `40037548484` başarılı; platform dağıtımı `40038012018` başarılı.
+- **KODLANDI:** Dosya adı aramalarında `case_sensitive` parametresi artık MCP → Gateway → Agent → Rust dosya taramasına aktarılıyor. Önceki sürümde bu parametre dosya aramalarında yok sayılıyordu.
+- **KODLANDI:** Gerçek Linux Agent E2E'ye büyük/küçük harf ayrımı ve `start_search` oturumunun aynı semantiği koruması için pozitif/negatif testler eklendi.
+- **KODLANDI:** Durdurulan aramaların aktör eşzamanlılık kotasını tüketmesi giderildi; birim testi eklendi.
+- **PENDING:** Son kod commit'i `959ed2a4` ve `ci #40043081577` sonucu; belge güncelleme commit'lerinin de ayrıca CI kabulü gerekir.
+- **Kalan P0:** Native streaming/pause/cancel, kalıcı search session, tam PTY geçmişi, rollback.
+- **BLOCKED_EXTERNAL:** Gerçek macOS/Ubuntu kurulum ve ChatGPT/Claude canlı istemci kabulü.
+- **Sonraki öncelik:** Yeni CI hatası varsa düzelt; değilse 04.00 terminal/PTY/süreç yönetimi P0 eksiklerine geç.
