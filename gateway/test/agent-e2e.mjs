@@ -390,6 +390,23 @@ try {
   assert.equal(tail.endLine, 4);
   assert.equal(tail.truncated, false);
 
+  // 1D: paged reads reject oversized and invalid UTF-8 files instead of
+  // attempting unbounded allocation or returning a partial secret.
+  const oversizedPagedPath = path.join(tempRoot, "oversized-paged.txt");
+  fs.writeFileSync(oversizedPagedPath, Buffer.alloc(32 * 1024 * 1024 + 1, 0x61));
+  const oversizedPaged = await tool(292, "fs_read_lines", {
+    device_id: deviceId, path: oversizedPagedPath, offset_lines: -1, limit_lines: 1,
+  });
+  assert.equal(typeof oversizedPaged.error, "string");
+  assert.ok(!JSON.stringify(oversizedPaged).includes("a".repeat(128)));
+  fs.rmSync(oversizedPagedPath);
+  const invalidUtf8PagedPath = path.join(tempRoot, "invalid-paged.txt");
+  fs.writeFileSync(invalidUtf8PagedPath, Buffer.from([0xff, 0xfe]));
+  const invalidUtf8Paged = await tool(293, "fs_read_lines", {
+    device_id: deviceId, path: invalidUtf8PagedPath,
+  });
+  assert.equal(typeof invalidUtf8Paged.error, "string");
+
   const batch = await tool(203, "fs_read_multiple", {
     device_id: deviceId, paths: [filePath, linesPath, path.join(tempRoot, "nonexistent.txt")],
   });
