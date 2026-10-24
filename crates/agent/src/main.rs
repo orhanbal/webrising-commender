@@ -464,7 +464,8 @@ async fn connected_loop(
                             if start_rx.await.is_err() {
                                 return;
                             }
-                            let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel::<serde_json::Value>(8);
+                            let (progress_tx, mut progress_rx) =
+                                tokio::sync::mpsc::channel::<serde_json::Value>(8);
                             let progress_writer = Arc::clone(&task_writer);
                             let progress_request = id_for_task.clone();
                             let progress_forwarder = tokio::spawn(async move {

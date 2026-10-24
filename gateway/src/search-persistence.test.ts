@@ -79,7 +79,7 @@ test("completed search page survives new gateway persistence instance and is act
 test("a live remote Gateway keeps its running search visible", async () => {
   const fake = {
     query: async () => ({
-      rows: [{ ...sampleRow, status: "running", origin_alive: true }],
+      rows: [{ ...sampleRow, status: "running", items: [], origin_alive: true }],
       rowCount: 1,
     }),
   } as unknown as Pool;
@@ -88,6 +88,32 @@ test("a live remote Gateway keeps its running search visible", async () => {
   assert.equal(page.status, "running");
   assert.equal(page.error, undefined);
   assert.deepEqual(page.items, []);
+});
+
+test("active remote Gateway exposes only its persisted incremental progress pages", async () => {
+  const visibleItems = [{ path: "/allowed/in-progress" }];
+  const fake = {
+    query: async () => ({
+      rows: [{ ...sampleRow, status: "running", items: visibleItems,
+        origin_alive: true, progress_sequence: 3, scanned_entries: 96, scanned_bytes: 12 }],
+      rowCount: 1,
+    }),
+  } as unknown as Pool;
+  const observer = new PgSearchPersistence(fake);
+  const page = await observer.page(owner, id, 0, 10);
+  assert.equal(page.status, "running");
+  assert.deepEqual(page.items, visibleItems);
+  assert.equal(page.progressUpdates, 3);
+  assert.equal(page.scannedEntries, 96);
+  assert.equal(page.scannedBytes, 12);
+  const foreign = { ...sampleRow, status: "running", items: visibleItems,
+    origin_alive: false, progress_sequence: 3 };
+  const hidden = new PgSearchPersistence({
+    query: async () => ({ rows: [foreign], rowCount: 1 }),
+  } as unknown as Pool);
+  const invisible = await hidden.page(owner, id, 0, 10);
+  assert.equal(invisible.status, "error");
+  assert.deepEqual(invisible.items, []);
 });
 
 test("a native search owned by an unavailable gateway is never reported as completed", async () => {
