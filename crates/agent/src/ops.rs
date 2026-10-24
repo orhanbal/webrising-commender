@@ -9,6 +9,7 @@ use crate::{
 };
 use anyhow::{anyhow, Result};
 use serde_json::Value;
+use std::sync::{atomic::AtomicBool, Arc};
 
 pub async fn execute(
     policy: &PathPolicy,
@@ -18,6 +19,7 @@ pub async fn execute(
     approval_token: Option<&str>,
     approval_key: &str,
     device_id: &str,
+    cancelled: Arc<AtomicBool>,
 ) -> Result<Value> {
     if action.risk() == Risk::High {
         let token = approval_token
@@ -179,25 +181,39 @@ pub async fn execute(
             query,
             case_sensitive,
             max_results,
-        } => fs_ops::search(
-            policy,
-            &path,
-            &query,
-            case_sensitive.unwrap_or(false),
-            max_results,
-        ),
+        } => {
+            let policy = policy.clone();
+            tokio::task::spawn_blocking(move || {
+                fs_ops::search_cancellable(
+                    &policy,
+                    &path,
+                    &query,
+                    case_sensitive.unwrap_or(false),
+                    max_results,
+                    &cancelled,
+                )
+            })
+            .await?
+        },
         AgentAction::TextSearch {
             path,
             query,
             case_sensitive,
             max_results,
-        } => fs_ops::text_search(
-            policy,
-            &path,
-            &query,
-            case_sensitive.unwrap_or(false),
-            max_results,
-        ),
+        } => {
+            let policy = policy.clone();
+            tokio::task::spawn_blocking(move || {
+                fs_ops::text_search_cancellable(
+                    &policy,
+                    &path,
+                    &query,
+                    case_sensitive.unwrap_or(false),
+                    max_results,
+                    &cancelled,
+                )
+            })
+            .await?
+        },
         AgentAction::FsReplace {
             path,
             search,

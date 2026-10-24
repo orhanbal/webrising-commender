@@ -7,6 +7,7 @@ use std::{
     fs,
     io::{Read, Write},
     path::Path,
+    sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 use uuid::Uuid;
@@ -102,12 +103,13 @@ pub fn tree(
     }))
 }
 
-pub fn search(
+pub fn search_cancellable(
     policy: &PathPolicy,
     raw: &str,
     query: &str,
     case_sensitive: bool,
     max_results: Option<usize>,
+    cancelled: &AtomicBool,
 ) -> Result<Value> {
     search_with_deadline(
         policy,
@@ -116,6 +118,7 @@ pub fn search(
         case_sensitive,
         max_results,
         Instant::now() + MAX_SEARCH_DURATION,
+        cancelled,
     )
 }
 
@@ -126,6 +129,7 @@ fn search_with_deadline(
     case_sensitive: bool,
     max_results: Option<usize>,
     deadline: Instant,
+    cancelled: &AtomicBool,
 ) -> Result<Value> {
     if query.trim().is_empty() {
         return Err(anyhow!("search query cannot be empty"));
@@ -148,6 +152,9 @@ fn search_with_deadline(
     let mut timed_out = false;
 
     while let Some(path) = stack.pop() {
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(anyhow!("search_cancelled"));
+        }
         if Instant::now() >= deadline {
             timed_out = true;
             truncated = true;
@@ -161,6 +168,9 @@ fn search_with_deadline(
             }
         } else if metadata.is_dir() {
             for entry in fs::read_dir(&path)? {
+                if cancelled.load(Ordering::Relaxed) {
+                    return Err(anyhow!("search_cancelled"));
+                }
                 if Instant::now() >= deadline {
                     timed_out = true;
                     truncated = true;
@@ -204,12 +214,13 @@ fn search_with_deadline(
     }))
 }
 
-pub fn text_search(
+pub fn text_search_cancellable(
     policy: &PathPolicy,
     raw: &str,
     query: &str,
     case_sensitive: bool,
     max_results: Option<usize>,
+    cancelled: &AtomicBool,
 ) -> Result<Value> {
     text_search_with_deadline(
         policy,
@@ -218,6 +229,7 @@ pub fn text_search(
         case_sensitive,
         max_results,
         Instant::now() + MAX_SEARCH_DURATION,
+        cancelled,
     )
 }
 
@@ -228,6 +240,7 @@ fn text_search_with_deadline(
     case_sensitive: bool,
     max_results: Option<usize>,
     deadline: Instant,
+    cancelled: &AtomicBool,
 ) -> Result<Value> {
     if query.is_empty() {
         return Err(anyhow!("text search query cannot be empty"));
@@ -252,6 +265,9 @@ fn text_search_with_deadline(
     let mut timed_out = false;
 
     while let Some(path) = stack.pop() {
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(anyhow!("search_cancelled"));
+        }
         if Instant::now() >= deadline {
             timed_out = true;
             truncated = true;
@@ -261,6 +277,9 @@ fn text_search_with_deadline(
 
         if metadata.is_dir() {
             for entry in fs::read_dir(&path)? {
+                if cancelled.load(Ordering::Relaxed) {
+                    return Err(anyhow!("search_cancelled"));
+                }
                 if Instant::now() >= deadline {
                     timed_out = true;
                     truncated = true;
@@ -294,6 +313,9 @@ fn text_search_with_deadline(
             };
 
             for (index, line) in text.lines().enumerate() {
+                if cancelled.load(Ordering::Relaxed) {
+                    return Err(anyhow!("search_cancelled"));
+                }
                 if Instant::now() >= deadline {
                     timed_out = true;
                     truncated = true;
@@ -671,16 +693,31 @@ mod search_budget_tests {
         let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
         let raw = root.to_str().unwrap();
         let past = Instant::now() - Duration::from_millis(1);
-        let names = search_with_deadline(&policy, raw, "needle", false, Some(10), past).unwrap();
+        let names = search_with_deadline(&policy, raw, "needle", false, Some(10), past, &AtomicBool::new(false)).unwrap();
         assert_eq!(names["timedOut"], true);
         assert_eq!(names["truncated"], true);
         assert_eq!(names["scannedEntries"], 0);
         assert_eq!(names["items"].as_array().unwrap().len(), 0);
         let content =
-            text_search_with_deadline(&policy, raw, "needle", false, Some(10), past).unwrap();
+            text_search_with_deadline(&policy, raw, "needle", false, Some(10), past, &AtomicBool::new(false)).unwrap();
         assert_eq!(content["timedOut"], true);
         assert_eq!(content["truncated"], true);
         assert_eq!(content["scannedEntries"], 0);
         fs::remove_dir_all(root).unwrap();
     }
+    #[test]
+    fn native_search_respects_pre_cancelled_requests() {
+        let root = std::env::temp_dir().join(format!("wc-search-cancel-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("sample.txt"), b"needle").unwrap();
+        let policy = PathPolicy::new(&[root.clone()]).unwrap();
+        let cancelled = AtomicBool::new(true);
+        let raw = root.to_str().unwrap();
+        assert!(search_cancellable(&policy, raw, "sample", false, Some(10), &cancelled)
+            .unwrap_err().to_string().contains("search_cancelled"));
+        assert!(text_search_cancellable(&policy, raw, "needle", false, Some(10), &cancelled)
+            .unwrap_err().to_string().contains("search_cancelled"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
 }

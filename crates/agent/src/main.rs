@@ -19,11 +19,11 @@ use clap::{Parser, Subcommand};
 use config::{default_allowed_root, AgentConfig, EnrollmentResponse, RouteResponse};
 use futures_util::{Sink, SinkExt, StreamExt};
 use policy::PathPolicy;
-use protocol::{AgentError, AgentMessage, GatewayMessage};
+use protocol::{AgentAction, AgentError, AgentMessage, GatewayMessage};
 use std::{
     collections::HashMap,
     path::PathBuf,
-    sync::Arc,
+    sync::{atomic::{AtomicBool, Ordering}, Arc},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use task_manager::TaskManager;
@@ -40,6 +40,13 @@ use tokio_tungstenite::{
 use tracing::{error, info, warn};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[derive(Clone)]
+struct ActiveRequest {
+    handle: tokio::task::AbortHandle,
+    cancelled: Arc<AtomicBool>,
+    is_search: bool,
+}
 
 #[derive(Parser)]
 #[command(
@@ -201,7 +208,7 @@ pub(crate) async fn run_until_shutdown(
     let terminals = TerminalManager::default();
     let tasks = TaskManager::default();
     let active = Arc::new(Mutex::new(
-        HashMap::<String, tokio::task::AbortHandle>::new(),
+        HashMap::<String, ActiveRequest>::new(),
     ));
 
     let mut backoff = Duration::from_secs(1);
@@ -222,6 +229,8 @@ pub(crate) async fn run_until_shutdown(
             shutdown.clone(),
         )
         .await;
+        // A disconnected relay must not leave stale native scans running.
+        abort_active(&active).await;
 
         if *shutdown.borrow() {
             abort_active(&active).await;
@@ -322,15 +331,11 @@ async fn refresh_gateway_route(config: &AgentConfig) -> Option<String> {
     Some(route.gateway_ws_url)
 }
 
-async fn abort_active(active: &Arc<Mutex<HashMap<String, tokio::task::AbortHandle>>>) {
-    let handles: Vec<_> = active
-        .lock()
-        .await
-        .drain()
-        .map(|(_, handle)| handle)
-        .collect();
-    for handle in handles {
-        handle.abort();
+async fn abort_active(active: &Arc<Mutex<HashMap<String, ActiveRequest>>>) {
+    let handles: Vec<_> = active.lock().await.drain().map(|(_, request)| request).collect();
+    for request in handles {
+        request.cancelled.store(true, Ordering::Relaxed);
+        request.handle.abort();
     }
 }
 
@@ -340,7 +345,7 @@ async fn connected_loop(
     policy: Arc<PathPolicy>,
     terminals: TerminalManager,
     tasks: TaskManager,
-    active: Arc<Mutex<HashMap<String, tokio::task::AbortHandle>>>,
+    active: Arc<Mutex<HashMap<String, ActiveRequest>>>,
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<()> {
     let mut request = gateway_ws_url.to_owned().into_client_request()?;
@@ -440,8 +445,14 @@ async fn connected_loop(
                         let id_for_task = request_id.clone();
                         let approval_key = config.approval_key.clone();
                         let device_id = config.device_id.clone();
+                        let is_search = matches!(&action, AgentAction::FsSearch { .. } | AgentAction::TextSearch { .. });
+                        let cancelled = Arc::new(AtomicBool::new(false));
+                        let task_cancelled = Arc::clone(&cancelled);
+                        // Register the handle before allowing a fast task to complete.
+                        let (start_tx, start_rx) = tokio::sync::oneshot::channel::<()>();
 
                         let handle = tokio::spawn(async move {
+                            if start_rx.await.is_err() { return; }
                             let result = ops::execute(
                                 &task_policy,
                                 &task_terminals,
@@ -450,6 +461,7 @@ async fn connected_loop(
                                 approval_token.as_deref(),
                                 &approval_key,
                                 &device_id,
+                                task_cancelled,
                             )
                             .await;
 
@@ -477,14 +489,22 @@ async fn connected_loop(
                             active_map.lock().await.remove(&id_for_task);
                         });
 
-                        active
-                            .lock()
-                            .await
-                            .insert(request_id, handle.abort_handle());
+                        active.lock().await.insert(
+                            request_id,
+                            ActiveRequest { handle: handle.abort_handle(), cancelled, is_search },
+                        );
+                        let _ = start_tx.send(());
                     }
                     GatewayMessage::Cancel { request_id } => {
-                        if let Some(handle) = active.lock().await.remove(&request_id) {
-                            handle.abort();
+                        let request = active.lock().await.get(&request_id).cloned();
+                        if let Some(request) = request {
+                            request.cancelled.store(true, Ordering::Relaxed);
+                            // Tokio abort does not stop a running blocking scan.
+                            // Let the scan observe cancellation and finish cooperatively.
+                            if !request.is_search {
+                                active.lock().await.remove(&request_id);
+                                request.handle.abort();
+                            }
                         }
                     }
                     GatewayMessage::Ping { .. } => {}
