@@ -23,11 +23,6 @@ pub enum GatewayMessage {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    tag = "kind",
-    rename_all = "snake_case",
-    rename_all_fields = "camelCase"
-)]
 pub struct SpreadsheetCellUpdate {
     pub cell: String,
     pub value: Value,
