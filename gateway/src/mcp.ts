@@ -28,6 +28,10 @@ const tools = [
     { path: str(), offset_lines: integer(), limit_lines: integer() },
     ["path"],
   ),
+  tool("xlsx_inspect", "List worksheets in an XLSX/XLSM workbook without running macros. Read-only; compressed limit 16 MiB, expanded ZIP limit 64 MiB.", { path: str() }, ["path"]),
+  tool("xlsx_read_range", "Read up to 50 rows by 20 columns from one worksheet, using 1-based coordinates. Does not evaluate formulas or execute macros.",
+    { path: str(), sheet: str(), start_row: integer(), start_column: integer(), row_count: integer(), column_count: integer() },
+    ["path", "sheet", "start_row", "start_column", "row_count", "column_count"]),
   tool(
     "fs_read_multiple",
     "Read up to ten files in one call, retaining per-file errors. Each file is limited to 64 KiB.",
@@ -197,6 +201,8 @@ function actionFromTool(name: string, a: any): AgentAction {
     case "fs_stat": return { kind: "fs_stat", path: String(a.path) };
     case "fs_read": return { kind: "fs_read", path: String(a.path), ...(a.max_bytes ? { maxBytes: Number(a.max_bytes) } : {}) };
     case "fs_read_lines": return { kind: "fs_read_lines", path: String(a.path), ...(a.offset_lines !== undefined ? { offsetLines: Number(a.offset_lines) } : {}), ...(a.limit_lines !== undefined ? { limitLines: Number(a.limit_lines) } : {}) };
+    case "xlsx_inspect": return { kind: "xlsx_inspect", path: String(a.path) };
+    case "xlsx_read_range": return { kind: "xlsx_read_range", path: String(a.path), sheet: String(a.sheet), startRow: Number(a.start_row), startColumn: Number(a.start_column), rowCount: Number(a.row_count), columnCount: Number(a.column_count) };
     case "fs_write": return { kind: "fs_write", path: String(a.path), contentBase64: String(a.content_base64), createParents: Boolean(a.create_parents) };
     case "fs_append": return { kind: "fs_append", path: String(a.path), contentBase64: String(a.content_base64) };
     case "fs_mkdir": return { kind: "fs_mkdir", path: String(a.path), recursive: Boolean(a.recursive) };
