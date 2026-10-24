@@ -461,13 +461,13 @@ try {
   const unicodeBatchPath = path.join(tempRoot, "unicode-batch.txt");
   const unicodeBatchContent = "Türkçe 🧪\r\nİkinci satır\r\n";
   fs.writeFileSync(unicodeBatchPath, unicodeBatchContent, "utf8");
-  const binaryBatchPath = path.join(tempRoot, "binary-batch.bin");
+  const binaryParityBatchPath = path.join(tempRoot, "binary-parity-batch.bin");
   const binaryBatchBytes = Buffer.from([0x00, 0xff, 0x80, 0x0a, 0x42]);
-  fs.writeFileSync(binaryBatchPath, binaryBatchBytes);
+  fs.writeFileSync(binaryParityBatchPath, binaryBatchBytes);
   const tooLargeBatchPath = path.join(tempRoot, "batch-over-limit.txt");
   fs.writeFileSync(tooLargeBatchPath, "P".repeat(65 * 1024), "utf8");
   const mixedEncodingBatch = await tool(302, "fs_read_multiple", {
-    device_id: deviceId, paths: [unicodeBatchPath, binaryBatchPath, tooLargeBatchPath],
+    device_id: deviceId, paths: [unicodeBatchPath, binaryParityBatchPath, tooLargeBatchPath],
   });
   assert.equal(mixedEncodingBatch.count, 3);
   assert.equal(mixedEncodingBatch.items[0].ok, true);
@@ -481,7 +481,7 @@ try {
   assert.equal(mixedEncodingBatch.items[2].error, "read_failed");
   assert.equal(mixedEncodingBatch.items[2].data, undefined);
   assert.equal(fs.readFileSync(unicodeBatchPath, "utf8"), unicodeBatchContent);
-  assert.deepEqual(fs.readFileSync(binaryBatchPath), binaryBatchBytes);
+  assert.deepEqual(fs.readFileSync(binaryParityBatchPath), binaryBatchBytes);
 
   // 1D: native single-request batch must isolate individual read failures,
   // including an allowlist violation, without leaking host filesystem errors.
@@ -518,6 +518,27 @@ try {
   assert.equal(aggregateRead.items[4].data, undefined);
   assert.ok(aggregateRead.items.reduce((total, item) =>
     total + (item.data?.size ?? 0), 0) <= 256 * 1024);
+
+  // 1D: a file rejected for exceeding the remaining aggregate budget
+  // must not consume it; a later smaller valid file is still readable.
+  const remainingBudgetPaths = [
+    ...aggregatePaths.slice(0, 4),
+    path.join(tempRoot, "aggregate-too-large-for-remaining.bin"),
+    path.join(tempRoot, "aggregate-small-after-failure.bin"),
+  ];
+  fs.writeFileSync(remainingBudgetPaths[4], Buffer.alloc(20 * 1024, 0x43));
+  fs.writeFileSync(remainingBudgetPaths[5], Buffer.alloc(8 * 1024, 0x44));
+  const remainingBudgetRead = await tool(307, "fs_read_multiple", {
+    device_id: deviceId, paths: remainingBudgetPaths,
+  });
+  assert.equal(remainingBudgetRead.count, 6);
+  assert.deepEqual(remainingBudgetRead.items.map(item => item.ok),
+    [true, true, true, true, false, true]);
+  assert.equal(remainingBudgetRead.items[4].error, "read_failed");
+  assert.equal(remainingBudgetRead.items[4].data, undefined);
+  assert.equal(remainingBudgetRead.items[5].data.size, 8 * 1024);
+  assert.equal(remainingBudgetRead.items.reduce((total, item) =>
+    total + (item.data?.size ?? 0), 0), 248 * 1024);
 
   // 1D: a symlink placed inside an allowed root cannot launder an external
   // file into a native multi-read result. A neighboring valid file survives.
