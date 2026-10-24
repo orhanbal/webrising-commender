@@ -218,6 +218,36 @@ try {
   });
   assert.ok(fileSearch.items.some((item) => item.path === filePath));
 
+  // Filename matching must honor the case_sensitive flag all the way to the Rust Agent.
+  const mixedCaseName = path.join(tempRoot, "CaseMatch.txt");
+  const lowerCaseName = path.join(tempRoot, "casematch.txt");
+  fs.writeFileSync(mixedCaseName, "case test", "utf8");
+  fs.writeFileSync(lowerCaseName, "case test", "utf8");
+  const exactNameSearch = await tool(220, "fs_search", {
+    device_id: deviceId, path: tempRoot, query: "CaseMatch", case_sensitive: true,
+  });
+  assert.equal(exactNameSearch.caseSensitive, true);
+  assert.ok(exactNameSearch.items.some((item) => item.path === mixedCaseName));
+  assert.ok(!exactNameSearch.items.some((item) => item.path === lowerCaseName));
+  const foldedNameSearch = await tool(221, "fs_search", {
+    device_id: deviceId, path: tempRoot, query: "CaseMatch", case_sensitive: false,
+  });
+  assert.ok(foldedNameSearch.items.some((item) => item.path === mixedCaseName));
+  assert.ok(foldedNameSearch.items.some((item) => item.path === lowerCaseName));
+
+  const caseSession = await tool(222, "start_search", {
+    device_id: deviceId, path: tempRoot, query: "CaseMatch",
+    search_type: "files", case_sensitive: true,
+  });
+  const casePage = await waitFor(async () => {
+    const result = await tool(223, "get_more_search_results", {
+      device_id: deviceId, search_id: caseSession.searchId, offset: 0, length: 20,
+    });
+    return result.status === "completed" ? result : false;
+  });
+  assert.ok(casePage.items.some((item) => item.path === mixedCaseName));
+  assert.ok(!casePage.items.some((item) => item.path === lowerCaseName));
+
   const codeSearch = await tool(116, "code_search", {
     device_id: deviceId,
     path: tempRoot,
