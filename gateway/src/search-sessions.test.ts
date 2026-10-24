@@ -163,6 +163,48 @@ test("pause/resume only controls an owned active native search and never leaks a
   assert.deepEqual((await searchPage(actor, "pause-device", started.searchId, 0, 10)).items, []);
 });
 
+test("fast resumed native progress is accepted before the control ACK returns", async () => {
+  const actor = { ...principal, actor: "resume-race-owner" };
+  let emit!: (value: { items: unknown[]; scannedEntries: number; scannedBytes: number }) => void;
+  let settle!: (value: { items: unknown[]; truncated: boolean }) => void;
+  const calls: string[] = [];
+  const router = {
+    request: async (_device: string, _action: unknown, _approval: unknown,
+      _signal: AbortSignal, onProgress: typeof emit) => {
+      emit = onProgress;
+      return new Promise<{ items: unknown[]; truncated: boolean }>(resolve => { settle = resolve; });
+    },
+    controlSearch: async () => {
+      calls.push("native");
+      emit({ items: [{ path: "/safe/needle.txt" }], scannedEntries: 32, scannedBytes: 0 });
+      return true;
+    },
+  } as unknown as DeviceRouter;
+  const persistence = {
+    create: async () => {},
+    page: async () => ({ status: "running", paused: true }),
+    setPaused: async (_key: unknown, paused: boolean) => {
+      calls.push(paused ? "db-pause" : "db-resume"); return true;
+    },
+    progress: async () => { calls.push("progress"); return true; },
+    finish: async () => true,
+  };
+  setSearchPersistence(persistence as never);
+  try {
+    const entry = await startSearch(actor, "resume-race-device", router, {
+      path: "/safe", query: "needle", search_type: "files", start_paused: true,
+    });
+    const resumed = await controlSearch(actor, "resume-race-device", entry.searchId, router, false);
+    assert.equal(resumed.paused, false);
+    assert.equal(resumed.progressUpdates, 1);
+    assert.deepEqual(calls.slice(0, 2), ["db-resume", "native"]);
+    settle({ items: [{ path: "/safe/needle.txt" }], truncated: false });
+    await new Promise(resolve => setImmediate(resolve));
+  } finally {
+    setSearchPersistence(undefined);
+  }
+});
+
 test("failed native pause acknowledgment cancels only the owned scan", async () => {
   const actor = { ...principal, actor: "pause-reject-owner" };
   let cancelled!: AbortSignal;

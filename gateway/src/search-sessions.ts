@@ -350,17 +350,26 @@ export async function controlSearch(
   if (s.paused === paused) return summary(s);
   s.controlPending = true;
   try {
+    // A fast native scan can emit all progress before the resume ACK returns.
+    // Clear the durable and local pause flags *before* sending the resume:
+    // otherwise both the Gateway observer and PostgreSQL reject valid frames.
+    if (!paused) {
+      if (persistence?.setPaused && !await persistence.setPaused(s, false)) {
+        throw new Error("search_not_running");
+      }
+      if (s.status !== "running" || !s.inFlight) throw new Error("search_not_running");
+      s.paused = false;
+    }
     const accepted = await router.controlSearch(deviceId, searchId, paused);
     if (!accepted || s.status !== "running" || !s.inFlight) {
       throw new Error("search_control_unavailable");
     }
-    if (persistence?.setPaused && !await persistence.setPaused(s, paused)) {
-      // Another Gateway may have revoked this search during the native ACK.
-      // Cancel rather than leaving a paused native worker consuming resources.
-      s.controller.abort();
-      throw new Error("search_not_running");
+    if (paused) {
+      if (persistence?.setPaused && !await persistence.setPaused(s, true)) {
+        throw new Error("search_not_running");
+      }
+      s.paused = true;
     }
-    s.paused = paused;
     return summary(s);
   } catch (error) {
     if (s.status === "running" && error instanceof Error &&
