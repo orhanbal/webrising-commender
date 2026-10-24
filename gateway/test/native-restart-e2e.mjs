@@ -19,7 +19,8 @@ if (!["127.0.0.1", "localhost", "::1"].includes(target.hostname) ||
     target.protocol !== "http:") {
   throw new Error("native-restart-e2e requires loopback HTTP Gateway");
 }
-const contentMode = process.argv[2] === "content";
+const tamperedContentMode = process.argv[2] === "content-tampered";
+const contentMode = process.argv[2] === "content" || tamperedContentMode;
 if (process.argv[2] && !contentMode) throw new Error("unknown native restart test mode");
 const query = contentMode ? "native-content-recovery-needle" : "native-recovery-needle";
 const key = process.env.CONTROL_API_KEY;
@@ -145,6 +146,7 @@ try {
   assert.ok(Number.isSafeInteger(oldPid) && oldPid > 1);
   process.kill(oldPid, "SIGKILL");
   native.kill("SIGKILL");
+  await until(() => native.exitCode !== null || native.signalCode !== null, 3000, 20);
   await until(async () => {
     try { await fetch(base + "/health/live", { signal: AbortSignal.timeout(250) }); return false; }
     catch { return true; }
@@ -155,6 +157,15 @@ try {
   assert.equal(crashed.rows[0].status, "running",
     "Native scan must be unfinished when both processes crash");
   assert.ok(crashed.rows[0].checkpoint, "Safe native checkpoint must survive the crash");
+  if (tamperedContentMode) {
+    // A checkpoint contains untrusted saved matches. Mutating a previously
+    // matched file between process lifetimes must fail closed: no stale line
+    // preview may survive in a recovered search result.
+    const savedPath = checkpointed.checkpoint.items[0]?.path;
+    assert.equal(typeof savedPath, "string");
+    assert.ok(path.resolve(savedPath).startsWith(searchRoot + path.sep));
+    fs.writeFileSync(savedPath, "mutated after the crash; no original match");
+  }
 
   const logFd = fs.openSync("/tmp/commender-gateway-native-restart.log", "a");
   gateway = spawn(process.execPath, ["dist/index.js"], {
@@ -171,6 +182,25 @@ try {
     const devices = await api("/api/devices");
     return devices.items.some(item => item.id === deviceId && item.online);
   }, 18000, 100);
+  if (tamperedContentMode) {
+    const rejected = await until(async () => {
+      const page = await tool(8111, "get_more_search_results", {
+        device_id: deviceId, search_id: started.searchId, offset: 0, length: 10,
+      });
+      if (page.status === "completed") {
+        throw new Error("stale saved content was incorrectly accepted");
+      }
+      return page.status === "error" ? page : false;
+    }, 30000, 100);
+    assert.equal(rejected.error, "search_failed");
+    assert.deepEqual(rejected.items, []);
+    const persisted = await pool.query(
+      "select status, items from search_sessions where id=$1", [started.searchId],
+    );
+    assert.equal(persisted.rows[0].status, "error");
+    assert.deepEqual(persisted.rows[0].items, []);
+    console.log("native-restart-e2e: PASS (changed saved content rejected by real Rust Agent after restart)");
+  } else {
   const completed = await until(async () => {
     const page = await tool(8102, "get_more_search_results", {
       device_id: deviceId, search_id: started.searchId, offset: 0, length: 10,
@@ -210,6 +240,7 @@ try {
   console.log("native-restart-e2e: PASS (" +
     (contentMode ? "match-bearing content" : "filename") +
     ", real Rust Agent + Gateway SIGKILL/restart, same searchId, persisted checkpoint)");
+  }
 } catch (error) {
   console.error(error);
   console.error(nativeLog.slice(-5000));

@@ -245,6 +245,8 @@ jobs:
         run: node gateway/test/native-restart-e2e.mjs
       - name: Verify real Rust Agent match-bearing content recovery after restart
         run: node gateway/test/native-restart-e2e.mjs content
+      - name: Reject changed saved content during real Agent restart recovery
+        run: node gateway/test/native-restart-e2e.mjs content-tampered
       - name: Print gateway log on failure
         if: failure()
         run: cat /tmp/commender-gateway.log || true
