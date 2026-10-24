@@ -146,6 +146,10 @@ Current remote terminal, file, device and security features remain supported,
 but rich document support, paginated file/process operations and physical OS/MCP
 acceptance must be completed before declaring comparable product maturity.
 
+## Future roadmap — discussion only
+
+The [Advanced Development Plan 1](ADVANCED_DEVELOPMENT_PLAN_1.md) records the post-parity, AI-provider-independent remote infrastructure management proposals. **Status: discussion draft, not an approved or scheduled implementation phase.** WECOMMANDER remains an execution and security platform for the user's chosen AI client, not a required built-in LLM. Do not interrupt the Desktop Commander parity queue to implement this roadmap; discuss and refine features with the user first.
+
 ## 7. Definition of done
 
 A release is accepted only when:
