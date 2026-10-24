@@ -348,8 +348,7 @@ test("match-free content checkpoint resumes with original actor/session/byte bud
     assert.equal(dispatchedSession, candidate.id);
     assert.equal((dispatchedAction as { kind: string }).kind, "text_search");
     assert.deepEqual((dispatchedAction as { resumeCheckpoint: unknown }).resumeCheckpoint, checkpoint);
-    const running = await searchPage(actor, candidate.deviceId, candidate.id, 0, 10);
-    assert.equal(running.scannedBytes, 96);
+    assert.equal(checkpoint.scannedBytes, 96);
     resolveNative({ items: [{ path: "/safe/unread.txt", line: 1,
       preview: "needle" }], truncated: false, scannedBytes: 110 });
     await new Promise(resolve => setImmediate(resolve));

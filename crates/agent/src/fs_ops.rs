@@ -1331,10 +1331,11 @@ mod search_budget_tests {
         fs::write(root.join("first/one.txt"), b"needle in first").unwrap();
         fs::write(root.join("second/two.txt"), b"needle in second").unwrap();
         let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
-        let checkpoints = std::sync::Mutex::new(Vec::<Value>::new());
-        let report = |_: &[Value], _: usize, _: u64, candidate: Option<&Value>| {
+        let checkpoints = Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+        let sink = Arc::clone(&checkpoints);
+        let report = move |_: &[Value], _: usize, _: u64, candidate: Option<&Value>| {
             if let Some(candidate) = candidate {
-                checkpoints.lock().unwrap().push(candidate.clone());
+                sink.lock().unwrap().push(candidate.clone());
             }
         };
         let original = text_search_cancellable_controlled(
