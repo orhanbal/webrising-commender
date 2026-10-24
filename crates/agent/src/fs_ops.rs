@@ -919,6 +919,29 @@ mod search_budget_tests {
     }
 
     #[test]
+    fn expired_native_filename_search_reports_truncation_without_results() {
+        let root = std::env::temp_dir().join(format!("wc-search-deadline-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("match.txt"), b"needle").unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let cancelled = AtomicBool::new(false);
+        let result = search_with_deadline(
+            &policy,
+            root.to_str().unwrap(),
+            "match",
+            false,
+            Some(10),
+            Instant::now() - Duration::from_secs(1),
+            &cancelled,
+        )
+        .unwrap();
+        assert_eq!(result["timedOut"], true);
+        assert_eq!(result["truncated"], true);
+        assert!(result["items"].as_array().unwrap().is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn native_search_respects_pre_cancelled_requests() {
         let root = std::env::temp_dir().join(format!("wc-search-cancel-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
