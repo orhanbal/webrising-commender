@@ -79,3 +79,18 @@ test("file search sessions forward case sensitivity to the native device action"
   assert.deepEqual(observed, [{ kind: "fs_search", path: "/safe", query: "MixedCase",
     caseSensitive: true, maxResults: 500 }]);
 });
+
+test("stopping a search releases its per-actor concurrency slot", async () => {
+  const p = { ...principal, actor: "quota-search-user" };
+  const args = { path: "/safe", query: "sample", search_type: "files" };
+  const created = [];
+  for (let index = 0; index < 8; index += 1) {
+    created.push(await startSearch(p, "quota-device", remote, args));
+  }
+  await assert.rejects(startSearch(p, "quota-device", remote, args), /search_session_limit/);
+  const stopped = stopSearch(p, "quota-device", created[0].searchId);
+  assert.equal(stopped.status, "stopped");
+  const replacement = await startSearch(p, "quota-device", remote, args);
+  assert.equal(typeof replacement.searchId, "string");
+  assert.equal(searchPage(p, "quota-device", created[0].searchId, 0, 1).status, "stopped");
+});
