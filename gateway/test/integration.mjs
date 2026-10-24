@@ -930,6 +930,52 @@ assert.ok(listed.result.tools.some((tool) => tool.name === "fs_replace"));
 assert.ok(listed.result.tools.some((tool) => tool.name === "task_list"));
 assert.ok(listed.result.tools.some((tool) => tool.name === "terminal_list"));
 
+// MCP contract regression: every advertised tool must be uniquely named,
+// bounded to its documented JSON object schema, and device-scoped where relevant.
+const advertisedTools = listed.result.tools;
+const advertisedNames = advertisedTools.map((tool) => tool.name);
+assert.equal(new Set(advertisedNames).size, advertisedNames.length, "MCP tool names must be unique");
+for (const advertised of advertisedTools) {
+  assert.ok(advertised.description.length > 10, `Missing tool description: ${advertised.name}`);
+  const schema = advertised.inputSchema;
+  assert.equal(schema.type, "object", advertised.name);
+  assert.equal(schema.additionalProperties, false, advertised.name);
+  const required = schema.required || [];
+  assert.equal(new Set(required).size, required.length, advertised.name);
+  for (const key of required) {
+    assert.ok(Object.hasOwn(schema.properties, key), `Missing schema property ${advertised.name}.${key}`);
+  }
+  if (advertised.name !== "devices_list") {
+    assert.ok(required.includes("device_id"), `Device routing not required: ${advertised.name}`);
+    assert.equal(schema.properties.device_id.type, "string", advertised.name);
+  }
+}
+for (const name of [
+  "fs_read_lines", "fs_read_multiple", "start_search", "get_more_search_results",
+  "stop_search", "terminal_read_page", "get_recent_tool_calls", "get_usage_stats",
+  "xlsx_inspect", "xlsx_read_range", "xlsx_find", "xlsx_write_cells",
+  "docx_inspect", "docx_read_paragraphs", "docx_read_table", "image_inspect",
+]) {
+  assert.ok(advertisedNames.includes(name), `Missing advertised parity tool: ${name}`);
+}
+for (const name of ["process_exec", "process_kill", "fs_delete", "task_start",
+  "task_cancel", "terminal_start", "terminal_stop"]) {
+  const advertised = advertisedTools.find((tool) => tool.name === name);
+  assert.equal(advertised.inputSchema.properties.approval_token.type, "string", name);
+}
+const unknownMcpTool = await rpc(280, "tools/call", {
+  name: "unknown_unregistered_tool",
+  arguments: {},
+});
+assert.equal(unknownMcpTool.result.isError, true);
+assert.equal(toolText(unknownMcpTool).error, "unknown_tool");
+const missingDeviceMcp = await rpc(281, "tools/call", {
+  name: "system_info",
+  arguments: {},
+});
+assert.equal(missingDeviceMcp.result.isError, true);
+assert.equal(toolText(missingDeviceMcp).error, "device_id_required");
+
 const info = await rpc(3, "tools/call", {
   name: "system_info",
   arguments: { device_id: enrolled.deviceId },
