@@ -1,3 +1,12 @@
+## 24 Ekim 2026 — A/B/C/D: native dosya okuma symlink yarışını sertleştirme
+
+- **A / PASSED (giriş kodu):** [CI #40110624425](https://github.com/orhanbal/webrising-commender/actions/runs/40110624425) / `54c4ee7c` 17/17 PASSED; önceki kırmızı `integration` SMTP outbox yarışı giderilmişti. Bu kanıt yeni kod commitlerine taşınmaz.
+- **B / KODLANDI, PENDING:** [`c8cb2438`](https://github.com/orhanbal/webrising-commender/commit/c8cb2438848db12766cf18c71108991e1f9f8602) Rust Agent'da `text_search`, `fs_read`, `fs_read_lines` ve `fs_replace` için normal dosya handle'ı ve son bileşen symlink izlememe koruması ekler (Linux `O_NOFOLLOW`, macOS `O_NOFOLLOW`, Windows reparse-point açma bayrağı). `fs_replace` içeriği artık 4 MiB + 1 bayt fiziksel sınırla okur; metadata/read büyüme yarışında bellek sınırsız büyümez. Ücretli veya yeni runtime bağımlılığı yok.
+- **C / TESTLER KODLANDI, PENDING:** [`d7e47d93`](https://github.com/orhanbal/webrising-commender/commit/d7e47d934faaa14ad8adab41334bd663b69791b2) gerçek MCP→Gateway→Rust Agent E2E'de allowlist dışı dosyaya symlink üzerinden `fs_read`, `fs_read_lines`, `fs_replace` reddini ve hedef içeriğinin değişmemesini doğrular. Rust unit final-component swap simülasyonu eklenmiştir.
+- **D / FAILED → FIXED CODE, CI PENDING:** [CI #40111108878](https://github.com/orhanbal/webrising-commender/actions/runs/40111108878) `rust` job `cargo fmt --check` biçim hatası gösterdi. [`7567af97`](https://github.com/orhanbal/webrising-commender/commit/7567af97d4dc6b6dea05771a75b99468a47be0d3) bu diff'i düzeltti; [CI #40111188325](https://github.com/orhanbal/webrising-commender/actions/runs/40111188325) son kodun 17 job sonucu ve artifact'leri tamamlanmadan **PASSED** sayılmaz. Bu belge commitinin kendi CI'sı da ayrıca kontrol edilir.
+- **Kalan risk ve kuyruk:** Bu koruma yalnız son path bileşeninin symlink değiştirilmesini sınırlar; üst dizinlerin eşzamanlı yeniden adlandırılması için descriptor-relative/openat benzeri tam yarış güvenliği henüz **PENDING**. **1A** gerçek native streaming/pause/resume; **1B** çalışan taramayı checkpoint'ten restart sonrası sürdürme; **1C/1D/3A** tam OS/stress/race kabulü **PENDING**. 2A–10D kuyruğu açık; **7B/10C BLOCKED_EXTERNAL**. Tam Desktop Commander eşdeğerliği **PENDING**.
+- **Kapsam:** Yalnız `orhanbal/webrising-commender/main`; başka repo, üretim, sunucu, Desktop Commander/Remote Desktop Commander kullanılmadı.
+
 ## 24 Ekim 2026 19.14 TRT — A: kırmızı CI düzeltildi, 1A/1B kabulü açık
 
 - **FAILED (giriş HEAD):** `55da5480db6bcb007df286a502e8f523be22fa5e`, [CI #40108369178](https://github.com/orhanbal/webrising-commender/actions/runs/40108369178): 16/17 job PASSED; `integration` FAILED. Gerçek job `120914763009` logunda `gateway/test/integration.mjs:241` `outboxStatus.counts.sent >= 1` assertion hatası. SMTP test sunucusu mesajı kaydetmişti, ancak asenkron mail worker'ın `sent_at` veritabanı güncellemesi henüz görünür değildi.
@@ -124,15 +133,15 @@
 
 | Kod | Durum | Doğrulanmış mevcut kapsam / kalan kabul |
 |---|---|---|
-| 1A | PENDING | Cross-Gateway native cancel polling `1dd8091f` eklendi; gerçek streaming/pause/resume ve uzun tarama kabulü açık. Yerel relay üzerinden kooperatif native cancel kodlandı (`c602a7ad`, `0ad37183`); streaming, pause/resume, regional relay cancel ve yavaş tarama negatif E2E açık. |
+| 1A | PENDING | Native content read nofollow hardening `c8cb2438` eklendi; streaming/pause/resume hâlâ açık.  Cross-Gateway native cancel polling `1dd8091f` eklendi; gerçek streaming/pause/resume ve uzun tarama kabulü açık. Yerel relay üzerinden kooperatif native cancel kodlandı (`c602a7ad`, `0ad37183`); streaming, pause/resume, regional relay cancel ve yavaş tarama negatif E2E açık. |
 | 1B | PENDING | PostgreSQL scoped completed snapshots (`fc51c76c`) restart sonrası okunuyor; Gateway liveness (`bf07c7c5`), cross-instance stop CAS (`781a5efc`) ve native cancel polling (`1dd8091f`) eklendi. Gerçek iki Gateway + native Agent uzun tarama, scanner'ın restart sonrası devamı ve CI kabulü açık. |
 | 1C | PENDING | Case sensitivity ve sayfalama E2E mevcut; bu tur 10s native scan bütçesi ve zaman aşımı sinyali eklendi. Büyük dizin, yarış, quota ve güncel CI kabulü açık. |
-| 1D | PENDING | 1–10 çoklu okuma ve per-file hata, line/tail sayfalama Agent E2E mevcut; büyük çıktı ve negatif OS kapsamı tamamlanmadı. |
+| 1D | PENDING | `fs_read`/`fs_read_lines` final symlink guard ve negatif E2E `d7e47d93` eklendi.  1–10 çoklu okuma ve per-file hata, line/tail sayfalama Agent E2E mevcut; büyük çıktı ve negatif OS kapsamı tamamlanmadı. |
 | 2A | PENDING | PTY history paging var; prompt/REPL ve tam çıktı kalıcılığı açık. |
 | 2B | PENDING | PTY geçmişi RAM'de son 1 MiB; disk spool ve restart/retention yok. |
 | 2C | PENDING | Süreç/task iptali mevcut; process-tree temizleme ve OS varyantları kabulü açık. |
 | 2D | PENDING | Kota, izin, terminal yarışları ve tüm OS negatif test matrisi açık. |
-| 3A | PENDING | Atomik yazma ve SHA önkoşulu E2E var; eşzamanlı dış değişiklik yarışının güvenli kapanışı açık. |
+| 3A | PENDING | `fs_replace` fiziksel 4 MiB sınırı ve final symlink guard `c8cb2438`; tam atomic CAS/rollback yarışı açık.  Atomik yazma ve SHA önkoşulu E2E var; eşzamanlı dış değişiklik yarışının güvenli kapanışı açık. |
 | 3B | PENDING | Kalıcı sürümleme, geri alma ve veri kaybı negatif E2E yok. |
 | 3C | PENDING | Allowed-root, risk/onay ve policy_info var; konfigürasyon/shell/engelli komut matrisi açık. |
 | 3D | PENDING | Tool history/usage Gateway araçları var; audit/redaction/large paging kabulü açık. |
@@ -156,11 +165,11 @@
 | 8B | PENDING | Linux shell/systemd installer ve CI paket var; fiziksel upgrade/uninstall kabulü açık. |
 | 8C | PENDING | macOS installer ve CI paket var; fiziksel upgrade/uninstall ve noter kabulü açık. |
 | 8D | PENDING | Üç OS acceptance artifact'leri CI'da üretilmiş; fiziksel makine kanıtı ve güncel HEAD CI açık. |
-| 9A | PENDING | Auth/RBAC/approval/audit altyapısı var; 46 araç tam izin/limit/redaction negatif matrisi açık. |
+| 9A | PENDING | Dosya allowlist symlink negatif Agent E2E `d7e47d93`; ancestor-dir yarışları ve 46 araç tam izin matrisi açık.  Auth/RBAC/approval/audit altyapısı var; 46 araç tam izin/limit/redaction negatif matrisi açık. |
 | 9B | PENDING | Relay E2E/backup-restore CI var; uzun süreli reboot/soak/failover fiziksel kabulü açık. |
 | 9C | PENDING | 46 araç, 35 doğrudan Agent E2E çağrısı kayıtlı; tüm araç/negatif/OS varyantları açık. |
 | 9D | PENDING | Compose clean stack/restore CI var; tam yeni Agent eşleme/kurulum kabulü açık. |
-| 10A | PENDING | `e53f30ef` CI #40088408188 17/17 PASSED, platform #40088728355 PASSED; `1dd8091f` CI #40088922971 ve son belge HEAD'inin tüm işleri ayrıca doğrulanmalı. |
+| 10A | PENDING | Kod CI #40111188325 ve bu plan commitinin CI'sı bekleniyor; önceki #40110624425 17/17 PASSED yalnız `54c4ee7c` için.  `e53f30ef` CI #40088408188 17/17 PASSED, platform #40088728355 PASSED; `1dd8091f` CI #40088922971 ve son belge HEAD'inin tüm işleri ayrıca doğrulanmalı. |
 | 10B | PENDING | Kurulum/upgrade/uninstall belgeleri var; sürüm uyumu ve güvenli release acceptance açık. |
 | 10C | BLOCKED_EXTERNAL | Gerçek Windows/macOS/Ubuntu, canlı ChatGPT/Claude, Windows imzası ve Apple notarization kanıtı yok. |
 | 10D | PENDING | Plan/matris senkronizasyonu ve nihai CI/gerçek kabul kapıları açık; parity ilan edilmez. |
