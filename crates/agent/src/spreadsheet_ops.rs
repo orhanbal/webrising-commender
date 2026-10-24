@@ -16,13 +16,18 @@ fn checked_workbook(policy: &PathPolicy, raw: &str) -> Result<std::path::PathBuf
     if !path.is_file() {
         return Err(anyhow!("spreadsheet path is not a file"));
     }
-    let ext = path.extension().and_then(|ext| ext.to_str()).unwrap_or_default();
+    let ext = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or_default();
     if !ext.eq_ignore_ascii_case("xlsx") && !ext.eq_ignore_ascii_case("xlsm") {
         return Err(anyhow!("only .xlsx and .xlsm spreadsheets are supported"));
     }
     let len = fs::metadata(&path)?.len();
     if len == 0 || len > MAX_WORKBOOK_BYTES {
-        return Err(anyhow!("spreadsheet exceeds the 16 MiB compressed file limit"));
+        return Err(anyhow!(
+            "spreadsheet exceeds the 16 MiB compressed file limit"
+        ));
     }
     // ZIP metadata inspection prevents unbounded decompression by the reader.
     // Reading an XLSM never executes its embedded VBA code.
@@ -36,7 +41,9 @@ fn checked_workbook(policy: &PathPolicy, raw: &str) -> Result<std::path::PathBuf
         let entry = archive.by_index(index)?;
         expanded = expanded.saturating_add(entry.size());
         if expanded > MAX_UNCOMPRESSED_BYTES {
-            return Err(anyhow!("spreadsheet exceeds the 64 MiB expanded archive limit"));
+            return Err(anyhow!(
+                "spreadsheet exceeds the 64 MiB expanded archive limit"
+            ));
         }
     }
     Ok(path)
@@ -69,18 +76,27 @@ pub fn read_range(
     if sheet.is_empty() || sheet.len() > 255 {
         return Err(anyhow!("invalid sheet name"));
     }
-    if start_row == 0 || start_col == 0 || row_count == 0 || col_count == 0 ||
-        row_count > MAX_ROWS || col_count > MAX_COLS ||
-        start_row.saturating_add(row_count - 1) > 1_048_576 ||
-        start_col.saturating_add(col_count - 1) > 16_384 {
-        return Err(anyhow!("invalid spreadsheet range (1-based coordinates, maximum 50x20)"));
+    if start_row == 0
+        || start_col == 0
+        || row_count == 0
+        || col_count == 0
+        || row_count > MAX_ROWS
+        || col_count > MAX_COLS
+        || start_row.saturating_add(row_count - 1) > 1_048_576
+        || start_col.saturating_add(col_count - 1) > 16_384
+    {
+        return Err(anyhow!(
+            "invalid spreadsheet range (1-based coordinates, maximum 50x20)"
+        ));
     }
     let path = checked_workbook(policy, raw)?;
     let mut workbook = open_workbook_auto(&path).context("cannot parse spreadsheet")?;
     if !workbook.sheet_names().iter().any(|name| name == sheet) {
         return Err(anyhow!("spreadsheet sheet not found"));
     }
-    let range = workbook.worksheet_range(sheet).context("cannot read spreadsheet sheet")?;
+    let range = workbook
+        .worksheet_range(sheet)
+        .context("cannot read spreadsheet sheet")?;
     let mut cells = Vec::new();
     for row in start_row..start_row + row_count {
         for column in start_col..start_col + col_count {
@@ -144,7 +160,11 @@ mod tests {
         let file = root.join("test.txt");
         fs::write(&file, b"not an Excel workbook").unwrap();
         assert!(inspect(&policy, file.to_str().unwrap()).is_err());
-        assert!(inspect(&policy, PathBuf::from(&root).join("missing.xlsx").to_str().unwrap()).is_err());
+        assert!(inspect(
+            &policy,
+            PathBuf::from(&root).join("missing.xlsx").to_str().unwrap()
+        )
+        .is_err());
         fs::remove_dir_all(root).unwrap();
     }
 }
