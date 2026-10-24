@@ -1,3 +1,12 @@
+## 12.14 tetiklemesi — A/B/C/D P0 arama güvenliği ve sınırlandırma (2026-10-24)
+
+- **A / PASSED (giriş):** `cf8387fa` için [ci #40080662828](https://github.com/orhanbal/webrising-commender/actions/runs/40080662828) 17/17 başarılı, [platform #40080948491](https://github.com/orhanbal/webrising-commender/actions/runs/40080948491) başarılı; Rust job logları incelendi. Girişte kırmızı CI yoktu.
+- **B / PENDING (kodlandı):** `3db2cb23`, `e1fe01c5` — search-session kota semantiği: yalnız gerçek in-flight native taramalar slot tüketir, tamamlananlar tüketmez; durdurulan ama hâlâ çalışan native taramalar bitene kadar slotu tutar. Native hata mesajları redakte edilir; yarış/kota/redaksiyon testleri eklendi.
+- **C / PENDING (kodlandı):** `cf41f58f`, `5c67b09b`, `93809aaa` — Rust dosya/içerik taramasında 10s monotonic süre bütçesi, `timedOut`/ `truncated` sinyali, MCP session özeti, Rust unit ve gerçek Linux Agent E2E kontrat testi. Tek bir filesystem syscall'ın 10s içinde kesileceği garanti edilmez; gerçek native cancel/streaming hâlâ PENDING.
+- **D / PENDING:** [40 kalemlik kanonik kuyruk](HOURLY_BACKLOG_QUEUE_20261024.md) oluşturuldu; parity planı, MCP matrisi ve ana plan bağlantıları senkronize ediliyor. Yeni HEAD CI sonuçlanmadan `PASSED` ilan edilmez.
+- **BLOCKED_EXTERNAL:** Gerçek Windows/macOS/Ubuntu, ChatGPT/Claude canlı kabulü ve imzalama/noter kanıtları.
+- **Sonraki öncelik:** CI kırmızıysa düzelt; yeşilse 1A gerçek native streaming/cancel, 1B restart sonrası izole search-session persistence. Önceden tamamlanmış testleri yeniden yazma.
+
 # WECOMMANDER — 24 Ekim 2026 Gece Eşdeğerlik Kapanış Planı
 
 **Amaç:** Desktop Commander'ın temel, gelişmiş ve belgeye özgü araç kapsamına ulaşmak. İşlevler uygulama kodu, MCP şeması, Gateway, yerel Agent, güvenlik ve E2E kabulüyle tamamlanmadıkça DONE denmez.
