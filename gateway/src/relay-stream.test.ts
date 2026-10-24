@@ -14,8 +14,6 @@ function streamed(chunks: string[], contentType = "application/x-ndjson; charset
 }
 
 const progress: SearchProgress = {
-  type: "search_progress",
-  requestId: "native-request",
   items: [{ path: "/safe/first" }],
   scannedEntries: 32,
   scannedBytes: 1024,
