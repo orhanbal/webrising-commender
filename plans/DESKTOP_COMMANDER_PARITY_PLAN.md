@@ -37,6 +37,15 @@ Son gözden geçirme: 2026-10-24. Öncelik: eşdeğerlik > güvenilirlik/kabul >
 - **PENDING:** Bu son iki kod/test commit'inin CI ve dağıtım kabulü; en son HEAD üzerinde bütün job'lar PASS olmadan tamamlandı sayılmaz.
 - **AÇIK:** XLSM güvenli yazma (şimdilik yalnızca okuma), karmaşık OOXML parçaları için yazma (bilinçli olarak reddediliyor), formül ve stil roundtrip matrisi, fiziksel Windows/macOS kabulü ve performans testleri.
 
+## 06.00 P1 DOCX okuma altyapısı (2026-10-24)
+
+- **Önceki kanıtlı baseline:** `12d0a263` commit'i için GitHub Actions `ci #40054605923` **17/17 PASS**, `platform-distribution #40055044684` **PASS**.
+- **KODLANDI / son HEAD kabul bekliyor:** Native Rust `docx_inspect`, `docx_read_paragraphs`, `docx_read_table` işlemleri; MCP araç tanımları, Gateway Zod protokolü, `AgentAction` LOW risk eşlemesi, Agent `spawn_blocking` hattı. Sadece DOCX okuma destekleniyor; DOCX düzenleme henüz YOK.
+- **Güvenlik:** Allowed-root politikası, 16 MiB sıkıştırılmış/64 MiB açılmış ZIP limiti, 512 giriş sınırı, 8 MiB `word/document.xml` limiti, tekrar eden ana XML girişini reddetme, 128 KiB sonuç sayfası, Unicode-safe önizleme. Harici ilişki/URL veya makro yüklenmiyor.
+- **TEST EKLENDİ:** Gerçek Agent ↔ Gateway ↔ MCP testinde deterministik DOCX fixture, Unicode/XML entity, paragraf sayfalama, tablo hücreleri, geçersiz sayfa, eksik tablo, bozuk ZIP ve izin verilen kök dışı dosya negatif testleri.
+- **PENDING:** `3236ab30` kod commit'inin ve bu plan güncellemesinin güncel CI/Rust/Agent E2E sonucu; önceki `ci #40056654534` derlemesi clippy `cloned_ref_to_slice_refs` uyarısıyla durdu, düzeltildi. Yeni CI geçmeden PASS denmez.
+- **AÇIK:** DOCX yapılandırılmış düzenleme/biçim koruma, PDF sayfa/metin/merge, görsel önizleme, fiziksel üç OS ve canlı MCP istemci kabulü.
+
 ## Karşılaştırma kaynağı
 - Desktop Commander'ın yayımlanan MCP araç listesi: https://github.com/mcp/wonderwhy-er/desktop-commander
 - Remote MCP araç listesi: https://github.com/mcp/app.desktopcommander/remote-desktop-commander
