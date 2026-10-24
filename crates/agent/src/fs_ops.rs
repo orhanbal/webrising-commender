@@ -798,7 +798,10 @@ mod batch_read_tests {
         assert!(read_multiple(&policy, &[], None).is_err());
         assert!(read_multiple(&policy, &vec![paths[0].clone(); 11], None).is_err());
         assert!(read_multiple(&policy, &paths, Some(65_537)).is_err());
-        assert_eq!(read_multiple(&policy, &paths, Some(1)).unwrap()["items"][0]["ok"], false);
+        assert_eq!(
+            read_multiple(&policy, &paths, Some(1)).unwrap()["items"][0]["ok"],
+            false
+        );
         fs::remove_dir_all(root).unwrap();
         fs::remove_file(outside).unwrap();
     }
