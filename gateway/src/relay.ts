@@ -12,8 +12,8 @@ type Pending = {
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
   abortCleanup?: () => void;
-  onProgress?: (progress: SearchProgress) => void;
-  signal?: AbortSignal;
+  onProgress?: ((progress: SearchProgress) => void) | undefined;
+  signal?: AbortSignal | undefined;
   isSearch: boolean;
 };
 

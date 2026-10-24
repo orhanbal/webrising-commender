@@ -178,7 +178,10 @@ export async function startSearch(
       await clearStoppedNativeSlot();
       return;
     }
-    const payload = data as { items?: unknown[]; truncated?: boolean; timedOut?: boolean };
+    const payload = data as {
+      items?: unknown[]; truncated?: boolean; timedOut?: boolean;
+      scannedEntries?: number; scannedBytes?: number;
+    };
     const candidate = {
       status: "completed" as const,
       items: Array.isArray(payload?.items) ? payload.items.slice(0, 500) : [],

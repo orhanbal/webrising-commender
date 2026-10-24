@@ -41,7 +41,7 @@ test("native progress exposes scoped live pages and cannot resurrect stopped res
   assert.equal(live.progressUpdates, 1);
   assert.equal(live.scannedEntries, 64);
   await assert.rejects(
-    searchPage({ ...actor, actor: "other" }, "progress-device", started.searchId, 0, 10),
+    async () => searchPage({ ...actor, actor: "other" }, "progress-device", started.searchId, 0, 10),
     /search_not_found/,
   );
   // Unbounded or forged progress must not replace the guarded snapshot.
