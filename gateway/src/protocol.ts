@@ -11,6 +11,7 @@ export type AgentAction =
   | { kind: "fs_read_lines"; path: string; offsetLines?: number; limitLines?: number }
   | { kind: "xlsx_inspect"; path: string }
   | { kind: "xlsx_read_range"; path: string; sheet: string; startRow: number; startColumn: number; rowCount: number; columnCount: number }
+  | { kind: "xlsx_write_cells"; path: string; outputPath: string; sheet: string; updates: Array<{ cell: string; value: string | number | boolean }>; expectedSha256?: string }
   | { kind: "fs_write"; path: string; contentBase64: string; createParents?: boolean }
   | { kind: "fs_append"; path: string; contentBase64: string }
   | { kind: "fs_mkdir"; path: string; recursive?: boolean }
@@ -64,6 +65,17 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     startColumn: z.number().int().min(1).max(16_384),
     rowCount: z.number().int().min(1).max(50),
     columnCount: z.number().int().min(1).max(20),
+  }).strict(),
+  z.object({
+    kind: z.literal("xlsx_write_cells"),
+    path: pathSchema,
+    outputPath: pathSchema,
+    sheet: z.string().min(1).max(255),
+    updates: z.array(z.object({
+      cell: z.string().regex(/^[A-Z]{1,3}[1-9][0-9]{0,6}$/),
+      value: z.union([z.string().max(8192), z.number().finite(), z.boolean()]),
+    }).strict()).min(1).max(100),
+    expectedSha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
   }).strict(),
   z.object({
     kind: z.literal("fs_write"),
@@ -224,6 +236,7 @@ export function actionRisk(kind: AgentAction["kind"] | string): Risk {
     case "terminal_list":
       return "low";
     case "fs_write":
+    case "xlsx_write_cells":
     case "fs_append":
     case "fs_mkdir":
     case "fs_move":
