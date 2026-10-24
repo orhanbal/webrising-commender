@@ -144,7 +144,7 @@ const tools = [
   tool("terminal_read", "Read buffered PTY output.", { session_id: str(), max_bytes: integer() }, ["session_id"]),
   tool(
     "terminal_read_page",
-    "Non-consuming paginated PTY output; negative offset_bytes reads backward from the last retained byte (up to 1 MiB).",
+    "Read non-consuming retained PTY history independently of terminal_read. Positive offset_bytes is an absolute output byte cursor; negative reads from the end. Results report retainedStartBytes and truncatedBeforeOffset when the 1 MiB history cap evicts data.",
     { session_id: str(), offset_bytes: integer(), max_bytes: integer() },
     ["session_id"],
   ),
