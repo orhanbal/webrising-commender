@@ -326,6 +326,28 @@ fn search_with_deadline_reporting(
             }
             stack.push(path);
         }
+        // A checkpoint is an untrusted resume hint, not authority to inject
+        // arbitrary previous matches into a new native scan. Revalidate each
+        // saved item against the current allowlist and filesystem metadata.
+        let mut seen = std::collections::HashSet::new();
+        for item in prior {
+            let value = item["path"]
+                .as_str()
+                .ok_or_else(|| anyhow!("invalid_search_checkpoint"))?;
+            let path = Path::new(value);
+            if !path.starts_with(&root)
+                || !seen.insert(value)
+                || !file_name_matches(path, &needle, case_sensitive)
+                || fs::symlink_metadata(path)?.file_type().is_symlink()
+                || policy.resolve_existing(value)? != path
+            {
+                return Err(anyhow!("invalid_search_checkpoint"));
+            }
+            let metadata = fs::symlink_metadata(path)?;
+            if item != &search_item(path, &metadata) {
+                return Err(anyhow!("invalid_search_checkpoint"));
+            }
+        }
         results = prior.clone();
         scanned = counted as usize;
     }
@@ -1310,6 +1332,34 @@ mod search_budget_tests {
         let mut altered = forged.clone();
         altered["query"] = json!("other");
         assert!(invoke(&altered)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid_search_checkpoint"));
+
+        // A forged checkpoint can claim a safe pending directory while
+        // smuggling arbitrary old matches. Reject both foreign paths and
+        // fabricated metadata even when the directory cursor is valid.
+        fs::write(outside.join("needle-foreign.txt"), b"outside").unwrap();
+        fs::write(root.join("needle-real.txt"), b"inside").unwrap();
+        let mut injected = forged.clone();
+        injected["pending"] = json!([root.to_string_lossy()]);
+        injected["items"] = json!([{
+            "name": "needle-foreign.txt",
+            "path": outside.join("needle-foreign.txt").to_string_lossy(),
+            "type": "file",
+            "size": 7
+        }]);
+        assert!(invoke(&injected)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid_search_checkpoint"));
+        injected["items"] = json!([{
+            "name": "needle-real.txt",
+            "path": root.join("needle-real.txt").to_string_lossy(),
+            "type": "file",
+            "size": 999
+        }]);
+        assert!(invoke(&injected)
             .unwrap_err()
             .to_string()
             .contains("invalid_search_checkpoint"));
