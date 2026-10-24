@@ -980,7 +980,8 @@ try {
       max_bytes: 65536,
     });
     return snapshot.totalOutputBytes >= beforePagedOutput + 20000 &&
-      snapshot.text.includes("PTY_PAGED_END") ? snapshot : false;
+      /PTY_PAGED_BEGIN\r?\n0{20000}\r?\nPTY_PAGED_END/.test(snapshot.text)
+      ? snapshot : false;
   }, 15000, 250);
   const snapshotEnd = readyPage.totalOutputBytes;
   let cursor = readyPage.retainedStartBytes;
