@@ -930,6 +930,15 @@ try {
     const remoteRunning = await liveObserver.page(liveKey, liveKey.id, 0, 10);
     assert.equal(remoteRunning.status, "running");
     assert.deepEqual(remoteRunning.items, []);
+    // A stop from a second Gateway becomes visible to the owning process
+    // without requiring access to another tenant's session or scanner.
+    const remoteStopKey = { ...liveKey, id: randomUUID() };
+    await liveOwner.create({
+      ...remoteStopKey, path: "/ci", query: "remote-stop", searchType: "files",
+      createdAt: Date.now(),
+    });
+    await liveObserver.stop(remoteStopKey);
+    assert.deepEqual(await liveOwner.stoppedIds([remoteStopKey.id]), [remoteStopKey.id]);
     await liveOwner.deactivate();
     const orphaned = await liveObserver.page(liveKey, liveKey.id, 0, 10);
     assert.equal(orphaned.status, "error");

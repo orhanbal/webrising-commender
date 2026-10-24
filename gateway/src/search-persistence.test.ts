@@ -106,3 +106,21 @@ test("durable finish returns false when a stopped or expired row was not updated
     truncated: false, timedOut: false,
   }), false);
 });
+
+test("cross-Gateway stop polling is scoped to the native owner and bounded IDs", async () => {
+  const statements: Array<{ sql: string; params: unknown[] }> = [];
+  const fake = {
+    query: async (sql: string, params: unknown[]) => {
+      statements.push({ sql, params });
+      return { rows: [{ id }], rowCount: 1 };
+    },
+  } as unknown as Pool;
+  const store = new PgSearchPersistence(fake);
+  assert.deepEqual(await store.stoppedIds([]), []);
+  assert.equal(statements.length, 0);
+  assert.deepEqual(await store.stoppedIds([id]), [id]);
+  assert.match(statements[0]!.sql, /origin_instance=\$1/);
+  assert.match(statements[0]!.sql, /id=any\(\$2::uuid\[\]\)/);
+  assert.match(statements[0]!.sql, /status='stopped'/);
+  assert.deepEqual(statements[0]!.params[1], [id]);
+});

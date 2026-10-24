@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Principal } from "./auth.js";
 import type { DeviceRouter } from "./device-router.js";
-import { listSearches, searchPage, startSearch, stopSearch } from "./search-sessions.js";
+import { listSearches, reconcileRemoteSearchStops, searchPage, setSearchPersistence, startSearch, stopSearch } from "./search-sessions.js";
 
 const principal: Principal = {
   organizationId: "org-a",
@@ -176,4 +176,43 @@ test("stop_search forwards a native cancellation signal and holds its quota slot
   settle({ items: [{ path: "/safe/secret" }], truncated: false });
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual((await searchPage(p, "native-cancel-device", first.searchId, 0, 10)).items, []);
+});
+
+test("remote Gateway stop aborts only its matching local native scanner", async () => {
+  const p = { ...principal, actor: "cross-gateway-stop-user" };
+  const observed = new Map<string, AbortSignal>();
+  const router = {
+    request: async (deviceId: string, _action: unknown, _approval: unknown, signal: AbortSignal) => {
+      observed.set(deviceId, signal);
+      return new Promise<never>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new Error("cancelled")), { once: true });
+      });
+    },
+  } as unknown as DeviceRouter;
+  let remoteStops: string[] = [];
+  const store = {
+    create: async () => {},
+    finish: async () => true,
+    stoppedIds: async (ids: string[]) => remoteStops.filter(id => ids.includes(id)),
+  };
+  setSearchPersistence(store as never);
+  try {
+    const args = { path: "/safe", query: "needle", search_type: "files" };
+    const a = await startSearch(p, "remote-stop-a", router, args);
+    const b = await startSearch(p, "remote-stop-b", router, args);
+    remoteStops = ["00000000-0000-4000-8000-000000000099"];
+    await reconcileRemoteSearchStops();
+    assert.equal(observed.get("remote-stop-a")?.aborted, false);
+    assert.equal(observed.get("remote-stop-b")?.aborted, false);
+    remoteStops = [a.searchId];
+    await reconcileRemoteSearchStops();
+    assert.equal(observed.get("remote-stop-a")?.aborted, true);
+    assert.equal(observed.get("remote-stop-b")?.aborted, false);
+    // The unrelated scan remains running until explicitly stopped.
+    remoteStops = [b.searchId];
+    await reconcileRemoteSearchStops();
+    assert.equal(observed.get("remote-stop-b")?.aborted, true);
+  } finally {
+    setSearchPersistence(undefined);
+  }
 });

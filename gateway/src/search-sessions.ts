@@ -181,6 +181,23 @@ export async function startSearch(
   });
   return summary(entry);
 }
+/** Poll persisted stops to abort native requests started on this Gateway but
+ * stopped via another Gateway. Called at a bounded interval by the server.
+ * A database outage leaves the native timeout/cancellation budget in force.
+ */
+export async function reconcileRemoteSearchStops() {
+  if (!persistence) return;
+  const active = [...sessions.values()].filter(s => s.inFlight && s.status === "running");
+  if (active.length === 0) return;
+  const stopped = new Set(await persistence.stoppedIds(active.map(s => s.id)));
+  for (const s of active) {
+    if (!stopped.has(s.id) || s.status !== "running") continue;
+    s.status = "stopped";
+    s.items = [];
+    s.controller.abort();
+  }
+}
+
 export function searchPage(
   principal: Principal, deviceId: string, searchId: string, offset: number, length: number,
 ) {

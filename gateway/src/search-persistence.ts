@@ -49,6 +49,8 @@ export interface SearchPersistence {
   /** True only when the running row was atomically transitioned to its final status. */
   finish(key: SearchKey, result: SearchCompletion): Promise<boolean>;
   stop(key: SearchKey): Promise<void>;
+  /** Returns stopped IDs among this Gateway's active native requests only. */
+  stoppedIds(ids: string[]): Promise<string[]>;
   page(scope: Omit<SearchKey, "id">, id: string, offset: number, length: number): Promise<SearchPage>;
   list(scope: Omit<SearchKey, "id">): Promise<{ items: SearchSummary[] }>;
 }
@@ -136,6 +138,18 @@ export class PgSearchPersistence implements SearchPersistence {
       [s.id, s.organizationId, s.actor, s.deviceId],
     );
     if (!result.rowCount) throw new Error("search_not_found");
+  }
+
+  async stoppedIds(ids: string[]): Promise<string[]> {
+    if (ids.length === 0) return [];
+    // Query only the bounded local active set. The origin guard prevents a
+    // different Gateway's search IDs from influencing this process.
+    const result = await this.pool.query<{ id: string }>(
+      `select id from search_sessions
+        where origin_instance=$1 and id=any($2::uuid[]) and status='stopped'`,
+      [this.originInstance, ids],
+    );
+    return result.rows.map(row => row.id);
   }
 
   private summary(row: SearchRow) {

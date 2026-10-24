@@ -33,7 +33,7 @@ import { getPublicPlans, publicPaddleConfig, createPaddleCheckout, createPaddleP
 import { getDownloads } from "./downloads.js";
 import { createDeviceLink, getDeviceLinkStatus, approveDeviceLink } from "./device-link.js";
 import { DeviceRouter } from "./device-router.js";
-import { setSearchPersistence } from "./search-sessions.js";
+import { reconcileRemoteSearchStops, setSearchPersistence } from "./search-sessions.js";
 import { PgSearchPersistence } from "./search-persistence.js";
 import { RelayCancellationRegistry } from "./relay-cancellation.js";
 import { enqueueMail, mailConfigured, publicSignupEnabled, startMailWorker } from "./mail.js";
@@ -129,6 +129,18 @@ await migrate();
 const searchPersistence = new PgSearchPersistence(db);
 await searchPersistence.activate();
 setSearchPersistence(searchPersistence);
+// A stop issued through another Gateway must reach the owning native scanner.
+// One bounded DB query per second, only while local scans are in flight.
+let searchStopPollActive = false;
+const searchStopPollTimer = setInterval(() => {
+  if (searchStopPollActive) return;
+  searchStopPollActive = true;
+  void reconcileRemoteSearchStops().catch(() => {
+    // A transient DB outage cannot authorize a search or expose results;
+    // the existing native timeout remains the final cancellation bound.
+  }).finally(() => { searchStopPollActive = false; });
+}, 1_000);
+searchStopPollTimer.unref();
 await housekeeping();
 startMailWorker();
 
@@ -3670,6 +3682,7 @@ server.listen(port, host, () => {
 async function shutdown() {
   server.close();
   for (const client of wss.clients) client.close(1001, "shutdown");
+  clearInterval(searchStopPollTimer);
   await searchPersistence.deactivate();
   await db.end();
   process.exit(0);
