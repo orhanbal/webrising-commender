@@ -32,6 +32,45 @@ impl OutputHistory {
         self.bytes.drain(..excess);
     }
 
+    // Advisory prompt detection only. Never use terminal output as authorization
+    // or proof that a command completed; arbitrary programs can print prompts.
+    fn prompt_kind(&self) -> Option<&'static str> {
+        let tail: Vec<u8> = self.bytes.iter().rev().take(512).copied().collect();
+        let tail: Vec<u8> = tail.into_iter().rev().collect();
+        let output = String::from_utf8_lossy(&tail);
+        let line = output.rsplit(['\n', '\r']).next().unwrap_or("");
+        // Ignore terminal color/control sequences in the bounded final line.
+        let mut plain = String::with_capacity(line.len());
+        let mut chars = line.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '\u{1b}' && chars.peek() == Some(&'[') {
+                chars.next();
+                for code in chars.by_ref() {
+                    if ('@'..='~').contains(&code) {
+                        break;
+                    }
+                }
+            } else if !ch.is_control() || ch == '\t' {
+                plain.push(ch);
+            }
+        }
+        if plain.ends_with(">>> ") {
+            Some("python")
+        } else if plain.ends_with("... ") {
+            Some("python_continuation")
+        } else if plain.starts_with("PS ") && plain.ends_with("> ") {
+            Some("powershell")
+        } else if plain.ends_with("$ ") || plain.ends_with("# ") || plain.ends_with("% ") {
+            Some("shell")
+        } else if (plain.starts_with("sqlite>") || plain.starts_with("(gdb)"))
+            && plain.ends_with(' ')
+        {
+            Some("repl")
+        } else {
+            None
+        }
+    }
+
     fn page(&self, offset_bytes: Option<i64>, max_bytes: Option<usize>) -> Value {
         let retained_start = self.total_bytes.saturating_sub(self.bytes.len() as u64);
         let requested = match offset_bytes.unwrap_or(0) {
@@ -48,6 +87,7 @@ impl OutputHistory {
             .copied()
             .collect();
         let end = start + bytes.len() as u64;
+        let prompt_kind = self.prompt_kind();
         json!({
             "bytes": bytes.len(),
             "dataBase64": STANDARD.encode(&bytes),
@@ -58,7 +98,9 @@ impl OutputHistory {
             "retainedStartBytes": retained_start,
             "totalOutputBytes": self.total_bytes,
             "truncatedBeforeOffset": requested < retained_start,
-            "hasMore": end < self.total_bytes
+            "hasMore": end < self.total_bytes,
+            "promptDetected": prompt_kind.is_some(),
+            "promptKind": prompt_kind
         })
     }
 }
@@ -253,11 +295,20 @@ impl TerminalManager {
             }
         }
 
+        let remaining_bytes = queue.len();
+        drop(queue);
+        let history = session
+            .history
+            .lock()
+            .map_err(|_| anyhow!("terminal history lock poisoned"))?;
+        let prompt_kind = history.prompt_kind();
         Ok(json!({
             "bytes": bytes.len(),
             "dataBase64": STANDARD.encode(&bytes),
             "text": String::from_utf8_lossy(&bytes),
-            "remainingBytes": queue.len()
+            "remainingBytes": remaining_bytes,
+            "promptDetected": prompt_kind.is_some(),
+            "promptKind": prompt_kind
         }))
     }
 
@@ -370,6 +421,27 @@ mod tests {
         assert_eq!(manager.pending_starts.load(Ordering::SeqCst), 1);
         drop(after_failure);
         assert_eq!(manager.pending_starts.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn prompt_classification_is_bounded_and_advisory() {
+        let mut history = OutputHistory::default();
+        history.push(b"Python 3.13\\r\\n>>> ");
+        assert_eq!(history.prompt_kind(), Some("python"));
+        assert_eq!(history.page(Some(0), Some(2))["promptKind"], "python");
+        history.push(b"print(2)\\r\\n... ");
+        assert_eq!(history.prompt_kind(), Some("python_continuation"));
+        history.push(b"\\r\\n\\x1b[32muser@host\\x1b[0m$ ");
+        assert_eq!(history.prompt_kind(), Some("shell"));
+        history.push(b"\\r\\nPS C:\\\\Users\\\\Test> ");
+        assert_eq!(history.prompt_kind(), Some("powershell"));
+        history.push(b"\\r\\nnormal output");
+        assert_eq!(history.prompt_kind(), None);
+        assert_eq!(history.page(None, None)["promptDetected"], false);
+        history.push(b"\\r\\n>>> ");
+        assert_eq!(history.prompt_kind(), Some("python"));
+        history.push(&vec![b'x'; BUFFER_CAP]);
+        assert_eq!(history.prompt_kind(), None);
     }
 
     #[test]
