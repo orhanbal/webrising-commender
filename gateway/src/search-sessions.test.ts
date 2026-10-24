@@ -311,6 +311,53 @@ test("checkpoint takeover keeps the original session ID and replays only its pen
   }
 });
 
+test("match-free content checkpoint resumes with original actor/session/byte budget", async () => {
+  const actor = { ...principal, actor: "content-recovery-owner" };
+  const checkpoint = {
+    version: 1, searchType: "content", root: "/safe",
+    query: "needle", caseSensitive: false, pending: ["/safe/unread.txt"],
+    items: [], scannedEntries: 32, scannedBytes: 96,
+  };
+  const candidate = {
+    id: "7fe0222a-2222-4222-8222-111111111132",
+    organizationId: actor.organizationId, actor: actor.actor,
+    deviceId: "content-recovery-device", path: "/safe",
+    query: "needle", searchType: "content" as const,
+    createdAt: Date.now(), checkpoint, progressUpdates: 8,
+  };
+  let dispatchedAction: unknown;
+  let dispatchedSession: string | undefined;
+  let resolveNative!: (value: { items: unknown[]; truncated: boolean; scannedBytes: number }) => void;
+  const router = {
+    isOnline: async () => true,
+    request: async (_device: string, action: unknown, _approval: unknown,
+      _signal: AbortSignal, _progress: unknown, searchId: string) => {
+      dispatchedAction = action;
+      dispatchedSession = searchId;
+      return new Promise(resolve => { resolveNative = resolve; });
+    },
+  } as unknown as DeviceRouter;
+  const store = {
+    recoveryCandidates: async () => [candidate],
+    claimRecovery: async () => ({ sequence: 9, checkpoint }),
+    finish: async () => true,
+  };
+  setSearchPersistence(store as never);
+  try {
+    await recoverInterruptedSearches(router);
+    assert.equal(dispatchedSession, candidate.id);
+    assert.equal((dispatchedAction as { kind: string }).kind, "text_search");
+    assert.deepEqual((dispatchedAction as { resumeCheckpoint: unknown }).resumeCheckpoint, checkpoint);
+    const running = await searchPage(actor, candidate.deviceId, candidate.id, 0, 10);
+    assert.equal(running.scannedBytes, 96);
+    resolveNative({ items: [{ path: "/safe/unread.txt", line: 1,
+      preview: "needle" }], truncated: false, scannedBytes: 110 });
+    await new Promise(resolve => setImmediate(resolve));
+  } finally {
+    setSearchPersistence(undefined);
+  }
+});
+
 test("starts and pages bounded search sessions by actor and device", async () => {
   const started = await startSearch(principal, "device-a", remote, {
     path: "/safe", query: "txt", search_type: "files",

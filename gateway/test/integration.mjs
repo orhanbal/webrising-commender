@@ -1005,6 +1005,57 @@ try {
     "select checkpoint from search_sessions where id=$1", [recoveryKey.id],
   )).rows[0].checkpoint, null);
 
+  // A conservative content checkpoint carries no old line matches. The
+  // claimed row rewinds byte counters and drops an unfinished preview; only
+  // the claimant can persist newly read matching lines after that point.
+  const contentRecoveryKey = { ...durableKey, id: randomUUID() };
+  const contentCheckpoint = {
+    version: 1, searchType: "content", root: "/ci", query: "needle",
+    caseSensitive: false, pending: ["/ci/unread.txt"],
+    items: [], scannedEntries: 32, scannedBytes: 48,
+  };
+  await durableStore.create({
+    ...contentRecoveryKey, path: "/ci", query: "needle", searchType: "content",
+    createdAt: Date.now(),
+  });
+  assert.equal(await durableStore.progress(contentRecoveryKey, {
+    items: [], scannedEntries: 32, scannedBytes: 48,
+    sequence: 1, checkpoint: contentCheckpoint,
+  }), true);
+  assert.equal(await durableStore.progress(contentRecoveryKey, {
+    items: [{ path: "/ci/unsafe-previous.txt", line: 1, preview: "needle" }],
+    scannedEntries: 36, scannedBytes: 88, sequence: 2,
+  }), true);
+  const contentCandidate = (await takeover.recoveryCandidates())
+    .find(item => item.id === contentRecoveryKey.id);
+  assert.equal(contentCandidate?.searchType, "content");
+  assert.equal(await takeover.claimRecovery({
+    ...contentRecoveryKey, actor: "foreign-actor",
+  }), null);
+  const contentClaim = await takeover.claimRecovery(contentRecoveryKey);
+  assert.ok(contentClaim && contentClaim.sequence > 2);
+  assert.deepEqual(contentClaim.checkpoint, contentCheckpoint);
+  const rewound = await takeover.page(contentRecoveryKey, contentRecoveryKey.id, 0, 10);
+  assert.deepEqual(rewound.items, []);
+  assert.equal(rewound.scannedEntries, 32);
+  assert.equal(rewound.scannedBytes, 48);
+  assert.equal(await durableStore.finish(contentRecoveryKey, {
+    status: "completed", items: [{ path: "/ci/stale-after-takeover" }],
+    truncated: false, timedOut: false,
+  }), false);
+  assert.equal(await takeover.finish(contentRecoveryKey, {
+    status: "completed",
+    items: [{ path: "/ci/unread.txt", line: 1, preview: "needle" }],
+    truncated: false, timedOut: false,
+    scannedEntries: 32, scannedBytes: 96,
+    progressUpdates: contentClaim.sequence,
+  }), true);
+  const completedContent = await takeover.page(contentRecoveryKey, contentRecoveryKey.id, 0, 10);
+  assert.equal(completedContent.status, "completed");
+  assert.deepEqual(completedContent.items, [
+    { path: "/ci/unread.txt", line: 1, preview: "needle" },
+  ]);
+
   // Interrupted checkpoint recovery must never bypass a user's pause or
   // stop. These are real PostgreSQL conditional updates, not mocked SQL.
   const deniedRecoveryKey = { ...durableKey, id: randomUUID() };
