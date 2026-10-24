@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import type { Pool } from "pg";
-import type { Timeout } from "node:timers";
+
 
 /** Five-minute, actor/tenant/device-scoped durable search snapshots.
  * This records completed bounded results, not resumable native scanners.
@@ -68,7 +68,7 @@ type SearchRow = {
 };
 export class PgSearchPersistence implements SearchPersistence {
   private readonly originInstance = crypto.randomUUID();
-  private heartbeatTimer: Timeout | undefined;
+  private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
   constructor(private readonly pool: Pool) {}
 
   async activate() {
