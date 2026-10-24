@@ -121,6 +121,49 @@ try {
   assert.equal(policyInfo.agentMode, "restricted");
   assert.ok(policyInfo.allowedRoots.includes(tempRoot));
 
+  // Real Agent ↔ Gateway ↔ MCP Excel reading, using a deterministic XLSX fixture.
+  // No Python/Office executable or hosted document service is required at runtime.
+  const workbookPath = path.join(tempRoot, "sample.xlsx");
+  const workbookFixture = fs.readFileSync(path.join(here, "fixtures", "sample-workbook.xlsx.base64"), "utf8").trim();
+  fs.writeFileSync(workbookPath, Buffer.from(workbookFixture, "base64"));
+  const workbookInfo = await tool(230, "xlsx_inspect", {
+    device_id: deviceId, path: workbookPath,
+  });
+  assert.deepEqual(workbookInfo.sheets, ["Sample"]);
+  assert.equal(workbookInfo.readOnly, true);
+  assert.equal(workbookInfo.macrosExecuted, false);
+  const workbookPage = await tool(231, "xlsx_read_range", {
+    device_id: deviceId, path: workbookPath, sheet: "Sample",
+    start_row: 1, start_column: 1, row_count: 2, column_count: 2,
+  });
+  assert.equal(workbookPage.cells.length, 4);
+  assert.deepEqual(workbookPage.cells[0], {
+    row: 1, column: 1, data: { type: "string", value: "Label" },
+  });
+  assert.ok(workbookPage.cells.some((cell) =>
+    cell.row === 2 && cell.column === 2 && cell.data.value === 42));
+  const badWorkbookSheet = await tool(232, "xlsx_read_range", {
+    device_id: deviceId, path: workbookPath, sheet: "Missing",
+    start_row: 1, start_column: 1, row_count: 1, column_count: 1,
+  });
+  assert.match(badWorkbookSheet.error, /sheet not found/i);
+  const badWorkbookRange = await tool(233, "xlsx_read_range", {
+    device_id: deviceId, path: workbookPath, sheet: "Sample",
+    start_row: 1, start_column: 1, row_count: 51, column_count: 1,
+  });
+  assert.equal(typeof badWorkbookRange.error, "string");
+  const outsideWorkbook = await tool(234, "xlsx_inspect", {
+    device_id: deviceId, path: path.join(os.tmpdir(), "outside-allowed.xlsx"),
+  });
+  assert.equal(typeof outsideWorkbook.error, "string");
+  const macroNamedWorkbook = path.join(tempRoot, "sample.xlsm");
+  fs.copyFileSync(workbookPath, macroNamedWorkbook);
+  const macroInfo = await tool(235, "xlsx_inspect", {
+    device_id: deviceId, path: macroNamedWorkbook,
+  });
+  assert.deepEqual(macroInfo.sheets, ["Sample"]);
+  assert.equal(macroInfo.macrosExecuted, false);
+
   const filePath = path.join(tempRoot, "hello.txt");
   const content = Buffer.from("hello-from-real-agent", "utf8").toString("base64");
 
