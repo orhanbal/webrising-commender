@@ -619,10 +619,16 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           requestId: z.string().uuid().optional(),
           searchSessionId: z.string().uuid().optional(),
           startPaused: z.boolean().optional(),
+          streamProgress: z.boolean().optional(),
           action: z.unknown(),
           approvalToken: z.string().nullable().optional(),
         }).parse(parsed);
         const action = parseAgentAction(body.action);
+        const streamProgress = body.streamProgress === true;
+        if (streamProgress && (!body.requestId || !body.searchSessionId ||
+            (action.kind !== "fs_search" && action.kind !== "text_search"))) {
+          return void json(res, 400, { ok: false, error: "invalid_search_stream" });
+        }
         const controller = body.requestId
           ? relayCancellation.register(body.requestId, body.deviceId)
           : undefined;
@@ -639,17 +645,58 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           if (!device.rowCount || !hub.isOnline(body.deviceId)) {
             return void json(res, 409, { ok: false, error: "device-offline" });
           }
-          const data = await hub.request(
-            body.deviceId,
-            action,
-            body.approvalToken,
-            controller?.signal,
-            undefined,
-            body.searchSessionId,
-            body.startPaused,
-          );
-          return void json(res, 200, { ok: true, data });
+          // Only signed, device-bound native searches may open an NDJSON stream.
+          // Each progress frame is already bounded by AgentHub. Backpressure
+          // aborts the native worker instead of buffering unbounded output.
+          const writeFrame = (frame: unknown) => {
+            if (res.destroyed || res.writableEnded) return;
+            if (res.writableLength > 2 * 1024 * 1024) {
+              if (body.requestId) relayCancellation.cancel(body.requestId, body.deviceId);
+              return;
+            }
+            res.write(JSON.stringify(frame) + "\n");
+          };
+          const onDisconnect = () => {
+            if (!res.writableEnded && body.requestId) {
+              relayCancellation.cancel(body.requestId, body.deviceId);
+            }
+          };
+          if (streamProgress) {
+            res.writeHead(200, {
+              "content-type": "application/x-ndjson; charset=utf-8",
+              "cache-control": "no-store",
+              "x-content-type-options": "nosniff",
+            });
+            res.once("close", onDisconnect);
+            res.flushHeaders();
+          }
+          try {
+            const data = await hub.request(
+              body.deviceId,
+              action,
+              body.approvalToken,
+              controller?.signal,
+              streamProgress ? progress => writeFrame({ type: "progress", data: progress }) : undefined,
+              body.searchSessionId,
+              body.startPaused,
+            );
+            if (streamProgress) {
+              writeFrame({ type: "result", ok: true, data });
+              res.end();
+              return;
+            }
+            return void json(res, 200, { ok: true, data });
+          } finally {
+            if (streamProgress) res.off("close", onDisconnect);
+          }
         } catch (error) {
+          if (streamProgress && res.headersSent) {
+            // Never expose device paths, internal relay URLs or SQL details.
+            if (!res.destroyed) {
+              res.end(JSON.stringify({ type: "result", ok: false, error: "relay_request_failed" }) + "\n");
+            }
+            return;
+          }
           return void json(res, 502, {
             ok: false,
             error: redact(error instanceof Error ? error.message : error),
