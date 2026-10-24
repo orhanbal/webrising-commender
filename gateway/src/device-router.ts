@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import type { AgentAction } from "./protocol.js";
 import type { AgentHub } from "./relay.js";
 import {
@@ -48,19 +49,38 @@ export class DeviceRouter {
     const relay = await connectedRelayForDevice(deviceId);
     if (!relay) throw new Error("device-offline");
 
-    const response = await callRelay<{
-      ok: boolean;
-      data?: unknown;
-      error?: string;
-    }>(relay.internalBaseUrl, "/internal/relay/request", {
-      deviceId,
-      action,
-      ...(approvalToken !== undefined ? { approvalToken } : {}),
-    });
-    if (!response.ok) {
-      throw new Error(response.error || "relay_request_failed");
+    if (signal?.aborted) throw new Error("request_cancelled");
+    const requestId = crypto.randomUUID();
+    // A separate signed cancellation request reaches the remote AgentHub.
+    // Do not abort the original HTTP call: its native execution slot remains
+    // occupied until the Agent acknowledges cancellation or times out.
+    const onAbort = () => {
+      void callRelay<{ ok: boolean }>(relay.internalBaseUrl, "/internal/relay/cancel", {
+        deviceId, requestId,
+      }).catch(() => {
+        // Remote timeout/disconnection remains bounded by the original request.
+      });
+    };
+    if (signal) signal.addEventListener("abort", onAbort, { once: true });
+    try {
+      if (signal?.aborted) onAbort();
+      const response = await callRelay<{
+        ok: boolean;
+        data?: unknown;
+        error?: string;
+      }>(relay.internalBaseUrl, "/internal/relay/request", {
+        deviceId,
+        requestId,
+        action,
+        ...(approvalToken !== undefined ? { approvalToken } : {}),
+      });
+      if (!response.ok) {
+        throw new Error(response.error || "relay_request_failed");
+      }
+      return response.data;
+    } finally {
+      signal?.removeEventListener("abort", onAbort);
     }
-    return response.data;
   }
 
   async disconnect(deviceId: string) {

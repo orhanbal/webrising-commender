@@ -33,6 +33,7 @@ import { getPublicPlans, publicPaddleConfig, createPaddleCheckout, createPaddleP
 import { getDownloads } from "./downloads.js";
 import { createDeviceLink, getDeviceLinkStatus, approveDeviceLink } from "./device-link.js";
 import { DeviceRouter } from "./device-router.js";
+import { RelayCancellationRegistry } from "./relay-cancellation.js";
 import { enqueueMail, mailConfigured, publicSignupEnabled, startMailWorker } from "./mail.js";
 import { handleMcp } from "./mcp.js";
 import { actionRisk, parseAgentAction } from "./protocol.js";
@@ -98,6 +99,7 @@ async function nativeTlsOptions() {
 
 const tlsOptions = await nativeTlsOptions();
 const hub = new AgentHub(currentNodeId());
+const relayCancellation = new RelayCancellationRegistry();
 const deviceRouter = new DeviceRouter(hub);
 const enrollRateLimit = new FixedWindowRateLimiter();
 const agentRouteRateLimit = new FixedWindowRateLimiter();
@@ -548,6 +550,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     if (
       req.method === "POST" &&
       (url.pathname === "/internal/relay/request" ||
+        url.pathname === "/internal/relay/cancel" ||
         url.pathname === "/internal/relay/disconnect")
     ) {
       if (!currentNodeIsRelay() || !currentNodeId()) {
@@ -563,31 +566,46 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         ? JSON.parse(rawBody.toString("utf8"))
         : {};
 
+      if (url.pathname === "/internal/relay/cancel") {
+        const body = z.object({
+          requestId: z.string().uuid(),
+          deviceId: z.string().uuid(),
+        }).parse(parsed);
+        return void json(res, 200, {
+          ok: true,
+          cancelled: relayCancellation.cancel(body.requestId, body.deviceId),
+        });
+      }
+
       if (url.pathname === "/internal/relay/request") {
         const body = z.object({
           deviceId: z.string().uuid(),
+          requestId: z.string().uuid().optional(),
           action: z.unknown(),
           approvalToken: z.string().nullable().optional(),
         }).parse(parsed);
         const action = parseAgentAction(body.action);
-        const device = await db.query(
-          `select 1
-             from devices
-            where id=$1
-              and connected_relay_id=$2
-              and revoked_at is null
-            limit 1`,
-          [body.deviceId, currentNodeId()],
-        );
-        if (!device.rowCount || !hub.isOnline(body.deviceId)) {
-          return void json(res, 409, { ok: false, error: "device-offline" });
-        }
-
+        const controller = body.requestId
+          ? relayCancellation.register(body.requestId, body.deviceId)
+          : undefined;
         try {
+          const device = await db.query(
+            `select 1
+               from devices
+              where id=$1
+                and connected_relay_id=$2
+                and revoked_at is null
+              limit 1`,
+            [body.deviceId, currentNodeId()],
+          );
+          if (!device.rowCount || !hub.isOnline(body.deviceId)) {
+            return void json(res, 409, { ok: false, error: "device-offline" });
+          }
           const data = await hub.request(
             body.deviceId,
             action,
             body.approvalToken,
+            controller?.signal,
           );
           return void json(res, 200, { ok: true, data });
         } catch (error) {
@@ -595,6 +613,8 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
             ok: false,
             error: redact(error instanceof Error ? error.message : error),
           });
+        } finally {
+          if (body.requestId) relayCancellation.release(body.requestId, body.deviceId);
         }
       }
 
