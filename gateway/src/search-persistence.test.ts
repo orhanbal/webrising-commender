@@ -312,6 +312,9 @@ test("settling a stopped scanner releases only the owned durable native slot", a
   } as unknown as Pool;
   await new PgSearchPersistence(fake).settleStopped({ ...owner, id });
   assert.match(calls[0]!.statement, /status='stopped' and native_inflight=true/);
-  assert.deepEqual(calls[0]!.params, [id, owner.organizationId, owner.actor, owner.deviceId]);
+  assert.match(calls[0]!.statement, /origin_instance=\$5/);
+  assert.deepEqual(calls[0]!.params.slice(0, 4),
+    [id, owner.organizationId, owner.actor, owner.deviceId]);
+  assert.equal(typeof calls[0]!.params[4], "string");
 });
 

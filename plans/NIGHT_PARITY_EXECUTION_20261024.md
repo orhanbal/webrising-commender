@@ -1,3 +1,12 @@
+## 24 Ekim 2026 — A/B/C/D: kalıcı arama ilerlemesi ve native sahiplik sınırı
+
+- **A / PASSED (kod HEAD):** `d7938f12a0ccff880377181ec31bfdc8efc87859` için [CI #40115427469](https://github.com/orhanbal/webrising-commender/actions/runs/40115427469) **17/17 job success**; `gateway` test logunda 49/49 test, `integration`, `agent-e2e` ve `rust` PASSED. Dört artifact mevcut, `expired=false`. Bu kanıt yeni belge/sertleştirme HEAD'ine otomatik aktarılmaz.
+- **B / KOD + TEST PASSED:** `464cd2fb` ile PostgreSQL `list_searches` artık `progress_sequence`, `scanned_entries`, `scanned_bytes` alanlarını doğru SELECT eder; sayfa sorgusundaki tekrarlı sütunlar temizlendi. `finish` yalnız kendi `origin_instance` ve aktif native oturumu sonlandırabilir. Aktör/organizasyon/cihaz izolasyonu ve yabancı Gateway'in finish girişimi gerçek PostgreSQL E2E ile sınandı.
+- **C / KOD + TEST PASSED:** `d7938f12` ile küçük taramaların son native sayaçları progress eventi gelmese bile PostgreSQL'e kalıcı yazılır; geçersiz, gerileyen veya limit üstü Agent sayaçları reddedilir. Yeni unit ve gerçek PostgreSQL integration testleri aynı 17/17 CI içinde geçti.
+- **D / YENİ HEAD CI PENDING:** Bu commit `settleStopped` için ayrıca `origin_instance` koşulu getirir. Farklı Gateway'in durmuş fakat native olarak sürmekte olan işi erken kotadan düşüremediği PostgreSQL negatif E2E'ye eklendi. Bu commitin 17 job CI'sı ve artifact'leri ayrıca doğrulanmadan PASSED sayılmaz.
+- **Kuyruk:** **1A PENDING** (native canlı progress mevcut; gerçek pause/resume eksik); **1B PENDING** (tamamlanmış snapshot restart mevcut; çalışan native taramanın checkpoint'ten sürdürülmesi eksik); **1C/1D/3A PENDING** (OS/stres/üst dizin rename-symlink yarışı). **2A–10D PENDING**; **7B/10C BLOCKED_EXTERNAL** (fiziksel OS, canlı ChatGPT/Claude, Windows imza/SmartScreen, Apple notarization). **Desktop Commander parity PENDING.**
+- **Sınır:** Yalnız `orhanbal/webrising-commender/main`; başka repo, üretim/sunucu veya Desktop Commander/Remote Desktop Commander kullanılmadı. Yeni ücretli/limitli runtime bağımlılığı yok.
+
 ## 24 Ekim 2026 — D: yeni kod ve plan HEAD CI kabul kanıtı
 
 - **PASSED:** [CI #40111271685](https://github.com/orhanbal/webrising-commender/actions/runs/40111271685), `main` SHA [`28dad6a0`](https://github.com/orhanbal/webrising-commender/commit/28dad6a0542bbb22f29c1faa16d3cf40dfef91c5): **17/17 GitHub Actions job success**, `rust` (fmt/clippy/unit), `agent-e2e`, `integration`, `gateway`, `relay-e2e`, Windows/macOS cross-build ve dağıtım smoke işleri dahil.

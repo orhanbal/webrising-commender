@@ -162,8 +162,8 @@ export class PgSearchPersistence implements SearchPersistence {
     await this.pool.query(
       `update search_sessions set native_inflight=false
         where id=$1 and organization_id=$2 and actor=$3 and device_id=$4
-          and status='stopped' and native_inflight=true`,
-      [s.id, s.organizationId, s.actor, s.deviceId],
+          and origin_instance=$5 and status='stopped' and native_inflight=true`,
+      [s.id, s.organizationId, s.actor, s.deviceId, this.originInstance],
     );
   }
 

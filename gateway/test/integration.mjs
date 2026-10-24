@@ -1011,6 +1011,13 @@ try {
     });
     await liveObserver.stop(remoteStopKey);
     assert.deepEqual(await liveOwner.stoppedIds([remoteStopKey.id]), [remoteStopKey.id]);
+    // A different Gateway can request stop, but must never free the owner's
+    // native execution quota before that native scanner actually settles.
+    await liveObserver.settleStopped(remoteStopKey);
+    const foreignSettlement = await searchPool.query(
+      "select native_inflight from search_sessions where id=$1", [remoteStopKey.id],
+    );
+    assert.equal(foreignSettlement.rows[0]?.native_inflight, true);
 
     // Real PostgreSQL cross-Gateway allocation: eight native workers across
     // two instances must block a ninth worker for the SAME actor, even after
@@ -1034,6 +1041,10 @@ try {
       /search_session_limit/,
     );
     await liveOwner.settleStopped(remoteStopKey);
+    const ownerSettlement = await searchPool.query(
+      "select native_inflight from search_sessions where id=$1", [remoteStopKey.id],
+    );
+    assert.equal(ownerSettlement.rows[0]?.native_inflight, false);
     await liveObserver.create({
       ...ninthKey, path: "/ci", query: "after-native-settle", searchType: "files",
       createdAt: Date.now(),

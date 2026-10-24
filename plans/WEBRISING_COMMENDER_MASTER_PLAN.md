@@ -1,3 +1,9 @@
+## 24 Ekim 2026 — A/B/C/D: kalıcı arama ilerlemesi ve native sahiplik sınırı
+
+- **PASSED (önceki kod HEAD):** `d7938f12`, [CI #40115427469](https://github.com/orhanbal/webrising-commender/actions/runs/40115427469) **17/17**; dört artifact mevcut. `464cd2fb` list_searches progress sayaçlarını ve finish sahipliğini, `d7938f12` final sayaç kalıcılığını ve negatif PostgreSQL kabulünü düzeltir.
+- **PENDING (bu HEAD):** `settleStopped` origin-instance koruması ve farklı Gateway'in erken native slot bırakmasını reddeden PostgreSQL E2E bu committe eklendi. Bu yeni HEAD'in 17/17 CI'sı ayrıca doğrulanır.
+- **Kuyruk:** **1A PENDING** (pause/resume), **1B PENDING** (native checkpoint restart), **1C/1D/3A PENDING** (OS/stres/üst dizin yarışı), **7B/10C BLOCKED_EXTERNAL**. Genel parity **PENDING**.
+
 ## 24 Ekim 2026 — D: yeni kod ve plan HEAD CI kabul kanıtı
 
 - **PASSED:** [CI #40111271685](https://github.com/orhanbal/webrising-commender/actions/runs/40111271685), `main` SHA [`28dad6a0`](https://github.com/orhanbal/webrising-commender/commit/28dad6a0542bbb22f29c1faa16d3cf40dfef91c5): **17/17 GitHub Actions job success**, `rust` (fmt/clippy/unit), `agent-e2e`, `integration`, `gateway`, `relay-e2e`, Windows/macOS cross-build ve dağıtım smoke işleri dahil.
