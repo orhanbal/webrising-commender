@@ -1,6 +1,7 @@
 # WECOMMANDER — 1C/1D acceptance evidence gates
 
-Baseline: main `a27c311586586e0e7a43946bb79e5fccec18c5d8` (2026-10-24).\nVerified candidate: `a249abb19d3059ff2321dc7a360385bea9aa0caa`, CI #40131910457, **17/17 PASS** (including real Rust Agent E2E).
+Baseline: main `a27c311586586e0e7a43946bb79e5fccec18c5d8` (2026-10-24).
+Verified candidate: `3085efe3e954dd63fee1f11a45c271430fd3069e`, CI #40132610665, **17/17 PASS** (including real Rust Agent E2E).
 Scope: Desktop Commander parity work packages 1C and 1D. This matrix does **not** supersede the canonical parity plan.
 Status convention: PASS = test result linked to exact SHA and environment; PENDING = no verified gate; BLOCKED_EXTERNAL = requires authorized physical machine/network.
 
@@ -28,8 +29,8 @@ Status convention: PASS = test result linked to exact SHA and environment; PENDI
 
 | Gate | Acceptance criterion | Evidence so far | Status |
 | --- | --- | --- | --- |
-| 1D-01 | Multi-file read respects aggregate byte and per-file caps; partial results explicitly indicate truncation | `fs_read_multiple` enforces 10-file maximum and 64 KiB per-file (not aggregate) cap; E2E asserts over-limit failures. Aggregate response budget needs separate acceptance. | PARTIAL |
-| 1D-02 | UTF-8 boundary, CRLF and binary files do not return invalid offsets or silently mutate contents | Current candidate `a249abb1` E2E checks Unicode/CRLF preservation, binary Base64 roundtrip, over-limit rejection. Offset handling remains unproven. | PARTIAL |
+| 1D-01 | Multi-file read respects aggregate byte and per-file caps; partial results explicitly indicate truncation | `3085efe3` 17/17 CI: 10-file, 64 KiB per-file and 256 KiB aggregate raw budget; individual over-limit entries return explicit `read_failed` rather than truncating content. | PASS (CI) |
+| 1D-02 | UTF-8 boundary, CRLF and binary files do not return invalid offsets or silently mutate contents | Current candidate `a249abb1` E2E checks Unicode/CRLF preservation, binary Base64 roundtrip, over-limit rejection. CRLF line offsets added in `79e0afd6` and exercised by `3085efe3` 17/17 CI. | PASS (CI) |
 | 1D-03 | A single invalid/unreadable path cannot expose or overwrite any file outside allowed roots | `a249abb1` native E2E checks disallowed path and symlink to private external file, with successful neighboring reads, no data leak | PASS (CI) |
 | 1D-04 | Concurrent modify/delete between metadata check and open/read is rejected or safely handled | TOCTOU regression on real native Agent required | PENDING |
 | 1D-05 | Chunk/page continuation cannot be replayed for a different actor, device, tenant or changed file | MCP + Gateway + Agent negative test required | PENDING |
@@ -54,4 +55,4 @@ Status convention: PASS = test result linked to exact SHA and environment; PENDI
 
 ## Verified evidence update — 2026-10-24
 
-The 17-job GitHub Actions run [#40131910457](https://github.com/orhanbal/webrising-commender/actions/runs/40131910457) passed on commit `a249abb19d3059ff2321dc7a360385bea9aa0caa`. The matrix distinguishes CI-passed sub-gates from full 1C/1D release acceptance; no physical Windows, macOS, Ubuntu or network interruption test is inferred. `read_multiple` uses a per-file 64 KiB cap, not an aggregate 64 KiB budget; any aggregate-budget requirement must be addressed explicitly and must not be marked passed.
+The 17-job GitHub Actions run [#40131910457](https://github.com/orhanbal/webrising-commender/actions/runs/40131910457) passed on commit `a249abb19d3059ff2321dc7a360385bea9aa0caa`. The matrix distinguishes CI-passed sub-gates from full 1C/1D release acceptance; no physical Windows, macOS, Ubuntu or network interruption test is inferred. `read_multiple` uses a per-file 64 KiB cap, not an aggregate 64 KiB budget; the 256 KiB aggregate budget is now enforced and verified by real Rust Agent E2E on `3085efe3` (CI #40132610665).
