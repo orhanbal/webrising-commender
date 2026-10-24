@@ -32,6 +32,9 @@ const tools = [
   tool("xlsx_read_range", "Read up to 50 rows by 20 columns from one worksheet, using 1-based coordinates. Does not evaluate formulas or execute macros.",
     { path: str(), sheet: str(), start_row: integer(), start_column: integer(), row_count: integer(), column_count: integer() },
     ["path", "sheet", "start_row", "start_column", "row_count", "column_count"]),
+  tool("xlsx_write_cells", "Write up to 100 string/number/boolean cells to a NEW XLSX output file without overwriting the original. Existing XLSM files cannot be edited. Optional SHA-256 precondition prevents stale writes.",
+    { path: str(), output_path: str(), sheet: str(), updates: { type: "array", minItems: 1, maxItems: 100, items: { type: "object", properties: { cell: str(), value: { oneOf: [{ type: "string" }, { type: "number" }, { type: "boolean" }] } }, required: ["cell", "value"], additionalProperties: false } }, expected_sha256: str() },
+    ["path", "output_path", "sheet", "updates"]),
   tool(
     "fs_read_multiple",
     "Read up to ten files in one call, retaining per-file errors. Each file is limited to 64 KiB.",
@@ -203,6 +206,7 @@ function actionFromTool(name: string, a: any): AgentAction {
     case "fs_read_lines": return { kind: "fs_read_lines", path: String(a.path), ...(a.offset_lines !== undefined ? { offsetLines: Number(a.offset_lines) } : {}), ...(a.limit_lines !== undefined ? { limitLines: Number(a.limit_lines) } : {}) };
     case "xlsx_inspect": return { kind: "xlsx_inspect", path: String(a.path) };
     case "xlsx_read_range": return { kind: "xlsx_read_range", path: String(a.path), sheet: String(a.sheet), startRow: Number(a.start_row), startColumn: Number(a.start_column), rowCount: Number(a.row_count), columnCount: Number(a.column_count) };
+    case "xlsx_write_cells": return { kind: "xlsx_write_cells", path: String(a.path), outputPath: String(a.output_path), sheet: String(a.sheet), updates: a.updates, ...(a.expected_sha256 ? { expectedSha256: String(a.expected_sha256) } : {}) };
     case "fs_write": return { kind: "fs_write", path: String(a.path), contentBase64: String(a.content_base64), createParents: Boolean(a.create_parents) };
     case "fs_append": return { kind: "fs_append", path: String(a.path), contentBase64: String(a.content_base64) };
     case "fs_mkdir": return { kind: "fs_mkdir", path: String(a.path), recursive: Boolean(a.recursive) };
