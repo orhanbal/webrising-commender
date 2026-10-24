@@ -271,6 +271,12 @@ test("checkpoint takeover keeps the original session ID and replays only its pen
     searchType: "files" as const, createdAt: Date.now(),
     checkpoint, progressUpdates: 4,
   };
+  // The list query saw an older checkpoint. A progress write can commit a
+  // newer complete directory boundary before the owner-fencing SQL update.
+  const claimedCheckpoint = {
+    ...checkpoint, pending: ["/safe/later"], scannedEntries: 64,
+    items: [{ path: "/safe/needle-one.txt" }, { path: "/safe/needle-mid.txt" }],
+  };
   let requestAction: unknown;
   let requestSession: string | undefined;
   let finish!: (value: { items: unknown[]; truncated: boolean }) => void;
@@ -287,7 +293,7 @@ test("checkpoint takeover keeps the original session ID and replays only its pen
   const store = {
     create: async () => { created = true; },
     recoveryCandidates: async () => [candidate],
-    claimRecovery: async () => ({ sequence: 5, checkpoint }),
+    claimRecovery: async () => ({ sequence: 5, checkpoint: claimedCheckpoint }),
     finish: async () => true,
   };
   setSearchPersistence(store as never);
@@ -295,8 +301,9 @@ test("checkpoint takeover keeps the original session ID and replays only its pen
     await recoverInterruptedSearches(router);
     assert.equal(created, false, "A takeover must not allocate a second native slot");
     assert.equal(requestSession, candidate.id);
-    assert.deepEqual((requestAction as { resumeCheckpoint: unknown }).resumeCheckpoint, checkpoint);
-    finish({ items: [{ path: "/safe/needle-one.txt" }, { path: "/safe/needle-two.txt" }],
+    assert.deepEqual((requestAction as { resumeCheckpoint: unknown }).resumeCheckpoint,
+      claimedCheckpoint, "must replay the checkpoint returned by the atomic CAS");
+    finish({ items: [...claimedCheckpoint.items, { path: "/safe/needle-two.txt" }],
       truncated: false });
     await new Promise(resolve => setImmediate(resolve));
   } finally {

@@ -963,27 +963,44 @@ try {
   assert.equal(await takeover.claimRecovery({
     ...recoveryKey, actor: "wrong-actor",
   }), null);
+  // The candidate selection snapshot is now stale: an old Gateway managed
+  // to commit another safe directory boundary before its lease was fenced.
+  // The claimant must consume the checkpoint from UPDATE ... RETURNING.
+  const newerCheckpoint = {
+    ...nativeCheckpoint,
+    scannedEntries: 48,
+    pending: ["/ci/newer-pending"],
+    items: [...nativeCheckpoint.items, { path: "/ci/needle-newer.txt" }],
+  };
+  assert.equal(await durableStore.progress(recoveryKey, {
+    items: newerCheckpoint.items, scannedEntries: 48, scannedBytes: 0,
+    sequence: 3, checkpoint: newerCheckpoint,
+  }), true);
+  assert.equal(await durableStore.progress(recoveryKey, {
+    items: [...newerCheckpoint.items, { path: "/ci/unsafe-tail.txt" }],
+    scannedEntries: 55, scannedBytes: 0, sequence: 4,
+  }), true);
   const claimed = await takeover.claimRecovery(recoveryKey);
-  assert.ok(claimed && Number.isSafeInteger(claimed.sequence) && claimed.sequence > 2);
-  assert.deepEqual(claimed.checkpoint, nativeCheckpoint);
+  assert.ok(claimed && Number.isSafeInteger(claimed.sequence) && claimed.sequence > 4);
+  assert.deepEqual(claimed.checkpoint, newerCheckpoint);
   const claimedSequence = claimed.sequence;
   const safeRecovery = await takeover.page(recoveryKey, recoveryKey.id, 0, 10);
   assert.equal(safeRecovery.status, "running");
-  assert.deepEqual(safeRecovery.items, nativeCheckpoint.items,
-    "The abandoned partial result must be rolled back atomically");
-  assert.equal(safeRecovery.scannedEntries, nativeCheckpoint.scannedEntries);
+  assert.deepEqual(safeRecovery.items, newerCheckpoint.items,
+    "The abandoned partial result must be rolled back to the freshest checkpoint");
+  assert.equal(safeRecovery.scannedEntries, newerCheckpoint.scannedEntries);
   assert.equal(safeRecovery.progressUpdates, claimedSequence);
   assert.equal(await durableStore.finish(recoveryKey, {
     status: "completed", items: [{ path: "/ci/stale-native" }],
     truncated: false, timedOut: false,
   }), false);
   assert.equal(await takeover.finish(recoveryKey, {
-    status: "completed", items: nativeCheckpoint.items,
+    status: "completed", items: newerCheckpoint.items,
     truncated: false, timedOut: false, progressUpdates: claimedSequence,
   }), true);
   const recoveredFinal = await takeover.page(recoveryKey, recoveryKey.id, 0, 10);
   assert.equal(recoveredFinal.status, "completed");
-  assert.deepEqual(recoveredFinal.items, nativeCheckpoint.items);
+  assert.deepEqual(recoveredFinal.items, newerCheckpoint.items);
   assert.equal((await acceptanceDb.query(
     "select checkpoint from search_sessions where id=$1", [recoveryKey.id],
   )).rows[0].checkpoint, null);
