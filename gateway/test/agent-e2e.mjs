@@ -481,6 +481,28 @@ try {
   } finally {
     fs.rmSync(batchOutside, { force: true });
   }
+  // 1D: a symlink placed inside an allowed root cannot launder an external
+  // file into a native multi-read result. A neighboring valid file survives.
+  const outsideBatchDir = fs.mkdtempSync(path.join(os.tmpdir(), "commander-batch-symlink-"));
+  const outsideBatchSecret = path.join(outsideBatchDir, "private.txt");
+  const outsideBatchLink = path.join(tempRoot, "batch-symlink-private.txt");
+  try {
+    fs.writeFileSync(outsideBatchSecret, "private-outside-batch", "utf8");
+    fs.symlinkSync(outsideBatchSecret, outsideBatchLink);
+    const symlinkBatch = await tool(303, "fs_read_multiple", {
+      device_id: deviceId, paths: [filePath, outsideBatchLink, linesPath],
+    });
+    assert.equal(symlinkBatch.count, 3);
+    assert.equal(symlinkBatch.items[0].ok, true);
+    assert.equal(symlinkBatch.items[1].ok, false);
+    assert.equal(symlinkBatch.items[1].error, "read_failed");
+    assert.equal(symlinkBatch.items[1].data, undefined);
+    assert.equal(symlinkBatch.items[2].ok, true);
+    assert.ok(!JSON.stringify(symlinkBatch).includes("private-outside-batch"));
+  } finally {
+    fs.rmSync(outsideBatchLink, { force: true });
+    fs.rmSync(outsideBatchDir, { recursive: true, force: true });
+  }
   const emptyBatch = await tool(215, "fs_read_multiple", {
     device_id: deviceId, paths: [],
   });
