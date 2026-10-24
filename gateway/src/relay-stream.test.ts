@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readRelayStream } from "./relay-cluster.js";
+import { readRelayStream } from "./relay-stream.js";
 import type { SearchProgress } from "./protocol.js";
 
 function streamed(chunks: string[], contentType = "application/x-ndjson; charset=utf-8") {
