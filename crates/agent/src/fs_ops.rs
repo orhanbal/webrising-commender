@@ -114,7 +114,11 @@ pub fn search(
 
     let root = policy.resolve_existing(raw)?;
     let result_limit = max_results.unwrap_or(100).clamp(1, MAX_SEARCH_RESULTS);
-    let needle = if case_sensitive { query.to_owned() } else { query.to_lowercase() };
+    let needle = if case_sensitive {
+        query.to_owned()
+    } else {
+        query.to_lowercase()
+    };
     let mut results = Vec::new();
     let mut scanned = 0_usize;
     let mut stack = vec![root.clone()];
