@@ -401,7 +401,11 @@ pub fn read(policy: &PathPolicy, raw: &str, max_bytes: Option<usize>) -> Result<
 
 /// One bounded native operation, preserving per-file failures without exposing
 /// filesystem or policy error details in a multi-file response.
-pub fn read_multiple(policy: &PathPolicy, paths: &[String], max_bytes: Option<usize>) -> Result<Value> {
+pub fn read_multiple(
+    policy: &PathPolicy,
+    paths: &[String],
+    max_bytes: Option<usize>,
+) -> Result<Value> {
     if paths.is_empty() || paths.len() > 10 {
         return Err(anyhow!("invalid_batch_read_arguments"));
     }
