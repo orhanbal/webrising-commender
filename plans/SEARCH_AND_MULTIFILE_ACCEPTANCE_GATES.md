@@ -1,17 +1,7 @@
-
-## 2026-10-25 — Hourly work group: four bounded verification tasks
-
-1. **CI failure root cause isolated:** PR merge-preview CI #40138970984 failed at `agent-e2e` with `SyntaxError: Identifier 'binaryBatchPath' has already been declared`. The PR branch alone contained one declaration, but current `main` added another in the same scope. Commit `62a50ee0` renames the new fixture and adds a remaining-budget recovery E2E. This is **not** a successful CI verdict yet.
-2. **Native byte-budget boundary:** `1317bdcc` adds Rust unit coverage for 256 KiB exact acceptance, post-budget rejection, and continued reading after an individual over-budget item. The 256 KiB implementation was already CI-proven on `3085efe3`.
-3. **Concurrent distributed search quota:** `2d425ccb` adds nine simultaneous PostgreSQL reservations over two live Gateway persistence instances, requires exactly eight successes, checks a ninth denial and independent actor access.
-4. **Stop/settle race:** the same integration test concurrently issues stop and owner/foreign settlement, verifies stopped-unsettled quota retention, a single freed slot and rejection of a tenth worker. Gateway process restart fault injection is still pending.
-5. **Evidence discipline:** the 1D-01 full criterion remains PARTIAL because individual failures are explicit but there is no separate `truncated` flag. Physical OS/network/ChatGPT tests remain BLOCKED_EXTERNAL. All new test commits require a current-head merge-preview CI pass before marking their gates PASSED.
-
-These changes remain scoped to PR #25. No production, device or release operation was performed.
 # WECOMMANDER — 1C/1D acceptance evidence gates
 
 Baseline: main `a27c311586586e0e7a43946bb79e5fccec18c5d8` (2026-10-24).
-Verified candidate: `3085efe3e954dd63fee1f11a45c271430fd3069e`, CI #40132610665, **17/17 PASS** (including real Rust Agent E2E).
+Verified code candidate: `12a5addd2eb4257d385984c049a6d9c760f7a4b5`, CI #40143597740 (attempt 2), **17/17 PASS** (real Rust Agent E2E, PostgreSQL integration and all platform jobs).
 Scope: Desktop Commander parity work packages 1C and 1D. This matrix does **not** supersede the canonical parity plan.
 Status convention: PASS = test result linked to exact SHA and environment; PENDING = no verified gate; BLOCKED_EXTERNAL = requires authorized physical machine/network.
 
@@ -30,9 +20,9 @@ Status convention: PASS = test result linked to exact SHA and environment; PENDI
 | 1C-01 | At least 530 fixture files; deterministic page boundaries, cap at 500 results, `truncated` correct, offset 490/length 30, no duplicate or omitted entries | Current candidate `a249abb1` agent-e2e 17/17 CI; five 100-item pages, unique results and stable re-read assertion | PASS (CI) |
 | 1C-02 | Search query overlength (1025 chars), page size >100, invalid/negative offset fail closed; no silent widening of result set | Current candidate `a249abb1` agent-e2e 17/17 CI: 501 offset, 101 page size, 1025 query | PASS (CI) |
 | 1C-03 | A symlink that escapes an allowed root never yields filename or content matches outside it | Current candidate `a249abb1` agent-e2e 17/17 CI: filename/content symlink escape | PASS (CI) |
-| 1C-04 | Eight concurrent searches for one actor across two Gateway instances succeed; ninth is denied; other actors/organizations remain isolated | Existing sequential PostgreSQL E2E plus new actual nine-way concurrent `Promise.allSettled` cross-instance test (`gateway/test/integration.mjs`, commit `2d425ccb`); current-head CI pending. | PENDING (new CI) |
-| 1C-05 | Stopped but unsettled native work still holds a quota slot; only native settlement releases it | Existing PostgreSQL E2E plus `2d425ccb` negative test: stopped/unsettled scanner retains quota until owner settlement; current-head CI pending. | PENDING (new CI) |
-| 1C-06 | Simultaneous stop/settle/restart does not double-release slots, duplicate results or leak scans across tenant/device | `2d425ccb` concurrent stop/foreign settle/owner settle/idempotence/slot reuse test added. Process restart fault injection still missing. | PARTIAL (new CI pending) |
+| 1C-04 | Eight concurrent searches for one actor across two Gateway instances succeed; ninth is denied; other actors/organizations remain isolated | Existing sequential PostgreSQL E2E plus new actual nine-way concurrent `Promise.allSettled` cross-instance test (`gateway/test/integration.mjs`, commit `2d425ccb`); CI #40143597740 passed; independent persistence instances share one PostgreSQL actor quota, but two actual Gateway processes remain untested. | PARTIAL (CI) |
+| 1C-05 | Stopped but unsettled native work still holds a quota slot; only native settlement releases it | Existing PostgreSQL E2E plus `2d425ccb` negative test: stopped/unsettled scanner retains quota until owner settlement; CI #40143597740 passed; native Agent settlement still requires end-to-end fault injection. | PARTIAL (CI) |
+| 1C-06 | Simultaneous stop/settle/restart does not double-release slots, duplicate results or leak scans across tenant/device | `2d425ccb` concurrent stop/foreign settle/owner settle/idempotence/slot reuse test added. Process restart fault injection still missing. CI #40143597740 passed the concurrent PostgreSQL race test. | PARTIAL (CI) |
 | 1C-07 | Sustained large-tree search under CPU/memory budgets with pause/resume and gateway interruption, on real Windows and Ubuntu agents | Requires authorized real devices | BLOCKED_EXTERNAL |
 
 ## 1D — Bounded multi-file reading and safe edits
@@ -66,3 +56,18 @@ Status convention: PASS = test result linked to exact SHA and environment; PENDI
 ## Verified evidence update — 2026-10-24
 
 The 17-job GitHub Actions run [#40131910457](https://github.com/orhanbal/webrising-commender/actions/runs/40131910457) passed on commit `a249abb19d3059ff2321dc7a360385bea9aa0caa`. The matrix distinguishes CI-passed sub-gates from full 1C/1D release acceptance; no physical Windows, macOS, Ubuntu or network interruption test is inferred. `read_multiple` uses a per-file 64 KiB cap, not an aggregate 64 KiB budget; the 256 KiB aggregate budget is now enforced and verified by real Rust Agent E2E on `3085efe3` (CI #40132610665).
+
+
+## 2026-10-25 — Hourly work group: four bounded verification tasks
+
+1. **CI failure root cause isolated:** PR merge-preview CI #40138970984 failed at `agent-e2e` with `SyntaxError: Identifier 'binaryBatchPath' has already been declared`. The PR branch alone contained one declaration, but current `main` added another in the same scope. Commit `62a50ee0` renames the new fixture and adds a remaining-budget recovery E2E. This is **not** a successful CI verdict yet.
+2. **Native byte-budget boundary:** `1317bdcc` adds Rust unit coverage for 256 KiB exact acceptance, post-budget rejection, and continued reading after an individual over-budget item. The 256 KiB implementation was already CI-proven on `3085efe3`.
+3. **Concurrent distributed search quota:** `2d425ccb` adds nine simultaneous PostgreSQL reservations over two live Gateway persistence instances, requires exactly eight successes, checks a ninth denial and independent actor access.
+4. **Stop/settle race:** the same integration test concurrently issues stop and owner/foreign settlement, verifies stopped-unsettled quota retention, a single freed slot and rejection of a tenth worker. Gateway process restart fault injection is still pending.
+5. **Evidence discipline:** the 1D-01 full criterion remains PARTIAL because individual failures are explicit but there is no separate `truncated` flag. Physical OS/network/ChatGPT tests remain BLOCKED_EXTERNAL. All new test commits require a current-head merge-preview CI pass before marking their gates PASSED.
+
+These changes remain scoped to PR #25. No production, device or release operation was performed.
+
+## Verified CI update — 2026-10-25
+
+Code commit `12a5addd2eb4257d385984c049a6d9c760f7a4b5` passed [CI #40143597740](https://github.com/orhanbal/webrising-commender/actions/runs/40143597740) on retry attempt 2: 17/17 jobs passed, with all four acceptance artifacts present and unexpired. The first attempt's macOS acceptance job failed because the runner could not resolve `static.crates.io`; rerunning only that job succeeded. Real native Agent E2E and PostgreSQL integration succeeded on the first attempt. No claim is made that real two-process Gateway restart, ancestor directory TOCTOU, or physical OS reconnect tests passed. This documentation update itself creates a newer SHA whose CI must be checked separately.
