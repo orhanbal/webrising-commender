@@ -466,6 +466,7 @@ export async function callRelay<T>(
  * Every frame is length-bounded and a missing final result fails closed.
  */
 const MAX_RELAY_STREAM_FRAME_BYTES = 1_100_000;
+const MAX_RELAY_STREAM_TOTAL_BYTES = 64 * 1024 * 1024;
 export async function readRelayStream<T>(
   response: Response,
   onProgress: (progress: SearchProgress) => void,
@@ -483,6 +484,7 @@ export async function readRelayStream<T>(
   let final: T | undefined;
   let completed = false;
   let frames = 0;
+  let totalBytes = 0;
   const frame = (bytes: Buffer) => {
     if (++frames > 4096 || bytes.length === 0) throw new Error("relay_stream_invalid_frame");
     let item: Record<string, unknown>;
@@ -521,6 +523,10 @@ export async function readRelayStream<T>(
       const { done, value } = await reader.read();
       if (done) break;
       const chunk = Buffer.from(value);
+      totalBytes += chunk.length;
+      if (totalBytes > MAX_RELAY_STREAM_TOTAL_BYTES) {
+        throw new Error("relay_stream_total_too_large");
+      }
       let offset = 0;
       while (offset < chunk.length) {
         const newline = chunk.indexOf(10, offset);
