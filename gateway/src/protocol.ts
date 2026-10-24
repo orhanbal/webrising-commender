@@ -153,7 +153,7 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("terminal_read_page"),
     sessionId: sessionIdSchema,
-    offsetBytes: z.number().int().safe().min(-1_048_576).max(1_048_576).optional(),
+    offsetBytes: z.number().int().safe().min(-1_048_576).optional(),
     maxBytes: z.number().int().min(1).max(256 * 1024).optional(),
   }).strict(),
   z.object({
