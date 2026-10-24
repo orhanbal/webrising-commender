@@ -1030,10 +1030,24 @@ pub fn read_multiple(
     if !(1..=64 * 1024).contains(&limit) || paths.iter().any(|p| p.is_empty() || p.len() > 4096) {
         return Err(anyhow!("invalid_batch_read_arguments"));
     }
+    // Cap the combined raw payload even when every individual file satisfies
+    // its own limit. Keep per-file failures isolated and fail closed once the
+    // aggregate budget is exhausted.
+    const MAX_BATCH_TOTAL_BYTES: usize = 256 * 1024;
+    let mut remaining = MAX_BATCH_TOTAL_BYTES;
     let mut items = Vec::with_capacity(paths.len());
     for path in paths {
-        match read(policy, path, Some(limit)) {
-            Ok(data) => items.push(json!({ "path": path, "ok": true, "data": data })),
+        let result = if remaining == 0 {
+            Err(anyhow!("batch byte budget exhausted"))
+        } else {
+            read(policy, path, Some(limit.min(remaining)))
+        };
+        match result {
+            Ok(data) => {
+                let size = data["size"].as_u64().unwrap_or(0) as usize;
+                remaining = remaining.saturating_sub(size);
+                items.push(json!({ "path": path, "ok": true, "data": data }));
+            }
             Err(_) => items.push(json!({ "path": path, "ok": false, "error": "read_failed" })),
         }
     }
@@ -1980,5 +1994,54 @@ mod batch_read_tests {
         );
         fs::remove_dir_all(root).unwrap();
         fs::remove_file(outside).unwrap();
+    }
+
+    #[test]
+    fn native_batch_aggregate_budget_keeps_failed_items_isolated() {
+        let root = env::temp_dir().join(format!("wc-batch-budget-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let sizes = [
+            60 * 1024,
+            60 * 1024,
+            60 * 1024,
+            60 * 1024,
+            20 * 1024,
+            8 * 1024,
+        ];
+        let paths: Vec<String> = sizes
+            .iter()
+            .enumerate()
+            .map(|(index, size)| {
+                let path = root.join(format!("part-{index}.bin"));
+                fs::write(&path, vec![b'x'; *size]).unwrap();
+                path.to_string_lossy().into_owned()
+            })
+            .collect();
+        let result = read_multiple(&policy, &paths, None).unwrap();
+        assert_eq!(result["count"], 6);
+        for index in 0..4 {
+            assert_eq!(result["items"][index]["ok"], true);
+            assert_eq!(result["items"][index]["data"]["size"], 60 * 1024);
+        }
+        assert_eq!(result["items"][4]["ok"], false);
+        assert_eq!(result["items"][4]["error"], "read_failed");
+        assert!(result["items"][4].get("data").is_none());
+        assert_eq!(result["items"][5]["ok"], true);
+        assert_eq!(result["items"][5]["data"]["size"], 8 * 1024);
+
+        // Exactly 256 KiB succeeds, but no later file can exceed the budget.
+        let exact_path = root.join("exact.bin");
+        fs::write(&exact_path, vec![b'z'; 64 * 1024]).unwrap();
+        let mut exact_paths = vec![exact_path.to_string_lossy().into_owned(); 4];
+        exact_paths.push(paths[5].clone());
+        let exact = read_multiple(&policy, &exact_paths, None).unwrap();
+        for index in 0..4 {
+            assert_eq!(exact["items"][index]["ok"], true);
+            assert_eq!(exact["items"][index]["data"]["size"], 64 * 1024);
+        }
+        assert_eq!(exact["items"][4]["ok"], false);
+        assert_eq!(exact["items"][4]["error"], "read_failed");
+        fs::remove_dir_all(root).unwrap();
     }
 }

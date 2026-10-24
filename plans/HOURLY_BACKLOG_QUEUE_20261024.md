@@ -225,8 +225,8 @@
 |---|---|---|
 | 1A | PENDING | Native content read nofollow hardening `c8cb2438` eklendi; streaming/pause/resume hâlâ açık.  Cross-Gateway native cancel polling `1dd8091f` eklendi; gerçek streaming/pause/resume ve uzun tarama kabulü açık. Yerel relay üzerinden kooperatif native cancel kodlandı (`c602a7ad`, `0ad37183`); streaming, pause/resume, regional relay cancel ve yavaş tarama negatif E2E açık. |
 | 1B | PENDING | PostgreSQL scoped completed snapshots (`fc51c76c`) restart sonrası okunuyor; Gateway liveness (`bf07c7c5`), cross-instance stop CAS (`781a5efc`) ve native cancel polling (`1dd8091f`) eklendi. Gerçek iki Gateway + native Agent uzun tarama, scanner'ın restart sonrası devamı ve CI kabulü açık. |
-| 1C | PENDING | Case sensitivity ve sayfalama E2E mevcut; bu tur 10s native scan bütçesi ve zaman aşımı sinyali eklendi. Büyük dizin, yarış, quota ve güncel CI kabulü açık. |
-| 1D | PENDING | `fs_read`/`fs_read_lines` final symlink guard ve negatif E2E `d7e47d93` eklendi.  1–10 çoklu okuma ve per-file hata, line/tail sayfalama Agent E2E mevcut; büyük çıktı ve negatif OS kapsamı tamamlanmadı. |
+| 1C | PENDING | `12a5addd` CI #40143597740 (17/17) doğruladı: gerçek native sayfalama, UTF-8/symlink negatifleri ve iki bağımsız PostgreSQL persistence instance üzerinde 9 paralel rezervasyon/8 slot sınırı, eşzamanlı stop/settle ve actor izolasyonu. İki ayrı Gateway prosesi + restart fault injection, fiziksel OS/stress ve uzun süreli soak hâlâ açık. |
+| 1D | PENDING | `12a5addd` CI #40143597740 (17/17) doğruladı: 10 dosya, 64 KiB/dosya, 256 KiB toplam; tam sınır, hatalı dosyadan sonra küçük dosya, Unicode/CRLF, binary Base64, symlink/allowlist negatifleri. Ayrı `truncated` alanı yok; ancestor TOCTOU, devam sayfası tenant/actor/device izolasyonu ve gerçek OS/reconnect açık. |
 | 2A | PENDING | PTY history paging var; prompt/REPL ve tam çıktı kalıcılığı açık. |
 | 2B | PENDING | PTY geçmişi RAM'de son 1 MiB; disk spool ve restart/retention yok. |
 | 2C | PENDING | Süreç/task iptali mevcut; process-tree temizleme ve OS varyantları kabulü açık. |

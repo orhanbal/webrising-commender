@@ -392,6 +392,25 @@ try {
 
   // 1D: paged reads reject oversized and invalid UTF-8 files instead of
   // attempting unbounded allocation or returning a partial secret.
+  // 1D: paged Unicode lines must retain complete code points and the
+  // expected one-based line bounds when CRLF input is normalized to lines.
+  const unicodePagedPath = path.join(tempRoot, "unicode-paged.txt");
+  fs.writeFileSync(unicodePagedPath, "Başlangıç 🧪\r\nİkinci satır\r\nSon ✨\r\n", "utf8");
+  const unicodePaged = await tool(800, "fs_read_lines", {
+    device_id: deviceId, path: unicodePagedPath, offset_lines: 1, limit_lines: 2,
+  });
+  assert.deepEqual(unicodePaged.lines, ["İkinci satır", "Son ✨"]);
+  assert.equal(unicodePaged.startLine, 2);
+  assert.equal(unicodePaged.endLine, 3);
+  assert.equal(unicodePaged.totalLines, 3);
+  assert.equal(unicodePaged.truncated, false);
+  const unicodeTail = await tool(801, "fs_read_lines", {
+    device_id: deviceId, path: unicodePagedPath, offset_lines: -1, limit_lines: 1,
+  });
+  assert.deepEqual(unicodeTail.lines, ["Son ✨"]);
+  assert.equal(unicodeTail.startLine, 3);
+  assert.equal(unicodeTail.endLine, 3);
+
   const oversizedPagedPath = path.join(tempRoot, "oversized-paged.txt");
   fs.writeFileSync(oversizedPagedPath, Buffer.alloc(32 * 1024 * 1024 + 1, 0x61));
   const oversizedPaged = await tool(292, "fs_read_lines", {
@@ -437,6 +456,33 @@ try {
   });
   assert.equal(limitedBatch.items[0].ok, false);
 
+  // 1D: preserve Unicode bytes, return binary data as base64, and reject
+  // over-limit files without leaking a truncated private prefix.
+  const unicodeBatchPath = path.join(tempRoot, "unicode-batch.txt");
+  const unicodeBatchContent = "Türkçe 🧪\r\nİkinci satır\r\n";
+  fs.writeFileSync(unicodeBatchPath, unicodeBatchContent, "utf8");
+  const binaryParityBatchPath = path.join(tempRoot, "binary-parity-batch.bin");
+  const binaryBatchBytes = Buffer.from([0x00, 0xff, 0x80, 0x0a, 0x42]);
+  fs.writeFileSync(binaryParityBatchPath, binaryBatchBytes);
+  const tooLargeBatchPath = path.join(tempRoot, "batch-over-limit.txt");
+  fs.writeFileSync(tooLargeBatchPath, "P".repeat(65 * 1024), "utf8");
+  const mixedEncodingBatch = await tool(802, "fs_read_multiple", {
+    device_id: deviceId, paths: [unicodeBatchPath, binaryParityBatchPath, tooLargeBatchPath],
+  });
+  assert.equal(mixedEncodingBatch.count, 3);
+  assert.equal(mixedEncodingBatch.items[0].ok, true);
+  assert.equal(mixedEncodingBatch.items[0].data.encoding, "utf8");
+  assert.equal(mixedEncodingBatch.items[0].data.content, unicodeBatchContent);
+  assert.equal(mixedEncodingBatch.items[0].data.size, Buffer.byteLength(unicodeBatchContent));
+  assert.equal(mixedEncodingBatch.items[1].ok, true);
+  assert.equal(mixedEncodingBatch.items[1].data.encoding, "base64");
+  assert.deepEqual(Buffer.from(mixedEncodingBatch.items[1].data.content, "base64"), binaryBatchBytes);
+  assert.equal(mixedEncodingBatch.items[2].ok, false);
+  assert.equal(mixedEncodingBatch.items[2].error, "read_failed");
+  assert.equal(mixedEncodingBatch.items[2].data, undefined);
+  assert.equal(fs.readFileSync(unicodeBatchPath, "utf8"), unicodeBatchContent);
+  assert.deepEqual(fs.readFileSync(binaryParityBatchPath), binaryBatchBytes);
+
   // 1D: native single-request batch must isolate individual read failures,
   // including an allowlist violation, without leaking host filesystem errors.
   const batchOutside = path.join(os.tmpdir(), "wecommander-outside-batch-" + process.pid + ".txt");
@@ -453,6 +499,68 @@ try {
     assert.equal(partialBatch.items[2].ok, true);
   } finally {
     fs.rmSync(batchOutside, { force: true });
+  }
+  // 1D: enforce an aggregate 256 KiB raw-byte budget across otherwise
+  // individually valid files; a failed item must not corrupt earlier reads.
+  const aggregatePaths = Array.from({ length: 5 }, (_, i) =>
+    path.join(tempRoot, `aggregate-${i}.bin`));
+  aggregatePaths.forEach(p => fs.writeFileSync(p, Buffer.alloc(60 * 1024, 0x62)));
+  const aggregateRead = await tool(804, "fs_read_multiple", {
+    device_id: deviceId, paths: aggregatePaths,
+  });
+  assert.equal(aggregateRead.count, 5);
+  for (let i = 0; i < 4; i += 1) {
+    assert.equal(aggregateRead.items[i].ok, true);
+    assert.equal(aggregateRead.items[i].data.size, 60 * 1024);
+  }
+  assert.equal(aggregateRead.items[4].ok, false);
+  assert.equal(aggregateRead.items[4].error, "read_failed");
+  assert.equal(aggregateRead.items[4].data, undefined);
+  assert.ok(aggregateRead.items.reduce((total, item) =>
+    total + (item.data?.size ?? 0), 0) <= 256 * 1024);
+
+  // 1D: a file rejected for exceeding the remaining aggregate budget
+  // must not consume it; a later smaller valid file is still readable.
+  const remainingBudgetPaths = [
+    ...aggregatePaths.slice(0, 4),
+    path.join(tempRoot, "aggregate-too-large-for-remaining.bin"),
+    path.join(tempRoot, "aggregate-small-after-failure.bin"),
+  ];
+  fs.writeFileSync(remainingBudgetPaths[4], Buffer.alloc(20 * 1024, 0x43));
+  fs.writeFileSync(remainingBudgetPaths[5], Buffer.alloc(8 * 1024, 0x44));
+  const remainingBudgetRead = await tool(805, "fs_read_multiple", {
+    device_id: deviceId, paths: remainingBudgetPaths,
+  });
+  assert.equal(remainingBudgetRead.count, 6);
+  assert.deepEqual(remainingBudgetRead.items.map(item => item.ok),
+    [true, true, true, true, false, true]);
+  assert.equal(remainingBudgetRead.items[4].error, "read_failed");
+  assert.equal(remainingBudgetRead.items[4].data, undefined);
+  assert.equal(remainingBudgetRead.items[5].data.size, 8 * 1024);
+  assert.equal(remainingBudgetRead.items.reduce((total, item) =>
+    total + (item.data?.size ?? 0), 0), 248 * 1024);
+
+  // 1D: a symlink placed inside an allowed root cannot launder an external
+  // file into a native multi-read result. A neighboring valid file survives.
+  const outsideBatchDir = fs.mkdtempSync(path.join(os.tmpdir(), "commander-batch-symlink-"));
+  const outsideBatchSecret = path.join(outsideBatchDir, "private.txt");
+  const outsideBatchLink = path.join(tempRoot, "batch-symlink-private.txt");
+  try {
+    fs.writeFileSync(outsideBatchSecret, "private-outside-batch", "utf8");
+    fs.symlinkSync(outsideBatchSecret, outsideBatchLink);
+    const symlinkBatch = await tool(803, "fs_read_multiple", {
+      device_id: deviceId, paths: [filePath, outsideBatchLink, linesPath],
+    });
+    assert.equal(symlinkBatch.count, 3);
+    assert.equal(symlinkBatch.items[0].ok, true);
+    assert.equal(symlinkBatch.items[1].ok, false);
+    assert.equal(symlinkBatch.items[1].error, "read_failed");
+    assert.equal(symlinkBatch.items[1].data, undefined);
+    assert.equal(symlinkBatch.items[2].ok, true);
+    assert.ok(!JSON.stringify(symlinkBatch).includes("private-outside-batch"));
+  } finally {
+    fs.rmSync(outsideBatchLink, { force: true });
+    fs.rmSync(outsideBatchDir, { recursive: true, force: true });
   }
   const emptyBatch = await tool(215, "fs_read_multiple", {
     device_id: deviceId, paths: [],
@@ -627,6 +735,26 @@ try {
   assert.equal(bulkPage.hasMore, false);
   assert.equal(bulkPage.truncated, true);
   assert.deepEqual(bulkPage.items.map(item => item.path).length, 10);
+  // 1C pagination must be a consistent, duplicate-free snapshot across every
+  // page, not merely a correct last-page length.
+  const allBulkPaths = [];
+  for (let pageIndex = 0; pageIndex < 5; pageIndex += 1) {
+    const page = await tool(820 + pageIndex, "get_more_search_results", {
+      device_id: deviceId, search_id: bulkSession.searchId,
+      offset: pageIndex * 100, length: 100,
+    });
+    assert.equal(page.status, "completed");
+    assert.equal(page.resultCount, 500);
+    assert.equal(page.items.length, 100);
+    assert.equal(page.hasMore, pageIndex < 4);
+    allBulkPaths.push(...page.items.map(item => item.path));
+  }
+  assert.equal(new Set(allBulkPaths).size, 500,
+    "A bounded native search must not return duplicate files across pages");
+  assert.deepEqual(allBulkPaths.slice(490), bulkPage.items.map(item => item.path),
+    "Search pagination must remain stable when the same snapshot is reread");
+  assert.ok(allBulkPaths.every(file => path.dirname(file) === bulkDir),
+    "Search pagination must not escape the requested directory");
 
   // Real native pause/resume goes through MCP -> Gateway ownership -> Agent
   // ACK. Many nonmatching entries keep the scanner live long enough to pause
