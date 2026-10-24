@@ -179,8 +179,15 @@ try {
     arguments: {
       device_id: deviceId, path: tempRoot,
       query: "relay-progress-fixture", search_type: "files",
+      start_paused: true,
     },
   }));
+  assert.equal(progressSearch.paused, true);
+  const resumedProgress = toolText(await rpc(508, "tools/call", {
+    name: "resume_search",
+    arguments: { device_id: deviceId, search_id: progressSearch.searchId },
+  }));
+  assert.equal(resumedProgress.paused, false);
   const streamedSearch = await waitFor(async () => {
     const page = toolText(await rpc(507, "tools/call", {
       name: "get_more_search_results",
