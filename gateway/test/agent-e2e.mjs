@@ -397,6 +397,25 @@ try {
     return terminalText.includes("PTY_AGENT_OK");
   }, 10000, 250);
 
+  const historyAfterDrain = await tool(206, "terminal_read_page", {
+    device_id: deviceId,
+    session_id: started.sessionId,
+    offset_bytes: -65536,
+    max_bytes: 65536,
+  });
+  assert.match(historyAfterDrain.text, /PTY_AGENT_OK/);
+  assert.equal(typeof historyAfterDrain.totalOutputBytes, "number");
+  assert.equal(typeof historyAfterDrain.retainedStartBytes, "number");
+  assert.equal(historyAfterDrain.truncatedBeforeOffset, false);
+  const absolutePage = await tool(207, "terminal_read_page", {
+    device_id: deviceId,
+    session_id: started.sessionId,
+    offset_bytes: historyAfterDrain.offsetBytes,
+    max_bytes: 65536,
+  });
+  assert.equal(absolutePage.text, historyAfterDrain.text);
+  assert.equal(absolutePage.nextOffsetBytes, historyAfterDrain.nextOffsetBytes);
+
   const stopToken = await approval(deviceId, {
     kind: "terminal_stop",
     sessionId: started.sessionId,
