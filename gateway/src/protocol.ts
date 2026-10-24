@@ -243,6 +243,8 @@ export type SearchProgress = {
   items: unknown[];
   scannedEntries: number;
   scannedBytes: number;
+  /** Untrusted until isNativeFilenameCheckpoint validates the payload. */
+  checkpoint?: unknown;
 };
 
 export type AgentMessage =
