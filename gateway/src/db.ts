@@ -418,6 +418,7 @@ export async function migrate() {
       origin_instance uuid not null,
       -- Counts physical requests even after stop_search until native settlement.
       native_inflight boolean not null default true,
+      paused boolean not null default false,
       progress_sequence integer not null default 0,
       scanned_entries bigint not null default 0,
       scanned_bytes bigint not null default 0,
@@ -435,6 +436,8 @@ export async function migrate() {
     -- prevents a rolling deployment from under-counting legacy native scans.
     alter table search_sessions
       add column if not exists native_inflight boolean not null default true;
+    alter table search_sessions
+      add column if not exists paused boolean not null default false;
     alter table search_sessions
       add column if not exists progress_sequence integer not null default 0;
     alter table search_sessions

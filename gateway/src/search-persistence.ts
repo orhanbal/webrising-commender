@@ -41,6 +41,7 @@ export type SearchSummary = {
   query: string;
   searchType: "files" | "content";
   status: "running" | "completed" | "error" | "stopped";
+  paused: boolean;
   createdAt: string;
   resultCount: number;
   progressUpdates: number;
@@ -62,6 +63,8 @@ export interface SearchPersistence {
   settleStopped?(key: SearchKey): Promise<void>;
   /** Persist only monotonically newer native progress for the original actor/device. */
   progress?(key: SearchKey, update: SearchProgressUpdate): Promise<boolean>;
+  /** Exact native-origin CAS; never pause or revive stopped/foreign searches. */
+  setPaused?(key: SearchKey, paused: boolean): Promise<boolean>;
   /** True only when the running row was atomically transitioned to its final status. */
   finish(key: SearchKey, result: SearchCompletion): Promise<boolean>;
   stop(key: SearchKey): Promise<void>;
@@ -77,6 +80,7 @@ type SearchRow = {
   search_type: "files" | "content";
   status: "running" | "completed" | "error" | "stopped";
   origin_instance: string;
+  paused: boolean;
   progress_sequence: number;
   scanned_entries: number;
   scanned_bytes: number;
@@ -167,6 +171,18 @@ export class PgSearchPersistence implements SearchPersistence {
     );
   }
 
+  async setPaused(s: SearchKey, paused: boolean) {
+    const result = await this.pool.query(
+      `update search_sessions set paused=$5
+        where id=$1 and organization_id=$2 and actor=$3 and device_id=$4
+          and status='running' and native_inflight=true
+          and origin_instance=$6 and expires_at>now()
+        returning id`,
+      [s.id, s.organizationId, s.actor, s.deviceId, paused, this.originInstance],
+    );
+    return Boolean(result.rowCount);
+  }
+
   async progress(s: SearchKey, update: SearchProgressUpdate) {
     // A stopped/expired request can never regain results. Sequence gating
     // prevents a delayed database write from rolling back a newer page.
@@ -187,7 +203,7 @@ export class PgSearchPersistence implements SearchPersistence {
       `update search_sessions
           set items=$5::jsonb,scanned_entries=$6,scanned_bytes=$7,progress_sequence=$8
         where id=$1 and organization_id=$2 and actor=$3 and device_id=$4
-          and status='running' and native_inflight=true and expires_at>now()
+          and status='running' and paused=false and native_inflight=true and expires_at>now()
           and origin_instance=$9 and progress_sequence<$8
         returning id`,
       [s.id, s.organizationId, s.actor, s.deviceId,
@@ -220,7 +236,7 @@ export class PgSearchPersistence implements SearchPersistence {
     }
     const updated = await this.pool.query(
       `update search_sessions
-          set status=$5,items=$6::jsonb,truncated=$7,timed_out=$8,error_code=$9,native_inflight=false,
+          set status=$5,items=$6::jsonb,truncated=$7,timed_out=$8,error_code=$9,native_inflight=false,paused=false,
               progress_sequence=greatest(progress_sequence,$10),
               scanned_entries=greatest(scanned_entries,$11),
               scanned_bytes=greatest(scanned_bytes,$12)
@@ -239,7 +255,7 @@ export class PgSearchPersistence implements SearchPersistence {
   async stop(s: SearchKey) {
     const result = await this.pool.query(
       `update search_sessions
-          set status='stopped',items='[]'::jsonb,error_code=null
+          set status='stopped',paused=false,items='[]'::jsonb,error_code=null
         where id=$1 and organization_id=$2 and actor=$3 and device_id=$4
           and expires_at>now()
         returning id`,
@@ -272,7 +288,7 @@ export class PgSearchPersistence implements SearchPersistence {
     const error = interrupted ? "search_interrupted" : row.error_code;
     return {
       searchId: row.id, path: row.path, query: row.query,
-      searchType: row.search_type, status,
+      searchType: row.search_type, status, paused: status === "running" && row.paused === true,
       createdAt: new Date(row.created_at).toISOString(),
       resultCount: items.length,
       progressUpdates: row.progress_sequence ?? 0,
@@ -286,7 +302,7 @@ export class PgSearchPersistence implements SearchPersistence {
   async page(scope: Omit<SearchKey, "id">, id: string, offset: number, length: number) {
     const result = await this.pool.query<SearchRow>(
       `select s.id,s.path,s.query,s.search_type,s.status,s.origin_instance,
-              s.created_at,s.items,s.truncated,s.timed_out,s.error_code,
+              s.created_at,s.items,s.truncated,s.timed_out,s.error_code,s.paused,
               s.progress_sequence,s.scanned_entries,s.scanned_bytes,
               (g.last_heartbeat_at > now() - interval '15 seconds') as origin_alive
          from search_sessions s
@@ -309,7 +325,7 @@ export class PgSearchPersistence implements SearchPersistence {
   async list(scope: Omit<SearchKey, "id">) {
     const result = await this.pool.query<SearchRow>(
       `select s.id,s.path,s.query,s.search_type,s.status,s.origin_instance,
-              s.created_at,s.items,s.truncated,s.timed_out,s.error_code,
+              s.created_at,s.items,s.truncated,s.timed_out,s.error_code,s.paused,
               s.progress_sequence,s.scanned_entries,s.scanned_bytes,
               (g.last_heartbeat_at > now() - interval '15 seconds') as origin_alive
          from search_sessions s

@@ -15,6 +15,8 @@ type Pending = {
   onProgress?: ((progress: SearchProgress) => void) | undefined;
   signal?: AbortSignal | undefined;
   isSearch: boolean;
+  searchSessionId?: string | undefined;
+  control?: { paused: boolean; resolve: (ok: boolean) => void; timer: NodeJS.Timeout };
 };
 
 export class AgentHub {
@@ -38,6 +40,10 @@ export class AgentHub {
       if (pending.deviceId !== deviceId) continue;
       clearTimeout(pending.timer);
       pending.abortCleanup?.();
+      if (pending.control) {
+        clearTimeout(pending.control.timer);
+        pending.control.resolve(false);
+      }
       pending.reject(new Error(reason));
       this.pending.delete(id);
     }
@@ -157,6 +163,17 @@ export class AgentHub {
       return;
     }
 
+    if (message.type === "search_control_ack") {
+      const pending = this.pending.get(message.requestId);
+      const control = pending?.control;
+      if (!pending || pending.deviceId !== deviceId || !pending.isSearch ||
+          !control || control.paused !== message.paused) return;
+      clearTimeout(control.timer);
+      pending.control = undefined;
+      control.resolve(true);
+      return;
+    }
+
     if (message.type === "search_progress") {
       const pending = this.pending.get(message.requestId);
       if (!pending || pending.deviceId !== deviceId || !pending.isSearch ||
@@ -176,14 +193,46 @@ export class AgentHub {
       if (!pending || pending.deviceId !== deviceId) return;
       clearTimeout(pending.timer);
       pending.abortCleanup?.();
+      if (pending.control) {
+        clearTimeout(pending.control.timer);
+        pending.control.resolve(false);
+        pending.control = undefined;
+      }
       this.pending.delete(message.requestId);
       if (message.ok) pending.resolve(message.data);
       else pending.reject(Object.assign(new Error(message.error.message), { code: message.error.code }));
     }
   }
 
+  async controlSearch(deviceId: string, searchSessionId: string, paused: boolean): Promise<boolean> {
+    const current = [...this.pending.entries()].find(([, req]) =>
+      req.deviceId === deviceId && req.isSearch && req.searchSessionId === searchSessionId &&
+      !req.signal?.aborted);
+    if (!current) return false;
+    const [requestId, pending] = current;
+    const socket = this.sockets.get(deviceId);
+    if (pending.control || !socket || socket.readyState !== 1 || !this.ready.has(deviceId)) {
+      return false;
+    }
+    return new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        if (pending.control?.timer === timer) pending.control = undefined;
+        resolve(false);
+      }, 2_000);
+      pending.control = { paused, resolve, timer };
+      const command: GatewayMessage = { type: "search_control", requestId, paused };
+      socket.send(JSON.stringify(command), error => {
+        if (error && pending.control?.timer === timer) {
+          clearTimeout(timer);
+          pending.control = undefined;
+          resolve(false);
+        }
+      });
+    });
+  }
+
   request(deviceId: string, action: AgentAction, approvalToken?: string | null, signal?: AbortSignal,
-    onProgress?: (progress: SearchProgress) => void) {
+    onProgress?: (progress: SearchProgress) => void, searchSessionId?: string) {
     if (signal?.aborted) return Promise.reject(new Error("request_cancelled"));
     if (this.pending.size >= MAX_PENDING_TOTAL) {
       return Promise.reject(new Error("gateway-overloaded"));
@@ -214,6 +263,10 @@ export class AgentHub {
       const timer = setTimeout(() => {
         const pending = this.pending.get(requestId);
         pending?.abortCleanup?.();
+        if (pending?.control) {
+          clearTimeout(pending.control.timer);
+          pending.control.resolve(false);
+        }
         this.pending.delete(requestId);
         try {
           const cancel: GatewayMessage = { type: "cancel", requestId };
@@ -233,12 +286,18 @@ export class AgentHub {
       };
       const abortCleanup = () => signal?.removeEventListener("abort", onAbort);
       this.pending.set(requestId, { deviceId, resolve, reject, timer, abortCleanup,
-        signal, onProgress, isSearch: action.kind === "fs_search" || action.kind === "text_search" });
+        signal, onProgress, searchSessionId,
+        isSearch: action.kind === "fs_search" || action.kind === "text_search" });
       if (signal) signal.addEventListener("abort", onAbort, { once: true });
       socket.send(JSON.stringify(message), (error) => {
         if (!error) return;
         clearTimeout(timer);
         abortCleanup();
+        const pending = this.pending.get(requestId);
+        if (pending?.control) {
+          clearTimeout(pending.control.timer);
+          pending.control.resolve(false);
+        }
         this.pending.delete(requestId);
         reject(error);
       });

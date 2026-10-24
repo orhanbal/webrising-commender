@@ -234,6 +234,7 @@ export function parseAgentAction(value: unknown): AgentAction {
 export type GatewayMessage =
   | { type: "request"; requestId: string; action: AgentAction; approvalToken?: string | null }
   | { type: "cancel"; requestId: string }
+  | { type: "search_control"; requestId: string; paused: boolean }
   | { type: "ping"; timestamp: string };
 
 export type SearchProgress = {
@@ -252,6 +253,7 @@ export type AgentMessage =
       capabilities: string[];
     }
   | { type: "heartbeat"; timestamp: string }
+  | { type: "search_control_ack"; requestId: string; paused: boolean }
   | { type: "search_progress"; requestId: string; items: unknown[]; scannedEntries: number; scannedBytes: number }
   | { type: "result"; requestId: string; ok: true; data: unknown }
   | { type: "result"; requestId: string; ok: false; error: { code: string; message: string } };

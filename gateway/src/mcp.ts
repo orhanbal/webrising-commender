@@ -5,7 +5,7 @@ import { db } from "./db.js";
 import { actionRisk, type AgentAction } from "./protocol.js";
 import type { DeviceRouter } from "./device-router.js";
 import { issueApproval, redact } from "./security.js";
-import { startSearch, searchPage, listSearches, stopSearch } from "./search-sessions.js";
+import { startSearch, searchPage, listSearches, stopSearch, controlSearch } from "./search-sessions.js";
 
 type JsonRpcRequest = { jsonrpc?: string; id?: string | number | null; method?: string; params?: any };
 
@@ -105,6 +105,8 @@ const tools = [
   ),
   tool("list_searches", "List active/completed recent search sessions for this actor and device.", {}),
   tool("stop_search", "Discard a search session's results and suppress further updates.", { search_id: str() }, ["search_id"]),
+  tool("pause_search", "Cooperatively pause a running native search for at most 15 seconds; its concurrency slot remains occupied.", { search_id: str() }, ["search_id"]),
+  tool("resume_search", "Resume an owned, still-running paused native search.", { search_id: str() }, ["search_id"]),
   tool(
     "fs_replace",
     "Perform a guarded UTF-8 search/replace edit. By default the search must match exactly once.",
@@ -365,7 +367,8 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
     }
   }
 
-  if (["start_search", "get_more_search_results", "list_searches", "stop_search"].includes(name)) {
+  if (["start_search", "get_more_search_results", "list_searches", "stop_search",
+       "pause_search", "resume_search"].includes(name)) {
     if (!roleAtLeast(principal, "viewer")) {
       return ok(request.id, toolResult({ error: "forbidden" }, true));
     }
@@ -379,6 +382,9 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
           args.length === undefined ? 50 : Number(args.length));
       } else if (name === "stop_search") {
         data = await stopSearch(principal, deviceId, String(args.search_id || ""));
+      } else if (name === "pause_search" || name === "resume_search") {
+        data = await controlSearch(principal, deviceId, String(args.search_id || ""),
+          router, name === "pause_search");
       } else {
         data = await listSearches(principal, deviceId);
       }

@@ -568,7 +568,8 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       req.method === "POST" &&
       (url.pathname === "/internal/relay/request" ||
         url.pathname === "/internal/relay/cancel" ||
-        url.pathname === "/internal/relay/disconnect")
+        url.pathname === "/internal/relay/disconnect" ||
+        url.pathname === "/internal/relay/search-control")
     ) {
       if (!currentNodeIsRelay() || !currentNodeId()) {
         return void json(res, 404, { error: "relay_endpoint_unavailable" });
@@ -594,10 +595,29 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         });
       }
 
+      if (url.pathname === "/internal/relay/search-control") {
+        const body = z.object({
+          deviceId: z.string().uuid(),
+          searchSessionId: z.string().uuid(),
+          paused: z.boolean(),
+        }).strict().parse(parsed);
+        const ownedDevice = await db.query(
+          `select 1 from devices
+            where id=$1 and connected_relay_id=$2 and revoked_at is null limit 1`,
+          [body.deviceId, currentNodeId()],
+        );
+        if (!ownedDevice.rowCount) return void json(res, 409, { ok: false, accepted: false });
+        const accepted = await hub.controlSearch(
+          body.deviceId, body.searchSessionId, body.paused,
+        );
+        return void json(res, 200, { ok: true, accepted });
+      }
+
       if (url.pathname === "/internal/relay/request") {
         const body = z.object({
           deviceId: z.string().uuid(),
           requestId: z.string().uuid().optional(),
+          searchSessionId: z.string().uuid().optional(),
           action: z.unknown(),
           approvalToken: z.string().nullable().optional(),
         }).parse(parsed);
@@ -623,6 +643,8 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
             action,
             body.approvalToken,
             controller?.signal,
+            undefined,
+            body.searchSessionId,
           );
           return void json(res, 200, { ok: true, data });
         } catch (error) {

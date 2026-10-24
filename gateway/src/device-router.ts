@@ -38,10 +38,11 @@ export class DeviceRouter {
     approvalToken?: string | null,
     signal?: AbortSignal,
     onProgress?: (progress: SearchProgress) => void,
+    searchSessionId?: string,
   ) {
     if (signal?.aborted) throw new Error("request_cancelled");
     if (this.hub.isOnline(deviceId)) {
-      return this.hub.request(deviceId, action, approvalToken, signal, onProgress);
+      return this.hub.request(deviceId, action, approvalToken, signal, onProgress, searchSessionId);
     }
     if (!regionalRelayEnabled()) {
       throw new Error("device-offline");
@@ -73,6 +74,7 @@ export class DeviceRouter {
         deviceId,
         requestId,
         action,
+        ...(searchSessionId !== undefined ? { searchSessionId } : {}),
         ...(approvalToken !== undefined ? { approvalToken } : {}),
       });
       if (!response.ok) {
@@ -82,6 +84,20 @@ export class DeviceRouter {
     } finally {
       signal?.removeEventListener("abort", onAbort);
     }
+  }
+
+  async controlSearch(deviceId: string, searchSessionId: string, paused: boolean): Promise<boolean> {
+    if (this.hub.isOnline(deviceId)) {
+      return this.hub.controlSearch(deviceId, searchSessionId, paused);
+    }
+    if (!regionalRelayEnabled()) return false;
+    const relay = await connectedRelayForDevice(deviceId);
+    if (!relay) return false;
+    const response = await callRelay<{ ok: boolean; accepted: boolean }>(
+      relay.internalBaseUrl, "/internal/relay/search-control",
+      { deviceId, searchSessionId, paused },
+    );
+    return response.ok && response.accepted;
   }
 
   async disconnect(deviceId: string) {

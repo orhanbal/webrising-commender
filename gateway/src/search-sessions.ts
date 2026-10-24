@@ -23,6 +23,8 @@ type SearchEntry = {
   items: unknown[];
   truncated: boolean;
   timedOut: boolean;
+  paused: boolean;
+  controlPending: boolean;
   scannedEntries: number;
   scannedBytes: number;
   progressUpdates: number;
@@ -65,6 +67,7 @@ function summary(s: SearchEntry) {
     status: s.status,
     createdAt: new Date(s.createdAt).toISOString(),
     resultCount: s.items.length,
+    paused: s.status === "running" && s.paused,
     scannedEntries: s.scannedEntries,
     scannedBytes: s.scannedBytes,
     progressUpdates: s.progressUpdates,
@@ -120,6 +123,8 @@ export async function startSearch(
     items: [],
     truncated: false,
     timedOut: false,
+    paused: false,
+    controlPending: false,
     scannedEntries: 0,
     scannedBytes: 0,
     progressUpdates: 0,
@@ -148,7 +153,8 @@ export async function startSearch(
     }
   };
   const onProgress = (progress: SearchProgress) => {
-    if (!entry.inFlight || entry.status !== "running" || entry.controller.signal.aborted) return;
+    if (!entry.inFlight || entry.status !== "running" || entry.paused ||
+        entry.controller.signal.aborted) return;
     if (!Array.isArray(progress.items) || progress.items.length > 500 ||
         !Number.isSafeInteger(progress.scannedEntries) || progress.scannedEntries < 0 ||
         !Number.isSafeInteger(progress.scannedBytes) || progress.scannedBytes < 0 ||
@@ -176,7 +182,7 @@ export async function startSearch(
       });
     }
   };
-  void router.request(deviceId, action, undefined, entry.controller.signal, onProgress).then(async data => {
+  void router.request(deviceId, action, undefined, entry.controller.signal, onProgress, entry.id).then(async data => {
     entry.inFlight = false;
     if (entry.status !== "running") {
       await clearStoppedNativeSlot();
@@ -304,6 +310,50 @@ export function listSearches(principal: Principal, deviceId: string) {
   return { items: [...sessions.values()]
     .filter(s => owner(s, principal, deviceId)).map(summary) };
 }
+export async function controlSearch(
+  principal: Principal, deviceId: string, searchId: string,
+  router: DeviceRouter, paused: boolean,
+) {
+  expire();
+  const s = sessions.get(searchId);
+  // The native worker is owned by the Gateway that started it, even if a
+  // foreign Gateway can read persisted snapshots. No cross-actor/device relay.
+  if (!s || !owner(s, principal, deviceId)) throw new Error("search_not_found");
+  if (s.status !== "running" || !s.inFlight || s.controller.signal.aborted) {
+    throw new Error("search_not_running");
+  }
+  if (s.controlPending) throw new Error("search_control_in_progress");
+  if (persistence) {
+    const page = await persistence.page(principal, deviceId, searchId, 0, 1);
+    if (page.status !== "running") throw new Error("search_not_running");
+  }
+  if (s.paused === paused) return summary(s);
+  s.controlPending = true;
+  try {
+    const accepted = await router.controlSearch(deviceId, searchId, paused);
+    if (!accepted || s.status !== "running" || !s.inFlight) {
+      throw new Error("search_control_unavailable");
+    }
+    if (persistence?.setPaused && !await persistence.setPaused(s, paused)) {
+      // Another Gateway may have revoked this search during the native ACK.
+      // Cancel rather than leaving a paused native worker consuming resources.
+      s.controller.abort();
+      throw new Error("search_not_running");
+    }
+    s.paused = paused;
+    return summary(s);
+  } catch (error) {
+    if (s.status === "running" && error instanceof Error &&
+        error.message !== "search_control_in_progress") {
+      // A missing acknowledgment makes native state uncertain. Fail closed.
+      s.controller.abort();
+    }
+    throw error;
+  } finally {
+    s.controlPending = false;
+  }
+}
+
 export async function stopSearch(principal: Principal, deviceId: string, searchId: string) {
   expire();
   const s = sessions.get(searchId);
@@ -316,6 +366,7 @@ export async function stopSearch(principal: Principal, deviceId: string, searchI
     await persistence.stop({ id: searchId, ...scope });
     if (s && owner(s, principal, deviceId)) {
       s.status = "stopped";
+      s.paused = false;
       s.items = [];
       s.controller.abort();
     }
@@ -329,6 +380,7 @@ export async function stopSearch(principal: Principal, deviceId: string, searchI
   }
   if (!s || !owner(s, principal, deviceId)) throw new Error("search_not_found");
   s.status = "stopped";
+  s.paused = false;
   s.items = [];
   s.controller.abort();
   return summary(s);
