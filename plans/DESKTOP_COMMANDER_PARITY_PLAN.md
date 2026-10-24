@@ -28,6 +28,15 @@ Son gözden geçirme: 2026-10-24. Öncelik: eşdeğerlik > güvenilirlik/kabul >
 - **CI / PASS:** Kod + plan güncellemesi HEAD `03a618d2` için GitHub Actions `ci #40048337156` **17/17 PASS** (Rust, Gateway, Linux Agent E2E, Windows/macOS derlemeleri, installer/artifact işleri ve güvenlik entegrasyonu). Bu belge güncellemesi yeni HEAD oluşturacağı için onun CI'sı ayrıca doğrulanmalıdır.
 - **AÇIK:** Geçmiş yalnızca Agent RAM'inde ve 1 MiB sınırında; Agent yeniden başlatması sonrası veya daha eski çıktı için disk tabanlı tam geçmiş yok. REPL/prompt algılama, process-tree cleanup, native search cancellation ve gerçek üç platform kabulü ayrıca açık.
 
+## 05.00 P1 Excel / XLSX güvenlik ve regresyon (2026-10-24)
+
+- **Kodlandı, güncel HEAD CI bekliyor:** `xlsx_inspect`, `xlsx_read_range`, `xlsx_find` ve `xlsx_write_cells` MCP → Gateway → native Rust Agent hattında mevcut. Gerçek Linux Agent E2E, XLSX okuma/arama ve yeni XLSX'e hücre düzenleme, kaynak hash önkoşulu, makro etkin XLSM düzenleme reddi, mevcut çıktı dosyasını ezmeme ve izin sınırlarını test ediyor.
+- **Güvenlik düzeltmesi:** `c8a25876` arama eşleşmesindeki hücre içeriğini UTF-8 sınırlarını koruyarak en fazla 4096 bayt önizleme olarak döndürür ve `valueTruncated` alanını ekler. Önceden tek bir büyük hücre sınırsız MCP arama sonucu üretebiliyordu.
+- **Eşzamanlı düzenleme düzeltmesi:** Aynı commit, XLSX kaydetme işlemi tamamlandıktan sonra, yeni dosya atomik yayımlanmadan hemen önce kaynak SHA-256 değerini yeniden denetler. Kaynak arada değişmişse yeni çıktı yayımlanmaz. Bu, tüm olası dosya sistemi yarışlarını ortadan kaldırdığı iddiası değildir.
+- **Gerçek Agent E2E testi:** `bc76d202`, 6000+ karakterli XLSX hücresinin sonunda bulunan metni arar ve yanıttaki `valueTruncated=true` ile 4096 bayt önizleme sınırını doğrular.
+- **PENDING:** Bu son iki kod/test commit'inin CI ve dağıtım kabulü; en son HEAD üzerinde bütün job'lar PASS olmadan tamamlandı sayılmaz.
+- **AÇIK:** XLSM güvenli yazma (şimdilik yalnızca okuma), karmaşık OOXML parçaları için yazma (bilinçli olarak reddediliyor), formül ve stil roundtrip matrisi, fiziksel Windows/macOS kabulü ve performans testleri.
+
 ## Karşılaştırma kaynağı
 - Desktop Commander'ın yayımlanan MCP araç listesi: https://github.com/mcp/wonderwhy-er/desktop-commander
 - Remote MCP araç listesi: https://github.com/mcp/app.desktopcommander/remote-desktop-commander
