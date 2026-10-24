@@ -2001,7 +2001,14 @@ mod batch_read_tests {
         let root = env::temp_dir().join(format!("wc-batch-budget-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
         let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
-        let sizes = [60 * 1024, 60 * 1024, 60 * 1024, 60 * 1024, 20 * 1024, 8 * 1024];
+        let sizes = [
+            60 * 1024,
+            60 * 1024,
+            60 * 1024,
+            60 * 1024,
+            20 * 1024,
+            8 * 1024,
+        ];
         let paths: Vec<String> = sizes
             .iter()
             .enumerate()
