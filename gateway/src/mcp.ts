@@ -63,7 +63,7 @@ const tools = [
   tool(
     "fs_search",
     "Search file and directory names recursively inside an allowlisted root.",
-    { path: str(), query: str(), max_results: integer() },
+    { path: str(), query: str(), case_sensitive: bool(), max_results: integer() },
     ["path", "query"],
   ),
   tool(
@@ -203,7 +203,7 @@ function actionFromTool(name: string, a: any): AgentAction {
     case "fs_delete": return { kind: "fs_delete", path: String(a.path), recursive: Boolean(a.recursive) };
     case "fs_move": return { kind: "fs_move", source: String(a.source), destination: String(a.destination) };
     case "fs_tree": return { kind: "fs_tree", path: String(a.path), ...(a.max_depth !== undefined ? { maxDepth: Number(a.max_depth) } : {}), ...(a.max_entries !== undefined ? { maxEntries: Number(a.max_entries) } : {}) };
-    case "fs_search": return { kind: "fs_search", path: String(a.path), query: String(a.query), ...(a.max_results !== undefined ? { maxResults: Number(a.max_results) } : {}) };
+    case "fs_search": return { kind: "fs_search", path: String(a.path), query: String(a.query), ...(a.case_sensitive !== undefined ? { caseSensitive: Boolean(a.case_sensitive) } : {}), ...(a.max_results !== undefined ? { maxResults: Number(a.max_results) } : {}) };
     case "text_search":
     case "code_search": return { kind: "text_search", path: String(a.path), query: String(a.query), ...(a.case_sensitive !== undefined ? { caseSensitive: Boolean(a.case_sensitive) } : {}), ...(a.max_results !== undefined ? { maxResults: Number(a.max_results) } : {}) };
     case "fs_replace": return { kind: "fs_replace", path: String(a.path), search: String(a.search), replace: String(a.replace), ...(a.replace_all !== undefined ? { replaceAll: Boolean(a.replace_all) } : {}), ...(a.expected_sha256 !== undefined ? { expectedSha256: String(a.expected_sha256) } : {}) };
