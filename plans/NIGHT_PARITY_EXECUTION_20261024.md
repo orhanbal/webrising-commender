@@ -41,7 +41,7 @@
 - **PASS / giriş HEAD:** `67332a8a`, `ci #40043353106` 17/17 PASS ve platform dağıtımı `#40043712961` PASS.
 - **KODLANDI:** `b1500c06` Rust PTY history, `3170bbcd` Gateway mutlak cursor sınırı, `409c089d` MCP sözleşme açıklaması, `9376405c` ve `223798ac` gerçek Agent E2E testi, `912c18bf` Gateway protokol testi, `03ea7026` yarış koşulu düzeltmesi.
 - **Kabul sınırı:** `terminal_read` sonrasında `terminal_read_page` çıktı geçmişini koruyor. Pozitif offset mutlak, negatif sondan. 1 MiB retention aşıldığında `truncatedBeforeOffset` ve `retainedStartBytes` raporlanıyor; **tam kalıcı terminal geçmişi hâlâ açık**.
-- **CI / PENDING:** Kod HEAD `03ea7026` için `ci #40048008146`; ilk kontrolde 15/17 iş PASS, iki acceptance artifact işi çalışıyor. Güncel plan commit'lerinin CI'sı da ayrıca doğrulanmalı.
+- **CI / PASS:** Kod + ilk plan güncellemesi HEAD `03a618d2` için `ci #40048337156` **17/17 PASS**; son belge düzeltmesinin oluşturduğu HEAD'in CI'sı ayrıca doğrulanmalıdır.
 - **AÇIK:** Prompt/REPL tanıma, süreç ağacı temizleme, PTY disk spool ve Agent yeniden başlatması sonrası geçmiş, Windows/macOS fiziksel kabul.
 - **Sonraki adım:** CI tamamen yeşilse P0 terminal süreç temizliği açıklarını, ardından P1 Excel desteğini ele al; CI kırmızıysa önce düzelt.
 
