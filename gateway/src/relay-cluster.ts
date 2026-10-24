@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
 import type { PoolClient } from "pg";
 import { db } from "./db.js";
+import type { SearchProgress } from "./protocol.js";
 
 type Queryable = typeof db | PoolClient;
 
@@ -455,4 +456,109 @@ export async function callRelay<T>(
     );
   }
   return result as T;
+}
+
+
+/**
+ * Stream bounded native search progress over the existing authenticated relay
+ * request. A single signed POST carries progress frames and the final result;
+ * no callback endpoint, unsignable polling URL or additional runtime service.
+ * Every frame is length-bounded and a missing final result fails closed.
+ */
+const MAX_RELAY_STREAM_FRAME_BYTES = 1_100_000;
+export async function readRelayStream<T>(
+  response: Response,
+  onProgress: (progress: SearchProgress) => void,
+): Promise<T> {
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(typeof error?.error === "string" ? error.error : `relay_http_${response.status}`);
+  }
+  if (!response.headers.get("content-type")?.toLowerCase().startsWith("application/x-ndjson")) {
+    throw new Error("relay_stream_invalid_content_type");
+  }
+  if (!response.body) throw new Error("relay_stream_missing_body");
+  const reader = response.body.getReader();
+  let pending = Buffer.alloc(0);
+  let final: T | undefined;
+  let completed = false;
+  let frames = 0;
+  const frame = (bytes: Buffer) => {
+    if (++frames > 4096 || bytes.length === 0) throw new Error("relay_stream_invalid_frame");
+    let item: Record<string, unknown>;
+    try {
+      item = JSON.parse(bytes.toString("utf8")) as Record<string, unknown>;
+    } catch {
+      throw new Error("relay_stream_invalid_frame");
+    }
+    if (!item || typeof item !== "object" || Array.isArray(item) || completed) {
+      throw new Error("relay_stream_invalid_frame");
+    }
+    if (item.type === "progress") {
+      const p = item.data as SearchProgress | undefined;
+      if (!p || !Array.isArray(p.items) || p.items.length > 500 ||
+          !Number.isSafeInteger(p.scannedEntries) || p.scannedEntries < 0 ||
+          p.scannedEntries > 100_000 ||
+          !Number.isSafeInteger(p.scannedBytes) || p.scannedBytes < 0 ||
+          p.scannedBytes > 64 * 1024 * 1024) {
+        throw new Error("relay_stream_invalid_progress");
+      }
+      try { onProgress(p); } catch { /* A subscriber cannot interrupt a native scan. */ }
+      return;
+    }
+    if (item.type === "result" && typeof item.ok === "boolean") {
+      completed = true;
+      if (!item.ok) {
+        throw new Error(typeof item.error === "string" ? item.error : "relay_request_failed");
+      }
+      final = item.data as T;
+      return;
+    }
+    throw new Error("relay_stream_invalid_frame");
+  };
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value);
+      let offset = 0;
+      while (offset < chunk.length) {
+        const newline = chunk.indexOf(10, offset);
+        const end = newline < 0 ? chunk.length : newline;
+        const piece = chunk.subarray(offset, end);
+        if (pending.length + piece.length > MAX_RELAY_STREAM_FRAME_BYTES) {
+          throw new Error("relay_stream_frame_too_large");
+        }
+        pending = Buffer.concat([pending, piece]);
+        if (newline < 0) break;
+        frame(pending);
+        pending = Buffer.alloc(0);
+        offset = newline + 1;
+      }
+    }
+    if (pending.length !== 0 || !completed) throw new Error("relay_stream_incomplete");
+    return final as T;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+export async function callRelayStream<T>(
+  relayInternalBaseUrl: string,
+  path: string,
+  payload: unknown,
+  onProgress: (progress: SearchProgress) => void,
+): Promise<T> {
+  const body = JSON.stringify(payload);
+  const rawTimeout = Number(process.env.RELAY_REQUEST_TIMEOUT_MS ?? 35_000);
+  const timeoutMs = Number.isFinite(rawTimeout)
+    ? Math.min(120_000, Math.max(1_000, Math.floor(rawTimeout))) : 35_000;
+  const response = await fetch(relayInternalBaseUrl + path, {
+    method: "POST",
+    headers: { ...signedRelayHeaders("POST", path, body), accept: "application/x-ndjson" },
+    body,
+    redirect: "error",
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  return readRelayStream<T>(response, onProgress);
 }
