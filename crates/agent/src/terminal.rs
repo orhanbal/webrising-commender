@@ -426,19 +426,19 @@ mod tests {
     #[test]
     fn prompt_classification_is_bounded_and_advisory() {
         let mut history = OutputHistory::default();
-        history.push(b"Python 3.13\\r\\n>>> ");
+        history.push(b"Python 3.13\r\n>>> ");
         assert_eq!(history.prompt_kind(), Some("python"));
         assert_eq!(history.page(Some(0), Some(2))["promptKind"], "python");
-        history.push(b"print(2)\\r\\n... ");
+        history.push(b"print(2)\r\n... ");
         assert_eq!(history.prompt_kind(), Some("python_continuation"));
-        history.push(b"\\r\\n\\x1b[32muser@host\\x1b[0m$ ");
+        history.push(b"\r\n\x1b[32muser@host\x1b[0m$ ");
         assert_eq!(history.prompt_kind(), Some("shell"));
-        history.push(b"\\r\\nPS C:\\\\Users\\\\Test> ");
+        history.push(b"\r\nPS C:\\\\Users\\\\Test> ");
         assert_eq!(history.prompt_kind(), Some("powershell"));
-        history.push(b"\\r\\nnormal output");
+        history.push(b"\r\nnormal output");
         assert_eq!(history.prompt_kind(), None);
         assert_eq!(history.page(None, None)["promptDetected"], false);
-        history.push(b"\\r\\n>>> ");
+        history.push(b"\r\n>>> ");
         assert_eq!(history.prompt_kind(), Some("python"));
         history.push(&vec![b'x'; BUFFER_CAP]);
         assert_eq!(history.prompt_kind(), None);
