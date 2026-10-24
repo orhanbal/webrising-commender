@@ -84,8 +84,12 @@ export async function startSearch(
   // must not block the actor for the entire result-retention TTL. A stopped
   // search remains in-flight until the agent settles: stop_search currently
   // suppresses results but does not physically cancel native scanning.
+  // A single actor cannot bypass the native scan quota by switching devices.
+  // Keep tenant scoping: actors with the same ID in distinct organizations
+  // must not consume one another's slots.
   const matches = [...sessions.values()].filter(s =>
-    owner(s, principal, deviceId) && s.inFlight);
+    s.organizationId === principal.organizationId &&
+    s.actor === principal.actor && s.inFlight);
   // Evict the oldest settled snapshots only if the global retention cap is hit.
   // Never evict active scans to admit more concurrent work.
   if (sessions.size >= MAX_SESSIONS) {
