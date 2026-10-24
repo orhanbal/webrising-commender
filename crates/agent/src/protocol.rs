@@ -28,6 +28,17 @@ pub enum GatewayMessage {
     rename_all = "snake_case",
     rename_all_fields = "camelCase"
 )]
+pub struct SpreadsheetCellUpdate {
+    pub cell: String,
+    pub value: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum AgentAction {
     SystemInfo,
     PolicyInfo,
@@ -56,6 +67,13 @@ pub enum AgentAction {
         start_column: u32,
         row_count: u32,
         column_count: u32,
+    },
+    XlsxWriteCells {
+        path: String,
+        output_path: String,
+        sheet: String,
+        updates: Vec<SpreadsheetCellUpdate>,
+        expected_sha256: Option<String>,
     },
     FsWrite {
         path: String,
@@ -204,6 +222,7 @@ impl AgentAction {
             Self::FsReadLines { .. } => "fs_read_lines",
             Self::XlsxInspect { .. } => "xlsx_inspect",
             Self::XlsxReadRange { .. } => "xlsx_read_range",
+            Self::XlsxWriteCells { .. } => "xlsx_write_cells",
             Self::FsWrite { .. } => "fs_write",
             Self::FsAppend { .. } => "fs_append",
             Self::FsMkdir { .. } => "fs_mkdir",
@@ -251,6 +270,7 @@ impl AgentAction {
             | Self::TerminalList => Risk::Low,
 
             Self::FsWrite { .. }
+            | Self::XlsxWriteCells { .. }
             | Self::FsAppend { .. }
             | Self::FsMkdir { .. }
             | Self::FsMove { .. }
