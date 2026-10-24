@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import type WebSocket from "ws";
+import { isNativeFilenameCheckpoint } from "./search-checkpoint.js";
 import { db } from "./db.js";
 import type { AgentAction, AgentMessage, GatewayMessage, SearchProgress } from "./protocol.js";
 
@@ -183,7 +184,10 @@ export class AgentHub {
           !Number.isSafeInteger(message.scannedBytes) || message.scannedBytes < 0 ||
           message.scannedBytes > 64 * 1024 * 1024 ||
           !Array.isArray(message.items) || message.items.length > 500 ||
-          Buffer.byteLength(JSON.stringify(message.items), "utf8") > 1024 * 1024) return;
+          Buffer.byteLength(JSON.stringify(message.items), "utf8") > 1024 * 1024 ||
+          (message.checkpoint !== undefined &&
+            (!isNativeFilenameCheckpoint(message.checkpoint) ||
+             Buffer.byteLength(JSON.stringify(message), "utf8") > 1_100_000))) return;
       try { pending.onProgress(message); } catch { /* A progress observer cannot disrupt the native request. */ }
       return;
     }

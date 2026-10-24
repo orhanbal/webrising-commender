@@ -419,6 +419,7 @@ export async function migrate() {
       -- Counts physical requests even after stop_search until native settlement.
       native_inflight boolean not null default true,
       paused boolean not null default false,
+      checkpoint jsonb,
       progress_sequence integer not null default 0,
       scanned_entries bigint not null default 0,
       scanned_bytes bigint not null default 0,
@@ -438,6 +439,8 @@ export async function migrate() {
       add column if not exists native_inflight boolean not null default true;
     alter table search_sessions
       add column if not exists paused boolean not null default false;
+    alter table search_sessions
+      add column if not exists checkpoint jsonb;
     alter table search_sessions
       add column if not exists progress_sequence integer not null default 0;
     alter table search_sessions

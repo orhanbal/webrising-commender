@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isNativeFilenameCheckpoint } from "./search-checkpoint.js";
 
 export type Risk = "low" | "medium" | "high";
 
@@ -149,6 +150,7 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     query: z.string().min(1).max(1024),
     caseSensitive: z.boolean().optional(),
     maxResults: z.number().int().min(1).max(500).optional(),
+    resumeCheckpoint: z.unknown().refine(isNativeFilenameCheckpoint).optional(),
   }).strict(),
   z.object({
     kind: z.literal("text_search"),

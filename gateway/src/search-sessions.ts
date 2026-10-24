@@ -3,6 +3,7 @@ import type { AgentAction, SearchProgress } from "./protocol.js";
 import type { DeviceRouter } from "./device-router.js";
 import type { Principal } from "./auth.js";
 import type { SearchPersistence } from "./search-persistence.js";
+import { isNativeFilenameCheckpoint } from "./search-checkpoint.js";
 
 /**
  * Bounded, tenant/actor-isolated search sessions.
@@ -165,6 +166,13 @@ export async function startSearch(
     // The hub validates payload size; retain the same limit in this boundary,
     // including when a test or alternate router calls us directly.
     if (Buffer.byteLength(JSON.stringify(progress.items), "utf8") > 1024 * 1024) return;
+    const checkpoint = entry.searchType === "files" &&
+      isNativeFilenameCheckpoint(progress.checkpoint) &&
+      progress.checkpoint.query === entry.query &&
+      progress.checkpoint.caseSensitive === Boolean(arg.case_sensitive) &&
+      progress.checkpoint.scannedEntries === progress.scannedEntries &&
+      JSON.stringify(progress.checkpoint.items) === JSON.stringify(progress.items)
+      ? progress.checkpoint : undefined;
     entry.progressUpdates += 1;
     entry.items = progress.items;
     entry.scannedEntries = progress.scannedEntries;
@@ -174,6 +182,7 @@ export async function startSearch(
       void persistence.progress(entry, {
         items: progress.items, scannedEntries: progress.scannedEntries,
         scannedBytes: progress.scannedBytes, sequence,
+        ...(checkpoint ? { checkpoint } : {}),
       }).then(() => {
         // A stale out-of-order write can legitimately lose the monotone CAS.
         // Stop/expiry revocation is database-authoritative; never cancel a

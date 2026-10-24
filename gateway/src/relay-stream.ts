@@ -1,4 +1,5 @@
 import type { SearchProgress } from "./protocol.js";
+import { isNativeFilenameCheckpoint } from "./search-checkpoint.js";
 
 /** Pure relay stream decoder: must not import database or cluster configuration. */
 const MAX_RELAY_STREAM_FRAME_BYTES = 1_100_000;
@@ -39,7 +40,8 @@ export async function readRelayStream<T>(
           !Number.isSafeInteger(p.scannedEntries) || p.scannedEntries < 0 ||
           p.scannedEntries > 100_000 ||
           !Number.isSafeInteger(p.scannedBytes) || p.scannedBytes < 0 ||
-          p.scannedBytes > 64 * 1024 * 1024) {
+          p.scannedBytes > 64 * 1024 * 1024 ||
+          (p.checkpoint !== undefined && !isNativeFilenameCheckpoint(p.checkpoint))) {
         throw new Error("relay_stream_invalid_progress");
       }
       try { onProgress(p); } catch { /* A subscriber cannot interrupt a native scan. */ }

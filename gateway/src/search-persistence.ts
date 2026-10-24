@@ -25,6 +25,7 @@ export type SearchProgressUpdate = {
   scannedEntries: number;
   scannedBytes: number;
   sequence: number;
+  checkpoint?: unknown;
 };
 export type SearchCompletion = {
   status: "completed" | "error";
@@ -202,14 +203,16 @@ export class PgSearchPersistence implements SearchPersistence {
     }
     const result = await this.pool.query(
       `update search_sessions
-          set items=$5::jsonb,scanned_entries=$6,scanned_bytes=$7,progress_sequence=$8
+          set items=$5::jsonb,scanned_entries=$6,scanned_bytes=$7,progress_sequence=$8,
+              checkpoint=coalesce($10::jsonb,checkpoint)
         where id=$1 and organization_id=$2 and actor=$3 and device_id=$4
           and status='running' and paused=false and native_inflight=true and expires_at>now()
           and origin_instance=$9 and progress_sequence<$8
         returning id`,
       [s.id, s.organizationId, s.actor, s.deviceId,
         JSON.stringify(items), update.scannedEntries, update.scannedBytes,
-        update.sequence, this.originInstance],
+        update.sequence, this.originInstance,
+        update.checkpoint === undefined ? null : JSON.stringify(update.checkpoint)],
     );
     return Boolean(result.rowCount);
   }
@@ -237,7 +240,7 @@ export class PgSearchPersistence implements SearchPersistence {
     }
     const updated = await this.pool.query(
       `update search_sessions
-          set status=$5,items=$6::jsonb,truncated=$7,timed_out=$8,error_code=$9,native_inflight=false,paused=false,
+          set status=$5,items=$6::jsonb,truncated=$7,timed_out=$8,error_code=$9,native_inflight=false,paused=false,checkpoint=null,
               progress_sequence=greatest(progress_sequence,$10),
               scanned_entries=greatest(scanned_entries,$11),
               scanned_bytes=greatest(scanned_bytes,$12)
@@ -256,7 +259,7 @@ export class PgSearchPersistence implements SearchPersistence {
   async stop(s: SearchKey) {
     const result = await this.pool.query(
       `update search_sessions
-          set status='stopped',paused=false,items='[]'::jsonb,error_code=null
+          set status='stopped',paused=false,checkpoint=null,items='[]'::jsonb,error_code=null
         where id=$1 and organization_id=$2 and actor=$3 and device_id=$4
           and expires_at>now()
         returning id`,

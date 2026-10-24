@@ -17,6 +17,29 @@ const sampleRow = {
   truncated: false, timed_out: false, error_code: null,
 };
 
+test("checkpoint persistence uses the monotone actor/device/native-origin CAS", async () => {
+  const calls: Array<{ sql: string; args: unknown[] }> = [];
+  const db = { query: async (sql: string, args: unknown[]) => {
+    calls.push({ sql, args }); return { rows: [{ id }], rowCount: 1 };
+  }} as unknown as Pool;
+  const checkpoint = { version: 1, root: "/safe", query: "needle",
+    caseSensitive: false, pending: ["/safe/later"], items: [{ path: "/safe/needle.txt" }],
+    scannedEntries: 48 };
+  const store = new PgSearchPersistence(db);
+  await store.progress({ ...owner, id }, {
+    items: checkpoint.items, scannedEntries: 48, scannedBytes: 0,
+    sequence: 2, checkpoint,
+  });
+  assert.match(calls[0]!.sql, /checkpoint=coalesce\(\$10::jsonb,checkpoint\)/);
+  assert.match(calls[0]!.sql, /origin_instance=\$9/);
+  assert.match(calls[0]!.sql, /progress_sequence<\$8/);
+  assert.deepEqual(JSON.parse(calls[0]!.args[9] as string), checkpoint);
+  await store.progress({ ...owner, id }, {
+    items: checkpoint.items, scannedEntries: 49, scannedBytes: 0, sequence: 3,
+  });
+  assert.equal(calls[1]!.args[9], null);
+});
+
 test("monotone progress persistence cannot update stopped or another actor's scan", async () => {
   const writes: Array<{ sql: string; args: unknown[] }> = [];
   const fake = {
