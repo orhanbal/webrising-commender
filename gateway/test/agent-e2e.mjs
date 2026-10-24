@@ -463,6 +463,28 @@ try {
   });
   assert.equal(excessiveBatchBytes.error, "invalid_batch_read_arguments");
 
+  // 1D: a single huge line must fail closed rather than returning a partial
+  // line, while a batch keeps binary files isolated as base64 payloads.
+  const hugeLinePath = path.join(tempRoot, "oversized-line.txt");
+  fs.writeFileSync(hugeLinePath, "secret-page-prefix-" + "z".repeat(256 * 1024 + 1));
+  const hugeLinePage = await tool(298, "fs_read_lines", {
+    device_id: deviceId, path: hugeLinePath, offset_lines: 0, limit_lines: 1,
+  });
+  assert.equal(typeof hugeLinePage.error, "string");
+  assert.ok(!JSON.stringify(hugeLinePage).includes("secret-page-prefix-"));
+  const binaryBatchPath = path.join(tempRoot, "binary-batch.bin");
+  fs.writeFileSync(binaryBatchPath, Buffer.from([0xff, 0x00, 0xfe]));
+  const mixedBatch = await tool(299, "fs_read_multiple", {
+    device_id: deviceId, paths: [filePath, binaryBatchPath, path.join(tempRoot, "missing-batch.bin")],
+  });
+  assert.equal(mixedBatch.count, 3);
+  assert.equal(mixedBatch.items[0].ok, true);
+  assert.equal(mixedBatch.items[1].ok, true);
+  assert.equal(mixedBatch.items[1].data.encoding, "base64");
+  assert.equal(mixedBatch.items[1].data.content, Buffer.from([0xff, 0x00, 0xfe]).toString("base64"));
+  assert.equal(mixedBatch.items[2].ok, false);
+  assert.equal(mixedBatch.items[2].error, "read_failed");
+
   const rejectedOutsideRoot = await tool(204, "fs_read_lines", {
     device_id: deviceId, path: path.join(os.tmpdir(), "outside-allowed-root.txt"),
   });
@@ -703,6 +725,13 @@ try {
     search_type: "files",
   });
   assert.equal(invalidBulkQuery.error, "invalid_search_arguments");
+  // MCP -> Gateway -> Rust must share the native byte budget for Unicode.
+  // 342 CJK characters fit a 1024-unit JS length check but exceed 1024 UTF-8 bytes.
+  const invalidUtf8BulkQuery = await tool(297, "start_search", {
+    device_id: deviceId, path: bulkDir, query: "界".repeat(342),
+    search_type: "files",
+  });
+  assert.equal(invalidUtf8BulkQuery.error, "invalid_search_arguments");
 
   // Symlinks inside an allowed root must never expose filenames or contents
   // from another directory through a native recursive search.

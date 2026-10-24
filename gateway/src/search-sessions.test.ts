@@ -432,6 +432,19 @@ test("rejects invalid searches and pagination bounds", async () => {
   await assert.rejects(async () => searchPage(principal, "device-b", s.searchId, 0, 101), /invalid_search_page/);
 });
 
+test("async native searches reject UTF-8 byte-budget bypass before dispatch", async () => {
+  await assert.rejects(startSearch(principal, "unicode-quota-device", remote, {
+    path: "/safe", query: "界".repeat(342), search_type: "files",
+  }), /invalid_search_arguments/);
+  await assert.rejects(startSearch(principal, "unicode-quota-device", remote, {
+    path: "/safe", query: "界".repeat(342), search_type: "content",
+  }), /invalid_search_arguments/);
+  const accepted = await startSearch(principal, "unicode-quota-device", remote, {
+    path: "/safe", query: "界".repeat(341), search_type: "files",
+  });
+  assert.equal(typeof accepted.searchId, "string");
+});
+
 test("search failure is retained without leaking sessions to other actors", async () => {
   const failing = { request: async () => { throw new Error("device-offline"); } } as unknown as DeviceRouter;
   const s = await startSearch({...principal, actor: "offline-user"}, "device-c", failing, {

@@ -117,7 +117,8 @@ export async function startSearch(
 ) {
   expire();
   if (typeof arg.path !== "string" || !arg.path || arg.path.length > 4096 ||
-      typeof arg.query !== "string" || !arg.query.trim() || arg.query.length > 1024 ||
+      typeof arg.query !== "string" || !arg.query.trim() ||
+      arg.query.length > 1024 || Buffer.byteLength(arg.query, "utf8") > 1024 ||
       !["files", "content"].includes(arg.search_type) ||
       (arg.case_sensitive !== undefined && typeof arg.case_sensitive !== "boolean") ||
       (arg.start_paused !== undefined && typeof arg.start_paused !== "boolean")) {

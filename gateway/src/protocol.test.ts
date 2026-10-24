@@ -78,6 +78,15 @@ test("rejects malformed persistent task ids", () => {
 });
 
 
+test("native search query budgets use UTF-8 bytes, not UTF-16 characters", () => {
+  const filename = { kind: "fs_search", path: "/safe", query: "界".repeat(341) };
+  assert.equal(parseAgentAction(filename).kind, "fs_search");
+  assert.throws(() => parseAgentAction({ ...filename, query: "界".repeat(342) }));
+  const content = { kind: "text_search", path: "/safe", query: "界".repeat(1365) };
+  assert.equal(parseAgentAction(content).kind, "text_search");
+  assert.throws(() => parseAgentAction({ ...content, query: "界".repeat(1366) }));
+});
+
 test("validates native bounded multi-file reads and rejects malformed batch payloads", () => {
   const action = parseAgentAction({
     kind: "fs_read_multiple", paths: ["/safe/a.txt", "/safe/b.txt"], maxBytes: 65536,

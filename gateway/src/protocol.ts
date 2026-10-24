@@ -44,6 +44,13 @@ export type AgentAction =
   | { kind: "terminal_list" };
 
 const pathSchema = z.string().min(1).max(4096);
+// Rust search budgets are measured in UTF-8 bytes (String::len), not JS
+// UTF-16 code units. Reject multi-byte over-budget queries at the wire boundary.
+const searchQuerySchema = (maxBytes: number) =>
+  z.string().min(1).max(maxBytes).refine(
+    query => Buffer.byteLength(query, "utf8") <= maxBytes,
+    "search query exceeds UTF-8 byte budget",
+  );
 const sessionIdSchema = z.string().uuid();
 const timeoutSchema = z.number().int().min(100).max(24 * 60 * 60 * 1000);
 
@@ -147,7 +154,7 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("fs_search"),
     path: pathSchema,
-    query: z.string().min(1).max(1024),
+    query: searchQuerySchema(1024),
     caseSensitive: z.boolean().optional(),
     maxResults: z.number().int().min(1).max(500).optional(),
     resumeCheckpoint: z.unknown().refine(isNativeFilenameCheckpoint).optional(),
@@ -155,7 +162,7 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("text_search"),
     path: pathSchema,
-    query: z.string().min(1).max(4096),
+    query: searchQuerySchema(4096),
     caseSensitive: z.boolean().optional(),
     maxResults: z.number().int().min(1).max(500).optional(),
     resumeCheckpoint: z.unknown().refine(isNativeContentCheckpoint).optional(),
