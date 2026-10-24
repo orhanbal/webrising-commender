@@ -159,7 +159,8 @@ impl TerminalManager {
             history,
         });
 
-        let mut sessions = self.sessions
+        let mut sessions = self
+            .sessions
             .lock()
             .map_err(|_| anyhow!("terminal session lock poisoned"))?;
         sessions.insert(id.clone(), session);
@@ -171,7 +172,8 @@ impl TerminalManager {
     }
 
     fn reserve_start(&self) -> Result<StartReservation> {
-        let mut sessions = self.sessions
+        let mut sessions = self
+            .sessions
             .lock()
             .map_err(|_| anyhow!("terminal session lock poisoned"))?;
         sessions.retain(|_, session| {
@@ -180,7 +182,8 @@ impl TerminalManager {
             };
             !matches!(child.try_wait(), Ok(Some(_)))
         });
-        if sessions.len().saturating_add(self.pending_starts.load(Ordering::SeqCst)) >= MAX_SESSIONS {
+        let active_and_pending = sessions.len() + self.pending_starts.load(Ordering::SeqCst);
+        if active_and_pending >= MAX_SESSIONS {
             return Err(anyhow!("too many terminal sessions; limit is {MAX_SESSIONS}"));
         }
         self.pending_starts.fetch_add(1, Ordering::SeqCst);
