@@ -141,6 +141,7 @@ pub enum AgentAction {
         query: String,
         case_sensitive: Option<bool>,
         max_results: Option<usize>,
+        resume_checkpoint: Option<Value>,
     },
     FsReplace {
         path: String,
