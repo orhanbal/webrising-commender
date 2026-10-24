@@ -21,6 +21,7 @@ type SearchEntry = {
   status: "running" | "completed" | "error" | "stopped";
   items: unknown[];
   truncated: boolean;
+  timedOut: boolean;
   /** A stopped search still occupies its native execution slot until its request settles. */
   inFlight: boolean;
   error?: string;
@@ -58,6 +59,7 @@ function summary(s: SearchEntry) {
     createdAt: new Date(s.createdAt).toISOString(),
     resultCount: s.items.length,
     truncated: s.truncated,
+    timedOut: s.timedOut,
     ...(s.error ? { error: s.error } : {}),
   };
 }
@@ -103,6 +105,7 @@ export async function startSearch(
     status: "running",
     items: [],
     truncated: false,
+    timedOut: false,
     inFlight: true,
   };
   sessions.set(entry.id, entry);
@@ -115,9 +118,10 @@ export async function startSearch(
   void router.request(deviceId, action).then(data => {
     entry.inFlight = false;
     if (entry.status !== "running") return;
-    const payload = data as { items?: unknown[]; truncated?: boolean };
+    const payload = data as { items?: unknown[]; truncated?: boolean; timedOut?: boolean };
     entry.items = Array.isArray(payload?.items) ? payload.items.slice(0, 500) : [];
     entry.truncated = Boolean(payload?.truncated);
+    entry.timedOut = Boolean(payload?.timedOut);
     entry.status = "completed";
   }, error => {
     entry.inFlight = false;
