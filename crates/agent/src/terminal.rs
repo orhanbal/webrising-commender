@@ -133,6 +133,11 @@ impl TerminalManager {
                 match reader.read(&mut chunk) {
                     Ok(0) | Err(_) => break,
                     Ok(size) => {
+                        // Publish history first: a destructive reader must never
+                        // observe bytes that are not yet available for paging.
+                        if let Ok(mut retained) = read_history.lock() {
+                            retained.push(&chunk[..size]);
+                        }
                         if let Ok(mut queue) = read_buffer.lock() {
                             for byte in &chunk[..size] {
                                 queue.push_back(*byte);
@@ -140,9 +145,6 @@ impl TerminalManager {
                             while queue.len() > BUFFER_CAP {
                                 queue.pop_front();
                             }
-                        }
-                        if let Ok(mut retained) = read_history.lock() {
-                            retained.push(&chunk[..size]);
                         }
                     }
                 }
