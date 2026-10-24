@@ -399,6 +399,26 @@ pub fn read(policy: &PathPolicy, raw: &str, max_bytes: Option<usize>) -> Result<
     }
 }
 
+/// One bounded native operation, preserving per-file failures without exposing
+/// filesystem or policy error details in a multi-file response.
+pub fn read_multiple(policy: &PathPolicy, paths: &[String], max_bytes: Option<usize>) -> Result<Value> {
+    if paths.is_empty() || paths.len() > 10 {
+        return Err(anyhow!("invalid_batch_read_arguments"));
+    }
+    let limit = max_bytes.unwrap_or(64 * 1024);
+    if !(1..=64 * 1024).contains(&limit) || paths.iter().any(|p| p.is_empty() || p.len() > 4096) {
+        return Err(anyhow!("invalid_batch_read_arguments"));
+    }
+    let mut items = Vec::with_capacity(paths.len());
+    for path in paths {
+        match read(policy, path, Some(limit)) {
+            Ok(data) => items.push(json!({ "path": path, "ok": true, "data": data })),
+            Err(_) => items.push(json!({ "path": path, "ok": false, "error": "read_failed" })),
+        }
+    }
+    Ok(json!({ "count": items.len(), "items": items }))
+}
+
 /// Read a bounded page of UTF-8 lines, with negative offsets counting from EOF.
 pub fn read_lines(
     policy: &PathPolicy,

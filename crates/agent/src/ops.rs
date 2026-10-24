@@ -49,6 +49,10 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
         AgentAction::FsList { path } => fs_ops::list(policy, &path),
         AgentAction::FsStat { path } => fs_ops::stat(policy, &path),
         AgentAction::FsRead { path, max_bytes } => fs_ops::read(policy, &path, max_bytes),
+        AgentAction::FsReadMultiple { paths, max_bytes } => {
+            let policy = policy.clone();
+            tokio::task::spawn_blocking(move || fs_ops::read_multiple(&policy, &paths, max_bytes)).await?
+        }
         AgentAction::FsReadLines {
             path,
             offset_lines,

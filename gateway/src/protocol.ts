@@ -8,6 +8,7 @@ export type AgentAction =
   | { kind: "fs_list"; path: string }
   | { kind: "fs_stat"; path: string }
   | { kind: "fs_read"; path: string; maxBytes?: number }
+  | { kind: "fs_read_multiple"; paths: string[]; maxBytes?: number }
   | { kind: "fs_read_lines"; path: string; offsetLines?: number; limitLines?: number }
   | { kind: "image_inspect"; path: string }
   | { kind: "docx_inspect"; path: string }
@@ -54,6 +55,11 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     kind: z.literal("fs_read"),
     path: pathSchema,
     maxBytes: z.number().int().min(1).max(4 * 1024 * 1024).optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("fs_read_multiple"),
+    paths: z.array(pathSchema).min(1).max(10),
+    maxBytes: z.number().int().min(1).max(64 * 1024).optional(),
   }).strict(),
   z.object({
     kind: z.literal("fs_read_lines"),
@@ -250,6 +256,7 @@ export function actionRisk(kind: AgentAction["kind"] | string): Risk {
     case "fs_list":
     case "fs_stat":
     case "fs_read":
+    case "fs_read_multiple":
     case "fs_read_lines":
     case "image_inspect":
     case "docx_inspect":

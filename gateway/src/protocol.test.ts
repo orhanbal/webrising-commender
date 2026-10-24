@@ -76,3 +76,16 @@ test("rejects malformed persistent task ids", () => {
     }),
   );
 });
+
+
+test("validates native bounded multi-file reads and rejects malformed batch payloads", () => {
+  const action = parseAgentAction({
+    kind: "fs_read_multiple", paths: ["/safe/a.txt", "/safe/b.txt"], maxBytes: 65536,
+  });
+  assert.equal(action.kind, "fs_read_multiple");
+  assert.throws(() => parseAgentAction({ kind: "fs_read_multiple", paths: [] }));
+  assert.throws(() => parseAgentAction({ kind: "fs_read_multiple", paths: Array(11).fill("/safe/a") }));
+  assert.throws(() => parseAgentAction({ kind: "fs_read_multiple", paths: ["/safe/a"], maxBytes: 65537 }));
+  assert.throws(() => parseAgentAction({ kind: "fs_read_multiple", paths: ["/safe/a"], maxBytes: 0 }));
+  assert.throws(() => parseAgentAction({ kind: "fs_read_multiple", paths: ["/safe/a"], unexpected: true }));
+});

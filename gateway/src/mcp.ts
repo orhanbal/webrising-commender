@@ -44,7 +44,7 @@ const tools = [
   tool(
     "fs_read_multiple",
     "Read up to ten files in one call, retaining per-file errors. Each file is limited to 64 KiB.",
-    { paths: { type: "array", items: str(), minItems: 1, maxItems: 10 }, max_bytes: integer() },
+    { paths: { type: "array", items: { type: "string", minLength: 1, maxLength: 4096 }, minItems: 1, maxItems: 10 }, max_bytes: { type: "integer", minimum: 1, maximum: 65536 } },
     ["paths"],
   ),
   tool(
@@ -337,8 +337,8 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
       hasMore: result.rows.length === limit }));
   }
 
-  // Batch reads are an MCP orchestration operation: each path is checked by the
-  // native agent's existing allowlist, and one failed read does not abort others.
+  // A single native operation enforces the allowlist and per-file bounds.
+  // Keep the batch's partial failures independent, with redacted error codes.
   if (name === "fs_read_multiple") {
     if (!roleAtLeast(principal, "viewer")) {
       return ok(request.id, toolResult({ error: "forbidden", required_role: "viewer" }, true));
@@ -351,18 +351,18 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
         maxBytes < 1 || maxBytes > 64 * 1024) {
       return ok(request.id, toolResult({ error: "invalid_batch_read_arguments" }, true));
     }
-    const items = [];
-    for (const path of paths as string[]) {
-      try {
-        const data = await router.request(deviceId, { kind: "fs_read", path, maxBytes });
-        items.push({ path, ok: true, data });
-      } catch (error) {
-        items.push({ path, ok: false, error: error instanceof Error ? error.message : "read_failed" });
-      }
+    try {
+      const data = await router.request(deviceId, {
+        kind: "fs_read_multiple", paths: paths as string[], maxBytes,
+      });
+      const result = data as { items: Array<{ ok: boolean }>; count: number };
+      await audit(orgId, principal.actor, deviceId, name, "low", "completed",
+        JSON.stringify({ count: result.count, failed: result.items.filter((item) => !item.ok).length }));
+      return ok(request.id, toolResult(data));
+    } catch {
+      await audit(orgId, principal.actor, deviceId, name, "low", "error", "batch_read_failed");
+      return ok(request.id, toolResult({ error: "batch_read_failed" }, true));
     }
-    await audit(orgId, principal.actor, deviceId, name, "low", "completed",
-      JSON.stringify({ count: items.length, failed: items.filter((item) => !item.ok).length }));
-    return ok(request.id, toolResult({ items, count: items.length }));
   }
 
   if (["start_search", "get_more_search_results", "list_searches", "stop_search"].includes(name)) {

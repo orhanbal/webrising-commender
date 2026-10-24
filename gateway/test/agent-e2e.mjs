@@ -420,6 +420,26 @@ try {
   });
   assert.equal(limitedBatch.items[0].ok, false);
 
+  // 1D: native single-request batch must isolate individual read failures,
+  // including an allowlist violation, without leaking host filesystem errors.
+  const batchOutside = path.join(os.tmpdir(), "wecommander-outside-batch-" + process.pid + ".txt");
+  const partialBatch = await tool(214, "fs_read_multiple", {
+    device_id: deviceId, paths: [filePath, batchOutside, linesPath],
+  });
+  assert.equal(partialBatch.count, 3);
+  assert.equal(partialBatch.items[0].ok, true);
+  assert.equal(partialBatch.items[1].ok, false);
+  assert.equal(partialBatch.items[1].error, "read_failed");
+  assert.equal(partialBatch.items[2].ok, true);
+  const emptyBatch = await tool(215, "fs_read_multiple", {
+    device_id: deviceId, paths: [],
+  });
+  assert.equal(emptyBatch.error, "invalid_batch_read_arguments");
+  const excessiveBatchBytes = await tool(216, "fs_read_multiple", {
+    device_id: deviceId, paths: [filePath], max_bytes: 65537,
+  });
+  assert.equal(excessiveBatchBytes.error, "invalid_batch_read_arguments");
+
   const rejectedOutsideRoot = await tool(204, "fs_read_lines", {
     device_id: deviceId, path: path.join(os.tmpdir(), "outside-allowed-root.txt"),
   });

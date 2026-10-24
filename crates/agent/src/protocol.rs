@@ -47,6 +47,10 @@ pub enum AgentAction {
         path: String,
         max_bytes: Option<usize>,
     },
+    FsReadMultiple {
+        paths: Vec<String>,
+        max_bytes: Option<usize>,
+    },
     FsReadLines {
         path: String,
         offset_lines: Option<i64>,
@@ -238,6 +242,7 @@ impl AgentAction {
             Self::FsList { .. } => "fs_list",
             Self::FsStat { .. } => "fs_stat",
             Self::FsRead { .. } => "fs_read",
+            Self::FsReadMultiple { .. } => "fs_read_multiple",
             Self::FsReadLines { .. } => "fs_read_lines",
             Self::ImageInspect { .. } => "image_inspect",
             Self::DocxInspect { .. } => "docx_inspect",
@@ -280,6 +285,7 @@ impl AgentAction {
             | Self::FsList { .. }
             | Self::FsStat { .. }
             | Self::FsRead { .. }
+            | Self::FsReadMultiple { .. }
             | Self::FsReadLines { .. }
             | Self::ImageInspect { .. }
             | Self::DocxInspect { .. }
