@@ -2,6 +2,7 @@ use crate::{
     approval, fs_ops,
     policy::PathPolicy,
     process_ops,
+    spreadsheet_ops,
     protocol::{AgentAction, Risk},
     system_ops,
     task_manager::TaskManager,
@@ -42,6 +43,17 @@ pub async fn execute(
             offset_lines,
             limit_lines,
         } => fs_ops::read_lines(policy, &path, offset_lines, limit_lines),
+        AgentAction::XlsxInspect { path } => spreadsheet_ops::inspect(policy, &path),
+        AgentAction::XlsxReadRange {
+            path,
+            sheet,
+            start_row,
+            start_column,
+            row_count,
+            column_count,
+        } => spreadsheet_ops::read_range(
+            policy, &path, &sheet, start_row, start_column, row_count, column_count,
+        ),
         AgentAction::FsWrite {
             path,
             content_base64,
