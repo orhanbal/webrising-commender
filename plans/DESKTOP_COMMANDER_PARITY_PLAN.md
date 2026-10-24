@@ -1,5 +1,17 @@
 # WECOMMANDER — Desktop Commander İşlevsel Eşdeğerlik Planı
 
+## 08.00 kapanış kontrolü — 24 Ekim 2026
+
+- **PASS / son tamamen doğrulanan baseline:** `5c9d860a7b83186f60457e0046f4b25e91eacc92` için GitHub Actions `ci #40060563045` **17/17 PASS**, `platform-distribution #40060992297` PASS. CI artifact'leri: `WECOMMANDER-windows-x64-acceptance`, `WECOMMANDER-linux-x64-acceptance`, `WECOMMANDER-macos-universal-acceptance` ve `dashboard-visual-acceptance`. Bunlar **gerçek fiziksel kurulum kabulü değildir**.
+- **KODLANDI / yeni HEAD CI bekliyor:** `948ed6a3` ile bilinmeyen MCP araç adı, cihaz/tenant DB sorgusu yapılmadan `unknown_tool` hatasıyla reddediliyor. `97413956` ile gerçek Gateway entegrasyon testine araç adları tekilliği, JSON şeması, gerekli `device_id`, HIGH onay parametresi ve bilinmeyen araç regresyonu eklendi.
+- **SÖZLEŞME ENVANTERİ:** `plans/MCP_TOOL_CONTRACT_MATRIX_20261024.md` dosyasında 46 kayıtlı MCP aracı, risk/yönlendirme ve doğrudan Linux Agent E2E fixture varlığı ayrıştırıldı; 35 aracın doğrudan test çağrısı mevcut. **Test çağrısı varlığı, o aracın bütün davranışları veya tüm işletim sistemleri için kabul anlamına gelmez.**
+- **PENDING:** Bu son kod/test/belge commit'lerinin bulunduğu **güncel `main` HEAD** üzerinde CI, platform artifact'leri ve gerçek istemci kabulü. Önceki baseline PASS yeni HEAD'e otomatik taşınmaz.
+- **AÇIK / P0:** Native akışlı aramayı iptal/askıya alma, Gateway restart sonrası arama oturumları, disk kalıcı PTY geçmişi, REPL/prompt, süreç ağacı temizleme, dosya rollback/sürümleme.
+- **AÇIK / P1:** PDF araçları; DOCX biçim koruyan düzenleme; görsel önizleme; XLSM güvenli yazma; karmaşık OOXML roundtrip; performans/regresyon matrisi.
+- **AÇIK / P2:** Gerçek ChatGPT/Claude MCP bağlantısı, fiziksel Windows/macOS/Ubuntu kurulum/upgrade/uninstall, kullanıcı paneli tam işlev kabulü, Windows imzası ve macOS noter onayı.
+- **Karar:** `Desktop Commander parity achieved` **HAYIR**. CI'da derlenebilirlik ve genel entegrasyon, canlı ürün eşdeğerliği değildir.
+
+
 Son gözden geçirme: 2026-10-24. Öncelik: eşdeğerlik > güvenilirlik/kabul > farklılaşma. Yeni SaaS/ticari özelliklere girilmeden önce aşağıdaki kapsamdaki eksikler kapatılacak.
 
 ## Güncel uygulama durumu (2026-10-24 02.00 CI/P0 doğrulaması)
