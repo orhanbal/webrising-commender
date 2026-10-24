@@ -3,7 +3,7 @@ import type { AgentAction, SearchProgress } from "./protocol.js";
 import type { DeviceRouter } from "./device-router.js";
 import type { Principal } from "./auth.js";
 import type { SearchPersistence, SearchRecoveryCandidate } from "./search-persistence.js";
-import { isNativeFilenameCheckpoint } from "./search-checkpoint.js";
+import { isNativeContentCheckpoint, isNativeFilenameCheckpoint } from "./search-checkpoint.js";
 
 /**
  * Bounded, tenant/actor-isolated search sessions.
@@ -56,6 +56,11 @@ function safeSearchError(error: unknown): string {
   ]);
   return allowed.has(code) ? code : "search_failed";
 }
+function isCheckpointFor(searchType: "files" | "content", value: unknown) {
+  return searchType === "files"
+    ? isNativeFilenameCheckpoint(value)
+    : isNativeContentCheckpoint(value);
+}
 function owner(s: SearchEntry, p: Principal, deviceId: string) {
   return s.organizationId === p.organizationId && s.actor === p.actor && s.deviceId === deviceId;
 }
@@ -95,10 +100,11 @@ export async function startSearch(
   if (recovery && (
       recovery.organizationId !== principal.organizationId ||
       recovery.actor !== principal.actor || recovery.deviceId !== deviceId ||
-      recovery.searchType !== "files" || arg.search_type !== "files" ||
+      recovery.searchType !== arg.search_type ||
       recovery.path !== arg.path || recovery.query !== arg.query ||
-      !isNativeFilenameCheckpoint(recovery.checkpoint) ||
+      !isCheckpointFor(recovery.searchType, recovery.checkpoint) ||
       recovery.checkpoint.query !== arg.query ||
+      recovery.checkpoint.root !== arg.path ||
       recovery.checkpoint.caseSensitive !== Boolean(arg.case_sensitive))) {
     throw new Error("invalid_search_checkpoint");
   }
@@ -133,15 +139,16 @@ export async function startSearch(
     searchType: arg.search_type as "files" | "content",
     createdAt: recovery?.createdAt ?? Date.now(),
     status: "running",
-    items: recovery && isNativeFilenameCheckpoint(recovery.checkpoint)
+    items: recovery && isCheckpointFor(recovery.searchType, recovery.checkpoint)
       ? recovery.checkpoint.items : [],
     truncated: false,
     timedOut: false,
     paused: Boolean(arg.start_paused),
     controlPending: false,
-    scannedEntries: recovery && isNativeFilenameCheckpoint(recovery.checkpoint)
+    scannedEntries: recovery && isCheckpointFor(recovery.searchType, recovery.checkpoint)
       ? recovery.checkpoint.scannedEntries : 0,
-    scannedBytes: 0,
+    scannedBytes: recovery && isNativeContentCheckpoint(recovery.checkpoint)
+      ? recovery.checkpoint.scannedBytes : 0,
     progressUpdates: recovery?.progressUpdates ?? 0,
     inFlight: true,
     controller: new AbortController(),
@@ -161,7 +168,8 @@ export async function startSearch(
         caseSensitive: Boolean(arg.case_sensitive), maxResults: 500,
         ...(recovery ? { resumeCheckpoint: recovery.checkpoint } : {}) }
     : { kind: "text_search", path: arg.path, query: arg.query,
-        caseSensitive: Boolean(arg.case_sensitive), maxResults: 500 };
+        caseSensitive: Boolean(arg.case_sensitive), maxResults: 500,
+        ...(recovery ? { resumeCheckpoint: recovery.checkpoint } : {}) };
   // Do not block the MCP request; a follow-up call collects paged results.
   const clearStoppedNativeSlot = async () => {
     try { await persistence?.settleStopped?.(entry); } catch {
@@ -180,13 +188,17 @@ export async function startSearch(
     // The hub validates payload size; retain the same limit in this boundary,
     // including when a test or alternate router calls us directly.
     if (Buffer.byteLength(JSON.stringify(progress.items), "utf8") > 1024 * 1024) return;
-    const checkpoint = entry.searchType === "files" &&
-      isNativeFilenameCheckpoint(progress.checkpoint) &&
-      progress.checkpoint.query === entry.query &&
-      progress.checkpoint.caseSensitive === Boolean(arg.case_sensitive) &&
-      progress.checkpoint.scannedEntries === progress.scannedEntries &&
-      JSON.stringify(progress.checkpoint.items) === JSON.stringify(progress.items)
-      ? progress.checkpoint : undefined;
+    const candidate = progress.checkpoint;
+    const checkpoint = isCheckpointFor(entry.searchType, candidate) &&
+      candidate.root === entry.path &&
+      candidate.query === entry.query &&
+      candidate.caseSensitive === Boolean(arg.case_sensitive) &&
+      candidate.scannedEntries === progress.scannedEntries &&
+      (entry.searchType !== "content" ||
+        (isNativeContentCheckpoint(candidate) &&
+          candidate.scannedBytes === progress.scannedBytes)) &&
+      JSON.stringify(candidate.items) === JSON.stringify(progress.items)
+      ? candidate : undefined;
     entry.progressUpdates += 1;
     entry.items = progress.items;
     entry.scannedEntries = progress.scannedEntries;
@@ -288,9 +300,9 @@ export async function startSearch(
   return summary(entry);
 }
 let recoveryActive = false;
-/** Resume only filename scans with a *completed-directory* checkpoint.
- * PostgreSQL atomically fences out the dead Gateway first. Content scans and
- * checkpoint-free running rows remain interrupted; never invent a cursor.
+/** Resume bounded filename scans, or match-free content scans at a completed
+ * path boundary. PostgreSQL atomically fences out a dead Gateway first.
+ * Checkpoint-free or match-bearing content rows never invent a cursor.
  */
 export async function recoverInterruptedSearches(router: DeviceRouter) {
   const store = persistence;
@@ -301,8 +313,9 @@ export async function recoverInterruptedSearches(router: DeviceRouter) {
     for (const candidate of await store.recoveryCandidates()) {
       if (sessions.has(candidate.id) || sessions.size >= MAX_SESSIONS) continue;
       const checkpoint = candidate.checkpoint;
-      if (!isNativeFilenameCheckpoint(checkpoint) ||
-          checkpoint.query !== candidate.query || candidate.searchType !== "files") continue;
+      if (!isCheckpointFor(candidate.searchType, checkpoint) ||
+          checkpoint.query !== candidate.query ||
+          checkpoint.root !== candidate.path) continue;
       if (candidate.createdAt + TTL_MS <= Date.now()) continue;
       const activeForActor = [...sessions.values()].filter(s =>
         s.organizationId === candidate.organizationId && s.actor === candidate.actor && s.inFlight);
@@ -315,7 +328,7 @@ export async function recoverInterruptedSearches(router: DeviceRouter) {
       // Treat an invalid claim as a failed recovery rather than replaying stale
       // candidate data or leaking an acquired native execution slot.
       try {
-        if (!isNativeFilenameCheckpoint(claim.checkpoint) ||
+        if (!isCheckpointFor(candidate.searchType, claim.checkpoint) ||
             claim.checkpoint.query !== candidate.query ||
             claim.checkpoint.root !== candidate.path) {
           throw new Error("invalid_search_checkpoint");
@@ -323,7 +336,7 @@ export async function recoverInterruptedSearches(router: DeviceRouter) {
         await startSearch({
           organizationId: candidate.organizationId, actor: candidate.actor,
         } as Principal, candidate.deviceId, router, {
-          path: candidate.path, query: candidate.query, search_type: "files",
+          path: candidate.path, query: candidate.query, search_type: candidate.searchType,
           case_sensitive: claim.checkpoint.caseSensitive,
         }, { ...candidate, checkpoint: claim.checkpoint, progressUpdates: claim.sequence });
       } catch {

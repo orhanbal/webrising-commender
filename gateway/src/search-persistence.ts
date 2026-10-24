@@ -71,7 +71,7 @@ export interface SearchPersistence {
   progress?(key: SearchKey, update: SearchProgressUpdate): Promise<boolean>;
   /** Exact native-origin CAS; never pause or revive stopped/foreign searches. */
   setPaused?(key: SearchKey, paused: boolean): Promise<boolean>;
-  /** Recovery is permitted only for unpaused filename scans with a stale owner lease. */
+  /** Recovery is permitted only for safe path-boundary scans with a stale owner lease. */
   recoveryCandidates?(): Promise<SearchRecoveryCandidate[]>;
   /** Atomic owner takeover returns the exact checkpoint fenced by the same SQL update.
    * Never replay a stale candidate snapshot captured before the CAS.
@@ -186,15 +186,15 @@ export class PgSearchPersistence implements SearchPersistence {
   async recoveryCandidates(): Promise<SearchRecoveryCandidate[]> {
     const rows = await this.pool.query<{
       id: string; organization_id: string; actor: string; device_id: string;
-      path: string; query: string; created_at: Date;
-      checkpoint: unknown; progress_sequence: number;
+      path: string; query: string; search_type: "files" | "content";
+      created_at: Date; checkpoint: unknown; progress_sequence: number;
     }>(
       `select s.id,s.organization_id,s.actor,s.device_id,s.path,s.query,
-              s.created_at,s.checkpoint,s.progress_sequence
+              s.search_type,s.created_at,s.checkpoint,s.progress_sequence
          from search_sessions s
          join devices d on d.id=s.device_id and d.organization_id=s.organization_id
          left join search_gateway_instances g on g.id=s.origin_instance
-        where s.status='running' and s.search_type='files'
+        where s.status='running' and s.search_type in ('files','content')
           and s.paused=false and s.native_inflight=true
           and s.checkpoint is not null and s.expires_at>now()
           and d.revoked_at is null
@@ -204,7 +204,7 @@ export class PgSearchPersistence implements SearchPersistence {
     return rows.rows.map(row => ({
       id: row.id, organizationId: row.organization_id,
       actor: row.actor, deviceId: row.device_id,
-      path: row.path, query: row.query, searchType: "files",
+      path: row.path, query: row.query, searchType: row.search_type,
       createdAt: new Date(row.created_at).getTime(),
       checkpoint: row.checkpoint, progressUpdates: row.progress_sequence,
     }));
@@ -219,9 +219,11 @@ export class PgSearchPersistence implements SearchPersistence {
               -- the ownership fence, before a new native worker is dispatched.
               items=s.checkpoint->'items',
               scanned_entries=(s.checkpoint->>'scannedEntries')::bigint,
-              scanned_bytes=0,truncated=false,timed_out=false
+              scanned_bytes=case when s.search_type='content'
+                then (s.checkpoint->>'scannedBytes')::bigint else 0 end,
+              truncated=false,timed_out=false
         where s.id=$1 and s.organization_id=$2 and s.actor=$3 and s.device_id=$4
-          and s.status='running' and s.search_type='files' and s.paused=false
+          and s.status='running' and s.search_type in ('files','content') and s.paused=false
           and s.native_inflight=true and s.checkpoint is not null
           and s.expires_at>now() and s.origin_instance<>$5
           and exists(select 1 from devices d
