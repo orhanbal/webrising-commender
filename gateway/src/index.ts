@@ -618,6 +618,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           deviceId: z.string().uuid(),
           requestId: z.string().uuid().optional(),
           searchSessionId: z.string().uuid().optional(),
+          startPaused: z.boolean().optional(),
           action: z.unknown(),
           approvalToken: z.string().nullable().optional(),
         }).parse(parsed);
@@ -645,6 +646,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
             controller?.signal,
             undefined,
             body.searchSessionId,
+            body.startPaused,
           );
           return void json(res, 200, { ok: true, data });
         } catch (error) {

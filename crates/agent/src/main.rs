@@ -443,6 +443,7 @@ async fn connected_loop(
                         request_id,
                         action,
                         approval_token,
+                        start_paused,
                     } => {
                         let task_writer = Arc::clone(&writer);
                         let task_policy = Arc::clone(&policy);
@@ -458,7 +459,9 @@ async fn connected_loop(
                         );
                         let cancelled = Arc::new(AtomicBool::new(false));
                         let task_cancelled = Arc::clone(&cancelled);
-                        let paused = Arc::new(AtomicBool::new(false));
+                        let paused = Arc::new(AtomicBool::new(
+                            is_search && start_paused.unwrap_or(false),
+                        ));
                         let task_paused = Arc::clone(&paused);
                         // Register the handle before allowing a fast task to complete.
                         let (start_tx, start_rx) = tokio::sync::oneshot::channel::<()>();

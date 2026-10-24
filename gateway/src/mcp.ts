@@ -94,7 +94,7 @@ const tools = [
   tool(
     "start_search",
     "Start a bounded, asynchronous file-name or content search. Follow with get_more_search_results when completed; maximum 500 matches.",
-    { path: str(), query: str(), search_type: { type: "string", enum: ["files", "content"] }, case_sensitive: bool() },
+    { path: str(), query: str(), search_type: { type: "string", enum: ["files", "content"] }, case_sensitive: bool(), start_paused: bool() },
     ["path", "query", "search_type"],
   ),
   tool(

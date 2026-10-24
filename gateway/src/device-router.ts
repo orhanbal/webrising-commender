@@ -39,10 +39,12 @@ export class DeviceRouter {
     signal?: AbortSignal,
     onProgress?: (progress: SearchProgress) => void,
     searchSessionId?: string,
+    startPaused?: boolean,
   ) {
     if (signal?.aborted) throw new Error("request_cancelled");
     if (this.hub.isOnline(deviceId)) {
-      return this.hub.request(deviceId, action, approvalToken, signal, onProgress, searchSessionId);
+      return this.hub.request(deviceId, action, approvalToken, signal, onProgress, searchSessionId,
+        startPaused);
     }
     if (!regionalRelayEnabled()) {
       throw new Error("device-offline");
@@ -75,6 +77,7 @@ export class DeviceRouter {
         requestId,
         action,
         ...(searchSessionId !== undefined ? { searchSessionId } : {}),
+        ...(startPaused !== undefined ? { startPaused } : {}),
         ...(approvalToken !== undefined ? { approvalToken } : {}),
       });
       if (!response.ok) {

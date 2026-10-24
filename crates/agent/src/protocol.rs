@@ -12,6 +12,7 @@ pub enum GatewayMessage {
         request_id: String,
         action: AgentAction,
         approval_token: Option<String>,
+        start_paused: Option<bool>,
     },
     Cancel {
         request_id: String,

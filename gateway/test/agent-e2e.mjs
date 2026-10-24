@@ -616,19 +616,23 @@ try {
   }
   const pauseSession = await tool(290, "start_search", {
     device_id: deviceId, path: pauseDir,
-    query: "absent-unique-native-marker", search_type: "files",
+    query: "absent-unique-native-marker", search_type: "files", start_paused: true,
   });
   assert.equal(typeof pauseSession.searchId, "string");
+  assert.equal(pauseSession.paused, true);
+  // The scanner must remain paused without scanning any of the test entries.
+  await new Promise(resolve => setTimeout(resolve, 100));
   const pausedScan = await tool(291, "pause_search", {
     device_id: deviceId, search_id: pauseSession.searchId,
   });
-  assert.equal(pausedScan.paused, true,
-    `Agent must ACK native pause while scanning: ${JSON.stringify(pausedScan)}`);
+  assert.equal(pausedScan.paused, true);
   assert.equal(pausedScan.status, "running");
   const whilePaused = await tool(292, "get_more_search_results", {
     device_id: deviceId, search_id: pauseSession.searchId,
   });
   assert.equal(whilePaused.paused, true);
+  assert.equal(whilePaused.scannedEntries, 0,
+    "A start_paused native scanner cannot advance before resume_search");
   const resumedScan = await tool(293, "resume_search", {
     device_id: deviceId, search_id: pauseSession.searchId,
   });

@@ -80,13 +80,14 @@ export async function startSearch(
   principal: Principal,
   deviceId: string,
   router: DeviceRouter,
-  arg: { path: string; query: string; search_type: string; case_sensitive?: boolean },
+  arg: { path: string; query: string; search_type: string; case_sensitive?: boolean; start_paused?: boolean },
 ) {
   expire();
   if (typeof arg.path !== "string" || !arg.path || arg.path.length > 4096 ||
       typeof arg.query !== "string" || !arg.query.trim() || arg.query.length > 1024 ||
       !["files", "content"].includes(arg.search_type) ||
-      (arg.case_sensitive !== undefined && typeof arg.case_sensitive !== "boolean")) {
+      (arg.case_sensitive !== undefined && typeof arg.case_sensitive !== "boolean") ||
+      (arg.start_paused !== undefined && typeof arg.start_paused !== "boolean")) {
     throw new Error("invalid_search_arguments");
   }
   // Only active native requests consume concurrency slots. Completed searches
@@ -123,7 +124,7 @@ export async function startSearch(
     items: [],
     truncated: false,
     timedOut: false,
-    paused: false,
+    paused: Boolean(arg.start_paused),
     controlPending: false,
     scannedEntries: 0,
     scannedBytes: 0,
@@ -182,7 +183,8 @@ export async function startSearch(
       });
     }
   };
-  void router.request(deviceId, action, undefined, entry.controller.signal, onProgress, entry.id).then(async data => {
+  void router.request(deviceId, action, undefined, entry.controller.signal, onProgress,
+    entry.id, entry.paused).then(async data => {
     entry.inFlight = false;
     if (entry.status !== "running") {
       await clearStoppedNativeSlot();

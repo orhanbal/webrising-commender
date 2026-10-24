@@ -18,6 +18,7 @@ export type SearchSnapshot = SearchKey & {
   query: string;
   searchType: "files" | "content";
   createdAt: number;
+  paused?: boolean;
 };
 export type SearchProgressUpdate = {
   items: unknown[];
@@ -147,9 +148,9 @@ export class PgSearchPersistence implements SearchPersistence {
         throw new Error("search_session_limit");
       }
       await client.query(
-        `insert into search_sessions(id,organization_id,actor,device_id,path,query,search_type,status,origin_instance,created_at,expires_at,native_inflight)
-         values($1,$2,$3,$4,$5,$6,$7,'running',$8,to_timestamp($9::double precision / 1000),now()+interval '5 minutes',true)`,
-        [s.id, s.organizationId, s.actor, s.deviceId, s.path, s.query, s.searchType, this.originInstance, s.createdAt],
+        `insert into search_sessions(id,organization_id,actor,device_id,path,query,search_type,status,origin_instance,created_at,expires_at,native_inflight,paused)
+         values($1,$2,$3,$4,$5,$6,$7,'running',$8,to_timestamp($9::double precision / 1000),now()+interval '5 minutes',true,$10)`,
+        [s.id, s.organizationId, s.actor, s.deviceId, s.path, s.query, s.searchType, this.originInstance, s.createdAt, s.paused ?? false],
       );
       await client.query("commit");
     } catch (error) {

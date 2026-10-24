@@ -232,7 +232,7 @@ export function parseAgentAction(value: unknown): AgentAction {
 }
 
 export type GatewayMessage =
-  | { type: "request"; requestId: string; action: AgentAction; approvalToken?: string | null }
+  | { type: "request"; requestId: string; action: AgentAction; approvalToken?: string | null; startPaused?: boolean }
   | { type: "cancel"; requestId: string }
   | { type: "search_control"; requestId: string; paused: boolean }
   | { type: "ping"; timestamp: string };

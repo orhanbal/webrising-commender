@@ -232,7 +232,8 @@ export class AgentHub {
   }
 
   request(deviceId: string, action: AgentAction, approvalToken?: string | null, signal?: AbortSignal,
-    onProgress?: (progress: SearchProgress) => void, searchSessionId?: string) {
+    onProgress?: (progress: SearchProgress) => void, searchSessionId?: string,
+    startPaused?: boolean) {
     if (signal?.aborted) return Promise.reject(new Error("request_cancelled"));
     if (this.pending.size >= MAX_PENDING_TOTAL) {
       return Promise.reject(new Error("gateway-overloaded"));
@@ -256,6 +257,7 @@ export class AgentHub {
       type: "request",
       requestId,
       action,
+      ...(startPaused !== undefined ? { startPaused } : {}),
       ...(approvalToken !== undefined ? { approvalToken } : {}),
     };
 
