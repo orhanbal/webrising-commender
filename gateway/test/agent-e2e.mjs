@@ -960,6 +960,48 @@ try {
   assert.ok(absolutePage.text.startsWith(historyAfterDrain.text));
   assert.ok(absolutePage.nextOffsetBytes >= historyAfterDrain.nextOffsetBytes);
 
+  // 2A: paginate real PTY output by absolute byte cursor across multiple
+  // non-consuming pages. A terminal_read drain must not destroy the history.
+  // The short command generates 20,000 bytes without sending a huge input.
+  const beforePagedOutput = historyAfterDrain.totalOutputBytes;
+  await tool(301, "terminal_input", {
+    device_id: deviceId,
+    session_id: started.sessionId,
+    data_base64: Buffer.from(
+      "printf '\\nPTY_PAGED_BEGIN\\n'; printf '%020000d' 0; printf '\\nPTY_PAGED_END\\n'\\n",
+      "utf8",
+    ).toString("base64"),
+  });
+  const readyPage = await waitFor(async () => {
+    const snapshot = await tool(302, "terminal_read_page", {
+      device_id: deviceId,
+      session_id: started.sessionId,
+      offset_bytes: -65536,
+      max_bytes: 65536,
+    });
+    return snapshot.totalOutputBytes >= beforePagedOutput + 20000 &&
+      snapshot.text.includes("PTY_PAGED_END") ? snapshot : false;
+  }, 15000, 250);
+  const snapshotEnd = readyPage.totalOutputBytes;
+  let cursor = readyPage.retainedStartBytes;
+  const chunks = [];
+  while (cursor < snapshotEnd) {
+    const part = await tool(303, "terminal_read_page", {
+      device_id: deviceId,
+      session_id: started.sessionId,
+      offset_bytes: cursor,
+      max_bytes: 4096,
+    });
+    assert.equal(part.offsetBytes, cursor, "PTY history must not skip bytes");
+    assert.ok(part.nextOffsetBytes > cursor, "PTY page must advance the cursor");
+    assert.equal(part.truncatedBeforeOffset, false);
+    chunks.push(Buffer.from(part.dataBase64, "base64"));
+    cursor = part.nextOffsetBytes;
+  }
+  const reassembled = Buffer.concat(chunks).toString("utf8");
+  assert.match(reassembled, /PTY_PAGED_BEGIN\\r?\\n0{20000}\\r?\\nPTY_PAGED_END/);
+  console.log("agent-e2e: real PTY paged output reassembled without byte gaps");
+
   const stopToken = await approval(deviceId, {
     kind: "terminal_stop",
     sessionId: started.sessionId,
