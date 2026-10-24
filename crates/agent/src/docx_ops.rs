@@ -245,8 +245,11 @@ mod tests {
     #[test]
     fn bounded_text_preserves_unicode_boundaries() {
         let (preview, truncated) = bounded_text("çalışma", 3);
-        assert_eq!(preview, "ç");
+        assert_eq!(preview, "ça");
         assert!(truncated);
+        let (partial, partial_truncated) = bounded_text("çalışma", 1);
+        assert_eq!(partial, "");
+        assert!(partial_truncated);
     }
 
     #[test]
