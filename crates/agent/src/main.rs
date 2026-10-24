@@ -501,11 +501,11 @@ async fn connected_loop(
                                     approval_key: &approval_key,
                                     device_id: &device_id,
                                     cancelled: task_cancelled,
-                                    search_progress: if is_search {
-                                        Some(progress_tx)
-                                    } else {
-                                        None
-                                    },
+                                    // Consume the sender on every path. If this is not a
+                                    // search, then_some drops it immediately, allowing the
+                                    // progress forwarder to exit instead of deadlocking the
+                                    // normal operation while waiting for a channel close.
+                                    search_progress: is_search.then_some(progress_tx),
                                 },
                                 action,
                             )
