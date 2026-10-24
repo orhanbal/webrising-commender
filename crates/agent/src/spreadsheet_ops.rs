@@ -3,7 +3,7 @@ use crate::policy::PathPolicy;
 use anyhow::{anyhow, Context, Result};
 use calamine::{open_workbook_auto, Data, Reader};
 use serde_json::{json, Value};
-use std::{fs, path::Path};
+use std::fs;
 
 const MAX_WORKBOOK_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_UNCOMPRESSED_BYTES: u64 = 64 * 1024 * 1024;
