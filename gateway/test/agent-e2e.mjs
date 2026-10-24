@@ -423,14 +423,20 @@ try {
   // 1D: native single-request batch must isolate individual read failures,
   // including an allowlist violation, without leaking host filesystem errors.
   const batchOutside = path.join(os.tmpdir(), "wecommander-outside-batch-" + process.pid + ".txt");
-  const partialBatch = await tool(214, "fs_read_multiple", {
-    device_id: deviceId, paths: [filePath, batchOutside, linesPath],
-  });
-  assert.equal(partialBatch.count, 3);
-  assert.equal(partialBatch.items[0].ok, true);
-  assert.equal(partialBatch.items[1].ok, false);
-  assert.equal(partialBatch.items[1].error, "read_failed");
-  assert.equal(partialBatch.items[2].ok, true);
+  fs.writeFileSync(batchOutside, "outside-secret-must-not-leak", "utf8");
+  try {
+    const partialBatch = await tool(214, "fs_read_multiple", {
+      device_id: deviceId, paths: [filePath, batchOutside, linesPath],
+    });
+    assert.equal(partialBatch.count, 3);
+    assert.equal(partialBatch.items[0].ok, true);
+    assert.equal(partialBatch.items[1].ok, false);
+    assert.equal(partialBatch.items[1].error, "read_failed");
+    assert.equal(partialBatch.items[1].data, undefined);
+    assert.equal(partialBatch.items[2].ok, true);
+  } finally {
+    fs.rmSync(batchOutside, { force: true });
+  }
   const emptyBatch = await tool(215, "fs_read_multiple", {
     device_id: deviceId, paths: [],
   });

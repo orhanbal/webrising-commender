@@ -769,3 +769,37 @@ mod search_budget_tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 }
+
+#[cfg(test)]
+mod batch_read_tests {
+    use super::*;
+    use std::{env, fs};
+
+    #[test]
+    fn native_batch_read_isolates_errors_and_enforces_bounds() {
+        let root = env::temp_dir().join(format!("wc-batch-{}", Uuid::new_v4()));
+        let outside = env::temp_dir().join(format!("wc-batch-outside-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("one.txt"), "hello").unwrap();
+        fs::write(root.join("binary.dat"), [0xff, 0x00]).unwrap();
+        fs::write(&outside, "secret outside allowed roots").unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let paths = vec![
+            root.join("one.txt").to_string_lossy().into_owned(),
+            outside.to_string_lossy().into_owned(),
+            root.join("binary.dat").to_string_lossy().into_owned(),
+        ];
+        let page = read_multiple(&policy, &paths, None).unwrap();
+        assert_eq!(page["count"], 3);
+        assert_eq!(page["items"][0]["data"]["content"], "hello");
+        assert_eq!(page["items"][1]["ok"], false);
+        assert_eq!(page["items"][1]["error"], "read_failed");
+        assert_eq!(page["items"][2]["data"]["encoding"], "base64");
+        assert!(read_multiple(&policy, &[], None).is_err());
+        assert!(read_multiple(&policy, &vec![paths[0].clone(); 11], None).is_err());
+        assert!(read_multiple(&policy, &paths, Some(65_537)).is_err());
+        assert_eq!(read_multiple(&policy, &paths, Some(1)).unwrap()["items"][0]["ok"], false);
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_file(outside).unwrap();
+    }
+}
