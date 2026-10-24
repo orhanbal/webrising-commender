@@ -284,29 +284,44 @@ fn search_with_deadline_reporting(
     let mut scanned = 0_usize;
     let mut stack = vec![root.clone()];
     if let Some(resume) = resume {
-        if serde_json::to_vec(resume)?.len() > MAX_CHECKPOINT_BYTES ||
-            resume["version"] != 1 || resume["root"] != root.to_string_lossy().as_ref() ||
-            resume["query"] != query || resume["caseSensitive"] != case_sensitive {
+        if serde_json::to_vec(resume)?.len() > MAX_CHECKPOINT_BYTES
+            || resume["version"] != 1
+            || resume["root"] != root.to_string_lossy().as_ref()
+            || resume["query"] != query
+            || resume["caseSensitive"] != case_sensitive
+        {
             return Err(anyhow!("invalid_search_checkpoint"));
         }
-        let pending = resume["pending"].as_array()
+        let pending = resume["pending"]
+            .as_array()
             .ok_or_else(|| anyhow!("invalid_search_checkpoint"))?;
-        let prior = resume["items"].as_array()
+        let prior = resume["items"]
+            .as_array()
             .ok_or_else(|| anyhow!("invalid_search_checkpoint"))?;
-        let counted = resume["scannedEntries"].as_u64()
+        let counted = resume["scannedEntries"]
+            .as_u64()
             .ok_or_else(|| anyhow!("invalid_search_checkpoint"))?;
-        if pending.is_empty() || pending.len() > 4096 ||
-            prior.len() > result_limit || counted > MAX_SCAN_ENTRIES as u64 {
+        if pending.is_empty()
+            || pending.len() > 4096
+            || prior.len() > result_limit
+            || counted > MAX_SCAN_ENTRIES as u64
+        {
             return Err(anyhow!("invalid_search_checkpoint"));
         }
         stack.clear();
         for dir in pending {
-            let value = dir.as_str().ok_or_else(|| anyhow!("invalid_search_checkpoint"))?;
-            if value.len() > 4096 { return Err(anyhow!("invalid_search_checkpoint")); }
+            let value = dir
+                .as_str()
+                .ok_or_else(|| anyhow!("invalid_search_checkpoint"))?;
+            if value.len() > 4096 {
+                return Err(anyhow!("invalid_search_checkpoint"));
+            }
             let path = std::path::PathBuf::from(value);
-            if !path.starts_with(&root) || !path.is_dir() ||
-               fs::symlink_metadata(&path)?.file_type().is_symlink() ||
-               policy.resolve_existing(value)? != path {
+            if !path.starts_with(&root)
+                || !path.is_dir()
+                || fs::symlink_metadata(&path)?.file_type().is_symlink()
+                || policy.resolve_existing(value)? != path
+            {
                 return Err(anyhow!("invalid_search_checkpoint"));
             }
             stack.push(path);
@@ -405,7 +420,12 @@ fn search_with_deadline_reporting(
                     "scannedEntries": scanned.min(MAX_SCAN_ENTRIES),
                 });
                 if serde_json::to_vec(&checkpoint)?.len() <= MAX_CHECKPOINT_BYTES {
-                    report(&results, scanned.min(MAX_SCAN_ENTRIES), 0, Some(&checkpoint));
+                    report(
+                        &results,
+                        scanned.min(MAX_SCAN_ENTRIES),
+                        0,
+                        Some(&checkpoint),
+                    );
                 }
             }
         }
@@ -1211,20 +1231,45 @@ mod search_budget_tests {
             }
         };
         let first = search_cancellable_controlled(
-            &policy, root.to_str().unwrap(), "needle", false, Some(100),
-            (&AtomicBool::new(false), &AtomicBool::new(false), None), &emit,
-        ).unwrap();
-        let snapshot = checkpoints.lock().unwrap().iter()
+            &policy,
+            root.to_str().unwrap(),
+            "needle",
+            false,
+            Some(100),
+            (&AtomicBool::new(false), &AtomicBool::new(false), None),
+            &emit,
+        )
+        .unwrap();
+        let snapshot = checkpoints
+            .lock()
+            .unwrap()
+            .iter()
             .find(|value| !value["items"].as_array().unwrap().is_empty())
             .cloned()
             .unwrap_or_else(|| checkpoints.lock().unwrap()[0].clone());
         let resumed = search_cancellable_controlled(
-            &policy, root.to_str().unwrap(), "needle", false, Some(100),
-            (&AtomicBool::new(false), &AtomicBool::new(false), Some(&snapshot)), &emit,
-        ).unwrap();
+            &policy,
+            root.to_str().unwrap(),
+            "needle",
+            false,
+            Some(100),
+            (
+                &AtomicBool::new(false),
+                &AtomicBool::new(false),
+                Some(&snapshot),
+            ),
+            &emit,
+        )
+        .unwrap();
         assert_eq!(first["items"].as_array().unwrap().len(), 2);
-        assert_eq!(resumed["items"].as_array().unwrap(), first["items"].as_array().unwrap());
-        assert!(resumed["scannedEntries"].as_u64().unwrap() >= snapshot["scannedEntries"].as_u64().unwrap());
+        assert_eq!(
+            resumed["items"].as_array().unwrap(),
+            first["items"].as_array().unwrap()
+        );
+        assert!(
+            resumed["scannedEntries"].as_u64().unwrap()
+                >= snapshot["scannedEntries"].as_u64().unwrap()
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -1241,14 +1286,31 @@ mod search_budget_tests {
             "items": [], "scannedEntries": 1
         });
         let noop = |_: &[Value], _: usize, _: u64, _: Option<&Value>| {};
-        let invoke = |checkpoint: &Value| search_cancellable_controlled(
-            &policy, root.to_str().unwrap(), "needle", false, Some(100),
-            (&AtomicBool::new(false), &AtomicBool::new(false), Some(checkpoint)), &noop,
-        );
-        assert!(invoke(&forged).unwrap_err().to_string().contains("invalid_search_checkpoint"));
+        let invoke = |checkpoint: &Value| {
+            search_cancellable_controlled(
+                &policy,
+                root.to_str().unwrap(),
+                "needle",
+                false,
+                Some(100),
+                (
+                    &AtomicBool::new(false),
+                    &AtomicBool::new(false),
+                    Some(checkpoint),
+                ),
+                &noop,
+            )
+        };
+        assert!(invoke(&forged)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid_search_checkpoint"));
         let mut altered = forged.clone();
         altered["query"] = json!("other");
-        assert!(invoke(&altered).unwrap_err().to_string().contains("invalid_search_checkpoint"));
+        assert!(invoke(&altered)
+            .unwrap_err()
+            .to_string()
+            .contains("invalid_search_checkpoint"));
         fs::remove_dir_all(root).unwrap();
         fs::remove_dir_all(outside).unwrap();
     }
@@ -1263,12 +1325,13 @@ mod search_budget_tests {
         let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
         let updates = Arc::new(AtomicUsize::new(0));
         let observed = Arc::clone(&updates);
-        let report = move |items: &[Value], scanned: usize, bytes: u64, _checkpoint: Option<&Value>| {
-            assert!(scanned >= 32);
-            assert_eq!(bytes, 0);
-            assert!(items.len() <= 100);
-            observed.fetch_add(1, Ordering::Relaxed);
-        };
+        let report =
+            move |items: &[Value], scanned: usize, bytes: u64, _checkpoint: Option<&Value>| {
+                assert!(scanned >= 32);
+                assert_eq!(bytes, 0);
+                assert!(items.len() <= 100);
+                observed.fetch_add(1, Ordering::Relaxed);
+            };
         let found = search_cancellable_reporting(
             &policy,
             root.to_str().unwrap(),
@@ -1294,12 +1357,13 @@ mod search_budget_tests {
         let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
         let updates = Arc::new(AtomicUsize::new(0));
         let observed = Arc::clone(&updates);
-        let report = move |items: &[Value], scanned: usize, bytes: u64, _checkpoint: Option<&Value>| {
-            assert!(scanned >= 32 || items.len() >= 32);
-            assert!(bytes <= MAX_TEXT_SEARCH_BYTES);
-            assert!(items.len() <= 80);
-            observed.fetch_add(1, Ordering::Relaxed);
-        };
+        let report =
+            move |items: &[Value], scanned: usize, bytes: u64, _checkpoint: Option<&Value>| {
+                assert!(scanned >= 32 || items.len() >= 32);
+                assert!(bytes <= MAX_TEXT_SEARCH_BYTES);
+                assert!(items.len() <= 80);
+                observed.fetch_add(1, Ordering::Relaxed);
+            };
         let found = text_search_cancellable_reporting(
             &policy,
             root.to_str().unwrap(),

@@ -206,14 +206,18 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
             let policy = policy.clone();
             tokio::task::spawn_blocking(move || {
                 if let Some(sender) = search_progress {
-                    let report = move |items: &[Value], scanned: usize, bytes: u64, checkpoint: Option<&Value>| {
-                        let _ = sender.try_send(json!({
-                            "items": items,
-                            "scannedEntries": scanned,
-                            "scannedBytes": bytes,
-                            "checkpoint": checkpoint,
-                        }));
-                    };
+                    let report =
+                        move |items: &[Value],
+                              scanned: usize,
+                              bytes: u64,
+                              checkpoint: Option<&Value>| {
+                            let _ = sender.try_send(json!({
+                                "items": items,
+                                "scannedEntries": scanned,
+                                "scannedBytes": bytes,
+                                "checkpoint": checkpoint,
+                            }));
+                        };
                     fs_ops::search_cancellable_controlled(
                         &policy,
                         &path,
@@ -248,13 +252,17 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
             let policy = policy.clone();
             tokio::task::spawn_blocking(move || {
                 if let Some(sender) = search_progress {
-                    let report = move |items: &[Value], scanned: usize, bytes: u64, _checkpoint: Option<&Value>| {
-                        let _ = sender.try_send(json!({
-                            "items": items,
-                            "scannedEntries": scanned,
-                            "scannedBytes": bytes,
-                        }));
-                    };
+                    let report =
+                        move |items: &[Value],
+                              scanned: usize,
+                              bytes: u64,
+                              _checkpoint: Option<&Value>| {
+                            let _ = sender.try_send(json!({
+                                "items": items,
+                                "scannedEntries": scanned,
+                                "scannedBytes": bytes,
+                            }));
+                        };
                     fs_ops::text_search_cancellable_controlled(
                         &policy,
                         &path,
