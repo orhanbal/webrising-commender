@@ -763,13 +763,8 @@ fn text_search_with_deadline_reporting(
                 return Err(anyhow!("invalid_search_checkpoint"));
             }
             let mut file = open_regular_read(path)?;
-            let text = read_search_utf8_controlled(
-                &mut file,
-                cancelled,
-                &mut deadline,
-                paused,
-            )?
-            .ok_or_else(|| anyhow!("invalid_search_checkpoint"))?;
+            let text = read_search_utf8_controlled(&mut file, cancelled, &mut deadline, paused)?
+                .ok_or_else(|| anyhow!("invalid_search_checkpoint"))?;
             validation_bytes = validation_bytes.saturating_add(text.len() as u64);
             if validation_bytes > MAX_TEXT_SEARCH_BYTES {
                 return Err(anyhow!("invalid_search_checkpoint"));
@@ -1480,11 +1475,7 @@ mod search_budget_tests {
             "needle",
             false,
             Some(100),
-            (
-                &AtomicBool::new(false),
-                &AtomicBool::new(false),
-                Some(&cp),
-            ),
+            (&AtomicBool::new(false), &AtomicBool::new(false), Some(&cp)),
             &report,
         )
         .unwrap();
@@ -1497,11 +1488,7 @@ mod search_budget_tests {
             "needle",
             false,
             Some(100),
-            (
-                &AtomicBool::new(false),
-                &AtomicBool::new(false),
-                Some(&cp),
-            ),
+            (&AtomicBool::new(false), &AtomicBool::new(false), Some(&cp)),
             &report,
         );
         assert!(rejected
