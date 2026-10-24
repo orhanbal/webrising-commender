@@ -27,9 +27,12 @@ test("native checkpoint schema enforces size, bounded work and strict primitive 
 });
 
 test("Agent action schema refuses malformed or oversized native resume checkpoints", () => {
-  assert.deepEqual(parseAgentAction({
+  const action = parseAgentAction({
     kind: "fs_search", path: "/safe", query: "needle", resumeCheckpoint: valid,
-  }).resumeCheckpoint, valid);
+  });
+  assert.equal(action.kind, "fs_search");
+  if (action.kind !== "fs_search") throw new Error("unexpected_action");
+  assert.deepEqual(action.resumeCheckpoint, valid);
   assert.throws(() => parseAgentAction({
     kind: "fs_search", path: "/safe", query: "needle",
     resumeCheckpoint: { ...valid, pending: ["/".repeat(4097)] },
