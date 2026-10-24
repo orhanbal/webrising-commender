@@ -143,17 +143,29 @@ pub fn write_cells(
         return Err(anyhow!("invalid sheet name"));
     }
     let source = checked_workbook(policy, raw)?;
-    if !source.extension().and_then(|ext| ext.to_str()).unwrap_or_default().eq_ignore_ascii_case("xlsx") {
+    if !source
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or_default()
+        .eq_ignore_ascii_case("xlsx")
+    {
         return Err(anyhow!("macro-enabled XLSM workbooks are read-only"));
     }
     let output = policy.resolve_for_create(output_raw)?;
-    if !output.extension().and_then(|ext| ext.to_str()).unwrap_or_default().eq_ignore_ascii_case("xlsx") {
+    if !output
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or_default()
+        .eq_ignore_ascii_case("xlsx")
+    {
         return Err(anyhow!("output must be a new .xlsx file"));
     }
     if output == source || output.exists() {
         return Err(anyhow!("output must not overwrite an existing file"));
     }
-    let parent = output.parent().ok_or_else(|| anyhow!("missing output parent"))?;
+    let parent = output
+        .parent()
+        .ok_or_else(|| anyhow!("missing output parent"))?;
     if !parent.is_dir() {
         return Err(anyhow!("output parent directory does not exist"));
     }
@@ -168,7 +180,11 @@ pub fn write_cells(
             Value::String(v) if v.len() <= 8192 => {}
             Value::Bool(_) => {}
             Value::Number(n) if n.as_f64().is_some_and(f64::is_finite) => {}
-            _ => return Err(anyhow!("cell value must be a string <=8192 bytes, finite number, or boolean")),
+            _ => {
+                return Err(anyhow!(
+                    "cell value must be a string <=8192 bytes, finite number, or boolean"
+                ))
+            }
         }
     }
 
@@ -194,7 +210,10 @@ pub fn write_cells(
                 cell.set_value_bool(*v);
             }
             Value::Number(v) => {
-                cell.set_value_number(v.as_f64().ok_or_else(|| anyhow!("invalid numeric cell value"))?);
+                cell.set_value_number(
+                    v.as_f64()
+                        .ok_or_else(|| anyhow!("invalid numeric cell value"))?,
+                );
             }
             _ => return Err(anyhow!("unsupported cell value")),
         }
@@ -204,7 +223,12 @@ pub fn write_cells(
     let result = (|| -> Result<Value> {
         umya_spreadsheet::writer::xlsx::write(&book, &temporary)
             .map_err(|error| anyhow!("cannot save XLSX: {error}"))?;
-        checked_workbook(policy, temporary.to_str().ok_or_else(|| anyhow!("invalid temporary path"))?)?;
+        checked_workbook(
+            policy,
+            temporary
+                .to_str()
+                .ok_or_else(|| anyhow!("invalid temporary path"))?,
+        )?;
         // Publish without replacement: hard_link is atomic and fails if a
         // concurrent writer has already created the output path.
         fs::File::open(&temporary)?.sync_all()?;
@@ -230,8 +254,13 @@ fn validate_cell_address(cell: &str) -> Result<()> {
         .position(|byte| byte.is_ascii_digit())
         .ok_or_else(|| anyhow!("invalid cell address"))?;
     let (letters, digits) = cell.split_at(split);
-    if letters.is_empty() || letters.len() > 3 || !letters.bytes().all(|byte| byte.is_ascii_uppercase()) ||
-        digits.is_empty() || digits.starts_with('0') || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+    if letters.is_empty()
+        || letters.len() > 3
+        || !letters.bytes().all(|byte| byte.is_ascii_uppercase())
+        || digits.is_empty()
+        || digits.starts_with('0')
+        || !digits.bytes().all(|byte| byte.is_ascii_digit())
+    {
         return Err(anyhow!("invalid cell address"));
     }
     let mut column = 0_u32;
