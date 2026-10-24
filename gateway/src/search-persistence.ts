@@ -73,8 +73,10 @@ export interface SearchPersistence {
   setPaused?(key: SearchKey, paused: boolean): Promise<boolean>;
   /** Recovery is permitted only for unpaused filename scans with a stale owner lease. */
   recoveryCandidates?(): Promise<SearchRecoveryCandidate[]>;
-  /** Atomic owner takeover; returns the new sequence or null if already claimed. */
-  claimRecovery?(key: SearchKey): Promise<number | null>;
+  /** Atomic owner takeover returns the exact checkpoint fenced by the same SQL update.
+   * Never replay a stale candidate snapshot captured before the CAS.
+   */
+  claimRecovery?(key: SearchKey): Promise<{ sequence: number; checkpoint: unknown } | null>;
   /** True only when the running row was atomically transitioned to its final status. */
   finish(key: SearchKey, result: SearchCompletion): Promise<boolean>;
   stop(key: SearchKey): Promise<void>;
@@ -208,8 +210,8 @@ export class PgSearchPersistence implements SearchPersistence {
     }));
   }
 
-  async claimRecovery(s: SearchKey): Promise<number | null> {
-    const result = await this.pool.query<{ progress_sequence: number }>(
+  async claimRecovery(s: SearchKey): Promise<{ sequence: number; checkpoint: unknown } | null> {
+    const result = await this.pool.query<{ progress_sequence: number; checkpoint: unknown }>(
       `update search_sessions s
           set origin_instance=$5,progress_sequence=s.progress_sequence+1,
               -- Later in-flight updates are not durable directory boundaries.
@@ -228,10 +230,11 @@ export class PgSearchPersistence implements SearchPersistence {
           and not exists(select 1 from search_gateway_instances g
                          where g.id=s.origin_instance
                            and g.last_heartbeat_at>now()-interval '15 seconds')
-        returning s.progress_sequence`,
+        returning s.progress_sequence,s.checkpoint`,
       [s.id, s.organizationId, s.actor, s.deviceId, this.originInstance],
     );
-    return result.rows[0] ? Number(result.rows[0].progress_sequence) : null;
+    const claimed = result.rows[0];
+    return claimed ? { sequence: Number(claimed.progress_sequence), checkpoint: claimed.checkpoint } : null;
   }
 
   async setPaused(s: SearchKey, paused: boolean) {

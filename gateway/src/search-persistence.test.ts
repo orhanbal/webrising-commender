@@ -352,7 +352,7 @@ test("checkpoint takeover is gated on the original Gateway lease and scoped devi
   const db = { query: async (sql: string, args: unknown[] = []) => {
     statements.push({ sql, args });
     if (sql.includes("returning s.progress_sequence")) {
-      return { rows: [{ progress_sequence: 12 }], rowCount: 1 };
+      return { rows: [{ progress_sequence: 12, checkpoint: { version: 1 } }], rowCount: 1 };
     }
     return { rows: [], rowCount: 0 };
   }} as unknown as Pool;
@@ -361,7 +361,10 @@ test("checkpoint takeover is gated on the original Gateway lease and scoped devi
   assert.match(statements[0]!.sql, /s.checkpoint is not null/);
   assert.match(statements[0]!.sql, /d.revoked_at is null/);
   assert.match(statements[0]!.sql, /last_heartbeat_at<now\(\)-interval '15 seconds'/);
-  assert.equal(await store.claimRecovery({ ...owner, id }), 12);
+  assert.deepEqual(await store.claimRecovery({ ...owner, id }), {
+    sequence: 12, checkpoint: { version: 1 },
+  });
+  assert.match(statements[1]!.sql, /returning s.progress_sequence,s.checkpoint/);
   assert.match(statements[1]!.sql, /s.origin_instance<>\$5/);
   assert.match(statements[1]!.sql, /items=s.checkpoint->'items'/);
   assert.match(statements[1]!.sql, /scanned_entries=\(s.checkpoint->>'scannedEntries'\)::bigint/);

@@ -308,15 +308,24 @@ export async function recoverInterruptedSearches(router: DeviceRouter) {
         s.organizationId === candidate.organizationId && s.actor === candidate.actor && s.inFlight);
       if (activeForActor.length >= PER_ACTOR_LIMIT) continue;
       if (!await router.isOnline(candidate.deviceId)) continue;
-      const sequence = await store.claimRecovery(candidate);
-      if (sequence === null) continue; // Another Gateway claimed or user stopped.
+      const claim = await store.claimRecovery(candidate);
+      if (claim === null) continue; // Another Gateway claimed or user stopped.
+      // An earlier progress frame can race with recoveryCandidates(). Only the
+      // checkpoint returned by the successful owner-fencing CAS is authoritative.
+      // Treat an invalid claim as a failed recovery rather than replaying stale
+      // candidate data or leaking an acquired native execution slot.
       try {
+        if (!isNativeFilenameCheckpoint(claim.checkpoint) ||
+            claim.checkpoint.query !== candidate.query ||
+            claim.checkpoint.root !== candidate.path) {
+          throw new Error("invalid_search_checkpoint");
+        }
         await startSearch({
           organizationId: candidate.organizationId, actor: candidate.actor,
         } as Principal, candidate.deviceId, router, {
           path: candidate.path, query: candidate.query, search_type: "files",
-          case_sensitive: checkpoint.caseSensitive,
-        }, { ...candidate, progressUpdates: sequence });
+          case_sensitive: claim.checkpoint.caseSensitive,
+        }, { ...candidate, checkpoint: claim.checkpoint, progressUpdates: claim.sequence });
       } catch {
         // A post-claim dispatch failure must not strand the native quota.
         await store.finish(candidate, {

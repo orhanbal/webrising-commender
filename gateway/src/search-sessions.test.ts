@@ -287,7 +287,7 @@ test("checkpoint takeover keeps the original session ID and replays only its pen
   const store = {
     create: async () => { created = true; },
     recoveryCandidates: async () => [candidate],
-    claimRecovery: async () => 5,
+    claimRecovery: async () => ({ sequence: 5, checkpoint }),
     finish: async () => true,
   };
   setSearchPersistence(store as never);

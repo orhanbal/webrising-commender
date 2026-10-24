@@ -963,8 +963,10 @@ try {
   assert.equal(await takeover.claimRecovery({
     ...recoveryKey, actor: "wrong-actor",
   }), null);
-  const claimedSequence = await takeover.claimRecovery(recoveryKey);
-  assert.ok(Number.isSafeInteger(claimedSequence) && claimedSequence > 2);
+  const claimed = await takeover.claimRecovery(recoveryKey);
+  assert.ok(claimed && Number.isSafeInteger(claimed.sequence) && claimed.sequence > 2);
+  assert.deepEqual(claimed.checkpoint, nativeCheckpoint);
+  const claimedSequence = claimed.sequence;
   const safeRecovery = await takeover.page(recoveryKey, recoveryKey.id, 0, 10);
   assert.equal(safeRecovery.status, "running");
   assert.deepEqual(safeRecovery.items, nativeCheckpoint.items,
