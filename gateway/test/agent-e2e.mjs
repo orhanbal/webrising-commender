@@ -500,13 +500,13 @@ try {
   // 1A/1C: real MCP -> Gateway -> Rust content search keeps the native
   // per-file read bound; large UTF-8 inputs must not leak unbounded content.
   const boundedContentPath = path.join(tempRoot, "bounded-content.txt");
-  fs.writeFileSync(boundedContentPath, "a".repeat(1024 * 1024 - 32) + "\\nbounded-native-needle\\n");
+  fs.writeFileSync(boundedContentPath, "a".repeat(1024 * 1024 - 32) + "\nbounded-native-needle\n");
   const boundedContent = await tool(290, "text_search", {
     device_id: deviceId, path: boundedContentPath, query: "bounded-native-needle",
   });
   assert.ok(boundedContent.items.some((item) => item.path === boundedContentPath));
   const tooLargeContentPath = path.join(tempRoot, "oversized-content.txt");
-  fs.writeFileSync(tooLargeContentPath, "bounded-native-needle\\n" + "a".repeat(1024 * 1024));
+  fs.writeFileSync(tooLargeContentPath, "bounded-native-needle\n" + "a".repeat(1024 * 1024));
   const tooLargeContent = await tool(291, "text_search", {
     device_id: deviceId, path: tooLargeContentPath, query: "bounded-native-needle",
   });
