@@ -9,6 +9,9 @@ export type AgentAction =
   | { kind: "fs_stat"; path: string }
   | { kind: "fs_read"; path: string; maxBytes?: number }
   | { kind: "fs_read_lines"; path: string; offsetLines?: number; limitLines?: number }
+  | { kind: "docx_inspect"; path: string }
+  | { kind: "docx_read_paragraphs"; path: string; offset?: number; limit?: number }
+  | { kind: "docx_read_table"; path: string; tableIndex: number; offsetRows?: number; limitRows?: number }
   | { kind: "xlsx_inspect"; path: string }
   | { kind: "xlsx_read_range"; path: string; sheet: string; startRow: number; startColumn: number; rowCount: number; columnCount: number }
   | { kind: "xlsx_write_cells"; path: string; outputPath: string; sheet: string; updates: Array<{ cell: string; value: string | number | boolean }>; expectedSha256?: string }
@@ -56,6 +59,20 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     path: pathSchema,
     offsetLines: z.number().int().safe().min(-2_147_483_648).max(2_147_483_647).optional(),
     limitLines: z.number().int().min(1).max(1000).optional(),
+  }).strict(),
+  z.object({ kind: z.literal("docx_inspect"), path: pathSchema }).strict(),
+  z.object({
+    kind: z.literal("docx_read_paragraphs"),
+    path: pathSchema,
+    offset: z.number().int().min(0).max(1_000_000).optional(),
+    limit: z.number().int().min(1).max(100).optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("docx_read_table"),
+    path: pathSchema,
+    tableIndex: z.number().int().min(0).max(10_000),
+    offsetRows: z.number().int().min(0).max(1_000_000).optional(),
+    limitRows: z.number().int().min(1).max(50).optional(),
   }).strict(),
   z.object({ kind: z.literal("xlsx_inspect"), path: pathSchema }).strict(),
   z.object({
@@ -232,6 +249,9 @@ export function actionRisk(kind: AgentAction["kind"] | string): Risk {
     case "fs_stat":
     case "fs_read":
     case "fs_read_lines":
+    case "docx_inspect":
+    case "docx_read_paragraphs":
+    case "docx_read_table":
     case "xlsx_inspect":
     case "xlsx_read_range":
     case "xlsx_find":
