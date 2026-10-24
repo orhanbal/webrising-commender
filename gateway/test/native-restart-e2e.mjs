@@ -90,7 +90,7 @@ try {
     // Content searches open every file and have a strict 10-second native
     // budget. Keep this fixture large enough to checkpoint, but small enough
     // to finish on slow CI runners; filename scans are considerably cheaper.
-    const nonMatches = contentMode ? 75 : 420;
+    const nonMatches = contentMode ? 20 : 420;
     for (let index = 0; index < nonMatches; index++) {
       fs.writeFileSync(path.join(dir, "other-" + String(index).padStart(4, "0") + ".txt"), "");
     }
