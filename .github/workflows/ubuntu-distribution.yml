@@ -42,7 +42,23 @@ jobs:
         run: |
           cd dist
           sha256sum -- *.deb *.exe *.pkg > SHA256SUMS.txt
+      - name: Preserve verified installers and checksums as an Actions artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WECOMMANDER-multiplatform-preview-${{ github.event.workflow_run.run_number }}
+          path: |
+            dist/*.deb
+            dist/*.exe
+            dist/*.pkg
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+      # The repository integration may refuse release writes (HTTP 403) even
+      # with contents:write. Keep CI-verified packages downloadable without
+      # silently mislabeling the GitHub Release acceptance gate as passed.
       - name: Publish multi-platform preview release
+        id: publish_release
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -52,3 +68,18 @@ jobs:
             --target "${{ github.event.workflow_run.head_sha }}" \
             --title "WECOMMANDER platform preview #${{ github.event.workflow_run.run_number }}" \
             --prerelease --notes "Preview installers: Ubuntu AMD64 Debian, Windows x64 Setup, macOS universal PKG. Checksums available. Must pass physical-device acceptance before production approval."
+
+      - name: Report preview publication status
+        if: ${{ always() }}
+        env:
+          PUBLISH_OUTCOME: ${{ steps.publish_release.outcome }}
+        run: |
+          if [[ "$PUBLISH_OUTCOME" == "success" ]]; then
+            echo "### PASSED — GitHub preview release published" >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$PUBLISH_OUTCOME" == "failure" ]]; then
+            echo "### BLOCKED_EXTERNAL — GitHub Release permissions" >> "$GITHUB_STEP_SUMMARY"
+            echo "CI-built Linux/Windows/macOS installers and SHA256SUMS.txt were preserved as an Actions artifact. Release creation was denied or unavailable. No production deployment or signing was attempted." >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::GitHub Release publish unavailable; archive artifact remains available (BLOCKED_EXTERNAL)"
+          else
+            echo "### PENDING — Preview release step was not executed" >> "$GITHUB_STEP_SUMMARY"
+          fi
