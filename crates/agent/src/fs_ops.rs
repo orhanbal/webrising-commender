@@ -7,6 +7,7 @@ use std::{
     fs,
     io::{Read, Write},
     path::Path,
+    time::{Duration, Instant},
 };
 use uuid::Uuid;
 
@@ -22,6 +23,9 @@ const MAX_SEARCH_RESULTS: usize = 500;
 const MAX_TEXT_SEARCH_RESULTS: usize = 500;
 const MAX_TEXT_SEARCH_FILE: u64 = 1024 * 1024;
 const MAX_TEXT_SEARCH_BYTES: u64 = 64 * 1024 * 1024;
+// Wall-clock budget is independent of the Gateway's transport timeout.
+// Individual filesystem syscalls cannot be preempted by this synchronous scan.
+const MAX_SEARCH_DURATION: Duration = Duration::from_secs(10);
 
 pub fn list(policy: &PathPolicy, raw: &str) -> Result<Value> {
     let path = policy.resolve_existing(raw)?;
@@ -105,6 +109,24 @@ pub fn search(
     case_sensitive: bool,
     max_results: Option<usize>,
 ) -> Result<Value> {
+    search_with_deadline(
+        policy,
+        raw,
+        query,
+        case_sensitive,
+        max_results,
+        Instant::now() + MAX_SEARCH_DURATION,
+    )
+}
+
+fn search_with_deadline(
+    policy: &PathPolicy,
+    raw: &str,
+    query: &str,
+    case_sensitive: bool,
+    max_results: Option<usize>,
+    deadline: Instant,
+) -> Result<Value> {
     if query.trim().is_empty() {
         return Err(anyhow!("search query cannot be empty"));
     }
@@ -123,8 +145,14 @@ pub fn search(
     let mut scanned = 0_usize;
     let mut stack = vec![root.clone()];
     let mut truncated = false;
+    let mut timed_out = false;
 
     while let Some(path) = stack.pop() {
+        if Instant::now() >= deadline {
+            timed_out = true;
+            truncated = true;
+            break;
+        }
         let metadata = fs::symlink_metadata(&path)?;
         if metadata.is_file() {
             scanned += 1;
@@ -133,6 +161,11 @@ pub fn search(
             }
         } else if metadata.is_dir() {
             for entry in fs::read_dir(&path)? {
+                if Instant::now() >= deadline {
+                    timed_out = true;
+                    truncated = true;
+                    break;
+                }
                 let entry = entry?;
                 scanned += 1;
                 if scanned > MAX_SCAN_ENTRIES {
@@ -166,6 +199,7 @@ pub fn search(
         "caseSensitive": case_sensitive,
         "items": results,
         "truncated": truncated,
+        "timedOut": timed_out,
         "scannedEntries": scanned.min(MAX_SCAN_ENTRIES)
     }))
 }
@@ -176,6 +210,24 @@ pub fn text_search(
     query: &str,
     case_sensitive: bool,
     max_results: Option<usize>,
+) -> Result<Value> {
+    text_search_with_deadline(
+        policy,
+        raw,
+        query,
+        case_sensitive,
+        max_results,
+        Instant::now() + MAX_SEARCH_DURATION,
+    )
+}
+
+fn text_search_with_deadline(
+    policy: &PathPolicy,
+    raw: &str,
+    query: &str,
+    case_sensitive: bool,
+    max_results: Option<usize>,
+    deadline: Instant,
 ) -> Result<Value> {
     if query.is_empty() {
         return Err(anyhow!("text search query cannot be empty"));
@@ -197,12 +249,23 @@ pub fn text_search(
     let mut scanned_entries = 0_usize;
     let mut scanned_bytes = 0_u64;
     let mut truncated = false;
+    let mut timed_out = false;
 
     while let Some(path) = stack.pop() {
+        if Instant::now() >= deadline {
+            timed_out = true;
+            truncated = true;
+            break;
+        }
         let metadata = fs::symlink_metadata(&path)?;
 
         if metadata.is_dir() {
             for entry in fs::read_dir(&path)? {
+                if Instant::now() >= deadline {
+                    timed_out = true;
+                    truncated = true;
+                    break;
+                }
                 let entry = entry?;
                 scanned_entries += 1;
                 if scanned_entries > MAX_SCAN_ENTRIES {
@@ -231,6 +294,11 @@ pub fn text_search(
             };
 
             for (index, line) in text.lines().enumerate() {
+                if Instant::now() >= deadline {
+                    timed_out = true;
+                    truncated = true;
+                    break;
+                }
                 let haystack = if case_sensitive {
                     line.to_owned()
                 } else {
@@ -261,6 +329,7 @@ pub fn text_search(
         "caseSensitive": case_sensitive,
         "items": results,
         "truncated": truncated,
+        "timedOut": timed_out,
         "scannedEntries": scanned_entries.min(MAX_SCAN_ENTRIES),
         "scannedBytes": scanned_bytes
     }))
@@ -587,4 +656,30 @@ fn search_item(path: &Path, metadata: &fs::Metadata) -> Value {
 
 fn preview_line(line: &str) -> String {
     line.chars().take(500).collect()
+}
+
+#[cfg(test)]
+mod search_budget_tests {
+    use super::*;
+    use std::{env, fs};
+
+    #[test]
+    fn expired_search_budget_returns_partial_result_marker_without_scanning() {
+        let root = env::temp_dir().join(format!("wecommander-search-budget-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("needle.txt"), "needle in content").unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let raw = root.to_str().unwrap();
+        let past = Instant::now() - Duration::from_millis(1);
+        let names = search_with_deadline(&policy, raw, "needle", false, Some(10), past).unwrap();
+        assert_eq!(names["timedOut"], true);
+        assert_eq!(names["truncated"], true);
+        assert_eq!(names["scannedEntries"], 0);
+        assert_eq!(names["items"].as_array().unwrap().len(), 0);
+        let content = text_search_with_deadline(&policy, raw, "needle", false, Some(10), past).unwrap();
+        assert_eq!(content["timedOut"], true);
+        assert_eq!(content["truncated"], true);
+        assert_eq!(content["scannedEntries"], 0);
+        fs::remove_dir_all(root).unwrap();
+    }
 }
