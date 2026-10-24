@@ -114,6 +114,50 @@ test("in-flight search quotas survive stop until native request settles", async 
   for (const resolve of pending) resolve({ items: [], truncated: false });
 });
 
+test("native search quota follows actor across devices without crossing tenants", async () => {
+  const actor = { ...principal, actor: "multi-device-quota-user" };
+  const args = { path: "/safe", query: "needle", search_type: "files" };
+  const pending: Array<(value: { items: unknown[]; truncated: boolean }) => void> = [];
+  const delayed = {
+    request: async () => new Promise<{ items: unknown[]; truncated: boolean }>(resolve => {
+      pending.push(resolve);
+    }),
+  } as unknown as DeviceRouter;
+  try {
+    const active = [];
+    for (let index = 0; index < 8; index += 1) {
+      active.push(await startSearch(actor, `multi-quota-device-${index}`, delayed, args));
+    }
+    await assert.rejects(
+      startSearch(actor, "multi-quota-device-nine", delayed, args),
+      /search_session_limit/,
+    );
+    // Neither a different actor nor an identically named actor in another
+    // tenant should inherit this actor's native execution slots.
+    const otherActor = await startSearch({ ...actor, actor: "different-actor" },
+      "multi-quota-device-nine", delayed, args);
+    const otherTenant = await startSearch({ ...actor, organizationId: "org-b" },
+      "multi-quota-device-nine", delayed, args);
+    assert.equal(otherActor.status, "running");
+    assert.equal(otherTenant.status, "running");
+
+    // Stopping a search cannot immediately free the slot: native cancellation
+    // is asynchronous and the device may still be scanning.
+    await stopSearch(actor, "multi-quota-device-0", active[0]!.searchId);
+    await assert.rejects(
+      startSearch(actor, "multi-quota-device-nine", delayed, args),
+      /search_session_limit/,
+    );
+    pending[0]!({ items: [], truncated: false });
+    await new Promise(resolve => setImmediate(resolve));
+    const replacement = await startSearch(actor, "multi-quota-device-nine", delayed, args);
+    assert.equal(replacement.status, "running");
+  } finally {
+    for (const resolve of pending) resolve({ items: [], truncated: false });
+    await new Promise(resolve => setImmediate(resolve));
+  }
+});
+
 test("completed searches do not consume native concurrency quota", async () => {
   const p = { ...principal, actor: "completed-quota-user" };
   const args = { path: "/safe", query: "txt", search_type: "files" };
