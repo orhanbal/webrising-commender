@@ -6,7 +6,10 @@ use serde_json::{json, Value};
 use std::{
     collections::{HashMap, VecDeque},
     io::{Read, Write},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
 };
 use uuid::Uuid;
 
@@ -60,6 +63,17 @@ impl OutputHistory {
     }
 }
 
+// A pending PTY spawn must consume quota before the OS process is created.
+// Otherwise concurrent terminal_start requests can all observe the same
+// sessions.len() and exceed MAX_SESSIONS before any one inserts its session.
+struct StartReservation(Arc<AtomicUsize>);
+
+impl Drop for StartReservation {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 struct Session {
     master: Mutex<Box<dyn MasterPty + Send>>,
     writer: Mutex<Box<dyn Write + Send>>,
@@ -71,6 +85,7 @@ struct Session {
 #[derive(Clone, Default)]
 pub struct TerminalManager {
     sessions: Arc<Mutex<HashMap<String, Arc<Session>>>>,
+    pending_starts: Arc<AtomicUsize>,
 }
 
 impl TerminalManager {
@@ -82,23 +97,7 @@ impl TerminalManager {
         cols: u16,
         rows: u16,
     ) -> Result<Value> {
-        {
-            let mut sessions = self
-                .sessions
-                .lock()
-                .map_err(|_| anyhow!("terminal session lock poisoned"))?;
-            sessions.retain(|_, session| {
-                let Ok(mut child) = session.child.lock() else {
-                    return true;
-                };
-                !matches!(child.try_wait(), Ok(Some(_)))
-            });
-            if sessions.len() >= MAX_SESSIONS {
-                return Err(anyhow!(
-                    "too many terminal sessions; limit is {MAX_SESSIONS}"
-                ));
-            }
-        }
+        let reservation = self.reserve_start()?;
 
         let pty = native_pty_system();
         let pair = pty.openpty(PtySize {
@@ -160,12 +159,32 @@ impl TerminalManager {
             history,
         });
 
-        self.sessions
+        let mut sessions = self.sessions
             .lock()
-            .map_err(|_| anyhow!("terminal session lock poisoned"))?
-            .insert(id.clone(), session);
+            .map_err(|_| anyhow!("terminal session lock poisoned"))?;
+        sessions.insert(id.clone(), session);
+        // Release the reservation while holding the same mutex used to count
+        // active sessions: another starter can never observe a quota gap.
+        drop(reservation);
 
         Ok(json!({ "sessionId": id }))
+    }
+
+    fn reserve_start(&self) -> Result<StartReservation> {
+        let mut sessions = self.sessions
+            .lock()
+            .map_err(|_| anyhow!("terminal session lock poisoned"))?;
+        sessions.retain(|_, session| {
+            let Ok(mut child) = session.child.lock() else {
+                return true;
+            };
+            !matches!(child.try_wait(), Ok(Some(_)))
+        });
+        if sessions.len().saturating_add(self.pending_starts.load(Ordering::SeqCst)) >= MAX_SESSIONS {
+            return Err(anyhow!("too many terminal sessions; limit is {MAX_SESSIONS}"));
+        }
+        self.pending_starts.fetch_add(1, Ordering::SeqCst);
+        Ok(StartReservation(Arc::clone(&self.pending_starts)))
     }
 
     pub fn list(&self) -> Result<Value> {
@@ -310,6 +329,43 @@ fn default_shell() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn concurrent_start_reservations_enforce_quota_and_release_on_drop() {
+        use std::{sync::Barrier, thread};
+        let manager = TerminalManager::default();
+        let contenders = MAX_SESSIONS + 8;
+        let begin = Arc::new(Barrier::new(contenders));
+        let release = Arc::new(Barrier::new(contenders));
+        let accepted = Arc::new(AtomicUsize::new(0));
+        let mut threads = Vec::new();
+        for _ in 0..contenders {
+            let manager = manager.clone();
+            let begin = Arc::clone(&begin);
+            let release = Arc::clone(&release);
+            let accepted = Arc::clone(&accepted);
+            threads.push(thread::spawn(move || {
+                begin.wait();
+                let reservation = manager.reserve_start();
+                if reservation.is_ok() {
+                    accepted.fetch_add(1, Ordering::SeqCst);
+                }
+                // Hold every successful reservation until all contenders
+                // have attempted to reserve, making the race deterministic.
+                release.wait();
+                drop(reservation);
+            }));
+        }
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        assert_eq!(accepted.load(Ordering::SeqCst), MAX_SESSIONS);
+        assert_eq!(manager.pending_starts.load(Ordering::SeqCst), 0);
+        let after_failure = manager.reserve_start().unwrap();
+        assert_eq!(manager.pending_starts.load(Ordering::SeqCst), 1);
+        drop(after_failure);
+        assert_eq!(manager.pending_starts.load(Ordering::SeqCst), 0);
+    }
 
     #[test]
     fn retained_history_uses_absolute_offsets_and_reports_eviction() {
