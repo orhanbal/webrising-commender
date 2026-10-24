@@ -31,6 +31,14 @@ const MAX_SEARCH_DURATION: Duration = Duration::from_secs(10);
 /// Sends bounded cumulative results during a native search without holding up the scanner.
 pub type SearchProgressReporter = dyn Fn(&[Value], usize, u64) + Send + Sync;
 
+/// Bundles the deadline, cancellation signal and optional progress sink so
+/// both bounded native scanners share a small, explicit control surface.
+struct SearchExecution<'a> {
+    deadline: Instant,
+    cancelled: &'a AtomicBool,
+    report: Option<&'a SearchProgressReporter>,
+}
+
 pub fn list(policy: &PathPolicy, raw: &str) -> Result<Value> {
     let path = policy.resolve_existing(raw)?;
     if !path.is_dir() {
@@ -151,9 +159,11 @@ pub fn search_cancellable_reporting(
         query,
         case_sensitive,
         max_results,
-        Instant::now() + MAX_SEARCH_DURATION,
-        cancelled,
-        Some(report),
+        SearchExecution {
+            deadline: Instant::now() + MAX_SEARCH_DURATION,
+            cancelled,
+            report: Some(report),
+        },
     )
 }
 
@@ -172,9 +182,11 @@ fn search_with_deadline(
         query,
         case_sensitive,
         max_results,
-        deadline,
-        cancelled,
-        None,
+        SearchExecution {
+            deadline,
+            cancelled,
+            report: None,
+        },
     )
 }
 
@@ -184,10 +196,13 @@ fn search_with_deadline_reporting(
     query: &str,
     case_sensitive: bool,
     max_results: Option<usize>,
-    deadline: Instant,
-    cancelled: &AtomicBool,
-    report: Option<&SearchProgressReporter>,
+    execution: SearchExecution<'_>,
 ) -> Result<Value> {
+    let SearchExecution {
+        deadline,
+        cancelled,
+        report,
+    } = execution;
     if query.trim().is_empty() {
         return Err(anyhow!("search query cannot be empty"));
     }
@@ -389,9 +404,11 @@ pub fn text_search_cancellable_reporting(
         query,
         case_sensitive,
         max_results,
-        Instant::now() + MAX_SEARCH_DURATION,
-        cancelled,
-        Some(report),
+        SearchExecution {
+            deadline: Instant::now() + MAX_SEARCH_DURATION,
+            cancelled,
+            report: Some(report),
+        },
     )
 }
 
@@ -410,9 +427,11 @@ fn text_search_with_deadline(
         query,
         case_sensitive,
         max_results,
-        deadline,
-        cancelled,
-        None,
+        SearchExecution {
+            deadline,
+            cancelled,
+            report: None,
+        },
     )
 }
 
@@ -422,10 +441,13 @@ fn text_search_with_deadline_reporting(
     query: &str,
     case_sensitive: bool,
     max_results: Option<usize>,
-    deadline: Instant,
-    cancelled: &AtomicBool,
-    report: Option<&SearchProgressReporter>,
+    execution: SearchExecution<'_>,
 ) -> Result<Value> {
+    let SearchExecution {
+        deadline,
+        cancelled,
+        report,
+    } = execution;
     if query.is_empty() {
         return Err(anyhow!("text search query cannot be empty"));
     }
