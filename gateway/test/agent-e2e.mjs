@@ -1009,7 +1009,7 @@ try {
   await tool(304, "terminal_input", {
     device_id: deviceId,
     session_id: started.sessionId,
-    data_base64: Buffer.from("python3 -q\\n", "utf8").toString("base64"),
+    data_base64: Buffer.from("python3 -q\n", "utf8").toString("base64"),
   });
   const replPrompt = await waitFor(async () => {
     const page = await tool(305, "terminal_read_page", {
@@ -1025,7 +1025,7 @@ try {
   await tool(306, "terminal_input", {
     device_id: deviceId,
     session_id: started.sessionId,
-    data_base64: Buffer.from("print('REPL_AGENT_OK')\\n", "utf8").toString("base64"),
+    data_base64: Buffer.from("print('REPL_AGENT_OK')\n", "utf8").toString("base64"),
   });
   await waitFor(async () => {
     const page = await tool(307, "terminal_read_page", {
@@ -1040,7 +1040,7 @@ try {
   await tool(308, "terminal_input", {
     device_id: deviceId,
     session_id: started.sessionId,
-    data_base64: Buffer.from("exit()\\n", "utf8").toString("base64"),
+    data_base64: Buffer.from("exit()\n", "utf8").toString("base64"),
   });
   console.log("agent-e2e: real Python REPL prompt metadata observed through MCP");
 
