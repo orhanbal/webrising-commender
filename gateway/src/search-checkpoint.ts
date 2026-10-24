@@ -3,7 +3,10 @@ export type NativeFilenameCheckpoint = {
   version: 1; root: string; query: string; caseSensitive: boolean;
   pending: string[]; items: unknown[]; scannedEntries: number;
 };
-export function isNativeFilenameCheckpoint(value: unknown): value is NativeFilenameCheckpoint {
+export type NativeContentCheckpoint = NativeFilenameCheckpoint & {
+  searchType: "content"; scannedBytes: number;
+};
+function isBaseCheckpoint(value: unknown): value is NativeFilenameCheckpoint {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const x = value as Record<string, unknown>;
   if (x.version !== 1 || typeof x.root !== "string" || x.root.length < 1 ||
@@ -16,4 +19,18 @@ export function isNativeFilenameCheckpoint(value: unknown): value is NativeFilen
       !Array.isArray(x.items) || x.items.length > 500) return false;
   try { return Buffer.byteLength(JSON.stringify(value), "utf8") <= 128 * 1024; }
   catch { return false; }
+}
+
+/** File-name checkpoints cannot masquerade as content checkpoints. */
+export function isNativeFilenameCheckpoint(value: unknown): value is NativeFilenameCheckpoint {
+  return isBaseCheckpoint(value) &&
+    !("searchType" in value) && !("scannedBytes" in value);
+}
+
+/** Conservative text resume: never replay unverifiable old line previews. */
+export function isNativeContentCheckpoint(value: unknown): value is NativeContentCheckpoint {
+  return isBaseCheckpoint(value) && value.searchType === "content" &&
+    Array.isArray(value.items) && value.items.length === 0 &&
+    Number.isSafeInteger(value.scannedBytes) &&
+    value.scannedBytes >= 0 && value.scannedBytes <= 64 * 1024 * 1024;
 }

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isNativeFilenameCheckpoint } from "./search-checkpoint.js";
+import { isNativeContentCheckpoint, isNativeFilenameCheckpoint } from "./search-checkpoint.js";
 
 export type Risk = "low" | "medium" | "high";
 
@@ -26,7 +26,7 @@ export type AgentAction =
   | { kind: "fs_move"; source: string; destination: string }
   | { kind: "fs_tree"; path: string; maxDepth?: number; maxEntries?: number }
   | { kind: "fs_search"; path: string; query: string; caseSensitive?: boolean; maxResults?: number; resumeCheckpoint?: unknown }
-  | { kind: "text_search"; path: string; query: string; caseSensitive?: boolean; maxResults?: number }
+  | { kind: "text_search"; path: string; query: string; caseSensitive?: boolean; maxResults?: number; resumeCheckpoint?: unknown }
   | { kind: "fs_replace"; path: string; search: string; replace: string; replaceAll?: boolean; expectedSha256?: string }
   | { kind: "process_exec"; command: string; cwd?: string; timeoutMs?: number }
   | { kind: "process_list" }
@@ -158,6 +158,7 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     query: z.string().min(1).max(4096),
     caseSensitive: z.boolean().optional(),
     maxResults: z.number().int().min(1).max(500).optional(),
+    resumeCheckpoint: z.unknown().refine(isNativeContentCheckpoint).optional(),
   }).strict(),
   z.object({
     kind: z.literal("fs_replace"),
