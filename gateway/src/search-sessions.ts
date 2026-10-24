@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import type { AgentAction, SearchProgress } from "./protocol.js";
 import type { DeviceRouter } from "./device-router.js";
 import type { Principal } from "./auth.js";
-import type { SearchPersistence } from "./search-persistence.js";
+import type { SearchPersistence, SearchRecoveryCandidate } from "./search-persistence.js";
 import { isNativeFilenameCheckpoint } from "./search-checkpoint.js";
 
 /**
@@ -82,6 +82,7 @@ export async function startSearch(
   deviceId: string,
   router: DeviceRouter,
   arg: { path: string; query: string; search_type: string; case_sensitive?: boolean; start_paused?: boolean },
+  recovery?: SearchRecoveryCandidate,
 ) {
   expire();
   if (typeof arg.path !== "string" || !arg.path || arg.path.length > 4096 ||
@@ -90,6 +91,16 @@ export async function startSearch(
       (arg.case_sensitive !== undefined && typeof arg.case_sensitive !== "boolean") ||
       (arg.start_paused !== undefined && typeof arg.start_paused !== "boolean")) {
     throw new Error("invalid_search_arguments");
+  }
+  if (recovery && (
+      recovery.organizationId !== principal.organizationId ||
+      recovery.actor !== principal.actor || recovery.deviceId !== deviceId ||
+      recovery.searchType !== "files" || arg.search_type !== "files" ||
+      recovery.path !== arg.path || recovery.query !== arg.query ||
+      !isNativeFilenameCheckpoint(recovery.checkpoint) ||
+      recovery.checkpoint.query !== arg.query ||
+      recovery.checkpoint.caseSensitive !== Boolean(arg.case_sensitive))) {
+    throw new Error("invalid_search_checkpoint");
   }
   // Only active native requests consume concurrency slots. Completed searches
   // must not block the actor for the entire result-retention TTL. A stopped
@@ -113,28 +124,30 @@ export async function startSearch(
     throw new Error("search_session_limit");
   }
   const entry: SearchEntry = {
-    id: crypto.randomUUID(),
+    id: recovery?.id ?? crypto.randomUUID(),
     organizationId: principal.organizationId,
     actor: principal.actor,
     deviceId,
     path: arg.path,
     query: arg.query,
     searchType: arg.search_type as "files" | "content",
-    createdAt: Date.now(),
+    createdAt: recovery?.createdAt ?? Date.now(),
     status: "running",
-    items: [],
+    items: recovery && isNativeFilenameCheckpoint(recovery.checkpoint)
+      ? recovery.checkpoint.items : [],
     truncated: false,
     timedOut: false,
     paused: Boolean(arg.start_paused),
     controlPending: false,
-    scannedEntries: 0,
+    scannedEntries: recovery && isNativeFilenameCheckpoint(recovery.checkpoint)
+      ? recovery.checkpoint.scannedEntries : 0,
     scannedBytes: 0,
-    progressUpdates: 0,
+    progressUpdates: recovery?.progressUpdates ?? 0,
     inFlight: true,
     controller: new AbortController(),
   };
   sessions.set(entry.id, entry);
-  if (persistence) {
+  if (persistence && !recovery) {
     try {
       await persistence.create(entry);
     } catch (error) {
@@ -145,7 +158,8 @@ export async function startSearch(
   }
   const action: AgentAction = entry.searchType === "files"
     ? { kind: "fs_search", path: arg.path, query: arg.query,
-        caseSensitive: Boolean(arg.case_sensitive), maxResults: 500 }
+        caseSensitive: Boolean(arg.case_sensitive), maxResults: 500,
+        ...(recovery ? { resumeCheckpoint: recovery.checkpoint } : {}) }
     : { kind: "text_search", path: arg.path, query: arg.query,
         caseSensitive: Boolean(arg.case_sensitive), maxResults: 500 };
   // Do not block the MCP request; a follow-up call collects paged results.
@@ -273,6 +287,49 @@ export async function startSearch(
   });
   return summary(entry);
 }
+let recoveryActive = false;
+/** Resume only filename scans with a *completed-directory* checkpoint.
+ * PostgreSQL atomically fences out the dead Gateway first. Content scans and
+ * checkpoint-free running rows remain interrupted; never invent a cursor.
+ */
+export async function recoverInterruptedSearches(router: DeviceRouter) {
+  const store = persistence;
+  if (!store?.recoveryCandidates || !store.claimRecovery || recoveryActive) return;
+  recoveryActive = true;
+  try {
+    expire();
+    for (const candidate of await store.recoveryCandidates()) {
+      if (sessions.has(candidate.id) || sessions.size >= MAX_SESSIONS) continue;
+      const checkpoint = candidate.checkpoint;
+      if (!isNativeFilenameCheckpoint(checkpoint) ||
+          checkpoint.query !== candidate.query || candidate.searchType !== "files") continue;
+      if (candidate.createdAt + TTL_MS <= Date.now()) continue;
+      const activeForActor = [...sessions.values()].filter(s =>
+        s.organizationId === candidate.organizationId && s.actor === candidate.actor && s.inFlight);
+      if (activeForActor.length >= PER_ACTOR_LIMIT) continue;
+      if (!await router.isOnline(candidate.deviceId)) continue;
+      const sequence = await store.claimRecovery(candidate);
+      if (sequence === null) continue; // Another Gateway claimed or user stopped.
+      try {
+        await startSearch({
+          organizationId: candidate.organizationId, actor: candidate.actor,
+        } as Principal, candidate.deviceId, router, {
+          path: candidate.path, query: candidate.query, search_type: "files",
+          case_sensitive: checkpoint.caseSensitive,
+        }, { ...candidate, progressUpdates: sequence });
+      } catch {
+        // A post-claim dispatch failure must not strand the native quota.
+        await store.finish(candidate, {
+          status: "error", items: [], truncated: false, timedOut: false,
+          error: "search_recovery_failed",
+        }).catch(() => {});
+      }
+    }
+  } finally {
+    recoveryActive = false;
+  }
+}
+
 /** Poll persisted stops to abort native requests started on this Gateway but
  * stopped via another Gateway. Called at a bounded interval by the server.
  * A database outage leaves the native timeout/cancellation budget in force.

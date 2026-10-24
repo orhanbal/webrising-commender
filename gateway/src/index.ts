@@ -33,7 +33,7 @@ import { getPublicPlans, publicPaddleConfig, createPaddleCheckout, createPaddleP
 import { getDownloads } from "./downloads.js";
 import { createDeviceLink, getDeviceLinkStatus, approveDeviceLink } from "./device-link.js";
 import { DeviceRouter } from "./device-router.js";
-import { reconcileRemoteSearchStops, setSearchPersistence } from "./search-sessions.js";
+import { reconcileRemoteSearchStops, recoverInterruptedSearches, setSearchPersistence } from "./search-sessions.js";
 import { PgSearchPersistence } from "./search-persistence.js";
 import { RelayCancellationRegistry } from "./relay-cancellation.js";
 import { enqueueMail, mailConfigured, publicSignupEnabled, startMailWorker } from "./mail.js";
@@ -141,6 +141,17 @@ const searchStopPollTimer = setInterval(() => {
   }).finally(() => { searchStopPollActive = false; });
 }, 1_000);
 searchStopPollTimer.unref();
+// Bounded recovery after stale 15-second Gateway lease; retry when the Agent
+// reconnects rather than marking an offline device's scan completed.
+let recoveryPollActive = false;
+const recoveryPollTimer = setInterval(() => {
+  if (recoveryPollActive) return;
+  recoveryPollActive = true;
+  void recoverInterruptedSearches(deviceRouter).catch(() => {
+    // DB/relay unavailability must never bypass tenant or native ownership.
+  }).finally(() => { recoveryPollActive = false; });
+}, 5_000);
+recoveryPollTimer.unref();
 await housekeeping();
 startMailWorker();
 
@@ -3754,6 +3765,7 @@ async function shutdown() {
   server.close();
   for (const client of wss.clients) client.close(1001, "shutdown");
   clearInterval(searchStopPollTimer);
+  clearInterval(recoveryPollTimer);
   await searchPersistence.deactivate();
   await db.end();
   process.exit(0);

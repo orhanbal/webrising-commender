@@ -257,6 +257,53 @@ test("pause control redacts remote relay failures and cancels the uncertain nati
   await new Promise(resolve => setImmediate(resolve));
 });
 
+test("checkpoint takeover keeps the original session ID and replays only its pending native directories", async () => {
+  const user = { ...principal, actor: "recovery-actor" };
+  const checkpoint = {
+    version: 1, root: "/safe", query: "needle", caseSensitive: false,
+    pending: ["/safe/unvisited"], items: [{ path: "/safe/needle-one.txt" }],
+    scannedEntries: 32,
+  };
+  const candidate = {
+    id: "bfe0222a-2222-4222-8222-111111111112",
+    organizationId: user.organizationId, actor: user.actor,
+    deviceId: "recovery-device", path: "/safe", query: "needle",
+    searchType: "files" as const, createdAt: Date.now(),
+    checkpoint, progressUpdates: 4,
+  };
+  let requestAction: unknown;
+  let requestSession: string | undefined;
+  let finish!: (value: { items: unknown[]; truncated: boolean }) => void;
+  let created = false;
+  const router = {
+    isOnline: async () => true,
+    request: async (_device: string, action: unknown, _approval: unknown,
+      _signal: AbortSignal, _progress: unknown, sessionId: string) => {
+      requestAction = action;
+      requestSession = sessionId;
+      return new Promise<{ items: unknown[]; truncated: boolean }>(resolve => { finish = resolve; });
+    },
+  } as unknown as DeviceRouter;
+  const store = {
+    create: async () => { created = true; },
+    recoveryCandidates: async () => [candidate],
+    claimRecovery: async () => 5,
+    finish: async () => true,
+  };
+  setSearchPersistence(store as never);
+  try {
+    await recoverInterruptedSearches(router);
+    assert.equal(created, false, "A takeover must not allocate a second native slot");
+    assert.equal(requestSession, candidate.id);
+    assert.deepEqual((requestAction as { resumeCheckpoint: unknown }).resumeCheckpoint, checkpoint);
+    finish({ items: [{ path: "/safe/needle-one.txt" }, { path: "/safe/needle-two.txt" }],
+      truncated: false });
+    await new Promise(resolve => setImmediate(resolve));
+  } finally {
+    setSearchPersistence(undefined);
+  }
+});
+
 test("starts and pages bounded search sessions by actor and device", async () => {
   const started = await startSearch(principal, "device-a", remote, {
     path: "/safe", query: "txt", search_type: "files",
