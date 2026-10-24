@@ -57,6 +57,34 @@ test("an out-of-order durable progress CAS does not cancel a healthy native scan
   }
 });
 
+test("native completion persists final bounded counters even without a progress event", async () => {
+  const actor = { ...principal, actor: "final-counter-actor" };
+  const completions: Array<{ scannedEntries: number; scannedBytes: number }> = [];
+  const persistence = {
+    create: async () => {},
+    finish: async (_key: unknown, value: { scannedEntries: number; scannedBytes: number }) => {
+      completions.push(value);
+      return true;
+    },
+  };
+  const router = {
+    request: async () => ({
+      items: [], truncated: false, scannedEntries: 7, scannedBytes: 1024,
+    }),
+  } as unknown as DeviceRouter;
+  setSearchPersistence(persistence as never);
+  try {
+    await startSearch(actor, "final-counter-device", router, {
+      path: "/safe", query: "needle", search_type: "content",
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(completions.map(({ scannedEntries, scannedBytes }) =>
+      ({ scannedEntries, scannedBytes })), [{ scannedEntries: 7, scannedBytes: 1024 }]);
+  } finally {
+    setSearchPersistence(undefined);
+  }
+});
+
 test("native progress exposes scoped live pages and cannot resurrect stopped results", async () => {
   const actor = { ...principal, actor: "progress-actor" };
   let progress!: (value: { items: unknown[]; scannedEntries: number; scannedBytes: number }) => void;

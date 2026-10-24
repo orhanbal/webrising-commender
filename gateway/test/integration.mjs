@@ -906,12 +906,15 @@ try {
     status: "completed",
     items: [{ path: "/ci/one.txt" }, { path: "/ci/two.txt" }],
     truncated: false, timedOut: false, progressUpdates: 1,
+    scannedEntries: 37, scannedBytes: 120,
   });
   const afterRestart = new PgSearchPersistence(searchPool);
   const restored = await afterRestart.page(durableKey, durableKey.id, 1, 1);
   assert.equal(restored.status, "completed");
   assert.deepEqual(restored.items, [{ path: "/ci/two.txt" }]);
   assert.equal(restored.resultCount, 2);
+  assert.equal(restored.scannedEntries, 37);
+  assert.equal(restored.scannedBytes, 120);
   await assert.rejects(
     afterRestart.page({ ...durableKey, actor: "foreign-actor" }, durableKey.id, 0, 10),
     /search_not_found/,

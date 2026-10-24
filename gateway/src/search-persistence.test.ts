@@ -176,8 +176,12 @@ test("persisted completions use a size bound and status transition guard", async
   });
   assert.match(sql[0]!.statement, /status='running'/);
   assert.match(sql[0]!.statement, /native_inflight=true/);
-  assert.match(sql[0]!.statement, /origin_instance=\$11/);
-  assert.equal(typeof sql[0]!.params[10], "string");
+  assert.match(sql[0]!.statement, /origin_instance=\$13/);
+  assert.match(sql[0]!.statement, /scanned_entries=greatest\(scanned_entries,\$11\)/);
+  assert.match(sql[0]!.statement, /scanned_bytes=greatest\(scanned_bytes,\$12\)/);
+  assert.equal(sql[0]!.params[10], 0);
+  assert.equal(sql[0]!.params[11], 0);
+  assert.equal(typeof sql[0]!.params[12], "string");
   assert.equal(sql[0]!.params[5], "[]");
   assert.equal(sql[0]!.params[6], true);
   assert.match(sql[0]!.statement, /returning id/);

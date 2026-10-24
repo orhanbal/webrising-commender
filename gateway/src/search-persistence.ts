@@ -32,6 +32,8 @@ export type SearchCompletion = {
   timedOut: boolean;
   error?: string;
   progressUpdates?: number;
+  scannedEntries?: number;
+  scannedBytes?: number;
 };
 export type SearchSummary = {
   searchId: string;
@@ -219,14 +221,17 @@ export class PgSearchPersistence implements SearchPersistence {
     const updated = await this.pool.query(
       `update search_sessions
           set status=$5,items=$6::jsonb,truncated=$7,timed_out=$8,error_code=$9,native_inflight=false,
-              progress_sequence=greatest(progress_sequence,$10)
+              progress_sequence=greatest(progress_sequence,$10),
+              scanned_entries=greatest(scanned_entries,$11),
+              scanned_bytes=greatest(scanned_bytes,$12)
         where id=$1 and organization_id=$2 and actor=$3 and device_id=$4
           and status='running' and native_inflight=true
-          and origin_instance=$11 and expires_at>now()
+          and origin_instance=$13 and expires_at>now()
         returning id`,
       [s.id, s.organizationId, s.actor, s.deviceId,
         result.status, JSON.stringify(items), truncated, result.timedOut,
-        result.error ?? null, result.progressUpdates ?? 0, this.originInstance],
+        result.error ?? null, result.progressUpdates ?? 0,
+        result.scannedEntries ?? 0, result.scannedBytes ?? 0, this.originInstance],
     );
     return Boolean(updated.rowCount);
   }

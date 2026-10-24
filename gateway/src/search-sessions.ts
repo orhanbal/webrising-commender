@@ -192,6 +192,19 @@ export async function startSearch(
       truncated: Boolean(payload?.truncated),
       timedOut: Boolean(payload?.timedOut),
       progressUpdates: entry.progressUpdates,
+      // A small native scan can complete before its first progress event.
+      // Persist the final counters too; reject forged, negative or regressing
+      // values rather than trusting an unvalidated Agent response.
+      scannedEntries: typeof payload?.scannedEntries === "number" &&
+        Number.isSafeInteger(payload.scannedEntries) &&
+        payload.scannedEntries >= entry.scannedEntries &&
+        payload.scannedEntries <= 100_000
+        ? payload.scannedEntries : entry.scannedEntries,
+      scannedBytes: typeof payload?.scannedBytes === "number" &&
+        Number.isSafeInteger(payload.scannedBytes) &&
+        payload.scannedBytes >= entry.scannedBytes &&
+        payload.scannedBytes <= 64 * 1024 * 1024
+        ? payload.scannedBytes : entry.scannedBytes,
     };
     try {
       const committed = persistence ? await persistence.finish(entry, candidate) : true;
@@ -213,8 +226,8 @@ export async function startSearch(
     entry.items = candidate.items;
     entry.truncated = candidate.truncated;
     entry.timedOut = candidate.timedOut;
-    entry.scannedEntries = Number(payload?.scannedEntries ?? entry.scannedEntries);
-    entry.scannedBytes = Number(payload?.scannedBytes ?? entry.scannedBytes);
+    entry.scannedEntries = candidate.scannedEntries;
+    entry.scannedBytes = candidate.scannedBytes;
     entry.status = "completed";
   }, async error => {
     entry.inFlight = false;
