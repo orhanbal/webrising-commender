@@ -52,6 +52,20 @@ pub enum AgentAction {
         offset_lines: Option<i64>,
         limit_lines: Option<usize>,
     },
+    DocxInspect {
+        path: String,
+    },
+    DocxReadParagraphs {
+        path: String,
+        offset: Option<usize>,
+        limit: Option<usize>,
+    },
+    DocxReadTable {
+        path: String,
+        table_index: usize,
+        offset_rows: Option<usize>,
+        limit_rows: Option<usize>,
+    },
     XlsxInspect {
         path: String,
     },
@@ -222,6 +236,9 @@ impl AgentAction {
             Self::FsStat { .. } => "fs_stat",
             Self::FsRead { .. } => "fs_read",
             Self::FsReadLines { .. } => "fs_read_lines",
+            Self::DocxInspect { .. } => "docx_inspect",
+            Self::DocxReadParagraphs { .. } => "docx_read_paragraphs",
+            Self::DocxReadTable { .. } => "docx_read_table",
             Self::XlsxInspect { .. } => "xlsx_inspect",
             Self::XlsxReadRange { .. } => "xlsx_read_range",
             Self::XlsxWriteCells { .. } => "xlsx_write_cells",
@@ -260,6 +277,9 @@ impl AgentAction {
             | Self::FsStat { .. }
             | Self::FsRead { .. }
             | Self::FsReadLines { .. }
+            | Self::DocxInspect { .. }
+            | Self::DocxReadParagraphs { .. }
+            | Self::DocxReadTable { .. }
             | Self::XlsxInspect { .. }
             | Self::XlsxReadRange { .. }
             | Self::XlsxFind { .. }
