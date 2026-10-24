@@ -23,7 +23,13 @@ pub struct ExecutionContext<'a> {
 
 pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Result<Value> {
     let ExecutionContext {
-        policy, terminals, tasks, approval_token, approval_key, device_id, cancelled,
+        policy,
+        terminals,
+        tasks,
+        approval_token,
+        approval_key,
+        device_id,
+        cancelled,
     } = context;
     if action.risk() == Risk::High {
         let token = approval_token
