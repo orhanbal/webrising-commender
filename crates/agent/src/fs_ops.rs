@@ -47,8 +47,12 @@ fn await_search_resume(
     cancelled: &AtomicBool,
     deadline: &mut Instant,
 ) -> Result<()> {
-    let Some(paused) = paused else { return Ok(()); };
-    if !paused.load(Ordering::Relaxed) { return Ok(()); }
+    let Some(paused) = paused else {
+        return Ok(());
+    };
+    if !paused.load(Ordering::Relaxed) {
+        return Ok(());
+    }
     let started = Instant::now();
     while paused.load(Ordering::Relaxed) {
         if cancelled.load(Ordering::Relaxed) {
@@ -179,14 +183,21 @@ pub fn search_cancellable_controlled(
     report: &SearchProgressReporter,
 ) -> Result<Value> {
     search_with_deadline_reporting(
-        policy, raw, query, case_sensitive, max_results,
+        policy,
+        raw,
+        query,
+        case_sensitive,
+        max_results,
         SearchExecution {
             deadline: Instant::now() + MAX_SEARCH_DURATION,
-            cancelled: controls.0, paused: Some(controls.1), report: Some(report),
+            cancelled: controls.0,
+            paused: Some(controls.1),
+            report: Some(report),
         },
     )
 }
 
+#[cfg(test)]
 pub fn search_cancellable_reporting(
     policy: &PathPolicy,
     raw: &str,
@@ -389,12 +400,14 @@ fn open_regular_read(path: &Path) -> Result<fs::File> {
 
 /// Limit bytes read from a changing file and check cancellation between
 /// bounded chunks. Invalid UTF-8 and oversized files are safely skipped.
+#[cfg(test)]
 fn read_search_utf8<R: Read>(
     reader: &mut R,
     cancelled: &AtomicBool,
     deadline: Instant,
 ) -> Result<Option<String>> {
-    read_search_utf8_controlled(reader, cancelled, &mut deadline.clone(), None)
+    let mut deadline = deadline;
+    read_search_utf8_controlled(reader, cancelled, &mut deadline, None)
 }
 
 fn read_search_utf8_controlled<R: Read>(
@@ -457,14 +470,21 @@ pub fn text_search_cancellable_controlled(
     report: &SearchProgressReporter,
 ) -> Result<Value> {
     text_search_with_deadline_reporting(
-        policy, raw, query, case_sensitive, max_results,
+        policy,
+        raw,
+        query,
+        case_sensitive,
+        max_results,
         SearchExecution {
             deadline: Instant::now() + MAX_SEARCH_DURATION,
-            cancelled: controls.0, paused: Some(controls.1), report: Some(report),
+            cancelled: controls.0,
+            paused: Some(controls.1),
+            report: Some(report),
         },
     )
 }
 
+#[cfg(test)]
 pub fn text_search_cancellable_reporting(
     policy: &PathPolicy,
     raw: &str,
@@ -621,17 +641,20 @@ fn text_search_with_deadline_reporting(
             // Read in cancellable, bounded chunks. File size can change after
             // metadata(), so a one-shot read_to_string is not a memory bound.
             let text = match open_regular_read(&path) {
-                Ok(mut file) => match read_search_utf8_controlled(&mut file, cancelled, &mut deadline, paused)? {
-                    Some(value) => value,
-                    None => {
-                        if Instant::now() >= deadline {
-                            timed_out = true;
-                            truncated = true;
-                            break;
+                Ok(mut file) => {
+                    match read_search_utf8_controlled(&mut file, cancelled, &mut deadline, paused)?
+                    {
+                        Some(value) => value,
+                        None => {
+                            if Instant::now() >= deadline {
+                                timed_out = true;
+                                truncated = true;
+                                break;
+                            }
+                            continue;
                         }
-                        continue;
                     }
-                },
+                }
                 Err(_) => continue,
             };
             if scanned_bytes.saturating_add(text.len() as u64) > MAX_TEXT_SEARCH_BYTES {
@@ -1102,7 +1125,12 @@ mod search_budget_tests {
         });
         std::thread::sleep(Duration::from_millis(30));
         cancelled.store(true, Ordering::Relaxed);
-        assert!(worker.join().unwrap().unwrap_err().to_string().contains("search_cancelled"));
+        assert!(worker
+            .join()
+            .unwrap()
+            .unwrap_err()
+            .to_string()
+            .contains("search_cancelled"));
         assert!(paused.load(Ordering::Relaxed));
     }
 

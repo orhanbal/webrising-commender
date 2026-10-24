@@ -569,10 +569,11 @@ async fn connected_loop(
                         if let Some(request) = request {
                             if request.is_search && !request.cancelled.load(Ordering::Relaxed) {
                                 request.paused.store(paused, Ordering::Relaxed);
-                                send(&writer, AgentMessage::SearchControlAck {
-                                    request_id,
-                                    paused,
-                                }).await?;
+                                send(
+                                    &writer,
+                                    AgentMessage::SearchControlAck { request_id, paused },
+                                )
+                                .await?;
                             }
                         }
                     }
