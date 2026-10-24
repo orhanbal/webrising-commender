@@ -326,10 +326,16 @@ export async function controlSearch(
   }
   if (s.controlPending) throw new Error("search_control_in_progress");
   if (persistence) {
-    const page = await persistence.page(
-      { organizationId: principal.organizationId, actor: principal.actor, deviceId },
-      searchId, 0, 1,
-    );
+    let page;
+    try {
+      page = await persistence.page(
+        { organizationId: principal.organizationId, actor: principal.actor, deviceId },
+        searchId, 0, 1,
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message === "search_not_found") throw error;
+      throw new Error("search_store_unavailable");
+    }
     if (page.status !== "running") throw new Error("search_not_running");
   }
   if (s.paused === paused) return summary(s);
@@ -353,7 +359,13 @@ export async function controlSearch(
       // A missing acknowledgment makes native state uncertain. Fail closed.
       s.controller.abort();
     }
-    throw error;
+    // Relay transport exceptions may include internal URLs or sensitive device
+    // details. Only structured search errors are safe for MCP callers.
+    if (error instanceof Error &&
+        ["search_not_running", "search_control_unavailable"].includes(error.message)) {
+      throw error;
+    }
+    throw new Error("search_control_unavailable");
   } finally {
     s.controlPending = false;
   }
