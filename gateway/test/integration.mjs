@@ -887,6 +887,34 @@ try {
     afterRestart.page({ ...durableKey, deviceId: "00000000-0000-4000-8000-000000000998" }, durableKey.id, 0, 10),
     /search_not_found/,
   );
+  // A native search snapshot larger than 1 MiB must retain ordered,
+  // pageable results instead of silently discarding the entire result set.
+  const oversizedKey = { ...durableKey, id: randomUUID() };
+  await durableStore.create({
+    ...oversizedKey, path: "/ci", query: "large", searchType: "content",
+    createdAt: Date.now(),
+  });
+  const oversizedItems = Array.from({ length: 500 }, (_, index) => ({
+    path: `/ci/${String(index).padStart(4, "0")}.txt`,
+    preview: "ğ".repeat(1500),
+  }));
+  assert.equal(await durableStore.finish(oversizedKey, {
+    status: "completed", items: oversizedItems, truncated: false, timedOut: false,
+  }), true);
+  const firstOversizedPage = await afterRestart.page(oversizedKey, oversizedKey.id, 0, 100);
+  assert.equal(firstOversizedPage.status, "completed");
+  assert.equal(firstOversizedPage.truncated, true);
+  assert.ok(firstOversizedPage.resultCount > 100 && firstOversizedPage.resultCount < 500);
+  assert.equal(firstOversizedPage.hasMore, true);
+  assert.deepEqual(firstOversizedPage.items, oversizedItems.slice(0, 100));
+  const lastOversizedPage = await afterRestart.page(
+    oversizedKey, oversizedKey.id, firstOversizedPage.resultCount - 1, 100,
+  );
+  assert.deepEqual(lastOversizedPage.items, [oversizedItems[firstOversizedPage.resultCount - 1]]);
+  assert.equal(lastOversizedPage.hasMore, false);
+  await durableStore.stop(oversizedKey);
+  assert.deepEqual((await afterRestart.page(oversizedKey, oversizedKey.id, 0, 100)).items, []);
+
   const foreignList = await afterRestart.list({ ...durableKey, actor: "foreign-actor" });
   assert.equal(foreignList.items.some(item => item.searchId === durableKey.id), false);
   await afterRestart.stop(durableKey);
