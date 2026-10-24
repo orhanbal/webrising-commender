@@ -437,6 +437,33 @@ try {
   });
   assert.equal(limitedBatch.items[0].ok, false);
 
+  // 1D: preserve Unicode bytes, return binary data as base64, and reject
+  // over-limit files without leaking a truncated private prefix.
+  const unicodeBatchPath = path.join(tempRoot, "unicode-batch.txt");
+  const unicodeBatchContent = "Türkçe 🧪\r\nİkinci satır\r\n";
+  fs.writeFileSync(unicodeBatchPath, unicodeBatchContent, "utf8");
+  const binaryBatchPath = path.join(tempRoot, "binary-batch.bin");
+  const binaryBatchBytes = Buffer.from([0x00, 0xff, 0x80, 0x0a, 0x42]);
+  fs.writeFileSync(binaryBatchPath, binaryBatchBytes);
+  const tooLargeBatchPath = path.join(tempRoot, "batch-over-limit.txt");
+  fs.writeFileSync(tooLargeBatchPath, "P".repeat(65 * 1024), "utf8");
+  const mixedEncodingBatch = await tool(302, "fs_read_multiple", {
+    device_id: deviceId, paths: [unicodeBatchPath, binaryBatchPath, tooLargeBatchPath],
+  });
+  assert.equal(mixedEncodingBatch.count, 3);
+  assert.equal(mixedEncodingBatch.items[0].ok, true);
+  assert.equal(mixedEncodingBatch.items[0].data.encoding, "utf8");
+  assert.equal(mixedEncodingBatch.items[0].data.content, unicodeBatchContent);
+  assert.equal(mixedEncodingBatch.items[0].data.size, Buffer.byteLength(unicodeBatchContent));
+  assert.equal(mixedEncodingBatch.items[1].ok, true);
+  assert.equal(mixedEncodingBatch.items[1].data.encoding, "base64");
+  assert.deepEqual(Buffer.from(mixedEncodingBatch.items[1].data.content, "base64"), binaryBatchBytes);
+  assert.equal(mixedEncodingBatch.items[2].ok, false);
+  assert.equal(mixedEncodingBatch.items[2].error, "read_failed");
+  assert.equal(mixedEncodingBatch.items[2].data, undefined);
+  assert.equal(fs.readFileSync(unicodeBatchPath, "utf8"), unicodeBatchContent);
+  assert.deepEqual(fs.readFileSync(binaryBatchPath), binaryBatchBytes);
+
   // 1D: native single-request batch must isolate individual read failures,
   // including an allowlist violation, without leaking host filesystem errors.
   const batchOutside = path.join(os.tmpdir(), "wecommander-outside-batch-" + process.pid + ".txt");
