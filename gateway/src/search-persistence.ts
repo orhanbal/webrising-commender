@@ -221,11 +221,12 @@ export class PgSearchPersistence implements SearchPersistence {
           set status=$5,items=$6::jsonb,truncated=$7,timed_out=$8,error_code=$9,native_inflight=false,
               progress_sequence=greatest(progress_sequence,$10)
         where id=$1 and organization_id=$2 and actor=$3 and device_id=$4
-          and status='running' and expires_at>now()
+          and status='running' and native_inflight=true
+          and origin_instance=$11 and expires_at>now()
         returning id`,
       [s.id, s.organizationId, s.actor, s.deviceId,
         result.status, JSON.stringify(items), truncated, result.timedOut,
-        result.error ?? null, result.progressUpdates ?? 0],
+        result.error ?? null, result.progressUpdates ?? 0, this.originInstance],
     );
     return Boolean(updated.rowCount);
   }
@@ -282,7 +283,6 @@ export class PgSearchPersistence implements SearchPersistence {
       `select s.id,s.path,s.query,s.search_type,s.status,s.origin_instance,
               s.created_at,s.items,s.truncated,s.timed_out,s.error_code,
               s.progress_sequence,s.scanned_entries,s.scanned_bytes,
-              s.progress_sequence,s.scanned_entries,s.scanned_bytes,
               (g.last_heartbeat_at > now() - interval '15 seconds') as origin_alive
          from search_sessions s
          left join search_gateway_instances g on g.id=s.origin_instance
@@ -305,6 +305,7 @@ export class PgSearchPersistence implements SearchPersistence {
     const result = await this.pool.query<SearchRow>(
       `select s.id,s.path,s.query,s.search_type,s.status,s.origin_instance,
               s.created_at,s.items,s.truncated,s.timed_out,s.error_code,
+              s.progress_sequence,s.scanned_entries,s.scanned_bytes,
               (g.last_heartbeat_at > now() - interval '15 seconds') as origin_alive
          from search_sessions s
          left join search_gateway_instances g on g.id=s.origin_instance

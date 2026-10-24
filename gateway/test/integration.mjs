@@ -880,6 +880,12 @@ try {
   assert.deepEqual(beforeCompletion.items, [{ path: "/ci/one.txt" }]);
   assert.equal(beforeCompletion.progressUpdates, 1);
   assert.equal(beforeCompletion.scannedEntries, 32);
+  const runningList = await durableStore.list(durableKey);
+  const listedProgress = runningList.items.find(item => item.searchId === durableKey.id);
+  assert.equal(listedProgress?.status, "running");
+  assert.equal(listedProgress?.progressUpdates, 1);
+  assert.equal(listedProgress?.scannedEntries, 32);
+  assert.equal(listedProgress?.scannedBytes, 0);
   assert.equal(await durableStore.progress({ ...durableKey, actor: "foreign-actor" }, {
     items: [{ path: "/ci/foreign" }], scannedEntries: 90,
     scannedBytes: 0, sequence: 3,
@@ -888,6 +894,14 @@ try {
     items: [{ path: "/ci/out-of-order" }], scannedEntries: 12,
     scannedBytes: 0, sequence: 1,
   }), false);
+  // A foreign Gateway may read the actor-scoped snapshot, but cannot finalize
+  // a native request it did not originate, even with the correct search ID.
+  const foreignGateway = new PgSearchPersistence(searchPool);
+  assert.equal(await foreignGateway.finish(durableKey, {
+    status: "completed", items: [{ path: "/ci/foreign-completion" }],
+    truncated: false, timedOut: false,
+  }), false);
+  assert.equal((await durableStore.page(durableKey, durableKey.id, 0, 10)).status, "running");
   await durableStore.finish(durableKey, {
     status: "completed",
     items: [{ path: "/ci/one.txt" }, { path: "/ci/two.txt" }],

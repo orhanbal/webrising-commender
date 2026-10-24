@@ -116,6 +116,26 @@ test("active remote Gateway exposes only its persisted incremental progress page
   assert.deepEqual(invisible.items, []);
 });
 
+test("search list retains native progress counters and exact tenant/actor/device SQL isolation", async () => {
+  const statements: Array<{ sql: string; args: unknown[] }> = [];
+  const fake = {
+    query: async (sql: string, args: unknown[]) => {
+      statements.push({ sql, args });
+      return { rows: [{ ...sampleRow, status: "running", origin_alive: true,
+        progress_sequence: 4, scanned_entries: 128, scanned_bytes: 8192 }], rowCount: 1 };
+    },
+  } as unknown as Pool;
+  const list = await new PgSearchPersistence(fake).list(owner);
+  assert.equal(list.items.length, 1);
+  assert.equal(list.items[0]!.status, "running");
+  assert.equal(list.items[0]!.progressUpdates, 4);
+  assert.equal(list.items[0]!.scannedEntries, 128);
+  assert.equal(list.items[0]!.scannedBytes, 8192);
+  assert.match(statements[0]!.sql, /s.progress_sequence,s.scanned_entries,s.scanned_bytes/);
+  assert.match(statements[0]!.sql, /s.organization_id=\$1 and s.actor=\$2 and s.device_id=\$3/);
+  assert.deepEqual(statements[0]!.args, [owner.organizationId, owner.actor, owner.deviceId]);
+});
+
 test("a native search owned by an unavailable gateway is never reported as completed", async () => {
   const fake = {
     query: async () => ({ rows: [{ ...sampleRow, status: "running" }], rowCount: 1 }),
@@ -155,6 +175,9 @@ test("persisted completions use a size bound and status transition guard", async
     truncated: false, timedOut: false,
   });
   assert.match(sql[0]!.statement, /status='running'/);
+  assert.match(sql[0]!.statement, /native_inflight=true/);
+  assert.match(sql[0]!.statement, /origin_instance=\$11/);
+  assert.equal(typeof sql[0]!.params[10], "string");
   assert.equal(sql[0]!.params[5], "[]");
   assert.equal(sql[0]!.params[6], true);
   assert.match(sql[0]!.statement, /returning id/);
