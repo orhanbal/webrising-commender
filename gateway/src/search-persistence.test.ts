@@ -96,6 +96,53 @@ test("persisted completions use a size bound and status transition guard", async
   assert.match(sql[0]!.statement, /returning id/);
 });
 
+test("oversized durable search keeps ordered pages under the 1 MiB cap", async () => {
+  const calls: unknown[][] = [];
+  const fake = {
+    query: async (_statement: string, params: unknown[]) => {
+      calls.push(params);
+      return { rows: [{ id }], rowCount: 1 };
+    },
+  } as unknown as Pool;
+  const store = new PgSearchPersistence(fake);
+  const items = Array.from({ length: 500 }, (_, index) => ({
+    path: `/allowed/${String(index).padStart(4, "0")}`,
+    preview: "ü".repeat(1500),
+  }));
+  assert.equal(await store.finish({ ...owner, id }, {
+    status: "completed", items, truncated: false, timedOut: false,
+  }), true);
+  const params = calls[0]!;
+  const retained = JSON.parse(params[5] as string) as typeof items;
+  assert.ok(retained.length > 0 && retained.length < 500);
+  assert.ok(Buffer.byteLength(params[5] as string, "utf8") <= 1024 * 1024);
+  assert.deepEqual(retained, items.slice(0, retained.length));
+  assert.equal(params[6], true);
+  assert.equal(params[7], false);
+});
+
+test("durable search enforces 500-item cap and preserves exact fitting snapshots", async () => {
+  const calls: unknown[][] = [];
+  const fake = {
+    query: async (_statement: string, params: unknown[]) => {
+      calls.push(params);
+      return { rows: [{ id }], rowCount: 1 };
+    },
+  } as unknown as Pool;
+  const store = new PgSearchPersistence(fake);
+  const items = Array.from({ length: 501 }, (_, index) => ({ path: `/allowed/${index}` }));
+  await store.finish({ ...owner, id }, {
+    status: "completed", items, truncated: false, timedOut: false,
+  });
+  assert.equal((JSON.parse(calls[0]![5] as string) as unknown[]).length, 500);
+  assert.equal(calls[0]![6], true);
+  await store.finish({ ...owner, id }, {
+    status: "completed", items: items.slice(0, 2), truncated: false, timedOut: false,
+  });
+  assert.deepEqual(JSON.parse(calls[1]![5] as string), items.slice(0, 2));
+  assert.equal(calls[1]![6], false);
+});
+
 test("durable finish returns false when a stopped or expired row was not updated", async () => {
   const fake = {
     query: async () => ({ rows: [], rowCount: 0 }),
