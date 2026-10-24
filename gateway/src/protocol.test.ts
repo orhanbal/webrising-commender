@@ -57,6 +57,17 @@ test("validates bounded paginated file read with negative tail offset", () => {
   }));
 });
 
+test("supports large absolute PTY history cursors without unsafe numbers", () => {
+  const id = "00000000-0000-4000-8000-000000000001";
+  const action = parseAgentAction({
+    kind: "terminal_read_page", sessionId: id, offsetBytes: 2_000_000, maxBytes: 4096,
+  });
+  assert.equal(action.kind, "terminal_read_page");
+  assert.throws(() => parseAgentAction({
+    kind: "terminal_read_page", sessionId: id, offsetBytes: Number.MAX_SAFE_INTEGER + 1,
+  }));
+});
+
 test("rejects malformed persistent task ids", () => {
   assert.throws(() =>
     parseAgentAction({
