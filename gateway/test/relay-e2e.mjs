@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -166,6 +167,26 @@ try {
   );
   assert.equal(typeof infoBefore.cpuCount, "number");
 
+  // Exercise real remote-relay MCP search/start/stop/page, including no-result
+  // resurrection if the native worker races with the cancellation request.
+  const startedSearch = toolText(await rpc(503, "tools/call", {
+    name: "start_search",
+    arguments: { device_id: deviceId, path: tempRoot, query: "relay", search_type: "files" },
+  }));
+  assert.equal(typeof startedSearch.searchId, "string");
+  const stoppedSearch = toolText(await rpc(504, "tools/call", {
+    name: "stop_search",
+    arguments: { device_id: deviceId, search_id: startedSearch.searchId },
+  }));
+  assert.equal(stoppedSearch.status, "stopped");
+  const pagedStopped = toolText(await rpc(505, "tools/call", {
+    name: "get_more_search_results",
+    arguments: { device_id: deviceId, search_id: startedSearch.searchId, offset: 0, length: 10 },
+  }));
+  assert.equal(pagedStopped.status, "stopped");
+  assert.deepEqual(pagedStopped.items, []);
+
+
   const relayPort =
     firstRelay === "relay-a"
       ? 8788
@@ -182,6 +203,18 @@ try {
     },
   );
   assert.equal(unsignedInternal.status, 401);
+
+  // Signed relay cancellation requires the same trust boundary as execution.
+  const unsignedCancel = await fetch(
+    `http://127.0.0.1:${relayPort}/internal/relay/cancel`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deviceId, requestId: crypto.randomUUID() }),
+    },
+  );
+  assert.equal(unsignedCancel.status, 401);
+
 
   const drained = await jsonFetch(
     `/api/admin/relays/${encodeURIComponent(firstRelay)}`,
