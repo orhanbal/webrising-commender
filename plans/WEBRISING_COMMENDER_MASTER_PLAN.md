@@ -146,6 +146,10 @@ Current remote terminal, file, device and security features remain supported,
 but rich document support, paginated file/process operations and physical OS/MCP
 acceptance must be completed before declaring comparable product maturity.
 
+### Saatlik parity kuyruğu (24 Ekim 2026)
+
+Tek tetiklemede A (CI/P0), B (sıradaki eksik dikey), C (bağımsız veya kalan dikey), D (test/CI/plan/kanıt) sırası ve 1A–10D kodlu 40 alt görevin güncel durumu için [kanonik backlog kuyruğunu](HOURLY_BACKLOG_QUEUE_20261024.md) kullanın. Giriş HEAD `cf8387fa` 17/17 CI PASS; sonraki P0 search quota/redaction/native scan timeout commitlerinin son HEAD CI kabulü ayrıca beklenir. **Gerçek streaming/cancel, kalıcı arama/PTY, rollback, belge araçları ve dış platform kabulü tamamlanmadan eşdeğerlik ilan edilmez.** İleri Geliştirme Planı 1 bu kuyruğa dahil değildir.
+
 ## Future roadmap — approved feature candidates, not yet scheduled
 
 The [Advanced Development Plan 1 v0.3](ADVANCED_DEVELOPMENT_PLAN_1.md) records 21 user-approved post-parity feature candidates, including Time Machine, Safe Execution, privacy-preserving AI access, optional kernel observability, lightweight digital twin, controlled optimization, and resilience testing. **Status: accepted into discussion/design backlog, not approved for immediate implementation or production release.** WECOMMANDER remains an execution and security platform for the user's chosen AI client, not a required built-in LLM. Complete the Desktop Commander parity queue first; refine advanced work scope, implementation gates, and sequencing with the user separately.
