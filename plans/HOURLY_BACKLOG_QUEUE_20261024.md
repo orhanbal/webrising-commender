@@ -1,5 +1,18 @@
 # WECOMMANDER — Saatlik eşdeğerlik iş kuyruğu
 
+## 13.11–13.25 A/B/C/D ilerleme kaydı — 24 Ekim 2026
+
+- **A / PASSED (giriş):** `7d4ff46b` için [CI #40081678744](https://github.com/orhanbal/webrising-commender/actions/runs/40081678744) **17/17 PASS**; [platform #40082053980](https://github.com/orhanbal/webrising-commender/actions/runs/40082053980) PASS. Rust, Agent E2E ve integration job logları incelendi; giriş HEAD'inde kırmızı iş yoktu.
+- **B / PENDING (1A native cancellation):** `c602a7ad` ile Rust Agent aramaları `spawn_blocking` üzerinde çalışıyor; istek bazlı `AtomicBool` iptal bayrağı tarama döngüsü/dizin/satır sınırlarında kontrol ediliyor. WebSocket `cancel` geldiğinde search task'ı körlemesine abort edilmek yerine kooperatif çıkış yapıyor; disconnect/shutdown bayrakları temizliyor. Pre-cancelled Rust negatif testi eklendi.
+- **C / PENDING (1A Gateway cancel iletimi):** `0ad37183` ile `stop_search` → AbortSignal → local AgentHub → WebSocket `cancel` → native Agent zinciri kuruldu. Gateway in-flight kotası, Agent yanıtı veya timeout gelene kadar korunuyor; sonuçlar stop sonrası geri dönmüyor. Actor/device izolasyonu korunuyor. Gateway negatif yarış testi eklendi.
+- **D / PASSED (ara kod kontrolü):** `4071130f` rustfmt, `6f3eca4f` clippy ExecutionContext ve `523e532e` biçim düzeltmeleri. [CI #40085512074](https://github.com/orhanbal/webrising-commender/actions/runs/40085512074) kod HEAD'i için başlatıldı; son durum ayrıca kontrol edilmeli. İlk CI kırmızıları (fmt/clippy) düzeltildi.
+- **Açık 1A:** Gerçek streaming ve pause/resume yok. Yerel relay için fiziksel iptal uygulanmış olsa da uçtan uca yavaş tarama sırasında durdurma testi ve bölgesel relay üzerinden iptal iletimi henüz doğrulanmadı; bu nedenle 1A **PENDING**.
+- **Açık 1B:** PostgreSQL kalıcı arama oturumu ve restart sonrası actor/tenant/device izolasyonu **PENDING**. `stop_search` ile durdurulmuş snapshot hiçbir koşulda tekrar görünür olmamalı.
+- **BLOCKED_EXTERNAL:** Gerçek Windows/macOS/Ubuntu fiziksel kurulum, canlı ChatGPT/Claude ve Windows/Apple imzalama/noter kanıtları yok. Eşdeğerlik **PENDING**.
+- **Sonraki öncelik:** CI yeşilse 1A native streaming/pause, regional relay cancel ve 1B kalıcı search-session; kırmızıysa önce CI.
+
+
+
 **Tarih:** 2026-10-24, Europe/Istanbul. **Kapsam:** Yalnız `orhanbal/webrising-commender/main`.
 **Yönetim:** Her tetiklemede A = CI/P0/güvenlik, B = en öncelikli eksik dikey dilim, C = sonraki bağımsız/aynı dikey dilim, D = test/commit/CI/plan/kanıt. A–D *iş paketleri*dir; her birini bitirmiş saymak için ilgili gerçek testler gerekir. Kalanlar sonraki çalışmada sürdürülür.
 **Sınır:** Bu kuyruk, [İleri Geliştirme Planı 1](ADVANCED_DEVELOPMENT_PLAN_1.md) ile karıştırılmaz. Üretim, sunucular, başka repolar ve Desktop Commander araçları kapsam dışıdır. Ücretli servis veya zorunlu üçüncü taraf runtime bağımlılığı eklenmez.
@@ -18,7 +31,7 @@
 
 | Kod | Durum | Doğrulanmış mevcut kapsam / kalan kabul |
 |---|---|---|
-| 1A | PENDING | Native arama snapshot'ı var; gerçek streaming, pause ve fiziksel cancel, paralel oturum gerçek yük testi açık. |
+| 1A | PENDING | Yerel relay üzerinden kooperatif native cancel kodlandı (`c602a7ad`, `0ad37183`); streaming, pause/resume, regional relay cancel ve yavaş tarama negatif E2E açık. |
 | 1B | PENDING | Search session bellekte; Gateway restart sonrası devamlılık yok. Actor/tenant/device izolasyon testi mevcut; kalıcı depo/izolasyon kabulü açık. |
 | 1C | PENDING | Case sensitivity ve sayfalama E2E mevcut; bu tur 10s native scan bütçesi ve zaman aşımı sinyali eklendi. Büyük dizin, yarış, quota ve güncel CI kabulü açık. |
 | 1D | PENDING | 1–10 çoklu okuma ve per-file hata, line/tail sayfalama Agent E2E mevcut; büyük çıktı ve negatif OS kapsamı tamamlanmadı. |
