@@ -274,6 +274,11 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
 
   const name = String(request.params?.name || "");
   const args = request.params?.arguments || {};
+  // Reject unknown MCP tools before attempting device/tenant database access.
+  // This also avoids reporting a misleading missing-device error for typos.
+  if (!tools.some((entry) => entry.name === name)) {
+    return ok(request.id, toolResult({ error: "unknown_tool" }, true));
+  }
   const orgId = principal.organizationId;
 
   if (name === "devices_list") {
