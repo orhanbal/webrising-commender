@@ -15,7 +15,7 @@ export type AgentAction =
   | { kind: "fs_delete"; path: string; recursive?: boolean }
   | { kind: "fs_move"; source: string; destination: string }
   | { kind: "fs_tree"; path: string; maxDepth?: number; maxEntries?: number }
-  | { kind: "fs_search"; path: string; query: string; maxResults?: number }
+  | { kind: "fs_search"; path: string; query: string; caseSensitive?: boolean; maxResults?: number }
   | { kind: "text_search"; path: string; query: string; caseSensitive?: boolean; maxResults?: number }
   | { kind: "fs_replace"; path: string; search: string; replace: string; replaceAll?: boolean; expectedSha256?: string }
   | { kind: "process_exec"; command: string; cwd?: string; timeoutMs?: number }
@@ -89,6 +89,7 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     kind: z.literal("fs_search"),
     path: pathSchema,
     query: z.string().min(1).max(1024),
+    caseSensitive: z.boolean().optional(),
     maxResults: z.number().int().min(1).max(500).optional(),
   }).strict(),
   z.object({
