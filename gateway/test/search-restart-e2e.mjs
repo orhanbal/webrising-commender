@@ -71,11 +71,37 @@ try {
     caseSensitive: false, pending: ["/ci/not-yet-visited"],
     items: [{ path: "/ci/checkpoint-first.txt" }], scannedEntries: 32,
   };
+  const savedContent = {
+    version: 1, searchType: "content", root: "/ci", query: "content-fixture",
+    caseSensitive: false, pending: ["/ci/unvisited-text.txt"], items: [],
+    scannedEntries: 32, scannedBytes: 64,
+  };
   let didResumeNativeCheckpoint = false;
+  let didResumeNativeContent = false;
   function installResponder(ws) {
     ws.on("message", raw => {
       const request = JSON.parse(raw.toString());
-      if (request.type !== "request" || request.action?.kind !== "fs_search") return;
+      if (request.type !== "request" ||
+          !["fs_search", "text_search"].includes(request.action?.kind)) return;
+      if (request.action.kind === "text_search" && request.action.query === "content-fixture") {
+        if (request.action.resumeCheckpoint) {
+          assert.deepEqual(request.action.resumeCheckpoint, savedContent);
+          didResumeNativeContent = true;
+          ws.send(JSON.stringify({
+            type: "result", requestId: request.requestId, ok: true,
+            data: { items: [{ path: "/ci/unvisited-text.txt", line: 1,
+              preview: "content-fixture matched" }],
+              truncated: false, timedOut: false, scannedEntries: 64, scannedBytes: 96 },
+          }));
+        } else {
+          ws.send(JSON.stringify({
+            type: "search_progress", requestId: request.requestId,
+            items: [], scannedEntries: 32, scannedBytes: 64,
+            checkpoint: savedContent,
+          }));
+        }
+        return;
+      }
       if (request.action.query === "saved-fixture") {
         ws.send(JSON.stringify({
           type: "result", requestId: request.requestId, ok: true,
@@ -138,6 +164,17 @@ try {
     return page.status === "running" && page.progressUpdates > 0 &&
       page.items.length === 1 ? page : null;
   });
+  const contentSession = await tool(911, "start_search", {
+    device_id: deviceId, path: "/ci", query: "content-fixture", search_type: "content",
+  });
+  assert.equal(contentSession.status, "running");
+  await until(async () => {
+    const page = await tool(912, "get_more_search_results", {
+      device_id: deviceId, search_id: contentSession.searchId,
+    });
+    return page.status === "running" && page.progressUpdates > 0 &&
+      page.scannedBytes === 64 ? page : null;
+  });
   const orphan = await tool(903, "start_search", {
     device_id: deviceId, path: "/ci", query: "unanswered-fixture", search_type: "files",
   });
@@ -198,6 +235,19 @@ try {
     return page.status === "completed" ? page : null;
   }, 35_000);
   assert.equal(didResumeNativeCheckpoint, true);
+  const resumedContent = await until(async () => {
+    const page = await tool(913, "get_more_search_results", {
+      device_id: deviceId, search_id: contentSession.searchId,
+    });
+    return page.status === "completed" ? page : null;
+  }, 35_000);
+  assert.equal(didResumeNativeContent, true);
+  assert.equal(resumedContent.searchId, contentSession.searchId);
+  assert.equal(resumedContent.scannedBytes, 96);
+  assert.deepEqual(resumedContent.items, [
+    { path: "/ci/unvisited-text.txt", line: 1,
+      preview: "content-fixture matched" },
+  ]);
   assert.equal(resumedCheckpoint.searchId, checkpointed.searchId);
   assert.deepEqual(resumedCheckpoint.items, [
     { path: "/ci/checkpoint-first.txt" }, { path: "/ci/checkpoint-second.txt" },
@@ -226,7 +276,7 @@ try {
   });
   assert.equal(afterStop.status, "stopped");
   assert.deepEqual(afterStop.items, []);
-  console.log("search-restart-e2e: PASS (real SIGKILL/restart, checkpoint takeover, lease expiry, stop)");
+  console.log("search-restart-e2e: PASS (SIGKILL/restart, filename+content checkpoints, lease expiry, stop)");
 } finally {
   socket?.terminate();
 }

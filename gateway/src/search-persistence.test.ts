@@ -359,6 +359,7 @@ test("checkpoint takeover is gated on the original Gateway lease and scoped devi
   const store = new PgSearchPersistence(db);
   assert.deepEqual(await store.recoveryCandidates(), []);
   assert.match(statements[0]!.sql, /s.checkpoint is not null/);
+  assert.match(statements[0]!.sql, /s.search_type in \('files','content'\)/);
   assert.match(statements[0]!.sql, /d.revoked_at is null/);
   assert.match(statements[0]!.sql, /last_heartbeat_at<now\(\)-interval '15 seconds'/);
   assert.deepEqual(await store.claimRecovery({ ...owner, id }), {
@@ -367,6 +368,7 @@ test("checkpoint takeover is gated on the original Gateway lease and scoped devi
   assert.match(statements[1]!.sql, /returning s.progress_sequence,s.checkpoint/);
   assert.match(statements[1]!.sql, /s.origin_instance<>\$5/);
   assert.match(statements[1]!.sql, /items=s.checkpoint->'items'/);
+  assert.match(statements[1]!.sql, /scanned_bytes=case when s.search_type='content'/);
   assert.match(statements[1]!.sql, /scanned_entries=\(s.checkpoint->>'scannedEntries'\)::bigint/);
   assert.match(statements[1]!.sql, /s.organization_id=\$2 and s.actor=\$3 and s.device_id=\$4/);
   assert.match(statements[1]!.sql, /not exists\(select 1 from search_gateway_instances/);

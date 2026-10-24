@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isNativeFilenameCheckpoint } from "./search-checkpoint.js";
+import { isNativeContentCheckpoint, isNativeFilenameCheckpoint } from "./search-checkpoint.js";
 import { parseAgentAction } from "./protocol.js";
 
 const valid = {
@@ -43,5 +43,35 @@ test("Agent action schema refuses malformed or oversized native resume checkpoin
   assert.throws(() => parseAgentAction({
     kind: "fs_search", path: "/safe", query: "needle",
     resumeCheckpoint: { ...valid, items: Array(501).fill(null) },
+  }));
+});
+
+
+const validContent = {
+  version: 1, searchType: "content", root: "/safe", query: "needle",
+  caseSensitive: false, pending: ["/safe/sub"], items: [],
+  scannedEntries: 32, scannedBytes: 1024,
+};
+
+test("content checkpoint validator rejects replay of match-bearing or over-budget data", () => {
+  assert.equal(isNativeContentCheckpoint(validContent), true);
+  assert.equal(isNativeFilenameCheckpoint(validContent), false);
+  assert.equal(isNativeContentCheckpoint({ ...validContent, items: [{ preview: "forged" }] }), false);
+  assert.equal(isNativeContentCheckpoint({ ...validContent, scannedBytes: -1 }), false);
+  assert.equal(isNativeContentCheckpoint({ ...validContent, scannedBytes: 64 * 1024 * 1024 + 1 }), false);
+  assert.equal(isNativeContentCheckpoint({ ...validContent, scannedBytes: 1.5 }), false);
+  assert.equal(isNativeContentCheckpoint({ ...validContent, searchType: "files" }), false);
+  const action = parseAgentAction({
+    kind: "text_search", path: "/safe", query: "needle", resumeCheckpoint: validContent,
+  });
+  assert.equal(action.kind, "text_search");
+  if (action.kind !== "text_search") throw new Error("unexpected_action");
+  assert.deepEqual(action.resumeCheckpoint, validContent);
+  assert.throws(() => parseAgentAction({
+    kind: "text_search", path: "/safe", query: "needle",
+    resumeCheckpoint: { ...validContent, items: [{ preview: "forged" }] },
+  }));
+  assert.throws(() => parseAgentAction({
+    kind: "fs_search", path: "/safe", query: "needle", resumeCheckpoint: validContent,
   }));
 });
