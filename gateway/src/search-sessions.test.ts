@@ -94,3 +94,21 @@ test("stopping a search releases its per-actor concurrency slot", async () => {
   assert.equal(typeof replacement.searchId, "string");
   assert.equal(searchPage(p, "quota-device", created[0].searchId, 0, 1).status, "stopped");
 });
+
+test("stopped search cannot resurrect results from an in-flight agent response", async () => {
+  let complete!: (value: { items: unknown[]; truncated: boolean }) => void;
+  const pending = new Promise<{ items: unknown[]; truncated: boolean }>((resolve) => {
+    complete = resolve;
+  });
+  const delayed = { request: async () => pending } as unknown as DeviceRouter;
+  const p = { ...principal, actor: "cancel-race-user" };
+  const started = await startSearch(p, "cancel-race-device", delayed, {
+    path: "/safe", query: "needle", search_type: "content",
+  });
+  assert.equal(stopSearch(p, "cancel-race-device", started.searchId).status, "stopped");
+  complete({ items: [{ path: "/safe/secret.txt" }], truncated: false });
+  await new Promise(resolve => setImmediate(resolve));
+  const result = searchPage(p, "cancel-race-device", started.searchId, 0, 10);
+  assert.equal(result.status, "stopped");
+  assert.deepEqual(result.items, []);
+});
