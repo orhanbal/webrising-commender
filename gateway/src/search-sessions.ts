@@ -1,14 +1,14 @@
 import crypto from "node:crypto";
-import type { AgentAction } from "./protocol.js";
+import type { AgentAction, SearchProgress } from "./protocol.js";
 import type { DeviceRouter } from "./device-router.js";
 import type { Principal } from "./auth.js";
 import type { SearchPersistence } from "./search-persistence.js";
 
 /**
  * Bounded, tenant/actor-isolated search sessions.
- * The native search currently returns a bounded snapshot (up to 500 matches);
- * pagination becomes available when that remote request completes. This is
- * NOT a streaming scanner and is intentionally labelled accordingly.
+ * Native file/content scanning publishes bounded incremental pages while
+ * the agent is running (direct Relay/Gateway route). Completed results remain
+ * the authoritative final snapshot; remote regional relays use final snapshots.
  */
 type SearchEntry = {
   id: string;
@@ -23,6 +23,9 @@ type SearchEntry = {
   items: unknown[];
   truncated: boolean;
   timedOut: boolean;
+  scannedEntries: number;
+  scannedBytes: number;
+  progressUpdates: number;
   /** A stopped search still occupies its native execution slot until its request settles. */
   inFlight: boolean;
   controller: AbortController;
@@ -62,6 +65,9 @@ function summary(s: SearchEntry) {
     status: s.status,
     createdAt: new Date(s.createdAt).toISOString(),
     resultCount: s.items.length,
+    scannedEntries: s.scannedEntries,
+    scannedBytes: s.scannedBytes,
+    progressUpdates: s.progressUpdates,
     truncated: s.truncated,
     timedOut: s.timedOut,
     ...(s.error ? { error: s.error } : {}),
@@ -114,6 +120,9 @@ export async function startSearch(
     items: [],
     truncated: false,
     timedOut: false,
+    scannedEntries: 0,
+    scannedBytes: 0,
+    progressUpdates: 0,
     inFlight: true,
     controller: new AbortController(),
   };
@@ -138,7 +147,32 @@ export async function startSearch(
       // Keep the conservative database slot until its bounded lease expires.
     }
   };
-  void router.request(deviceId, action, undefined, entry.controller.signal).then(async data => {
+  const onProgress = (progress: SearchProgress) => {
+    if (!entry.inFlight || entry.status !== "running" || entry.controller.signal.aborted) return;
+    if (!Array.isArray(progress.items) || progress.items.length > 500 ||
+        !Number.isSafeInteger(progress.scannedEntries) || progress.scannedEntries < 0 ||
+        !Number.isSafeInteger(progress.scannedBytes) || progress.scannedBytes < 0 ||
+        progress.scannedEntries > 100_000 || progress.scannedBytes > 64 * 1024 * 1024) return;
+    // The hub validates payload size; retain the same limit in this boundary,
+    // including when a test or alternate router calls us directly.
+    if (Buffer.byteLength(JSON.stringify(progress.items), "utf8") > 1024 * 1024) return;
+    entry.progressUpdates += 1;
+    entry.items = progress.items;
+    entry.scannedEntries = progress.scannedEntries;
+    entry.scannedBytes = progress.scannedBytes;
+    if (persistence?.progress) {
+      const sequence = entry.progressUpdates;
+      void persistence.progress(entry, {
+        items: progress.items, scannedEntries: progress.scannedEntries,
+        scannedBytes: progress.scannedBytes, sequence,
+      }).then(committed => {
+        if (!committed && entry.status === "running" && entry.inFlight) entry.controller.abort();
+      }).catch(() => {
+        if (entry.status === "running" && entry.inFlight) entry.controller.abort();
+      });
+    }
+  };
+  void router.request(deviceId, action, undefined, entry.controller.signal, onProgress).then(async data => {
     entry.inFlight = false;
     if (entry.status !== "running") {
       await clearStoppedNativeSlot();
@@ -150,6 +184,7 @@ export async function startSearch(
       items: Array.isArray(payload?.items) ? payload.items.slice(0, 500) : [],
       truncated: Boolean(payload?.truncated),
       timedOut: Boolean(payload?.timedOut),
+      progressUpdates: entry.progressUpdates,
     };
     try {
       const committed = persistence ? await persistence.finish(entry, candidate) : true;
@@ -171,6 +206,8 @@ export async function startSearch(
     entry.items = candidate.items;
     entry.truncated = candidate.truncated;
     entry.timedOut = candidate.timedOut;
+    entry.scannedEntries = Number(payload?.scannedEntries ?? entry.scannedEntries);
+    entry.scannedBytes = Number(payload?.scannedBytes ?? entry.scannedBytes);
     entry.status = "completed";
   }, async error => {
     entry.inFlight = false;

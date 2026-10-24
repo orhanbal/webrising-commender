@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import type WebSocket from "ws";
 import { db } from "./db.js";
-import type { AgentAction, AgentMessage, GatewayMessage } from "./protocol.js";
+import type { AgentAction, AgentMessage, GatewayMessage, SearchProgress } from "./protocol.js";
 
 const MAX_PENDING_TOTAL = 1024;
 const MAX_PENDING_PER_DEVICE = 64;
@@ -12,6 +12,9 @@ type Pending = {
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
   abortCleanup?: () => void;
+  onProgress?: (progress: SearchProgress) => void;
+  signal?: AbortSignal;
+  isSearch: boolean;
 };
 
 export class AgentHub {
@@ -154,6 +157,20 @@ export class AgentHub {
       return;
     }
 
+    if (message.type === "search_progress") {
+      const pending = this.pending.get(message.requestId);
+      if (!pending || pending.deviceId !== deviceId || !pending.isSearch ||
+          pending.signal?.aborted || !pending.onProgress) return;
+      if (!Number.isSafeInteger(message.scannedEntries) || message.scannedEntries < 0 ||
+          message.scannedEntries > 100_000 ||
+          !Number.isSafeInteger(message.scannedBytes) || message.scannedBytes < 0 ||
+          message.scannedBytes > 64 * 1024 * 1024 ||
+          !Array.isArray(message.items) || message.items.length > 500 ||
+          Buffer.byteLength(JSON.stringify(message.items), "utf8") > 1024 * 1024) return;
+      try { pending.onProgress(message); } catch { /* A progress observer cannot disrupt the native request. */ }
+      return;
+    }
+
     if (message.type === "result") {
       const pending = this.pending.get(message.requestId);
       if (!pending || pending.deviceId !== deviceId) return;
@@ -165,7 +182,8 @@ export class AgentHub {
     }
   }
 
-  request(deviceId: string, action: AgentAction, approvalToken?: string | null, signal?: AbortSignal) {
+  request(deviceId: string, action: AgentAction, approvalToken?: string | null, signal?: AbortSignal,
+    onProgress?: (progress: SearchProgress) => void) {
     if (signal?.aborted) return Promise.reject(new Error("request_cancelled"));
     if (this.pending.size >= MAX_PENDING_TOTAL) {
       return Promise.reject(new Error("gateway-overloaded"));
@@ -214,7 +232,8 @@ export class AgentHub {
         } catch {}
       };
       const abortCleanup = () => signal?.removeEventListener("abort", onAbort);
-      this.pending.set(requestId, { deviceId, resolve, reject, timer, abortCleanup });
+      this.pending.set(requestId, { deviceId, resolve, reject, timer, abortCleanup,
+        signal, onProgress, isSearch: action.kind === "fs_search" || action.kind === "text_search" });
       if (signal) signal.addEventListener("abort", onAbort, { once: true });
       socket.send(JSON.stringify(message), (error) => {
         if (!error) return;

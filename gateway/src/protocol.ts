@@ -236,6 +236,12 @@ export type GatewayMessage =
   | { type: "cancel"; requestId: string }
   | { type: "ping"; timestamp: string };
 
+export type SearchProgress = {
+  items: unknown[];
+  scannedEntries: number;
+  scannedBytes: number;
+};
+
 export type AgentMessage =
   | {
       type: "hello";
@@ -246,6 +252,7 @@ export type AgentMessage =
       capabilities: string[];
     }
   | { type: "heartbeat"; timestamp: string }
+  | { type: "search_progress"; requestId: string; items: unknown[]; scannedEntries: number; scannedBytes: number }
   | { type: "result"; requestId: string; ok: true; data: unknown }
   | { type: "result"; requestId: string; ok: false; error: { code: string; message: string } };
 

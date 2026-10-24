@@ -19,12 +19,19 @@ export type SearchSnapshot = SearchKey & {
   searchType: "files" | "content";
   createdAt: number;
 };
+export type SearchProgressUpdate = {
+  items: unknown[];
+  scannedEntries: number;
+  scannedBytes: number;
+  sequence: number;
+};
 export type SearchCompletion = {
   status: "completed" | "error";
   items: unknown[];
   truncated: boolean;
   timedOut: boolean;
   error?: string;
+  progressUpdates?: number;
 };
 export type SearchSummary = {
   searchId: string;
@@ -34,6 +41,9 @@ export type SearchSummary = {
   status: "running" | "completed" | "error" | "stopped";
   createdAt: string;
   resultCount: number;
+  progressUpdates: number;
+  scannedEntries: number;
+  scannedBytes: number;
   truncated: boolean;
   timedOut: boolean;
   error?: string;
@@ -48,6 +58,8 @@ export interface SearchPersistence {
   create(snapshot: SearchSnapshot): Promise<void>;
   /** Clear a stopped row's physical slot only after its native request settles. */
   settleStopped?(key: SearchKey): Promise<void>;
+  /** Persist only monotonically newer native progress for the original actor/device. */
+  progress?(key: SearchKey, update: SearchProgressUpdate): Promise<boolean>;
   /** True only when the running row was atomically transitioned to its final status. */
   finish(key: SearchKey, result: SearchCompletion): Promise<boolean>;
   stop(key: SearchKey): Promise<void>;
@@ -63,6 +75,9 @@ type SearchRow = {
   search_type: "files" | "content";
   status: "running" | "completed" | "error" | "stopped";
   origin_instance: string;
+  progress_sequence: number;
+  scanned_entries: number;
+  scanned_bytes: number;
   created_at: Date;
   items: unknown[];
   truncated: boolean;
@@ -150,6 +165,36 @@ export class PgSearchPersistence implements SearchPersistence {
     );
   }
 
+  async progress(s: SearchKey, update: SearchProgressUpdate) {
+    // A stopped/expired request can never regain results. Sequence gating
+    // prevents a delayed database write from rolling back a newer page.
+    let items = update.items.slice(0, 500);
+    if (Buffer.byteLength(JSON.stringify(items), "utf8") > 1024 * 1024) {
+      // Never persist a partial item or more than 1 MiB of untrusted payload.
+      let low = 0;
+      let high = items.length;
+      while (low < high) {
+        const middle = Math.ceil((low + high) / 2);
+        if (Buffer.byteLength(JSON.stringify(items.slice(0, middle)), "utf8") <= 1024 * 1024) {
+          low = middle;
+        } else high = middle - 1;
+      }
+      items = items.slice(0, low);
+    }
+    const result = await this.pool.query(
+      `update search_sessions
+          set items=$5::jsonb,scanned_entries=$6,scanned_bytes=$7,progress_sequence=$8
+        where id=$1 and organization_id=$2 and actor=$3 and device_id=$4
+          and status='running' and native_inflight=true and expires_at>now()
+          and origin_instance=$9 and progress_sequence<$8
+        returning id`,
+      [s.id, s.organizationId, s.actor, s.deviceId,
+        JSON.stringify(items), update.scannedEntries, update.scannedBytes,
+        update.sequence, this.originInstance],
+    );
+    return Boolean(result.rowCount);
+  }
+
   async finish(s: SearchKey, result: SearchCompletion) {
     // Retain the longest ordered prefix that fits the durable 1 MiB cap.
     // Dropping the entire snapshot when one result crosses the cap loses
@@ -173,12 +218,14 @@ export class PgSearchPersistence implements SearchPersistence {
     }
     const updated = await this.pool.query(
       `update search_sessions
-          set status=$5,items=$6::jsonb,truncated=$7,timed_out=$8,error_code=$9,native_inflight=false
+          set status=$5,items=$6::jsonb,truncated=$7,timed_out=$8,error_code=$9,native_inflight=false,
+              progress_sequence=greatest(progress_sequence,$10)
         where id=$1 and organization_id=$2 and actor=$3 and device_id=$4
           and status='running' and expires_at>now()
         returning id`,
       [s.id, s.organizationId, s.actor, s.deviceId,
-        result.status, JSON.stringify(items), truncated, result.timedOut, result.error ?? null],
+        result.status, JSON.stringify(items), truncated, result.timedOut,
+        result.error ?? null, result.progressUpdates ?? 0],
     );
     return Boolean(updated.rowCount);
   }
@@ -214,13 +261,18 @@ export class PgSearchPersistence implements SearchPersistence {
     const interrupted = row.status === "running" &&
       row.origin_instance !== this.originInstance && row.origin_alive !== true;
     const status = interrupted ? "error" : row.status;
-    const items = status === "completed" && Array.isArray(row.items) ? row.items : [];
+    const items = (status === "completed" || status === "running") &&
+      Array.isArray(row.items) ? row.items : [];
     const error = interrupted ? "search_interrupted" : row.error_code;
     return {
       searchId: row.id, path: row.path, query: row.query,
       searchType: row.search_type, status,
       createdAt: new Date(row.created_at).toISOString(),
-      resultCount: items.length, truncated: row.truncated,
+      resultCount: items.length,
+      progressUpdates: row.progress_sequence ?? 0,
+      scannedEntries: Number(row.scanned_entries ?? 0),
+      scannedBytes: Number(row.scanned_bytes ?? 0),
+      truncated: row.truncated,
       timedOut: row.timed_out, ...(error ? { error } : {}),
     };
   }
@@ -229,6 +281,8 @@ export class PgSearchPersistence implements SearchPersistence {
     const result = await this.pool.query<SearchRow>(
       `select s.id,s.path,s.query,s.search_type,s.status,s.origin_instance,
               s.created_at,s.items,s.truncated,s.timed_out,s.error_code,
+              s.progress_sequence,s.scanned_entries,s.scanned_bytes,
+              s.progress_sequence,s.scanned_entries,s.scanned_bytes,
               (g.last_heartbeat_at > now() - interval '15 seconds') as origin_alive
          from search_sessions s
          left join search_gateway_instances g on g.id=s.origin_instance
@@ -239,7 +293,8 @@ export class PgSearchPersistence implements SearchPersistence {
     const row = result.rows[0];
     if (!row) throw new Error("search_not_found");
     const summary = this.summary(row);
-    const items = summary.status === "completed" && Array.isArray(row.items) ? row.items : [];
+    const items = (summary.status === "completed" || summary.status === "running") &&
+      Array.isArray(row.items) ? row.items : [];
     return {
       ...summary, offset, length, items: items.slice(offset, offset + length),
       hasMore: offset + length < items.length,
