@@ -10,6 +10,15 @@ Son gözden geçirme: 2026-10-24. Öncelik: eşdeğerlik > güvenilirlik/kabul >
 - **Açık:** Excel/DOCX/PDF formatlarına özel araçlar, gerçek ChatGPT/Claude MCP kabulü, üç OS fiziksel kabulü, platform imzalama/noter, kullanıcı paneli tam işlev kabulü.
 - `main` HEAD her zaman kabul edilmiş sürüm değildir. Her yeni commit'in CI sonucu ve Agent E2E kanıtı ayrıca doğrulanır.
 
+## 03.00 P0 arama güvenilirliği — uygulanan düzeltme (2026-10-24)
+
+- **Önceki kanıtlı baseline:** `00a5fe63` üzerinde `ci #40037548484` PASS ve `platform-distribution #40038012018` PASS.
+- **KODLANDI / güncel HEAD CI bekliyor:** Native `fs_search` daha önce her zaman küçük/büyük harfe duyarsızdı; `start_search(search_type=files, case_sensitive=true)` parametresi sessizce yok sayılıyordu. Rust `AgentAction`, dosya arama fonksiyonu, Gateway Zod protokolü, MCP şeması ve oturum yönlendirmesinde `caseSensitive` uçtan uca geçiriliyor; varsayılan eski davranış (`false`) korunuyor.
+- **KODLANDI / test eklendi:** Gerçek Agent MCP E2E'de `CaseMatch.txt` / `casematch.txt` ayrımı ve oturum sonuç sayfalaması; Gateway unit testinde arama parametresi iletimi.
+- **KODLANDI / test eklendi:** `stop_search` ile durdurulan oturumun aynı kullanıcı için eşzamanlılık kotasını tüketmemesi, global limit dolduğunda durmuş oturumların geri kazanılması. Durmuş oturumun sayfalı durum sorgusu geçici süre boyunca korunur.
+- **PENDING:** Güncel kod HEAD `959ed2a4` için GitHub Actions CI run `40043081577` başlatıldı; sonucu görülmeden kabul PASS değildir.
+- **AÇIK:** Gerçek native akışlı arama ve iptal, yeniden başlatmada oturum devamlılığı, kalıcı terminal geçmişi ve sürüm/rollback. `stop_search` şu an yalnızca Gateway sonuçlarını durdurur; devam eden native taramayı fiziksel olarak iptal etmez.
+
 ## Karşılaştırma kaynağı
 - Desktop Commander'ın yayımlanan MCP araç listesi: https://github.com/mcp/wonderwhy-er/desktop-commander
 - Remote MCP araç listesi: https://github.com/mcp/app.desktopcommander/remote-desktop-commander
