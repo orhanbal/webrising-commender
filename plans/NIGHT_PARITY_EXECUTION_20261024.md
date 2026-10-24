@@ -45,6 +45,16 @@
 - **AÇIK:** Prompt/REPL tanıma, süreç ağacı temizleme, PTY disk spool ve Agent yeniden başlatması sonrası geçmiş, Windows/macOS fiziksel kabul.
 - **Sonraki adım:** CI tamamen yeşilse P0 terminal süreç temizliği açıklarını, ardından P1 Excel desteğini ele al; CI kırmızıysa önce düzelt.
 
+## 05.00 oturumu — P1 XLSX inceleme ve güvenlik (2026-10-24)
+
+- **Giriş HEAD:** `cb97d38f`; `ci #40054203831` kontrol edildi: 15/17 job PASS, Windows/macOS kabul artifact'leri henüz sürüyordu; bu nedenle tüm CI'ya PASS denmedi.
+- **Önceden mevcut, tekrarlanmadı:** XLSX/XLSM metadata, 50×20 hücre okuma, 50.000 hücrede arama, XLSX yeni dosyaya 100 hücre düzenleme, SHA-256 önkoşulu ve gerçek Agent E2E fixture.
+- **Kodlandı:** `c8a25876` — arama sonucu hücre önizlemesi 4096 UTF-8 baytla sınırlandı; kaydetme bitiminden sonra kaynak SHA-256 tekrar denetlendi. Birim testi Unicode sınırını doğruluyor.
+- **E2E test eklendi:** `bc76d202` — 6000+ karakterli XLSX hücresinde geç eşleşme, sonuç önizlemesi ve `valueTruncated` denetimi.
+- **Plan güncellemesi:** `ee16dd83` — P1 sınırları ve açık kabul işleri belgelendi.
+- **PENDING:** Son HEAD'in CI/Agent E2E ve Windows/macOS paket artifact sonuçları.
+- **AÇIK:** XLSM yazma, karmaşık OOXML koruma, formül/stil matrisi, gerçek cihaz kabulü. Öncelik, CI sonucu kırmızıysa düzeltmek; yeşilse 06.00 DOCX/PDF araçlarına geçmek.
+
 ## Bitirme tanımı
 
 Tüm maddeleri *kodlandı* diye tamamlandı sayma. `Desktop Commander parity achieved` kararı ancak resmi plan matrisi ve platform kabulünden sonra verilebilir. Harici imzalama ve fiziksel makine testleri kullanıcının erişimini gerektiriyorsa açık kanıt/komutları üret; bunları tamamlanmış saymadan kalan görevleri kodlamaya devam et.
