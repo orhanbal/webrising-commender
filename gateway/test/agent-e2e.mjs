@@ -500,6 +500,25 @@ try {
   } finally {
     fs.rmSync(batchOutside, { force: true });
   }
+  // 1D: enforce an aggregate 256 KiB raw-byte budget across otherwise
+  // individually valid files; a failed item must not corrupt earlier reads.
+  const aggregatePaths = Array.from({ length: 5 }, (_, i) =>
+    path.join(tempRoot, `aggregate-${i}.bin`));
+  aggregatePaths.forEach(p => fs.writeFileSync(p, Buffer.alloc(60 * 1024, 0x62)));
+  const aggregateRead = await tool(306, "fs_read_multiple", {
+    device_id: deviceId, paths: aggregatePaths,
+  });
+  assert.equal(aggregateRead.count, 5);
+  for (let i = 0; i < 4; i += 1) {
+    assert.equal(aggregateRead.items[i].ok, true);
+    assert.equal(aggregateRead.items[i].data.size, 60 * 1024);
+  }
+  assert.equal(aggregateRead.items[4].ok, false);
+  assert.equal(aggregateRead.items[4].error, "read_failed");
+  assert.equal(aggregateRead.items[4].data, undefined);
+  assert.ok(aggregateRead.items.reduce((total, item) =>
+    total + (item.data?.size ?? 0), 0) <= 256 * 1024);
+
   // 1D: a symlink placed inside an allowed root cannot launder an external
   // file into a native multi-read result. A neighboring valid file survives.
   const outsideBatchDir = fs.mkdtempSync(path.join(os.tmpdir(), "commander-batch-symlink-"));
