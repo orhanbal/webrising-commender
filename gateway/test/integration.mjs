@@ -1145,6 +1145,70 @@ try {
   await liveOwner.activate();
   await liveObserver.activate();
   try {
+    // 1C-04/06: actual concurrent actor reservations across two Gateway
+    // persistence instances, followed by simultaneous stop/settle attempts.
+    const parallelActor = `parallel-${randomUUID()}`;
+    const isolatedActor = `isolated-${randomUUID()}`;
+    const parallelKeys = Array.from({ length: 9 }, () => ({
+      ...liveKey, id: randomUUID(), actor: parallelActor,
+    }));
+    try {
+      const attempts = await Promise.allSettled(parallelKeys.map((key, index) =>
+        (index % 2 === 0 ? liveOwner : liveObserver).create({
+          ...key, path: "/ci", query: "parallel-race", searchType: "files",
+          createdAt: Date.now(),
+        })));
+      const granted = attempts.flatMap((result, index) =>
+        result.status === "fulfilled" ? [index] : []);
+      const rejected = attempts.flatMap((result, index) =>
+        result.status === "rejected" ? [index] : []);
+      assert.equal(granted.length, 8, "Two Gateways must share an eight-search quota");
+      assert.equal(rejected.length, 1);
+      assert.match(String(attempts[rejected[0]].reason), /search_session_limit/);
+      const ownerIndex = granted.find(index => index % 2 === 0);
+      assert.notEqual(ownerIndex, undefined);
+      const settledKey = parallelKeys[ownerIndex];
+      await Promise.all([liveOwner.stop(settledKey), liveObserver.stop(settledKey)]);
+      // Stop without native settlement must not free a slot.
+      await assert.rejects(
+        liveObserver.create({
+          ...parallelKeys[rejected[0]], path: "/ci", query: "still-unsettled",
+          searchType: "files", createdAt: Date.now(),
+        }),
+        /search_session_limit/,
+      );
+      await Promise.all([
+        liveObserver.settleStopped(settledKey),
+        liveOwner.settleStopped(settledKey),
+        liveOwner.settleStopped(settledKey),
+      ]);
+      const settledRow = await searchPool.query(
+        "select native_inflight from search_sessions where id=$1", [settledKey.id],
+      );
+      assert.equal(settledRow.rows[0]?.native_inflight, false);
+      await liveObserver.create({
+        ...parallelKeys[rejected[0]], path: "/ci", query: "slot-reused-once",
+        searchType: "files", createdAt: Date.now(),
+      });
+      await assert.rejects(
+        liveOwner.create({
+          ...liveKey, id: randomUUID(), actor: parallelActor, path: "/ci",
+          query: "no-double-release", searchType: "files", createdAt: Date.now(),
+        }),
+        /search_session_limit/,
+      );
+      // Another actor on the same device and organization is not throttled.
+      await liveOwner.create({
+        ...liveKey, id: randomUUID(), actor: isolatedActor, path: "/ci",
+        query: "other-actor-isolated", searchType: "files", createdAt: Date.now(),
+      });
+    } finally {
+      await searchPool.query(
+        "delete from search_sessions where organization_id=$1 and actor in ($2,$3)",
+        [liveKey.organizationId, parallelActor, isolatedActor],
+      );
+    }
+
     await liveOwner.create({
       ...liveKey, path: "/ci", query: "live-remote-owner", searchType: "files",
       createdAt: Date.now(),
