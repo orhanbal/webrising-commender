@@ -485,6 +485,7 @@ export async function readRelayStream<T>(
   let completed = false;
   let frames = 0;
   let totalBytes = 0;
+  let successfullyCompleted = false;
   const frame = (bytes: Buffer) => {
     if (++frames > 4096 || bytes.length === 0) throw new Error("relay_stream_invalid_frame");
     let item: Record<string, unknown>;
@@ -543,8 +544,12 @@ export async function readRelayStream<T>(
       }
     }
     if (pending.length !== 0 || !completed) throw new Error("relay_stream_incomplete");
+    successfullyCompleted = true;
     return final as T;
   } finally {
+    // Malformed or truncated relay streams must not keep downloading in the
+    // background after the caller has already rejected their contents.
+    if (!successfullyCompleted) await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
 }
