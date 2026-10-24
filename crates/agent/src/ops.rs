@@ -57,11 +57,17 @@ pub async fn execute(
             let policy = policy.clone();
             tokio::task::spawn_blocking(move || {
                 spreadsheet_ops::read_range(
-                    &policy, &path, &sheet, start_row, start_column, row_count, column_count,
+                    &policy,
+                    &path,
+                    &sheet,
+                    start_row,
+                    start_column,
+                    row_count,
+                    column_count,
                 )
             })
             .await?
-        },
+        }
         AgentAction::XlsxFind {
             path,
             sheet,
@@ -81,7 +87,7 @@ pub async fn execute(
                 )
             })
             .await?
-        },
+        }
         AgentAction::XlsxWriteCells {
             path,
             output_path,
@@ -101,7 +107,7 @@ pub async fn execute(
                 )
             })
             .await?
-        },
+        }
         AgentAction::FsWrite {
             path,
             content_base64,
