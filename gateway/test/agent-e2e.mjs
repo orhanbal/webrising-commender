@@ -598,6 +598,9 @@ try {
     return page.status === "completed" ? page : false;
   });
   assert.equal(bulkPage.resultCount, 500);
+  assert.ok(bulkPage.progressUpdates > 0,
+    "Real Rust Agent must emit interim snapshots over the WebSocket protocol");
+  assert.ok(bulkPage.scannedEntries > 0);
   assert.equal(bulkPage.items.length, 10);
   assert.equal(bulkPage.hasMore, false);
   assert.equal(bulkPage.truncated, true);

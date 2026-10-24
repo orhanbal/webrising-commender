@@ -871,10 +871,27 @@ try {
     ...durableKey, path: "/ci", query: "needle", searchType: "files",
     createdAt: durableCreatedAt,
   });
+  assert.equal(await durableStore.progress(durableKey, {
+    items: [{ path: "/ci/one.txt" }], scannedEntries: 32,
+    scannedBytes: 0, sequence: 1,
+  }), true);
+  const beforeCompletion = await durableStore.page(durableKey, durableKey.id, 0, 10);
+  assert.equal(beforeCompletion.status, "running");
+  assert.deepEqual(beforeCompletion.items, [{ path: "/ci/one.txt" }]);
+  assert.equal(beforeCompletion.progressUpdates, 1);
+  assert.equal(beforeCompletion.scannedEntries, 32);
+  assert.equal(await durableStore.progress({ ...durableKey, actor: "foreign-actor" }, {
+    items: [{ path: "/ci/foreign" }], scannedEntries: 90,
+    scannedBytes: 0, sequence: 3,
+  }), false);
+  assert.equal(await durableStore.progress(durableKey, {
+    items: [{ path: "/ci/out-of-order" }], scannedEntries: 12,
+    scannedBytes: 0, sequence: 1,
+  }), false);
   await durableStore.finish(durableKey, {
     status: "completed",
     items: [{ path: "/ci/one.txt" }, { path: "/ci/two.txt" }],
-    truncated: false, timedOut: false,
+    truncated: false, timedOut: false, progressUpdates: 1,
   });
   const afterRestart = new PgSearchPersistence(searchPool);
   const restored = await afterRestart.page(durableKey, durableKey.id, 1, 1);
@@ -937,6 +954,10 @@ try {
   const stillStopped = await afterRestart.page(durableKey, durableKey.id, 0, 10);
   assert.equal(stillStopped.status, "stopped");
   assert.deepEqual(stillStopped.items, []);
+  assert.equal(await durableStore.progress(durableKey, {
+    items: [{ path: "/ci/must-not-resurrect" }],
+    scannedEntries: 99, scannedBytes: 0, sequence: 9,
+  }), false);
 
   const interruptedKey = { ...durableKey, id: randomUUID() };
   await durableStore.create({

@@ -17,6 +17,44 @@ const sampleRow = {
   truncated: false, timed_out: false, error_code: null,
 };
 
+test("monotone progress persistence cannot update stopped or another actor's scan", async () => {
+  const writes: Array<{ sql: string; args: unknown[] }> = [];
+  const fake = {
+    query: async (sql: string, args: unknown[]) => {
+      writes.push({ sql, args });
+      return { rows: [{ id }], rowCount: 1 };
+    },
+  } as unknown as Pool;
+  const store = new PgSearchPersistence(fake);
+  const accepted = await store.progress({ ...owner, id }, {
+    items: [{ path: "/allowed/one" }], scannedEntries: 80,
+    scannedBytes: 1000, sequence: 2,
+  });
+  assert.equal(accepted, true);
+  assert.match(writes[0]!.sql, /status='running'/);
+  assert.match(writes[0]!.sql, /origin_instance=\$9/);
+  assert.match(writes[0]!.sql, /progress_sequence<\$8/);
+  assert.deepEqual(writes[0]!.args.slice(0, 4),
+    [id, owner.organizationId, owner.actor, owner.deviceId]);
+  assert.equal(writes[0]!.args[7], 2);
+  const tooLarge = Array.from({ length: 500 }, (_, i) => ({
+    path: `/allowed/${i}`, preview: "ü".repeat(2000),
+  }));
+  await store.progress({ ...owner, id }, {
+    items: tooLarge, scannedEntries: 90, scannedBytes: 2000, sequence: 3,
+  });
+  const persisted = JSON.parse(writes[1]!.args[4] as string) as unknown[];
+  assert.ok(persisted.length > 0 && persisted.length < 500);
+  assert.ok(Buffer.byteLength(writes[1]!.args[4] as string, "utf8") <= 1024 * 1024);
+  const rejecting = {
+    query: async () => ({ rows: [], rowCount: 0 }),
+  } as unknown as Pool;
+  assert.equal(await new PgSearchPersistence(rejecting).progress({ ...owner, id }, {
+    items: [{ path: "/allowed/must-not-reappear" }],
+    scannedEntries: 100, scannedBytes: 2000, sequence: 4,
+  }), false);
+});
+
 test("completed search page survives new gateway persistence instance and is actor scoped", async () => {
   const queries: Array<{ statement: string; parameters: unknown[] | undefined }> = [];
   const fake = {

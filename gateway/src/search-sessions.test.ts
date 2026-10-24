@@ -20,6 +20,42 @@ const remote = {
   }),
 } as unknown as DeviceRouter;
 
+test("native progress exposes scoped live pages and cannot resurrect stopped results", async () => {
+  const actor = { ...principal, actor: "progress-actor" };
+  let progress!: (value: { items: unknown[]; scannedEntries: number; scannedBytes: number }) => void;
+  let finish!: (value: { items: unknown[]; truncated: boolean }) => void;
+  const router = {
+    request: async (_device: string, _action: unknown, _approval: unknown,
+      _signal: AbortSignal, onProgress: typeof progress) => {
+      progress = onProgress;
+      return new Promise<{ items: unknown[]; truncated: boolean }>(resolve => { finish = resolve; });
+    },
+  } as unknown as DeviceRouter;
+  const started = await startSearch(actor, "progress-device", router, {
+    path: "/safe", query: "needle", search_type: "files",
+  });
+  progress({ items: [{ path: "/safe/one" }], scannedEntries: 64, scannedBytes: 0 });
+  const live = await searchPage(actor, "progress-device", started.searchId, 0, 10);
+  assert.equal(live.status, "running");
+  assert.deepEqual(live.items, [{ path: "/safe/one" }]);
+  assert.equal(live.progressUpdates, 1);
+  assert.equal(live.scannedEntries, 64);
+  await assert.rejects(
+    searchPage({ ...actor, actor: "other" }, "progress-device", started.searchId, 0, 10),
+    /search_not_found/,
+  );
+  // Unbounded or forged progress must not replace the guarded snapshot.
+  progress({ items: Array.from({ length: 501 }, () => "x"), scannedEntries: 100, scannedBytes: 0 });
+  assert.equal((await searchPage(actor, "progress-device", started.searchId, 0, 10)).progressUpdates, 1);
+  await stopSearch(actor, "progress-device", started.searchId);
+  progress({ items: [{ path: "/safe/secret" }], scannedEntries: 200, scannedBytes: 0 });
+  finish({ items: [{ path: "/safe/secret" }], truncated: false });
+  await new Promise(resolve => setImmediate(resolve));
+  const stopped = await searchPage(actor, "progress-device", started.searchId, 0, 10);
+  assert.equal(stopped.status, "stopped");
+  assert.deepEqual(stopped.items, []);
+});
+
 test("starts and pages bounded search sessions by actor and device", async () => {
   const started = await startSearch(principal, "device-a", remote, {
     path: "/safe", query: "txt", search_type: "files",
