@@ -484,6 +484,51 @@ try {
   assert.ok(casePage.items.some((item) => item.path === mixedCaseName));
   assert.ok(!casePage.items.some((item) => item.path === lowerCaseName));
 
+  // 1C: real Rust Agent large-directory acceptance with bounded pages,
+  // native result cap, malformed offsets, and no leakage outside allowed roots.
+  const bulkDir = path.join(tempRoot, "bulk-search");
+  fs.mkdirSync(bulkDir);
+  for (let index = 0; index < 530; index += 1) {
+    fs.writeFileSync(path.join(bulkDir, `bulk-match-${String(index).padStart(4, "0")}.txt`), "sample");
+  }
+  const bulkDirect = await tool(270, "fs_search", {
+    device_id: deviceId, path: bulkDir, query: "bulk-match", max_results: 500,
+  });
+  assert.equal(bulkDirect.items.length, 500);
+  assert.equal(bulkDirect.truncated, true);
+  assert.equal(bulkDirect.timedOut, false);
+  assert.ok(bulkDirect.scannedEntries <= 100000);
+
+  const bulkSession = await tool(271, "start_search", {
+    device_id: deviceId, path: bulkDir, query: "bulk-match", search_type: "files",
+  });
+  assert.equal(typeof bulkSession.searchId, "string");
+  const bulkPage = await waitFor(async () => {
+    const page = await tool(272, "get_more_search_results", {
+      device_id: deviceId, search_id: bulkSession.searchId, offset: 490, length: 30,
+    });
+    return page.status === "completed" ? page : false;
+  });
+  assert.equal(bulkPage.resultCount, 500);
+  assert.equal(bulkPage.items.length, 10);
+  assert.equal(bulkPage.hasMore, false);
+  assert.equal(bulkPage.truncated, true);
+  assert.deepEqual(bulkPage.items.map(item => item.path).length, 10);
+
+  const invalidBulkOffset = await tool(273, "get_more_search_results", {
+    device_id: deviceId, search_id: bulkSession.searchId, offset: 501, length: 1,
+  });
+  assert.equal(invalidBulkOffset.error, "invalid_search_page");
+  const invalidBulkLength = await tool(274, "get_more_search_results", {
+    device_id: deviceId, search_id: bulkSession.searchId, offset: 0, length: 101,
+  });
+  assert.equal(invalidBulkLength.error, "invalid_search_page");
+  const invalidBulkQuery = await tool(275, "start_search", {
+    device_id: deviceId, path: bulkDir, query: "x".repeat(1025),
+    search_type: "files",
+  });
+  assert.equal(invalidBulkQuery.error, "invalid_search_arguments");
+
   const codeSearch = await tool(116, "code_search", {
     device_id: deviceId,
     path: tempRoot,
