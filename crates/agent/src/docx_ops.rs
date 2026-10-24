@@ -255,7 +255,7 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let path = root.join("not-docx.txt");
         fs::write(&path, b"test").unwrap();
-        let policy = PathPolicy::new(&[root.clone()]).unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
         assert!(inspect(&policy, path.to_str().unwrap()).is_err());
         fs::remove_dir_all(&root).unwrap();
     }
