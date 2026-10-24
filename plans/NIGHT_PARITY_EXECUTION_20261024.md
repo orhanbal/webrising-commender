@@ -1,3 +1,12 @@
+## 24 Ekim 2026 — A/B/C/D gerçek Agent arama regresyonları (15.17 TRT)
+
+- **A — PASSED (giriş HEAD):** `b222da7a` [CI #40091796139](https://github.com/orhanbal/webrising-commender/actions/runs/40091796139) **17/17 PASSED**, [platform #40092082366](https://github.com/orhanbal/webrising-commender/actions/runs/40092082366) **PASSED**. `agent-e2e`, Rust ve Gateway job sonuçları/logları incelendi. Bu sonuçlar yeni commitlere taşınmaz.
+- **B — 1A PENDING (test eklendi):** [`4ed6397b`](https://github.com/orhanbal/webrising-commender/commit/4ed6397bd11185f644a37d10ae2a6c450812f3f4) gerçek Rust Agent üzerinden **iki eşzamanlı `start_search` oturumu**, birini `stop_search` ile durdurma, diğerinin 500 sonuçla tamamlanması ve durdurulmuş oturumun sonuçlarının yeniden görünmemesi için MCP E2E regresyonu ekler. Bu test **gerçek streaming, pause/resume veya fiziksel native iptal gecikmesini kanıtlamaz**.
+- **C — 1C PENDING (test eklendi):** [`31e3770a`](https://github.com/orhanbal/webrising-commender/commit/31e3770a00044337c7be530e53d36edb129fe4d8) doğrudan `text_search` ve sayfalı `start_search` üzerinde case-sensitive/insensitive içerik eşleşmesinin Rust Agent'da ayrışmasını test eder.
+- **D — PENDING (güncel HEAD kabulü):** Kod commitleri için [CI #40093329014](https://github.com/orhanbal/webrising-commender/actions/runs/40093329014) ve [CI #40093339478](https://github.com/orhanbal/webrising-commender/actions/runs/40093339478) tetiklendi; dokümantasyon commitinin kendi CI'sı ayrıca doğrulanır. **17/17 PASSED** yalnız `b222da7a` için kanıtlıdır. Son HEAD testleri geçene kadar yeni kapsam **PENDING**.
+- **Kuyruk:** 1A streaming/pause/resume ve uzun tarama gerçek native iptal; 1B çalışan taramanın restart sonrası devamı; 1C OS/stress/race; 1D–10D açık. 7B/10C canlı ChatGPT/Claude, fiziksel OS ve imzalama/noter **BLOCKED_EXTERNAL**. **Genel eşdeğerlik PENDING**.
+- **Sınır:** Yalnız `orhanbal/webrising-commender/main`; üretim, sunucu, başka depo, Desktop Commander ve Remote Desktop Commander kullanılmadı. Ücretli runtime bağımlılığı eklenmedi.
+
 ## 24 Ekim — 1C büyük dizin / güvenli arama kabulü
 
 - **Giriş kabulü:** `e7256adc` [CI #40088982183](https://github.com/orhanbal/webrising-commender/actions/runs/40088982183) **17/17 PASSED**, [platform #40089288689](https://github.com/orhanbal/webrising-commender/actions/runs/40089288689) PASSED.
