@@ -605,6 +605,26 @@ try {
   assert.equal(bulkPage.hasMore, false);
   assert.equal(bulkPage.truncated, true);
   assert.deepEqual(bulkPage.items.map(item => item.path).length, 10);
+  // 1C pagination must be a consistent, duplicate-free snapshot across every
+  // page, not merely a correct last-page length.
+  const allBulkPaths = [];
+  for (let pageIndex = 0; pageIndex < 5; pageIndex += 1) {
+    const page = await tool(297 + pageIndex, "get_more_search_results", {
+      device_id: deviceId, search_id: bulkSession.searchId,
+      offset: pageIndex * 100, length: 100,
+    });
+    assert.equal(page.status, "completed");
+    assert.equal(page.resultCount, 500);
+    assert.equal(page.items.length, 100);
+    assert.equal(page.hasMore, pageIndex < 4);
+    allBulkPaths.push(...page.items.map(item => item.path));
+  }
+  assert.equal(new Set(allBulkPaths).size, 500,
+    "A bounded native search must not return duplicate files across pages");
+  assert.deepEqual(allBulkPaths.slice(490), bulkPage.items.map(item => item.path),
+    "Search pagination must remain stable when the same snapshot is reread");
+  assert.ok(allBulkPaths.every(file => path.dirname(file) === bulkDir),
+    "Search pagination must not escape the requested directory");
 
   // Real native pause/resume goes through MCP -> Gateway ownership -> Agent
   // ACK. Many nonmatching entries keep the scanner live long enough to pause
