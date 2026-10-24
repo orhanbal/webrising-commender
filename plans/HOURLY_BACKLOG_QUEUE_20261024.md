@@ -205,8 +205,8 @@
 |---|---|---|
 | 1A | PENDING | Native content read nofollow hardening `c8cb2438` eklendi; streaming/pause/resume hâlâ açık.  Cross-Gateway native cancel polling `1dd8091f` eklendi; gerçek streaming/pause/resume ve uzun tarama kabulü açık. Yerel relay üzerinden kooperatif native cancel kodlandı (`c602a7ad`, `0ad37183`); streaming, pause/resume, regional relay cancel ve yavaş tarama negatif E2E açık. |
 | 1B | PENDING | PostgreSQL scoped completed snapshots (`fc51c76c`) restart sonrası okunuyor; Gateway liveness (`bf07c7c5`), cross-instance stop CAS (`781a5efc`) ve native cancel polling (`1dd8091f`) eklendi. Gerçek iki Gateway + native Agent uzun tarama, scanner'ın restart sonrası devamı ve CI kabulü açık. |
-| 1C | PENDING | Case sensitivity ve sayfalama E2E mevcut; bu tur 10s native scan bütçesi ve zaman aşımı sinyali eklendi. Büyük dizin, yarış, quota ve güncel CI kabulü açık. |
-| 1D | PENDING | `fs_read`/`fs_read_lines` final symlink guard ve negatif E2E `d7e47d93` eklendi.  1–10 çoklu okuma ve per-file hata, line/tail sayfalama Agent E2E mevcut; büyük çıktı ve negatif OS kapsamı tamamlanmadı. |
+| 1C | PENDING | 530 native fixture/500 sonuç sayfalama, Unicode UTF-8 bütçe ve symlink negatifleri eski CI ile kısmi PASS. PR #25 `2d425ccb`: iki Gateway üzerinde eşzamanlı 9 başlatma/8 slot sınırı, durdurma + native settlement idempotence ve başka actor izolasyonu PostgreSQL testleri EKLENDİ; merge-preview CI bekleniyor. Restart/soak/üç OS tam kabul açık. |
+| 1D | PENDING | `3085efe3` CI 17/17: native batch 10 dosya, 64 KiB/dosya, 256 KiB toplam, UTF-8/binary/symlink E2E kısmi PASS. PR #25 `62a50ee0` merged-head çift JS tanımını giderdi; `1317bdcc` exact-limit Rust unit, sonraki küçük dosyanın korunması E2E eklendi. Ayrı `truncated` alanı, TOCTOU ancestor-race, continuation izolasyonu, gerçek OS/reconnect kabulü açık. |
 | 2A | PENDING | PTY history paging var; prompt/REPL ve tam çıktı kalıcılığı açık. |
 | 2B | PENDING | PTY geçmişi RAM'de son 1 MiB; disk spool ve restart/retention yok. |
 | 2C | PENDING | Süreç/task iptali mevcut; process-tree temizleme ve OS varyantları kabulü açık. |
