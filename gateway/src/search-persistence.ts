@@ -27,6 +27,10 @@ export type SearchProgressUpdate = {
   sequence: number;
   checkpoint?: unknown;
 };
+export type SearchRecoveryCandidate = SearchSnapshot & {
+  checkpoint: unknown;
+  progressUpdates: number;
+};
 export type SearchCompletion = {
   status: "completed" | "error";
   items: unknown[];
@@ -67,6 +71,10 @@ export interface SearchPersistence {
   progress?(key: SearchKey, update: SearchProgressUpdate): Promise<boolean>;
   /** Exact native-origin CAS; never pause or revive stopped/foreign searches. */
   setPaused?(key: SearchKey, paused: boolean): Promise<boolean>;
+  /** Recovery is permitted only for unpaused filename scans with a stale owner lease. */
+  recoveryCandidates?(): Promise<SearchRecoveryCandidate[]>;
+  /** Atomic owner takeover; returns the new sequence or null if already claimed. */
+  claimRecovery?(key: SearchKey): Promise<number | null>;
   /** True only when the running row was atomically transitioned to its final status. */
   finish(key: SearchKey, result: SearchCompletion): Promise<boolean>;
   stop(key: SearchKey): Promise<void>;
@@ -171,6 +179,53 @@ export class PgSearchPersistence implements SearchPersistence {
           and origin_instance=$5 and status='stopped' and native_inflight=true`,
       [s.id, s.organizationId, s.actor, s.deviceId, this.originInstance],
     );
+  }
+
+  async recoveryCandidates(): Promise<SearchRecoveryCandidate[]> {
+    const rows = await this.pool.query<{
+      id: string; organization_id: string; actor: string; device_id: string;
+      path: string; query: string; created_at: Date;
+      checkpoint: unknown; progress_sequence: number;
+    }>(
+      `select s.id,s.organization_id,s.actor,s.device_id,s.path,s.query,
+              s.created_at,s.checkpoint,s.progress_sequence
+         from search_sessions s
+         join devices d on d.id=s.device_id and d.organization_id=s.organization_id
+         left join search_gateway_instances g on g.id=s.origin_instance
+        where s.status='running' and s.search_type='files'
+          and s.paused=false and s.native_inflight=true
+          and s.checkpoint is not null and s.expires_at>now()
+          and d.revoked_at is null
+          and (g.id is null or g.last_heartbeat_at<now()-interval '15 seconds')
+        order by s.created_at,s.id limit 8`,
+    );
+    return rows.rows.map(row => ({
+      id: row.id, organizationId: row.organization_id,
+      actor: row.actor, deviceId: row.device_id,
+      path: row.path, query: row.query, searchType: "files",
+      createdAt: new Date(row.created_at).getTime(),
+      checkpoint: row.checkpoint, progressUpdates: row.progress_sequence,
+    }));
+  }
+
+  async claimRecovery(s: SearchKey): Promise<number | null> {
+    const result = await this.pool.query<{ progress_sequence: number }>(
+      `update search_sessions s
+          set origin_instance=$5,progress_sequence=s.progress_sequence+1
+        where s.id=$1 and s.organization_id=$2 and s.actor=$3 and s.device_id=$4
+          and s.status='running' and s.search_type='files' and s.paused=false
+          and s.native_inflight=true and s.checkpoint is not null
+          and s.expires_at>now() and s.origin_instance<>$5
+          and exists(select 1 from devices d
+                      where d.id=s.device_id and d.organization_id=s.organization_id
+                        and d.revoked_at is null)
+          and not exists(select 1 from search_gateway_instances g
+                         where g.id=s.origin_instance
+                           and g.last_heartbeat_at>now()-interval '15 seconds')
+        returning s.progress_sequence`,
+      [s.id, s.organizationId, s.actor, s.deviceId, this.originInstance],
+    );
+    return result.rows[0] ? Number(result.rows[0].progress_sequence) : null;
   }
 
   async setPaused(s: SearchKey, paused: boolean) {

@@ -929,6 +929,48 @@ try {
   );
   // A native search snapshot larger than 1 MiB must retain ordered,
   // pageable results instead of silently discarding the entire result set.
+  // 1B native filename checkpoint handoff: only a dead Gateway's lease
+  // can be taken over; identical actor/device checks prevent cross-scope claims.
+  const recoveryKey = { ...durableKey, id: randomUUID() };
+  const nativeCheckpoint = {
+    version: 1, root: "/ci", query: "needle", caseSensitive: false,
+    pending: ["/ci/pending"], items: [{ path: "/ci/needle.txt" }], scannedEntries: 32,
+  };
+  await durableStore.create({
+    ...recoveryKey, path: "/ci", query: "needle", searchType: "files",
+    createdAt: Date.now(),
+  });
+  assert.equal(await durableStore.progress(recoveryKey, {
+    items: nativeCheckpoint.items, scannedEntries: 32, scannedBytes: 0,
+    sequence: 1, checkpoint: nativeCheckpoint,
+  }), true);
+  const persistedCheckpoint = await acceptanceDb.query(
+    "select checkpoint from search_sessions where id=$1", [recoveryKey.id],
+  );
+  assert.deepEqual(persistedCheckpoint.rows[0].checkpoint, nativeCheckpoint);
+  const takeover = new PgSearchPersistence(searchPool);
+  const recoveryRows = await takeover.recoveryCandidates();
+  assert.ok(recoveryRows.some(item => item.id === recoveryKey.id));
+  assert.equal(await takeover.claimRecovery({
+    ...recoveryKey, actor: "wrong-actor",
+  }), null);
+  const claimedSequence = await takeover.claimRecovery(recoveryKey);
+  assert.ok(Number.isSafeInteger(claimedSequence) && claimedSequence > 1);
+  assert.equal(await durableStore.finish(recoveryKey, {
+    status: "completed", items: [{ path: "/ci/stale-native" }],
+    truncated: false, timedOut: false,
+  }), false);
+  assert.equal(await takeover.finish(recoveryKey, {
+    status: "completed", items: nativeCheckpoint.items,
+    truncated: false, timedOut: false, progressUpdates: claimedSequence,
+  }), true);
+  const recoveredFinal = await takeover.page(recoveryKey, recoveryKey.id, 0, 10);
+  assert.equal(recoveredFinal.status, "completed");
+  assert.deepEqual(recoveredFinal.items, nativeCheckpoint.items);
+  assert.equal((await acceptanceDb.query(
+    "select checkpoint from search_sessions where id=$1", [recoveryKey.id],
+  )).rows[0].checkpoint, null);
+
   const oversizedKey = { ...durableKey, id: randomUUID() };
   await durableStore.create({
     ...oversizedKey, path: "/ci", query: "large", searchType: "content",

@@ -347,6 +347,32 @@ test("durable search allocation serializes actors across gateways and retains na
   }
 });
 
+test("checkpoint takeover is gated on the original Gateway lease and scoped device", async () => {
+  const statements: Array<{ sql: string; args: unknown[] }> = [];
+  const db = { query: async (sql: string, args: unknown[] = []) => {
+    statements.push({ sql, args });
+    if (sql.includes("returning s.progress_sequence")) {
+      return { rows: [{ progress_sequence: 12 }], rowCount: 1 };
+    }
+    return { rows: [], rowCount: 0 };
+  }} as unknown as Pool;
+  const store = new PgSearchPersistence(db);
+  assert.deepEqual(await store.recoveryCandidates(), []);
+  assert.match(statements[0]!.sql, /s.checkpoint is not null/);
+  assert.match(statements[0]!.sql, /d.revoked_at is null/);
+  assert.match(statements[0]!.sql, /last_heartbeat_at<now\(\)-interval '15 seconds'/);
+  assert.equal(await store.claimRecovery({ ...owner, id }), 12);
+  assert.match(statements[1]!.sql, /s.origin_instance<>\$5/);
+  assert.match(statements[1]!.sql, /s.organization_id=\$2 and s.actor=\$3 and s.device_id=\$4/);
+  assert.match(statements[1]!.sql, /not exists\(select 1 from search_gateway_instances/);
+  assert.deepEqual(statements[1]!.args.slice(0, 4),
+    [id, owner.organizationId, owner.actor, owner.deviceId]);
+  const rejected = new PgSearchPersistence({
+    query: async () => ({ rows: [], rowCount: 0 }),
+  } as unknown as Pool);
+  assert.equal(await rejected.claimRecovery({ ...owner, id }), null);
+});
+
 test("settling a stopped scanner releases only the owned durable native slot", async () => {
   const calls: Array<{ statement: string; params: unknown[] }> = [];
   const fake = {
