@@ -494,7 +494,9 @@ pub fn read_lines(
         .take(MAX_PAGED_FILE + 1)
         .read_to_end(&mut bytes)?;
     if bytes.len() as u64 > MAX_PAGED_FILE {
-        return Err(anyhow!("file exceeds paginated read scan limit of {MAX_PAGED_FILE} bytes"));
+        return Err(anyhow!(
+            "file exceeds paginated read scan limit of {MAX_PAGED_FILE} bytes"
+        ));
     }
     let content = String::from_utf8(bytes).context("paginated read requires UTF-8 text")?;
     let total = content.lines().count();
@@ -809,7 +811,9 @@ mod search_budget_tests {
         let flag = AtomicBool::new(false);
         let deadline = Instant::now() + Duration::from_secs(2);
         let mut oversized = Cursor::new(vec![b'x'; MAX_TEXT_SEARCH_FILE as usize + 1]);
-        assert!(read_search_utf8(&mut oversized, &flag, deadline).unwrap().is_none());
+        assert!(read_search_utf8(&mut oversized, &flag, deadline)
+            .unwrap()
+            .is_none());
 
         struct InterruptingReader<'a> {
             cancelled: &'a AtomicBool,
@@ -826,7 +830,10 @@ mod search_budget_tests {
                 Ok(1)
             }
         }
-        let mut reader = InterruptingReader { cancelled: &flag, emitted: false };
+        let mut reader = InterruptingReader {
+            cancelled: &flag,
+            emitted: false,
+        };
         assert!(read_search_utf8(&mut reader, &flag, deadline)
             .unwrap_err()
             .to_string()
@@ -835,11 +842,15 @@ mod search_budget_tests {
         flag.store(false, Ordering::Relaxed);
         let mut valid = Cursor::new("Türkçe içerik".as_bytes());
         assert_eq!(
-            read_search_utf8(&mut valid, &flag, deadline).unwrap().as_deref(),
+            read_search_utf8(&mut valid, &flag, deadline)
+                .unwrap()
+                .as_deref(),
             Some("Türkçe içerik")
         );
         let mut invalid = Cursor::new([0xff, 0xfe]);
-        assert!(read_search_utf8(&mut invalid, &flag, deadline).unwrap().is_none());
+        assert!(read_search_utf8(&mut invalid, &flag, deadline)
+            .unwrap()
+            .is_none());
     }
 
     #[test]
