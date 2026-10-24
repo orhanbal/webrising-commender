@@ -5,6 +5,7 @@ mod ops;
 mod policy;
 mod process_ops;
 mod protocol;
+mod spreadsheet_ops;
 mod system_ops;
 mod task_manager;
 mod terminal;
@@ -368,6 +369,7 @@ async fn connected_loop(
             version: VERSION.to_owned(),
             capabilities: vec![
                 "fs".into(),
+                "xlsx-read".into(),
                 "process".into(),
                 "task".into(),
                 "pty".into(),
