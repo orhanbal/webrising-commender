@@ -75,6 +75,7 @@ pub enum AgentAction {
     FsSearch {
         path: String,
         query: String,
+        case_sensitive: Option<bool>,
         max_results: Option<usize>,
     },
     TextSearch {
