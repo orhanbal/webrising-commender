@@ -1,3 +1,9 @@
+## 24 Ekim 2026 — D: yeni kod ve plan HEAD CI kabul kanıtı
+
+- **PASSED:** [CI #40111271685](https://github.com/orhanbal/webrising-commender/actions/runs/40111271685), `main` SHA [`28dad6a0`](https://github.com/orhanbal/webrising-commender/commit/28dad6a0542bbb22f29c1faa16d3cf40dfef91c5): **17/17 GitHub Actions job success**, `rust` (fmt/clippy/unit), `agent-e2e`, `integration`, `gateway`, `relay-e2e`, Windows/macOS cross-build ve dağıtım smoke işleri dahil.
+- **PASSED ARTIFACT:** Aynı CI run'da `dashboard-visual-acceptance`, `WECOMMANDER-linux-x64-acceptance`, `WECOMMANDER-macos-universal-acceptance`, `WECOMMANDER-windows-x64-acceptance` dört artifact üretildi; dördü de `expired=false`. Bu kanıt fiziksel OS kabulü değildir.
+- **PENDING:** Bu yeni durum-kayıt commitinin kendi HEAD CI'sı ayrıca doğrulanır. `1A` gerçek streaming/pause/resume, `1B` native checkpoint restart, `1C/1D/3A` üst dizin symlink/rename yarışının tam OS ve stress kabulü ve kalan 2A–10D görevleri açık. `7B/10C BLOCKED_EXTERNAL`; parity **PENDING**.
+
 ## 24 Ekim 2026 — A/B/C/D: native dosya okuma symlink yarışını sertleştirme
 
 - **A / PASSED (giriş kodu):** [CI #40110624425](https://github.com/orhanbal/webrising-commender/actions/runs/40110624425) / `54c4ee7c` 17/17 PASSED; önceki kırmızı `integration` SMTP outbox yarışı giderilmişti. Bu kanıt yeni kod commitlerine taşınmaz.
