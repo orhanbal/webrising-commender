@@ -55,6 +55,16 @@
 - **PENDING:** Son HEAD'in CI/Agent E2E ve Windows/macOS paket artifact sonuçları.
 - **AÇIK:** XLSM yazma, karmaşık OOXML koruma, formül/stil matrisi, gerçek cihaz kabulü. Öncelik, CI sonucu kırmızıysa düzeltmek; yeşilse 06.00 DOCX/PDF araçlarına geçmek.
 
+## 06.00 oturumu — P1 DOCX okuma ve kabul (2026-10-24)
+
+- **PASS / giriş HEAD:** `12d0a263`, GitHub Actions `ci #40054605923` 17/17 PASS, `platform-distribution #40055044684` PASS.
+- **KODLANDI:** Native DOCX `docx_inspect`, `docx_read_paragraphs`, `docx_read_table`; WordprocessingML XML okuma; tablo ve paragraf sayfalama; MCP/Gateway/Rust Agent protokolü ve LOW risk sınıflaması.
+- **Güvenlik:** ZIP/XML boyut ve giriş sınırları, allowed-root, dış kaynak veya makro yüklememe, bounded Unicode output.
+- **TEST EKLENDİ:** Deterministik DOCX E2E fixture, Unicode ve XML entity çözümleme, tablo ve paragraf pagination, invalid range, missing table, corrupt ZIP ve root dışı erişim reddi.
+- **CI / FAIL (düzeltildi):** İlk kod HEAD `be89ed66` için Rust fmt hataları; ardından `fdbc03a2` için Rust clippy `cloned_ref_to_slice_refs` uyarısı. Bunlar `dc60de9f`, `fdbc03a2`, `3236ab30` ile giderildi. Güncel HEAD'in CI sonucu **PENDING**.
+- **AÇIK:** DOCX yazma/format koruma, PDF okuma/düzenleme, görsel önizleme, gerçek Windows/macOS/Linux kabulü, Apple noter/Windows imza ve gerçek ChatGPT/Claude istemci testi.
+- **Sonraki öncelik:** Yeni CI kırmızıysa düzelt, yeşilse PDF araçları ve görüntü metaveri/önizleme; önceki kodu yeniden yazma.
+
 ## Bitirme tanımı
 
 Tüm maddeleri *kodlandı* diye tamamlandı sayma. `Desktop Commander parity achieved` kararı ancak resmi plan matrisi ve platform kabulünden sonra verilebilir. Harici imzalama ve fiziksel makine testleri kullanıcının erişimini gerektiriyorsa açık kanıt/komutları üret; bunları tamamlanmış saymadan kalan görevleri kodlamaya devam et.
