@@ -529,6 +529,29 @@ try {
   });
   assert.equal(invalidBulkQuery.error, "invalid_search_arguments");
 
+  // Symlinks inside an allowed root must never expose filenames or contents
+  // from another directory through a native recursive search.
+  const escapedDir = fs.mkdtempSync(path.join(os.tmpdir(), "commender-search-outside-"));
+  const escapedLink = path.join(tempRoot, "external-search-link");
+  try {
+    fs.writeFileSync(
+      path.join(escapedDir, "outside-search-private-keyword.txt"),
+      "outside-content-private-keyword", "utf8",
+    );
+    fs.symlinkSync(escapedDir, escapedLink, "dir");
+    const escapedNames = await tool(276, "fs_search", {
+      device_id: deviceId, path: tempRoot, query: "outside-search-private-keyword",
+    });
+    assert.deepEqual(escapedNames.items, []);
+    const escapedContent = await tool(277, "text_search", {
+      device_id: deviceId, path: tempRoot, query: "outside-content-private-keyword",
+    });
+    assert.deepEqual(escapedContent.items, []);
+  } finally {
+    fs.rmSync(escapedLink, { force: true });
+    fs.rmSync(escapedDir, { recursive: true, force: true });
+  }
+
   const codeSearch = await tool(116, "code_search", {
     device_id: deviceId,
     path: tempRoot,
