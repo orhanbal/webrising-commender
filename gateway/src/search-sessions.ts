@@ -121,8 +121,9 @@ export async function startSearch(
   if (persistence) {
     try {
       await persistence.create(entry);
-    } catch {
+    } catch (error) {
       sessions.delete(entry.id);
+      if (error instanceof Error && error.message === "search_session_limit") throw error;
       throw new Error("search_store_unavailable");
     }
   }
@@ -132,9 +133,17 @@ export async function startSearch(
     : { kind: "text_search", path: arg.path, query: arg.query,
         caseSensitive: Boolean(arg.case_sensitive), maxResults: 500 };
   // Do not block the MCP request; a follow-up call collects paged results.
+  const clearStoppedNativeSlot = async () => {
+    try { await persistence?.settleStopped?.(entry); } catch {
+      // Keep the conservative database slot until its bounded lease expires.
+    }
+  };
   void router.request(deviceId, action, undefined, entry.controller.signal).then(async data => {
     entry.inFlight = false;
-    if (entry.status !== "running") return;
+    if (entry.status !== "running") {
+      await clearStoppedNativeSlot();
+      return;
+    }
     const payload = data as { items?: unknown[]; truncated?: boolean; timedOut?: boolean };
     const candidate = {
       status: "completed" as const,
@@ -148,6 +157,7 @@ export async function startSearch(
         // Another Gateway may have stopped or expired this request; never revive results.
         entry.status = "stopped";
         entry.items = [];
+        await clearStoppedNativeSlot();
         return;
       }
     } catch {
@@ -164,7 +174,10 @@ export async function startSearch(
     entry.status = "completed";
   }, async error => {
     entry.inFlight = false;
-    if (entry.status !== "running") return;
+    if (entry.status !== "running") {
+      await clearStoppedNativeSlot();
+      return;
+    }
     const message = safeSearchError(error);
     try {
       const committed = persistence ? await persistence.finish(entry, {
@@ -173,6 +186,7 @@ export async function startSearch(
       if (!committed) {
         entry.status = "stopped";
         entry.items = [];
+        await clearStoppedNativeSlot();
         return;
       }
     } catch {

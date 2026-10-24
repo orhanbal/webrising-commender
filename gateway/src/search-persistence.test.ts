@@ -171,3 +171,56 @@ test("cross-Gateway stop polling is scoped to the native owner and bounded IDs",
   assert.match(statements[0]!.sql, /status='stopped'/);
   assert.deepEqual(statements[0]!.params[1], [id]);
 });
+
+test("durable search allocation serializes actors across gateways and retains native stop slots", async () => {
+  for (const occupied of [8, 7]) {
+    const sql: Array<{ statement: string; params: unknown[] }> = [];
+    let released = false;
+    const client = {
+      query: async (statement: string, params: unknown[] = []) => {
+        sql.push({ statement, params });
+        if (statement.includes("count(*)::integer")) {
+          return { rows: [{ count: occupied }], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 1 };
+      },
+      release: () => { released = true; },
+    };
+    const fake = { connect: async () => client } as unknown as Pool;
+    const store = new PgSearchPersistence(fake);
+    const sample = {
+      ...owner, id, path: "/allowed", query: "needle", searchType: "files" as const,
+      createdAt: Date.now(),
+    };
+    if (occupied === 8) {
+      await assert.rejects(store.create(sample), /search_session_limit/);
+      assert.ok(sql.some(x => x.statement === "rollback"));
+      assert.ok(!sql.some(x => x.statement.includes("insert into search_sessions")));
+    } else {
+      await store.create(sample);
+      assert.ok(sql.some(x => x.statement === "commit"));
+      assert.ok(sql.some(x => x.statement.includes("insert into search_sessions")));
+    }
+    assert.equal(sql[0]!.statement, "begin");
+    assert.ok(sql.some(x => x.statement.includes("pg_advisory_xact_lock")));
+    assert.ok(sql.some(x =>
+      x.statement.includes("s.native_inflight=true") &&
+      x.statement.includes("s.organization_id=$1 and s.actor=$2") &&
+      x.statement.includes("last_heartbeat_at")));
+    assert.equal(released, true);
+  }
+});
+
+test("settling a stopped scanner releases only the owned durable native slot", async () => {
+  const calls: Array<{ statement: string; params: unknown[] }> = [];
+  const fake = {
+    query: async (statement: string, params: unknown[]) => {
+      calls.push({ statement, params });
+      return { rows: [], rowCount: 1 };
+    },
+  } as unknown as Pool;
+  await new PgSearchPersistence(fake).settleStopped({ ...owner, id });
+  assert.match(calls[0]!.statement, /status='stopped' and native_inflight=true/);
+  assert.deepEqual(calls[0]!.params, [id, owner.organizationId, owner.actor, owner.deviceId]);
+});
+

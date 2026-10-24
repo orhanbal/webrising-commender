@@ -416,6 +416,8 @@ export async function migrate() {
       search_type text not null check (search_type in ('files','content')),
       status text not null check (status in ('running','completed','error','stopped')),
       origin_instance uuid not null,
+      -- Counts physical requests even after stop_search until native settlement.
+      native_inflight boolean not null default true,
       items jsonb not null default '[]'::jsonb,
       truncated boolean not null default false,
       timed_out boolean not null default false,
@@ -426,6 +428,12 @@ export async function migrate() {
     create index if not exists search_sessions_scope_idx
       on search_sessions(organization_id,actor,device_id,created_at desc);
     create index if not exists search_sessions_expiry_idx on search_sessions(expires_at);
+    -- Existing installations may lack native_inflight. A conservative default
+    -- prevents a rolling deployment from under-counting legacy native scans.
+    alter table search_sessions
+      add column if not exists native_inflight boolean not null default true;
+    update search_sessions set native_inflight=false
+      where status in ('completed','error') and native_inflight;
 
     create table if not exists audit_logs (
       id bigserial primary key,

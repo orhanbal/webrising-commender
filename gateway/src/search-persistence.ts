@@ -46,6 +46,8 @@ export type SearchPage = SearchSummary & {
 };
 export interface SearchPersistence {
   create(snapshot: SearchSnapshot): Promise<void>;
+  /** Clear a stopped row's physical slot only after its native request settles. */
+  settleStopped?(key: SearchKey): Promise<void>;
   /** True only when the running row was atomically transitioned to its final status. */
   finish(key: SearchKey, result: SearchCompletion): Promise<boolean>;
   stop(key: SearchKey): Promise<void>;
@@ -101,10 +103,50 @@ export class PgSearchPersistence implements SearchPersistence {
   }
 
   async create(s: SearchSnapshot) {
+    // Serialize actor allocation across all Gateways sharing this PostgreSQL.
+    // A local Map quota alone can be bypassed by connecting through a
+    // different Gateway or choosing a different device.
+    const client = await this.pool.connect();
+    try {
+      await client.query("begin");
+      await client.query(
+        "select pg_advisory_xact_lock(hashtext('wc-search-actor'),hashtext($1))",
+        [JSON.stringify([s.organizationId, s.actor])],
+      );
+      const active = await client.query<{ count: number }>(
+        `select count(*)::integer as count
+           from search_sessions s
+           join search_gateway_instances g on g.id=s.origin_instance
+          where s.organization_id=$1 and s.actor=$2
+            and s.native_inflight=true and s.expires_at>now()
+            and g.last_heartbeat_at>now()-interval '15 seconds'`,
+        [s.organizationId, s.actor],
+      );
+      if (Number(active.rows[0]?.count ?? 0) >= 8) {
+        throw new Error("search_session_limit");
+      }
+      await client.query(
+        `insert into search_sessions(id,organization_id,actor,device_id,path,query,search_type,status,origin_instance,created_at,expires_at,native_inflight)
+         values($1,$2,$3,$4,$5,$6,$7,'running',$8,to_timestamp($9::double precision / 1000),now()+interval '5 minutes',true)`,
+        [s.id, s.organizationId, s.actor, s.deviceId, s.path, s.query, s.searchType, this.originInstance, s.createdAt],
+      );
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback").catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async settleStopped(s: SearchKey) {
+    // A stop revokes results immediately but must not free a remote native
+    // execution slot until the Agent responds or disconnects.
     await this.pool.query(
-      `insert into search_sessions(id,organization_id,actor,device_id,path,query,search_type,status,origin_instance,created_at,expires_at)
-       values($1,$2,$3,$4,$5,$6,$7,'running',$8,to_timestamp($9::double precision / 1000),now()+interval '5 minutes')`,
-      [s.id, s.organizationId, s.actor, s.deviceId, s.path, s.query, s.searchType, this.originInstance, s.createdAt],
+      `update search_sessions set native_inflight=false
+        where id=$1 and organization_id=$2 and actor=$3 and device_id=$4
+          and status='stopped' and native_inflight=true`,
+      [s.id, s.organizationId, s.actor, s.deviceId],
     );
   }
 
@@ -131,7 +173,7 @@ export class PgSearchPersistence implements SearchPersistence {
     }
     const updated = await this.pool.query(
       `update search_sessions
-          set status=$5,items=$6::jsonb,truncated=$7,timed_out=$8,error_code=$9
+          set status=$5,items=$6::jsonb,truncated=$7,timed_out=$8,error_code=$9,native_inflight=false
         where id=$1 and organization_id=$2 and actor=$3 and device_id=$4
           and status='running' and expires_at>now()
         returning id`,
