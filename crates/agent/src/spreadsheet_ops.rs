@@ -13,6 +13,7 @@ const MAX_COLS: u32 = 20;
 const MAX_CELL_PAGE_JSON_BYTES: usize = 256 * 1024;
 const MAX_SEARCHED_CELLS: usize = 50_000;
 const MAX_SEARCH_RESULTS: usize = 100;
+const MAX_SEARCH_PREVIEW_BYTES: usize = 4096;
 
 fn checked_workbook(policy: &PathPolicy, raw: &str) -> Result<std::path::PathBuf> {
     let path = policy.resolve_existing(raw)?;
@@ -192,11 +193,13 @@ pub fn find_cells(
                 display.to_lowercase().contains(&needle)
             };
             if found {
+                let (preview, value_truncated) = bounded_cell_preview(&display);
                 matches.push(json!({
                     "sheet": name,
                     "row": first_row + row as u32 + 1,
                     "column": first_col + col as u32 + 1,
-                    "value": display
+                    "value": preview,
+                    "valueTruncated": value_truncated
                 }));
                 if matches.len() >= max_results {
                     truncated = true;
@@ -332,6 +335,11 @@ pub fn write_cells(
         // concurrent writer has already created the output path.
         fs::File::open(&temporary)?.sync_all()?;
         let output_bytes = fs::read(&temporary)?;
+        // Serialization may take time. A concurrent source edit during writing
+        // must not publish a stale derived workbook.
+        if format!("{:x}", Sha256::digest(fs::read(&source)?)) != previous_sha256 {
+            return Err(anyhow!("file_changed_since_read"));
+        }
         fs::hard_link(&temporary, &output).context("atomic output publish failed")?;
         Ok(json!({
             "ok": true,
@@ -401,6 +409,17 @@ fn validate_cell_address(cell: &str) -> Result<()> {
     Ok(())
 }
 
+fn bounded_cell_preview(value: &str) -> (String, bool) {
+    if value.len() <= MAX_SEARCH_PREVIEW_BYTES {
+        return (value.to_owned(), false);
+    }
+    let mut end = MAX_SEARCH_PREVIEW_BYTES;
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    (value[..end].to_owned(), true)
+}
+
 fn cell_value(value: &Data) -> Value {
     match value {
         Data::Empty => Value::Null,
@@ -449,6 +468,20 @@ mod tests {
         for cell in ["A0", "A01", "a1", "XFE1", "A1048577", "ZZZZ1", "A", "1A"] {
             assert!(validate_cell_address(cell).is_err(), "{cell}");
         }
+    }
+
+    #[test]
+    fn search_previews_are_bounded_and_unicode_safe() {
+        let (short, truncated) = bounded_cell_preview("Alpha");
+        assert_eq!(short, "Alpha");
+        assert!(!truncated);
+
+        let oversized = format!("{}éneedle", "a".repeat(MAX_SEARCH_PREVIEW_BYTES - 1));
+        let (preview, truncated) = bounded_cell_preview(&oversized);
+        assert!(truncated);
+        assert!(preview.len() <= MAX_SEARCH_PREVIEW_BYTES);
+        assert_eq!(preview, "a".repeat(MAX_SEARCH_PREVIEW_BYTES - 1));
+        assert!(oversized.contains("needle"));
     }
 
     #[test]
