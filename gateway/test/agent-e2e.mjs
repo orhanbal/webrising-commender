@@ -250,6 +250,23 @@ try {
   });
   assert.equal(typeof invalidCellOutput.error, "string");
 
+  // A matching cell can contain much more text than a safe MCP result page.
+  // Search must still find a match beyond the preview boundary without
+  // returning the full (potentially huge) cell value.
+  const longWorkbookPath = path.join(tempRoot, "long-search.xlsx");
+  const longWorkbookWrite = await tool(247, "xlsx_write_cells", {
+    device_id: deviceId, path: workbookPath, output_path: longWorkbookPath,
+    sheet: "Sample", updates: [{ cell: "A3", value: "a".repeat(6000) + "ENDMARKER" }],
+  });
+  assert.equal(longWorkbookWrite.ok, true, JSON.stringify(longWorkbookWrite));
+  const longWorkbookMatches = await tool(248, "xlsx_find", {
+    device_id: deviceId, path: longWorkbookPath, query: "ENDMARKER",
+  });
+  assert.equal(longWorkbookMatches.items.length, 1);
+  assert.equal(longWorkbookMatches.items[0].valueTruncated, true);
+  assert.ok(Buffer.byteLength(longWorkbookMatches.items[0].value, "utf8") <= 4096);
+  assert.equal(longWorkbookMatches.items[0].value.includes("ENDMARKER"), false);
+
   const filePath = path.join(tempRoot, "hello.txt");
   const content = Buffer.from("hello-from-real-agent", "utf8").toString("base64");
 
