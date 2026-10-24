@@ -968,7 +968,7 @@ try {
     device_id: deviceId,
     session_id: started.sessionId,
     data_base64: Buffer.from(
-      "printf '\\nPTY_PAGED_BEGIN\\n'; printf '%020000d' 0; printf '\\nPTY_PAGED_END\\n'\\n",
+      "printf '\\nPTY_PAGED_BEGIN\\n'; printf '%020000d' 0; printf '\\nPTY_PAGED_END\\n'\n",
       "utf8",
     ).toString("base64"),
   });
@@ -999,7 +999,7 @@ try {
     cursor = part.nextOffsetBytes;
   }
   const reassembled = Buffer.concat(chunks).toString("utf8");
-  assert.match(reassembled, /PTY_PAGED_BEGIN\\r?\\n0{20000}\\r?\\nPTY_PAGED_END/);
+  assert.match(reassembled, /PTY_PAGED_BEGIN\r?\n0{20000}\r?\nPTY_PAGED_END/);
   console.log("agent-e2e: real PTY paged output reassembled without byte gaps");
 
   const stopToken = await approval(deviceId, {
