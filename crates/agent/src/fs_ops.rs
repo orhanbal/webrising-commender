@@ -909,11 +909,11 @@ mod search_budget_tests {
         let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
         let raw = root.to_str().unwrap();
         let cancelled = AtomicBool::new(false);
-        let filenames = search_cancellable(&policy, raw, "disappearing", false, Some(10), &cancelled)
-            .unwrap();
+        let filenames =
+            search_cancellable(&policy, raw, "disappearing", false, Some(10), &cancelled).unwrap();
         assert!(filenames["items"].as_array().unwrap().is_empty());
-        let content = text_search_cancellable(&policy, raw, "needle", false, Some(10), &cancelled)
-            .unwrap();
+        let content =
+            text_search_cancellable(&policy, raw, "needle", false, Some(10), &cancelled).unwrap();
         assert!(content["items"].as_array().unwrap().is_empty());
         fs::remove_dir_all(root).unwrap();
     }
