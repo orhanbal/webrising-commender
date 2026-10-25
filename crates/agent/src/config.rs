@@ -116,7 +116,11 @@ impl AgentConfig {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(error.into()),
         }
-        let data = serde_json::to_vec_pretty(self)?;
+        // Validate before replacing the last usable credential file. A saved
+        // config must be loadable, including its allowlisted root paths.
+        let mut checked = self.clone();
+        checked.normalize_roots()?;
+        let data = serde_json::to_vec_pretty(&checked)?;
         // A config we save must remain loadable by the bounded reader. Reject
         // oversized updates before creating a temporary file or replacing
         // existing device credentials.
@@ -248,6 +252,36 @@ mod tests {
         );
         let parent = path.parent().unwrap();
         assert_eq!(fs::read_dir(parent).unwrap().count(), 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn config_save_rejects_invalid_roots_without_replacing_credentials() {
+        let root = std::env::temp_dir().join(format!("wc-config-roots-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("private").join("agent.json");
+        let mut config = AgentConfig {
+            device_id: "device".into(),
+            device_token: "original-secret".into(),
+            approval_key: "original-approval".into(),
+            gateway_ws_url: String::new(),
+            control_url: String::new(),
+            name: "test".into(),
+            allowed_roots: vec![root.clone()],
+        };
+        config.save(&path).unwrap();
+        let original = fs::read(&path).unwrap();
+        config.device_token = "new-secret".into();
+        config.allowed_roots.clear();
+        assert!(config.save(&path).is_err());
+        assert_eq!(fs::read(&path).unwrap(), original);
+        config.allowed_roots.push(root.join("missing"));
+        assert!(config.save(&path).is_err());
+        assert_eq!(fs::read(&path).unwrap(), original);
+        assert_eq!(
+            AgentConfig::load(&path).unwrap().device_token,
+            "original-secret"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
