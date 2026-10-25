@@ -1018,6 +1018,32 @@ try {
   });
   assert.equal(readAfterMove.content, "hello-from-search-edit");
 
+  // 3A: fs_move must never overwrite a destination created concurrently.
+  // This exercises the real MCP -> Gateway -> native Agent path, not a stub.
+  const collisionDestination = path.join(tempRoot, "move-collision.txt");
+  const collisionSources = Array.from({ length: 8 }, (_, index) =>
+    path.join(tempRoot, `move-candidate-${index}.txt`)
+  );
+  collisionSources.forEach((source, index) =>
+    fs.writeFileSync(source, `move-candidate-${index}`, "utf8")
+  );
+  const collisionMoves = await Promise.all(collisionSources.map((source, index) =>
+    tool(610 + index, "fs_move", {
+      device_id: deviceId, source, destination: collisionDestination,
+    })
+  ));
+  assert.equal(collisionMoves.filter((result) => result.ok === true).length, 1);
+  assert.equal(collisionMoves.filter((result) => typeof result.error === "string").length, 7);
+  assert.match(fs.readFileSync(collisionDestination, "utf8"), /^move-candidate-[0-7]$/);
+  assert.equal(collisionSources.filter((source) => fs.existsSync(source)).length, 7);
+  const stillPresentSource = collisionSources.find((source) => fs.existsSync(source));
+  const noOverwrite = await tool(618, "fs_move", {
+    device_id: deviceId, source: stillPresentSource, destination: collisionDestination,
+  });
+  assert.equal(typeof noOverwrite.error, "string");
+  assert.match(fs.readFileSync(collisionDestination, "utf8"), /^move-candidate-[0-7]$/);
+  console.log("agent-e2e: concurrent fs_move destination collision never overwrote winner");
+
   const execAction = {
     kind: "process_exec",
     command: "printf agent-process-ok",
