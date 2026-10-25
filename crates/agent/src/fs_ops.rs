@@ -1863,6 +1863,84 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     result
 }
 
+/// Move without ever replacing a destination created by another process.
+/// Checking destination.exists() before fs::rename is not an atomic guard:
+/// Unix rename replaces existing files and Windows MoveFileEx can also replace.
+#[cfg(target_os = "linux")]
+fn rename_noreplace(source: &Path, destination: &Path) -> Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    let source = CString::new(source.as_os_str().as_bytes())?;
+    let destination = CString::new(destination.as_os_str().as_bytes())?;
+    // renameat2 RENAME_NOREPLACE (1): kernel arbitrates competing writers.
+    let status = unsafe {
+        libc::syscall(
+            libc::SYS_renameat2,
+            libc::AT_FDCWD,
+            source.as_ptr(),
+            libc::AT_FDCWD,
+            destination.as_ptr(),
+            1u32,
+        )
+    };
+    if status != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn rename_noreplace(source: &Path, destination: &Path) -> Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    unsafe extern "C" {
+        fn renameatx_np(
+            fromfd: libc::c_int,
+            from: *const libc::c_char,
+            tofd: libc::c_int,
+            to: *const libc::c_char,
+            flags: libc::c_uint,
+        ) -> libc::c_int;
+    }
+    let source = CString::new(source.as_os_str().as_bytes())?;
+    let destination = CString::new(destination.as_os_str().as_bytes())?;
+    // Darwin RENAME_EXCL (0x4) rejects an existing destination atomically.
+    let status = unsafe {
+        renameatx_np(
+            libc::AT_FDCWD,
+            source.as_ptr(),
+            libc::AT_FDCWD,
+            destination.as_ptr(),
+            0x4,
+        )
+    };
+    if status != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn rename_noreplace(source: &Path, destination: &Path) -> Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    #[link(name = "Kernel32")]
+    unsafe extern "system" {
+        fn MoveFileW(existing: *const u16, new: *const u16) -> i32;
+    }
+    let source = source.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
+    let destination = destination.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
+    // Unlike MoveFileEx with REPLACE_EXISTING, MoveFileW refuses collisions.
+    if unsafe { MoveFileW(source.as_ptr(), destination.as_ptr()) } == 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+fn rename_noreplace(_source: &Path, _destination: &Path) -> Result<()> {
+    Err(anyhow!("atomic_noreplace_move_unsupported"))
+}
+
 pub fn move_path(policy: &PathPolicy, source: &str, destination: &str) -> Result<Value> {
     let source_path = policy.resolve_existing(source)?;
     if policy.roots().iter().any(|root| root == &source_path) {
@@ -1870,16 +1948,70 @@ pub fn move_path(policy: &PathPolicy, source: &str, destination: &str) -> Result
     }
 
     let destination_path = policy.resolve_for_create(destination)?;
-    if destination_path.exists() {
-        return Err(anyhow!("destination already exists"));
+    // symlink_metadata detects dangling links as occupied too.
+    match fs::symlink_metadata(&destination_path) {
+        Ok(_) => return Err(anyhow!("destination already exists")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
     }
 
-    fs::rename(&source_path, &destination_path)?;
+    rename_noreplace(&source_path, &destination_path)?;
     Ok(json!({
         "ok": true,
         "source": source_path.to_string_lossy(),
         "destination": destination_path.to_string_lossy()
     }))
+}
+
+#[cfg(test)]
+mod move_collision_tests {
+    use super::*;
+
+    #[test]
+    fn move_does_not_overwrite_an_existing_file() {
+        let root = std::env::temp_dir().join(format!("commender-move-collision-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("source.txt");
+        let destination = root.join("destination.txt");
+        fs::write(&source, b"source").unwrap();
+        fs::write(&destination, b"keep-me").unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        assert!(move_path(&policy, source.to_str().unwrap(), destination.to_str().unwrap()).is_err());
+        assert_eq!(fs::read(&source).unwrap(), b"source");
+        assert_eq!(fs::read(&destination).unwrap(), b"keep-me");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn simultaneous_moves_to_one_destination_have_one_winner() {
+        use std::sync::{Arc, Barrier};
+        let root = std::env::temp_dir().join(format!("commender-move-race-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let policy = Arc::new(PathPolicy::new(std::slice::from_ref(&root)).unwrap());
+        let destination = root.join("destination.txt");
+        let barrier = Arc::new(Barrier::new(16));
+        let handles = (0..16).map(|index| {
+            let source = root.join(format!("source-{index}.txt"));
+            fs::write(&source, format!("candidate-{index}")).unwrap();
+            let destination = destination.clone();
+            let policy = Arc::clone(&policy);
+            let barrier = Arc::clone(&barrier);
+            std::thread::spawn(move || {
+                barrier.wait();
+                move_path(&policy, source.to_str().unwrap(), destination.to_str().unwrap()).is_ok()
+            })
+        }).collect::<Vec<_>>();
+        let wins = handles.into_iter().filter(|handle| handle.join().unwrap()).count();
+        assert_eq!(wins, 1);
+        let winner = fs::read_to_string(&destination).unwrap();
+        assert!(winner.starts_with("candidate-"));
+        assert_eq!(
+            (0..16).filter(|index| root.join(format!("source-{index}.txt")).exists()).count(),
+            15
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
 }
 
 pub fn mkdir(policy: &PathPolicy, raw: &str, recursive: bool) -> Result<Value> {
