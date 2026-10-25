@@ -38,6 +38,8 @@ import { PgSearchPersistence } from "./search-persistence.js";
 import { RelayCancellationRegistry } from "./relay-cancellation.js";
 import { enqueueMail, mailConfigured, publicSignupEnabled, startMailWorker } from "./mail.js";
 import { handleMcp } from "./mcp.js";
+import { handleOAuthHttp, oauthChallenge } from "./oauth.js";
+import { authenticateOAuthAccessToken } from "./oauth-tokens.js";
 import { actionRisk, parseAgentAction } from "./protocol.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import {activePlatformIncidents} from "./platform-incidents.js";
@@ -436,6 +438,7 @@ async function serveConsole(res: ServerResponse) {
 const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
   try {
     const url = new URL(req.url || "/", publicBaseUrl);
+    if (await handleOAuthHttp(req, res, url, publicBaseUrl)) return;
 
     if (req.method === "GET" && url.pathname.startsWith("/assets/")) {
       const name = url.pathname.slice("/assets/".length);
@@ -1560,7 +1563,19 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     let principal: Principal | null = null;
     if (url.pathname.startsWith("/api/") || url.pathname === "/mcp") {
       principal = await authenticateRequest(req.headers.authorization, req.headers.cookie);
-      if (!principal) return void json(res, 401, { error: "unauthorized" });
+      if (!principal && url.pathname === "/mcp" && process.env.MCP_OAUTH_ENABLED === "true") {
+        const supplied = req.headers.authorization?.startsWith("Bearer wrco_") ? req.headers.authorization.slice(7) : "";
+        if (supplied) {
+          principal = await authenticateOAuthAccessToken(supplied, publicBaseUrl + "/mcp")
+            ?? await authenticateOAuthAccessToken(supplied, publicBaseUrl);
+        }
+      }
+      if (!principal) {
+        if (url.pathname === "/mcp" && process.env.MCP_OAUTH_ENABLED === "true") {
+          res.setHeader("WWW-Authenticate", oauthChallenge(publicBaseUrl));
+        }
+        return void json(res, 401, { error: "unauthorized" });
+      }
 
       const method = req.method || "GET";
       if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
