@@ -1,4 +1,4 @@
-use crate::policy::PathPolicy;
+use crate::{policy::PathPolicy, terminal_history::HistoryStore};
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
@@ -22,6 +22,7 @@ const MAX_SESSIONS: usize = 32;
 struct OutputHistory {
     bytes: VecDeque<u8>,
     total_bytes: u64,
+    durable: bool,
 }
 
 impl OutputHistory {
@@ -100,7 +101,8 @@ impl OutputHistory {
             "truncatedBeforeOffset": requested < retained_start,
             "hasMore": end < self.total_bytes,
             "promptDetected": prompt_kind.is_some(),
-            "promptKind": prompt_kind
+            "promptKind": prompt_kind,
+            "historyDurable": self.durable
         })
     }
 }
@@ -128,9 +130,14 @@ struct Session {
 pub struct TerminalManager {
     sessions: Arc<Mutex<HashMap<String, Arc<Session>>>>,
     pending_starts: Arc<AtomicUsize>,
+    store: Option<Arc<HistoryStore>>,
 }
 
 impl TerminalManager {
+    pub fn for_device(id: &str) -> Result<Self> {
+        Ok(Self { store: Some(Arc::new(HistoryStore::for_device(id)?)), ..Self::default() })
+    }
+
     pub fn start(
         &self,
         policy: &PathPolicy,
@@ -167,6 +174,12 @@ impl TerminalManager {
         let read_buffer = Arc::clone(&buffer);
         let history = Arc::new(Mutex::new(OutputHistory::default()));
         let read_history = Arc::clone(&history);
+        let id = Uuid::new_v4().to_string();
+        if let Some(store) = &self.store {
+            store.save(&id, 0, &VecDeque::new())?;
+        }
+        let history_store = self.store.clone();
+        let history_id = id.clone();
 
         std::thread::spawn(move || {
             let mut chunk = [0_u8; 8192];
@@ -178,6 +191,9 @@ impl TerminalManager {
                         // observe bytes that are not yet available for paging.
                         if let Ok(mut retained) = read_history.lock() {
                             retained.push(&chunk[..size]);
+                            if let Some(store) = &history_store {
+                                retained.durable = store.save(&history_id, retained.total_bytes, &retained.bytes).is_ok();
+                            }
                         }
                         if let Ok(mut queue) = read_buffer.lock() {
                             for byte in &chunk[..size] {
@@ -192,7 +208,6 @@ impl TerminalManager {
             }
         });
 
-        let id = Uuid::new_v4().to_string();
         let session = Arc::new(Session {
             master: Mutex::new(pair.master),
             writer: Mutex::new(writer),
@@ -321,12 +336,21 @@ impl TerminalManager {
         offset_bytes: Option<i64>,
         max_bytes: Option<usize>,
     ) -> Result<Value> {
-        let session = self.get(id)?;
-        let history = session
-            .history
-            .lock()
-            .map_err(|_| anyhow!("terminal history lock poisoned"))?;
-        Ok(history.page(offset_bytes, max_bytes))
+        let session = self.sessions.lock()
+            .map_err(|_| anyhow!("terminal session lock poisoned"))?
+            .get(id).cloned();
+        if let Some(session) = session {
+            let history = session.history.lock()
+                .map_err(|_| anyhow!("terminal history lock poisoned"))?;
+            return Ok(history.page(offset_bytes, max_bytes));
+        }
+        let store = self.store.as_ref().ok_or_else(|| anyhow!("terminal session not found"))?;
+        let (total_bytes, bytes) = store.load(id)?;
+        let history = OutputHistory { bytes, total_bytes, durable: true };
+        let mut page = history.page(offset_bytes, max_bytes);
+        page["archived"] = json!(true);
+        page["running"] = json!(false);
+        Ok(page)
     }
 
     pub fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<Value> {

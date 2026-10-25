@@ -105,7 +105,7 @@ try {
 
   agent = spawn(agentBinary, ["--config", configPath, "run"], {
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, RUST_LOG: "info" },
+    env: { ...process.env, RUST_LOG: "info", XDG_DATA_HOME: path.join(tempRoot, "xdg-data") },
   });
   agent.stdout.on("data", (chunk) => { agentLog += chunk.toString(); });
   agent.stderr.on("data", (chunk) => { agentLog += chunk.toString(); });
@@ -1059,6 +1059,50 @@ try {
     device_id: deviceId,
   });
   assert.ok(!terminalsAfterStop.items.some((item) => item.sessionId === started.sessionId));
+
+
+  // 2B: preserve bounded PTY output through a real Rust Agent SIGKILL.
+  const archiveToken = await approval(deviceId, startAction);
+  const archiveSession = await tool(330, "terminal_start", {
+    device_id: deviceId, cwd: tempRoot, cols: 100, rows: 30, approval_token: archiveToken,
+  });
+  await tool(331, "terminal_input", {
+    device_id: deviceId, session_id: archiveSession.sessionId,
+    data_base64: Buffer.from("echo DURABLE_HISTORY_AGENT_OK\n").toString("base64"),
+  });
+  await waitFor(async () => {
+    const page = await tool(332, "terminal_read_page", {
+      device_id: deviceId, session_id: archiveSession.sessionId, offset_bytes: -8192, max_bytes: 8192,
+    });
+    return page.historyDurable && String(page.text).includes("DURABLE_HISTORY_AGENT_OK") ? page : false;
+  });
+  const oldAgent = agent;
+  const exit = new Promise((resolve) => oldAgent.once("exit", resolve));
+  oldAgent.kill("SIGKILL");
+  await exit;
+  agent = spawn(agentBinary, ["--config", configPath, "run"], {
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, RUST_LOG: "info", XDG_DATA_HOME: path.join(tempRoot, "xdg-data") },
+  });
+  agent.stdout.on("data", (chunk) => { agentLog += chunk.toString(); });
+  agent.stderr.on("data", (chunk) => { agentLog += chunk.toString(); });
+  await waitFor(async () => {
+    const devices = await jsonFetch("/api/devices", { headers: authHeaders });
+    return devices.items.some((item) => item.id === deviceId && item.online);
+  });
+  const archived = await waitFor(async () => {
+    const page = await tool(333, "terminal_read_page", {
+      device_id: deviceId, session_id: archiveSession.sessionId, offset_bytes: -8192, max_bytes: 8192,
+    });
+    return page.archived && String(page.text).includes("DURABLE_HISTORY_AGENT_OK") ? page : false;
+  });
+  assert.equal(archived.running, false);
+  assert.equal(archived.historyDurable, true);
+  assert.equal(typeof (await tool(334, "terminal_input", {
+    device_id: deviceId, session_id: archiveSession.sessionId,
+    data_base64: Buffer.from("echo cannot-reattach\n").toString("base64"),
+  })).error, "string");
+  console.log("agent-e2e: bounded PTY history survived real Agent SIGKILL/restart");
 
   const taskAction = {
     kind: "task_start",

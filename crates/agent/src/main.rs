@@ -11,6 +11,7 @@ mod spreadsheet_ops;
 mod system_ops;
 mod task_manager;
 mod terminal;
+mod terminal_history;
 #[cfg(windows)]
 mod windows_service_host;
 
@@ -209,7 +210,7 @@ pub(crate) async fn run_until_shutdown(
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<()> {
     let policy = Arc::new(PathPolicy::new(&config.allowed_roots)?);
-    let terminals = TerminalManager::default();
+    let terminals = TerminalManager::for_device(&config.device_id)?;
     let tasks = TaskManager::default();
     let active = Arc::new(Mutex::new(HashMap::<String, ActiveRequest>::new()));
 
