@@ -1274,6 +1274,72 @@ pub fn replace_text(
 const MAX_UNDO_FILE_BYTES: u64 = 6 * 1024 * 1024;
 const MAX_UNDO_PER_FILE: usize = 8;
 const MAX_UNDO_PER_DIRECTORY: usize = 64;
+const MAX_UNDO_TOTAL_BYTES: u64 = 128 * 1024 * 1024;
+const UNDO_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+
+// Protect the shared snapshot directory budget and pruning from concurrent
+// writes/restores to different files in the same Agent process.
+static UNDO_DIRECTORY_LOCK: std::sync::OnceLock<std::sync::Mutex<()>> =
+    std::sync::OnceLock::new();
+
+fn undo_directory_lock() -> Result<std::sync::MutexGuard<'static, ()>> {
+    UNDO_DIRECTORY_LOCK
+        .get_or_init(|| std::sync::Mutex::new(()))
+        .lock()
+        .map_err(|_| anyhow!("undo_directory_lock_poisoned"))
+}
+
+// Only validated snapshot filenames are eligible for retention deletion.
+// Unknown regular files still count toward the quota; unsafe entries fail closed.
+fn undo_snapshot_name(name: &str) -> bool {
+    let Some((prefix, id)) = name.strip_suffix(".undo").and_then(|v| v.split_once('-')) else {
+        return false;
+    };
+    prefix.len() == 64
+        && prefix.bytes().all(|byte| byte.is_ascii_hexdigit())
+        && Uuid::parse_str(id).is_ok()
+}
+
+fn undo_storage_usage(dir: &Path) -> Result<(usize, u64)> {
+    let mut count = 0_usize;
+    let mut total_bytes = 0_u64;
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let metadata = fs::symlink_metadata(entry.path())?;
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            return Err(anyhow!("unsafe_undo_storage_entry"));
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let expired = undo_snapshot_name(&name)
+            && metadata
+                .modified()
+                .ok()
+                .and_then(|modified| std::time::SystemTime::now().duration_since(modified).ok())
+                .is_some_and(|age| age >= UNDO_RETENTION);
+        if expired {
+            fs::remove_file(entry.path())?;
+            continue;
+        }
+        count += 1;
+        total_bytes = total_bytes
+            .checked_add(metadata.len())
+            .ok_or_else(|| anyhow!("undo_snapshot_quota_exceeded"))?;
+    }
+    Ok((count, total_bytes))
+}
+
+fn ensure_undo_capacity(dir: &Path, path: &Path, incoming: u64, max_total: u64) -> Result<()> {
+    let (count, used_bytes) = undo_storage_usage(dir)?;
+    if undo_entries(path, dir)?.len() >= MAX_UNDO_PER_FILE
+        || count >= MAX_UNDO_PER_DIRECTORY
+        || used_bytes
+            .checked_add(incoming)
+            .is_none_or(|bytes| bytes > max_total)
+    {
+        return Err(anyhow!("undo_snapshot_quota_exceeded"));
+    }
+    Ok(())
+}
 
 fn undo_prefix(path: &Path) -> String {
     format!("{:x}", Sha256::digest(path.to_string_lossy().as_bytes()))
@@ -1381,12 +1447,8 @@ fn save_undo_snapshot(
     previous_sha: &str,
     next_sha: &str,
 ) -> Result<(String, std::path::PathBuf)> {
+    let _directory_guard = undo_directory_lock()?;
     let dir = undo_dir(path, true)?.ok_or_else(|| anyhow!("undo_directory_unavailable"))?;
-    if undo_entries(path, &dir)?.len() >= MAX_UNDO_PER_FILE
-        || fs::read_dir(&dir)?.count() >= MAX_UNDO_PER_DIRECTORY
-    {
-        return Err(anyhow!("undo_snapshot_quota_exceeded"));
-    }
     let id = Uuid::new_v4().to_string();
     let filename = format!("{}-{}.undo", undo_prefix(path), id);
     let destination = dir.join(filename);
@@ -1401,6 +1463,7 @@ fn save_undo_snapshot(
     if payload.len() as u64 > MAX_UNDO_FILE_BYTES {
         return Err(anyhow!("undo_snapshot_too_large"));
     }
+    ensure_undo_capacity(&dir, path, payload.len() as u64, MAX_UNDO_TOTAL_BYTES)?;
     let result = (|| -> Result<()> {
         let mut options = fs::OpenOptions::new();
         options.write(true).create_new(true);
@@ -1436,8 +1499,12 @@ pub fn versions(policy: &PathPolicy, raw: &str) -> Result<Value> {
     let _guard = lock
         .lock()
         .map_err(|_| anyhow!("file mutation lock poisoned"))?;
+    let _directory_guard = undo_directory_lock()?;
     let entries = match undo_dir(&path, false)? {
-        Some(dir) => undo_entries(&path, &dir)?,
+        Some(dir) => {
+            undo_storage_usage(&dir)?;
+            undo_entries(&path, &dir)?
+        }
         None => Vec::new(),
     };
     Ok(json!({
@@ -1459,7 +1526,9 @@ pub fn undo(policy: &PathPolicy, raw: &str, undo_id: &str, expected_sha256: &str
     let _guard = lock
         .lock()
         .map_err(|_| anyhow!("file mutation lock poisoned"))?;
+    let _directory_guard = undo_directory_lock()?;
     let dir = undo_dir(&path, false)?.ok_or_else(|| anyhow!("undo_snapshot_not_found"))?;
+    undo_storage_usage(&dir)?;
     let snapshot = dir.join(format!("{}-{}.undo", undo_prefix(&path), id));
     let mut reader = open_regular_read(&snapshot)?;
     let mut encoded = Vec::new();
@@ -2390,6 +2459,64 @@ mod undo_version_tests {
             edited["sha256"].as_str().unwrap()
         )
         .is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn expired_undo_is_pruned_and_cannot_restore_stale_content() {
+        let root = env::temp_dir().join(format!("wc-undo-expiry-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("edit.txt");
+        fs::write(&path, b"original").unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let edited = replace_text(
+            &policy,
+            path.to_str().unwrap(),
+            "original",
+            "edited",
+            false,
+            None,
+        )
+        .unwrap();
+        let id = edited["undoId"].as_str().unwrap();
+        let snapshot = undo_dir(&path, false).unwrap().unwrap().join(format!(
+            "{}-{}.undo",
+            undo_prefix(&path),
+            id
+        ));
+        let file = fs::OpenOptions::new().write(true).open(&snapshot).unwrap();
+        file.set_times(
+            fs::FileTimes::new().set_modified(
+                std::time::SystemTime::now() - UNDO_RETENTION - Duration::from_secs(60),
+            ),
+        )
+        .unwrap();
+        assert!(versions(&policy, path.to_str().unwrap()).unwrap()["versions"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert!(!snapshot.exists());
+        assert!(undo(
+            &policy,
+            path.to_str().unwrap(),
+            id,
+            edited["sha256"].as_str().unwrap()
+        )
+        .is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"edited");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn undo_global_byte_quota_rejects_without_erasing_existing_snapshot() {
+        let root = env::temp_dir().join(format!("wc-undo-budget-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("edit.txt");
+        let snapshot = root.join(format!("{}-{}.undo", undo_prefix(&path), Uuid::new_v4()));
+        fs::write(&snapshot, b"123456").unwrap();
+        assert!(ensure_undo_capacity(&root, &path, 5, 10).is_err());
+        assert!(ensure_undo_capacity(&root, &path, 4, 10).is_ok());
+        assert_eq!(fs::read(&snapshot).unwrap(), b"123456");
         fs::remove_dir_all(root).unwrap();
     }
 
