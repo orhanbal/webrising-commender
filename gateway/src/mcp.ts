@@ -203,6 +203,7 @@ function tool(name: string, description: string, properties: Record<string, unkn
     name,
     description,
     inputSchema: { type: "object", properties, required, additionalProperties: false },
+    ...(process.env.MCP_OAUTH_ENABLED === "true" ? { securitySchemes: [{ type: "oauth2", scopes: ["mcp:tools"] }] } : {}),
   };
 }
 
