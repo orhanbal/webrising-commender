@@ -1536,6 +1536,9 @@ const MAX_UNDO_PER_FILE: usize = 8;
 const MAX_UNDO_PER_DIRECTORY: usize = 64;
 const MAX_UNDO_TOTAL_BYTES: u64 = 128 * 1024 * 1024;
 const UNDO_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+// A killed Agent can leave a private, uncommitted snapshot staging file.
+// Give an active writer a generous grace period before reclaiming its quota.
+const UNDO_TEMP_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
 
 // Protect the shared snapshot directory budget and pruning from concurrent
 // writes/restores to different files in the same Agent process.
@@ -1559,6 +1562,14 @@ fn undo_snapshot_name(name: &str) -> bool {
         && Uuid::parse_str(id).is_ok()
 }
 
+// Only our UUID-named staging files are eligible for crash recovery cleanup.
+// Unknown files must not be deleted, even when they are old.
+fn undo_temporary_name(name: &str) -> bool {
+    name.strip_prefix('.')
+        .and_then(|value| value.strip_suffix(".tmp"))
+        .is_some_and(|id| Uuid::parse_str(id).is_ok())
+}
+
 fn undo_storage_usage(dir: &Path) -> Result<(usize, u64)> {
     let mut count = 0_usize;
     let mut total_bytes = 0_u64;
@@ -1569,12 +1580,20 @@ fn undo_storage_usage(dir: &Path) -> Result<(usize, u64)> {
             return Err(anyhow!("unsafe_undo_storage_entry"));
         }
         let name = entry.file_name().to_string_lossy().into_owned();
-        let expired = undo_snapshot_name(&name)
-            && metadata
+        let retention = if undo_snapshot_name(&name) {
+            Some(UNDO_RETENTION)
+        } else if undo_temporary_name(&name) {
+            Some(UNDO_TEMP_RETENTION)
+        } else {
+            None
+        };
+        let expired = retention.is_some_and(|retention| {
+            metadata
                 .modified()
                 .ok()
                 .and_then(|modified| std::time::SystemTime::now().duration_since(modified).ok())
-                .is_some_and(|age| age >= UNDO_RETENTION);
+                .is_some_and(|age| age >= retention)
+        });
         if expired {
             fs::remove_file(entry.path())?;
             continue;
@@ -1585,6 +1604,55 @@ fn undo_storage_usage(dir: &Path) -> Result<(usize, u64)> {
             .ok_or_else(|| anyhow!("undo_snapshot_quota_exceeded"))?;
     }
     Ok((count, total_bytes))
+}
+
+#[cfg(test)]
+mod undo_crash_cleanup_tests {
+    use super::*;
+
+    #[test]
+    fn old_orphan_staging_files_are_pruned_but_unknown_and_fresh_files_survive() {
+        let dir = std::env::temp_dir().join(format!("commender-undo-crash-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let stale = dir.join(format!(".{}.tmp", Uuid::new_v4()));
+        let fresh = dir.join(format!(".{}.tmp", Uuid::new_v4()));
+        let unknown = dir.join("unrelated-user-data");
+        let malformed = dir.join(".not-a-uuid.tmp");
+        for path in [&stale, &fresh, &unknown, &malformed] {
+            fs::write(path, b"safe").unwrap();
+        }
+        let old = std::time::SystemTime::now()
+            .checked_sub(UNDO_TEMP_RETENTION + Duration::from_secs(3600))
+            .unwrap();
+        for path in [&stale, &unknown, &malformed] {
+            fs::File::open(path)
+                .unwrap()
+                .set_times(fs::FileTimes::new().set_modified(old))
+                .unwrap();
+        }
+        let (count, bytes) = undo_storage_usage(&dir).unwrap();
+        assert!(!stale.exists(), "orphaned staging file must be reclaimed");
+        assert!(fresh.exists(), "recent staging file must not be touched");
+        assert!(unknown.exists(), "unknown file must not be pruned");
+        assert!(malformed.exists(), "invalid staging name must not be pruned");
+        assert_eq!((count, bytes), (3, 12));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_in_staging_directory_fails_closed_without_following_target() {
+        use std::os::unix::fs::symlink;
+        let dir = std::env::temp_dir().join(format!("commender-undo-link-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let outside = dir.with_extension("outside");
+        fs::write(&outside, b"private").unwrap();
+        symlink(&outside, dir.join(format!(".{}.tmp", Uuid::new_v4()))).unwrap();
+        assert!(undo_storage_usage(&dir).is_err());
+        assert_eq!(fs::read(&outside).unwrap(), b"private");
+        fs::remove_dir_all(dir).unwrap();
+        fs::remove_file(outside).unwrap();
+    }
 }
 
 fn ensure_undo_capacity(dir: &Path, path: &Path, incoming: u64, max_total: u64) -> Result<()> {
