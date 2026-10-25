@@ -828,6 +828,20 @@ try {
         assert.equal(fs.readFileSync(outsideFile, "utf8"), "outside-private-do-not-modify");
         fs.rmSync(moveGuardSource);
         console.log("agent-e2e: fs_move symlinked source/destination parents denied");
+        // Nonrecursive deletion must not traverse a symlinked parent even
+        // when a destructive-action approval token has been issued.
+        const deniedDeletePath = path.join(outsideDirLink, "outside-private.txt");
+        const deniedDeleteToken = await approval(deviceId, {
+          kind: "fs_delete", path: deniedDeletePath, recursive: false,
+        });
+        const deniedParentDelete = await tool(623, "fs_delete", {
+          device_id: deviceId, path: deniedDeletePath,
+          recursive: false, approval_token: deniedDeleteToken,
+        });
+        assert.equal(typeof deniedParentDelete.error, "string");
+        assert.equal(fs.readFileSync(outsideFile, "utf8"), "outside-private-do-not-modify");
+        console.log("agent-e2e: fs_delete symlinked parent denied with approval");
+
 
       } finally {
         fs.rmSync(outsideDirLink, { force: true });
