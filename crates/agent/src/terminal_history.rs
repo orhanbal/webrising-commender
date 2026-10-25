@@ -25,36 +25,38 @@ impl HistoryStore {
         let id = Uuid::parse_str(device).context("invalid device id")?;
         let root =
             dirs::data_local_dir().ok_or_else(|| anyhow!("local data directory unavailable"))?;
-        Self::at(
-            root.join("webrising-commender")
-                .join("terminal-history")
-                .join(id.to_string()),
-        )
+        let app_root = root.join("webrising-commender");
+        let history_root = app_root.join("terminal-history");
+        fs::create_dir_all(&history_root)?;
+        for owned in [&app_root, &history_root] {
+            Self::secure_dir(owned)?;
+        }
+        Self::at(history_root.join(id.to_string()))
     }
 
     fn at(dir: PathBuf) -> Result<Self> {
         fs::create_dir_all(&dir)?;
-        let mut current = Some(dir.as_path());
-        for _ in 0..3 {
-            if let Some(path) = current {
-                let meta = fs::symlink_metadata(path)?;
-                if !meta.is_dir() || meta.file_type().is_symlink() {
-                    return Err(anyhow!("unsafe terminal history directory"));
-                }
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
-                }
-                current = path.parent();
-            }
-        }
+        // Never chmod arbitrary parents (e.g. /tmp in isolated tests).
+        Self::secure_dir(&dir)?;
         let store = Self {
             dir,
             mutex: Mutex::new(()),
         };
         store.prune()?;
         Ok(store)
+    }
+
+    fn secure_dir(path: &std::path::Path) -> Result<()> {
+        let meta = fs::symlink_metadata(path)?;
+        if !meta.is_dir() || meta.file_type().is_symlink() {
+            return Err(anyhow!("unsafe terminal history directory"));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+        }
+        Ok(())
     }
 
     fn valid_id(id: &str) -> Result<()> {
