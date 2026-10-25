@@ -1279,8 +1279,7 @@ const UNDO_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
 // Protect the shared snapshot directory budget and pruning from concurrent
 // writes/restores to different files in the same Agent process.
-static UNDO_DIRECTORY_LOCK: std::sync::OnceLock<std::sync::Mutex<()>> =
-    std::sync::OnceLock::new();
+static UNDO_DIRECTORY_LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
 
 fn undo_directory_lock() -> Result<std::sync::MutexGuard<'static, ()>> {
     UNDO_DIRECTORY_LOCK
@@ -2491,10 +2490,12 @@ mod undo_version_tests {
             ),
         )
         .unwrap();
-        assert!(versions(&policy, path.to_str().unwrap()).unwrap()["versions"]
-            .as_array()
-            .unwrap()
-            .is_empty());
+        assert!(
+            versions(&policy, path.to_str().unwrap()).unwrap()["versions"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
         assert!(!snapshot.exists());
         assert!(undo(
             &policy,
