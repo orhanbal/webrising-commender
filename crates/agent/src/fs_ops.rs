@@ -2459,9 +2459,8 @@ fn delete_children_pinned_unix(
             }
             let original = child.metadata()?;
             use std::os::unix::fs::MetadataExt;
-            if current.st_ino != original.ino()
-                || i128::from(current.st_dev) != i128::from(original.dev())
-            {
+            if current.st_ino != original.ino() || i128::from(current.st_dev) != i128::from(original.dev())
+    {
                 return Err(anyhow!("recursive_delete_inode_changed"));
             }
             if unsafe { libc::unlinkat(directory.as_raw_fd(), name.as_ptr(), libc::AT_REMOVEDIR) }
