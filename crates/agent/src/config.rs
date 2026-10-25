@@ -2,9 +2,11 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
 };
+
+const MAX_AGENT_CONFIG_BYTES: u64 = 256 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,9 +45,43 @@ impl AgentConfig {
     }
 
     pub fn load(path: &Path) -> Result<Self> {
-        let raw = fs::read_to_string(path)
+        // A config holds device credentials: never follow a replaced symlink,
+        // read a directory/device, or allocate unbounded memory for JSON.
+        let metadata = fs::symlink_metadata(path)
             .with_context(|| format!("cannot read config {}", path.display()))?;
-        let mut config: Self = serde_json::from_str(&raw).context("invalid agent config")?;
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            return Err(anyhow!("unsafe_agent_config_target"));
+        }
+        let mut options = fs::OpenOptions::new();
+        options.read(true);
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(0o400000); // O_NOFOLLOW
+        }
+        #[cfg(target_os = "macos")]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(0x100); // O_NOFOLLOW
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
+        }
+        let mut file = options
+            .open(path)
+            .with_context(|| format!("cannot read config {}", path.display()))?;
+        let opened = file.metadata()?;
+        if !opened.is_file() || opened.len() > MAX_AGENT_CONFIG_BYTES {
+            return Err(anyhow!("unsafe_agent_config_target"));
+        }
+        let mut raw = Vec::new();
+        file.take(MAX_AGENT_CONFIG_BYTES + 1).read_to_end(&mut raw)?;
+        if raw.len() as u64 > MAX_AGENT_CONFIG_BYTES {
+            return Err(anyhow!("agent_config_too_large"));
+        }
+        let mut config: Self = serde_json::from_slice(&raw).context("invalid agent config")?;
         config.normalize_roots()?;
         Ok(config)
     }
@@ -55,6 +91,12 @@ impl AgentConfig {
             .parent()
             .ok_or_else(|| anyhow!("config parent unavailable"))?;
         fs::create_dir_all(parent)?;
+        // A symlinked config directory could redirect credentials into an
+        // attacker-controlled location even when the file itself is regular.
+        let parent_meta = fs::symlink_metadata(parent)?;
+        if !parent_meta.is_dir() || parent_meta.file_type().is_symlink() {
+            return Err(anyhow!("unsafe_agent_config_parent"));
+        }
         // Never follow an existing config symlink when writing credentials.
         match fs::symlink_metadata(path) {
             Ok(meta) if !meta.is_file() || meta.file_type().is_symlink() => {
@@ -186,4 +228,44 @@ mod tests {
         assert_eq!(fs::read(&target).unwrap(), b"unchanged");
         fs::remove_dir_all(root).unwrap();
     }
+    #[cfg(unix)]
+    #[test]
+    fn config_load_rejects_symlink_and_oversized_json() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!("wc-config-read-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("target.json");
+        fs::write(&target, b"{}").unwrap();
+        let link = root.join("agent.json");
+        symlink(&target, &link).unwrap();
+        assert!(AgentConfig::load(&link).is_err());
+        let oversized = root.join("oversized.json");
+        fs::write(&oversized, vec![b'x'; MAX_AGENT_CONFIG_BYTES as usize + 1]).unwrap();
+        assert!(AgentConfig::load(&oversized).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn config_save_rejects_symlinked_parent_without_leaking_credentials() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!("wc-config-parent-{}", uuid::Uuid::new_v4()));
+        let destination = root.join("destination");
+        fs::create_dir_all(&destination).unwrap();
+        let link = root.join("config-link");
+        symlink(&destination, &link).unwrap();
+        let config = AgentConfig {
+            device_id: "device".into(),
+            device_token: "secret".into(),
+            approval_key: "key".into(),
+            gateway_ws_url: String::new(),
+            control_url: String::new(),
+            name: String::new(),
+            allowed_roots: vec![root.clone()],
+        };
+        assert!(config.save(&link.join("agent.json")).is_err());
+        assert!(!destination.join("agent.json").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
 }
