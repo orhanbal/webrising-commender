@@ -51,7 +51,9 @@ impl AgentConfig {
     }
 
     pub fn save(&self, path: &Path) -> Result<()> {
-        let parent = path.parent().ok_or_else(|| anyhow!("config parent unavailable"))?;
+        let parent = path
+            .parent()
+            .ok_or_else(|| anyhow!("config parent unavailable"))?;
         fs::create_dir_all(parent)?;
         // Never follow an existing config symlink when writing credentials.
         match fs::symlink_metadata(path) {
@@ -143,14 +145,20 @@ mod tests {
             allowed_roots: vec![root.clone()],
         };
         config.save(&path).unwrap();
-        assert_eq!(AgentConfig::load(&path).unwrap().device_token, "secret-token");
+        assert_eq!(
+            AgentConfig::load(&path).unwrap().device_token,
+            "secret-token"
+        );
         config.device_token = "new-token".into();
         config.save(&path).unwrap();
         assert_eq!(AgentConfig::load(&path).unwrap().device_token, "new-token");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
         }
         fs::remove_dir_all(root).unwrap();
     }
