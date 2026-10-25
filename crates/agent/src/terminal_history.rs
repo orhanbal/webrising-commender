@@ -269,7 +269,6 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
-
     #[test]
     fn device_namespace_isolated_and_archive_count_bounded() {
         let root = std::env::temp_dir().join(format!("wcth-scope-{}", Uuid::new_v4()));
@@ -286,7 +285,12 @@ mod tests {
         let count = fs::read_dir(&a.dir)
             .unwrap()
             .filter(|entry| {
-                entry.as_ref().unwrap().file_name().to_string_lossy().ends_with(".hist")
+                entry
+                    .as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .ends_with(".hist")
             })
             .count();
         assert_eq!(count, MAX_ARCHIVES);
