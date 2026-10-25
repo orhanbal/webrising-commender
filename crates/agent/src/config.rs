@@ -77,7 +77,8 @@ impl AgentConfig {
             return Err(anyhow!("unsafe_agent_config_target"));
         }
         let mut raw = Vec::new();
-        file.take(MAX_AGENT_CONFIG_BYTES + 1).read_to_end(&mut raw)?;
+        file.take(MAX_AGENT_CONFIG_BYTES + 1)
+            .read_to_end(&mut raw)?;
         if raw.len() as u64 > MAX_AGENT_CONFIG_BYTES {
             return Err(anyhow!("agent_config_too_large"));
         }
@@ -267,5 +268,4 @@ mod tests {
         assert!(!destination.join("agent.json").exists());
         fs::remove_dir_all(root).unwrap();
     }
-
 }
