@@ -1179,8 +1179,7 @@ pub fn write(
         let (original, previous_sha) = previous
             .as_ref()
             .ok_or_else(|| anyhow!("undo_requires_existing_file"))?;
-        let (id, snapshot_path) =
-            save_undo_snapshot(&path, original, previous_sha, &next_sha)?;
+        let (id, snapshot_path) = save_undo_snapshot(&path, original, previous_sha, &next_sha)?;
         Some((id, snapshot_path, previous_sha.clone()))
     } else {
         None
@@ -1249,9 +1248,7 @@ pub fn append(
         }
         let next_sha = format!("{:x}", Sha256::digest(&updated));
         let snapshot = if with_undo {
-            Some(save_undo_snapshot(
-                &path, &original, &previous_sha, &next_sha,
-            )?)
+            Some(save_undo_snapshot(&path, &original, &previous_sha, &next_sha)?)
         } else {
             None
         };
