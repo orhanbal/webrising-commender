@@ -1,10 +1,10 @@
 use crate::policy::PathPolicy;
 use anyhow::{anyhow, Context, Result};
 use serde_json::{json, Value};
-use std::{process::Stdio, time::Duration};
-use sysinfo::{Pid, ProcessesToUpdate, Signal, System};
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
+use std::{process::Stdio, time::Duration};
+use sysinfo::{Pid, ProcessesToUpdate, Signal, System};
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
     process::Command,
@@ -119,7 +119,8 @@ async fn exec_with_timeout_bounds(
     let mut child = process.spawn().context("failed to start command")?;
     #[cfg(unix)]
     let group = ProcessGroupGuard::new(
-        child.id()
+        child
+            .id()
             .ok_or_else(|| anyhow!("spawned process has no pid"))?,
     )?;
     let stdout = child
@@ -273,10 +274,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let marker = root.join("orphaned");
         let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
-        let command = format!(
-            "(sleep 1; printf leaked > '{}') & wait",
-            marker.display()
-        );
+        let command = format!("(sleep 1; printf leaked > '{}') & wait", marker.display());
         let result = exec(&policy, &command, None, Some(150)).await;
         assert!(result.unwrap_err().to_string().contains("timed out"));
         tokio::time::sleep(Duration::from_millis(1200)).await;
@@ -297,9 +295,8 @@ mod tests {
             ready.display(),
             marker.display()
         );
-        let job = tokio::spawn(async move {
-            exec_task(&policy, &command, None, Some(10_000)).await
-        });
+        let job =
+            tokio::spawn(async move { exec_task(&policy, &command, None, Some(10_000)).await });
         let started = tokio::time::timeout(Duration::from_secs(5), async {
             while !ready.exists() {
                 tokio::time::sleep(Duration::from_millis(10)).await;
