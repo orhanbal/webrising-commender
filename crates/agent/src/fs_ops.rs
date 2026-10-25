@@ -1957,7 +1957,10 @@ mod atomic_write_parent_tests {
         symlink(&outside, &parent).unwrap();
         assert!(atomic_write(&resolved, b"replacement").is_err());
         assert_eq!(fs::read(&outside_target).unwrap(), b"outside-private");
-        assert_eq!(fs::read(allowed.join("relocated/target.txt")).unwrap(), b"inside");
+        assert_eq!(
+            fs::read(allowed.join("relocated/target.txt")).unwrap(),
+            b"inside"
+        );
         assert_eq!(fs::read_dir(&outside).unwrap().count(), 1);
         fs::remove_dir_all(base).unwrap();
     }
@@ -1972,7 +1975,10 @@ mod atomic_write_parent_tests {
         symlink(&outside, &link).unwrap();
         assert!(atomic_write(&link, b"replacement").is_err());
         assert_eq!(fs::read(&outside).unwrap(), b"original");
-        assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        assert!(fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
         fs::remove_dir_all(base).unwrap();
     }
 }
