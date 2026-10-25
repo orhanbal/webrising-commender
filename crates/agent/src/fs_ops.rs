@@ -2320,7 +2320,10 @@ mod delete_parent_tests {
         symlink(&outside, &parent).unwrap();
         assert!(unlink_pinned(&resolved_file, false).is_err());
         assert!(unlink_pinned(&resolved_dir, true).is_err());
-        assert_eq!(fs::read(outside.join("target.txt")).unwrap(), b"outside-private");
+        assert_eq!(
+            fs::read(outside.join("target.txt")).unwrap(),
+            b"outside-private"
+        );
         assert!(outside.join("empty").is_dir());
         assert!(allowed.join("relocated/target.txt").exists());
         fs::remove_dir_all(base).unwrap();
