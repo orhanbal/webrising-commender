@@ -841,6 +841,41 @@ try {
         assert.equal(typeof deniedParentDelete.error, "string");
         assert.equal(fs.readFileSync(outsideFile, "utf8"), "outside-private-do-not-modify");
         console.log("agent-e2e: fs_delete symlinked parent denied with approval");
+        // Recursive delete must also reject a symlinked ancestor after
+        // destructive-action approval, and must not follow symlink entries
+        // encountered inside an otherwise allowed directory tree.
+        const outsideRecursive = path.join(escapedDir, "recursive-target");
+        fs.mkdirSync(path.join(outsideRecursive, "nested"), { recursive: true });
+        fs.writeFileSync(path.join(outsideRecursive, "nested/keep.txt"), "outside-recursive-private");
+        const deniedRecursivePath = path.join(outsideDirLink, "recursive-target");
+        const deniedRecursiveToken = await approval(deviceId, {
+          kind: "fs_delete", path: deniedRecursivePath, recursive: true,
+        });
+        const deniedRecursiveDelete = await tool(626, "fs_delete", {
+          device_id: deviceId, path: deniedRecursivePath,
+          recursive: true, approval_token: deniedRecursiveToken,
+        });
+        assert.equal(typeof deniedRecursiveDelete.error, "string");
+        assert.equal(
+          fs.readFileSync(path.join(outsideRecursive, "nested/keep.txt"), "utf8"),
+          "outside-recursive-private",
+        );
+
+        const allowedRecursive = path.join(tempRoot, "recursive-delete-acceptance");
+        fs.mkdirSync(path.join(allowedRecursive, "nested"), { recursive: true });
+        fs.writeFileSync(path.join(allowedRecursive, "nested/inside.txt"), "inside");
+        fs.symlinkSync(outsideFile, path.join(allowedRecursive, "external-link"), "file");
+        const allowedRecursiveToken = await approval(deviceId, {
+          kind: "fs_delete", path: allowedRecursive, recursive: true,
+        });
+        const recursiveDelete = await tool(627, "fs_delete", {
+          device_id: deviceId, path: allowedRecursive,
+          recursive: true, approval_token: allowedRecursiveToken,
+        });
+        assert.equal(recursiveDelete.ok, true);
+        assert.equal(fs.existsSync(allowedRecursive), false);
+        assert.equal(fs.readFileSync(outsideFile, "utf8"), "outside-private-do-not-modify");
+        console.log("agent-e2e: recursive fs_delete pinned traversal and symlink boundary passed");
         // Both mkdir modes must reject an outside-root symlinked parent
         // through the actual MCP -> Gateway -> Agent route.
         for (const recursive of [false, true]) {
