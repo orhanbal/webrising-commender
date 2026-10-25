@@ -1146,6 +1146,11 @@ pub fn write(
             "write exceeds hard limit of {HARD_WRITE_MAX} bytes"
         ));
     }
+    // fs_undo reads at most 4 MiB of current content. Never issue an undoId
+    // for a replacement that the restore path cannot read back.
+    if with_undo && bytes.len() > HARD_READ_MAX {
+        return Err(anyhow!("guarded_write_exceeds_4mib_limit"));
+    }
 
     let lock = mutation_lock(&path)?;
     let _guard = lock
