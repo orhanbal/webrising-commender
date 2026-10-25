@@ -521,6 +521,76 @@ fn open_regular_read(path: &Path) -> Result<fs::File> {
     Ok(file)
 }
 
+/// Open a regular append target without following a final-component symlink.
+/// A caller may resolve an allowlisted path before another process swaps its
+/// directory entry. O_NOFOLLOW closes that final-component race on Unix;
+/// descriptor-relative parent traversal is still required for full TOCTOU safety.
+fn open_regular_append(path: &Path) -> Result<fs::File> {
+    let mut options = fs::OpenOptions::new();
+    options.append(true).create(true);
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(0o400000); // O_NOFOLLOW
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(0x100); // O_NOFOLLOW
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
+    }
+    let file = options.open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return Err(anyhow!("path is not a regular append target"));
+    }
+    Ok(file)
+}
+
+#[cfg(test)]
+mod append_security_tests {
+    use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn append_handle_rejects_final_symlink_swap_after_policy_resolution() {
+        use std::os::unix::fs::symlink;
+        let base = std::env::temp_dir().join(format!("commender-append-race-{}", Uuid::new_v4()));
+        let allowed = base.join("allowed");
+        let outside = base.join("outside");
+        fs::create_dir_all(&allowed).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let target = allowed.join("file.txt");
+        let secret = outside.join("secret.txt");
+        fs::write(&target, b"inside").unwrap();
+        fs::write(&secret, b"outside").unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&allowed)).unwrap();
+        let resolved = policy.resolve_for_create(target.to_str().unwrap()).unwrap();
+        fs::remove_file(&target).unwrap();
+        symlink(&secret, &target).unwrap();
+        assert!(open_regular_append(&resolved).is_err());
+        assert_eq!(fs::read(&secret).unwrap(), b"outside");
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn unguarded_append_uses_open_handle_for_size_limit() {
+        let base = std::env::temp_dir().join(format!("commender-append-size-{}", Uuid::new_v4()));
+        fs::create_dir_all(&base).unwrap();
+        let path = base.join("large.bin");
+        fs::File::create(&path).unwrap().set_len(128 * 1024 * 1024).unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&base)).unwrap();
+        let result = append(&policy, path.to_str().unwrap(), "YQ==", None, false);
+        assert!(result.is_err());
+        assert_eq!(fs::metadata(&path).unwrap().len(), 128 * 1024 * 1024);
+        fs::remove_dir_all(base).unwrap();
+    }
+}
+
 /// Limit bytes read from a changing file and check cancellation between
 /// bounded chunks. Invalid UTF-8 and oversized files are safely skipped.
 #[cfg(test)]
@@ -1227,11 +1297,6 @@ pub fn append(
     let _guard = lock
         .lock()
         .map_err(|_| anyhow!("file mutation lock poisoned"))?;
-    let existing_size = fs::metadata(&path).map(|item| item.len()).unwrap_or(0);
-    if existing_size.saturating_add(bytes.len() as u64) > 128 * 1024 * 1024 {
-        return Err(anyhow!("append exceeds total file limit of 128 MiB"));
-    }
-
     // An undoable append must be an atomic replacement of the full bounded
     // result: a partially written append would invalidate its snapshot SHA.
     if with_undo || expected_sha256.is_some() {
@@ -1278,10 +1343,13 @@ pub fn append(
         return Ok(response);
     }
 
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)?;
+    let mut file = open_regular_append(&path)?;
+    // The descriptor, not a path-based stat performed before open, is the
+    // authority for the size limit. A concurrent writer may still append
+    // after this check; cross-process locking remains an open acceptance gate.
+    if file.metadata()?.len().saturating_add(bytes.len() as u64) > 128 * 1024 * 1024 {
+        return Err(anyhow!("append exceeds total file limit of 128 MiB"));
+    }
     file.write_all(&bytes)?;
     file.sync_all()?;
     Ok(json!({ "ok": true, "path": path.to_string_lossy(), "appendedBytes": bytes.len() }))
