@@ -2368,8 +2368,156 @@ mod mkdir_parent_tests {
     }
 }
 
+/// Traverse recursive deletion with directory descriptors, never path strings.
+/// Directory entries are opened with O_NOFOLLOW; symlinks are unlinked rather
+/// than traversed. A bounded walk prevents a single request from monopolizing
+/// the Agent. External renames of already-open inodes remain a separate gate.
+#[cfg(unix)]
+struct RecursiveDeleteDir(*mut libc::DIR);
+
+#[cfg(unix)]
+impl Drop for RecursiveDeleteDir {
+    fn drop(&mut self) {
+        unsafe {
+            libc::closedir(self.0);
+        }
+    }
+}
+
+#[cfg(unix)]
+fn delete_children_pinned_unix(
+    directory: &fs::File,
+    depth: usize,
+    remaining: &mut usize,
+) -> Result<()> {
+    use std::ffi::{CStr, CString};
+    use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd};
+
+    if depth > 64 {
+        return Err(anyhow!("recursive_delete_depth_limit"));
+    }
+    let fd = directory.try_clone()?.into_raw_fd();
+    let stream = unsafe { libc::fdopendir(fd) };
+    if stream.is_null() {
+        let error = std::io::Error::last_os_error();
+        unsafe {
+            libc::close(fd);
+        }
+        return Err(error.into());
+    }
+    let stream = RecursiveDeleteDir(stream);
+    loop {
+        let entry = unsafe { libc::readdir(stream.0) };
+        if entry.is_null() {
+            break;
+        }
+        let name = unsafe { CStr::from_ptr((*entry).d_name.as_ptr()) };
+        if name.to_bytes() == b"." || name.to_bytes() == b".." {
+            continue;
+        }
+        *remaining = remaining
+            .checked_sub(1)
+            .ok_or_else(|| anyhow!("recursive_delete_entry_limit"))?;
+        let name = CString::new(name.to_bytes())?;
+        let mut metadata: libc::stat = unsafe { std::mem::zeroed() };
+        if unsafe {
+            libc::fstatat(
+                directory.as_raw_fd(),
+                name.as_ptr(),
+                &mut metadata,
+                libc::AT_SYMLINK_NOFOLLOW,
+            )
+        } != 0
+        {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        if metadata.st_mode & libc::S_IFMT == libc::S_IFDIR {
+            let child_fd = unsafe {
+                libc::openat(
+                    directory.as_raw_fd(),
+                    name.as_ptr(),
+                    libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                )
+            };
+            if child_fd < 0 {
+                return Err(std::io::Error::last_os_error().into());
+            }
+            let child = unsafe { fs::File::from_raw_fd(child_fd) };
+            delete_children_pinned_unix(&child, depth + 1, remaining)?;
+            // Detect a swapped child before unlinking its directory entry.
+            let mut current: libc::stat = unsafe { std::mem::zeroed() };
+            if unsafe {
+                libc::fstatat(
+                    directory.as_raw_fd(),
+                    name.as_ptr(),
+                    &mut current,
+                    libc::AT_SYMLINK_NOFOLLOW,
+                )
+            } != 0
+            {
+                return Err(std::io::Error::last_os_error().into());
+            }
+            let original = child.metadata()?;
+            use std::os::unix::fs::MetadataExt;
+            if current.st_ino != original.ino() || current.st_dev != original.dev() {
+                return Err(anyhow!("recursive_delete_inode_changed"));
+            }
+            if unsafe { libc::unlinkat(directory.as_raw_fd(), name.as_ptr(), libc::AT_REMOVEDIR) }
+                != 0
+            {
+                return Err(std::io::Error::last_os_error().into());
+            }
+        } else if unsafe { libc::unlinkat(directory.as_raw_fd(), name.as_ptr(), 0) } != 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn delete_tree_pinned_unix(path: &Path) -> Result<()> {
+    use std::os::fd::{AsRawFd, FromRawFd};
+
+    let (parent, name) = rename_parent_handle(path)?;
+    let fd = unsafe {
+        libc::openat(
+            parent.as_raw_fd(),
+            name.as_ptr(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let directory = unsafe { fs::File::from_raw_fd(fd) };
+    let mut remaining = 100_000usize;
+    delete_children_pinned_unix(&directory, 0, &mut remaining)?;
+    // The directory may have been renamed by an external writer. Refuse to
+    // unlink a different inode at the original path.
+    let mut current: libc::stat = unsafe { std::mem::zeroed() };
+    if unsafe {
+        libc::fstatat(
+            parent.as_raw_fd(),
+            name.as_ptr(),
+            &mut current,
+            libc::AT_SYMLINK_NOFOLLOW,
+        )
+    } != 0
+    {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    use std::os::unix::fs::MetadataExt;
+    let original = directory.metadata()?;
+    if current.st_ino != original.ino() || current.st_dev != original.dev() {
+        return Err(anyhow!("recursive_delete_inode_changed"));
+    }
+    if unsafe { libc::unlinkat(parent.as_raw_fd(), name.as_ptr(), libc::AT_REMOVEDIR) } != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    Ok(())
+}
+
 /// Remove a file or empty directory relative to a pinned, no-follow parent.
-/// Recursive deletion remains a separate, not-yet-hardened acceptance gate.
 #[cfg(unix)]
 fn unlink_pinned(path: &Path, directory: bool) -> Result<()> {
     use std::os::fd::AsRawFd;
@@ -2391,6 +2539,9 @@ pub fn delete(policy: &PathPolicy, raw: &str, recursive: bool) -> Result<Value> 
     let metadata = fs::symlink_metadata(&path)?;
     if metadata.is_dir() {
         if recursive {
+            #[cfg(unix)]
+            delete_tree_pinned_unix(&path)?;
+            #[cfg(not(unix))]
             fs::remove_dir_all(&path)?;
         } else {
             #[cfg(unix)]
@@ -2440,6 +2591,50 @@ mod delete_parent_tests {
         );
         assert!(outside.join("empty").is_dir());
         assert!(allowed.join("relocated/target.txt").exists());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn recursive_delete_unlinks_symlink_without_following_external_target() {
+        let base = std::env::temp_dir().join(format!("commender-recursive-{}", Uuid::new_v4()));
+        let allowed = base.join("allowed");
+        let outside = base.join("outside");
+        let target = allowed.join("nested");
+        fs::create_dir_all(target.join("child")).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(target.join("child/data.txt"), b"inside").unwrap();
+        fs::write(outside.join("keep.txt"), b"outside-private").unwrap();
+        symlink(&outside, target.join("external-link")).unwrap();
+
+        let policy = PathPolicy::new(std::slice::from_ref(&allowed)).unwrap();
+        assert!(delete(&policy, target.to_str().unwrap(), true).is_ok());
+        assert!(!target.exists());
+        assert_eq!(fs::read(outside.join("keep.txt")).unwrap(), b"outside-private");
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn recursive_delete_rejects_swapped_parent_symlink() {
+        let base = std::env::temp_dir().join(format!("commender-recursive-parent-{}", Uuid::new_v4()));
+        let allowed = base.join("allowed");
+        let parent = allowed.join("working");
+        let outside = base.join("outside");
+        fs::create_dir_all(parent.join("nested/child")).unwrap();
+        fs::create_dir_all(outside.join("nested/child")).unwrap();
+        fs::write(outside.join("nested/child/keep.txt"), b"outside-private").unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&allowed)).unwrap();
+        let resolved = policy
+            .resolve_existing(parent.join("nested").to_str().unwrap())
+            .unwrap();
+
+        fs::rename(&parent, allowed.join("relocated")).unwrap();
+        symlink(&outside, &parent).unwrap();
+        assert!(delete_tree_pinned_unix(&resolved).is_err());
+        assert_eq!(
+            fs::read(outside.join("nested/child/keep.txt")).unwrap(),
+            b"outside-private"
+        );
+        assert!(allowed.join("relocated/nested").exists());
         fs::remove_dir_all(base).unwrap();
     }
 
