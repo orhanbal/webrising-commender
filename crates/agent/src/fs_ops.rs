@@ -1694,6 +1694,16 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
         file.sync_all()?;
         drop(file);
         fs::rename(&temporary, path).context("atomic replace failed")?;
+        // A synced temporary file does not make its directory entry durable.
+        // Best-effort directory sync improves crash recovery on Unix. Never
+        // fail *after* rename: callers would otherwise delete their undo
+        // snapshot despite the replacement already being visible.
+        #[cfg(unix)]
+        {
+            if let Ok(directory) = fs::File::open(parent) {
+                let _ = directory.sync_all();
+            }
+        }
         Ok(())
     })();
     if result.is_err() {
@@ -2708,6 +2718,58 @@ mod undo_version_tests {
         assert!(ensure_undo_capacity(&root, &path, 5, 10).is_err());
         assert!(ensure_undo_capacity(&root, &path, 4, 10).is_ok());
         assert_eq!(fs::read(&snapshot).unwrap(), b"123456");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn guarded_write_and_append_undo_survive_policy_restart() {
+        let root = env::temp_dir().join(format!("wc-undo-restart-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("restart.dat");
+        fs::write(&path, b"before").unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let written = write(
+            &policy,
+            path.to_str().unwrap(),
+            &STANDARD.encode(b"middle"),
+            false,
+            None,
+            true,
+        )
+        .unwrap();
+        let restarted = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        assert_eq!(
+            versions(&restarted, path.to_str().unwrap()).unwrap()["versions"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        let appended = append(
+            &restarted,
+            path.to_str().unwrap(),
+            &STANDARD.encode(b"-after"),
+            None,
+            true,
+        )
+        .unwrap();
+        let second_restart = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        undo(
+            &second_restart,
+            path.to_str().unwrap(),
+            appended["undoId"].as_str().unwrap(),
+            appended["sha256"].as_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"middle");
+        undo(
+            &second_restart,
+            path.to_str().unwrap(),
+            written["undoId"].as_str().unwrap(),
+            written["sha256"].as_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"before");
         fs::remove_dir_all(root).unwrap();
     }
 
