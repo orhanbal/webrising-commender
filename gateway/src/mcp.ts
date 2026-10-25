@@ -113,6 +113,8 @@ const tools = [
     { path: str(), search: str(), replace: str(), replace_all: bool(), expected_sha256: str() },
     ["path", "search", "replace"],
   ),
+  tool("fs_versions", "List at most eight persistent undo snapshots for an allowlisted file.", { path: str() }, ["path"]),
+  tool("fs_undo", "Restore a prior fs_replace snapshot only when the current SHA-256 matches. Consumes the snapshot on success.", { path: str(), undo_id: str(), expected_sha256: str() }, ["path", "undo_id", "expected_sha256"]),
   tool(
     "process_exec",
     "Execute a shell command. HIGH risk. Omit approval_token to create a human approval request, then retry after approval.",
@@ -230,6 +232,8 @@ function actionFromTool(name: string, a: any): AgentAction {
     case "text_search":
     case "code_search": return { kind: "text_search", path: String(a.path), query: String(a.query), ...(a.case_sensitive !== undefined ? { caseSensitive: Boolean(a.case_sensitive) } : {}), ...(a.max_results !== undefined ? { maxResults: Number(a.max_results) } : {}) };
     case "fs_replace": return { kind: "fs_replace", path: String(a.path), search: String(a.search), replace: String(a.replace), ...(a.replace_all !== undefined ? { replaceAll: Boolean(a.replace_all) } : {}), ...(a.expected_sha256 !== undefined ? { expectedSha256: String(a.expected_sha256) } : {}) };
+    case "fs_versions": return { kind: "fs_versions", path: String(a.path) };
+    case "fs_undo": return { kind: "fs_undo", path: String(a.path), undoId: String(a.undo_id), expectedSha256: String(a.expected_sha256) };
     case "process_exec": return { kind: "process_exec", command: String(a.command), ...(a.cwd ? { cwd: String(a.cwd) } : {}), ...(a.timeout_ms ? { timeoutMs: Number(a.timeout_ms) } : {}) };
     case "process_list": return { kind: "process_list" };
     case "process_kill": return { kind: "process_kill", pid: Number(a.pid) };

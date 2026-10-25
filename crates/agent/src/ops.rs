@@ -304,6 +304,9 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
             replace_all.unwrap_or(false),
             expected_sha256.as_deref(),
         ),
+        AgentAction::FsVersions { path } => fs_ops::versions(policy, &path),
+        AgentAction::FsUndo { path, undo_id, expected_sha256 } =>
+            fs_ops::undo(policy, &path, &undo_id, &expected_sha256),
         AgentAction::ProcessExec {
             command,
             cwd,

@@ -868,6 +868,28 @@ try {
   assert.equal(raceResults.filter((result) => typeof result.error === "string").length, 7);
   assert.match(fs.readFileSync(raceFile, "utf8"), /^winner-[0-7]$/);
   console.log("agent-e2e: concurrent fs_replace SHA guard accepted exactly one writer");
+  const winningEdit = raceResults.find((result) => result.ok === true);
+  assert.match(winningEdit.undoId, /^[0-9a-f-]{36}$/);
+  const versions = await tool(570, "fs_versions", { device_id: deviceId, path: raceFile });
+  assert.ok(versions.versions.some((item) => item.undoId === winningEdit.undoId));
+  const currentRaceSha = createHash("sha256").update(fs.readFileSync(raceFile)).digest("hex");
+  const staleUndo = await tool(571, "fs_undo", {
+    device_id: deviceId, path: raceFile, undo_id: winningEdit.undoId,
+    expected_sha256: "0".repeat(64),
+  });
+  assert.equal(typeof staleUndo.error, "string");
+  const restored = await tool(572, "fs_undo", {
+    device_id: deviceId, path: raceFile, undo_id: winningEdit.undoId,
+    expected_sha256: currentRaceSha,
+  });
+  assert.equal(restored.ok, true);
+  assert.equal(fs.readFileSync(raceFile, "utf8"), "race-seed");
+  const replay = await tool(573, "fs_undo", {
+    device_id: deviceId, path: raceFile, undo_id: winningEdit.undoId,
+    expected_sha256: currentRaceSha,
+  });
+  assert.equal(typeof replay.error, "string");
+  console.log("agent-e2e: durable guarded fs_replace undo survived stale/replay negative tests");
 
   const readAfterReplace = await tool(118, "fs_read", {
     device_id: deviceId,

@@ -150,6 +150,8 @@ pub enum AgentAction {
         replace_all: Option<bool>,
         expected_sha256: Option<String>,
     },
+    FsVersions { path: String },
+    FsUndo { path: String, undo_id: String, expected_sha256: String },
     ProcessExec {
         command: String,
         cwd: Option<String>,
@@ -280,6 +282,8 @@ impl AgentAction {
             Self::FsSearch { .. } => "fs_search",
             Self::TextSearch { .. } => "text_search",
             Self::FsReplace { .. } => "fs_replace",
+            Self::FsVersions { .. } => "fs_versions",
+            Self::FsUndo { .. } => "fs_undo",
             Self::ProcessExec { .. } => "process_exec",
             Self::ProcessList => "process_list",
             Self::ProcessKill { .. } => "process_kill",
@@ -306,6 +310,7 @@ impl AgentAction {
             | Self::FsRead { .. }
             | Self::FsReadMultiple { .. }
             | Self::FsReadLines { .. }
+            | Self::FsVersions { .. }
             | Self::ImageInspect { .. }
             | Self::DocxInspect { .. }
             | Self::DocxReadParagraphs { .. }
@@ -329,6 +334,7 @@ impl AgentAction {
             | Self::FsMkdir { .. }
             | Self::FsMove { .. }
             | Self::FsReplace { .. }
+            | Self::FsUndo { .. }
             | Self::TerminalInput { .. }
             | Self::TerminalResize { .. } => Risk::Medium,
 

@@ -28,6 +28,8 @@ export type AgentAction =
   | { kind: "fs_search"; path: string; query: string; caseSensitive?: boolean; maxResults?: number; resumeCheckpoint?: unknown }
   | { kind: "text_search"; path: string; query: string; caseSensitive?: boolean; maxResults?: number; resumeCheckpoint?: unknown }
   | { kind: "fs_replace"; path: string; search: string; replace: string; replaceAll?: boolean; expectedSha256?: string }
+  | { kind: "fs_versions"; path: string }
+  | { kind: "fs_undo"; path: string; undoId: string; expectedSha256: string }
   | { kind: "process_exec"; command: string; cwd?: string; timeoutMs?: number }
   | { kind: "process_list" }
   | { kind: "process_kill"; pid: number }
@@ -175,6 +177,13 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     replaceAll: z.boolean().optional(),
     expectedSha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
   }).strict(),
+  z.object({ kind: z.literal("fs_versions"), path: pathSchema }).strict(),
+  z.object({
+    kind: z.literal("fs_undo"),
+    path: pathSchema,
+    undoId: z.string().uuid(),
+    expectedSha256: z.string().regex(/^[a-fA-F0-9]{64}$/),
+  }).strict(),
   z.object({
     kind: z.literal("process_exec"),
     command: z.string().min(1).max(32_000),
@@ -279,6 +288,7 @@ export function actionRisk(kind: AgentAction["kind"] | string): Risk {
     case "fs_read":
     case "fs_read_multiple":
     case "fs_read_lines":
+    case "fs_versions":
     case "image_inspect":
     case "docx_inspect":
     case "docx_read_paragraphs":
@@ -302,6 +312,7 @@ export function actionRisk(kind: AgentAction["kind"] | string): Risk {
     case "fs_mkdir":
     case "fs_move":
     case "fs_replace":
+    case "fs_undo":
     case "terminal_input":
     case "terminal_resize":
       return "medium";
