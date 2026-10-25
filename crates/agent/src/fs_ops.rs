@@ -492,63 +492,115 @@ fn search_with_deadline_reporting(
     }))
 }
 
-/// Open only a regular file without following a final-component symlink.
-/// A file may be swapped after the directory entry's metadata check; a plain
-/// File::open would otherwise follow that replacement outside allowed roots.
-/// Parent-directory rename races still require descriptor-relative traversal.
-fn open_regular_read(path: &Path) -> Result<fs::File> {
-    let mut options = fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(target_os = "linux")]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(0o400000); // O_NOFOLLOW
+/// Open an allowlisted canonical path without following a symlink in ANY
+/// component. A final-component O_NOFOLLOW alone is insufficient: another
+/// process can rename an ancestor and replace it with an outside-root link
+/// after PathPolicy resolves the path. openat() pins each parent directory
+/// descriptor before the next component is resolved.
+#[cfg(unix)]
+fn open_regular_unix(path: &Path, append: bool) -> Result<fs::File> {
+    use std::ffi::CString;
+    use std::os::fd::{AsRawFd, FromRawFd};
+    use std::os::unix::ffi::OsStrExt;
+    use std::path::Component;
+
+    if !path.is_absolute() {
+        return Err(anyhow!("absolute_path_required"));
     }
-    #[cfg(target_os = "macos")]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(0x100); // O_NOFOLLOW
+    let mut components = path
+        .components()
+        .filter(|part| !matches!(part, Component::RootDir))
+        .peekable();
+    let mut directory = fs::File::open("/")?;
+    while let Some(component) = components.next() {
+        let Component::Normal(name) = component else {
+            return Err(anyhow!("unsafe_path_component"));
+        };
+        let name = CString::new(name.as_bytes())
+            .map_err(|_| anyhow!("unsafe_path_component"))?;
+        let last = components.peek().is_none();
+        let flags = if last {
+            if append {
+                libc::O_WRONLY | libc::O_APPEND | libc::O_CREAT
+            } else {
+                libc::O_RDONLY
+            }
+        } else {
+            libc::O_RDONLY | libc::O_DIRECTORY
+        };
+        let fd = unsafe {
+            libc::openat(
+                directory.as_raw_fd(),
+                name.as_ptr(),
+                flags | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                0o600,
+            )
+        };
+        if fd < 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        // Ownership transfers to File immediately, including on error paths.
+        let opened = unsafe { fs::File::from_raw_fd(fd) };
+        if last {
+            if !opened.metadata()?.is_file() {
+                return Err(anyhow!("path is not a regular file"));
+            }
+            return Ok(opened);
+        }
+        directory = opened;
     }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-        options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
-    }
-    let file = options.open(path)?;
-    if !file.metadata()?.is_file() {
-        return Err(anyhow!("path is not a regular file"));
-    }
-    Ok(file)
+    Err(anyhow!("path is not a regular file"))
 }
 
-/// Open a regular append target without following a final-component symlink.
-/// A caller may resolve an allowlisted path before another process swaps its
-/// directory entry. O_NOFOLLOW closes that final-component race on Unix;
-/// descriptor-relative parent traversal is still required for full TOCTOU safety.
+/// Open only a regular file. Unix also pins every ancestor directory using
+/// openat(O_DIRECTORY | O_NOFOLLOW), closing parent-symlink substitution races
+/// for descriptor-based reads. Atomic rename operations remain a separate gate.
+fn open_regular_read(path: &Path) -> Result<fs::File> {
+    #[cfg(unix)]
+    {
+        return open_regular_unix(path, false);
+    }
+    #[cfg(not(unix))]
+    {
+        let mut options = fs::OpenOptions::new();
+        options.read(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
+        }
+        let file = options.open(path)?;
+        if !file.metadata()?.is_file() {
+            return Err(anyhow!("path is not a regular file"));
+        }
+        Ok(file)
+    }
+}
+
+/// Append through a pinned parent-directory chain on Unix. On Windows, the
+/// existing final-component reparse-point guard remains in effect; a full
+/// Windows parent-handle traversal is still an outstanding acceptance gate.
 fn open_regular_append(path: &Path) -> Result<fs::File> {
-    let mut options = fs::OpenOptions::new();
-    options.append(true).create(true);
-    #[cfg(target_os = "linux")]
+    #[cfg(unix)]
     {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(0o400000); // O_NOFOLLOW
+        return open_regular_unix(path, true);
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(not(unix))]
     {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(0x100); // O_NOFOLLOW
+        let mut options = fs::OpenOptions::new();
+        options.append(true).create(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
+        }
+        let file = options.open(path)?;
+        let metadata = file.metadata()?;
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            return Err(anyhow!("path is not a regular append target"));
+        }
+        Ok(file)
     }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-        options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
-    }
-    let file = options.open(path)?;
-    let metadata = file.metadata()?;
-    if !metadata.is_file() || metadata.file_type().is_symlink() {
-        return Err(anyhow!("path is not a regular append target"));
-    }
-    Ok(file)
 }
 
 #[cfg(test)]
@@ -574,6 +626,35 @@ mod append_security_tests {
         symlink(&secret, &target).unwrap();
         assert!(open_regular_append(&resolved).is_err());
         assert_eq!(fs::read(&secret).unwrap(), b"outside");
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_and_append_handles_reject_parent_symlink_swap_after_policy_resolution() {
+        use std::os::unix::fs::symlink;
+
+        let base = std::env::temp_dir().join(format!("commender-parent-race-{}", Uuid::new_v4()));
+        let allowed = base.join("allowed");
+        let nested = allowed.join("nested");
+        let outside = base.join("outside");
+        fs::create_dir_all(&nested).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let target = nested.join("file.txt");
+        let secret = outside.join("file.txt");
+        fs::write(&target, b"inside").unwrap();
+        fs::write(&secret, b"outside-private").unwrap();
+
+        let policy = PathPolicy::new(std::slice::from_ref(&allowed)).unwrap();
+        let resolved = policy.resolve_for_create(target.to_str().unwrap()).unwrap();
+        fs::rename(&nested, allowed.join("renamed")).unwrap();
+        symlink(&outside, &nested).unwrap();
+
+        // The stale canonical pathname now resolves outside the allowed root.
+        // Neither a read nor an append may follow the swapped parent link.
+        assert!(open_regular_read(&resolved).is_err());
+        assert!(open_regular_append(&resolved).is_err());
+        assert_eq!(fs::read(&secret).unwrap(), b"outside-private");
         fs::remove_dir_all(base).unwrap();
     }
 

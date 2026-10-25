@@ -780,6 +780,23 @@ try {
       assert.equal(typeof deniedAppend.error, "string");
       assert.equal(fs.readFileSync(outsideFile, "utf8"), "outside-private-do-not-modify");
       console.log("agent-e2e: fs_append outside-root symlink denied without modifying target");
+      const outsideDirLink = path.join(tempRoot, "outside-dir-link");
+      fs.symlinkSync(escapedDir, outsideDirLink, "dir");
+      try {
+        const deniedParentRead = await tool(298, "fs_read", {
+          device_id: deviceId, path: path.join(outsideDirLink, "outside-private.txt"),
+        });
+        assert.equal(typeof deniedParentRead.error, "string");
+        const deniedParentAppend = await tool(299, "fs_append", {
+          device_id: deviceId, path: path.join(outsideDirLink, "outside-private.txt"),
+          content_base64: Buffer.from("-must-not-append").toString("base64"),
+        });
+        assert.equal(typeof deniedParentAppend.error, "string");
+        assert.equal(fs.readFileSync(outsideFile, "utf8"), "outside-private-do-not-modify");
+        console.log("agent-e2e: parent symlink outside root denied for read and append");
+      } finally {
+        fs.rmSync(outsideDirLink, { force: true });
+      }
     } finally {
       fs.rmSync(outsideLink, { force: true });
     }
