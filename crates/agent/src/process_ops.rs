@@ -231,8 +231,7 @@ pub fn kill(pid: u32) -> Result<Value> {
         .ok_or_else(|| anyhow!("process not found"))?;
     let target_start = original.start_time();
 
-    let mut children: std::collections::HashMap<Pid, Vec<Pid>> =
-        std::collections::HashMap::new();
+    let mut children: std::collections::HashMap<Pid, Vec<Pid>> = std::collections::HashMap::new();
     for (child_pid, process) in system.processes() {
         if let Some(parent) = process.parent() {
             children.entry(parent).or_default().push(*child_pid);
