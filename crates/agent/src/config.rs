@@ -2,6 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
+    io::Write,
     path::{Path, PathBuf},
 };
 
@@ -50,19 +51,46 @@ impl AgentConfig {
     }
 
     pub fn save(&self, path: &Path) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
+        let parent = path.parent().ok_or_else(|| anyhow!("config parent unavailable"))?;
+        fs::create_dir_all(parent)?;
+        // Never follow an existing config symlink when writing credentials.
+        match fs::symlink_metadata(path) {
+            Ok(meta) if !meta.is_file() || meta.file_type().is_symlink() => {
+                return Err(anyhow!("unsafe_agent_config_target"));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
         }
         let data = serde_json::to_vec_pretty(self)?;
-        fs::write(path, data)?;
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+        let temporary = parent.join(format!(".agent-config-{}.tmp", uuid::Uuid::new_v4()));
+        let result = (|| -> Result<()> {
+            let mut options = fs::OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            let mut file = options.open(&temporary)?;
+            file.write_all(&data)?;
+            file.sync_all()?;
+            drop(file);
+            // Publish only fully synced content; failed writes preserve the
+            // previous config instead of truncating its secrets or JSON.
+            fs::rename(&temporary, path)?;
+            #[cfg(unix)]
+            {
+                if let Ok(directory) = fs::File::open(parent) {
+                    let _ = directory.sync_all();
+                }
+            }
+            Ok(())
+        })();
+        if result.is_err() {
+            let _ = fs::remove_file(&temporary);
         }
-
-        Ok(())
+        result
     }
 
     pub fn masked_json(&self) -> Result<String> {
@@ -94,4 +122,60 @@ impl AgentConfig {
 
 pub fn default_allowed_root() -> Result<PathBuf> {
     dirs::home_dir().ok_or_else(|| anyhow!("cannot determine home directory"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_save_is_atomic_and_roundtrips_credentials() {
+        let root = std::env::temp_dir().join(format!("wc-config-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("private").join("agent.json");
+        let mut config = AgentConfig {
+            device_id: "device".into(),
+            device_token: "secret-token".into(),
+            approval_key: "secret-approval".into(),
+            gateway_ws_url: "wss://example.invalid/agent".into(),
+            control_url: "https://example.invalid".into(),
+            name: "test".into(),
+            allowed_roots: vec![root.clone()],
+        };
+        config.save(&path).unwrap();
+        assert_eq!(AgentConfig::load(&path).unwrap().device_token, "secret-token");
+        config.device_token = "new-token".into();
+        config.save(&path).unwrap();
+        assert_eq!(AgentConfig::load(&path).unwrap().device_token, "new-token");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn config_save_rejects_symlink_without_modifying_target() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!("wc-config-link-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("target.json");
+        fs::write(&target, b"unchanged").unwrap();
+        let link = root.join("agent.json");
+        symlink(&target, &link).unwrap();
+        let config = AgentConfig {
+            device_id: "device".into(),
+            device_token: "secret".into(),
+            approval_key: "key".into(),
+            gateway_ws_url: String::new(),
+            control_url: String::new(),
+            name: String::new(),
+            allowed_roots: vec![root.clone()],
+        };
+        assert!(config.save(&link).is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"unchanged");
+        fs::remove_dir_all(root).unwrap();
+    }
 }
