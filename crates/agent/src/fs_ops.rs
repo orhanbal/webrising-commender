@@ -1985,9 +1985,12 @@ mod move_collision_tests {
         fs::write(&source, b"source").unwrap();
         fs::write(&destination, b"keep-me").unwrap();
         let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
-        assert!(
-            move_path(&policy, source.to_str().unwrap(), destination.to_str().unwrap()).is_err()
-        );
+        assert!(move_path(
+            &policy,
+            source.to_str().unwrap(),
+            destination.to_str().unwrap()
+        )
+        .is_err());
         assert_eq!(fs::read(&source).unwrap(), b"source");
         assert_eq!(fs::read(&destination).unwrap(), b"keep-me");
         fs::remove_dir_all(root).unwrap();
@@ -2011,8 +2014,12 @@ mod move_collision_tests {
                 let barrier = Arc::clone(&barrier);
                 std::thread::spawn(move || {
                     barrier.wait();
-                    move_path(&policy, source.to_str().unwrap(), destination.to_str().unwrap())
-                        .is_ok()
+                    move_path(
+                        &policy,
+                        source.to_str().unwrap(),
+                        destination.to_str().unwrap(),
+                    )
+                    .is_ok()
                 })
             })
             .collect::<Vec<_>>();
