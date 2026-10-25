@@ -219,7 +219,9 @@ mod tests {
             let barrier = Arc::clone(&barrier);
             jobs.push(tokio::spawn(async move {
                 barrier.wait().await;
-                manager.start(policy, "sleep 5".into(), None, Some(10_000)).await
+                manager
+                    .start(policy, "sleep 5".into(), None, Some(10_000))
+                    .await
             }));
         }
         barrier.wait().await;
@@ -240,12 +242,15 @@ mod tests {
         {
             let tasks = manager.tasks.lock().await;
             assert_eq!(
-                tasks.values().filter(|entry| entry.status == "running").count(),
+                tasks
+                    .values()
+                    .filter(|entry| entry.status == "running")
+                    .count(),
                 MAX_RUNNING_TASKS
             );
-            assert!(tasks.values().all(|entry| {
-                entry.status != "running" || entry.abort.is_some()
-            }));
+            assert!(tasks
+                .values()
+                .all(|entry| { entry.status != "running" || entry.abort.is_some() }));
         }
         for id in accepted {
             let canceled = manager.cancel(&id).await.unwrap();
