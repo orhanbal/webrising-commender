@@ -1151,6 +1151,51 @@ try {
   });
   assert.match(finalTaskStatus.result.stdout, /PERSISTENT_TASK_OK/);
 
+  // 2C: real Agent/Gateway/MCP timeout and cancellation must terminate
+  // descendants, not just the foreground shell. The markers would be
+  // created by leaked grandchildren two seconds after the request ends.
+  if (process.platform !== "win32") {
+    const timeoutMarker = path.join(tempRoot, "timeout-descendant-leaked");
+    const timeoutCommand =
+      "(sleep 2; printf leaked > '" + timeoutMarker + "') & wait";
+    const timeoutToken = await approval(deviceId, {
+      kind: "process_exec", command: timeoutCommand, cwd: tempRoot, timeoutMs: 250,
+    });
+    const timedOut = await tool(341, "process_exec", {
+      device_id: deviceId, command: timeoutCommand, cwd: tempRoot,
+      timeout_ms: 250, approval_token: timeoutToken,
+    });
+    assert.match(timedOut.error, /timed out/i);
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+    assert.equal(fs.existsSync(timeoutMarker), false, "timed-out descendant survived");
+
+    const cancelReady = path.join(tempRoot, "cancel-task-ready");
+    const cancelMarker = path.join(tempRoot, "cancel-descendant-leaked");
+    const cancelCommand =
+      "printf ready > '" + cancelReady +
+      "'; (sleep 2; printf leaked > '" + cancelMarker + "') & wait";
+    const cancelStartToken = await approval(deviceId, {
+      kind: "task_start", command: cancelCommand, cwd: tempRoot, timeoutMs: 10000,
+    });
+    const cancelTask = await tool(342, "task_start", {
+      device_id: deviceId, command: cancelCommand, cwd: tempRoot,
+      timeout_ms: 10000, approval_token: cancelStartToken,
+    });
+    assert.equal(typeof cancelTask.taskId, "string");
+    await waitFor(() => fs.existsSync(cancelReady), 5000, 20);
+    const cancelToken = await approval(deviceId, {
+      kind: "task_cancel", taskId: cancelTask.taskId,
+    });
+    const canceledTask = await tool(343, "task_cancel", {
+      device_id: deviceId, task_id: cancelTask.taskId,
+      approval_token: cancelToken,
+    });
+    assert.equal(canceledTask.canceled, true);
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+    assert.equal(fs.existsSync(cancelMarker), false, "canceled descendant survived");
+    console.log("agent-e2e: process timeout and task cancel reaped Unix descendants");
+  }
+
   const deleteToken = await approval(deviceId, {
     kind: "fs_delete",
     path: movedPath,
