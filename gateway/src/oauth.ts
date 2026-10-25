@@ -288,7 +288,7 @@ export async function handleOAuthHttp(
           !/^[A-Za-z0-9._~-]+$/.test(p.code_verifier || "")) {
         failure(res, 400, "invalid_grant"); return true;
       }
-      const expected = crypto.createHash("sha256").update(p.code_verifier).digest("base64url");
+      const expected = crypto.createHash("sha256").update(p.code_verifier || "").digest("base64url");
       const client = await db.connect();
       try {
         await client.query("begin");
@@ -301,14 +301,14 @@ export async function handleOAuthHttp(
           "join users u on u.id=c.user_id and u.disabled_at is null " +
           "join organization_members m on m.user_id=c.user_id and m.organization_id=c.organization_id " +
           "where c.code_hash=$1 and c.client_id=$2 and c.expires_at>now() for update of c",
-          [sha256(p.code), clientId],
+          [sha256(p.code || ""), clientId],
         );
         const row = rows.rows[0];
         if (!row || row.code_challenge !== expected || row.redirect_uri !== p.redirect_uri ||
             row.resource !== p.resource || row.scope !== oauthScope) {
           await client.query("rollback"); failure(res, 400, "invalid_grant"); return true;
         }
-        await client.query("delete from oauth_codes where code_hash=$1", [sha256(p.code)]);
+        await client.query("delete from oauth_codes where code_hash=$1", [sha256(p.code || "")]);
         const access = "wrco_" + randomToken(40);
         const refresh = "wrcr_" + randomToken(40);
         await client.query(
@@ -335,7 +335,7 @@ export async function handleOAuthHttp(
         "where s.refresh_hash=$3 and s.client_id=$4 and s.resource=$5 and s.refresh_expires_at>now() and s.revoked_at is null " +
         "and exists(select 1 from users u join organization_members m on m.user_id=u.id and m.organization_id=s.organization_id " +
         "where u.id=s.user_id and u.disabled_at is null) returning s.id",
-        [sha256(access), sha256(refresh), sha256(p.refresh_token), clientId, p.resource],
+        [sha256(access), sha256(refresh), sha256(p.refresh_token || ""), clientId, p.resource],
       );
       if (!updated.rowCount) { failure(res, 400, "invalid_grant"); return true; }
       json(res, 200, { access_token: access, token_type: "Bearer", expires_in: 3600, refresh_token: refresh, scope: oauthScope });
