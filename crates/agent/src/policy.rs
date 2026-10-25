@@ -36,14 +36,24 @@ impl PathPolicy {
         let input = PathBuf::from(raw);
         reject_parent_components(&input)?;
 
-        if input.exists() {
-            return self.resolve_existing(raw);
+        // Path::exists follows symlinks and reports false for a dangling
+        // symlink. Treating that path as absent would let a later write
+        // follow the link to a target outside the allowed roots.
+        match fs::symlink_metadata(&input) {
+            Ok(_) => return self.resolve_existing(raw),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
         }
 
         let mut ancestor = input.as_path();
         let mut suffix: Vec<std::ffi::OsString> = Vec::new();
 
-        while !ancestor.exists() {
+        loop {
+            match fs::symlink_metadata(ancestor) {
+                Ok(_) => break,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
             let name = ancestor
                 .file_name()
                 .ok_or_else(|| anyhow!("cannot resolve parent for {}", input.display()))?;
@@ -106,6 +116,42 @@ mod tests {
         fs::create_dir_all(&base).unwrap();
         let policy = PathPolicy::new(std::slice::from_ref(&base)).unwrap();
         assert!(policy.resolve_for_create("../escape").is_err());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_dangling_symlink_create_outside_allowed_root() {
+        use std::os::unix::fs::symlink;
+
+        let base = env::temp_dir().join(format!("commander-dangling-{}", Uuid::new_v4()));
+        let allowed = base.join("allowed");
+        let outside = base.join("outside");
+        fs::create_dir_all(&allowed).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let link = allowed.join("new-file");
+        let target = outside.join("missing-file");
+        symlink(&target, &link).unwrap();
+
+        let policy = PathPolicy::new(std::slice::from_ref(&allowed)).unwrap();
+        assert!(policy.resolve_for_create(link.to_str().unwrap()).is_err());
+        assert!(!target.exists());
+
+        // An intermediate dangling link must not be mistaken for a missing
+        // directory either.
+        let intermediate = allowed.join("new-dir");
+        symlink(outside.join("missing-dir"), &intermediate).unwrap();
+        assert!(policy
+            .resolve_for_create(intermediate.join("file").to_str().unwrap())
+            .is_err());
+
+        // Legitimate new files within the root still resolve normally.
+        assert_eq!(
+            policy
+                .resolve_for_create(allowed.join("ordinary").to_str().unwrap())
+                .unwrap(),
+            allowed.join("ordinary")
+        );
         fs::remove_dir_all(base).unwrap();
     }
 }
