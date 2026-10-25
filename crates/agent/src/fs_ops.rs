@@ -1203,7 +1203,13 @@ pub fn write(
 }
 
 /// Append without truncating, up to the configured size limits.
-pub fn append(policy: &PathPolicy, raw: &str, content_base64: &str) -> Result<Value> {
+pub fn append(
+    policy: &PathPolicy,
+    raw: &str,
+    content_base64: &str,
+    expected_sha256: Option<&str>,
+    with_undo: bool,
+) -> Result<Value> {
     let path = policy.resolve_for_create(raw)?;
     let bytes = STANDARD
         .decode(content_base64)
@@ -1221,6 +1227,50 @@ pub fn append(policy: &PathPolicy, raw: &str, content_base64: &str) -> Result<Va
     if existing_size.saturating_add(bytes.len() as u64) > 128 * 1024 * 1024 {
         return Err(anyhow!("append exceeds total file limit of 128 MiB"));
     }
+
+    // An undoable append must be an atomic replacement of the full bounded
+    // result: a partially written append would invalidate its snapshot SHA.
+    if with_undo || expected_sha256.is_some() {
+        let mut original = Vec::new();
+        open_regular_read(&path)?
+            .take(HARD_READ_MAX as u64 + 1)
+            .read_to_end(&mut original)?;
+        if original.len() > HARD_READ_MAX {
+            return Err(anyhow!("guarded_append_exceeds_4mib_limit"));
+        }
+        let previous_sha = format!("{:x}", Sha256::digest(&original));
+        if expected_sha256.is_some_and(|expected| !previous_sha.eq_ignore_ascii_case(expected)) {
+            return Err(anyhow!("file_changed_since_read"));
+        }
+        let mut updated = original.clone();
+        updated.extend_from_slice(&bytes);
+        if updated.len() > HARD_READ_MAX {
+            return Err(anyhow!("guarded_append_exceeds_4mib_limit"));
+        }
+        let next_sha = format!("{:x}", Sha256::digest(&updated));
+        let snapshot = if with_undo {
+            Some(save_undo_snapshot(
+                &path, &original, &previous_sha, &next_sha,
+            )?)
+        } else {
+            None
+        };
+        if let Err(error) = atomic_write(&path, &updated) {
+            if let Some((_, snapshot_path)) = &snapshot {
+                let _ = fs::remove_file(snapshot_path);
+            }
+            return Err(error);
+        }
+        let mut response = json!({
+            "ok": true, "path": path.to_string_lossy(), "appendedBytes": bytes.len(),
+            "previousSha256": previous_sha, "sha256": next_sha
+        });
+        if let Some((id, _)) = snapshot {
+            response["undoId"] = json!(id);
+        }
+        return Ok(response);
+    }
+
     let mut file = fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -2457,6 +2507,43 @@ mod mutation_concurrency_tests {
 mod undo_version_tests {
     use super::*;
     use std::{env, fs};
+
+    #[test]
+    fn guarded_binary_append_undo_and_stale_sha() {
+        let root = env::temp_dir().join(format!("wc-undo-append-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("binary.dat");
+        let seed = [0_u8, 255, 42, 13];
+        fs::write(&path, seed).unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let seed_sha = format!("{:x}", Sha256::digest(seed));
+        let appended = append(
+            &policy,
+            path.to_str().unwrap(),
+            &STANDARD.encode([7_u8, 8]),
+            Some(&seed_sha),
+            true,
+        )
+        .unwrap();
+        assert_eq!(fs::read(&path).unwrap(), [0_u8, 255, 42, 13, 7, 8]);
+        assert!(append(
+            &policy,
+            path.to_str().unwrap(),
+            &STANDARD.encode([9_u8]),
+            Some(&seed_sha),
+            true,
+        )
+        .is_err());
+        undo(
+            &policy,
+            path.to_str().unwrap(),
+            appended["undoId"].as_str().unwrap(),
+            appended["sha256"].as_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(fs::read(&path).unwrap(), seed);
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn guarded_binary_write_undo_and_stale_sha() {

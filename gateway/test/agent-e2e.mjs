@@ -951,6 +951,27 @@ try {
   assert.equal(typeof missingUndoWrite.error, "string");
   assert.equal(fs.existsSync(path.join(tempRoot, "missing-undo.txt")), false);
   console.log("agent-e2e: guarded fs_write binary undo, stale SHA and missing target passed");
+  const guardedAppend = await tool(584, "fs_append", {
+    device_id: deviceId, path: versionedPath,
+    content_base64: Buffer.from([7, 8]).toString("base64"),
+    expected_sha256: seedSha, with_undo: true,
+  });
+  assert.equal(guardedAppend.ok, true, JSON.stringify(guardedAppend));
+  assert.match(guardedAppend.undoId, /^[0-9a-f-]{36}$/);
+  assert.deepEqual(fs.readFileSync(versionedPath), Buffer.from([0, 255, 42, 13, 7, 8]));
+  const staleAppend = await tool(585, "fs_append", {
+    device_id: deviceId, path: versionedPath,
+    content_base64: Buffer.from([9]).toString("base64"),
+    expected_sha256: seedSha, with_undo: true,
+  });
+  assert.equal(typeof staleAppend.error, "string");
+  const restoredAppend = await tool(586, "fs_undo", {
+    device_id: deviceId, path: versionedPath,
+    undo_id: guardedAppend.undoId, expected_sha256: guardedAppend.sha256,
+  });
+  assert.equal(restoredAppend.ok, true);
+  assert.deepEqual(fs.readFileSync(versionedPath), seedBytes);
+  console.log("agent-e2e: guarded fs_append atomic undo and stale SHA negative tests passed");
 
   const readAfterReplace = await tool(118, "fs_read", {
     device_id: deviceId,

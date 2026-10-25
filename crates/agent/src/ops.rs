@@ -184,7 +184,15 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
         AgentAction::FsAppend {
             path,
             content_base64,
-        } => fs_ops::append(policy, &path, &content_base64),
+            expected_sha256,
+            with_undo,
+        } => fs_ops::append(
+            policy,
+            &path,
+            &content_base64,
+            expected_sha256.as_deref(),
+            with_undo.unwrap_or(false),
+        ),
         AgentAction::FsMkdir { path, recursive } => {
             fs_ops::mkdir(policy, &path, recursive.unwrap_or(false))
         }

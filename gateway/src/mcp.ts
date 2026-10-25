@@ -53,7 +53,7 @@ const tools = [
     { path: str(), content_base64: str(), create_parents: bool(), expected_sha256: str(), with_undo: bool() },
     ["path", "content_base64"],
   ),
-  tool("fs_append", "Append base64-encoded bytes to a file in allowed roots.", { path: str(), content_base64: str() }, ["path", "content_base64"]),
+  tool("fs_append", "Append base64-encoded bytes to an allowlisted file. Optional expected_sha256 guards stale appends; with_undo atomically appends to an existing regular file (max 4 MiB) and creates a guarded snapshot.", { path: str(), content_base64: str(), expected_sha256: str(), with_undo: bool() }, ["path", "content_base64"]),
   tool("fs_mkdir", "Create a directory.", { path: str(), recursive: bool() }, ["path"]),
   tool(
     "fs_delete",
@@ -223,7 +223,7 @@ function actionFromTool(name: string, a: any): AgentAction {
     case "xlsx_write_cells": return { kind: "xlsx_write_cells", path: String(a.path), outputPath: String(a.output_path), sheet: String(a.sheet), updates: a.updates, ...(a.expected_sha256 ? { expectedSha256: String(a.expected_sha256) } : {}) };
     case "xlsx_find": return { kind: "xlsx_find", path: String(a.path), query: String(a.query), ...(a.sheet ? { sheet: String(a.sheet) } : {}), ...(a.case_sensitive !== undefined ? { caseSensitive: Boolean(a.case_sensitive) } : {}), ...(a.max_results !== undefined ? { maxResults: Number(a.max_results) } : {}) };
     case "fs_write": return { kind: "fs_write", path: String(a.path), contentBase64: String(a.content_base64), createParents: Boolean(a.create_parents), ...(a.expected_sha256 !== undefined ? { expectedSha256: String(a.expected_sha256) } : {}), ...(a.with_undo !== undefined ? { withUndo: Boolean(a.with_undo) } : {}) };
-    case "fs_append": return { kind: "fs_append", path: String(a.path), contentBase64: String(a.content_base64) };
+    case "fs_append": return { kind: "fs_append", path: String(a.path), contentBase64: String(a.content_base64), ...(a.expected_sha256 !== undefined ? { expectedSha256: String(a.expected_sha256) } : {}), ...(a.with_undo !== undefined ? { withUndo: Boolean(a.with_undo) } : {}) };
     case "fs_mkdir": return { kind: "fs_mkdir", path: String(a.path), recursive: Boolean(a.recursive) };
     case "fs_delete": return { kind: "fs_delete", path: String(a.path), recursive: Boolean(a.recursive) };
     case "fs_move": return { kind: "fs_move", source: String(a.source), destination: String(a.destination) };

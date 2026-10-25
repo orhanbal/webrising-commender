@@ -113,6 +113,8 @@ pub enum AgentAction {
     FsAppend {
         path: String,
         content_base64: String,
+        expected_sha256: Option<String>,
+        with_undo: Option<bool>,
     },
     FsMkdir {
         path: String,
