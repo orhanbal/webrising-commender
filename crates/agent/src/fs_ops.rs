@@ -2494,6 +2494,8 @@ mod mutation_concurrency_tests {
                     &policy,
                     &raw,
                     &STANDARD.encode(format!("{index:02}\n").as_bytes()),
+                    None,
+                    false,
                 )
             }));
         }
