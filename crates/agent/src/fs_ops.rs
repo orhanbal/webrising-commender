@@ -1879,8 +1879,12 @@ fn rename_parent_handle(path: &Path) -> Result<(fs::File, std::ffi::CString)> {
     if !path.is_absolute() {
         return Err(anyhow!("absolute_path_required"));
     }
-    let parent = path.parent().ok_or_else(|| anyhow!("unsafe_path_component"))?;
-    let leaf = path.file_name().ok_or_else(|| anyhow!("unsafe_path_component"))?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow!("unsafe_path_component"))?;
+    let leaf = path
+        .file_name()
+        .ok_or_else(|| anyhow!("unsafe_path_component"))?;
     let leaf = CString::new(leaf.as_bytes())?;
     let mut directory = fs::File::open("/")?;
     for component in parent.components() {
@@ -2103,7 +2107,10 @@ mod move_collision_tests {
         fs::rename(&source_dir, allowed.join("relocated-source")).unwrap();
         symlink(&outside, &source_dir).unwrap();
         assert!(rename_noreplace(&resolved_source, &resolved_destination).is_err());
-        assert_eq!(fs::read(outside.join("source.txt")).unwrap(), b"outside-source");
+        assert_eq!(
+            fs::read(outside.join("source.txt")).unwrap(),
+            b"outside-source"
+        );
         assert!(!destination.exists());
 
         let stable_source = allowed.join("stable-source.txt");
