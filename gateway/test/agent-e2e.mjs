@@ -794,6 +794,27 @@ try {
         assert.equal(typeof deniedParentAppend.error, "string");
         assert.equal(fs.readFileSync(outsideFile, "utf8"), "outside-private-do-not-modify");
         console.log("agent-e2e: parent symlink outside root denied for read and append");
+        // 3A: fs_move must reject symlinked source/destination parents
+        // through the real MCP -> Gateway -> Rust Agent permission path.
+        const moveGuardSource = path.join(tempRoot, "move-parent-guard-source.txt");
+        const moveGuardTarget = path.join(outsideDirLink, "move-parent-guard-target.txt");
+        fs.writeFileSync(moveGuardSource, "move-guard-preserve", "utf8");
+        const deniedMoveIntoParent = await tool(619, "fs_move", {
+          device_id: deviceId, source: moveGuardSource, destination: moveGuardTarget,
+        });
+        assert.equal(typeof deniedMoveIntoParent.error, "string");
+        assert.equal(fs.readFileSync(moveGuardSource, "utf8"), "move-guard-preserve");
+        assert.equal(fs.existsSync(path.join(escapedDir, "move-parent-guard-target.txt")), false);
+        const deniedMoveOutOfParent = await tool(620, "fs_move", {
+          device_id: deviceId,
+          source: path.join(outsideDirLink, "outside-private.txt"),
+          destination: path.join(tempRoot, "move-parent-guard-escaped.txt"),
+        });
+        assert.equal(typeof deniedMoveOutOfParent.error, "string");
+        assert.equal(fs.readFileSync(outsideFile, "utf8"), "outside-private-do-not-modify");
+        fs.rmSync(moveGuardSource);
+        console.log("agent-e2e: fs_move symlinked source/destination parents denied");
+
       } finally {
         fs.rmSync(outsideDirLink, { force: true });
       }
