@@ -6,6 +6,7 @@ import { csrfCookieName } from "./browser-auth.js";
 import { randomToken, sha256 } from "./crypto-utils.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { oauthScope } from "./oauth-tokens.js";
+import { redirectAllowed, validChallenge, validResource, validClientGrants } from "./oauth-validation.js";
 
 const registerLimiter = new FixedWindowRateLimiter();
 const tokenLimiter = new FixedWindowRateLimiter();
@@ -88,21 +89,7 @@ function getCookie(req: IncomingMessage, name: string) {
   return "";
 }
 
-function redirectAllowed(value: string) {
-  if (!value || value.length > 1024) return false;
-  try {
-    const u = new URL(value);
-    if (u.username || u.password || u.hash || !u.hostname) return false;
-    if (u.protocol === "https:") return true;
-    return u.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname);
-  } catch {
-    return false;
-  }
-}
 
-function validResource(value: string, origin: string) {
-  return value === origin + "/mcp" || value === origin;
-}
 
 function baseEnabled(origin: string) {
   return process.env.MCP_OAUTH_ENABLED === "true" &&
@@ -117,9 +104,6 @@ function safeClientName(name: unknown) {
   return typeof name === "string" && name.trim().length > 0 && name.length <= 120 ? name.trim() : "MCP client";
 }
 
-function validChallenge(value: string) {
-  return /^[A-Za-z0-9_-]{43,128}$/.test(value);
-}
 
 export function oauthChallenge(origin: string) {
   return 'Bearer resource_metadata="' + origin + '/.well-known/oauth-protected-resource", error="invalid_token", error_description="Authentication required"';
@@ -180,8 +164,7 @@ export async function handleOAuthHttp(
           body.redirect_uris.some((u) => typeof u !== "string" || !redirectAllowed(u)) ||
           new Set(body.redirect_uris).size !== body.redirect_uris.length ||
           (body.token_endpoint_auth_method !== undefined && body.token_endpoint_auth_method !== "none") ||
-          (body.grant_types !== undefined && JSON.stringify(body.grant_types) !== '["authorization_code","refresh_token"]' &&
-           JSON.stringify(body.grant_types) !== '["authorization_code"]')) {
+          !validClientGrants(body.grant_types)) {
         failure(res, 400, "invalid_client_metadata"); return true;
       }
       const name = safeClientName(body.client_name);
