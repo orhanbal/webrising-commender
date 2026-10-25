@@ -1063,6 +1063,30 @@ try {
   assert.equal(fs.readFileSync(raceFile, "utf8"), "expiry-edited");
   console.log("agent-e2e: expired undo pruned and stale restore denied via real MCP");
 
+  // 3B crash recovery: a SIGKILL during snapshot staging can leave a UUID
+  // .tmp file behind. A real MCP listing must reclaim stale staging files
+  // without touching fresh staging data or unknown private-directory files.
+  const versionDirectory = path.dirname(snapshotPath);
+  const orphanStage = path.join(versionDirectory, ".00000000-0000-4000-8000-000000000001.tmp");
+  const activeStage = path.join(versionDirectory, ".00000000-0000-4000-8000-000000000002.tmp");
+  const unrelatedStage = path.join(versionDirectory, ".not-a-uuid.tmp");
+  for (const filename of [orphanStage, activeStage, unrelatedStage]) {
+    fs.writeFileSync(filename, "retained");
+  }
+  const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+  fs.utimesSync(orphanStage, twoDaysAgo, twoDaysAgo);
+  fs.utimesSync(unrelatedStage, twoDaysAgo, twoDaysAgo);
+  const crashRecovery = await tool(577, "fs_versions", {
+    device_id: deviceId, path: raceFile,
+  });
+  assert.ok(Array.isArray(crashRecovery.versions), JSON.stringify(crashRecovery));
+  assert.equal(fs.existsSync(orphanStage), false);
+  assert.equal(fs.existsSync(activeStage), true);
+  assert.equal(fs.existsSync(unrelatedStage), true);
+  fs.unlinkSync(activeStage);
+  fs.unlinkSync(unrelatedStage);
+  console.log("agent-e2e: orphan undo staging cleanup preserved fresh and unknown files");
+
   // Real MCP -> Gateway -> native Agent opt-in binary write undo.
   const versionedPath = path.join(tempRoot, "versioned-write.bin");
   const seedBytes = Buffer.from([0, 255, 42, 13]);
