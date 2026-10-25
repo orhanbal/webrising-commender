@@ -1460,8 +1460,7 @@ pub fn undo(policy: &PathPolicy, raw: &str, undo_id: &str, expected_sha256: &str
     let snapshot = dir.join(format!("{}-{}.undo", undo_prefix(&path), id));
     let mut reader = open_regular_read(&snapshot)?;
     let mut encoded = Vec::new();
-    reader
-        .by_ref()
+    std::io::Read::by_ref(&mut reader)
         .take(MAX_UNDO_FILE_BYTES + 1)
         .read_to_end(&mut encoded)?;
     if encoded.len() as u64 > MAX_UNDO_FILE_BYTES {
