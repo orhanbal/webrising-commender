@@ -557,7 +557,7 @@ fn open_regular_unix(path: &Path, append: bool) -> Result<fs::File> {
 fn open_regular_read(path: &Path) -> Result<fs::File> {
     #[cfg(unix)]
     {
-        return open_regular_unix(path, false);
+        open_regular_unix(path, false)
     }
     #[cfg(not(unix))]
     {
@@ -582,7 +582,7 @@ fn open_regular_read(path: &Path) -> Result<fs::File> {
 fn open_regular_append(path: &Path) -> Result<fs::File> {
     #[cfg(unix)]
     {
-        return open_regular_unix(path, true);
+        open_regular_unix(path, true)
     }
     #[cfg(not(unix))]
     {
