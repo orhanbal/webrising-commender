@@ -853,6 +853,22 @@ try {
   assert.equal(typeof staleEdit.error, "string");
   assert.equal(fs.readFileSync(filePath, "utf8"), "hello-from-search-edit");
 
+  // Concurrent fs_replace SHA guard: exactly one matching CAS request can
+  // succeed through the real MCP/Gateway/Rust Agent path.
+  const raceFile = path.join(tempRoot, "concurrent-edit.txt");
+  fs.writeFileSync(raceFile, "race-seed", "utf8");
+  const raceSha = createHash("sha256").update("race-seed").digest("hex");
+  const raceResults = await Promise.all(Array.from({ length: 8 }, (_, index) =>
+    tool(540 + index, "fs_replace", {
+      device_id: deviceId, path: raceFile, search: "race-seed",
+      replace: `winner-${index}`, expected_sha256: raceSha,
+    })
+  ));
+  assert.equal(raceResults.filter((result) => result.ok === true).length, 1);
+  assert.equal(raceResults.filter((result) => typeof result.error === "string").length, 7);
+  assert.match(fs.readFileSync(raceFile, "utf8"), /^winner-[0-7]$/);
+  console.log("agent-e2e: concurrent fs_replace SHA guard accepted exactly one writer");
+
   const readAfterReplace = await tool(118, "fs_read", {
     device_id: deviceId,
     path: filePath,
