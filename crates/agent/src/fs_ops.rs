@@ -1927,8 +1927,16 @@ fn rename_noreplace(source: &Path, destination: &Path) -> Result<()> {
     unsafe extern "system" {
         fn MoveFileW(existing: *const u16, new: *const u16) -> i32;
     }
-    let source = source.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
-    let destination = destination.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
+    let source = source
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
+    let destination = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<_>>();
     // Unlike MoveFileEx with REPLACE_EXISTING, MoveFileW refuses collisions.
     if unsafe { MoveFileW(source.as_ptr(), destination.as_ptr()) } == 0 {
         return Err(std::io::Error::last_os_error().into());
@@ -1969,14 +1977,17 @@ mod move_collision_tests {
 
     #[test]
     fn move_does_not_overwrite_an_existing_file() {
-        let root = std::env::temp_dir().join(format!("commender-move-collision-{}", Uuid::new_v4()));
+        let root =
+            std::env::temp_dir().join(format!("commender-move-collision-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
         let source = root.join("source.txt");
         let destination = root.join("destination.txt");
         fs::write(&source, b"source").unwrap();
         fs::write(&destination, b"keep-me").unwrap();
         let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
-        assert!(move_path(&policy, source.to_str().unwrap(), destination.to_str().unwrap()).is_err());
+        assert!(
+            move_path(&policy, source.to_str().unwrap(), destination.to_str().unwrap()).is_err()
+        );
         assert_eq!(fs::read(&source).unwrap(), b"source");
         assert_eq!(fs::read(&destination).unwrap(), b"keep-me");
         fs::remove_dir_all(root).unwrap();
@@ -1991,23 +2002,31 @@ mod move_collision_tests {
         let policy = Arc::new(PathPolicy::new(std::slice::from_ref(&root)).unwrap());
         let destination = root.join("destination.txt");
         let barrier = Arc::new(Barrier::new(16));
-        let handles = (0..16).map(|index| {
-            let source = root.join(format!("source-{index}.txt"));
-            fs::write(&source, format!("candidate-{index}")).unwrap();
-            let destination = destination.clone();
-            let policy = Arc::clone(&policy);
-            let barrier = Arc::clone(&barrier);
-            std::thread::spawn(move || {
-                barrier.wait();
-                move_path(&policy, source.to_str().unwrap(), destination.to_str().unwrap()).is_ok()
+        let handles = (0..16)
+            .map(|index| {
+                let source = root.join(format!("source-{index}.txt"));
+                fs::write(&source, format!("candidate-{index}")).unwrap();
+                let destination = destination.clone();
+                let policy = Arc::clone(&policy);
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    move_path(&policy, source.to_str().unwrap(), destination.to_str().unwrap())
+                        .is_ok()
+                })
             })
-        }).collect::<Vec<_>>();
-        let wins = handles.into_iter().filter(|handle| handle.join().unwrap()).count();
+            .collect::<Vec<_>>();
+        let wins = handles
+            .into_iter()
+            .filter(|handle| handle.join().unwrap())
+            .count();
         assert_eq!(wins, 1);
         let winner = fs::read_to_string(&destination).unwrap();
         assert!(winner.starts_with("candidate-"));
         assert_eq!(
-            (0..16).filter(|index| root.join(format!("source-{index}.txt")).exists()).count(),
+            (0..16)
+                .filter(|index| root.join(format!("source-{index}.txt")).exists())
+                .count(),
             15
         );
         fs::remove_dir_all(root).unwrap();
