@@ -2459,7 +2459,9 @@ fn delete_children_pinned_unix(
             }
             let original = child.metadata()?;
             use std::os::unix::fs::MetadataExt;
-            if current.st_ino != original.ino() || current.st_dev != original.dev() {
+            if current.st_ino != original.ino()
+                || i128::from(current.st_dev) != i128::from(original.dev())
+            {
                 return Err(anyhow!("recursive_delete_inode_changed"));
             }
             if unsafe { libc::unlinkat(directory.as_raw_fd(), name.as_ptr(), libc::AT_REMOVEDIR) }
@@ -2508,7 +2510,9 @@ fn delete_tree_pinned_unix(path: &Path) -> Result<()> {
     }
     use std::os::unix::fs::MetadataExt;
     let original = directory.metadata()?;
-    if current.st_ino != original.ino() || current.st_dev != original.dev() {
+    if current.st_ino != original.ino()
+                || i128::from(current.st_dev) != i128::from(original.dev())
+            {
         return Err(anyhow!("recursive_delete_inode_changed"));
     }
     if unsafe { libc::unlinkat(parent.as_raw_fd(), name.as_ptr(), libc::AT_REMOVEDIR) } != 0 {
@@ -2609,13 +2613,17 @@ mod delete_parent_tests {
         let policy = PathPolicy::new(std::slice::from_ref(&allowed)).unwrap();
         assert!(delete(&policy, target.to_str().unwrap(), true).is_ok());
         assert!(!target.exists());
-        assert_eq!(fs::read(outside.join("keep.txt")).unwrap(), b"outside-private");
+        assert_eq!(
+            fs::read(outside.join("keep.txt")).unwrap(),
+            b"outside-private"
+        );
         fs::remove_dir_all(base).unwrap();
     }
 
     #[test]
     fn recursive_delete_rejects_swapped_parent_symlink() {
-        let base = std::env::temp_dir().join(format!("commender-recursive-parent-{}", Uuid::new_v4()));
+        let base =
+            std::env::temp_dir().join(format!("commender-recursive-parent-{}", Uuid::new_v4()));
         let allowed = base.join("allowed");
         let parent = allowed.join("working");
         let outside = base.join("outside");
