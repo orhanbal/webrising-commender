@@ -150,6 +150,13 @@ impl TerminalManager {
         rows: u16,
     ) -> Result<Value> {
         let reservation = self.reserve_start()?;
+        // Allocate the archive before spawning an OS child. A disk failure
+        // must never leave an untracked live shell behind.
+        let id = Uuid::new_v4().to_string();
+        if let Some(store) = &self.store {
+            store.save(&id, 0, &VecDeque::new())?;
+            store.prune()?;
+        }
 
         let pty = native_pty_system();
         let pair = pty.openpty(PtySize {
@@ -177,10 +184,6 @@ impl TerminalManager {
         let read_buffer = Arc::clone(&buffer);
         let history = Arc::new(Mutex::new(OutputHistory::default()));
         let read_history = Arc::clone(&history);
-        let id = Uuid::new_v4().to_string();
-        if let Some(store) = &self.store {
-            store.save(&id, 0, &VecDeque::new())?;
-        }
         let history_store = self.store.clone();
         let history_id = id.clone();
 

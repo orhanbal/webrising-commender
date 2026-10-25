@@ -168,7 +168,7 @@ impl HistoryStore {
         Ok((total, raw[20..].iter().copied().collect()))
     }
 
-    fn prune(&self) -> Result<()> {
+    pub fn prune(&self) -> Result<()> {
         let _lock = self
             .mutex
             .lock()
@@ -177,6 +177,20 @@ impl HistoryStore {
         for entry in fs::read_dir(&self.dir)? {
             let entry = entry?;
             let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') && name.ends_with(".tmp") {
+                let meta = fs::symlink_metadata(entry.path())?;
+                if !meta.is_file() || meta.file_type().is_symlink() {
+                    return Err(anyhow!("unsafe terminal history temporary file"));
+                }
+                if SystemTime::now()
+                    .duration_since(meta.modified()?)
+                    .unwrap_or_default()
+                    > Duration::from_secs(3600)
+                {
+                    fs::remove_file(entry.path())?;
+                }
+                continue;
+            }
             let Some(stem) = name.strip_suffix(".hist") else {
                 continue;
             };
@@ -251,6 +265,30 @@ mod tests {
         fs::write(path, b"corrupt").unwrap();
         assert!(store.load(&id).is_err());
         fs::remove_dir_all(dir).unwrap();
+    }
+
+
+    #[test]
+    fn device_namespace_isolated_and_archive_count_bounded() {
+        let root = std::env::temp_dir().join(format!("wcth-scope-{}", Uuid::new_v4()));
+        let a = HistoryStore::at(root.join("a")).unwrap();
+        let b = HistoryStore::at(root.join("b")).unwrap();
+        let id = Uuid::new_v4().to_string();
+        let bytes = VecDeque::from(vec![b'x']);
+        a.save(&id, 1, &bytes).unwrap();
+        assert!(b.load(&id).is_err());
+        for _ in 0..(MAX_ARCHIVES + 8) {
+            a.save(&Uuid::new_v4().to_string(), 1, &bytes).unwrap();
+        }
+        a.prune().unwrap();
+        let count = fs::read_dir(&a.dir)
+            .unwrap()
+            .filter(|entry| {
+                entry.as_ref().unwrap().file_name().to_string_lossy().ends_with(".hist")
+            })
+            .count();
+        assert_eq!(count, MAX_ARCHIVES);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
