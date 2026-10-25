@@ -778,6 +778,14 @@ try {
         content_base64: Buffer.from("-must-not-append").toString("base64"),
       });
       assert.equal(typeof deniedAppend.error, "string");
+      // 3A: unguarded fs_write uses the same pinned-parent atomic replacement
+      // as guarded edits; neither a symlink target nor a symlinked ancestor
+      // may mutate files outside the device's allowed root.
+      const deniedAtomicWrite = await tool(621, "fs_write", {
+        device_id: deviceId, path: outsideLink,
+        content_base64: Buffer.from("must-not-overwrite").toString("base64"),
+      });
+      assert.equal(typeof deniedAtomicWrite.error, "string");
       assert.equal(fs.readFileSync(outsideFile, "utf8"), "outside-private-do-not-modify");
       console.log("agent-e2e: fs_append outside-root symlink denied without modifying target");
       const outsideDirLink = path.join(tempRoot, "outside-dir-link");
@@ -792,7 +800,13 @@ try {
           content_base64: Buffer.from("-must-not-append").toString("base64"),
         });
         assert.equal(typeof deniedParentAppend.error, "string");
+        const deniedParentAtomicWrite = await tool(622, "fs_write", {
+          device_id: deviceId, path: path.join(outsideDirLink, "outside-private.txt"),
+          content_base64: Buffer.from("must-not-overwrite").toString("base64"),
+        });
+        assert.equal(typeof deniedParentAtomicWrite.error, "string");
         assert.equal(fs.readFileSync(outsideFile, "utf8"), "outside-private-do-not-modify");
+        console.log("agent-e2e: fs_write symlinked target and parent denied");
         console.log("agent-e2e: parent symlink outside root denied for read and append");
         // 3A: fs_move must reject symlinked source/destination parents
         // through the real MCP -> Gateway -> Rust Agent permission path.
