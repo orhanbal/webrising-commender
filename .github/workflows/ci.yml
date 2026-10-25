@@ -121,6 +121,7 @@ jobs:
       HOST: 127.0.0.1
       PORT: 8787
       DEPLOYMENT_MODE: saas
+      MCP_OAUTH_ENABLED: true
       PUBLIC_SIGNUP_ENABLED: true
       SMTP_HOST: 127.0.0.1
       SMTP_PORT: 2525
@@ -173,6 +174,8 @@ jobs:
           exit 1
       - name: Run integration acceptance
         run: npm run integration
+      - name: Run OAuth 2.1 PKCE / ChatGPT MCP acceptance
+        run: node test/oauth-integration.mjs
       - name: Verify backup restore in disposable CI database
         working-directory: .
         run: bash scripts/ci-postgres-restore.sh
