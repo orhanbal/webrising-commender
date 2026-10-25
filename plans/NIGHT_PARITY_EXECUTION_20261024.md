@@ -1,3 +1,8 @@
+## 25 Ekim 2026 — 3B retention / global disk kotası: kanıtlı CI kapanışı (ALT KAPSAM PASSED)
+
+- **Kod + test + plan HEAD:** [`953dc96c`](https://github.com/orhanbal/webrising-commender/commit/953dc96cb5addc9bbabb4198a85838d7ad3d876a), [GitHub Actions CI #40168710877](https://github.com/orhanbal/webrising-commender/actions/runs/40168710877) **17/17 PASSED**, 0 FAILED. Rust **46/46 PASSED** (özellikle `expired_undo_is_pruned_and_cannot_restore_stale_content` ve `undo_global_byte_quota_rejects_without_erasing_existing_snapshot`). Gerçek Rust Agent ↔ Gateway ↔ MCP E2E logu: `expired undo pruned and stale restore denied via real MCP`, `agent-e2e: ok`. Dört artifact (Linux x64, Windows x64, macOS universal, dashboard) **4/4 mevcut**, `expired=false`.
+- **Kabul sınırı:** 7 günlük retention ve 128 MiB toplam snapshot kotası yalnız **tek Agent süreci** için eşzamanlılık kontrollü; aktör/tenant/device ayrı snapshot namespace, harici süreç CAS, tam crash/soak ve gerçek OS kabulü yok. **3B genel PENDING**, 3A/3C–10D ve 1A–2D açık kapılar **PENDING**, 7B/10C dış kabuller **BLOCKED_EXTERNAL**. Bu kanıtın eklendiği yeni belge HEAD'i için CI ayrı doğrulanacaktır; genel parity **PENDING**.
+
 ## 25 Ekim 2026 — 3B snapshot retention ve toplam disk kotası (A/B/C/D, KISMİ KABUL)
 
 - **A / PASSED (giriş HEAD):** `f70061b5c60ae741dfff65218f31dd0ea325eeb8` için [CI #40165505271](https://github.com/orhanbal/webrising-commender/actions/runs/40165505271) **17/17 success**, 4 artifact mevcut/expired=false; [platform-distribution #40165778075](https://github.com/orhanbal/webrising-commender/actions/runs/40165778075) success. Rust ve gerçek Agent E2E logları kontrol edildi, girişte P0 CI kırmızısı yoktu.
