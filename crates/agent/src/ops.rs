@@ -171,11 +171,15 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
             path,
             content_base64,
             create_parents,
+            expected_sha256,
+            with_undo,
         } => fs_ops::write(
             policy,
             &path,
             &content_base64,
             create_parents.unwrap_or(false),
+            expected_sha256.as_deref(),
+            with_undo.unwrap_or(false),
         ),
         AgentAction::FsAppend {
             path,

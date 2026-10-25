@@ -917,6 +917,41 @@ try {
   assert.equal(fs.readFileSync(raceFile, "utf8"), "expiry-edited");
   console.log("agent-e2e: expired undo pruned and stale restore denied via real MCP");
 
+  // Real MCP -> Gateway -> native Agent opt-in binary write undo.
+  const versionedPath = path.join(tempRoot, "versioned-write.bin");
+  const seedBytes = Buffer.from([0, 255, 42, 13]);
+  fs.writeFileSync(versionedPath, seedBytes);
+  const seedSha = createHash("sha256").update(seedBytes).digest("hex");
+  const updatedBytes = Buffer.from([5, 4, 3]);
+  const guardedWrite = await tool(580, "fs_write", {
+    device_id: deviceId, path: versionedPath,
+    content_base64: updatedBytes.toString("base64"),
+    expected_sha256: seedSha, with_undo: true,
+  });
+  assert.equal(guardedWrite.ok, true, JSON.stringify(guardedWrite));
+  assert.match(guardedWrite.undoId, /^[0-9a-f-]{36}$/);
+  assert.deepEqual(fs.readFileSync(versionedPath), updatedBytes);
+  const staleWrite = await tool(581, "fs_write", {
+    device_id: deviceId, path: versionedPath,
+    content_base64: Buffer.from("stale").toString("base64"),
+    expected_sha256: seedSha, with_undo: true,
+  });
+  assert.equal(typeof staleWrite.error, "string");
+  assert.deepEqual(fs.readFileSync(versionedPath), updatedBytes);
+  const restoredWrite = await tool(582, "fs_undo", {
+    device_id: deviceId, path: versionedPath,
+    undo_id: guardedWrite.undoId, expected_sha256: guardedWrite.sha256,
+  });
+  assert.equal(restoredWrite.ok, true);
+  assert.deepEqual(fs.readFileSync(versionedPath), seedBytes);
+  const missingUndoWrite = await tool(583, "fs_write", {
+    device_id: deviceId, path: path.join(tempRoot, "missing-undo.txt"),
+    content_base64: Buffer.from("new").toString("base64"), with_undo: true,
+  });
+  assert.equal(typeof missingUndoWrite.error, "string");
+  assert.equal(fs.existsSync(path.join(tempRoot, "missing-undo.txt")), false);
+  console.log("agent-e2e: guarded fs_write binary undo, stale SHA and missing target passed");
+
   const readAfterReplace = await tool(118, "fs_read", {
     device_id: deviceId,
     path: filePath,

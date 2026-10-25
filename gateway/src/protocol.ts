@@ -19,7 +19,7 @@ export type AgentAction =
   | { kind: "xlsx_read_range"; path: string; sheet: string; startRow: number; startColumn: number; rowCount: number; columnCount: number }
   | { kind: "xlsx_write_cells"; path: string; outputPath: string; sheet: string; updates: Array<{ cell: string; value: string | number | boolean }>; expectedSha256?: string }
   | { kind: "xlsx_find"; path: string; sheet?: string; query: string; caseSensitive?: boolean; maxResults?: number }
-  | { kind: "fs_write"; path: string; contentBase64: string; createParents?: boolean }
+  | { kind: "fs_write"; path: string; contentBase64: string; createParents?: boolean; expectedSha256?: string; withUndo?: boolean }
   | { kind: "fs_append"; path: string; contentBase64: string }
   | { kind: "fs_mkdir"; path: string; recursive?: boolean }
   | { kind: "fs_delete"; path: string; recursive?: boolean }
@@ -126,6 +126,8 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     path: pathSchema,
     contentBase64: z.string().max(12 * 1024 * 1024),
     createParents: z.boolean().optional(),
+    expectedSha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
+    withUndo: z.boolean().optional(),
   }).strict(),
   z.object({
     kind: z.literal("fs_append"),

@@ -1134,6 +1134,8 @@ pub fn write(
     raw: &str,
     content_base64: &str,
     create_parents: bool,
+    expected_sha256: Option<&str>,
+    with_undo: bool,
 ) -> Result<Value> {
     let path = policy.resolve_for_create(raw)?;
     let bytes = STANDARD
@@ -1154,8 +1156,50 @@ pub fn write(
             fs::create_dir_all(parent)?;
         }
     }
-    atomic_write(&path, &bytes)?;
-    Ok(json!({ "ok": true, "path": path.to_string_lossy(), "size": bytes.len() }))
+    // Opt-in undo never silently overwrites a missing, oversized or symlink
+    // target. The existing unguarded API remains backward compatible.
+    let previous = if with_undo || expected_sha256.is_some() {
+        let mut original = Vec::new();
+        open_regular_read(&path)?
+            .take(HARD_READ_MAX as u64 + 1)
+            .read_to_end(&mut original)?;
+        if original.len() > HARD_READ_MAX {
+            return Err(anyhow!("guarded_write_exceeds_4mib_limit"));
+        }
+        let sha = format!("{:x}", Sha256::digest(&original));
+        if expected_sha256.is_some_and(|expected| !sha.eq_ignore_ascii_case(expected)) {
+            return Err(anyhow!("file_changed_since_read"));
+        }
+        Some((original, sha))
+    } else {
+        None
+    };
+    let next_sha = format!("{:x}", Sha256::digest(&bytes));
+    let snapshot = if with_undo {
+        let (original, previous_sha) = previous
+            .as_ref()
+            .ok_or_else(|| anyhow!("undo_requires_existing_file"))?;
+        let (id, snapshot_path) =
+            save_undo_snapshot(&path, original, previous_sha, &next_sha)?;
+        Some((id, snapshot_path, previous_sha.clone()))
+    } else {
+        None
+    };
+    if let Err(error) = atomic_write(&path, &bytes) {
+        if let Some((_, snapshot_path, _)) = &snapshot {
+            let _ = fs::remove_file(snapshot_path);
+        }
+        return Err(error);
+    }
+    let mut response = json!({
+        "ok": true, "path": path.to_string_lossy(), "size": bytes.len()
+    });
+    if let Some((id, _, previous_sha)) = snapshot {
+        response["undoId"] = json!(id);
+        response["previousSha256"] = json!(previous_sha);
+        response["sha256"] = json!(next_sha);
+    }
+    Ok(response)
 }
 
 /// Append without truncating, up to the configured size limits.
@@ -2413,6 +2457,56 @@ mod mutation_concurrency_tests {
 mod undo_version_tests {
     use super::*;
     use std::{env, fs};
+
+    #[test]
+    fn guarded_binary_write_undo_and_stale_sha() {
+        let root = env::temp_dir().join(format!("wc-undo-write-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("binary.dat");
+        let seed = [0_u8, 255, 42, 13];
+        fs::write(&path, seed).unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let seed_sha = format!("{:x}", Sha256::digest(seed));
+        let written = write(
+            &policy,
+            path.to_str().unwrap(),
+            &STANDARD.encode([5_u8, 4, 3]),
+            false,
+            Some(&seed_sha),
+            true,
+        )
+        .unwrap();
+        assert_eq!(fs::read(&path).unwrap(), [5_u8, 4, 3]);
+        assert!(write(
+            &policy,
+            path.to_str().unwrap(),
+            &STANDARD.encode(b"stale"),
+            false,
+            Some(&seed_sha),
+            true,
+        )
+        .is_err());
+        undo(
+            &policy,
+            path.to_str().unwrap(),
+            written["undoId"].as_str().unwrap(),
+            written["sha256"].as_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(fs::read(&path).unwrap(), seed);
+        let missing = root.join("missing.txt");
+        assert!(write(
+            &policy,
+            missing.to_str().unwrap(),
+            &STANDARD.encode(b"new"),
+            false,
+            None,
+            true,
+        )
+        .is_err());
+        assert!(!missing.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn persisted_undo_restores_only_matching_post_edit_bytes() {

@@ -107,6 +107,8 @@ pub enum AgentAction {
         path: String,
         content_base64: String,
         create_parents: Option<bool>,
+        expected_sha256: Option<String>,
+        with_undo: Option<bool>,
     },
     FsAppend {
         path: String,
