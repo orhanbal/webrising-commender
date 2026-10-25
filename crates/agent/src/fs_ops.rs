@@ -34,6 +34,25 @@ const MAX_SEARCH_PAUSE: Duration = Duration::from_secs(15);
 pub type SearchProgressReporter = dyn Fn(&[Value], usize, u64, Option<&Value>) + Send + Sync;
 const MAX_CHECKPOINT_BYTES: usize = 128 * 1024;
 
+// Serialize in-process mutations to the same resolved path. Weak entries
+// prevent a long-lived Agent from retaining a lock for every edited file.
+// External writers still require an OS-level compare-and-swap protocol.
+static MUTATION_LOCKS: std::sync::OnceLock<
+    std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, std::sync::Weak<std::sync::Mutex<()>>>>,
+> = std::sync::OnceLock::new();
+
+fn mutation_lock(path: &Path) -> Result<std::sync::Arc<std::sync::Mutex<()>>> {
+    let registry = MUTATION_LOCKS.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    let mut locks = registry.lock().map_err(|_| anyhow!("file mutation registry poisoned"))?;
+    locks.retain(|_, weak| weak.strong_count() > 0);
+    if let Some(lock) = locks.get(path).and_then(std::sync::Weak::upgrade) {
+        return Ok(lock);
+    }
+    let lock = std::sync::Arc::new(std::sync::Mutex::new(()));
+    locks.insert(path.to_path_buf(), std::sync::Arc::downgrade(&lock));
+    Ok(lock)
+}
+
 /// Bundles the deadline, cancellation signal and optional progress sink so
 /// both bounded native scanners share a small, explicit control surface.
 struct SearchExecution<'a> {
@@ -1122,6 +1141,8 @@ pub fn write(
         ));
     }
 
+    let lock = mutation_lock(&path)?;
+    let _guard = lock.lock().map_err(|_| anyhow!("file mutation lock poisoned"))?;
     if create_parents {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -1142,6 +1163,8 @@ pub fn append(policy: &PathPolicy, raw: &str, content_base64: &str) -> Result<Va
             "append exceeds hard limit of {HARD_WRITE_MAX} bytes"
         ));
     }
+    let lock = mutation_lock(&path)?;
+    let _guard = lock.lock().map_err(|_| anyhow!("file mutation lock poisoned"))?;
     let existing_size = fs::metadata(&path).map(|item| item.len()).unwrap_or(0);
     if existing_size.saturating_add(bytes.len() as u64) > 128 * 1024 * 1024 {
         return Err(anyhow!("append exceeds total file limit of 128 MiB"));
@@ -1175,6 +1198,8 @@ pub fn replace_text(
         return Err(anyhow!("path is not a file"));
     }
 
+    let lock = mutation_lock(&path)?;
+    let _guard = lock.lock().map_err(|_| anyhow!("file mutation lock poisoned"))?;
     let metadata = fs::metadata(&path)?;
     if metadata.len() > HARD_READ_MAX as u64 {
         return Err(anyhow!("file exceeds edit limit of {HARD_READ_MAX} bytes"));
@@ -1980,5 +2005,72 @@ mod batch_read_tests {
         );
         fs::remove_dir_all(root).unwrap();
         fs::remove_file(outside).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod mutation_concurrency_tests {
+    use super::*;
+    use std::{env, fs, sync::{Arc, Barrier}};
+
+    #[test]
+    fn concurrent_expected_sha_replacements_have_one_winner() {
+        let root = env::temp_dir().join(format!("wc-edit-race-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("edit.txt");
+        fs::write(&path, b"race-seed").unwrap();
+        let policy = Arc::new(PathPolicy::new(std::slice::from_ref(&root)).unwrap());
+        let expected = format!("{:x}", Sha256::digest(b"race-seed"));
+        let barrier = Arc::new(Barrier::new(24));
+        let mut workers = Vec::new();
+        for index in 0..24 {
+            let policy = Arc::clone(&policy);
+            let barrier = Arc::clone(&barrier);
+            let expected = expected.clone();
+            let raw = path.to_string_lossy().into_owned();
+            workers.push(std::thread::spawn(move || {
+                barrier.wait();
+                replace_text(&policy, &raw, "race-seed", &format!("winner-{index}"), false, Some(&expected))
+            }));
+        }
+        let mut success = 0;
+        for worker in workers {
+            match worker.join().unwrap() {
+                Ok(_) => success += 1,
+                Err(error) => assert_eq!(error.to_string(), "file_changed_since_read"),
+            }
+        }
+        assert_eq!(success, 1);
+        assert!(fs::read_to_string(&path).unwrap().starts_with("winner-"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn concurrent_appends_obey_total_size_and_preserve_every_chunk() {
+        let root = env::temp_dir().join(format!("wc-append-race-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("append.txt");
+        let policy = Arc::new(PathPolicy::new(std::slice::from_ref(&root)).unwrap());
+        let barrier = Arc::new(Barrier::new(16));
+        let mut workers = Vec::new();
+        for index in 0..16 {
+            let policy = Arc::clone(&policy);
+            let barrier = Arc::clone(&barrier);
+            let raw = path.to_string_lossy().into_owned();
+            workers.push(std::thread::spawn(move || {
+                barrier.wait();
+                append(&policy, &raw, &STANDARD.encode(format!("{index:02}\\n").as_bytes()))
+            }));
+        }
+        for worker in workers {
+            assert_eq!(worker.join().unwrap().unwrap()["ok"], true);
+        }
+        let content = fs::read_to_string(&path).unwrap();
+        let lines: std::collections::HashSet<_> = content.lines().collect();
+        assert_eq!(lines.len(), 16);
+        for index in 0..16 {
+            assert!(lines.contains(format!("{index:02}").as_str()));
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 }
