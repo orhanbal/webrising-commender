@@ -200,20 +200,106 @@ pub fn list() -> Result<Value> {
     Ok(json!({ "items": items }))
 }
 
+// process_kill is a HIGH-risk, approval-gated operation. Never allow it to
+// terminate the Agent, its supervisors, or PID 1. Snapshot descendants before
+// sending signals so a parent cannot orphan its still-running children.
 pub fn kill(pid: u32) -> Result<Value> {
+    if pid <= 1 {
+        return Err(anyhow!("protected process cannot be terminated"));
+    }
+
+    let target = Pid::from_u32(pid);
     let mut system = System::new();
     system.refresh_processes(ProcessesToUpdate::All, true);
-    let process = system
-        .process(Pid::from_u32(pid))
-        .ok_or_else(|| anyhow!("process not found"))?;
 
-    let killed = process
-        .kill_with(Signal::Term)
-        .unwrap_or_else(|| process.kill());
-    if !killed {
-        return Err(anyhow!("process could not be terminated"));
+    // An Agent may be started by a service manager or interactive shell.
+    // Killing any ancestor would sever the Agent's own control plane.
+    let mut ancestor = Some(Pid::from_u32(std::process::id()));
+    let mut ancestors_seen = std::collections::HashSet::new();
+    while let Some(current) = ancestor {
+        if current == target {
+            return Err(anyhow!("protected process cannot be terminated"));
+        }
+        if !ancestors_seen.insert(current) {
+            break;
+        }
+        ancestor = system.process(current).and_then(|process| process.parent());
     }
-    Ok(json!({ "ok": true, "pid": pid }))
+
+    let original = system
+        .process(target)
+        .ok_or_else(|| anyhow!("process not found"))?;
+    let target_start = original.start_time();
+
+    let mut children: std::collections::HashMap<Pid, Vec<Pid>> =
+        std::collections::HashMap::new();
+    for (child_pid, process) in system.processes() {
+        if let Some(parent) = process.parent() {
+            children.entry(parent).or_default().push(*child_pid);
+        }
+    }
+
+    // Postorder ensures descendants are signaled before their parent.
+    // Refuse excessively large trees rather than partially terminating one.
+    let mut stack = vec![(target, false)];
+    let mut seen = std::collections::HashSet::new();
+    let mut order = Vec::new();
+    while let Some((current, visited)) = stack.pop() {
+        if visited {
+            order.push(current);
+            continue;
+        }
+        if !seen.insert(current) {
+            continue;
+        }
+        if seen.len() > 4096 {
+            return Err(anyhow!("process tree exceeds safe termination limit"));
+        }
+        stack.push((current, true));
+        if let Some(descendants) = children.get(&current) {
+            for child in descendants {
+                stack.push((*child, false));
+            }
+        }
+    }
+
+    let snapshot: Vec<(Pid, u64)> = order
+        .into_iter()
+        .filter_map(|id| system.process(id).map(|process| (id, process.start_time())))
+        .collect();
+
+    // Reject a reused root PID and skip descendants whose PID was recycled
+    // between snapshots. This is best-effort tree termination, not an atomic
+    // OS-level process-tree guarantee (Windows Job Objects remain pending).
+    let mut current = System::new();
+    current.refresh_processes(ProcessesToUpdate::All, true);
+    if current.process(target).map(|process| process.start_time()) != Some(target_start) {
+        return Err(anyhow!("process changed before termination"));
+    }
+
+    let mut terminated_descendants = 0usize;
+    for (id, start_time) in snapshot {
+        let Some(process) = current.process(id) else {
+            continue;
+        };
+        if process.start_time() != start_time {
+            continue;
+        }
+        let killed = process
+            .kill_with(Signal::Term)
+            .unwrap_or_else(|| process.kill());
+        if id == target && !killed {
+            return Err(anyhow!("process could not be terminated"));
+        }
+        if id != target && killed {
+            terminated_descendants += 1;
+        }
+    }
+    Ok(json!({
+        "ok": true,
+        "pid": pid,
+        "signaledDescendants": terminated_descendants
+    }))
 }
 
 struct CapturedOutput {
@@ -265,6 +351,15 @@ mod tests {
 
         assert_eq!(captured.data, b"0123");
         assert!(captured.truncated);
+    }
+
+    #[test]
+    fn process_kill_rejects_agent_and_system_processes() {
+        assert!(kill(1).unwrap_err().to_string().contains("protected"));
+        assert!(kill(std::process::id())
+            .unwrap_err()
+            .to_string()
+            .contains("protected"));
     }
 
     #[cfg(unix)]

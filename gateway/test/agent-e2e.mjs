@@ -1193,6 +1193,38 @@ try {
     assert.equal(canceledTask.canceled, true);
     await new Promise((resolve) => setTimeout(resolve, 2200));
     assert.equal(fs.existsSync(cancelMarker), false, "canceled descendant survived");
+    // process_kill must reject the Agent itself and terminate a separate
+    // approved target's visible child tree before its parent exits.
+    const protectedToken = await approval(deviceId, {
+      kind: "process_kill", pid: agent.pid,
+    });
+    const protectedResult = await tool(344, "process_kill", {
+      device_id: deviceId, pid: agent.pid, approval_token: protectedToken,
+    });
+    assert.match(protectedResult.error, /protected process/i);
+
+    const killReady = path.join(tempRoot, "kill-tree-ready");
+    const killMarker = path.join(tempRoot, "kill-tree-descendant-leaked");
+    const killCommand =
+      "printf ready > '" + killReady +
+      "'; (sleep 2; printf leaked > '" + killMarker + "') & wait";
+    const killParent = spawn("/bin/sh", ["-c", killCommand], { stdio: "ignore" });
+    try {
+      await waitFor(() => fs.existsSync(killReady), 5000, 20);
+      const killToken = await approval(deviceId, {
+        kind: "process_kill", pid: killParent.pid,
+      });
+      const killed = await tool(345, "process_kill", {
+        device_id: deviceId, pid: killParent.pid, approval_token: killToken,
+      });
+      assert.equal(killed.ok, true, JSON.stringify(killed));
+      assert.ok(killed.signaledDescendants >= 1, JSON.stringify(killed));
+      await new Promise((resolve) => setTimeout(resolve, 2200));
+      assert.equal(fs.existsSync(killMarker), false, "process_kill left a descendant alive");
+    } finally {
+      if (killParent.exitCode === null) killParent.kill("SIGKILL");
+    }
+    console.log("agent-e2e: process_kill protected Agent and reaped visible descendants");
     console.log("agent-e2e: process timeout and task cancel reaped Unix descendants");
   }
 
