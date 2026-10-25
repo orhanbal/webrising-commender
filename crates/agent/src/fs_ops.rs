@@ -516,8 +516,7 @@ fn open_regular_unix(path: &Path, append: bool) -> Result<fs::File> {
         let Component::Normal(name) = component else {
             return Err(anyhow!("unsafe_path_component"));
         };
-        let name = CString::new(name.as_bytes())
-            .map_err(|_| anyhow!("unsafe_path_component"))?;
+        let name = CString::new(name.as_bytes()).map_err(|_| anyhow!("unsafe_path_component"))?;
         let last = components.peek().is_none();
         let flags = if last {
             if append {
