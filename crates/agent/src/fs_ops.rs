@@ -1309,8 +1309,16 @@ pub fn write(
     let _guard = lock
         .lock()
         .map_err(|_| anyhow!("file mutation lock poisoned"))?;
-    if create_parents {
+    // A guarded replacement requires an existing file. Do not create empty
+    // directories as a side effect of a rejected expected-SHA/undo request.
+    if create_parents && !with_undo && expected_sha256.is_none() {
         if let Some(parent) = path.parent() {
+            // On Unix a path-based create_dir_all can follow an ancestor that
+            // another process swaps to a symlink after allowlist resolution.
+            // Reuse the no-follow mkdirat/openat traversal used by fs_mkdir.
+            #[cfg(unix)]
+            mkdir_pinned_unix(parent, true)?;
+            #[cfg(not(unix))]
             fs::create_dir_all(parent)?;
         }
     }
@@ -2321,6 +2329,93 @@ pub fn mkdir(policy: &PathPolicy, raw: &str, recursive: bool) -> Result<Value> {
         fs::create_dir(&path)?;
     }
     Ok(json!({ "ok": true, "path": path.to_string_lossy() }))
+}
+
+#[cfg(all(test, unix))]
+mod write_parent_creation_tests {
+    use super::*;
+    use std::os::unix::fs::symlink;
+
+    #[test]
+    fn fs_write_creates_nested_parents_without_following_links() {
+        let root = std::env::temp_dir().join(format!("wc-write-parents-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("nested/deeper/file.txt");
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let result = write(
+            &policy,
+            target.to_str().unwrap(),
+            &STANDARD.encode(b"safe-content"),
+            true,
+            None,
+            false,
+        )
+        .unwrap();
+        assert_eq!(result["ok"], true);
+        assert_eq!(fs::read(&target).unwrap(), b"safe-content");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn fs_write_create_parents_rejects_outside_symlink() {
+        let base = std::env::temp_dir().join(format!("wc-write-parent-link-{}", Uuid::new_v4()));
+        let allowed = base.join("allowed");
+        let outside = base.join("outside");
+        fs::create_dir_all(&allowed).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        symlink(&outside, allowed.join("redirect")).unwrap();
+        let target = allowed.join("redirect/new/file.txt");
+        let policy = PathPolicy::new(std::slice::from_ref(&allowed)).unwrap();
+        assert!(write(
+            &policy,
+            target.to_str().unwrap(),
+            &STANDARD.encode(b"not-outside"),
+            true,
+            None,
+            false,
+        )
+        .is_err());
+        assert!(!outside.join("new").exists());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn fs_write_pinned_mkdir_rejects_parent_swap_after_resolution() {
+        let base = std::env::temp_dir().join(format!("wc-write-parent-swap-{}", Uuid::new_v4()));
+        let allowed = base.join("allowed");
+        let working = allowed.join("working");
+        let outside = base.join("outside");
+        fs::create_dir_all(&working).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&allowed)).unwrap();
+        let resolved = policy
+            .resolve_for_create(working.join("nested/file.txt").to_str().unwrap())
+            .unwrap();
+        fs::rename(&working, allowed.join("relocated")).unwrap();
+        symlink(&outside, &working).unwrap();
+        assert!(mkdir_pinned_unix(resolved.parent().unwrap(), true).is_err());
+        assert!(!outside.join("nested").exists());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn rejected_guarded_write_does_not_create_parent_directories() {
+        let root = std::env::temp_dir().join(format!("wc-guarded-no-mkdir-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("missing/child/file.txt");
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        assert!(write(
+            &policy,
+            target.to_str().unwrap(),
+            &STANDARD.encode(b"should-not-appear"),
+            true,
+            None,
+            true,
+        )
+        .is_err());
+        assert!(!root.join("missing").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
 }
 
 #[cfg(all(test, unix))]

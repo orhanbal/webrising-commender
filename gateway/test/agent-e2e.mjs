@@ -373,6 +373,24 @@ try {
   assert.equal(read.encoding, "utf8");
   assert.equal(read.content, "hello-from-real-agent");
 
+  // 3A: fs_write(create_parents) must create nested paths using pinned
+  // no-follow directory handles, and rejected guarded writes must not mkdir.
+  const nestedWritePath = path.join(tempRoot, "write-nested", "deeper", "file.txt");
+  const nestedWrite = await tool(629, "fs_write", {
+    device_id: deviceId, path: nestedWritePath, content_base64: content,
+    create_parents: true,
+  });
+  assert.equal(nestedWrite.ok, true, JSON.stringify(nestedWrite));
+  assert.equal(fs.readFileSync(nestedWritePath, "utf8"), "hello-from-real-agent");
+  const missingGuardedDir = path.join(tempRoot, "guarded-write-missing");
+  const rejectedGuardedWrite = await tool(630, "fs_write", {
+    device_id: deviceId, path: path.join(missingGuardedDir, "child", "file.txt"),
+    content_base64: content, create_parents: true, with_undo: true,
+  });
+  assert.equal(typeof rejectedGuardedWrite.error, "string");
+  assert.equal(fs.existsSync(missingGuardedDir), false);
+  console.log("agent-e2e: fs_write pinned nested mkdir and guarded no-side-effect passed");
+
   const linesPath = path.join(tempRoot, "paged-lines.txt");
   fs.writeFileSync(linesPath, "first\nsecond\nthird\nfourth\n", "utf8");
   const page = await tool(201, "fs_read_lines", {
@@ -806,6 +824,15 @@ try {
         });
         assert.equal(typeof deniedParentAtomicWrite.error, "string");
         assert.equal(fs.readFileSync(outsideFile, "utf8"), "outside-private-do-not-modify");
+        const deniedNestedParentWrite = await tool(631, "fs_write", {
+          device_id: deviceId,
+          path: path.join(outsideDirLink, "new-nested", "file.txt"),
+          content_base64: Buffer.from("must-not-create").toString("base64"),
+          create_parents: true,
+        });
+        assert.equal(typeof deniedNestedParentWrite.error, "string");
+        assert.equal(fs.existsSync(path.join(escapedDir, "new-nested")), false);
+        console.log("agent-e2e: fs_write create_parents outside-root symlink denied");
         console.log("agent-e2e: fs_write symlinked target and parent denied");
         console.log("agent-e2e: parent symlink outside root denied for read and append");
         // 3A: fs_move must reject symlinked source/destination parents
