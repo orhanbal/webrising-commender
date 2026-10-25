@@ -117,6 +117,12 @@ impl AgentConfig {
             Err(error) => return Err(error.into()),
         }
         let data = serde_json::to_vec_pretty(self)?;
+        // A config we save must remain loadable by the bounded reader. Reject
+        // oversized updates before creating a temporary file or replacing
+        // existing device credentials.
+        if data.len() as u64 > MAX_AGENT_CONFIG_BYTES {
+            return Err(anyhow!("agent_config_too_large"));
+        }
         let temporary = parent.join(format!(".agent-config-{}.tmp", uuid::Uuid::new_v4()));
         let result = (|| -> Result<()> {
             let mut options = fs::OpenOptions::new();
@@ -212,6 +218,36 @@ mod tests {
                 0o600
             );
         }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn config_save_rejects_oversized_update_without_losing_credentials() {
+        let root = std::env::temp_dir().join(format!("wc-config-size-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("private").join("agent.json");
+        let mut config = AgentConfig {
+            device_id: "device".into(),
+            device_token: "original-secret".into(),
+            approval_key: "original-approval".into(),
+            gateway_ws_url: String::new(),
+            control_url: String::new(),
+            name: "test".into(),
+            allowed_roots: vec![root.clone()],
+        };
+        config.save(&path).unwrap();
+        let original = fs::read(&path).unwrap();
+        config.device_token = "replacement-secret".into();
+        config.name = "x".repeat(MAX_AGENT_CONFIG_BYTES as usize);
+        let error = config.save(&path).unwrap_err();
+        assert!(error.to_string().contains("agent_config_too_large"));
+        assert_eq!(fs::read(&path).unwrap(), original);
+        assert_eq!(
+            AgentConfig::load(&path).unwrap().device_token,
+            "original-secret"
+        );
+        let parent = path.parent().unwrap();
+        assert_eq!(fs::read_dir(parent).unwrap().count(), 1);
         fs::remove_dir_all(root).unwrap();
     }
 
