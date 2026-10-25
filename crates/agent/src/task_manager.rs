@@ -39,37 +39,25 @@ impl TaskManager {
 
         self.prune().await;
 
-        {
-            let tasks = self.tasks.lock().await;
-            let running = tasks
-                .values()
-                .filter(|entry| entry.status == "running")
-                .count();
-            if running >= MAX_RUNNING_TASKS {
-                return Err(anyhow!(
-                    "too many running tasks; limit is {MAX_RUNNING_TASKS}"
-                ));
-            }
-        }
-
         let task_id = Uuid::new_v4().to_string();
-        {
-            let mut tasks = self.tasks.lock().await;
-            tasks.insert(
-                task_id.clone(),
-                TaskEntry {
-                    status: "running",
-                    created_at_ms: now_ms(),
-                    finished_at_ms: None,
-                    result: None,
-                    error: None,
-                    abort: None,
-                },
-            );
-        }
-
         let tasks = std::sync::Arc::clone(&self.tasks);
         let id_for_job = task_id.clone();
+
+        // Check the running quota, register the task and publish its abort
+        // handle under ONE lock. A separate check/insert allowed concurrent
+        // callers to exceed MAX_RUNNING_TASKS; publishing the handle later
+        // allowed an immediate cancel to leave the command running.
+        let mut map = self.tasks.lock().await;
+        let running = map
+            .values()
+            .filter(|entry| entry.status == "running")
+            .count();
+        if running >= MAX_RUNNING_TASKS {
+            return Err(anyhow!(
+                "too many running tasks; limit is {MAX_RUNNING_TASKS}"
+            ));
+        }
+
         let job = tokio::spawn(async move {
             let outcome =
                 process_ops::exec_task(&policy, &command, cwd.as_deref(), timeout_ms).await;
@@ -97,15 +85,18 @@ impl TaskManager {
                 }
             }
         });
-
-        {
-            let mut tasks = self.tasks.lock().await;
-            if let Some(entry) = tasks.get_mut(&task_id) {
-                if entry.status == "running" {
-                    entry.abort = Some(job.abort_handle());
-                }
-            }
-        }
+        map.insert(
+            task_id.clone(),
+            TaskEntry {
+                status: "running",
+                created_at_ms: now_ms(),
+                finished_at_ms: None,
+                result: None,
+                error: None,
+                abort: Some(job.abort_handle()),
+            },
+        );
+        drop(map);
 
         Ok(json!({ "taskId": task_id, "status": "running" }))
     }
@@ -205,4 +196,80 @@ fn now_ms() -> u128 {
         .duration_since(UNIX_EPOCH)
         .map(|value| value.as_millis())
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn concurrent_task_starts_respect_quota_and_publish_abort_handles() {
+        let root = std::env::temp_dir().join(format!("wc-task-quota-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let manager = TaskManager::default();
+        let barrier = Arc::new(tokio::sync::Barrier::new(41));
+        let mut jobs = Vec::new();
+
+        for _ in 0..40 {
+            let manager = manager.clone();
+            let policy = policy.clone();
+            let barrier = Arc::clone(&barrier);
+            jobs.push(tokio::spawn(async move {
+                barrier.wait().await;
+                manager.start(policy, "sleep 5".into(), None, Some(10_000)).await
+            }));
+        }
+        barrier.wait().await;
+
+        let mut accepted = Vec::new();
+        let mut rejected = 0;
+        for job in jobs {
+            match job.await.unwrap() {
+                Ok(value) => accepted.push(value["taskId"].as_str().unwrap().to_owned()),
+                Err(error) => {
+                    assert!(error.to_string().contains("too many running tasks"));
+                    rejected += 1;
+                }
+            }
+        }
+        assert_eq!(accepted.len(), MAX_RUNNING_TASKS);
+        assert_eq!(rejected, 40 - MAX_RUNNING_TASKS);
+        {
+            let tasks = manager.tasks.lock().await;
+            assert_eq!(
+                tasks.values().filter(|entry| entry.status == "running").count(),
+                MAX_RUNNING_TASKS
+            );
+            assert!(tasks.values().all(|entry| {
+                entry.status != "running" || entry.abort.is_some()
+            }));
+        }
+        for id in accepted {
+            let canceled = manager.cancel(&id).await.unwrap();
+            assert_eq!(canceled["canceled"], true);
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn immediate_cancel_cannot_lose_abort_handle() {
+        let root = std::env::temp_dir().join(format!("wc-task-cancel-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let manager = TaskManager::default();
+        for _ in 0..24 {
+            let started = manager
+                .start(policy.clone(), "sleep 5".into(), None, Some(10_000))
+                .await
+                .unwrap();
+            let id = started["taskId"].as_str().unwrap();
+            assert_eq!(manager.cancel(id).await.unwrap()["canceled"], true);
+            assert_eq!(manager.status(id).await.unwrap()["status"], "canceled");
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
