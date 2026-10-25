@@ -197,6 +197,42 @@ export async function migrate() {
     create index if not exists browser_sessions_user_idx on browser_sessions(user_id);
     create index if not exists browser_sessions_expiry_idx on browser_sessions(expires_at);
 
+    create table if not exists oauth_clients (
+      client_id text primary key,
+      client_name text not null,
+      redirect_uris jsonb not null,
+      created_at timestamptz not null default now()
+    );
+    create table if not exists oauth_codes (
+      code_hash text primary key,
+      client_id text not null references oauth_clients(client_id) on delete cascade,
+      user_id uuid not null references users(id) on delete cascade,
+      organization_id uuid not null references organizations(id) on delete cascade,
+      session_id uuid not null references browser_sessions(id) on delete cascade,
+      redirect_uri text not null,
+      code_challenge text not null,
+      resource text not null,
+      scope text not null,
+      expires_at timestamptz not null
+    );
+    create index if not exists oauth_codes_expiry_idx on oauth_codes(expires_at);
+    create table if not exists oauth_sessions (
+      id uuid primary key default gen_random_uuid(),
+      client_id text not null references oauth_clients(client_id) on delete cascade,
+      user_id uuid not null references users(id) on delete cascade,
+      organization_id uuid not null references organizations(id) on delete cascade,
+      resource text not null,
+      scope text not null,
+      access_hash text not null unique,
+      refresh_hash text not null unique,
+      access_expires_at timestamptz not null,
+      refresh_expires_at timestamptz not null,
+      revoked_at timestamptz,
+      created_at timestamptz not null default now()
+    );
+    create index if not exists oauth_sessions_user_idx on oauth_sessions(user_id);
+    create index if not exists oauth_sessions_expiry_idx on oauth_sessions(refresh_expires_at);
+
     create table if not exists invitations (
       id uuid primary key default gen_random_uuid(),
       organization_id uuid not null references organizations(id) on delete cascade,
@@ -522,6 +558,9 @@ function auditRetentionDays() {
 }
 
 export async function housekeeping() {
+  await db.query("delete from oauth_codes where expires_at < now()");
+  await db.query("delete from oauth_sessions where refresh_expires_at < now() - interval '1 day' or revoked_at < now() - interval '1 day'");
+  await db.query("delete from oauth_clients c where c.created_at < now() - interval '90 days' and not exists(select 1 from oauth_sessions s where s.client_id=c.client_id)");
   await db.query("delete from search_sessions where expires_at < now()");
   await db.query("delete from search_gateway_instances where last_heartbeat_at < now() - interval '10 minutes'");
   await db.query("delete from pairing_codes where expires_at < now() or used_at < now() - interval '1 day'");

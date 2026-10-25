@@ -14,6 +14,7 @@ const tools = [
     name: "devices_list",
     description: "List enrolled WebRising Commender devices and online state.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    ...(process.env.MCP_OAUTH_ENABLED === "true" ? { securitySchemes: [{ type: "oauth2", scopes: ["mcp:tools"] }] } : {}),
   },
   tool("system_info", "Read system information from a device.", {}),
   tool("policy_info", "Read agent-enforced allowed directories and resource limits. Read-only.", {}),
@@ -203,6 +204,7 @@ function tool(name: string, description: string, properties: Record<string, unkn
     name,
     description,
     inputSchema: { type: "object", properties, required, additionalProperties: false },
+    ...(process.env.MCP_OAUTH_ENABLED === "true" ? { securitySchemes: [{ type: "oauth2", scopes: ["mcp:tools"] }] } : {}),
   };
 }
 

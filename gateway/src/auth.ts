@@ -4,7 +4,7 @@ import { db, defaultOrganizationId } from "./db.js";
 import { isControlAuthorized, randomToken, sha256 } from "./security.js";
 
 export type Role = "viewer" | "operator" | "admin" | "owner";
-export type AuthKind = "control" | "token" | "session";
+export type AuthKind = "control" | "token" | "session" | "oauth";
 
 export type Principal = {
   organizationId: string;
