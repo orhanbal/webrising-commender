@@ -23,8 +23,13 @@ pub struct HistoryStore {
 impl HistoryStore {
     pub fn for_device(device: &str) -> Result<Self> {
         let id = Uuid::parse_str(device).context("invalid device id")?;
-        let root = dirs::data_local_dir().ok_or_else(|| anyhow!("local data directory unavailable"))?;
-        Self::at(root.join("webrising-commender").join("terminal-history").join(id.to_string()))
+        let root =
+            dirs::data_local_dir().ok_or_else(|| anyhow!("local data directory unavailable"))?;
+        Self::at(
+            root.join("webrising-commender")
+                .join("terminal-history")
+                .join(id.to_string()),
+        )
     }
 
     fn at(dir: PathBuf) -> Result<Self> {
@@ -44,7 +49,10 @@ impl HistoryStore {
                 current = path.parent();
             }
         }
-        let store = Self { dir, mutex: Mutex::new(()) };
+        let store = Self {
+            dir,
+            mutex: Mutex::new(()),
+        };
         store.prune()?;
         Ok(store)
     }
@@ -62,7 +70,10 @@ impl HistoryStore {
         for entry in fs::read_dir(&self.dir)? {
             let entry = entry?;
             let name = entry.file_name().to_string_lossy().into_owned();
-            if let Some(n) = name.strip_prefix(&prefix).and_then(|x| x.strip_suffix(".hist")) {
+            if let Some(n) = name
+                .strip_prefix(&prefix)
+                .and_then(|x| x.strip_suffix(".hist"))
+            {
                 if let Ok(seq) = n.parse::<u64>() {
                     let kind = entry.file_type()?;
                     if !kind.is_file() || kind.is_symlink() {
@@ -81,7 +92,10 @@ impl HistoryStore {
         if bytes.len() > CAP || total < bytes.len() as u64 {
             return Err(anyhow!("terminal history exceeds bounds"));
         }
-        let _lock = self.mutex.lock().map_err(|_| anyhow!("terminal history lock poisoned"))?;
+        let _lock = self
+            .mutex
+            .lock()
+            .map_err(|_| anyhow!("terminal history lock poisoned"))?;
         let target = self.dir.join(format!("{id}-{total}.hist"));
         let temp = self.dir.join(format!(".{}.tmp", Uuid::new_v4()));
         let mut options = OpenOptions::new();
@@ -120,18 +134,29 @@ impl HistoryStore {
 
     pub fn load(&self, id: &str) -> Result<(u64, VecDeque<u8>)> {
         Self::valid_id(id)?;
-        let _lock = self.mutex.lock().map_err(|_| anyhow!("terminal history lock poisoned"))?;
-        let (seq, path) = self.versions(id)?.pop()
+        let _lock = self
+            .mutex
+            .lock()
+            .map_err(|_| anyhow!("terminal history lock poisoned"))?;
+        let (seq, path) = self
+            .versions(id)?
+            .pop()
             .ok_or_else(|| anyhow!("terminal session not found"))?;
         let meta = fs::symlink_metadata(&path)?;
         if !meta.is_file() || meta.file_type().is_symlink() || meta.len() > (CAP + 20) as u64 {
             return Err(anyhow!("unsafe terminal history snapshot"));
         }
-        if SystemTime::now().duration_since(meta.modified()?).unwrap_or_default() > TTL {
+        if SystemTime::now()
+            .duration_since(meta.modified()?)
+            .unwrap_or_default()
+            > TTL
+        {
             return Err(anyhow!("terminal history expired"));
         }
         let mut raw = Vec::new();
-        File::open(path)?.take((CAP + 21) as u64).read_to_end(&mut raw)?;
+        File::open(path)?
+            .take((CAP + 21) as u64)
+            .read_to_end(&mut raw)?;
         if raw.len() < 20 || &raw[..8] != MAGIC {
             return Err(anyhow!("corrupt terminal history"));
         }
@@ -144,20 +169,35 @@ impl HistoryStore {
     }
 
     fn prune(&self) -> Result<()> {
-        let _lock = self.mutex.lock().map_err(|_| anyhow!("terminal history lock poisoned"))?;
+        let _lock = self
+            .mutex
+            .lock()
+            .map_err(|_| anyhow!("terminal history lock poisoned"))?;
         let mut newest: HashMap<String, (u64, PathBuf)> = HashMap::new();
         for entry in fs::read_dir(&self.dir)? {
             let entry = entry?;
             let name = entry.file_name().to_string_lossy().into_owned();
-            let Some(stem) = name.strip_suffix(".hist") else { continue };
-            let Some((id, suffix)) = stem.rsplit_once('-') else { continue };
-            if Self::valid_id(id).is_err() { continue; }
-            let Ok(seq) = suffix.parse::<u64>() else { continue };
+            let Some(stem) = name.strip_suffix(".hist") else {
+                continue;
+            };
+            let Some((id, suffix)) = stem.rsplit_once('-') else {
+                continue;
+            };
+            if Self::valid_id(id).is_err() {
+                continue;
+            }
+            let Ok(seq) = suffix.parse::<u64>() else {
+                continue;
+            };
             let meta = fs::symlink_metadata(entry.path())?;
             if !meta.is_file() || meta.file_type().is_symlink() {
                 return Err(anyhow!("unsafe terminal history snapshot"));
             }
-            if SystemTime::now().duration_since(meta.modified()?).unwrap_or_default() > TTL {
+            if SystemTime::now()
+                .duration_since(meta.modified()?)
+                .unwrap_or_default()
+                > TTL
+            {
                 fs::remove_file(entry.path())?;
                 continue;
             }
@@ -170,8 +210,15 @@ impl HistoryStore {
             }
             newest.insert(id.to_owned(), (seq, entry.path()));
         }
-        let mut paths = newest.into_values().map(|(_, path)| path).collect::<Vec<_>>();
-        paths.sort_by_key(|p| fs::metadata(p).and_then(|m| m.modified()).unwrap_or(SystemTime::UNIX_EPOCH));
+        let mut paths = newest
+            .into_values()
+            .map(|(_, path)| path)
+            .collect::<Vec<_>>();
+        paths.sort_by_key(|p| {
+            fs::metadata(p)
+                .and_then(|m| m.modified())
+                .unwrap_or(SystemTime::UNIX_EPOCH)
+        });
         let excess = paths.len().saturating_sub(MAX_ARCHIVES);
         for path in paths.into_iter().take(excess) {
             fs::remove_file(path)?;

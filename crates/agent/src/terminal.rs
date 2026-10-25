@@ -135,7 +135,10 @@ pub struct TerminalManager {
 
 impl TerminalManager {
     pub fn for_device(id: &str) -> Result<Self> {
-        Ok(Self { store: Some(Arc::new(HistoryStore::for_device(id)?)), ..Self::default() })
+        Ok(Self {
+            store: Some(Arc::new(HistoryStore::for_device(id)?)),
+            ..Self::default()
+        })
     }
 
     pub fn start(
@@ -192,7 +195,9 @@ impl TerminalManager {
                         if let Ok(mut retained) = read_history.lock() {
                             retained.push(&chunk[..size]);
                             if let Some(store) = &history_store {
-                                retained.durable = store.save(&history_id, retained.total_bytes, &retained.bytes).is_ok();
+                                retained.durable = store
+                                    .save(&history_id, retained.total_bytes, &retained.bytes)
+                                    .is_ok();
                             }
                         }
                         if let Ok(mut queue) = read_buffer.lock() {
@@ -336,17 +341,29 @@ impl TerminalManager {
         offset_bytes: Option<i64>,
         max_bytes: Option<usize>,
     ) -> Result<Value> {
-        let session = self.sessions.lock()
+        let session = self
+            .sessions
+            .lock()
             .map_err(|_| anyhow!("terminal session lock poisoned"))?
-            .get(id).cloned();
+            .get(id)
+            .cloned();
         if let Some(session) = session {
-            let history = session.history.lock()
+            let history = session
+                .history
+                .lock()
                 .map_err(|_| anyhow!("terminal history lock poisoned"))?;
             return Ok(history.page(offset_bytes, max_bytes));
         }
-        let store = self.store.as_ref().ok_or_else(|| anyhow!("terminal session not found"))?;
+        let store = self
+            .store
+            .as_ref()
+            .ok_or_else(|| anyhow!("terminal session not found"))?;
         let (total_bytes, bytes) = store.load(id)?;
-        let history = OutputHistory { bytes, total_bytes, durable: true };
+        let history = OutputHistory {
+            bytes,
+            total_bytes,
+            durable: true,
+        };
         let mut page = history.page(offset_bytes, max_bytes);
         page["archived"] = json!(true);
         page["running"] = json!(false);
