@@ -3,12 +3,48 @@ use anyhow::{anyhow, Context, Result};
 use serde_json::{json, Value};
 use std::{process::Stdio, time::Duration};
 use sysinfo::{Pid, ProcessesToUpdate, Signal, System};
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
     process::Command,
 };
 
 const OUTPUT_LIMIT: usize = 1024 * 1024;
+
+// Each shell is placed in its own Unix process group. Killing only the shell
+// leaves background children alive, including after task cancellation. The
+// guard also runs when Tokio aborts the executing future.
+#[cfg(unix)]
+struct ProcessGroupGuard {
+    pgid: i32,
+}
+
+#[cfg(unix)]
+impl ProcessGroupGuard {
+    fn new(pid: u32) -> Result<Self> {
+        let pgid = i32::try_from(pid).context("invalid child process id")?;
+        if pgid <= 0 {
+            return Err(anyhow!("invalid child process group"));
+        }
+        Ok(Self { pgid })
+    }
+
+    fn signal(&self, signal: i32) {
+        // A negative PID addresses the child's private process group, never
+        // the Agent's own group. ESRCH is expected after normal completion.
+        unsafe {
+            libc::kill(-self.pgid, signal);
+        }
+    }
+}
+
+#[cfg(unix)]
+impl Drop for ProcessGroupGuard {
+    fn drop(&mut self) {
+        self.signal(libc::SIGKILL);
+    }
+}
 
 pub async fn exec(
     policy: &PathPolicy,
@@ -73,12 +109,19 @@ async fn exec_with_timeout_bounds(
     if let Some(dir) = workdir {
         process.current_dir(dir);
     }
+    #[cfg(unix)]
+    process.as_std_mut().process_group(0);
     process
         .kill_on_drop(true)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
     let mut child = process.spawn().context("failed to start command")?;
+    #[cfg(unix)]
+    let group = ProcessGroupGuard::new(
+        child.id()
+            .ok_or_else(|| anyhow!("spawned process has no pid"))?,
+    )?;
     let stdout = child
         .stdout
         .take()
@@ -99,12 +142,23 @@ async fn exec_with_timeout_bounds(
     let status = match tokio::time::timeout(timeout, child.wait()).await {
         Ok(result) => result.context("failed while waiting for command")?,
         Err(_) => {
+            #[cfg(unix)]
+            {
+                group.signal(libc::SIGTERM);
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                group.signal(libc::SIGKILL);
+            }
             let _ = child.kill().await;
             stdout_task.abort();
             stderr_task.abort();
             return Err(anyhow!("process execution timed out"));
         }
     };
+
+    // A successful shell can still have background children holding its pipes.
+    // Reap those descendants before joining stdout/stderr readers.
+    #[cfg(unix)]
+    group.signal(libc::SIGKILL);
 
     let stdout = stdout_task
         .await
@@ -210,5 +264,53 @@ mod tests {
 
         assert_eq!(captured.data, b"0123");
         assert!(captured.truncated);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn timeout_kills_background_process_group() {
+        let root = std::env::temp_dir().join(format!("wc-proc-timeout-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let marker = root.join("orphaned");
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let command = format!(
+            "(sleep 1; printf leaked > '{}') & wait",
+            marker.display()
+        );
+        let result = exec(&policy, &command, None, Some(150)).await;
+        assert!(result.unwrap_err().to_string().contains("timed out"));
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+        assert!(!marker.exists(), "timed-out descendant survived");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn abort_kills_background_process_group() {
+        let root = std::env::temp_dir().join(format!("wc-proc-cancel-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let ready = root.join("ready");
+        let marker = root.join("orphaned");
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let command = format!(
+            "printf ready > '{}'; (sleep 1; printf leaked > '{}') & wait",
+            ready.display(),
+            marker.display()
+        );
+        let job = tokio::spawn(async move {
+            exec_task(&policy, &command, None, Some(10_000)).await
+        });
+        let started = tokio::time::timeout(Duration::from_secs(5), async {
+            while !ready.exists() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+        assert!(started.is_ok(), "shell did not start");
+        job.abort();
+        let _ = job.await;
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+        assert!(!marker.exists(), "canceled descendant survived");
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

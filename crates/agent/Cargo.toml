@@ -34,5 +34,8 @@ uuid = { version = "1.18", features = ["v4", "serde"] }
 zip = { version = "4.2", default-features = false, features = ["deflate"] }
 
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.8.1"
