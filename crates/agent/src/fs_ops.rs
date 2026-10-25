@@ -1634,7 +1634,10 @@ mod undo_crash_cleanup_tests {
         assert!(!stale.exists(), "orphaned staging file must be reclaimed");
         assert!(fresh.exists(), "recent staging file must not be touched");
         assert!(unknown.exists(), "unknown file must not be pruned");
-        assert!(malformed.exists(), "invalid staging name must not be pruned");
+        assert!(
+            malformed.exists(),
+            "invalid staging name must not be pruned"
+        );
         assert_eq!((count, bytes), (3, 12));
         fs::remove_dir_all(dir).unwrap();
     }
