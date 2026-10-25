@@ -1282,9 +1282,12 @@ fn undo_prefix(path: &Path) -> String {
 fn undo_dir(_path: &Path, create: bool) -> Result<Option<std::path::PathBuf>> {
     // Never place plaintext undo snapshots beside source files: allowlisted
     // workspaces may also be publicly served web roots.
-    let app_root = dirs::data_local_dir()
-        .ok_or_else(|| anyhow!("local data directory unavailable"))?
-        .join("webrising-commender");
+    let data_root =
+        dirs::data_local_dir().ok_or_else(|| anyhow!("local data directory unavailable"))?;
+    if create {
+        fs::create_dir_all(&data_root)?;
+    }
+    let app_root = data_root.join("webrising-commender");
     if create {
         let mut builder = fs::DirBuilder::new();
         #[cfg(unix)]
