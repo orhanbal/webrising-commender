@@ -1828,6 +1828,77 @@ pub fn undo(policy: &PathPolicy, raw: &str, undo_id: &str, expected_sha256: &str
 
 /// Stage writes beside their target so incomplete writes never truncate
 /// an existing file. Keep the original intact if rename cannot replace it.
+/// Unix uses one pinned parent directory for staging, rename and cleanup:
+/// a swapped ancestor symlink cannot redirect the final rename.
+#[cfg(unix)]
+fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
+    use std::ffi::CString;
+    use std::os::fd::{AsRawFd, FromRawFd};
+
+    let (parent, target) = rename_parent_handle(path)?;
+    let temporary = CString::new(format!(".wecommander-{}.tmp", Uuid::new_v4()))?;
+    let fd = unsafe {
+        libc::openat(
+            parent.as_raw_fd(),
+            temporary.as_ptr(),
+            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            0o600,
+        )
+    };
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let mut file = unsafe { fs::File::from_raw_fd(fd) };
+    let result = (|| -> Result<()> {
+        // Do not follow a replaced target symlink while copying permissions.
+        // O_NONBLOCK prevents an attacker-controlled FIFO from hanging the agent.
+        let existing_fd = unsafe {
+            libc::openat(
+                parent.as_raw_fd(),
+                target.as_ptr(),
+                libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        };
+        if existing_fd >= 0 {
+            let existing = unsafe { fs::File::from_raw_fd(existing_fd) };
+            let metadata = existing.metadata()?;
+            if !metadata.is_file() {
+                return Err(anyhow!("atomic_replace_requires_regular_file"));
+            }
+            file.set_permissions(metadata.permissions())?;
+        } else {
+            let error = std::io::Error::last_os_error();
+            if error.kind() != std::io::ErrorKind::NotFound {
+                return Err(error.into());
+            }
+        }
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        let status = unsafe {
+            libc::renameat(
+                parent.as_raw_fd(),
+                temporary.as_ptr(),
+                parent.as_raw_fd(),
+                target.as_ptr(),
+            )
+        };
+        if status != 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        // Never report a post-rename sync failure as a failed edit: undo
+        // callers would otherwise discard a snapshot for a visible write.
+        let _ = parent.sync_all();
+        Ok(())
+    })();
+    if result.is_err() {
+        unsafe {
+            libc::unlinkat(parent.as_raw_fd(), temporary.as_ptr(), 0);
+        }
+    }
+    result
+}
+
+#[cfg(not(unix))]
 fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = path
         .parent()
@@ -1861,6 +1932,49 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
         let _ = fs::remove_file(&temporary);
     }
     result
+}
+
+#[cfg(all(test, unix))]
+mod atomic_write_parent_tests {
+    use super::*;
+    use std::os::unix::fs::symlink;
+
+    #[test]
+    fn atomic_replace_refuses_swapped_parent_symlink_and_preserves_outside_file() {
+        let base = std::env::temp_dir().join(format!("commender-atomic-parent-{}", Uuid::new_v4()));
+        let allowed = base.join("allowed");
+        let parent = allowed.join("working");
+        let outside = base.join("outside");
+        fs::create_dir_all(&parent).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let target = parent.join("target.txt");
+        let outside_target = outside.join("target.txt");
+        fs::write(&target, b"inside").unwrap();
+        fs::write(&outside_target, b"outside-private").unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&allowed)).unwrap();
+        let resolved = policy.resolve_existing(target.to_str().unwrap()).unwrap();
+        fs::rename(&parent, allowed.join("relocated")).unwrap();
+        symlink(&outside, &parent).unwrap();
+        assert!(atomic_write(&resolved, b"replacement").is_err());
+        assert_eq!(fs::read(&outside_target).unwrap(), b"outside-private");
+        assert_eq!(fs::read(allowed.join("relocated/target.txt")).unwrap(), b"inside");
+        assert_eq!(fs::read_dir(&outside).unwrap().count(), 1);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn atomic_replace_rejects_symlink_target_without_touching_destination() {
+        let base = std::env::temp_dir().join(format!("commender-atomic-target-{}", Uuid::new_v4()));
+        fs::create_dir_all(&base).unwrap();
+        let outside = base.join("outside.txt");
+        let link = base.join("link.txt");
+        fs::write(&outside, b"original").unwrap();
+        symlink(&outside, &link).unwrap();
+        assert!(atomic_write(&link, b"replacement").is_err());
+        assert_eq!(fs::read(&outside).unwrap(), b"original");
+        assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        fs::remove_dir_all(base).unwrap();
+    }
 }
 
 /// Move without ever replacing a destination created by another process.
