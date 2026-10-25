@@ -2025,7 +2025,8 @@ mod move_collision_tests {
             .collect::<Vec<_>>();
         let wins = handles
             .into_iter()
-            .filter(|handle| handle.join().unwrap())
+            .map(|handle| handle.join().unwrap())
+            .filter(|won| *won)
             .count();
         assert_eq!(wins, 1);
         let winner = fs::read_to_string(&destination).unwrap();
