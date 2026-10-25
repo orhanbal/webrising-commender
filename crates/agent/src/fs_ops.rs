@@ -37,13 +37,17 @@ const MAX_CHECKPOINT_BYTES: usize = 128 * 1024;
 // Serialize in-process mutations to the same resolved path. Weak entries
 // prevent a long-lived Agent from retaining a lock for every edited file.
 // External writers still require an OS-level compare-and-swap protocol.
-static MUTATION_LOCKS: std::sync::OnceLock<
-    std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, std::sync::Weak<std::sync::Mutex<()>>>>,
-> = std::sync::OnceLock::new();
+type FileMutationLock = std::sync::Mutex<()>;
+type FileMutationLocks =
+    std::collections::HashMap<std::path::PathBuf, std::sync::Weak<FileMutationLock>>;
+static MUTATION_LOCKS: std::sync::OnceLock<std::sync::Mutex<FileMutationLocks>> =
+    std::sync::OnceLock::new();
 
-fn mutation_lock(path: &Path) -> Result<std::sync::Arc<std::sync::Mutex<()>>> {
-    let registry = MUTATION_LOCKS.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
-    let mut locks = registry.lock().map_err(|_| anyhow!("file mutation registry poisoned"))?;
+fn mutation_lock(path: &Path) -> Result<std::sync::Arc<FileMutationLock>> {
+    let registry = MUTATION_LOCKS.get_or_init(Default::default);
+    let mut locks = registry
+        .lock()
+        .map_err(|_| anyhow!("file mutation registry poisoned"))?;
     locks.retain(|_, weak| weak.strong_count() > 0);
     if let Some(lock) = locks.get(path).and_then(std::sync::Weak::upgrade) {
         return Ok(lock);
@@ -2059,7 +2063,7 @@ mod mutation_concurrency_tests {
             let raw = path.to_string_lossy().into_owned();
             workers.push(std::thread::spawn(move || {
                 barrier.wait();
-                append(&policy, &raw, &STANDARD.encode(format!("{index:02}\\n").as_bytes()))
+                append(&policy, &raw, &STANDARD.encode(format!("{index:02}\n").as_bytes()))
             }));
         }
         for worker in workers {
