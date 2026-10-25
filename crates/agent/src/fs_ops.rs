@@ -1146,7 +1146,9 @@ pub fn write(
     }
 
     let lock = mutation_lock(&path)?;
-    let _guard = lock.lock().map_err(|_| anyhow!("file mutation lock poisoned"))?;
+    let _guard = lock
+        .lock()
+        .map_err(|_| anyhow!("file mutation lock poisoned"))?;
     if create_parents {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -1168,7 +1170,9 @@ pub fn append(policy: &PathPolicy, raw: &str, content_base64: &str) -> Result<Va
         ));
     }
     let lock = mutation_lock(&path)?;
-    let _guard = lock.lock().map_err(|_| anyhow!("file mutation lock poisoned"))?;
+    let _guard = lock
+        .lock()
+        .map_err(|_| anyhow!("file mutation lock poisoned"))?;
     let existing_size = fs::metadata(&path).map(|item| item.len()).unwrap_or(0);
     if existing_size.saturating_add(bytes.len() as u64) > 128 * 1024 * 1024 {
         return Err(anyhow!("append exceeds total file limit of 128 MiB"));
@@ -1203,7 +1207,9 @@ pub fn replace_text(
     }
 
     let lock = mutation_lock(&path)?;
-    let _guard = lock.lock().map_err(|_| anyhow!("file mutation lock poisoned"))?;
+    let _guard = lock
+        .lock()
+        .map_err(|_| anyhow!("file mutation lock poisoned"))?;
     let metadata = fs::metadata(&path)?;
     if metadata.len() > HARD_READ_MAX as u64 {
         return Err(anyhow!("file exceeds edit limit of {HARD_READ_MAX} bytes"));
@@ -2015,7 +2021,10 @@ mod batch_read_tests {
 #[cfg(test)]
 mod mutation_concurrency_tests {
     use super::*;
-    use std::{env, fs, sync::{Arc, Barrier}};
+    use std::{
+        env, fs,
+        sync::{Arc, Barrier},
+    };
 
     #[test]
     fn concurrent_expected_sha_replacements_have_one_winner() {
@@ -2034,7 +2043,14 @@ mod mutation_concurrency_tests {
             let raw = path.to_string_lossy().into_owned();
             workers.push(std::thread::spawn(move || {
                 barrier.wait();
-                replace_text(&policy, &raw, "race-seed", &format!("winner-{index}"), false, Some(&expected))
+                replace_text(
+                    &policy,
+                    &raw,
+                    "race-seed",
+                    &format!("winner-{index}"),
+                    false,
+                    Some(&expected),
+                )
             }));
         }
         let mut success = 0;
@@ -2063,7 +2079,11 @@ mod mutation_concurrency_tests {
             let raw = path.to_string_lossy().into_owned();
             workers.push(std::thread::spawn(move || {
                 barrier.wait();
-                append(&policy, &raw, &STANDARD.encode(format!("{index:02}\n").as_bytes()))
+                append(
+                    &policy,
+                    &raw,
+                    &STANDARD.encode(format!("{index:02}\n").as_bytes()),
+                )
             }));
         }
         for worker in workers {
