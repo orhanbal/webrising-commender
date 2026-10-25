@@ -259,7 +259,8 @@ mod tests {
     #[test]
     fn config_load_rejects_symlinked_parent_without_reading_credentials() {
         use std::os::unix::fs::symlink;
-        let root = std::env::temp_dir().join(format!("wc-config-load-parent-{}", uuid::Uuid::new_v4()));
+        let root =
+            std::env::temp_dir().join(format!("wc-config-load-parent-{}", uuid::Uuid::new_v4()));
         let actual = root.join("actual");
         fs::create_dir_all(&actual).unwrap();
         let config = AgentConfig {
@@ -276,7 +277,9 @@ mod tests {
         symlink(&actual, &alias).unwrap();
         assert!(AgentConfig::load(&alias.join("agent.json")).is_err());
         assert_eq!(
-            AgentConfig::load(&actual.join("agent.json")).unwrap().device_token,
+            AgentConfig::load(&actual.join("agent.json"))
+                .unwrap()
+                .device_token,
             "private-token"
         );
         fs::remove_dir_all(root).unwrap();
