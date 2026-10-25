@@ -1271,7 +1271,6 @@ pub fn replace_text(
     }))
 }
 
-
 const MAX_UNDO_FILE_BYTES: u64 = 6 * 1024 * 1024;
 const MAX_UNDO_PER_FILE: usize = 8;
 const MAX_UNDO_PER_DIRECTORY: usize = 64;
@@ -1280,9 +1279,43 @@ fn undo_prefix(path: &Path) -> String {
     format!("{:x}", Sha256::digest(path.to_string_lossy().as_bytes()))
 }
 
-fn undo_dir(path: &Path, create: bool) -> Result<Option<std::path::PathBuf>> {
-    let dir = path.parent().ok_or_else(|| anyhow!("missing parent directory"))?
-        .join(".wecommander-versions");
+fn undo_dir(_path: &Path, create: bool) -> Result<Option<std::path::PathBuf>> {
+    // Never place plaintext undo snapshots beside source files: allowlisted
+    // workspaces may also be publicly served web roots.
+    let app_root = dirs::data_local_dir()
+        .ok_or_else(|| anyhow!("local data directory unavailable"))?
+        .join("webrising-commender");
+    if create {
+        let mut builder = fs::DirBuilder::new();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
+        }
+        if let Err(error) = builder.create(&app_root) {
+            if error.kind() != std::io::ErrorKind::AlreadyExists {
+                return Err(error.into());
+            }
+        }
+    }
+    let app_meta = match fs::symlink_metadata(&app_root) {
+        Ok(meta) => meta,
+        Err(error) if !create && error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    if !app_meta.is_dir() || app_meta.file_type().is_symlink() {
+        return Err(anyhow!("unsafe_undo_app_directory"));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if create {
+            fs::set_permissions(&app_root, fs::Permissions::from_mode(0o700))?;
+        } else if app_meta.permissions().mode() & 0o077 != 0 {
+            return Err(anyhow!("unsafe_undo_app_permissions"));
+        }
+    }
+    let dir = app_root.join("file-versions");
     if create {
         let mut builder = fs::DirBuilder::new();
         #[cfg(unix)]
@@ -1320,7 +1353,10 @@ fn undo_entries(path: &Path, dir: &Path) -> Result<Vec<(String, u64)>> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
-        let Some(id) = name.strip_prefix(&prefix).and_then(|v| v.strip_suffix(".undo")) else {
+        let Some(id) = name
+            .strip_prefix(&prefix)
+            .and_then(|v| v.strip_suffix(".undo"))
+        else {
             continue;
         };
         if Uuid::parse_str(id).is_err() {
@@ -1336,10 +1372,16 @@ fn undo_entries(path: &Path, dir: &Path) -> Result<Vec<(String, u64)>> {
     Ok(result)
 }
 
-fn save_undo_snapshot(path: &Path, previous: &[u8], previous_sha: &str, next_sha: &str) -> Result<(String, std::path::PathBuf)> {
+fn save_undo_snapshot(
+    path: &Path,
+    previous: &[u8],
+    previous_sha: &str,
+    next_sha: &str,
+) -> Result<(String, std::path::PathBuf)> {
     let dir = undo_dir(path, true)?.ok_or_else(|| anyhow!("undo_directory_unavailable"))?;
     if undo_entries(path, &dir)?.len() >= MAX_UNDO_PER_FILE
-        || fs::read_dir(&dir)?.count() >= MAX_UNDO_PER_DIRECTORY {
+        || fs::read_dir(&dir)?.count() >= MAX_UNDO_PER_DIRECTORY
+    {
         return Err(anyhow!("undo_snapshot_quota_exceeded"));
     }
     let id = Uuid::new_v4().to_string();
@@ -1388,7 +1430,9 @@ pub fn versions(policy: &PathPolicy, raw: &str) -> Result<Value> {
         return Err(anyhow!("path is not a file"));
     }
     let lock = mutation_lock(&path)?;
-    let _guard = lock.lock().map_err(|_| anyhow!("file mutation lock poisoned"))?;
+    let _guard = lock
+        .lock()
+        .map_err(|_| anyhow!("file mutation lock poisoned"))?;
     let entries = match undo_dir(&path, false)? {
         Some(dir) => undo_entries(&path, &dir)?,
         None => Vec::new(),
@@ -1409,34 +1453,46 @@ pub fn undo(policy: &PathPolicy, raw: &str, undo_id: &str, expected_sha256: &str
         return Err(anyhow!("path is not a file"));
     }
     let lock = mutation_lock(&path)?;
-    let _guard = lock.lock().map_err(|_| anyhow!("file mutation lock poisoned"))?;
+    let _guard = lock
+        .lock()
+        .map_err(|_| anyhow!("file mutation lock poisoned"))?;
     let dir = undo_dir(&path, false)?.ok_or_else(|| anyhow!("undo_snapshot_not_found"))?;
     let snapshot = dir.join(format!("{}-{}.undo", undo_prefix(&path), id));
     let mut reader = open_regular_read(&snapshot)?;
     let mut encoded = Vec::new();
-    reader.by_ref().take(MAX_UNDO_FILE_BYTES + 1).read_to_end(&mut encoded)?;
+    reader
+        .by_ref()
+        .take(MAX_UNDO_FILE_BYTES + 1)
+        .read_to_end(&mut encoded)?;
     if encoded.len() as u64 > MAX_UNDO_FILE_BYTES {
         return Err(anyhow!("undo_snapshot_too_large"));
     }
     let record: Value = serde_json::from_slice(&encoded).context("invalid_undo_snapshot")?;
-    if record["version"] != 1
-        || record["path"].as_str() != Some(path.to_string_lossy().as_ref()) {
+    if record["version"] != 1 || record["path"].as_str() != Some(path.to_string_lossy().as_ref()) {
         return Err(anyhow!("undo_snapshot_path_mismatch"));
     }
-    let previous = STANDARD.decode(record["contentBase64"].as_str()
-        .ok_or_else(|| anyhow!("invalid_undo_snapshot"))?)?;
+    let previous = STANDARD.decode(
+        record["contentBase64"]
+            .as_str()
+            .ok_or_else(|| anyhow!("invalid_undo_snapshot"))?,
+    )?;
     if previous.len() > HARD_READ_MAX
-        || record["previousSha256"].as_str() != Some(format!("{:x}", Sha256::digest(&previous)).as_str()) {
+        || record["previousSha256"].as_str()
+            != Some(format!("{:x}", Sha256::digest(&previous)).as_str())
+    {
         return Err(anyhow!("undo_snapshot_checksum_mismatch"));
     }
     let mut current = Vec::new();
-    open_regular_read(&path)?.take(HARD_READ_MAX as u64 + 1).read_to_end(&mut current)?;
+    open_regular_read(&path)?
+        .take(HARD_READ_MAX as u64 + 1)
+        .read_to_end(&mut current)?;
     if current.len() > HARD_READ_MAX {
         return Err(anyhow!("file exceeds edit limit"));
     }
     let current_sha = format!("{:x}", Sha256::digest(&current));
     if !current_sha.eq_ignore_ascii_case(expected_sha256)
-        || record["nextSha256"].as_str() != Some(current_sha.as_str()) {
+        || record["nextSha256"].as_str() != Some(current_sha.as_str())
+    {
         return Err(anyhow!("file_changed_since_edit"));
     }
     atomic_write(&path, &previous)?;
@@ -2283,7 +2339,6 @@ mod mutation_concurrency_tests {
     }
 }
 
-
 #[cfg(test)]
 mod undo_version_tests {
     use super::*;
@@ -2296,17 +2351,43 @@ mod undo_version_tests {
         let path = root.join("edit.txt");
         fs::write(&path, b"original").unwrap();
         let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
-        let edited = replace_text(&policy, path.to_str().unwrap(), "original", "edited", false, None).unwrap();
+        let edited = replace_text(
+            &policy,
+            path.to_str().unwrap(),
+            "original",
+            "edited",
+            false,
+            None,
+        )
+        .unwrap();
         let id = edited["undoId"].as_str().unwrap();
-        assert_eq!(versions(&policy, path.to_str().unwrap()).unwrap()["versions"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            versions(&policy, path.to_str().unwrap()).unwrap()["versions"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
         assert!(undo(&policy, path.to_str().unwrap(), id, &"0".repeat(64)).is_err());
         assert_eq!(fs::read(&path).unwrap(), b"edited");
         // A new PathPolicy simulates recovery after an Agent restart.
         let restarted = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
-        let restored = undo(&restarted, path.to_str().unwrap(), id, edited["sha256"].as_str().unwrap()).unwrap();
+        let restored = undo(
+            &restarted,
+            path.to_str().unwrap(),
+            id,
+            edited["sha256"].as_str().unwrap(),
+        )
+        .unwrap();
         assert_eq!(restored["ok"], true);
         assert_eq!(fs::read(&path).unwrap(), b"original");
-        assert!(undo(&restarted, path.to_str().unwrap(), id, edited["sha256"].as_str().unwrap()).is_err());
+        assert!(undo(
+            &restarted,
+            path.to_str().unwrap(),
+            id,
+            edited["sha256"].as_str().unwrap()
+        )
+        .is_err());
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -2319,12 +2400,35 @@ mod undo_version_tests {
         fs::write(&path, b"original").unwrap();
         fs::write(&other, b"edited").unwrap();
         let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
-        let edited = replace_text(&policy, path.to_str().unwrap(), "original", "edited", false, None).unwrap();
+        let edited = replace_text(
+            &policy,
+            path.to_str().unwrap(),
+            "original",
+            "edited",
+            false,
+            None,
+        )
+        .unwrap();
         let id = edited["undoId"].as_str().unwrap();
-        assert!(undo(&policy, other.to_str().unwrap(), id, edited["sha256"].as_str().unwrap()).is_err());
-        let snapshot = root.join(".wecommander-versions").join(format!("{}-{}.undo", undo_prefix(&path), id));
+        assert!(undo(
+            &policy,
+            other.to_str().unwrap(),
+            id,
+            edited["sha256"].as_str().unwrap()
+        )
+        .is_err());
+        let snapshot = undo_dir(&path, false)
+            .unwrap()
+            .unwrap()
+            .join(format!("{}-{}.undo", undo_prefix(&path), id));
         fs::write(&snapshot, b"{\"version\":1,\"contentBase64\":\"tampered\"}").unwrap();
-        assert!(undo(&policy, path.to_str().unwrap(), id, edited["sha256"].as_str().unwrap()).is_err());
+        assert!(undo(
+            &policy,
+            path.to_str().unwrap(),
+            id,
+            edited["sha256"].as_str().unwrap()
+        )
+        .is_err());
         assert_eq!(fs::read(&path).unwrap(), b"edited");
         fs::remove_dir_all(root).unwrap();
     }

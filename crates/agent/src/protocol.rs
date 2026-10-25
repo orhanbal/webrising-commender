@@ -150,8 +150,14 @@ pub enum AgentAction {
         replace_all: Option<bool>,
         expected_sha256: Option<String>,
     },
-    FsVersions { path: String },
-    FsUndo { path: String, undo_id: String, expected_sha256: String },
+    FsVersions {
+        path: String,
+    },
+    FsUndo {
+        path: String,
+        undo_id: String,
+        expected_sha256: String,
+    },
     ProcessExec {
         command: String,
         cwd: Option<String>,
