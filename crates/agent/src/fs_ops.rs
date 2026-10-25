@@ -1253,7 +1253,12 @@ pub fn append(
         }
         let next_sha = format!("{:x}", Sha256::digest(&updated));
         let snapshot = if with_undo {
-            Some(save_undo_snapshot(&path, &original, &previous_sha, &next_sha)?)
+            Some(save_undo_snapshot(
+                &path,
+                &original,
+                &previous_sha,
+                &next_sha,
+            )?)
         } else {
             None
         };
