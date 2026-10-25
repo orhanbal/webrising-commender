@@ -841,7 +841,19 @@ try {
         assert.equal(typeof deniedParentDelete.error, "string");
         assert.equal(fs.readFileSync(outsideFile, "utf8"), "outside-private-do-not-modify");
         console.log("agent-e2e: fs_delete symlinked parent denied with approval");
-
+        // Both mkdir modes must reject an outside-root symlinked parent
+        // through the actual MCP -> Gateway -> Agent route.
+        for (const recursive of [false, true]) {
+          const deniedMkdir = await tool(recursive ? 625 : 624, "fs_mkdir", {
+            device_id: deviceId,
+            path: path.join(outsideDirLink, recursive ? "nested/deep" : "shallow"),
+            recursive,
+          });
+          assert.equal(typeof deniedMkdir.error, "string");
+        }
+        assert.equal(fs.existsSync(path.join(escapedDir, "shallow")), false);
+        assert.equal(fs.existsSync(path.join(escapedDir, "nested")), false);
+        console.log("agent-e2e: fs_mkdir nonrecursive and recursive outside-root symlink denied");
 
       } finally {
         fs.rmSync(outsideDirLink, { force: true });
