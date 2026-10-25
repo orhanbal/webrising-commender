@@ -2416,10 +2416,11 @@ mod undo_version_tests {
             edited["sha256"].as_str().unwrap()
         )
         .is_err());
-        let snapshot = undo_dir(&path, false)
-            .unwrap()
-            .unwrap()
-            .join(format!("{}-{}.undo", undo_prefix(&path), id));
+        let snapshot = undo_dir(&path, false).unwrap().unwrap().join(format!(
+            "{}-{}.undo",
+            undo_prefix(&path),
+            id
+        ));
         fs::write(&snapshot, b"{\"version\":1,\"contentBase64\":\"tampered\"}").unwrap();
         assert!(undo(
             &policy,
