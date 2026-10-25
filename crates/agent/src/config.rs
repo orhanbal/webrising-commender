@@ -69,7 +69,7 @@ impl AgentConfig {
             use std::os::windows::fs::OpenOptionsExt;
             options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
         }
-        let mut file = options
+        let file = options
             .open(path)
             .with_context(|| format!("cannot read config {}", path.display()))?;
         let opened = file.metadata()?;
