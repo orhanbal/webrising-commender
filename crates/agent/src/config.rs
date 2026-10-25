@@ -45,6 +45,15 @@ impl AgentConfig {
     }
 
     pub fn load(path: &Path) -> Result<Self> {
+        // The final file can be regular while a symlinked parent redirects
+        // credential reads outside the intended config directory.
+        let parent = path
+            .parent()
+            .ok_or_else(|| anyhow!("config parent unavailable"))?;
+        let parent_meta = fs::symlink_metadata(parent)?;
+        if !parent_meta.is_dir() || parent_meta.file_type().is_symlink() {
+            return Err(anyhow!("unsafe_agent_config_parent"));
+        }
         // A config holds device credentials: never follow a replaced symlink,
         // read a directory/device, or allocate unbounded memory for JSON.
         let metadata = fs::symlink_metadata(path)
@@ -243,6 +252,33 @@ mod tests {
         let oversized = root.join("oversized.json");
         fs::write(&oversized, vec![b'x'; MAX_AGENT_CONFIG_BYTES as usize + 1]).unwrap();
         assert!(AgentConfig::load(&oversized).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn config_load_rejects_symlinked_parent_without_reading_credentials() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!("wc-config-load-parent-{}", uuid::Uuid::new_v4()));
+        let actual = root.join("actual");
+        fs::create_dir_all(&actual).unwrap();
+        let config = AgentConfig {
+            device_id: "device".into(),
+            device_token: "private-token".into(),
+            approval_key: "private-approval".into(),
+            gateway_ws_url: String::new(),
+            control_url: String::new(),
+            name: String::new(),
+            allowed_roots: vec![root.clone()],
+        };
+        config.save(&actual.join("agent.json")).unwrap();
+        let alias = root.join("alias");
+        symlink(&actual, &alias).unwrap();
+        assert!(AgentConfig::load(&alias.join("agent.json")).is_err());
+        assert_eq!(
+            AgentConfig::load(&actual.join("agent.json")).unwrap().device_token,
+            "private-token"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
