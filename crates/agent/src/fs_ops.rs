@@ -582,7 +582,10 @@ mod append_security_tests {
         let base = std::env::temp_dir().join(format!("commender-append-size-{}", Uuid::new_v4()));
         fs::create_dir_all(&base).unwrap();
         let path = base.join("large.bin");
-        fs::File::create(&path).unwrap().set_len(128 * 1024 * 1024).unwrap();
+        fs::File::create(&path)
+            .unwrap()
+            .set_len(128 * 1024 * 1024)
+            .unwrap();
         let policy = PathPolicy::new(std::slice::from_ref(&base)).unwrap();
         let result = append(&policy, path.to_str().unwrap(), "YQ==", None, false);
         assert!(result.is_err());
