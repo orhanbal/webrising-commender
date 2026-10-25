@@ -2244,14 +2244,128 @@ mod move_collision_tests {
     }
 }
 
+/// Create directories relative to no-follow directory descriptors. Resolving an
+/// allowlisted path alone does not protect mkdir against a later parent-symlink
+/// swap; mkdirat/openat keep each step pinned to the directory we inspected.
+#[cfg(unix)]
+fn mkdir_pinned_unix(path: &Path, recursive: bool) -> Result<()> {
+    use std::ffi::CString;
+    use std::os::fd::{AsRawFd, FromRawFd};
+    use std::os::unix::ffi::OsStrExt;
+    use std::path::Component;
+
+    if !recursive {
+        let (parent, name) = rename_parent_handle(path)?;
+        let result = unsafe { libc::mkdirat(parent.as_raw_fd(), name.as_ptr(), 0o777) };
+        if result != 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        return Ok(());
+    }
+
+    if !path.is_absolute() {
+        return Err(anyhow!("absolute_path_required"));
+    }
+    let mut directory = fs::File::open("/")?;
+    for component in path.components() {
+        let name = match component {
+            Component::RootDir => continue,
+            Component::Normal(name) => name,
+            _ => return Err(anyhow!("unsafe_path_component")),
+        };
+        let name = CString::new(name.as_bytes())?;
+        let mut fd = unsafe {
+            libc::openat(
+                directory.as_raw_fd(),
+                name.as_ptr(),
+                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        };
+        if fd < 0 {
+            let error = std::io::Error::last_os_error();
+            if error.kind() != std::io::ErrorKind::NotFound {
+                return Err(error.into());
+            }
+            let created = unsafe { libc::mkdirat(directory.as_raw_fd(), name.as_ptr(), 0o777) };
+            if created != 0 {
+                let error = std::io::Error::last_os_error();
+                // Another creator may have won; re-open without following links.
+                if error.kind() != std::io::ErrorKind::AlreadyExists {
+                    return Err(error.into());
+                }
+            }
+            fd = unsafe {
+                libc::openat(
+                    directory.as_raw_fd(),
+                    name.as_ptr(),
+                    libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                )
+            };
+            if fd < 0 {
+                return Err(std::io::Error::last_os_error().into());
+            }
+        }
+        directory = unsafe { fs::File::from_raw_fd(fd) };
+    }
+    Ok(())
+}
+
 pub fn mkdir(policy: &PathPolicy, raw: &str, recursive: bool) -> Result<Value> {
     let path = policy.resolve_for_create(raw)?;
+    #[cfg(unix)]
+    mkdir_pinned_unix(&path, recursive)?;
+    #[cfg(not(unix))]
     if recursive {
         fs::create_dir_all(&path)?;
     } else {
         fs::create_dir(&path)?;
     }
     Ok(json!({ "ok": true, "path": path.to_string_lossy() }))
+}
+
+#[cfg(all(test, unix))]
+mod mkdir_parent_tests {
+    use super::*;
+    use std::os::unix::fs::symlink;
+
+    #[test]
+    fn mkdir_rejects_swapped_parent_without_creating_outside() {
+        let base = std::env::temp_dir().join(format!("commender-mkdir-parent-{}", Uuid::new_v4()));
+        let allowed = base.join("allowed");
+        let parent = allowed.join("working");
+        let outside = base.join("outside");
+        fs::create_dir_all(&parent).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&allowed)).unwrap();
+        let shallow = policy
+            .resolve_for_create(parent.join("new-shallow").to_str().unwrap())
+            .unwrap();
+        let nested = policy
+            .resolve_for_create(parent.join("new/nested").to_str().unwrap())
+            .unwrap();
+
+        fs::rename(&parent, allowed.join("relocated")).unwrap();
+        symlink(&outside, &parent).unwrap();
+        assert!(mkdir_pinned_unix(&shallow, false).is_err());
+        assert!(mkdir_pinned_unix(&nested, true).is_err());
+        assert!(!outside.join("new-shallow").exists());
+        assert!(!outside.join("new").exists());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn mkdir_pinned_creates_shallow_and_nested_directories() {
+        let root = std::env::temp_dir().join(format!("commender-mkdir-normal-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        assert!(mkdir(&policy, root.join("shallow").to_str().unwrap(), false).is_ok());
+        assert!(mkdir(&policy, root.join("deep/nested").to_str().unwrap(), true).is_ok());
+        assert!(root.join("shallow").is_dir());
+        assert!(root.join("deep/nested").is_dir());
+        assert!(mkdir(&policy, root.join("shallow").to_str().unwrap(), false).is_err());
+        assert!(mkdir(&policy, root.join("deep/nested").to_str().unwrap(), true).is_ok());
+        fs::remove_dir_all(root).unwrap();
+    }
 }
 
 /// Remove a file or empty directory relative to a pinned, no-follow parent.
