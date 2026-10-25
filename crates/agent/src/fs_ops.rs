@@ -1866,20 +1866,58 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
 /// Move without ever replacing a destination created by another process.
 /// Checking destination.exists() before fs::rename is not an atomic guard:
 /// Unix rename replaces existing files and Windows MoveFileEx can also replace.
+/// Pin each parent directory before an atomic rename. PathPolicy canonicalization
+/// alone is insufficient when another process swaps an ancestor to a symlink
+/// between authorization and renameat2/renameatx_np.
+#[cfg(unix)]
+fn rename_parent_handle(path: &Path) -> Result<(fs::File, std::ffi::CString)> {
+    use std::ffi::CString;
+    use std::os::fd::{AsRawFd, FromRawFd};
+    use std::os::unix::ffi::OsStrExt;
+    use std::path::Component;
+
+    if !path.is_absolute() {
+        return Err(anyhow!("absolute_path_required"));
+    }
+    let parent = path.parent().ok_or_else(|| anyhow!("unsafe_path_component"))?;
+    let leaf = path.file_name().ok_or_else(|| anyhow!("unsafe_path_component"))?;
+    let leaf = CString::new(leaf.as_bytes())?;
+    let mut directory = fs::File::open("/")?;
+    for component in parent.components() {
+        let name = match component {
+            Component::RootDir => continue,
+            Component::Normal(name) => name,
+            _ => return Err(anyhow!("unsafe_path_component")),
+        };
+        let name = CString::new(name.as_bytes())?;
+        let fd = unsafe {
+            libc::openat(
+                directory.as_raw_fd(),
+                name.as_ptr(),
+                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        };
+        if fd < 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        directory = unsafe { fs::File::from_raw_fd(fd) };
+    }
+    Ok((directory, leaf))
+}
+
+/// Atomic no-overwrite rename using pinned source and destination parent FDs.
 #[cfg(target_os = "linux")]
 fn rename_noreplace(source: &Path, destination: &Path) -> Result<()> {
-    use std::ffi::CString;
-    use std::os::unix::ffi::OsStrExt;
-    let source = CString::new(source.as_os_str().as_bytes())?;
-    let destination = CString::new(destination.as_os_str().as_bytes())?;
-    // renameat2 RENAME_NOREPLACE (1): kernel arbitrates competing writers.
+    use std::os::fd::AsRawFd;
+    let (source_dir, source_name) = rename_parent_handle(source)?;
+    let (destination_dir, destination_name) = rename_parent_handle(destination)?;
     let status = unsafe {
         libc::syscall(
             libc::SYS_renameat2,
-            libc::AT_FDCWD,
-            source.as_ptr(),
-            libc::AT_FDCWD,
-            destination.as_ptr(),
+            source_dir.as_raw_fd(),
+            source_name.as_ptr(),
+            destination_dir.as_raw_fd(),
+            destination_name.as_ptr(),
             1u32,
         )
     };
@@ -1891,8 +1929,7 @@ fn rename_noreplace(source: &Path, destination: &Path) -> Result<()> {
 
 #[cfg(target_os = "macos")]
 fn rename_noreplace(source: &Path, destination: &Path) -> Result<()> {
-    use std::ffi::CString;
-    use std::os::unix::ffi::OsStrExt;
+    use std::os::fd::AsRawFd;
     unsafe extern "C" {
         fn renameatx_np(
             fromfd: libc::c_int,
@@ -1902,15 +1939,15 @@ fn rename_noreplace(source: &Path, destination: &Path) -> Result<()> {
             flags: libc::c_uint,
         ) -> libc::c_int;
     }
-    let source = CString::new(source.as_os_str().as_bytes())?;
-    let destination = CString::new(destination.as_os_str().as_bytes())?;
+    let (source_dir, source_name) = rename_parent_handle(source)?;
+    let (destination_dir, destination_name) = rename_parent_handle(destination)?;
     // Darwin RENAME_EXCL (0x4) rejects an existing destination atomically.
     let status = unsafe {
         renameatx_np(
-            libc::AT_FDCWD,
-            source.as_ptr(),
-            libc::AT_FDCWD,
-            destination.as_ptr(),
+            source_dir.as_raw_fd(),
+            source_name.as_ptr(),
+            destination_dir.as_raw_fd(),
+            destination_name.as_ptr(),
             0x4,
         )
     };
@@ -2038,6 +2075,45 @@ mod move_collision_tests {
             15
         );
         fs::remove_dir_all(root).unwrap();
+    }
+    #[cfg(unix)]
+    #[test]
+    fn move_rejects_swapped_source_and_destination_parent_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let base = std::env::temp_dir().join(format!("commender-move-parent-{}", Uuid::new_v4()));
+        let allowed = base.join("allowed");
+        let source_dir = allowed.join("source-dir");
+        let destination_dir = allowed.join("destination-dir");
+        let outside = base.join("outside");
+        fs::create_dir_all(&source_dir).unwrap();
+        fs::create_dir_all(&destination_dir).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let source = source_dir.join("source.txt");
+        let destination = destination_dir.join("target.txt");
+        fs::write(&source, b"inside-source").unwrap();
+        fs::write(outside.join("source.txt"), b"outside-source").unwrap();
+
+        let policy = PathPolicy::new(std::slice::from_ref(&allowed)).unwrap();
+        let resolved_source = policy.resolve_existing(source.to_str().unwrap()).unwrap();
+        let resolved_destination = policy
+            .resolve_for_create(destination.to_str().unwrap())
+            .unwrap();
+
+        fs::rename(&source_dir, allowed.join("relocated-source")).unwrap();
+        symlink(&outside, &source_dir).unwrap();
+        assert!(rename_noreplace(&resolved_source, &resolved_destination).is_err());
+        assert_eq!(fs::read(outside.join("source.txt")).unwrap(), b"outside-source");
+        assert!(!destination.exists());
+
+        let stable_source = allowed.join("stable-source.txt");
+        fs::write(&stable_source, b"stable-source").unwrap();
+        fs::rename(&destination_dir, allowed.join("relocated-destination")).unwrap();
+        symlink(&outside, &destination_dir).unwrap();
+        assert!(rename_noreplace(&stable_source, &resolved_destination).is_err());
+        assert_eq!(fs::read(&stable_source).unwrap(), b"stable-source");
+        assert!(!outside.join("target.txt").exists());
+        fs::remove_dir_all(base).unwrap();
     }
 }
 
