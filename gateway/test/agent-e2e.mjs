@@ -890,6 +890,32 @@ try {
   });
   assert.equal(typeof replay.error, "string");
   console.log("agent-e2e: durable guarded fs_replace undo survived stale/replay negative tests");
+  // 3B retention: age a real Agent-created snapshot on disk and verify that
+  // the next MCP listing prunes it, without modifying the edited source file.
+  const expiring = await tool(574, "fs_replace", {
+    device_id: deviceId, path: raceFile, search: "race-seed", replace: "expiry-edited",
+  });
+  assert.equal(expiring.ok, true);
+  const racePrefix = createHash("sha256").update(raceFile).digest("hex");
+  const snapshotPath = path.join(
+    tempRoot, "xdg-data", "webrising-commender", "file-versions",
+    `${racePrefix}-${expiring.undoId}.undo`,
+  );
+  assert.equal(fs.existsSync(snapshotPath), true);
+  const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+  fs.utimesSync(snapshotPath, eightDaysAgo, eightDaysAgo);
+  const prunedVersions = await tool(575, "fs_versions", {
+    device_id: deviceId, path: raceFile,
+  });
+  assert.equal(prunedVersions.versions.some((item) => item.undoId === expiring.undoId), false);
+  assert.equal(fs.existsSync(snapshotPath), false);
+  const expiredUndo = await tool(576, "fs_undo", {
+    device_id: deviceId, path: raceFile, undo_id: expiring.undoId,
+    expected_sha256: expiring.sha256,
+  });
+  assert.equal(typeof expiredUndo.error, "string");
+  assert.equal(fs.readFileSync(raceFile, "utf8"), "expiry-edited");
+  console.log("agent-e2e: expired undo pruned and stale restore denied via real MCP");
 
   const readAfterReplace = await tool(118, "fs_read", {
     device_id: deviceId,
