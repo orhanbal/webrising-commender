@@ -55,6 +55,12 @@ try {
     grant_types: ["authorization_code"],
   });
   assert.equal(badRegistration.status, 400);
+  const invalidResponseType = await postJson("/oauth/register", {
+    client_name: "unsupported response",
+    redirect_uris: ["https://chatgpt.com/connector_platform_oauth_redirect"],
+    response_types: ["token"],
+  });
+  assert.equal(invalidResponseType.status, 400);
   const registered = await postJson("/oauth/register", {
     client_name: "ChatGPT CI connector",
     redirect_uris: ["https://chatgpt.com/connector_platform_oauth_redirect"],
@@ -88,6 +94,9 @@ try {
   const consent = await fetch(base + "/oauth/authorize?" + query, { headers: { Cookie: cookie } });
   assert.equal(consent.status, 200);
   assert.match(await consent.text(), /Erişime izin ver/);
+  const duplicateQuery = await fetch(base + "/oauth/authorize?" + query + "&client_id=" +
+    encodeURIComponent(params.client_id), { headers: { Cookie: cookie } });
+  assert.equal(duplicateQuery.status, 400, "duplicated GET authorization parameter must fail closed");
 
   const noCsrf = await fetch(base + "/oauth/authorize", {
     method: "POST",

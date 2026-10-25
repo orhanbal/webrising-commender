@@ -25,3 +25,21 @@ export function validClientGrants(value: unknown) {
       !value.includes("authorization_code") || new Set(value).size !== value.length) return false;
   return value.every((v) => v === "authorization_code" || v === "refresh_token");
 }
+
+/** Reject ambiguous repeated OAuth query parameters before authorization. */
+export function uniqueOAuthQueryParams(params: URLSearchParams): Record<string, string> {
+  const values: Record<string, string> = Object.create(null);
+  for (const [key, value] of params) {
+    if (Object.prototype.hasOwnProperty.call(values, key)) {
+      throw new Error("duplicate_parameter");
+    }
+    values[key] = value;
+  }
+  return values;
+}
+
+/** This authorization server supports only the authorization-code response type. */
+export function validClientResponses(value: unknown) {
+  return value === undefined ||
+    (Array.isArray(value) && value.length === 1 && value[0] === "code");
+}

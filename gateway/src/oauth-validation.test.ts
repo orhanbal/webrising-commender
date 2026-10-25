@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { redirectAllowed, validChallenge, validResource, validClientGrants } from "./oauth-validation.js";
+import { redirectAllowed, validChallenge, validResource, validClientGrants, validClientResponses, uniqueOAuthQueryParams } from "./oauth-validation.js";
 
 test("OAuth registration rejects insecure, credentialed and fragment redirects", () => {
   for (const uri of ["https://chatgpt.com/connector_platform_oauth_redirect", "https://chatgpt.com/connector/oauth/test", "http://127.0.0.1:4321/callback"]) {
@@ -33,4 +33,21 @@ test("DCR accepts authorization code and optional refresh, not unrelated grants"
   assert.equal(validClientGrants(["password"]), false);
   assert.equal(validClientGrants(["refresh_token"]), false);
   assert.equal(validClientGrants(["authorization_code", "authorization_code"]), false);
+});
+
+test("OAuth authorization rejects duplicated GET parameters", () => {
+  assert.deepEqual({ ...uniqueOAuthQueryParams(new URLSearchParams("client_id=a&state=b")) },
+    { client_id: "a", state: "b" });
+  for (const value of ["client_id=a&client_id=b", "state=a&state=a", "redirect_uri=a&redirect_uri=b"]) {
+    assert.throws(() => uniqueOAuthQueryParams(new URLSearchParams(value)), /duplicate_parameter/);
+  }
+  assert.equal(uniqueOAuthQueryParams(new URLSearchParams("__proto__=x")).__proto__, "x");
+});
+
+test("OAuth dynamic client registration rejects unsupported response types", () => {
+  assert.equal(validClientResponses(undefined), true);
+  assert.equal(validClientResponses(["code"]), true);
+  for (const value of [[], ["token"], ["code", "token"], ["code", "code"], "code", null]) {
+    assert.equal(validClientResponses(value), false);
+  }
 });

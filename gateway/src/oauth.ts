@@ -6,7 +6,7 @@ import { csrfCookieName } from "./browser-auth.js";
 import { randomToken, sha256 } from "./crypto-utils.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { oauthScope } from "./oauth-tokens.js";
-import { redirectAllowed, validChallenge, validResource, validClientGrants } from "./oauth-validation.js";
+import { redirectAllowed, validChallenge, validResource, validClientGrants, validClientResponses, uniqueOAuthQueryParams } from "./oauth-validation.js";
 
 const registerLimiter = new FixedWindowRateLimiter();
 const tokenLimiter = new FixedWindowRateLimiter();
@@ -164,7 +164,8 @@ export async function handleOAuthHttp(
           body.redirect_uris.some((u) => typeof u !== "string" || !redirectAllowed(u)) ||
           new Set(body.redirect_uris).size !== body.redirect_uris.length ||
           (body.token_endpoint_auth_method !== undefined && body.token_endpoint_auth_method !== "none") ||
-          !validClientGrants(body.grant_types)) {
+          !validClientGrants(body.grant_types) ||
+          !validClientResponses(body.response_types)) {
         failure(res, 400, "invalid_client_metadata"); return true;
       }
       const name = safeClientName(body.client_name);
@@ -193,7 +194,7 @@ export async function handleOAuthHttp(
     }
     let p: Record<string, string>;
     try {
-      p = req.method === "GET" ? Object.fromEntries(url.searchParams) : form(req, await bodyText(req));
+      p = req.method === "GET" ? uniqueOAuthQueryParams(url.searchParams) : form(req, await bodyText(req));
     } catch {
       failure(res, 400, "invalid_request"); return true;
     }
