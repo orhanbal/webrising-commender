@@ -2254,6 +2254,20 @@ pub fn mkdir(policy: &PathPolicy, raw: &str, recursive: bool) -> Result<Value> {
     Ok(json!({ "ok": true, "path": path.to_string_lossy() }))
 }
 
+/// Remove a file or empty directory relative to a pinned, no-follow parent.
+/// Recursive deletion remains a separate, not-yet-hardened acceptance gate.
+#[cfg(unix)]
+fn unlink_pinned(path: &Path, directory: bool) -> Result<()> {
+    use std::os::fd::AsRawFd;
+    let (parent, name) = rename_parent_handle(path)?;
+    let flags = if directory { libc::AT_REMOVEDIR } else { 0 };
+    let result = unsafe { libc::unlinkat(parent.as_raw_fd(), name.as_ptr(), flags) };
+    if result != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    Ok(())
+}
+
 pub fn delete(policy: &PathPolicy, raw: &str, recursive: bool) -> Result<Value> {
     let path = policy.resolve_existing(raw)?;
     if policy.roots().iter().any(|root| root == &path) {
@@ -2265,13 +2279,66 @@ pub fn delete(policy: &PathPolicy, raw: &str, recursive: bool) -> Result<Value> 
         if recursive {
             fs::remove_dir_all(&path)?;
         } else {
+            #[cfg(unix)]
+            unlink_pinned(&path, true)?;
+            #[cfg(not(unix))]
             fs::remove_dir(&path)?;
         }
     } else {
+        #[cfg(unix)]
+        unlink_pinned(&path, false)?;
+        #[cfg(not(unix))]
         fs::remove_file(&path)?;
     }
 
     Ok(json!({ "ok": true, "path": path.to_string_lossy() }))
+}
+
+#[cfg(all(test, unix))]
+mod delete_parent_tests {
+    use super::*;
+    use std::os::unix::fs::symlink;
+
+    #[test]
+    fn nonrecursive_delete_rejects_swapped_parent_without_touching_outside() {
+        let base = std::env::temp_dir().join(format!("commender-delete-parent-{}", Uuid::new_v4()));
+        let allowed = base.join("allowed");
+        let parent = allowed.join("working");
+        let outside = base.join("outside");
+        fs::create_dir_all(parent.join("empty")).unwrap();
+        fs::create_dir_all(outside.join("empty")).unwrap();
+        fs::write(parent.join("target.txt"), b"inside").unwrap();
+        fs::write(outside.join("target.txt"), b"outside-private").unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&allowed)).unwrap();
+        let resolved_file = policy
+            .resolve_existing(parent.join("target.txt").to_str().unwrap())
+            .unwrap();
+        let resolved_dir = policy
+            .resolve_existing(parent.join("empty").to_str().unwrap())
+            .unwrap();
+        fs::rename(&parent, allowed.join("relocated")).unwrap();
+        symlink(&outside, &parent).unwrap();
+        assert!(unlink_pinned(&resolved_file, false).is_err());
+        assert!(unlink_pinned(&resolved_dir, true).is_err());
+        assert_eq!(fs::read(outside.join("target.txt")).unwrap(), b"outside-private");
+        assert!(outside.join("empty").is_dir());
+        assert!(allowed.join("relocated/target.txt").exists());
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn nonrecursive_delete_removes_file_and_empty_directory() {
+        let root = std::env::temp_dir().join(format!("commender-delete-normal-{}", Uuid::new_v4()));
+        fs::create_dir_all(root.join("empty")).unwrap();
+        let file = root.join("target.txt");
+        fs::write(&file, b"content").unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        assert!(delete(&policy, file.to_str().unwrap(), false).is_ok());
+        assert!(delete(&policy, root.join("empty").to_str().unwrap(), false).is_ok());
+        assert!(!file.exists());
+        assert!(!root.join("empty").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
 }
 
 fn entry_type(file_type: &fs::FileType) -> &'static str {
