@@ -1193,6 +1193,30 @@ try {
     assert.equal(canceledTask.canceled, true);
     await new Promise((resolve) => setTimeout(resolve, 2200));
     assert.equal(fs.existsSync(cancelMarker), false, "canceled descendant survived");
+    // 2D: cancellation immediately after task_start must always find the
+    // published abort handle, even if the shell has not begun execution.
+    const immediateMarker = path.join(tempRoot, "immediate-cancel-leaked");
+    const immediateCommand =
+      "sleep 1; printf leaked > '" + immediateMarker + "'";
+    const immediateStartToken = await approval(deviceId, {
+      kind: "task_start", command: immediateCommand, cwd: tempRoot, timeoutMs: 10000,
+    });
+    const immediateTask = await tool(346, "task_start", {
+      device_id: deviceId, command: immediateCommand, cwd: tempRoot,
+      timeout_ms: 10000, approval_token: immediateStartToken,
+    });
+    assert.equal(typeof immediateTask.taskId, "string", JSON.stringify(immediateTask));
+    const immediateCancelToken = await approval(deviceId, {
+      kind: "task_cancel", taskId: immediateTask.taskId,
+    });
+    const immediateCancel = await tool(347, "task_cancel", {
+      device_id: deviceId, task_id: immediateTask.taskId,
+      approval_token: immediateCancelToken,
+    });
+    assert.equal(immediateCancel.canceled, true, JSON.stringify(immediateCancel));
+    await new Promise((resolve) => setTimeout(resolve, 1300));
+    assert.equal(fs.existsSync(immediateMarker), false, "immediately canceled task executed");
+    console.log("agent-e2e: immediate task cancellation did not leak command execution");
     // process_kill must reject the Agent itself and terminate a separate
     // approved target's visible child tree before its parent exits.
     const protectedToken = await approval(deviceId, {
