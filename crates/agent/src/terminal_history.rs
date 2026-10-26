@@ -167,7 +167,10 @@ impl HistoryStore {
             .pop()
             .ok_or_else(|| anyhow!("terminal session not found"))?;
         let meta = fs::symlink_metadata(&path)?;
-        if !meta.is_file() || meta.file_type().is_symlink() || meta.len() > (CAP + HEADER_BYTES + CHECKSUM_BYTES) as u64 {
+        if !meta.is_file()
+            || meta.file_type().is_symlink()
+            || meta.len() > (CAP + HEADER_BYTES + CHECKSUM_BYTES) as u64
+        {
             return Err(anyhow!("unsafe terminal history snapshot"));
         }
         // Pin the opened inode and reject a last-moment symlink swap on
@@ -181,7 +184,9 @@ impl HistoryStore {
         }
         let snapshot = options.open(&path)?;
         let opened_meta = snapshot.metadata()?;
-        if !opened_meta.is_file() || opened_meta.len() > (CAP + HEADER_BYTES + CHECKSUM_BYTES) as u64 {
+        if !opened_meta.is_file()
+            || opened_meta.len() > (CAP + HEADER_BYTES + CHECKSUM_BYTES) as u64
+        {
             return Err(anyhow!("unsafe terminal history snapshot"));
         }
         if SystemTime::now()
@@ -214,7 +219,7 @@ impl HistoryStore {
         }
         if is_v2 {
             let checksum = Sha256::digest(&raw[8..payload_end]);
-            if checksum.as_slice() != &raw[payload_end..] {
+            if checksum[..] != raw[payload_end..] {
                 return Err(anyhow!("corrupt terminal history checksum"));
             }
         }
