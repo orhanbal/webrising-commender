@@ -4028,11 +4028,11 @@ mod undo_version_tests {
     }
 
     #[test]
-    fn undo_global_byte_quota_rejects_without_erasing_existing_snapshot() {
+    fn undo_global_byte_quota_rejects_without_erasing_unknown_data() {
         let root = env::temp_dir().join(format!("wc-undo-budget-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
         let path = root.join("edit.txt");
-        let snapshot = root.join(format!("{}-{}.undo", undo_prefix(&path), Uuid::new_v4()));
+        let snapshot = root.join("unknown-private-data");
         fs::write(&snapshot, b"123456").unwrap();
         assert!(ensure_undo_capacity(&root, &path, 5, 10, None).is_err());
         assert!(ensure_undo_capacity(&root, &path, 4, 10, None).is_ok());
