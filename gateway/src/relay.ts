@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import type WebSocket from "ws";
 import { isNativeContentCheckpoint, isNativeFilenameCheckpoint } from "./search-checkpoint.js";
 import { db } from "./db.js";
-import type { AgentAction, AgentMessage, GatewayMessage, SearchProgress } from "./protocol.js";
+import type { AgentAction, AgentMessage, GatewayMessage, SearchProgress, UndoScope } from "./protocol.js";
 
 const MAX_PENDING_TOTAL = 1024;
 const MAX_PENDING_PER_DEVICE = 64;
@@ -238,7 +238,7 @@ export class AgentHub {
 
   request(deviceId: string, action: AgentAction, approvalToken?: string | null, signal?: AbortSignal,
     onProgress?: (progress: SearchProgress) => void, searchSessionId?: string,
-    startPaused?: boolean) {
+    startPaused?: boolean, undoScope?: UndoScope) {
     if (signal?.aborted) return Promise.reject(new Error("request_cancelled"));
     if (this.pending.size >= MAX_PENDING_TOTAL) {
       return Promise.reject(new Error("gateway-overloaded"));
@@ -264,6 +264,7 @@ export class AgentHub {
       action,
       ...(startPaused !== undefined ? { startPaused } : {}),
       ...(approvalToken !== undefined ? { approvalToken } : {}),
+      ...(undoScope !== undefined ? { undoScope } : {}),
     };
 
     return new Promise<unknown>((resolve, reject) => {

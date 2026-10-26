@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import type { AgentAction, SearchProgress } from "./protocol.js";
+import type { AgentAction, SearchProgress, UndoScope } from "./protocol.js";
 import type { AgentHub } from "./relay.js";
 import {
   callRelay,
@@ -41,11 +41,12 @@ export class DeviceRouter {
     onProgress?: (progress: SearchProgress) => void,
     searchSessionId?: string,
     startPaused?: boolean,
+    undoScope?: UndoScope,
   ) {
     if (signal?.aborted) throw new Error("request_cancelled");
     if (this.hub.isOnline(deviceId)) {
       return this.hub.request(deviceId, action, approvalToken, signal, onProgress, searchSessionId,
-        startPaused);
+        startPaused, undoScope);
     }
     if (!regionalRelayEnabled()) {
       throw new Error("device-offline");
@@ -75,6 +76,7 @@ export class DeviceRouter {
         action,
         ...(searchSessionId !== undefined ? { searchSessionId } : {}),
         ...(startPaused !== undefined ? { startPaused } : {}),
+        ...(undoScope !== undefined ? { undoScope } : {}),
         ...(approvalToken !== undefined ? { approvalToken } : {}),
         ...(onProgress ? { streamProgress: true } : {}),
       };

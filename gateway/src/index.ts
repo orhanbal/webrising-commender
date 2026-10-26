@@ -636,6 +636,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           streamProgress: z.boolean().optional(),
           action: z.unknown(),
           approvalToken: z.string().nullable().optional(),
+          undoScope: z.object({ organizationId: z.string().min(1).max(256), actor: z.string().min(1).max(256) }).strict().optional(),
         }).parse(parsed);
         const action = parseAgentAction(body.action);
         const streamProgress = body.streamProgress === true;
@@ -693,6 +694,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
               streamProgress ? progress => writeFrame({ type: "progress", data: progress }) : undefined,
               body.searchSessionId,
               body.startPaused,
+              body.undoScope,
             );
             if (streamProgress) {
               writeFrame({ type: "result", ok: true, data });
@@ -3658,7 +3660,9 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         return void json(res, 403, { error: "approval_required", action: action.kind });
       }
       try {
-        const data = await deviceRouter.request(body.deviceId, action, body.approvalToken);
+        const data = await deviceRouter.request(body.deviceId, action, body.approvalToken,
+          undefined, undefined, undefined, undefined,
+          { organizationId: principal!.organizationId, actor: principal!.actor });
         await auditControl(principal!, body.deviceId, `direct.${action.kind}`, risk, "success", redact({ kind: action.kind }));
         return void json(res, 200, { ok: true, data });
       } catch (error) {

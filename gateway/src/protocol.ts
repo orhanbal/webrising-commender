@@ -254,8 +254,10 @@ export function parseAgentAction(value: unknown): AgentAction {
   return agentActionSchema.parse(value) as AgentAction;
 }
 
+export type UndoScope = { organizationId: string; actor: string };
+
 export type GatewayMessage =
-  | { type: "request"; requestId: string; action: AgentAction; approvalToken?: string | null; startPaused?: boolean }
+  | { type: "request"; requestId: string; action: AgentAction; approvalToken?: string | null; startPaused?: boolean; undoScope?: UndoScope }
   | { type: "cancel"; requestId: string }
   | { type: "search_control"; requestId: string; paused: boolean }
   | { type: "ping"; timestamp: string };

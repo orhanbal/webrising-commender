@@ -484,7 +484,9 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
   }
 
   try {
-    const data = await router.request(deviceId, action, approvalToken);
+    const data = await router.request(deviceId, action, approvalToken,
+      undefined, undefined, undefined, undefined,
+      { organizationId: orgId, actor: principal.actor });
     await audit(orgId, principal.actor, deviceId, name, risk, "success", redact({ kind: action.kind }));
     return ok(request.id, toolResult(data));
   } catch (error) {
