@@ -953,6 +953,69 @@ mod tests {
     }
 
     #[test]
+    fn legacy_v1_append_migrates_to_checksumming_v2() {
+        let dir = std::env::temp_dir().join(format!("wcth-v1-upgrade-{}", Uuid::new_v4()));
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let id = Uuid::new_v4().to_string();
+        let legacy = dir.join(format!("{id}-3.hist"));
+        let mut raw = MAGIC_V1.to_vec();
+        raw.extend_from_slice(&3_u64.to_le_bytes());
+        raw.extend_from_slice(&3_u32.to_le_bytes());
+        raw.extend_from_slice(b"abc");
+        fs::write(&legacy, raw).unwrap();
+
+        let (old_total, old_bytes) = store.load(&id).unwrap();
+        assert_eq!(old_total, 3);
+        assert_eq!(old_bytes, VecDeque::from(b"abc".to_vec()));
+        let upgraded = VecDeque::from(b"abcdefgh".to_vec());
+        store.save(&id, 8, &upgraded).unwrap();
+        assert!(!legacy.exists(), "legacy generation must be retired after commit");
+        let versions = store.versions(&id).unwrap();
+        assert_eq!(versions.len(), 1);
+        assert_eq!(versions[0].0, 8);
+        assert_eq!(&fs::read(&versions[0].1).unwrap()[..8], MAGIC_V2);
+        let restarted = HistoryStore::at(dir.clone()).unwrap();
+        assert_eq!(restarted.load(&id).unwrap(), (8, upgraded));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn rolling_history_survives_repeated_restart_and_rejects_regression() {
+        let dir = std::env::temp_dir().join(format!("wcth-rolling-{}", Uuid::new_v4()));
+        let id = Uuid::new_v4().to_string();
+        let mut expected = VecDeque::new();
+        let mut total = 0_u64;
+        // Exercise hundreds of durable generations, including repeated
+        // reopens. This is a bounded CI stress test, not a 24-hour soak.
+        for cycle in 0..6_u8 {
+            let store = HistoryStore::at(dir.clone()).unwrap();
+            for _ in 0..40 {
+                total += 1;
+                expected.push_back(cycle);
+                if expected.len() > 64 {
+                    expected.pop_front();
+                }
+                store.save(&id, total, &expected).unwrap();
+            }
+            assert_eq!(store.load(&id).unwrap(), (total, expected.clone()));
+            assert_eq!(store.versions(&id).unwrap().len(), 1);
+            assert!(store.save(&id, total - 1, &expected).is_err());
+        }
+        let reopened = HistoryStore::at(dir.clone()).unwrap();
+        assert_eq!(reopened.load(&id).unwrap(), (total, expected));
+        assert_eq!(reopened.versions(&id).unwrap().len(), 1);
+        let staging = fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|entry| {
+                let name = entry.ok()?.file_name().to_string_lossy().into_owned();
+                name.ends_with(".tmp").then_some(name)
+            })
+            .collect::<Vec<_>>();
+        assert!(staging.is_empty(), "successful commits left staging files");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn prune_removes_only_owned_old_staging_and_preserves_unknown_files() {
         let dir = std::env::temp_dir().join(format!("wcth-prune-{}", Uuid::new_v4()));
         let store = HistoryStore::at(dir.clone()).unwrap();
