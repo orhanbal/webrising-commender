@@ -66,6 +66,14 @@ impl HistoryStore {
         Ok(())
     }
 
+    // Only our canonical UUID staging names are eligible for cleanup.
+    // Other dotfiles belong to the administrator and must remain untouched.
+    fn owned_staging_name(name: &str) -> bool {
+        name.strip_prefix('.')
+            .and_then(|stem| stem.strip_suffix(".tmp"))
+            .is_some_and(|id| Self::valid_id(id).is_ok())
+    }
+
     fn versions(&self, id: &str) -> Result<Vec<(u64, PathBuf)>> {
         let prefix = format!("{id}-");
         let mut versions = Vec::new();
@@ -155,8 +163,22 @@ impl HistoryStore {
         {
             return Err(anyhow!("terminal history expired"));
         }
+        // Pin the opened inode and reject a last-moment symlink swap on
+        // Unix. Inspect the descriptor, not the earlier pathname metadata.
+        let mut options = OpenOptions::new();
+        options.read(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+        }
+        let snapshot = options.open(&path)?;
+        let opened_meta = snapshot.metadata()?;
+        if !opened_meta.is_file() || opened_meta.len() > (CAP + 20) as u64 {
+            return Err(anyhow!("unsafe terminal history snapshot"));
+        }
         let mut raw = Vec::new();
-        File::open(path)?
+        snapshot
             .take((CAP + 21) as u64)
             .read_to_end(&mut raw)?;
         if raw.len() < 20 || &raw[..8] != MAGIC {
@@ -180,6 +202,9 @@ impl HistoryStore {
             let entry = entry?;
             let name = entry.file_name().to_string_lossy().into_owned();
             if name.starts_with('.') && name.ends_with(".tmp") {
+                if !Self::owned_staging_name(&name) {
+                    continue;
+                }
                 let meta = fs::symlink_metadata(entry.path())?;
                 if !meta.is_file() || meta.file_type().is_symlink() {
                     return Err(anyhow!("unsafe terminal history temporary file"));
@@ -312,4 +337,28 @@ mod tests {
             fs::remove_file(outside).unwrap();
         }
     }
+    #[test]
+    fn prune_removes_only_owned_old_staging_and_preserves_unknown_files() {
+        let dir = std::env::temp_dir().join(format!("wcth-prune-{}", Uuid::new_v4()));
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let stale = dir.join(format!(".{}.tmp", Uuid::new_v4()));
+        let unknown = dir.join(".foreign-maintenance.tmp");
+        let malformed = dir.join(".not-a-uuid.tmp");
+        for path in [&stale, &unknown, &malformed] {
+            fs::write(path, b"keep-unless-owned").unwrap();
+        }
+        let old = SystemTime::now() - Duration::from_secs(7200);
+        for path in [&stale, &unknown, &malformed] {
+            File::open(path)
+                .unwrap()
+                .set_times(fs::FileTimes::new().set_modified(old))
+                .unwrap();
+        }
+        store.prune().unwrap();
+        assert!(!stale.exists(), "only expired UUID staging may be removed");
+        assert_eq!(fs::read(&unknown).unwrap(), b"keep-unless-owned");
+        assert_eq!(fs::read(&malformed).unwrap(), b"keep-unless-owned");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
 }

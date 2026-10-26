@@ -1590,6 +1590,18 @@ try {
     });
     return page.historyDurable && String(page.text).includes("DURABLE_HISTORY_AGENT_OK") ? page : false;
   });
+  // 2B negative restart acceptance: the native HistoryStore may reclaim
+  // expired UUID staging files, never unrelated old dotfiles in its directory.
+  const historyDirectory = path.join(tempRoot, "xdg-data", "webrising-commender",
+    "terminal-history", deviceId);
+  assert.equal(fs.existsSync(historyDirectory), true);
+  const oldHistoryStage = path.join(historyDirectory, ".00000000-0000-4000-8000-000000000003.tmp");
+  const foreignHistoryStage = path.join(historyDirectory, ".foreign-maintenance.tmp");
+  fs.writeFileSync(oldHistoryStage, "orphan");
+  fs.writeFileSync(foreignHistoryStage, "do-not-delete");
+  const oldHistoryTime = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  fs.utimesSync(oldHistoryStage, oldHistoryTime, oldHistoryTime);
+  fs.utimesSync(foreignHistoryStage, oldHistoryTime, oldHistoryTime);
   const oldAgent = agent;
   const exit = new Promise((resolve) => oldAgent.once("exit", resolve));
   oldAgent.kill("SIGKILL");
@@ -1612,6 +1624,10 @@ try {
   });
   assert.equal(archived.running, false);
   assert.equal(archived.historyDurable, true);
+  assert.equal(fs.existsSync(oldHistoryStage), false);
+  assert.equal(fs.readFileSync(foreignHistoryStage, "utf8"), "do-not-delete");
+  fs.rmSync(foreignHistoryStage);
+  console.log("agent-e2e: terminal history restart pruned only UUID staging; foreign data preserved");
   assert.equal(typeof (await tool(334, "terminal_input", {
     device_id: deviceId, session_id: archiveSession.sessionId,
     data_base64: Buffer.from("echo cannot-reattach\n").toString("base64"),
