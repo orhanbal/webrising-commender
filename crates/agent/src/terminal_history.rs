@@ -443,7 +443,9 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("wcth-crash-{}", Uuid::new_v4()));
         let store = HistoryStore::at(dir.clone()).unwrap();
         let id = Uuid::new_v4().to_string();
-        store.save(&id, 3, &VecDeque::from(b"old".to_vec())).unwrap();
+        store
+            .save(&id, 3, &VecDeque::from(b"old".to_vec()))
+            .unwrap();
         let marker = dir.join("crash-ready");
         for (phase, expected_total) in [("before_rename", 3_u64), ("after_rename", 9_u64)] {
             let _ = fs::remove_file(&marker);
