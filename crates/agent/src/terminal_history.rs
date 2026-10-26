@@ -156,13 +156,6 @@ impl HistoryStore {
         if !meta.is_file() || meta.file_type().is_symlink() || meta.len() > (CAP + 20) as u64 {
             return Err(anyhow!("unsafe terminal history snapshot"));
         }
-        if SystemTime::now()
-            .duration_since(meta.modified()?)
-            .unwrap_or_default()
-            > TTL
-        {
-            return Err(anyhow!("terminal history expired"));
-        }
         // Pin the opened inode and reject a last-moment symlink swap on
         // Unix. Inspect the descriptor, not the earlier pathname metadata.
         let mut options = OpenOptions::new();
@@ -177,10 +170,15 @@ impl HistoryStore {
         if !opened_meta.is_file() || opened_meta.len() > (CAP + 20) as u64 {
             return Err(anyhow!("unsafe terminal history snapshot"));
         }
+        if SystemTime::now()
+            .duration_since(opened_meta.modified()?)
+            .unwrap_or_default()
+            > TTL
+        {
+            return Err(anyhow!("terminal history expired"));
+        }
         let mut raw = Vec::new();
-        snapshot
-            .take((CAP + 21) as u64)
-            .read_to_end(&mut raw)?;
+        snapshot.take((CAP + 21) as u64).read_to_end(&mut raw)?;
         if raw.len() < 20 || &raw[..8] != MAGIC {
             return Err(anyhow!("corrupt terminal history"));
         }
@@ -360,5 +358,4 @@ mod tests {
         assert_eq!(fs::read(&malformed).unwrap(), b"keep-unless-owned");
         fs::remove_dir_all(dir).unwrap();
     }
-
 }
