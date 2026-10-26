@@ -370,6 +370,101 @@ mod tests {
     use super::*;
 
     #[test]
+    fn independent_stores_wait_for_same_directory_lock() {
+        use std::sync::mpsc;
+        let dir = std::env::temp_dir().join(format!("wcth-lock-{}", Uuid::new_v4()));
+        let a = HistoryStore::at(dir.clone()).unwrap();
+        let b = HistoryStore::at(dir.clone()).unwrap();
+        let held = a.lock_directory().unwrap();
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            ready_tx.send(()).unwrap();
+            done_tx.send(b.prune()).unwrap();
+        });
+        ready_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        assert!(done_rx.recv_timeout(Duration::from_millis(100)).is_err());
+        drop(held);
+        done_rx.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
+        worker.join().unwrap();
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    // The test executable is deliberately launched as a second OS process,
+    // not just a thread sharing the HistoryStore mutex.
+    #[test]
+    fn process_archive_worker() {
+        let Ok(root) = std::env::var("WCTH_PROCESS_WORKER_ROOT") else {
+            return;
+        };
+        let store = HistoryStore::at(PathBuf::from(root)).unwrap();
+        let bytes = VecDeque::from(b"cross-process-output".to_vec());
+        for _ in 0..(MAX_ARCHIVES + 12) {
+            store
+                .save(&Uuid::new_v4().to_string(), bytes.len() as u64, &bytes)
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn independent_processes_enforce_archive_quota() {
+        use std::process::{Command, Stdio};
+        let dir = std::env::temp_dir().join(format!("wcth-process-{}", Uuid::new_v4()));
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let executable = std::env::current_exe().unwrap();
+        let mut children = Vec::new();
+        for _ in 0..3 {
+            children.push(
+                Command::new(&executable)
+                    .arg("--exact")
+                    .arg("terminal_history::tests::process_archive_worker")
+                    .arg("--nocapture")
+                    .env("WCTH_PROCESS_WORKER_ROOT", &dir)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::piped())
+                    .spawn()
+                    .unwrap(),
+            );
+        }
+        for child in children {
+            let output = child.wait_with_output().unwrap();
+            assert!(
+                output.status.success(),
+                "history subprocess failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        let snapshots = fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let name = entry.file_name().to_string_lossy().into_owned();
+                name.ends_with(".hist").then_some(name)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(snapshots.len(), MAX_ARCHIVES);
+        for name in snapshots.iter().take(5) {
+            let (id, _) = name.strip_suffix(".hist").unwrap().rsplit_once('-').unwrap();
+            assert_eq!(store.load(id).unwrap().1, VecDeque::from(b"cross-process-output".to_vec()));
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_lock_file_is_rejected_without_touching_target() {
+        let dir = std::env::temp_dir().join(format!("wcth-bad-lock-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let outside = std::env::temp_dir().join(format!("wcth-outside-{}", Uuid::new_v4()));
+        fs::write(&outside, b"do-not-touch").unwrap();
+        std::os::unix::fs::symlink(&outside, dir.join(".history.lock")).unwrap();
+        assert!(HistoryStore::at(dir.clone()).is_err());
+        assert_eq!(fs::read(&outside).unwrap(), b"do-not-touch");
+        fs::remove_dir_all(dir).unwrap();
+        fs::remove_file(outside).unwrap();
+    }
+
+    #[test]
     fn restart_snapshot_roundtrip_eviction_and_corruption() {
         let dir = std::env::temp_dir().join(format!("wcth-{}", Uuid::new_v4()));
         let store = HistoryStore::at(dir.clone()).unwrap();
