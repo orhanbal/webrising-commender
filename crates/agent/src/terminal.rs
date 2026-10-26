@@ -155,7 +155,12 @@ impl TerminalManager {
         // Allocate the archive before spawning an OS child. A disk failure
         // must never leave an untracked live shell behind.
         let id = Uuid::new_v4().to_string();
-        let history_store = self.store.as_ref().map(|store| store.scoped(scope)).transpose()?.map(Arc::new);
+        let history_store = self
+            .store
+            .as_ref()
+            .map(|store| store.scoped(scope))
+            .transpose()?
+            .map(Arc::new);
         if let Some(store) = &history_store {
             store.save(&id, 0, &VecDeque::new())?;
         }
@@ -398,11 +403,16 @@ impl TerminalManager {
     }
 
     pub fn stop(&self, id: &str, scope: &str) -> Result<Value> {
-        let mut sessions = self.sessions.lock().map_err(|_| anyhow!("terminal session lock poisoned"))?;
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| anyhow!("terminal session lock poisoned"))?;
         if sessions.get(id).is_none_or(|session| session.owner_scope != scope) {
             return Err(anyhow!("terminal session not found"));
         }
-        let session = sessions.remove(id).ok_or_else(|| anyhow!("terminal session not found"))?;
+        let session = sessions
+            .remove(id)
+            .ok_or_else(|| anyhow!("terminal session not found"))?;
         drop(sessions);
 
         let mut child = session
@@ -415,7 +425,8 @@ impl TerminalManager {
     }
 
     fn get(&self, id: &str, scope: &str) -> Result<Arc<Session>> {
-        let session = self.sessions
+        let session = self
+            .sessions
             .lock()
             .map_err(|_| anyhow!("terminal session lock poisoned"))?
             .get(id)
