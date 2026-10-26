@@ -95,7 +95,8 @@ impl HistoryStore {
         }
         // std::fs::File::lock is cross-process on Unix and Windows (Rust >= 1.89).
         // A failed lock must fail closed; never prune without holding it.
-        lock.lock().context("terminal history filesystem lock failed")?;
+        lock.lock()
+            .context("terminal history filesystem lock failed")?;
         let path_meta = fs::symlink_metadata(&path)?;
         if !path_meta.is_file() || path_meta.file_type().is_symlink() {
             return Err(anyhow!("unsafe terminal history lock"));
