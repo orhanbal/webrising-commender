@@ -423,7 +423,7 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
         } => terminals.resize(&session_id, cols, rows, require_undo_key()?),
         AgentAction::TerminalStop { session_id } => {
             terminals.stop(&session_id, require_undo_key()?)
-        },
+        }
         AgentAction::TerminalList => terminals.list(require_undo_key()?),
     }
 }
