@@ -1969,7 +1969,12 @@ mod undo_crash_cleanup_tests {
         let old = std::time::SystemTime::now()
             .checked_sub(UNDO_TEMP_RETENTION + Duration::from_secs(3600))
             .unwrap();
-        fs::File::open(&staged)
+        // Windows requires FILE_WRITE_ATTRIBUTES to change timestamps. A
+        // read-only File::open handle makes this fixture fail with OS error 5
+        // before the junction protection under test is exercised.
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&staged)
             .unwrap()
             .set_times(fs::FileTimes::new().set_modified(old))
             .unwrap();
