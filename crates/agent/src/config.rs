@@ -442,4 +442,47 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn windows_config_junction_grandparent_cannot_redirect_credentials() {
+        use std::process::Command;
+        let root = std::env::temp_dir().join(format!("wc-config-junction-{}", uuid::Uuid::new_v4()));
+        let outside = root.join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        let config = AgentConfig {
+            device_id: "device".into(),
+            device_token: "private-token".into(),
+            approval_key: "private-approval".into(),
+            gateway_ws_url: String::new(),
+            control_url: String::new(),
+            name: String::new(),
+            allowed_roots: vec![root.clone()],
+        };
+        let original = outside.join("private").join("agent.json");
+        config.save(&original).unwrap();
+        let original_bytes = fs::read(&original).unwrap();
+        let junction = root.join("alias");
+        let output = Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(&junction)
+            .arg(&outside)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "junction fixture failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let redirected = junction.join("private").join("agent.json");
+        assert!(AgentConfig::load(&redirected).is_err());
+        assert!(config.save(&redirected).is_err());
+        assert_eq!(fs::read(&original).unwrap(), original_bytes);
+        assert!(config.save(&junction.join("new-private").join("agent.json")).is_err());
+        assert!(!outside.join("new-private").exists());
+        fs::remove_dir(&junction).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
 }
