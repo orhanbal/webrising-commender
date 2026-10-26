@@ -493,7 +493,10 @@ mod tests {
             "stale writer accepted: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        assert_eq!(store.load(&id).unwrap(), (newer.len() as u64, newer.clone()));
+        assert_eq!(
+            store.load(&id).unwrap(),
+            (newer.len() as u64, newer.clone())
+        );
         assert_eq!(store.versions(&id).unwrap().len(), 1);
         // Equal offsets with different payloads must also be rejected.
         let duplicate = VecDeque::from(b"other-output".to_vec());
