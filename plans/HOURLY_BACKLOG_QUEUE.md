@@ -1,3 +1,10 @@
+## 26 Ekim 2026 — A/B/C/D: 3A external-writer SHA revalidation (CI PENDING)
+
+- **A / PASSED (giriş HEAD):** [CI #40365126968](https://github.com/orhanbal/webrising-commender/actions/runs/40365126968) at `451aafa397b909229285122ca79f81422ef0381f` **17/17 completed/success**; Rust job **95/95 tests**, real Gateway→Rust Agent→MCP E2E **PASSED**, Linux/Windows/macOS/dashboard **4/4 artifact (expired=false)**. V1→V2 history migration and 240-save/6-restart bounded tests passed; **24-hour soak remains PENDING**. [Distribution #40366154748](https://github.com/orhanbal/webrising-commender/actions/runs/40366154748) succeeded. No entry P0/CI red.
+- **B / KODLANDI, SON HEAD CI PENDING (3A):** [`1828594f`](https://github.com/orhanbal/webrising-commender/commit/1828594fb458eda21b71b3b7dd5ed85127655d4a) adds pre-rename SHA revalidation to guarded `fs_write`, `fs_append`, `fs_replace` and `fs_undo`. Unix uses `openat` relative to a pinned parent with `O_NOFOLLOW` and a bounded descriptor read; Windows uses existing regular-file read protections. Failed validation aborts the staged replacement and removes its uncommitted undo snapshot. [`25dd2a65`](https://github.com/orhanbal/webrising-commender/commit/25dd2a65b49aa770fb99d89a8a8f1a5618bd8480) fixes the concrete I/O iterator type and guarded-call formatting.
+- **C / KODLANDI, SON HEAD CI PENDING:** A separate OS test process pauses after staging; another process changes the target; release must produce `file_changed_since_read`, preserve the external update, and leave no staged temp file. Authenticated Gateway→Agent→MCP E2E additionally checks an externally changed SHA is rejected without overwriting the competing file. Existing actor/tenant/device/risk/approval and tool schemas are unchanged; no stub or paid runtime dependency.
+- **D / PENDING:** Code HEAD `25dd2a65`, [CI #40375031032](https://github.com/orhanbal/webrising-commender/actions/runs/40375031032) must finish before any new Rustfmt/Clippy/unit/E2E/artifact claim. Recheck the **documentation HEAD** separately. **3A overall PENDING:** pre-rename recheck narrows the external writer race but does **not** provide a linearizable CAS against a noncooperating writer that mutates after the final SHA read and before rename; adversarial TOCTOU/physical OS acceptance remain open. 2B soak and deterministic MCP stale-writer acceptance PENDING. Physical Windows/macOS/Ubuntu, live ChatGPT/Claude, Windows signing/SmartScreen, Apple notarization **BLOCKED_EXTERNAL**. No production/server/other repo/Desktop Commander/Remote Desktop Commander touched.
+
 ## 26 Ekim 2026 — A/B/C/D: legacy history migration + bounded restart stress (CI PENDING)
 
 - **A / PASSED (entry HEAD):** `bd13686fdce9f1059a9a72c6398da7f7eb850f0a` [CI #40347593614 attempt 2](https://github.com/orhanbal/webrising-commender/actions/runs/40347593614) **17/17 success** including macOS artifact. The newer [platform distribution #40356236957](https://github.com/orhanbal/webrising-commender/actions/runs/40356236957) succeeded. Earlier macOS artifact cancellation is resolved; no P0 CI red at entry.
@@ -7,9 +14,9 @@
 
 # WECOMMANDER — Hourly 1A–10D acceptance queue
 
-Last reviewed: 2026-10-26 (Windows junction acceptance). **PENDING is not a claim that the feature is absent**; it means all required schema + Gateway/TypeScript + Rust Agent + authorization + real E2E + negative + applicable OS gates have not been evidenced. Prior accepted slices must not be repeated. No paid/limited runtime, production deployment, other repository, Desktop Commander, or Remote Desktop Commander.
+Last reviewed: 2026-10-26 (3A external-writer SHA revalidation, code CI pending). **PENDING is not a claim that the feature is absent**; it means all required schema + Gateway/TypeScript + Rust Agent + authorization + real E2E + negative + applicable OS gates have not been evidenced. Prior accepted slices must not be repeated. No paid/limited runtime, production deployment, other repository, Desktop Commander, or Remote Desktop Commander.
 
-Latest code HEAD: [`42257b69`](https://github.com/orhanbal/webrising-commender/commit/42257b69cfc4880c68fd8e013b922c99e9614a3e). [CI #40345656336](https://github.com/orhanbal/webrising-commender/actions/runs/40345656336): Rust 93/93 PASSED, Windows native junction negatives 2/2 PASSED, Agent MCP E2E PASSED; full CI and 4/4 artifacts must be verified on final HEAD.
+Latest code HEAD: [`25dd2a65`](https://github.com/orhanbal/webrising-commender/commit/25dd2a65b49aa770fb99d89a8a8f1a5618bd8480); [CI #40375031032](https://github.com/orhanbal/webrising-commender/actions/runs/40375031032) PENDING. Prior HEAD `451aafa3` [CI #40365126968](https://github.com/orhanbal/webrising-commender/actions/runs/40365126968) 17/17 PASSED, Rust 95/95, 4/4 artifacts.
 
 | Item | Scope | Overall acceptance |
 |---|---|---|
@@ -18,10 +25,10 @@ Latest code HEAD: [`42257b69`](https://github.com/orhanbal/webrising-commender/c
 | 1C | Search paging/case/quota/timeout/large negative E2E | PENDING (full acceptance not yet established; partial implementations may exist) |
 | 1D | Batch file read, line/tail/paging/partial errors | PENDING (full acceptance not yet established; partial implementations may exist) |
 | 2A | PTY/REPL prompt and paged output | PENDING (full acceptance not yet established; partial implementations may exist) |
-| 2B | Durable terminal history and retention | PENDING (Windows junction native negative tests 2/2 PASSED; long soak, adversarial TOCTOU, physical OS open) |
+| 2B | Durable terminal history and retention | PENDING (V1→V2 and 240-save/6-restart Rust tests PASSED on `451aafa3`; Windows junction negatives 2/2 PASSED; 24h soak, MCP stale writer, physical OS open) |
 | 2C | Process tree terminate/kill/cancel/cleanup | PENDING (full acceptance not yet established; partial implementations may exist) |
 | 2D | Terminal/process/history quota and concurrency | PENDING (full acceptance not yet established; partial implementations may exist) |
-| 3A | Atomic file edit with SHA CAS and filesystem race safety | PENDING (full acceptance not yet established; partial implementations may exist) |
+| 3A | Atomic file edit with SHA CAS and filesystem race safety | PENDING (guarded pre-rename SHA revalidation and separate-process race negative test coded at `25dd2a65`; CI and noncooperative last-instant TOCTOU acceptance open) |
 | 3B | Rollback, snapshot crash resilience and recovery | PENDING (SIGKILL test PASSED; full crash/rollback gates open) |
 | 3C | Config policy, shell allowlist, audit | PENDING (full acceptance not yet established; partial implementations may exist) |
 | 3D | Tool history/usage/log secure paging | PENDING (full acceptance not yet established; partial implementations may exist) |
