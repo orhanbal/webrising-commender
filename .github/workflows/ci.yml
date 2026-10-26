@@ -54,7 +54,7 @@ jobs:
       - run: cargo check -p webrising-commender-agent
       - name: Windows terminal history junction rejection
         if: runner.os == 'Windows'
-        run: cargo test -p webrising-commender-agent windows_junction_parent_cannot_redirect_history_creation -- --nocapture
+        run: cargo test -p webrising-commender-agent windows_junction_ -- --nocapture
 
   gateway:
     runs-on: ubuntu-latest
