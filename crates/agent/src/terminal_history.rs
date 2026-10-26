@@ -42,7 +42,11 @@ impl HistoryStore {
     // The key is the Gateway-verified tenant/actor/device SHA-256 fingerprint.
     // Legacy unscoped snapshots remain inaccessible (fail closed).
     pub fn scoped(&self, scope: &str) -> Result<Self> {
-        if scope.len() != 64 || !scope.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) {
+        if scope.len() != 64
+            || !scope
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        {
             return Err(anyhow!("invalid terminal history scope"));
         }
         Self::at(self.dir.join(scope))
