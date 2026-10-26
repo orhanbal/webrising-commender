@@ -1150,6 +1150,36 @@ try {
   }
   assert.equal(fs.readFileSync(raceFile, "utf8"), "race-seed");
   console.log("agent-e2e: two real actors isolated undo; foreign tenant device denied");
+
+  // v1 records predate ownerScope. Never silently grant either new actor
+  // access to an unscoped legacy snapshot; migration remains an explicit,
+  // separate administrative decision rather than a permissive fallback.
+  const legacyUndoId = "22222222-2222-4222-8222-222222222222";
+  const legacySnapshot = path.join(tempRoot, "xdg-data", "webrising-commender", "file-versions",
+    `${foreignPrefix}-${legacyUndoId}.undo`);
+  fs.writeFileSync(legacySnapshot, JSON.stringify({
+    version: 1, path: raceFile,
+    previousSha256: createHash("sha256").update("legacy-seed").digest("hex"),
+    nextSha256: createHash("sha256").update("race-seed").digest("hex"),
+    contentBase64: Buffer.from("legacy-seed").toString("base64"),
+  }));
+  try {
+    for (const [id, headers] of [[1640, headersA], [1650, headersB]]) {
+      const listing = await toolAs(headers, id, "fs_versions", {
+        device_id: deviceId, path: raceFile,
+      });
+      assert.equal(listing.versions.some((item) => item.undoId === legacyUndoId), false);
+      const denied = await toolAs(headers, id + 1, "fs_undo", {
+        device_id: deviceId, path: raceFile, undo_id: legacyUndoId,
+        expected_sha256: createHash("sha256").update("race-seed").digest("hex"),
+      });
+      assert.equal(typeof denied.error, "string", JSON.stringify(denied));
+      assert.equal(fs.readFileSync(raceFile, "utf8"), "race-seed");
+    }
+  } finally {
+    fs.rmSync(legacySnapshot, { force: true });
+  }
+  console.log("agent-e2e: legacy v1 unscoped undo inaccessible to authenticated actors");
   // 3B retention: age a real Agent-created snapshot on disk and verify that
   // the next MCP listing prunes it, without modifying the edited source file.
   const expiring = await tool(574, "fs_replace", {
