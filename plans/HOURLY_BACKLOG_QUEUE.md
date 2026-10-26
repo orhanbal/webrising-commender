@@ -1,3 +1,11 @@
+## 26 Ekim 2026 — A/B/C/D: Windows undo fixture CI kırmızısı kapatıldı (dar PASSED, genel PENDING)
+
+- **A / FAILED → FIXED:** Giriş `main` HEAD [`fb6d7d96`](https://github.com/orhanbal/webrising-commender/commit/fb6d7d969583e36d384b6c0fbf83821276559a93), [CI #40392894891](https://github.com/orhanbal/webrising-commender/actions/runs/40392894891) **16/17 SUCCESS; Windows rust-platforms FAILED**. Gerçek Windows job logunda `windows_undo_junction_swap_cannot_prune_external_snapshot` testi `fs_ops.rs:1975` satırında `set_times` çağrısı için `Os { code: 5, PermissionDenied }` ile test fixture kurulumu sırasında çöktü; koruma kodunun reddi test edilemedi. `File::open` Windows'ta zaman damgası değiştirmek için gereken yazma özniteliği yetkisini vermiyordu.
+- **A / ONARIM:** [`6d0772cd`](https://github.com/orhanbal/webrising-commender/commit/6d0772cd968b38db74bc7073e1810547e441eca2) yalnız Windows negatif test fixture'ında `fs::OpenOptions::new().write(true)` ile timestamp ayarı için gereken handle erişimini açtı. Runtime koruması, MCP şeması, Gateway/Rust Agent sözleşmesi ve izinler değiştirilmedi.
+- **B / PENDING (yeni özellik ertelendi):** Girişte kritik CI kırmızısı bulunduğundan yeni 3A/3C özelliği bindirilmedi. **C / PASSED (dar kabul):** Native Windows job `rust-platforms (windows-latest)` testleri `windows_undo_junction_parent_cannot_redirect_lock_creation` ve `windows_undo_junction_swap_cannot_prune_external_snapshot` **2/2 PASSED**; ayrıca terminal geçmişi junction testleri **2/2 PASSED**.
+- **D / PASSED (KOD HEAD):** [CI #40400096639](https://github.com/orhanbal/webrising-commender/actions/runs/40400096639) `6d0772cd` üzerinde **17/17 completed/success**; Rustfmt/Clippy PASSED, Rust **99/99** test PASSED, `agent-e2e: ok`, Linux/Windows/macOS/dashboard **4/4 artifact**, `expired=false`. Bu dokümantasyon commitinin **kendi HEAD CI sonucu ayrıca doğrulanmalıdır**.
+- **Açık kabul:** 3B ve 2D **PENDING** (hostile concurrent reparse/path swap, gerçek MCP adversarial E2E, rollback/soak); 3A **PENDING** (işbirliği yapmayan harici yazıcının son SHA-read/rename TOCTOU penceresi); 2B **PENDING** (24 saat soak, deterministik gerçek MCP stale-writer); 3C **PENDING** (config/shell/audit). Fiziksel Windows/macOS/Ubuntu, canlı ChatGPT/Claude, Windows imza/SmartScreen, Apple notarization **BLOCKED_EXTERNAL**. Genel eşdeğerlik **PENDING**. Yalnız `orhanbal/webrising-commender/main`; üretim/sunucu/başka repo/Desktop Commander/Remote Desktop Commander yok; yeni ücretli/sınırlı runtime bağımlılığı yok.
+
 ## 26 Ekim 2026 — Windows undo snapshot junction/reparse hardening (DAR KODLANDI; SON HEAD CI PENDING)
 
 - **A / PASSED (giriş HEAD):** `011f3aff8b484851ecad17a6f3302d2bdaac166d` [CI #40384029325](https://github.com/orhanbal/webrising-commender/actions/runs/40384029325) **17/17 completed/success**, Rustfmt/Clippy PASSED, Rust **99/99**, gerçek Agent MCP E2E `agent-e2e: ok`, Linux/Windows/macOS/dashboard **4/4 artifact** (`expired=false`). Ek [CI #40385253126](https://github.com/orhanbal/webrising-commender/actions/runs/40385253126) success. Girişte kritik kırmızı CI yok.
@@ -38,9 +46,9 @@
 
 # WECOMMANDER — Hourly 1A–10D acceptance queue
 
-Last reviewed: 2026-10-26 (3B/2D cross-process undo lock code CI PASSED; overall 3B/2D PENDING). **PENDING is not a claim that the feature is absent**; it means all required schema + Gateway/TypeScript + Rust Agent + authorization + real E2E + negative + applicable OS gates have not been evidenced. Prior accepted slices must not be repeated. No paid/limited runtime, production deployment, other repository, Desktop Commander, or Remote Desktop Commander.
+Last reviewed: 2026-10-26 (Windows undo junction fixture CI repair and native 2/2 tests PASSED; 3B overall PENDING).
 
-Latest verified code HEAD: [`fb671908`](https://github.com/orhanbal/webrising-commender/commit/fb6719088c3080168e21bb86c46a6df1d06853f3); [CI #40382950306](https://github.com/orhanbal/webrising-commender/actions/runs/40382950306) 17/17 PASSED, Rust 99/99, Agent MCP E2E PASSED, 4/4 artifacts. Documentation HEAD CI must be checked separately.
+Latest verified code HEAD: [`6d0772cd`](https://github.com/orhanbal/webrising-commender/commit/6d0772cd968b38db74bc7073e1810547e441eca2); [CI #40400096639](https://github.com/orhanbal/webrising-commender/actions/runs/40400096639) 17/17 PASSED, Rust 99/99, Agent MCP E2E PASSED, Windows undo junction 2/2 PASSED, 4/4 artifacts. Documentation HEAD CI must be checked separately.
 
 | Item | Scope | Overall acceptance |
 |---|---|---|
@@ -53,7 +61,7 @@ Latest verified code HEAD: [`fb671908`](https://github.com/orhanbal/webrising-co
 | 2C | Process tree terminate/kill/cancel/cleanup | PENDING (full acceptance not yet established; partial implementations may exist) |
 | 2D | Terminal/process/history quota and concurrency | PENDING (cross-process undo quota OS lock and bounded timeout PASSED on `fb671908`; full terminal/process/undo E2E and physical OS open) |
 | 3A | Atomic file edit with SHA CAS and filesystem race safety | PENDING (pre-rename SHA revalidation, cross-process negative test and real MCP stale-SHA E2E PASSED on `95a9daf6`; noncooperative last-instant TOCTOU and physical OS gates open) |
-| 3B | Rollback, snapshot crash resilience and recovery | PENDING (SIGKILL test and cross-process undo quota lock/negative tests PASSED; full crash/rollback, Windows reparse and physical OS gates open) |
+| 3B | Rollback, snapshot crash resilience and recovery | PENDING (SIGKILL and cross-process undo quota tests PASSED; Windows undo junction negative tests 2/2 PASSED on `6d0772cd`; hostile concurrent reparse/path swap, full crash/rollback and physical OS gates open) |
 | 3C | Config policy, shell allowlist, audit | PENDING (full acceptance not yet established; partial implementations may exist) |
 | 3D | Tool history/usage/log secure paging | PENDING (full acceptance not yet established; partial implementations may exist) |
 | 4A | XLSX/XLSM read workbook/sheet/range/search | PENDING (full acceptance not yet established; partial implementations may exist) |
