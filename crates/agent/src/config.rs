@@ -435,14 +435,20 @@ mod tests {
         symlink(&destination, &alias).unwrap();
         let redirected = alias.join("private").join("agent.json");
         let load_error = AgentConfig::load(&redirected).unwrap_err();
-        assert!(load_error.to_string().contains("unsafe_agent_config_parent"));
+        assert!(load_error
+            .to_string()
+            .contains("unsafe_agent_config_parent"));
         let save_error = config.save(&redirected).unwrap_err();
-        assert!(save_error.to_string().contains("unsafe_agent_config_parent"));
+        assert!(save_error
+            .to_string()
+            .contains("unsafe_agent_config_parent"));
         assert_eq!(fs::read(&actual_path).unwrap(), original_bytes);
 
         let nonexistent = alias.join("new-private").join("agent.json");
         let create_error = config.save(&nonexistent).unwrap_err();
-        assert!(create_error.to_string().contains("unsafe_agent_config_parent"));
+        assert!(create_error
+            .to_string()
+            .contains("unsafe_agent_config_parent"));
         assert!(!destination.join("new-private").exists());
         fs::remove_dir_all(root).unwrap();
     }
