@@ -401,26 +401,27 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
             cwd.as_deref(),
             cols.unwrap_or(120),
             rows.unwrap_or(30),
+            require_undo_key()?,
         ),
         AgentAction::TerminalInput {
             session_id,
             data_base64,
-        } => terminals.input(&session_id, &data_base64),
+        } => terminals.input(&session_id, &data_base64, require_undo_key()?),
         AgentAction::TerminalRead {
             session_id,
             max_bytes,
-        } => terminals.read(&session_id, max_bytes.unwrap_or(64 * 1024)),
+        } => terminals.read(&session_id, max_bytes.unwrap_or(64 * 1024), require_undo_key()?),
         AgentAction::TerminalReadPage {
             session_id,
             offset_bytes,
             max_bytes,
-        } => terminals.read_page(&session_id, offset_bytes, max_bytes),
+        } => terminals.read_page(&session_id, offset_bytes, max_bytes, require_undo_key()?),
         AgentAction::TerminalResize {
             session_id,
             cols,
             rows,
-        } => terminals.resize(&session_id, cols, rows),
-        AgentAction::TerminalStop { session_id } => terminals.stop(&session_id),
-        AgentAction::TerminalList => terminals.list(),
+        } => terminals.resize(&session_id, cols, rows, require_undo_key()?),
+        AgentAction::TerminalStop { session_id } => terminals.stop(&session_id, require_undo_key()?),
+        AgentAction::TerminalList => terminals.list(require_undo_key()?),
     }
 }
