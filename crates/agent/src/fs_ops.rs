@@ -1679,6 +1679,67 @@ fn undo_directory_lock() -> Result<std::sync::MutexGuard<'static, ()>> {
         .map_err(|_| anyhow!("undo_directory_lock_poisoned"))
 }
 
+// The process-local mutex cannot protect the shared undo quota when two
+// enrolled Agent processes use the same data directory. Keep a persistent
+// lock inode: deleting it would let processes lock different files.
+fn undo_cross_process_lock(dir: &Path) -> Result<fs::File> {
+    undo_cross_process_lock_with_timeout(dir, Duration::from_secs(5))
+}
+
+fn undo_cross_process_lock_with_timeout(dir: &Path, timeout: Duration) -> Result<fs::File> {
+    let path = dir.join(".undo.lock");
+    let mut options = fs::OpenOptions::new();
+    options.read(true).write(true).create(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+    }
+    let lock = options.open(&path)?;
+    if !lock.metadata()?.is_file() {
+        return Err(anyhow!("unsafe_undo_lock"));
+    }
+    let start = Instant::now();
+    loop {
+        match lock.try_lock() {
+            Ok(()) => break,
+            Err(fs::TryLockError::WouldBlock) => {
+                if start.elapsed() >= timeout {
+                    return Err(anyhow!("undo_storage_lock_timeout"));
+                }
+                std::thread::sleep(
+                    Duration::from_millis(25).min(timeout.saturating_sub(start.elapsed())),
+                );
+            }
+            Err(error) => return Err(anyhow!("undo_storage_lock_failed: {error}")),
+        }
+    }
+    let path_meta = fs::symlink_metadata(&path)?;
+    if !path_meta.is_file() || path_meta.file_type().is_symlink() {
+        return Err(anyhow!("unsafe_undo_lock"));
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if path_meta.file_attributes() & 0x400 != 0 {
+            return Err(anyhow!("unsafe_undo_lock_reparse_point"));
+        }
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let held_meta = lock.metadata()?;
+        if held_meta.dev() != path_meta.dev()
+            || held_meta.ino() != path_meta.ino()
+            || held_meta.nlink() != 1
+        {
+            return Err(anyhow!("undo_storage_lock_replaced_or_linked"));
+        }
+    }
+    Ok(lock)
+}
+
 // Only validated snapshot filenames are eligible for retention deletion.
 // Unknown regular files still count toward the quota; unsafe entries fail closed.
 fn undo_snapshot_name(name: &str) -> bool {
@@ -1708,6 +1769,11 @@ fn undo_storage_usage(dir: &Path) -> Result<(usize, u64)> {
             return Err(anyhow!("unsafe_undo_storage_entry"));
         }
         let name = entry.file_name().to_string_lossy().into_owned();
+        // The persistent coordination inode is not an undo snapshot and must
+        // not consume a version slot or be deleted by retention pruning.
+        if name == ".undo.lock" {
+            continue;
+        }
         let retention = if undo_snapshot_name(&name) {
             Some(UNDO_RETENTION)
         } else if undo_temporary_name(&name) {
@@ -1737,6 +1803,58 @@ fn undo_storage_usage(dir: &Path) -> Result<(usize, u64)> {
 #[cfg(test)]
 mod undo_crash_cleanup_tests {
     use super::*;
+
+    #[test]
+    fn process_undo_lock_worker() {
+        let Ok(root) = std::env::var("WCF_UNDO_LOCK_ROOT") else {
+            return;
+        };
+        let result =
+            undo_cross_process_lock_with_timeout(Path::new(&root), Duration::from_millis(120));
+        if std::env::var("WCF_UNDO_LOCK_EXPECT_BLOCKED").is_ok() {
+            assert!(result
+                .unwrap_err()
+                .to_string()
+                .contains("undo_storage_lock_timeout"));
+        } else {
+            assert!(result.is_ok(), "undo lock did not recover: {result:?}");
+        }
+    }
+
+    #[test]
+    fn undo_quota_lock_is_cross_process_bounded_and_recovers() {
+        use std::process::Command;
+        let dir = std::env::temp_dir().join(format!("commender-undo-lock-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let held = undo_cross_process_lock(&dir).unwrap();
+        let run_worker = |blocked: bool| {
+            let mut command = Command::new(std::env::current_exe().unwrap());
+            command
+                .arg("--exact")
+                .arg("fs_ops::undo_crash_cleanup_tests::process_undo_lock_worker")
+                .env("WCF_UNDO_LOCK_ROOT", &dir);
+            if blocked {
+                command.env("WCF_UNDO_LOCK_EXPECT_BLOCKED", "1");
+            }
+            command.output().unwrap()
+        };
+        let blocked = run_worker(true);
+        assert!(
+            blocked.status.success(),
+            "cross-process timeout failed: {}",
+            String::from_utf8_lossy(&blocked.stderr)
+        );
+        drop(held);
+        let recovered = run_worker(false);
+        assert!(
+            recovered.status.success(),
+            "cross-process lock recovery failed: {}",
+            String::from_utf8_lossy(&recovered.stderr)
+        );
+        assert_eq!(undo_storage_usage(&dir).unwrap(), (0, 0));
+        assert!(dir.join(".undo.lock").exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn old_orphan_staging_files_are_pruned_but_unknown_and_fresh_files_survive() {
@@ -1948,6 +2066,7 @@ fn save_undo_snapshot(
 ) -> Result<(String, std::path::PathBuf)> {
     let _directory_guard = undo_directory_lock()?;
     let dir = undo_dir(path, true)?.ok_or_else(|| anyhow!("undo_directory_unavailable"))?;
+    let _filesystem_guard = undo_cross_process_lock(&dir)?;
     let id = Uuid::new_v4().to_string();
     let filename = format!("{}-{}.undo", undo_prefix(path), id);
     let destination = dir.join(filename);
@@ -2017,6 +2136,7 @@ fn versions_impl(policy: &PathPolicy, raw: &str, undo_scope: Option<&str>) -> Re
     let _directory_guard = undo_directory_lock()?;
     let entries = match undo_dir(&path, false)? {
         Some(dir) => {
+            let _filesystem_guard = undo_cross_process_lock(&dir)?;
             undo_storage_usage(&dir)?;
             undo_entries(&path, &dir, undo_scope)?
         }
@@ -2064,6 +2184,7 @@ fn undo_impl(
         .map_err(|_| anyhow!("file mutation lock poisoned"))?;
     let _directory_guard = undo_directory_lock()?;
     let dir = undo_dir(&path, false)?.ok_or_else(|| anyhow!("undo_snapshot_not_found"))?;
+    let _filesystem_guard = undo_cross_process_lock(&dir)?;
     undo_storage_usage(&dir)?;
     let snapshot = dir.join(format!("{}-{}.undo", undo_prefix(&path), id));
     let mut reader = open_regular_read(&snapshot)?;
