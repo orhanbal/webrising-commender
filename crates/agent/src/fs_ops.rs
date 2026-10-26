@@ -1682,14 +1682,45 @@ fn undo_directory_lock() -> Result<std::sync::MutexGuard<'static, ()>> {
 // The process-local mutex cannot protect the shared undo quota when two
 // enrolled Agent processes use the same data directory. Keep a persistent
 // lock inode: deleting it would let processes lock different files.
+// Windows junctions are not always reported as symlinks. Reject reparse
+// points in every existing ancestor before creating, locking, reading or
+// pruning the private undo store. This is fail-closed path validation, not a
+// substitute for a Windows handle-relative traversal under hostile swaps.
+fn reject_windows_undo_reparse_ancestors(path: &Path) -> Result<()> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        for ancestor in path.ancestors() {
+            match fs::symlink_metadata(ancestor) {
+                Ok(meta) if meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 => {
+                    return Err(anyhow!("unsafe_undo_reparse_ancestor"));
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = path;
+    Ok(())
+}
+
 fn undo_cross_process_lock(dir: &Path) -> Result<fs::File> {
     undo_cross_process_lock_with_timeout(dir, Duration::from_secs(5))
 }
 
 fn undo_cross_process_lock_with_timeout(dir: &Path, timeout: Duration) -> Result<fs::File> {
+    reject_windows_undo_reparse_ancestors(dir)?;
     let path = dir.join(".undo.lock");
     let mut options = fs::OpenOptions::new();
     options.read(true).write(true).create(true);
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -1715,6 +1746,7 @@ fn undo_cross_process_lock_with_timeout(dir: &Path, timeout: Duration) -> Result
             Err(error) => return Err(anyhow!("undo_storage_lock_failed: {error}")),
         }
     }
+    reject_windows_undo_reparse_ancestors(dir)?;
     let path_meta = fs::symlink_metadata(&path)?;
     if !path_meta.is_file() || path_meta.file_type().is_symlink() {
         return Err(anyhow!("unsafe_undo_lock"));
@@ -1760,10 +1792,12 @@ fn undo_temporary_name(name: &str) -> bool {
 }
 
 fn undo_storage_usage(dir: &Path) -> Result<(usize, u64)> {
+    reject_windows_undo_reparse_ancestors(dir)?;
     let mut count = 0_usize;
     let mut total_bytes = 0_u64;
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
+        reject_windows_undo_reparse_ancestors(&entry.path())?;
         let metadata = fs::symlink_metadata(entry.path())?;
         if !metadata.is_file() || metadata.file_type().is_symlink() {
             return Err(anyhow!("unsafe_undo_storage_entry"));
@@ -1888,6 +1922,79 @@ mod undo_crash_cleanup_tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_undo_junction_parent_cannot_redirect_lock_creation() {
+        use std::process::Command;
+        let root = std::env::temp_dir().join(format!("wc-undo-junction-{}", Uuid::new_v4()));
+        let outside = std::env::temp_dir().join(format!("wc-undo-outside-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let junction = root.join("linked");
+        let output = Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(&junction)
+            .arg(&outside)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "junction fixture failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(undo_cross_process_lock(&junction).is_err());
+        assert!(!outside.join(".undo.lock").exists());
+        assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
+        fs::remove_dir(&junction).unwrap();
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(outside).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_undo_junction_swap_cannot_prune_external_snapshot() {
+        use std::process::Command;
+        let root = std::env::temp_dir().join(format!("wc-undo-swap-{}", Uuid::new_v4()));
+        let outside = std::env::temp_dir().join(format!("wc-undo-target-{}", Uuid::new_v4()));
+        let undo = root.join("file-versions");
+        fs::create_dir_all(&undo).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        drop(undo_cross_process_lock(&undo).unwrap());
+        fs::remove_file(undo.join(".undo.lock")).unwrap();
+        fs::remove_dir(&undo).unwrap();
+        let staged = outside.join(format!(".{}.tmp", Uuid::new_v4()));
+        fs::write(&staged, b"outside-private").unwrap();
+        let old = std::time::SystemTime::now()
+            .checked_sub(UNDO_TEMP_RETENTION + Duration::from_secs(3600))
+            .unwrap();
+        fs::File::open(&staged)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(old))
+            .unwrap();
+        let output = Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(&undo)
+            .arg(&outside)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "junction fixture failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(undo_cross_process_lock(&undo).is_err());
+        assert!(undo_storage_usage(&undo).is_err());
+        assert_eq!(fs::read(&staged).unwrap(), b"outside-private");
+        assert!(!outside.join(".undo.lock").exists());
+        fs::remove_dir(&undo).unwrap();
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(outside).unwrap();
+    }
     #[cfg(unix)]
     #[test]
     fn symlink_in_staging_directory_fails_closed_without_following_target() {
@@ -1952,10 +2059,12 @@ fn undo_dir(_path: &Path, create: bool) -> Result<Option<std::path::PathBuf>> {
     // workspaces may also be publicly served web roots.
     let data_root =
         dirs::data_local_dir().ok_or_else(|| anyhow!("local data directory unavailable"))?;
+    reject_windows_undo_reparse_ancestors(&data_root)?;
     if create {
         fs::create_dir_all(&data_root)?;
     }
     let app_root = data_root.join("webrising-commender");
+    reject_windows_undo_reparse_ancestors(&app_root)?;
     if create {
         let mut builder = fs::DirBuilder::new();
         #[cfg(unix)]
@@ -1987,6 +2096,7 @@ fn undo_dir(_path: &Path, create: bool) -> Result<Option<std::path::PathBuf>> {
         }
     }
     let dir = app_root.join("file-versions");
+    reject_windows_undo_reparse_ancestors(&dir)?;
     if create {
         let mut builder = fs::DirBuilder::new();
         #[cfg(unix)]
@@ -2015,10 +2125,12 @@ fn undo_dir(_path: &Path, create: bool) -> Result<Option<std::path::PathBuf>> {
             return Err(anyhow!("unsafe_undo_directory_permissions"));
         }
     }
+    reject_windows_undo_reparse_ancestors(&dir)?;
     Ok(Some(dir))
 }
 
 fn undo_entries(path: &Path, dir: &Path, scope: Option<&str>) -> Result<Vec<(String, u64)>> {
+    reject_windows_undo_reparse_ancestors(dir)?;
     let prefix = format!("{}-", undo_prefix(path));
     let mut result = Vec::new();
     for entry in fs::read_dir(dir)? {
