@@ -1,8 +1,8 @@
 # WECOMMANDER — Hourly 1A–10D acceptance queue
 
-Last reviewed: 2026-10-26. **PENDING is not a claim that the feature is absent**; it means all required schema + Gateway/TypeScript + Rust Agent + authorization + real E2E + negative + applicable OS gates have not been evidenced. Prior accepted slices must not be repeated. No paid/limited runtime, production deployment, other repository, Desktop Commander, or Remote Desktop Commander.
+Last reviewed: 2026-10-26 (Windows junction acceptance). **PENDING is not a claim that the feature is absent**; it means all required schema + Gateway/TypeScript + Rust Agent + authorization + real E2E + negative + applicable OS gates have not been evidenced. Prior accepted slices must not be repeated. No paid/limited runtime, production deployment, other repository, Desktop Commander, or Remote Desktop Commander.
 
-Latest code HEAD: [`b06fe3fed5733e3febf37f8138c1da68a87a8720`](https://github.com/orhanbal/webrising-commender/commit/b06fe3fed5733e3febf37f8138c1da68a87a8720). [CI #40336976240](https://github.com/orhanbal/webrising-commender/actions/runs/40336976240): **17/17 PASSED**, Rust **93/93 PASSED**, Agent MCP E2E PASSED, 4/4 artifacts present/not expired. Prior HEAD `1aa4f97b` failed rustfmt; fixed by `b06fe3fe`. Documentation commit requires its own CI check.
+Latest code HEAD: [`42257b69`](https://github.com/orhanbal/webrising-commender/commit/42257b69cfc4880c68fd8e013b922c99e9614a3e). [CI #40345656336](https://github.com/orhanbal/webrising-commender/actions/runs/40345656336): Rust 93/93 PASSED, Windows native junction negatives 2/2 PASSED, Agent MCP E2E PASSED; full CI and 4/4 artifacts must be verified on final HEAD.
 
 | Item | Scope | Overall acceptance |
 |---|---|---|
@@ -11,7 +11,7 @@ Latest code HEAD: [`b06fe3fed5733e3febf37f8138c1da68a87a8720`](https://github.co
 | 1C | Search paging/case/quota/timeout/large negative E2E | PENDING (full acceptance not yet established; partial implementations may exist) |
 | 1D | Batch file read, line/tail/paging/partial errors | PENDING (full acceptance not yet established; partial implementations may exist) |
 | 2A | PTY/REPL prompt and paged output | PENDING (full acceptance not yet established; partial implementations may exist) |
-| 2B | Durable terminal history and retention | PENDING (multiple subscopes PASSED; soak/physical OS open) |
+| 2B | Durable terminal history and retention | PENDING (Windows junction native negative tests 2/2 PASSED; long soak, adversarial TOCTOU, physical OS open) |
 | 2C | Process tree terminate/kill/cancel/cleanup | PENDING (full acceptance not yet established; partial implementations may exist) |
 | 2D | Terminal/process/history quota and concurrency | PENDING (full acceptance not yet established; partial implementations may exist) |
 | 3A | Atomic file edit with SHA CAS and filesystem race safety | PENDING (full acceptance not yet established; partial implementations may exist) |
@@ -48,3 +48,7 @@ Latest code HEAD: [`b06fe3fed5733e3febf37f8138c1da68a87a8720`](https://github.co
 | 10D | Final canonical plans/matrix and SHA evidence | PENDING (full acceptance not yet established; partial implementations may exist) |
 
 Next action: verify documentation HEAD CI first; if green, continue 2B soak/Windows reparse and 3A CAS/TOCTOU, then 3B legacy migration and 3C config/audit. Stop new feature work if any P0/security/CI red appears. Evidence for partial scopes is recorded in the four canonical plans. Never mark physical OS, signing, notarization or live ChatGPT/Claude PASSED without direct evidence.
+
+## 2026-10-26 — Windows junction hardening (partial acceptance)
+
+A: prior HEAD `d4928a77` CI #40337905593 17/17 PASSED, platform distribution #40339579101 SUCCESS. B: `157f2fcd` rejects Windows reparse/junction ancestors before directory creation, locking, reading, pruning. C: `6cae199f` tests junction-parent creation and post-initialization directory replacement; `42257b69` runs both tests in native Windows CI. D: CI #40345656336 Windows job `121651964221` 2/2 PASSED; Rust 93/93 PASSED, Agent MCP E2E PASSED. Full CI and artifacts must be checked after this documentation commit. Native CI runner is not physical Windows acceptance. Concurrent adversarial TOCTOU, soak and physical OS remain PENDING; external clients/signing/notarization BLOCKED_EXTERNAL. No production/other repo/paid runtime.

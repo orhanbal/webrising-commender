@@ -1,3 +1,10 @@
+## 26 Ekim 2026 — Windows history junction fail-closed, 2B/9A/8D dar kabul
+
+- A: Giriş `d4928a77`, [CI #40337905593](https://github.com/orhanbal/webrising-commender/actions/runs/40337905593) 17/17 PASSED, Rust 93/93, 4/4 artifact; platform distribution #40339579101 SUCCESS.
+- B: [`157f2fcd`](https://github.com/orhanbal/webrising-commender/commit/157f2fcd2e0b41babdf566665a251b16c9dd4e2f) Windows junction/reparse-point ancestor güvenliği (create, lock, list, read, prune).
+- C: [`6cae199f`](https://github.com/orhanbal/webrising-commender/commit/6cae199fd647cbccf9b8168851f65bd5289834d8) junction parent ve initialization sonrası junction swap negatif testleri; [`42257b69`](https://github.com/orhanbal/webrising-commender/commit/42257b69cfc4880c68fd8e013b922c99e9614a3e) Windows native runner CI. [CI #40345656336](https://github.com/orhanbal/webrising-commender/actions/runs/40345656336) Windows job `121651964221` 2/2 PASSED; Linux Rust 93/93 ve gerçek Agent MCP E2E PASSED.
+- D: Kodun tam 17/17 CI, 4/4 artifact ve dokümantasyon HEAD CI kabulü **PENDING**; sonuçlar doğrulanmadan PASS yazılmaz. 2B uzun soak ve adversarial eşzamanlı TOCTOU, 3A dosya CAS yarışları, 3B legacy migration, 3C config/audit **PENDING**. Fiziksel Windows/macOS/Ubuntu, canlı ChatGPT/Claude, Windows imza/SmartScreen ve Apple notarization **BLOCKED_EXTERNAL**. Genel parity **PENDING**; üretim/başka repo/ücretli servis yok.
+
 ## 26 Ekim 2026 — A/B/C/D: 2B/3B SIGKILL atomik PTY snapshot kabulü (CI PENDING)
 
 - **A / PASSED (giriş HEAD):** `c13c6eea5090153861e09a03da1b6dff8c8e4c1f` için [CI #40321080495](https://github.com/orhanbal/webrising-commender/actions/runs/40321080495) job API'sinde **17/17 completed/success**; Rust job logunda **91/91 test**, gerçek Agent E2E logunda actor izolasyonu, 64-arşiv kota, SIGKILL/restart ve lock-timeout/recovery **PASSED**. Bu yalnız giriş HEAD'i için kanıttır.

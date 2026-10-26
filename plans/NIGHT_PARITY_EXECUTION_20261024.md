@@ -1,3 +1,10 @@
+## 26 Ekim 2026 — A/B/C/D Windows history junction güvenliği (DAR PASSED, GENEL PENDING)
+
+- **A PASSED:** Giriş HEAD `d4928a77`, [CI #40337905593](https://github.com/orhanbal/webrising-commender/actions/runs/40337905593) 17/17 SUCCESS, Rust 93/93, 4/4 artifact; [distribution #40339579101](https://github.com/orhanbal/webrising-commender/actions/runs/40339579101) SUCCESS.
+- **B KODLANDI:** [`157f2fcd`](https://github.com/orhanbal/webrising-commender/commit/157f2fcd2e0b41babdf566665a251b16c9dd4e2f) Windows reparse/junction ancestor denetimini create_dir_all öncesi ve history lock, versions, load, prune akışlarına ekledi. Fail-closed; Unix davranışı korunuyor.
+- **C PASSED (native Windows runner):** [`6cae199f`](https://github.com/orhanbal/webrising-commender/commit/6cae199fd647cbccf9b8168851f65bd5289834d8) junction parent ve başlatma sonrası dizin değişimi negatif testlerini ekledi; [`42257b69`](https://github.com/orhanbal/webrising-commender/commit/42257b69cfc4880c68fd8e013b922c99e9614a3e) CI'a bağladı. [CI #40345656336](https://github.com/orhanbal/webrising-commender/actions/runs/40345656336) Windows job `121651964221`: **2/2 PASSED**, Rust Linux **93/93 PASSED**, Agent MCP E2E **PASSED**.
+- **D PENDING (final HEAD):** Kod HEAD `42257b69` için diğer CI işleri ve artifact'ler tamamlanmadan 17/17 PASS denmez. Dokümantasyon commitinin kendi HEAD CI'sı ayrıca kontrol edilmeli. Fiziksel Windows, canlı ChatGPT/Claude, imza ve notarization **BLOCKED_EXTERNAL**; uzun soak, eşzamanlı adversarial TOCTOU, 2B/3A genel kabul **PENDING**. Üretim, sunucu, diğer repo, Desktop Commander/Remote Desktop Commander ve ücretli runtime kullanılmadı.
+
 ## 26 Ekim 2026 — A/B/C/D: 2B/3B SIGKILL atomik PTY snapshot kabulü (CI PENDING)
 
 - **A / PASSED (giriş HEAD):** `c13c6eea5090153861e09a03da1b6dff8c8e4c1f` için [CI #40321080495](https://github.com/orhanbal/webrising-commender/actions/runs/40321080495) job API'sinde **17/17 completed/success**; Rust job logunda **91/91 test**, gerçek Agent E2E logunda actor izolasyonu, 64-arşiv kota, SIGKILL/restart ve lock-timeout/recovery **PASSED**. Bu yalnız giriş HEAD'i için kanıttır.
