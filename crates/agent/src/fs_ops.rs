@@ -2306,8 +2306,8 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
         file.sync_all()?;
         drop(file);
         if let Some(expected) = expected_sha256 {
-            let existing = open_regular_read(path)
-                .map_err(|_| anyhow!("file_changed_since_read"))?;
+            let existing =
+                open_regular_read(path).map_err(|_| anyhow!("file_changed_since_read"))?;
             verify_atomic_write_guard(existing, expected)?;
         }
         fs::rename(&temporary, path).context("atomic replace failed")?;
@@ -2393,13 +2393,15 @@ mod atomic_write_parent_tests {
             fs::read_dir(&base)
                 .unwrap()
                 .filter_map(|entry| entry.ok())
-                .filter(|entry| entry.file_name().to_string_lossy().starts_with(".wecommander-"))
+                .filter(|entry| entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".wecommander-"))
                 .count(),
             0
         );
         fs::remove_dir_all(base).unwrap();
     }
-
 
     #[test]
     fn atomic_replace_refuses_swapped_parent_symlink_and_preserves_outside_file() {
