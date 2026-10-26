@@ -1005,6 +1005,20 @@ try {
   assert.equal(typeof staleEdit.error, "string");
   assert.equal(fs.readFileSync(filePath, "utf8"), "hello-from-search-edit");
 
+  // 3A: an independent writer changes the file after the client read its
+  // SHA. Real authenticated MCP must reject the stale edit and preserve data.
+  const externalCasPath = path.join(tempRoot, "external-cas.txt");
+  fs.writeFileSync(externalCasPath, "external-seed");
+  const externalCasSha = createHash("sha256").update("external-seed").digest("hex");
+  fs.writeFileSync(externalCasPath, "external-writer-won");
+  const externalCasResult = await tool(1591, "fs_replace", {
+    device_id: deviceId, path: externalCasPath, search: "external-seed",
+    replace: "agent-must-not-win", expected_sha256: externalCasSha,
+  });
+  assert.match(String(externalCasResult.error), /file_changed_since_read/);
+  assert.equal(fs.readFileSync(externalCasPath, "utf8"), "external-writer-won");
+  console.log("agent-e2e: external stale SHA edit rejected; competing data preserved");
+
   // Concurrent fs_replace SHA guard: exactly one matching CAS request can
   // succeed through the real MCP/Gateway/Rust Agent path.
   const raceFile = path.join(tempRoot, "concurrent-edit.txt");

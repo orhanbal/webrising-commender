@@ -1391,7 +1391,7 @@ fn write_impl(
     } else {
         None
     };
-    if let Err(error) = atomic_write(&path, &bytes) {
+    if let Err(error) = atomic_write(&path, &bytes, previous.as_ref().map(|(_, sha)| sha.as_str())) {
         if let Some((_, snapshot_path, _)) = &snapshot {
             let _ = fs::remove_file(snapshot_path);
         }
@@ -1496,7 +1496,7 @@ fn append_impl(
         } else {
             None
         };
-        if let Err(error) = atomic_write(&path, &updated) {
+        if let Err(error) = atomic_write(&path, &updated, Some(&previous_sha)) {
             if let Some((_, snapshot_path)) = &snapshot {
                 let _ = fs::remove_file(snapshot_path);
             }
@@ -1640,7 +1640,7 @@ fn replace_text_impl(
         &next_sha256,
         undo_scope,
     )?;
-    if let Err(error) = atomic_write(&path, updated.as_bytes()) {
+    if let Err(error) = atomic_write(&path, updated.as_bytes(), Some(&previous_sha256)) {
         let _ = fs::remove_file(&snapshot);
         return Err(error);
     }
@@ -2102,7 +2102,7 @@ fn undo_impl(
     {
         return Err(anyhow!("file_changed_since_edit"));
     }
-    atomic_write(&path, &previous)?;
+    atomic_write(&path, &previous, Some(&current_sha))?;
     let consumed = fs::remove_file(&snapshot).is_ok();
     Ok(json!({
         "ok": true, "path": path.to_string_lossy(),
@@ -2163,8 +2163,45 @@ mod undo_scope_tests {
 /// an existing file. Keep the original intact if rename cannot replace it.
 /// Unix uses one pinned parent directory for staging, rename and cleanup:
 /// a swapped ancestor symlink cannot redirect the final rename.
+// Recheck a guarded edit against the actual opened file immediately before
+// committing the staged replacement. This narrows the external-writer window;
+// it is not a transactional CAS against uncooperative processes.
+fn verify_atomic_write_guard(mut existing: fs::File, expected: &str) -> Result<()> {
+    let metadata = existing.metadata()?;
+    if !metadata.is_file() || metadata.len() > HARD_READ_MAX as u64 {
+        return Err(anyhow!("file_changed_since_read"));
+    }
+    let mut current = Vec::new();
+    existing
+        .take(HARD_READ_MAX as u64 + 1)
+        .read_to_end(&mut current)?;
+    if current.len() > HARD_READ_MAX
+        || !format!("{:x}", Sha256::digest(&current)).eq_ignore_ascii_case(expected)
+    {
+        return Err(anyhow!("file_changed_since_read"));
+    }
+    Ok(())
+}
+
+// Test-only interprocess barrier, excluded from production Agent binaries.
+#[cfg(all(test, unix))]
+fn pause_for_external_edit_fixture() -> Result<()> {
+    if let Ok(marker) = std::env::var("WCF_CAS_MARKER") {
+        let release = std::env::var("WCF_CAS_RELEASE")?;
+        fs::write(marker, b"staged")?;
+        let started = Instant::now();
+        while !Path::new(&release).exists() {
+            if started.elapsed() > Duration::from_secs(10) {
+                return Err(anyhow!("external_edit_fixture_timeout"));
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(unix)]
-fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
+fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Result<()> {
     use std::ffi::CString;
     use std::os::fd::{AsRawFd, FromRawFd};
 
@@ -2207,6 +2244,22 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
         }
         file.write_all(bytes)?;
         file.sync_all()?;
+        #[cfg(test)]
+        pause_for_external_edit_fixture()?;
+        if let Some(expected) = expected_sha256 {
+            // Re-open relative to the pinned parent; never trust a path stat.
+            let current_fd = unsafe {
+                libc::openat(
+                    parent.as_raw_fd(),
+                    target.as_ptr(),
+                    libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                )
+            };
+            if current_fd < 0 {
+                return Err(anyhow!("file_changed_since_read"));
+            }
+            verify_atomic_write_guard(unsafe { fs::File::from_raw_fd(current_fd) }, expected)?;
+        }
         let status = unsafe {
             libc::renameat(
                 parent.as_raw_fd(),
@@ -2232,7 +2285,7 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 #[cfg(not(unix))]
-fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
+fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Result<()> {
     let parent = path
         .parent()
         .ok_or_else(|| anyhow!("missing parent directory"))?;
@@ -2248,6 +2301,11 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
         file.write_all(bytes)?;
         file.sync_all()?;
         drop(file);
+        if let Some(expected) = expected_sha256 {
+            let existing = open_regular_read(path)
+                .map_err(|_| anyhow!("file_changed_since_read"))?;
+            verify_atomic_write_guard(existing, expected)?;
+        }
         fs::rename(&temporary, path).context("atomic replace failed")?;
         // A synced temporary file does not make its directory entry durable.
         // Best-effort directory sync improves crash recovery on Unix. Never
@@ -2272,6 +2330,73 @@ mod atomic_write_parent_tests {
     use super::*;
     use std::os::unix::fs::symlink;
 
+    // The competing writer is a separate OS process, not another thread
+    // sharing the Agent's in-memory mutation lock.
+    #[test]
+    fn process_atomic_guard_worker() {
+        let Ok(raw) = std::env::var("WCF_CAS_TARGET") else {
+            return;
+        };
+        let expected = format!("{:x}", Sha256::digest(b"seed"));
+        let error = atomic_write(Path::new(&raw), b"agent-update", Some(&expected)).unwrap_err();
+        assert!(
+            error.to_string().contains("file_changed_since_read"),
+            "unexpected guard error: {error}"
+        );
+    }
+
+    #[test]
+    fn external_process_edit_during_atomic_stage_is_rejected() {
+        use std::process::{Command, Stdio};
+        let base = std::env::temp_dir().join(format!("commender-external-cas-{}", Uuid::new_v4()));
+        fs::create_dir_all(&base).unwrap();
+        let target = base.join("target.txt");
+        let marker = base.join("staged.marker");
+        let release = base.join("release.marker");
+        fs::write(&target, b"seed").unwrap();
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("fs_ops::atomic_write_parent_tests::process_atomic_guard_worker")
+            .arg("--nocapture")
+            .env("WCF_CAS_TARGET", &target)
+            .env("WCF_CAS_MARKER", &marker)
+            .env("WCF_CAS_RELEASE", &release)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let started = Instant::now();
+        while !marker.exists() && started.elapsed() < Duration::from_secs(10) {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("guard worker exited before staging: {status}");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if !marker.exists() {
+            let _ = child.kill();
+            panic!("guard worker never reached the staging barrier");
+        }
+        fs::write(&target, b"external-update").unwrap();
+        fs::write(&release, b"continue").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "guard worker failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"external-update");
+        assert_eq!(
+            fs::read_dir(&base)
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|entry| entry.file_name().to_string_lossy().starts_with(".wecommander-"))
+                .count(),
+            0
+        );
+        fs::remove_dir_all(base).unwrap();
+    }
+
+
     #[test]
     fn atomic_replace_refuses_swapped_parent_symlink_and_preserves_outside_file() {
         let base = std::env::temp_dir().join(format!("commender-atomic-parent-{}", Uuid::new_v4()));
@@ -2288,7 +2413,7 @@ mod atomic_write_parent_tests {
         let resolved = policy.resolve_existing(target.to_str().unwrap()).unwrap();
         fs::rename(&parent, allowed.join("relocated")).unwrap();
         symlink(&outside, &parent).unwrap();
-        assert!(atomic_write(&resolved, b"replacement").is_err());
+        assert!(atomic_write(&resolved, b"replacement", None).is_err());
         assert_eq!(fs::read(&outside_target).unwrap(), b"outside-private");
         assert_eq!(
             fs::read(allowed.join("relocated/target.txt")).unwrap(),
@@ -2306,7 +2431,7 @@ mod atomic_write_parent_tests {
         let link = base.join("link.txt");
         fs::write(&outside, b"original").unwrap();
         symlink(&outside, &link).unwrap();
-        assert!(atomic_write(&link, b"replacement").is_err());
+        assert!(atomic_write(&link, b"replacement", None).is_err());
         assert_eq!(fs::read(&outside).unwrap(), b"original");
         assert!(fs::symlink_metadata(&link)
             .unwrap()
