@@ -1634,6 +1634,24 @@ try {
   })).error, "string");
   console.log("agent-e2e: bounded PTY history survived real Agent SIGKILL/restart");
 
+  // 2B: verify the durable format end-to-end after a real Agent restart.
+  // Same-length corruption must be rejected, not silently returned as output.
+  const archiveFiles = fs.readdirSync(historyDirectory).filter((name) =>
+    name.startsWith(`${archiveSession.sessionId}-`) && name.endsWith(".hist"));
+  assert.equal(archiveFiles.length, 1);
+  const archivePath = path.join(historyDirectory, archiveFiles[0]);
+  const archiveRaw = fs.readFileSync(archivePath);
+  assert.equal(archiveRaw.subarray(0, 8).toString("ascii"), "WCTH0002");
+  assert.ok(archiveRaw.length > 52);
+  archiveRaw[20] ^= 1;
+  fs.writeFileSync(archivePath, archiveRaw);
+  const tamperedPage = await tool(335, "terminal_read_page", {
+    device_id: deviceId, session_id: archiveSession.sessionId,
+    offset_bytes: -8192, max_bytes: 8192,
+  });
+  assert.match(String(tamperedPage.error), /corrupt terminal history checksum/);
+  console.log("agent-e2e: v2 terminal history same-size corruption rejected after SIGKILL/restart");
+
   const taskAction = {
     kind: "task_start",
     command: "sleep 1; printf PERSISTENT_TASK_OK",
