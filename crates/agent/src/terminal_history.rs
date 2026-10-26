@@ -77,6 +77,40 @@ impl HistoryStore {
         Ok(())
     }
 
+    // Keep this file forever: deleting a lock file allows different processes
+    // to lock different inodes and bypass the archive quota.
+    fn lock_directory(&self) -> Result<File> {
+        let path = self.dir.join(".history.lock");
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+            options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+        }
+        let lock = options.open(&path)?;
+        if !lock.metadata()?.is_file() {
+            return Err(anyhow!("unsafe terminal history lock"));
+        }
+        // std::fs::File::lock is cross-process on Unix and Windows (Rust >= 1.89).
+        // A failed lock must fail closed; never prune without holding it.
+        lock.lock().context("terminal history filesystem lock failed")?;
+        let path_meta = fs::symlink_metadata(&path)?;
+        if !path_meta.is_file() || path_meta.file_type().is_symlink() {
+            return Err(anyhow!("unsafe terminal history lock"));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let held_meta = lock.metadata()?;
+            if held_meta.dev() != path_meta.dev() || held_meta.ino() != path_meta.ino() {
+                return Err(anyhow!("terminal history lock was replaced"));
+            }
+        }
+        Ok(lock)
+    }
+
     fn valid_id(id: &str) -> Result<()> {
         if Uuid::parse_str(id).map(|u| u.to_string()).ok().as_deref() != Some(id) {
             return Err(anyhow!("invalid terminal session id"));
@@ -124,6 +158,7 @@ impl HistoryStore {
             .mutex
             .lock()
             .map_err(|_| anyhow!("terminal history lock poisoned"))?;
+        let _file_lock = self.lock_directory()?;
         let target = self.dir.join(format!("{id}-{total}.hist"));
         let temp = self.dir.join(format!(".{}.tmp", Uuid::new_v4()));
         let mut options = OpenOptions::new();
@@ -180,6 +215,7 @@ impl HistoryStore {
             .mutex
             .lock()
             .map_err(|_| anyhow!("terminal history lock poisoned"))?;
+        let _file_lock = self.lock_directory()?;
         let (seq, path) = self
             .versions(id)?
             .pop()
@@ -252,10 +288,11 @@ impl HistoryStore {
             .mutex
             .lock()
             .map_err(|_| anyhow!("terminal history lock poisoned"))?;
+        let _file_lock = self.lock_directory()?;
         self.prune_locked()
     }
 
-    // Call only while holding self.mutex (including during save).
+    // Call only while holding both self.mutex and the filesystem lock.
     fn prune_locked(&self) -> Result<()> {
         let mut newest: HashMap<String, (u64, PathBuf)> = HashMap::new();
         for entry in fs::read_dir(&self.dir)? {
