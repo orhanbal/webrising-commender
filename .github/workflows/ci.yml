@@ -55,6 +55,9 @@ jobs:
       - name: Windows terminal history junction rejection
         if: runner.os == 'Windows'
         run: cargo test -p webrising-commender-agent windows_junction_ -- --nocapture
+      - name: Windows undo snapshot junction rejection
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_undo_junction_ -- --nocapture
 
   gateway:
     runs-on: ubuntu-latest
