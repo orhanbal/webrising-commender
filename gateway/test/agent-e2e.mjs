@@ -1652,6 +1652,53 @@ try {
   assert.match(String(tamperedPage.error), /corrupt terminal history checksum/);
   console.log("agent-e2e: v2 terminal history same-size corruption rejected after SIGKILL/restart");
 
+  // 2B: a running Agent must enforce the global archive quota on each
+  // durable PTY save, not only after a restart. Populate bounded fixture
+  // filenames and trigger the actual save through authenticated MCP.
+  const quotaFixtures = [];
+  for (let index = 1; index <= 70; index += 1) {
+    const fixtureId = `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+    const fixturePath = path.join(historyDirectory, `${fixtureId}-1.hist`);
+    fs.writeFileSync(fixturePath, Buffer.from("fixture-not-for-reading"));
+    const fixtureTime = new Date(Date.now() - 2 * 60 * 1000);
+    fs.utimesSync(fixturePath, fixtureTime, fixtureTime);
+    quotaFixtures.push(fixturePath);
+  }
+  const quotaStartToken = await approval(deviceId, startAction);
+  const quotaSession = await tool(336, "terminal_start", {
+    device_id: deviceId, cwd: tempRoot, cols: 100, rows: 30,
+    approval_token: quotaStartToken,
+  });
+  assert.equal(typeof quotaSession.sessionId, "string");
+  await tool(337, "terminal_input", {
+    device_id: deviceId, session_id: quotaSession.sessionId,
+    data_base64: Buffer.from("echo LIVE_HISTORY_QUOTA_OK\\n").toString("base64"),
+  });
+  await waitFor(async () => {
+    const page = await tool(338, "terminal_read_page", {
+      device_id: deviceId, session_id: quotaSession.sessionId,
+      offset_bytes: -8192, max_bytes: 8192,
+    });
+    return page.historyDurable && String(page.text).includes("LIVE_HISTORY_QUOTA_OK");
+  });
+  const retainedArchives = fs.readdirSync(historyDirectory)
+    .filter((name) => name.endsWith(".hist"));
+  assert.ok(retainedArchives.length <= 64,
+    `live Agent retained ${retainedArchives.length} archives above quota`);
+  assert.ok(retainedArchives.some((name) => name.startsWith(`${quotaSession.sessionId}-`)),
+    "current live session archive was evicted");
+  assert.ok(quotaFixtures.some((fixture) => !fs.existsSync(fixture)),
+    "old fixture archives were not pruned");
+  const quotaStopToken = await approval(deviceId, {
+    kind: "terminal_stop", sessionId: quotaSession.sessionId,
+  });
+  const quotaStopped = await tool(339, "terminal_stop", {
+    device_id: deviceId, session_id: quotaSession.sessionId,
+    approval_token: quotaStopToken,
+  });
+  assert.equal(quotaStopped.ok, true, JSON.stringify(quotaStopped));
+  console.log("agent-e2e: live MCP PTY save enforced 64-archive quota without restart");
+
   const taskAction = {
     kind: "task_start",
     command: "sleep 1; printf PERSISTENT_TASK_OK",
