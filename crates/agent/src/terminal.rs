@@ -124,6 +124,7 @@ struct Session {
     child: Mutex<Box<dyn Child + Send + Sync>>,
     buffer: Arc<Mutex<VecDeque<u8>>>,
     history: Arc<Mutex<OutputHistory>>,
+    owner_scope: String,
 }
 
 #[derive(Clone, Default)]
@@ -148,14 +149,15 @@ impl TerminalManager {
         cwd: Option<&str>,
         cols: u16,
         rows: u16,
+        scope: &str,
     ) -> Result<Value> {
         let reservation = self.reserve_start()?;
         // Allocate the archive before spawning an OS child. A disk failure
         // must never leave an untracked live shell behind.
         let id = Uuid::new_v4().to_string();
-        if let Some(store) = &self.store {
+        let history_store = self.store.as_ref().map(|store| store.scoped(scope)).transpose()?.map(Arc::new);
+        if let Some(store) = &history_store {
             store.save(&id, 0, &VecDeque::new())?;
-            store.prune()?;
         }
 
         let pty = native_pty_system();
@@ -184,7 +186,6 @@ impl TerminalManager {
         let read_buffer = Arc::clone(&buffer);
         let history = Arc::new(Mutex::new(OutputHistory::default()));
         let read_history = Arc::clone(&history);
-        let history_store = self.store.clone();
         let history_id = id.clone();
 
         std::thread::spawn(move || {
@@ -222,6 +223,7 @@ impl TerminalManager {
             child: Mutex::new(child),
             buffer,
             history,
+            owner_scope: scope.to_owned(),
         });
 
         let mut sessions = self
@@ -257,7 +259,7 @@ impl TerminalManager {
         Ok(StartReservation(Arc::clone(&self.pending_starts)))
     }
 
-    pub fn list(&self) -> Result<Value> {
+    pub fn list(&self, scope: &str) -> Result<Value> {
         let sessions = self
             .sessions
             .lock()
@@ -265,6 +267,9 @@ impl TerminalManager {
         let mut items = Vec::with_capacity(sessions.len());
 
         for (id, session) in sessions.iter() {
+            if session.owner_scope != scope {
+                continue;
+            }
             let buffered_bytes = session
                 .buffer
                 .lock()
@@ -287,8 +292,8 @@ impl TerminalManager {
         Ok(json!({ "items": items }))
     }
 
-    pub fn input(&self, id: &str, data_base64: &str) -> Result<Value> {
-        let session = self.get(id)?;
+    pub fn input(&self, id: &str, data_base64: &str, scope: &str) -> Result<Value> {
+        let session = self.get(id, scope)?;
         let data = STANDARD
             .decode(data_base64)
             .context("invalid base64 terminal input")?;
@@ -304,8 +309,8 @@ impl TerminalManager {
         Ok(json!({ "ok": true, "bytes": data.len() }))
     }
 
-    pub fn read(&self, id: &str, max_bytes: usize) -> Result<Value> {
-        let session = self.get(id)?;
+    pub fn read(&self, id: &str, max_bytes: usize, scope: &str) -> Result<Value> {
+        let session = self.get(id, scope)?;
         let max = max_bytes.clamp(1, 256 * 1024);
         let mut queue = session
             .buffer
@@ -343,6 +348,7 @@ impl TerminalManager {
         id: &str,
         offset_bytes: Option<i64>,
         max_bytes: Option<usize>,
+        scope: &str,
     ) -> Result<Value> {
         let session = self
             .sessions
@@ -351,6 +357,9 @@ impl TerminalManager {
             .get(id)
             .cloned();
         if let Some(session) = session {
+            if session.owner_scope != scope {
+                return Err(anyhow!("terminal session not found"));
+            }
             let history = session
                 .history
                 .lock()
@@ -361,7 +370,7 @@ impl TerminalManager {
             .store
             .as_ref()
             .ok_or_else(|| anyhow!("terminal session not found"))?;
-        let (total_bytes, bytes) = store.load(id)?;
+        let (total_bytes, bytes) = store.scoped(scope)?.load(id)?;
         let history = OutputHistory {
             bytes,
             total_bytes,
@@ -373,8 +382,8 @@ impl TerminalManager {
         Ok(page)
     }
 
-    pub fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<Value> {
-        let session = self.get(id)?;
+    pub fn resize(&self, id: &str, cols: u16, rows: u16, scope: &str) -> Result<Value> {
+        let session = self.get(id, scope)?;
         session
             .master
             .lock()
@@ -388,13 +397,13 @@ impl TerminalManager {
         Ok(json!({ "ok": true }))
     }
 
-    pub fn stop(&self, id: &str) -> Result<Value> {
-        let session = self
-            .sessions
-            .lock()
-            .map_err(|_| anyhow!("terminal session lock poisoned"))?
-            .remove(id)
-            .ok_or_else(|| anyhow!("terminal session not found"))?;
+    pub fn stop(&self, id: &str, scope: &str) -> Result<Value> {
+        let mut sessions = self.sessions.lock().map_err(|_| anyhow!("terminal session lock poisoned"))?;
+        if sessions.get(id).is_none_or(|session| session.owner_scope != scope) {
+            return Err(anyhow!("terminal session not found"));
+        }
+        let session = sessions.remove(id).ok_or_else(|| anyhow!("terminal session not found"))?;
+        drop(sessions);
 
         let mut child = session
             .child
@@ -405,13 +414,17 @@ impl TerminalManager {
         Ok(json!({ "ok": true }))
     }
 
-    fn get(&self, id: &str) -> Result<Arc<Session>> {
-        self.sessions
+    fn get(&self, id: &str, scope: &str) -> Result<Arc<Session>> {
+        let session = self.sessions
             .lock()
             .map_err(|_| anyhow!("terminal session lock poisoned"))?
             .get(id)
             .cloned()
-            .ok_or_else(|| anyhow!("terminal session not found"))
+            .ok_or_else(|| anyhow!("terminal session not found"))?;
+        if session.owner_scope != scope {
+            return Err(anyhow!("terminal session not found"));
+        }
+        Ok(session)
     }
 }
 
