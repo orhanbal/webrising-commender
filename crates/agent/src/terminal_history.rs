@@ -223,7 +223,10 @@ impl HistoryStore {
                 return Err(anyhow!("corrupt terminal history checksum"));
             }
         }
-        Ok((total, raw[HEADER_BYTES..payload_end].iter().copied().collect()))
+        Ok((
+            total,
+            raw[HEADER_BYTES..payload_end].iter().copied().collect(),
+        ))
     }
 
     pub fn prune(&self) -> Result<()> {
