@@ -103,12 +103,18 @@ try {
   assert.equal(typeof config.deviceId, "string");
   const deviceId = config.deviceId;
 
-  agent = spawn(agentBinary, ["--config", configPath, "run"], {
-    stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, RUST_LOG: "info", XDG_DATA_HOME: path.join(tempRoot, "xdg-data") },
-  });
-  agent.stdout.on("data", (chunk) => { agentLog += chunk.toString(); });
-  agent.stderr.on("data", (chunk) => { agentLog += chunk.toString(); });
+  // Reuse the same enrollment and private XDG directory across a hard restart.
+  // The restarted Agent must not rely on in-memory undo state.
+  const startAgent = () => {
+    const child = spawn(agentBinary, ["--config", configPath, "run"], {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, RUST_LOG: "info", XDG_DATA_HOME: path.join(tempRoot, "xdg-data") },
+    });
+    child.stdout.on("data", (chunk) => { agentLog += chunk.toString(); });
+    child.stderr.on("data", (chunk) => { agentLog += chunk.toString(); });
+    return child;
+  };
+  agent = startAgent();
 
   await waitFor(async () => {
     const devices = await jsonFetch("/api/devices", { headers: authHeaders });
@@ -1076,6 +1082,60 @@ try {
   const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
   fs.utimesSync(orphanStage, twoDaysAgo, twoDaysAgo);
   fs.utimesSync(unrelatedStage, twoDaysAgo, twoDaysAgo);
+
+  // 3B REAL process-crash acceptance: persist a new undo snapshot, SIGKILL
+  // the native Agent, reconnect with the same enrolled device and restore
+  // through MCP. Also exercise orphan-stage pruning only after that restart.
+  const restartEdit = await tool(1577, "fs_replace", {
+    device_id: deviceId, path: raceFile,
+    search: "expiry-edited", replace: "restart-edited",
+  });
+  assert.equal(restartEdit.ok, true);
+  assert.match(restartEdit.undoId, /^[0-9a-f-]{36}$/);
+  const persistedSnapshot = path.join(versionDirectory, `${racePrefix}-${restartEdit.undoId}.undo`);
+  assert.equal(fs.existsSync(persistedSnapshot), true);
+
+  const killedAgent = agent;
+  assert.equal(killedAgent.kill("SIGKILL"), true, "native Agent must be running before crash test");
+  await new Promise((resolve, reject) => {
+    if (killedAgent.exitCode !== null || killedAgent.signalCode !== null) return resolve();
+    killedAgent.once("exit", resolve);
+    killedAgent.once("error", reject);
+  });
+  await waitFor(async () => {
+    const devices = await jsonFetch("/api/devices", { headers: authHeaders });
+    return devices.items.some((item) => item.id === deviceId && !item.online);
+  }, 15000, 100);
+  agent = startAgent();
+  await waitFor(async () => {
+    const devices = await jsonFetch("/api/devices", { headers: authHeaders });
+    return devices.items.some((item) => item.id === deviceId && item.online);
+  }, 20000, 100);
+
+  const afterCrashVersions = await tool(1578, "fs_versions", {
+    device_id: deviceId, path: raceFile,
+  });
+  assert.ok(afterCrashVersions.versions.some((item) => item.undoId === restartEdit.undoId));
+  const deniedCrashUndo = await tool(1579, "fs_undo", {
+    device_id: deviceId, path: raceFile, undo_id: restartEdit.undoId,
+    expected_sha256: "0".repeat(64),
+  });
+  assert.equal(typeof deniedCrashUndo.error, "string");
+  assert.equal(fs.readFileSync(raceFile, "utf8"), "restart-edited");
+  const restoredAfterCrash = await tool(1580, "fs_undo", {
+    device_id: deviceId, path: raceFile, undo_id: restartEdit.undoId,
+    expected_sha256: restartEdit.sha256,
+  });
+  assert.equal(restoredAfterCrash.ok, true);
+  assert.equal(fs.readFileSync(raceFile, "utf8"), "expiry-edited");
+  const replayAfterCrash = await tool(1581, "fs_undo", {
+    device_id: deviceId, path: raceFile, undo_id: restartEdit.undoId,
+    expected_sha256: restartEdit.sha256,
+  });
+  assert.equal(typeof replayAfterCrash.error, "string");
+  assert.equal(fs.existsSync(persistedSnapshot), false);
+  console.log("agent-e2e: SIGKILL restart preserved undo; stale SHA and replay denied");
+
   const crashRecovery = await tool(577, "fs_versions", {
     device_id: deviceId, path: raceFile,
   });
