@@ -182,6 +182,14 @@ impl HistoryStore {
             .lock()
             .map_err(|_| anyhow!("terminal history lock poisoned"))?;
         let _file_lock = self.lock_directory()?;
+        // Another Agent process can have persisted a newer generation while
+        // this writer waited for the filesystem lock. Never replace it with
+        // older output, or overwrite a generation with the same byte offset.
+        if let Some((latest, _)) = self.versions(id)?.last() {
+            if *latest >= total {
+                return Err(anyhow!("stale or duplicate terminal history snapshot"));
+            }
+        }
         let target = self.dir.join(format!("{id}-{total}.hist"));
         let temp = self.dir.join(format!(".{}.tmp", Uuid::new_v4()));
         let mut options = OpenOptions::new();
@@ -443,6 +451,55 @@ mod tests {
         assert!(store.versions(&expired_id).unwrap().is_empty());
         assert_eq!(store.load(&current_id).unwrap().1, bytes);
         assert_eq!(fs::read(&foreign).unwrap(), b"keep");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    // The child is a separate OS process, not a second HistoryStore sharing
+    // a mutex. A delayed writer must not regress the durable output offset.
+    #[test]
+    fn process_stale_snapshot_worker() {
+        let Ok(root) = std::env::var("WCTH_STALE_WORKER_ROOT") else {
+            return;
+        };
+        let id = std::env::var("WCTH_STALE_WORKER_ID").unwrap();
+        let store = HistoryStore::at(PathBuf::from(root)).unwrap();
+        let stale = VecDeque::from(b"old".to_vec());
+        let error = store.save(&id, 3, &stale).unwrap_err();
+        assert!(
+            error.to_string().contains("stale or duplicate"),
+            "unexpected stale write error: {error}"
+        );
+    }
+
+    #[test]
+    fn stale_cross_process_history_cannot_replace_newer_generation() {
+        use std::process::Command;
+        let dir = std::env::temp_dir().join(format!("wcth-stale-{}", Uuid::new_v4()));
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let id = Uuid::new_v4().to_string();
+        let newer = VecDeque::from(b"newer-output".to_vec());
+        store.save(&id, newer.len() as u64, &newer).unwrap();
+
+        let output = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("terminal_history::tests::process_stale_snapshot_worker")
+            .arg("--nocapture")
+            .env("WCTH_STALE_WORKER_ROOT", &dir)
+            .env("WCTH_STALE_WORKER_ID", &id)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "stale writer accepted: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(store.load(&id).unwrap(), (newer.len() as u64, newer.clone()));
+        assert_eq!(store.versions(&id).unwrap().len(), 1);
+        // Equal offsets with different payloads must also be rejected.
+        let duplicate = VecDeque::from(b"other-output".to_vec());
+        assert_eq!(duplicate.len(), newer.len());
+        assert!(store.save(&id, newer.len() as u64, &duplicate).is_err());
+        assert_eq!(store.load(&id).unwrap().1, newer);
         fs::remove_dir_all(dir).unwrap();
     }
 
