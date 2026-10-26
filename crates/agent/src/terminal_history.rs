@@ -969,7 +969,10 @@ mod tests {
         assert_eq!(old_bytes, VecDeque::from(b"abc".to_vec()));
         let upgraded = VecDeque::from(b"abcdefgh".to_vec());
         store.save(&id, 8, &upgraded).unwrap();
-        assert!(!legacy.exists(), "legacy generation must be retired after commit");
+        assert!(
+            !legacy.exists(),
+            "legacy generation must be retired after commit"
+        );
         let versions = store.versions(&id).unwrap();
         assert_eq!(versions.len(), 1);
         assert_eq!(versions[0].0, 8);
