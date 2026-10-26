@@ -33,6 +33,8 @@ impl HistoryStore {
             dirs::data_local_dir().ok_or_else(|| anyhow!("local data directory unavailable"))?;
         let app_root = root.join("webrising-commender");
         let history_root = app_root.join("terminal-history");
+        #[cfg(windows)]
+        Self::reject_windows_reparse_ancestors(&history_root)?;
         fs::create_dir_all(&history_root)?;
         for owned in [&app_root, &history_root] {
             Self::secure_dir(owned)?;
@@ -55,6 +57,8 @@ impl HistoryStore {
     }
 
     fn at(dir: PathBuf) -> Result<Self> {
+        #[cfg(windows)]
+        Self::reject_windows_reparse_ancestors(&dir)?;
         fs::create_dir_all(&dir)?;
         // Never chmod arbitrary parents (e.g. /tmp in isolated tests).
         Self::secure_dir(&dir)?;
@@ -66,7 +70,29 @@ impl HistoryStore {
         Ok(store)
     }
 
+    // Windows junctions and other reparse points are not necessarily reported
+    // as symbolic links. Reject them in every existing ancestor, including
+    // before create_dir_all, so a linked parent cannot redirect new archives.
+    #[cfg(windows)]
+    fn reject_windows_reparse_ancestors(path: &std::path::Path) -> Result<()> {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        for ancestor in path.ancestors() {
+            match fs::symlink_metadata(ancestor) {
+                Ok(meta) if meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 => {
+                    return Err(anyhow!("unsafe terminal history reparse point"));
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Ok(())
+    }
+
     fn secure_dir(path: &std::path::Path) -> Result<()> {
+        #[cfg(windows)]
+        Self::reject_windows_reparse_ancestors(path)?;
         let meta = fs::symlink_metadata(path)?;
         if !meta.is_dir() || meta.file_type().is_symlink() {
             return Err(anyhow!("unsafe terminal history directory"));
@@ -86,6 +112,8 @@ impl HistoryStore {
     }
 
     fn lock_directory_with_timeout(&self, timeout: Duration) -> Result<File> {
+        #[cfg(windows)]
+        Self::secure_dir(&self.dir)?;
         let path = self.dir.join(".history.lock");
         let mut options = OpenOptions::new();
         options.read(true).write(true).create(true);
@@ -118,6 +146,11 @@ impl HistoryStore {
                     return Err(anyhow!("terminal history filesystem lock failed: {error}"));
                 }
             }
+        }
+        #[cfg(windows)]
+        {
+            Self::secure_dir(&self.dir)?;
+            Self::reject_windows_reparse_ancestors(&path)?;
         }
         let path_meta = fs::symlink_metadata(&path)?;
         if !path_meta.is_file() || path_meta.file_type().is_symlink() {
@@ -174,6 +207,8 @@ impl HistoryStore {
                 .and_then(|x| x.strip_suffix(".hist"))
             {
                 if let Ok(seq) = n.parse::<u64>() {
+                    #[cfg(windows)]
+                    Self::reject_windows_reparse_ancestors(&entry.path())?;
                     let kind = entry.file_type()?;
                     if !kind.is_file() || kind.is_symlink() {
                         return Err(anyhow!("unsafe terminal history file"));
@@ -269,6 +304,8 @@ impl HistoryStore {
             .versions(id)?
             .pop()
             .ok_or_else(|| anyhow!("terminal session not found"))?;
+        #[cfg(windows)]
+        Self::reject_windows_reparse_ancestors(&path)?;
         let meta = fs::symlink_metadata(&path)?;
         if !meta.is_file()
             || meta.file_type().is_symlink()
@@ -351,6 +388,8 @@ impl HistoryStore {
                 if !Self::owned_staging_name(&name) {
                     continue;
                 }
+                #[cfg(windows)]
+                Self::reject_windows_reparse_ancestors(&entry.path())?;
                 let meta = fs::symlink_metadata(entry.path())?;
                 if !meta.is_file() || meta.file_type().is_symlink() {
                     return Err(anyhow!("unsafe terminal history temporary file"));
@@ -376,6 +415,8 @@ impl HistoryStore {
             let Ok(seq) = suffix.parse::<u64>() else {
                 continue;
             };
+            #[cfg(windows)]
+            Self::reject_windows_reparse_ancestors(&entry.path())?;
             let meta = fs::symlink_metadata(entry.path())?;
             if !meta.is_file() || meta.file_type().is_symlink() {
                 return Err(anyhow!("unsafe terminal history snapshot"));
@@ -696,6 +737,35 @@ mod tests {
         assert_eq!(fs::read(&outside).unwrap(), b"do-not-touch");
         fs::remove_dir_all(dir).unwrap();
         fs::remove_file(outside).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_junction_parent_cannot_redirect_history_creation() {
+        use std::process::Command;
+        let root = std::env::temp_dir().join(format!("wcth-junction-{}", Uuid::new_v4()));
+        let outside = std::env::temp_dir().join(format!("wcth-junction-target-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let junction = root.join("linked");
+        let output = Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(&junction)
+            .arg(&outside)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "junction fixture failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(HistoryStore::at(junction.join("scoped")).is_err());
+        assert!(!outside.join("scoped").exists());
+        fs::remove_dir(&junction).unwrap();
+        fs::remove_dir_all(&root).unwrap();
+        fs::remove_dir_all(&outside).unwrap();
     }
 
     #[test]
