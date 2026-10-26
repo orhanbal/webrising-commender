@@ -410,7 +410,11 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
         AgentAction::TerminalRead {
             session_id,
             max_bytes,
-        } => terminals.read(&session_id, max_bytes.unwrap_or(64 * 1024), require_undo_key()?),
+        } => terminals.read(
+            &session_id,
+            max_bytes.unwrap_or(64 * 1024),
+            require_undo_key()?,
+        ),
         AgentAction::TerminalReadPage {
             session_id,
             offset_bytes,
