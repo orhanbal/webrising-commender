@@ -116,6 +116,16 @@ impl AgentConfig {
         if !opened.is_file() || opened.len() > MAX_AGENT_CONFIG_BYTES {
             return Err(anyhow!("unsafe_agent_config_target"));
         }
+        // A hardlink can make a credential file appear to be an ordinary
+        // in-tree file even when its other name is outside the config tree.
+        // Check the opened inode, not only the path metadata.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if opened.nlink() != 1 {
+                return Err(anyhow!("unsafe_agent_config_hardlink"));
+            }
+        }
         let mut raw = Vec::new();
         file.take(MAX_AGENT_CONFIG_BYTES + 1)
             .read_to_end(&mut raw)?;
@@ -141,7 +151,17 @@ impl AgentConfig {
             Ok(meta) if !meta.is_file() || meta.file_type().is_symlink() => {
                 return Err(anyhow!("unsafe_agent_config_target"));
             }
-            Ok(_) => {}
+            Ok(meta) => {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::MetadataExt;
+                    if meta.nlink() != 1 {
+                        return Err(anyhow!("unsafe_agent_config_hardlink"));
+                    }
+                }
+                #[cfg(not(unix))]
+                let _ = meta;
+            }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(error.into()),
         }
@@ -340,6 +360,49 @@ mod tests {
         assert_eq!(fs::read(&target).unwrap(), b"unchanged");
         fs::remove_dir_all(root).unwrap();
     }
+    #[cfg(unix)]
+    #[test]
+    fn config_hardlink_is_rejected_without_replacing_original_credentials() {
+        use std::os::unix::fs::MetadataExt;
+        let root = std::env::temp_dir().join(format!("wc-config-hardlink-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let original = root.join("original.json");
+        let alias = root.join("alias.json");
+        let mut config = AgentConfig {
+            device_id: "device".into(),
+            device_token: "original-secret".into(),
+            approval_key: "original-approval".into(),
+            gateway_ws_url: String::new(),
+            control_url: String::new(),
+            name: "test".into(),
+            allowed_roots: vec![root.clone()],
+        };
+        config.save(&original).unwrap();
+        fs::hard_link(&original, &alias).unwrap();
+        assert_eq!(fs::metadata(&original).unwrap().nlink(), 2);
+        let before = fs::read(&original).unwrap();
+        assert!(AgentConfig::load(&alias)
+            .unwrap_err()
+            .to_string()
+            .contains("unsafe_agent_config_hardlink"));
+        assert!(AgentConfig::load(&original)
+            .unwrap_err()
+            .to_string()
+            .contains("unsafe_agent_config_hardlink"));
+        config.device_token = "replacement-secret".into();
+        assert!(config.save(&alias)
+            .unwrap_err()
+            .to_string()
+            .contains("unsafe_agent_config_hardlink"));
+        assert_eq!(fs::read(&original).unwrap(), before);
+        fs::remove_file(&alias).unwrap();
+        assert_eq!(
+            AgentConfig::load(&original).unwrap().device_token,
+            "original-secret"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[cfg(unix)]
     #[test]
     fn config_load_rejects_symlink_and_oversized_json() {
