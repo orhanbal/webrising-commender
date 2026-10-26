@@ -8,6 +8,38 @@ use std::{
 
 const MAX_AGENT_CONFIG_BYTES: u64 = 256 * 1024;
 
+// Reject an untrusted redirect at any component below the user's home or
+// the OS temporary root, not just at the immediate config directory.
+// These roots are trust boundaries: macOS, for example, uses /var -> /private/var.
+fn validate_config_parent_chain(parent: &Path) -> Result<()> {
+    let home = dirs::home_dir();
+    let temporary_root = std::env::temp_dir();
+    for ancestor in parent.ancestors() {
+        match fs::symlink_metadata(ancestor) {
+            Ok(metadata) => {
+                if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                    return Err(anyhow!("unsafe_agent_config_parent"));
+                }
+                #[cfg(windows)]
+                {
+                    use std::os::windows::fs::MetadataExt;
+                    // Junctions and other reparse directories need not report
+                    // themselves as ordinary symbolic links.
+                    if metadata.file_attributes() & 0x400 != 0 {
+                        return Err(anyhow!("unsafe_agent_config_parent"));
+                    }
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        if home.as_deref() == Some(ancestor) || temporary_root == ancestor {
+            break;
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentConfig {
@@ -50,10 +82,9 @@ impl AgentConfig {
         let parent = path
             .parent()
             .ok_or_else(|| anyhow!("config parent unavailable"))?;
-        let parent_meta = fs::symlink_metadata(parent)?;
-        if !parent_meta.is_dir() || parent_meta.file_type().is_symlink() {
-            return Err(anyhow!("unsafe_agent_config_parent"));
-        }
+        validate_config_parent_chain(parent)?;
+        // The immediate parent must exist for a credential read.
+        fs::symlink_metadata(parent)?;
         // A config holds device credentials: never follow a replaced symlink,
         // read a directory/device, or allocate unbounded memory for JSON.
         let metadata = fs::symlink_metadata(path)
@@ -100,13 +131,11 @@ impl AgentConfig {
         let parent = path
             .parent()
             .ok_or_else(|| anyhow!("config parent unavailable"))?;
+        // Check before mkdir: otherwise an ancestor link could create a new
+        // directory outside the intended config tree before being rejected.
+        validate_config_parent_chain(parent)?;
         fs::create_dir_all(parent)?;
-        // A symlinked config directory could redirect credentials into an
-        // attacker-controlled location even when the file itself is regular.
-        let parent_meta = fs::symlink_metadata(parent)?;
-        if !parent_meta.is_dir() || parent_meta.file_type().is_symlink() {
-            return Err(anyhow!("unsafe_agent_config_parent"));
-        }
+        validate_config_parent_chain(parent)?;
         // Never follow an existing config symlink when writing credentials.
         match fs::symlink_metadata(path) {
             Ok(meta) if !meta.is_file() || meta.file_type().is_symlink() => {
@@ -140,6 +169,9 @@ impl AgentConfig {
             file.write_all(&data)?;
             file.sync_all()?;
             drop(file);
+            // Narrow the window for a replaced ancestor before publication.
+            // This is not a handle-relative, adversarial TOCTOU guarantee.
+            validate_config_parent_chain(parent)?;
             // Publish only fully synced content; failed writes preserve the
             // previous config instead of truncating its secrets or JSON.
             fs::rename(&temporary, path)?;
@@ -377,4 +409,37 @@ mod tests {
         assert!(!destination.join("agent.json").exists());
         fs::remove_dir_all(root).unwrap();
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn config_rejects_symlinked_grandparent_before_mkdir_or_secret_read() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!("wc-config-grandparent-{}", uuid::Uuid::new_v4()));
+        let destination = root.join("destination");
+        let actual_parent = destination.join("private");
+        fs::create_dir_all(&actual_parent).unwrap();
+        let config = AgentConfig {
+            device_id: "device".into(),
+            device_token: "secret".into(),
+            approval_key: "approval".into(),
+            gateway_ws_url: String::new(),
+            control_url: String::new(),
+            name: String::new(),
+            allowed_roots: vec![root.clone()],
+        };
+        let actual_path = actual_parent.join("agent.json");
+        config.save(&actual_path).unwrap();
+        let alias = root.join("alias");
+        symlink(&destination, &alias).unwrap();
+        let redirected = alias.join("private").join("agent.json");
+        assert!(AgentConfig::load(&redirected).unwrap_err().to_string().contains("unsafe_agent_config_parent"));
+        assert!(config.save(&redirected).unwrap_err().to_string().contains("unsafe_agent_config_parent"));
+        assert_eq!(fs::read(&actual_path).unwrap(), fs::read(&destination.join("private/agent.json")).unwrap());
+
+        let nonexistent = alias.join("new-private").join("agent.json");
+        assert!(config.save(&nonexistent).unwrap_err().to_string().contains("unsafe_agent_config_parent"));
+        assert!(!destination.join("new-private").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
 }
