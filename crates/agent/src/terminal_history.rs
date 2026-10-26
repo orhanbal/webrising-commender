@@ -768,6 +768,41 @@ mod tests {
         fs::remove_dir_all(&outside).unwrap();
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn windows_junction_swap_after_store_open_is_rejected() {
+        use std::process::Command;
+        let root = std::env::temp_dir().join(format!("wcth-swap-{}", Uuid::new_v4()));
+        let outside = std::env::temp_dir().join(format!("wcth-swap-target-{}", Uuid::new_v4()));
+        let history = root.join("history");
+        fs::create_dir_all(&outside).unwrap();
+        let store = HistoryStore::at(history.clone()).unwrap();
+        // Simulate a local process replacing the history directory between
+        // operations. The next save must reject it before opening a lock file.
+        fs::remove_file(history.join(".history.lock")).unwrap();
+        fs::remove_dir(&history).unwrap();
+        let output = Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(&history)
+            .arg(&outside)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "junction fixture failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let id = Uuid::new_v4().to_string();
+        assert!(store.save(&id, 1, &VecDeque::from(b"x".to_vec())).is_err());
+        assert!(!outside.join(".history.lock").exists());
+        assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
+        fs::remove_dir(&history).unwrap();
+        fs::remove_dir_all(&root).unwrap();
+        fs::remove_dir_all(&outside).unwrap();
+    }
+
     #[test]
     fn restart_snapshot_roundtrip_eviction_and_corruption() {
         let dir = std::env::temp_dir().join(format!("wcth-{}", Uuid::new_v4()));
