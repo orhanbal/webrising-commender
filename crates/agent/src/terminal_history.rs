@@ -153,6 +153,10 @@ impl HistoryStore {
                 fs::remove_file(old)?;
             }
         }
+        // Bound disk usage while the Agent remains online. Startup-only
+        // pruning lets sequential sessions accumulate indefinitely.
+        // The save mutex is already held; do not lock it a second time.
+        self.prune_locked()?;
         Ok(())
     }
 
@@ -234,6 +238,11 @@ impl HistoryStore {
             .mutex
             .lock()
             .map_err(|_| anyhow!("terminal history lock poisoned"))?;
+        self.prune_locked()
+    }
+
+    // Call only while holding self.mutex (including during save).
+    fn prune_locked(&self) -> Result<()> {
         let mut newest: HashMap<String, (u64, PathBuf)> = HashMap::new();
         for entry in fs::read_dir(&self.dir)? {
             let entry = entry?;
@@ -357,6 +366,32 @@ mod tests {
             .count();
         assert_eq!(count, MAX_ARCHIVES);
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn save_enforces_archive_quota_without_restart_or_explicit_prune() {
+        let dir = std::env::temp_dir().join(format!("wcth-live-quota-{}", Uuid::new_v4()));
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let bytes = VecDeque::from(b"active".to_vec());
+        let mut newest_id = String::new();
+        for _ in 0..(MAX_ARCHIVES + 9) {
+            newest_id = Uuid::new_v4().to_string();
+            store.save(&newest_id, bytes.len() as u64, &bytes).unwrap();
+        }
+        let archives = fs::read_dir(&dir)
+            .unwrap()
+            .filter(|entry| {
+                entry
+                    .as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .ends_with(".hist")
+            })
+            .count();
+        assert_eq!(archives, MAX_ARCHIVES);
+        assert_eq!(store.load(&newest_id).unwrap().1, bytes);
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
