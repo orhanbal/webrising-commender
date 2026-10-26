@@ -38,6 +38,16 @@ impl HistoryStore {
         Self::at(history_root.join(id.to_string()))
     }
 
+    // Persist authenticated principals in disjoint on-disk namespaces.
+    // The key is the Gateway-verified tenant/actor/device SHA-256 fingerprint.
+    // Legacy unscoped snapshots remain inaccessible (fail closed).
+    pub fn scoped(&self, scope: &str) -> Result<Self> {
+        if scope.len() != 64 || !scope.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) {
+            return Err(anyhow!("invalid terminal history scope"));
+        }
+        Self::at(self.dir.join(scope))
+    }
+
     fn at(dir: PathBuf) -> Result<Self> {
         fs::create_dir_all(&dir)?;
         // Never chmod arbitrary parents (e.g. /tmp in isolated tests).
@@ -392,6 +402,27 @@ mod tests {
         assert_eq!(archives, MAX_ARCHIVES);
         assert_eq!(store.load(&newest_id).unwrap().1, bytes);
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn authenticated_history_scopes_are_isolated_and_legacy_is_unavailable() {
+        let root = std::env::temp_dir().join(format!("wcth-actor-scope-{}", Uuid::new_v4()));
+        let device = HistoryStore::at(root.clone()).unwrap();
+        let owner_a = "a".repeat(64);
+        let owner_b = "b".repeat(64);
+        let a = device.scoped(&owner_a).unwrap();
+        let b = device.scoped(&owner_b).unwrap();
+        let id = Uuid::new_v4().to_string();
+        let bytes = VecDeque::from(b"private-output".to_vec());
+        a.save(&id, bytes.len() as u64, &bytes).unwrap();
+        assert_eq!(a.load(&id).unwrap().1, bytes);
+        assert!(b.load(&id).is_err());
+        device.save(&id, bytes.len() as u64, &bytes).unwrap();
+        assert!(b.load(&id).is_err());
+        assert!(device.scoped("../escape").is_err());
+        assert!(device.scoped(&"A".repeat(64)).is_err());
+        assert!(device.scoped(&"f".repeat(64)).unwrap().load(&id).is_err());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
