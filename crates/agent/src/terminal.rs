@@ -407,7 +407,10 @@ impl TerminalManager {
             .sessions
             .lock()
             .map_err(|_| anyhow!("terminal session lock poisoned"))?;
-        if sessions.get(id).is_none_or(|session| session.owner_scope != scope) {
+        if sessions
+            .get(id)
+            .is_none_or(|session| session.owner_scope != scope)
+        {
             return Err(anyhow!("terminal session not found"));
         }
         let session = sessions
