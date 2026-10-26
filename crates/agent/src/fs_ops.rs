@@ -1290,6 +1290,34 @@ pub fn write(
     expected_sha256: Option<&str>,
     with_undo: bool,
 ) -> Result<Value> {
+    write_impl(
+        policy, raw, content_base64, create_parents, expected_sha256, with_undo, None,
+    )
+}
+
+pub fn write_scoped(
+    policy: &PathPolicy,
+    raw: &str,
+    content_base64: &str,
+    create_parents: bool,
+    expected_sha256: Option<&str>,
+    with_undo: bool,
+    undo_scope: &str,
+) -> Result<Value> {
+    write_impl(
+        policy, raw, content_base64, create_parents, expected_sha256, with_undo, Some(undo_scope),
+    )
+}
+
+fn write_impl(
+    policy: &PathPolicy,
+    raw: &str,
+    content_base64: &str,
+    create_parents: bool,
+    expected_sha256: Option<&str>,
+    with_undo: bool,
+    undo_scope: Option<&str>,
+) -> Result<Value> {
     let path = policy.resolve_for_create(raw)?;
     let bytes = STANDARD
         .decode(content_base64)
@@ -1345,7 +1373,7 @@ pub fn write(
         let (original, previous_sha) = previous
             .as_ref()
             .ok_or_else(|| anyhow!("undo_requires_existing_file"))?;
-        let (id, snapshot_path) = save_undo_snapshot(&path, original, previous_sha, &next_sha)?;
+        let (id, snapshot_path) = save_undo_snapshot(&path, original, previous_sha, &next_sha, undo_scope)?;
         Some((id, snapshot_path, previous_sha.clone()))
     } else {
         None
@@ -1374,6 +1402,30 @@ pub fn append(
     content_base64: &str,
     expected_sha256: Option<&str>,
     with_undo: bool,
+) -> Result<Value> {
+    append_impl(policy, raw, content_base64, expected_sha256, with_undo, None)
+}
+
+pub fn append_scoped(
+    policy: &PathPolicy,
+    raw: &str,
+    content_base64: &str,
+    expected_sha256: Option<&str>,
+    with_undo: bool,
+    undo_scope: &str,
+) -> Result<Value> {
+    append_impl(
+        policy, raw, content_base64, expected_sha256, with_undo, Some(undo_scope),
+    )
+}
+
+fn append_impl(
+    policy: &PathPolicy,
+    raw: &str,
+    content_base64: &str,
+    expected_sha256: Option<&str>,
+    with_undo: bool,
+    undo_scope: Option<&str>,
 ) -> Result<Value> {
     let path = policy.resolve_for_create(raw)?;
     let bytes = STANDARD
@@ -1414,6 +1466,7 @@ pub fn append(
                 &original,
                 &previous_sha,
                 &next_sha,
+                undo_scope,
             )?)
         } else {
             None
@@ -1453,6 +1506,32 @@ pub fn replace_text(
     replacement: &str,
     replace_all: bool,
     expected_sha256: Option<&str>,
+) -> Result<Value> {
+    replace_text_impl(policy, raw, search, replacement, replace_all, expected_sha256, None)
+}
+
+pub fn replace_text_scoped(
+    policy: &PathPolicy,
+    raw: &str,
+    search: &str,
+    replacement: &str,
+    replace_all: bool,
+    expected_sha256: Option<&str>,
+    undo_scope: &str,
+) -> Result<Value> {
+    replace_text_impl(
+        policy, raw, search, replacement, replace_all, expected_sha256, Some(undo_scope),
+    )
+}
+
+fn replace_text_impl(
+    policy: &PathPolicy,
+    raw: &str,
+    search: &str,
+    replacement: &str,
+    replace_all: bool,
+    expected_sha256: Option<&str>,
+    undo_scope: Option<&str>,
 ) -> Result<Value> {
     if search.is_empty() {
         return Err(anyhow!("search text cannot be empty"));
@@ -1515,7 +1594,7 @@ pub fn replace_text(
 
     let next_sha256 = format!("{:x}", Sha256::digest(updated.as_bytes()));
     let (undo_id, snapshot) =
-        save_undo_snapshot(&path, original.as_bytes(), &previous_sha256, &next_sha256)?;
+        save_undo_snapshot(&path, original.as_bytes(), &previous_sha256, &next_sha256, undo_scope)?;
     if let Err(error) = atomic_write(&path, updated.as_bytes()) {
         let _ = fs::remove_file(&snapshot);
         return Err(error);
@@ -1658,9 +1737,9 @@ mod undo_crash_cleanup_tests {
     }
 }
 
-fn ensure_undo_capacity(dir: &Path, path: &Path, incoming: u64, max_total: u64) -> Result<()> {
+fn ensure_undo_capacity(dir: &Path, path: &Path, incoming: u64, max_total: u64, scope: Option<&str>) -> Result<()> {
     let (count, used_bytes) = undo_storage_usage(dir)?;
-    if undo_entries(path, dir)?.len() >= MAX_UNDO_PER_FILE
+    if undo_entries(path, dir, scope)?.len() >= MAX_UNDO_PER_FILE
         || count >= MAX_UNDO_PER_DIRECTORY
         || used_bytes
             .checked_add(incoming)
@@ -1669,6 +1748,26 @@ fn ensure_undo_capacity(dir: &Path, path: &Path, incoming: u64, max_total: u64) 
         return Err(anyhow!("undo_snapshot_quota_exceeded"));
     }
     Ok(())
+}
+
+pub fn undo_scope_fingerprint(
+    organization_id: &str,
+    actor: &str,
+    device_id: &str,
+) -> Result<String> {
+    let parts = [organization_id, actor, device_id];
+    if parts
+        .iter()
+        .any(|part| part.is_empty() || part.len() > 256 || part.contains('\0'))
+    {
+        return Err(anyhow!("invalid_undo_scope"));
+    }
+    let mut digest = Sha256::new();
+    for part in ["wecommander-undo-v2", organization_id, actor, device_id] {
+        digest.update((part.len() as u32).to_be_bytes());
+        digest.update(part.as_bytes());
+    }
+    Ok(format!("{:x}", digest.finalize()))
 }
 
 fn undo_prefix(path: &Path) -> String {
@@ -1746,7 +1845,7 @@ fn undo_dir(_path: &Path, create: bool) -> Result<Option<std::path::PathBuf>> {
     Ok(Some(dir))
 }
 
-fn undo_entries(path: &Path, dir: &Path) -> Result<Vec<(String, u64)>> {
+fn undo_entries(path: &Path, dir: &Path, scope: Option<&str>) -> Result<Vec<(String, u64)>> {
     let prefix = format!("{}-", undo_prefix(path));
     let mut result = Vec::new();
     for entry in fs::read_dir(dir)? {
@@ -1765,6 +1864,20 @@ fn undo_entries(path: &Path, dir: &Path) -> Result<Vec<(String, u64)>> {
         if !meta.is_file() || meta.file_type().is_symlink() {
             return Err(anyhow!("unsafe_undo_snapshot"));
         }
+        // Legacy v1 snapshots have no owner; authenticated requests cannot
+        // list them. v2 snapshots are bound to org/actor/enrolled device.
+        let mut payload = Vec::new();
+        open_regular_read(&entry.path())?
+            .take(MAX_UNDO_FILE_BYTES + 1)
+            .read_to_end(&mut payload)?;
+        if payload.len() as u64 > MAX_UNDO_FILE_BYTES {
+            return Err(anyhow!("undo_snapshot_too_large"));
+        }
+        let record: Value = serde_json::from_slice(&payload).context("invalid_undo_snapshot")?;
+        let version = if scope.is_some() { 2 } else { 1 };
+        if record["version"] != version || record["ownerScope"].as_str() != scope {
+            continue;
+        }
         result.push((id.to_owned(), meta.len()));
     }
     result.sort_by(|a, b| a.0.cmp(&b.0));
@@ -1776,6 +1889,7 @@ fn save_undo_snapshot(
     previous: &[u8],
     previous_sha: &str,
     next_sha: &str,
+    undo_scope: Option<&str>,
 ) -> Result<(String, std::path::PathBuf)> {
     let _directory_guard = undo_directory_lock()?;
     let dir = undo_dir(path, true)?.ok_or_else(|| anyhow!("undo_directory_unavailable"))?;
@@ -1784,7 +1898,8 @@ fn save_undo_snapshot(
     let destination = dir.join(filename);
     let temporary = dir.join(format!(".{}.tmp", Uuid::new_v4()));
     let payload = serde_json::to_vec(&json!({
-        "version": 1,
+        "version": if undo_scope.is_some() { 2 } else { 1 },
+        "ownerScope": undo_scope,
         "path": path.to_string_lossy(),
         "previousSha256": previous_sha,
         "nextSha256": next_sha,
@@ -1793,7 +1908,7 @@ fn save_undo_snapshot(
     if payload.len() as u64 > MAX_UNDO_FILE_BYTES {
         return Err(anyhow!("undo_snapshot_too_large"));
     }
-    ensure_undo_capacity(&dir, path, payload.len() as u64, MAX_UNDO_TOTAL_BYTES)?;
+    ensure_undo_capacity(&dir, path, payload.len() as u64, MAX_UNDO_TOTAL_BYTES, undo_scope)?;
     let result = (|| -> Result<()> {
         let mut options = fs::OpenOptions::new();
         options.write(true).create_new(true);
@@ -1821,6 +1936,14 @@ fn save_undo_snapshot(
 
 /// List bounded, disk-persisted undo snapshots for an allowlisted regular file.
 pub fn versions(policy: &PathPolicy, raw: &str) -> Result<Value> {
+    versions_impl(policy, raw, None)
+}
+
+pub fn versions_scoped(policy: &PathPolicy, raw: &str, undo_scope: &str) -> Result<Value> {
+    versions_impl(policy, raw, Some(undo_scope))
+}
+
+fn versions_impl(policy: &PathPolicy, raw: &str, undo_scope: Option<&str>) -> Result<Value> {
     let path = policy.resolve_existing(raw)?;
     if !path.is_file() {
         return Err(anyhow!("path is not a file"));
@@ -1833,7 +1956,7 @@ pub fn versions(policy: &PathPolicy, raw: &str) -> Result<Value> {
     let entries = match undo_dir(&path, false)? {
         Some(dir) => {
             undo_storage_usage(&dir)?;
-            undo_entries(&path, &dir)?
+            undo_entries(&path, &dir, undo_scope)?
         }
         None => Vec::new(),
     };
@@ -1847,6 +1970,26 @@ pub fn versions(policy: &PathPolicy, raw: &str) -> Result<Value> {
 /// Undo a guarded text replacement only if the current bytes still match its
 /// post-edit digest. Snapshot files are read-only evidence, never executable.
 pub fn undo(policy: &PathPolicy, raw: &str, undo_id: &str, expected_sha256: &str) -> Result<Value> {
+    undo_impl(policy, raw, undo_id, expected_sha256, None)
+}
+
+pub fn undo_scoped(
+    policy: &PathPolicy,
+    raw: &str,
+    undo_id: &str,
+    expected_sha256: &str,
+    undo_scope: &str,
+) -> Result<Value> {
+    undo_impl(policy, raw, undo_id, expected_sha256, Some(undo_scope))
+}
+
+fn undo_impl(
+    policy: &PathPolicy,
+    raw: &str,
+    undo_id: &str,
+    expected_sha256: &str,
+    undo_scope: Option<&str>,
+) -> Result<Value> {
     let id = Uuid::parse_str(undo_id).map_err(|_| anyhow!("invalid_undo_id"))?;
     let path = policy.resolve_existing(raw)?;
     if !path.is_file() {
@@ -1869,7 +2012,11 @@ pub fn undo(policy: &PathPolicy, raw: &str, undo_id: &str, expected_sha256: &str
         return Err(anyhow!("undo_snapshot_too_large"));
     }
     let record: Value = serde_json::from_slice(&encoded).context("invalid_undo_snapshot")?;
-    if record["version"] != 1 || record["path"].as_str() != Some(path.to_string_lossy().as_ref()) {
+    let expected_version = if undo_scope.is_some() { 2 } else { 1 };
+    if record["version"] != expected_version || record["ownerScope"].as_str() != undo_scope {
+        return Err(anyhow!("undo_snapshot_not_found"));
+    }
+    if record["path"].as_str() != Some(path.to_string_lossy().as_ref()) {
         return Err(anyhow!("undo_snapshot_path_mismatch"));
     }
     let previous = STANDARD.decode(
@@ -1903,6 +2050,44 @@ pub fn undo(policy: &PathPolicy, raw: &str, undo_id: &str, expected_sha256: &str
         "sha256": format!("{:x}", Sha256::digest(&previous)),
         "previousSha256": current_sha, "undoConsumed": consumed
     }))
+}
+
+#[cfg(test)]
+mod undo_scope_tests {
+    use super::*;
+
+    #[test]
+    fn tenant_actor_and_device_undo_boundaries_fail_closed() {
+        let root = std::env::temp_dir().join(format!("commender-undo-scope-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let target = root.join("scope.txt");
+        fs::write(&target, b"before").unwrap();
+        let path = target.to_str().unwrap();
+        let owner = undo_scope_fingerprint("org-a", "actor-a", "device-a").unwrap();
+        let foreign_actor = undo_scope_fingerprint("org-a", "actor-b", "device-a").unwrap();
+        let foreign_org = undo_scope_fingerprint("org-b", "actor-a", "device-a").unwrap();
+        let foreign_device = undo_scope_fingerprint("org-a", "actor-a", "device-b").unwrap();
+        let changed =
+            replace_text_scoped(&policy, path, "before", "after", false, None, &owner).unwrap();
+        let id = changed["undoId"].as_str().unwrap();
+        let sha = changed["sha256"].as_str().unwrap();
+        for foreign in [&foreign_actor, &foreign_org, &foreign_device] {
+            assert!(versions_scoped(&policy, path, foreign).unwrap()["versions"]
+                .as_array().unwrap().is_empty());
+            assert!(undo_scoped(&policy, path, id, sha, foreign).is_err());
+            assert_eq!(fs::read(&target).unwrap(), b"after");
+        }
+        assert!(versions(&policy, path).unwrap()["versions"]
+            .as_array().unwrap().is_empty());
+        assert!(undo(&policy, path, id, sha).is_err());
+        assert_eq!(versions_scoped(&policy, path, &owner).unwrap()["versions"]
+            .as_array().unwrap().len(), 1);
+        assert!(undo_scoped(&policy, path, id, sha, &owner).unwrap()["ok"]
+            .as_bool().unwrap());
+        assert_eq!(fs::read(&target).unwrap(), b"before");
+        fs::remove_dir_all(root).unwrap();
+    }
 }
 
 /// Stage writes beside their target so incomplete writes never truncate

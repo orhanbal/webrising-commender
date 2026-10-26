@@ -2,7 +2,7 @@ use crate::{
     approval, docx_ops, fs_ops, image_ops,
     policy::PathPolicy,
     process_ops,
-    protocol::{AgentAction, Risk},
+    protocol::{AgentAction, Risk, UndoScope},
     spreadsheet_ops, system_ops,
     task_manager::TaskManager,
     terminal::TerminalManager,
@@ -19,6 +19,7 @@ pub struct ExecutionContext<'a> {
     pub approval_token: Option<&'a str>,
     pub approval_key: &'a str,
     pub device_id: &'a str,
+    pub undo_scope: Option<&'a UndoScope>,
     pub cancelled: Arc<AtomicBool>,
     pub paused: Arc<AtomicBool>,
     pub search_progress: Option<mpsc::Sender<Value>>,
@@ -32,6 +33,7 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
         approval_token,
         approval_key,
         device_id,
+        undo_scope,
         cancelled,
         paused,
         search_progress,
@@ -41,6 +43,17 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
             .ok_or_else(|| anyhow!("approval token required for high-risk action"))?;
         approval::verify(token, approval_key, device_id, &action)?;
     }
+
+    // Only the authenticated Gateway sets this scope, never tool arguments.
+    // Device identity is taken from the enrolled Agent configuration.
+    let undo_key = undo_scope
+        .map(|scope| fs_ops::undo_scope_fingerprint(&scope.organization_id, &scope.actor, device_id))
+        .transpose()?;
+    let require_undo_key = || {
+        undo_key
+            .as_deref()
+            .ok_or_else(|| anyhow!("undo_scope_required"))
+    };
 
     match action {
         AgentAction::SystemInfo => system_ops::info(),
@@ -173,26 +186,55 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
             create_parents,
             expected_sha256,
             with_undo,
-        } => fs_ops::write(
-            policy,
-            &path,
-            &content_base64,
-            create_parents.unwrap_or(false),
-            expected_sha256.as_deref(),
-            with_undo.unwrap_or(false),
-        ),
+        } => {
+            let with_undo = with_undo.unwrap_or(false);
+            if with_undo {
+                fs_ops::write_scoped(
+                    policy,
+                    &path,
+                    &content_base64,
+                    create_parents.unwrap_or(false),
+                    expected_sha256.as_deref(),
+                    true,
+                    require_undo_key()?,
+                )
+            } else {
+                fs_ops::write(
+                    policy,
+                    &path,
+                    &content_base64,
+                    create_parents.unwrap_or(false),
+                    expected_sha256.as_deref(),
+                    false,
+                )
+            }
+        },
         AgentAction::FsAppend {
             path,
             content_base64,
             expected_sha256,
             with_undo,
-        } => fs_ops::append(
-            policy,
-            &path,
-            &content_base64,
-            expected_sha256.as_deref(),
-            with_undo.unwrap_or(false),
-        ),
+        } => {
+            let with_undo = with_undo.unwrap_or(false);
+            if with_undo {
+                fs_ops::append_scoped(
+                    policy,
+                    &path,
+                    &content_base64,
+                    expected_sha256.as_deref(),
+                    true,
+                    require_undo_key()?,
+                )
+            } else {
+                fs_ops::append(
+                    policy,
+                    &path,
+                    &content_base64,
+                    expected_sha256.as_deref(),
+                    false,
+                )
+            }
+        },
         AgentAction::FsMkdir { path, recursive } => {
             fs_ops::mkdir(policy, &path, recursive.unwrap_or(false))
         }
@@ -308,20 +350,23 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
             replace,
             replace_all,
             expected_sha256,
-        } => fs_ops::replace_text(
+        } => fs_ops::replace_text_scoped(
             policy,
             &path,
             &search,
             &replace,
             replace_all.unwrap_or(false),
             expected_sha256.as_deref(),
+            require_undo_key()?,
         ),
-        AgentAction::FsVersions { path } => fs_ops::versions(policy, &path),
+        AgentAction::FsVersions { path } => {
+            fs_ops::versions_scoped(policy, &path, require_undo_key()?)
+        },
         AgentAction::FsUndo {
             path,
             undo_id,
             expected_sha256,
-        } => fs_ops::undo(policy, &path, &undo_id, &expected_sha256),
+        } => fs_ops::undo_scoped(policy, &path, &undo_id, &expected_sha256, require_undo_key()?),
         AgentAction::ProcessExec {
             command,
             cwd,

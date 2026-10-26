@@ -13,6 +13,7 @@ pub enum GatewayMessage {
         action: AgentAction,
         approval_token: Option<String>,
         start_paused: Option<bool>,
+        undo_scope: Option<UndoScope>,
     },
     Cancel {
         request_id: String,
@@ -25,6 +26,13 @@ pub enum GatewayMessage {
         #[serde(rename = "timestamp")]
         _timestamp: String,
     },
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UndoScope {
+    pub organization_id: String,
+    pub actor: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

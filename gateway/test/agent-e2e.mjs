@@ -1042,6 +1042,26 @@ try {
   });
   assert.equal(typeof replay.error, "string");
   console.log("agent-e2e: durable guarded fs_replace undo survived stale/replay negative tests");
+  // Foreign tenant/actor/device owner evidence must remain invisible.
+  const foreignUndoId = "11111111-1111-4111-8111-111111111111";
+  const foreignPrefix = createHash("sha256").update(raceFile).digest("hex");
+  const foreignSnapshot = path.join(tempRoot, "xdg-data", "webrising-commender", "file-versions",
+    `${foreignPrefix}-${foreignUndoId}.undo`);
+  fs.writeFileSync(foreignSnapshot, JSON.stringify({
+    version: 2, ownerScope: "0".repeat(64), path: raceFile,
+    previousSha256: "0".repeat(64), nextSha256: "0".repeat(64),
+    contentBase64: Buffer.from("foreign").toString("base64"),
+  }));
+  const foreignListing = await tool(1578, "fs_versions", { device_id: deviceId, path: raceFile });
+  assert.equal(foreignListing.versions.some((item) => item.undoId === foreignUndoId), false);
+  const foreignUndo = await tool(1579, "fs_undo", {
+    device_id: deviceId, path: raceFile, undo_id: foreignUndoId,
+    expected_sha256: createHash("sha256").update("race-seed").digest("hex"),
+  });
+  assert.equal(typeof foreignUndo.error, "string");
+  assert.equal(fs.readFileSync(raceFile, "utf8"), "race-seed");
+  fs.rmSync(foreignSnapshot);
+  console.log("agent-e2e: foreign undo owner hidden and restore denied");
   // 3B retention: age a real Agent-created snapshot on disk and verify that
   // the next MCP listing prunes it, without modifying the edited source file.
   const expiring = await tool(574, "fs_replace", {

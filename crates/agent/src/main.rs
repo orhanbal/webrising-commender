@@ -445,6 +445,7 @@ async fn connected_loop(
                         action,
                         approval_token,
                         start_paused,
+                        undo_scope,
                     } => {
                         let task_writer = Arc::clone(&writer);
                         let task_policy = Arc::clone(&policy);
@@ -511,6 +512,7 @@ async fn connected_loop(
                                     approval_token: approval_token.as_deref(),
                                     approval_key: &approval_key,
                                     device_id: &device_id,
+                                    undo_scope: undo_scope.as_ref(),
                                     cancelled: task_cancelled,
                                     paused: task_paused,
                                     // Consume the sender on every path. If this is not a
