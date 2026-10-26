@@ -47,7 +47,9 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
     // Only the authenticated Gateway sets this scope, never tool arguments.
     // Device identity is taken from the enrolled Agent configuration.
     let undo_key = undo_scope
-        .map(|scope| fs_ops::undo_scope_fingerprint(&scope.organization_id, &scope.actor, device_id))
+        .map(|scope| {
+            fs_ops::undo_scope_fingerprint(&scope.organization_id, &scope.actor, device_id)
+        })
         .transpose()?;
     let require_undo_key = || {
         undo_key
@@ -208,7 +210,7 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
                     false,
                 )
             }
-        },
+        }
         AgentAction::FsAppend {
             path,
             content_base64,
@@ -234,7 +236,7 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
                     false,
                 )
             }
-        },
+        }
         AgentAction::FsMkdir { path, recursive } => {
             fs_ops::mkdir(policy, &path, recursive.unwrap_or(false))
         }
@@ -361,12 +363,18 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
         ),
         AgentAction::FsVersions { path } => {
             fs_ops::versions_scoped(policy, &path, require_undo_key()?)
-        },
+        }
         AgentAction::FsUndo {
             path,
             undo_id,
             expected_sha256,
-        } => fs_ops::undo_scoped(policy, &path, &undo_id, &expected_sha256, require_undo_key()?),
+        } => fs_ops::undo_scoped(
+            policy,
+            &path,
+            &undo_id,
+            &expected_sha256,
+            require_undo_key()?,
+        ),
         AgentAction::ProcessExec {
             command,
             cwd,

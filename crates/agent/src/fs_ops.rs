@@ -1291,7 +1291,13 @@ pub fn write(
     with_undo: bool,
 ) -> Result<Value> {
     write_impl(
-        policy, raw, content_base64, create_parents, expected_sha256, with_undo, None,
+        policy,
+        raw,
+        content_base64,
+        create_parents,
+        expected_sha256,
+        with_undo,
+        None,
     )
 }
 
@@ -1305,7 +1311,13 @@ pub fn write_scoped(
     undo_scope: &str,
 ) -> Result<Value> {
     write_impl(
-        policy, raw, content_base64, create_parents, expected_sha256, with_undo, Some(undo_scope),
+        policy,
+        raw,
+        content_base64,
+        create_parents,
+        expected_sha256,
+        with_undo,
+        Some(undo_scope),
     )
 }
 
@@ -1373,7 +1385,8 @@ fn write_impl(
         let (original, previous_sha) = previous
             .as_ref()
             .ok_or_else(|| anyhow!("undo_requires_existing_file"))?;
-        let (id, snapshot_path) = save_undo_snapshot(&path, original, previous_sha, &next_sha, undo_scope)?;
+        let (id, snapshot_path) =
+            save_undo_snapshot(&path, original, previous_sha, &next_sha, undo_scope)?;
         Some((id, snapshot_path, previous_sha.clone()))
     } else {
         None
@@ -1403,7 +1416,14 @@ pub fn append(
     expected_sha256: Option<&str>,
     with_undo: bool,
 ) -> Result<Value> {
-    append_impl(policy, raw, content_base64, expected_sha256, with_undo, None)
+    append_impl(
+        policy,
+        raw,
+        content_base64,
+        expected_sha256,
+        with_undo,
+        None,
+    )
 }
 
 pub fn append_scoped(
@@ -1415,7 +1435,12 @@ pub fn append_scoped(
     undo_scope: &str,
 ) -> Result<Value> {
     append_impl(
-        policy, raw, content_base64, expected_sha256, with_undo, Some(undo_scope),
+        policy,
+        raw,
+        content_base64,
+        expected_sha256,
+        with_undo,
+        Some(undo_scope),
     )
 }
 
@@ -1507,7 +1532,15 @@ pub fn replace_text(
     replace_all: bool,
     expected_sha256: Option<&str>,
 ) -> Result<Value> {
-    replace_text_impl(policy, raw, search, replacement, replace_all, expected_sha256, None)
+    replace_text_impl(
+        policy,
+        raw,
+        search,
+        replacement,
+        replace_all,
+        expected_sha256,
+        None,
+    )
 }
 
 pub fn replace_text_scoped(
@@ -1520,7 +1553,13 @@ pub fn replace_text_scoped(
     undo_scope: &str,
 ) -> Result<Value> {
     replace_text_impl(
-        policy, raw, search, replacement, replace_all, expected_sha256, Some(undo_scope),
+        policy,
+        raw,
+        search,
+        replacement,
+        replace_all,
+        expected_sha256,
+        Some(undo_scope),
     )
 }
 
@@ -1593,8 +1632,13 @@ fn replace_text_impl(
     }
 
     let next_sha256 = format!("{:x}", Sha256::digest(updated.as_bytes()));
-    let (undo_id, snapshot) =
-        save_undo_snapshot(&path, original.as_bytes(), &previous_sha256, &next_sha256, undo_scope)?;
+    let (undo_id, snapshot) = save_undo_snapshot(
+        &path,
+        original.as_bytes(),
+        &previous_sha256,
+        &next_sha256,
+        undo_scope,
+    )?;
     if let Err(error) = atomic_write(&path, updated.as_bytes()) {
         let _ = fs::remove_file(&snapshot);
         return Err(error);
@@ -1737,7 +1781,13 @@ mod undo_crash_cleanup_tests {
     }
 }
 
-fn ensure_undo_capacity(dir: &Path, path: &Path, incoming: u64, max_total: u64, scope: Option<&str>) -> Result<()> {
+fn ensure_undo_capacity(
+    dir: &Path,
+    path: &Path,
+    incoming: u64,
+    max_total: u64,
+    scope: Option<&str>,
+) -> Result<()> {
     let (count, used_bytes) = undo_storage_usage(dir)?;
     if undo_entries(path, dir, scope)?.len() >= MAX_UNDO_PER_FILE
         || count >= MAX_UNDO_PER_DIRECTORY
@@ -1908,7 +1958,13 @@ fn save_undo_snapshot(
     if payload.len() as u64 > MAX_UNDO_FILE_BYTES {
         return Err(anyhow!("undo_snapshot_too_large"));
     }
-    ensure_undo_capacity(&dir, path, payload.len() as u64, MAX_UNDO_TOTAL_BYTES, undo_scope)?;
+    ensure_undo_capacity(
+        &dir,
+        path,
+        payload.len() as u64,
+        MAX_UNDO_TOTAL_BYTES,
+        undo_scope,
+    )?;
     let result = (|| -> Result<()> {
         let mut options = fs::OpenOptions::new();
         options.write(true).create_new(true);
@@ -2074,17 +2130,27 @@ mod undo_scope_tests {
         let sha = changed["sha256"].as_str().unwrap();
         for foreign in [&foreign_actor, &foreign_org, &foreign_device] {
             assert!(versions_scoped(&policy, path, foreign).unwrap()["versions"]
-                .as_array().unwrap().is_empty());
+                .as_array()
+                .unwrap()
+                .is_empty());
             assert!(undo_scoped(&policy, path, id, sha, foreign).is_err());
             assert_eq!(fs::read(&target).unwrap(), b"after");
         }
         assert!(versions(&policy, path).unwrap()["versions"]
-            .as_array().unwrap().is_empty());
+            .as_array()
+            .unwrap()
+            .is_empty());
         assert!(undo(&policy, path, id, sha).is_err());
-        assert_eq!(versions_scoped(&policy, path, &owner).unwrap()["versions"]
-            .as_array().unwrap().len(), 1);
+        assert_eq!(
+            versions_scoped(&policy, path, &owner).unwrap()["versions"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
         assert!(undo_scoped(&policy, path, id, sha, &owner).unwrap()["ok"]
-            .as_bool().unwrap());
+            .as_bool()
+            .unwrap());
         assert_eq!(fs::read(&target).unwrap(), b"before");
         fs::remove_dir_all(root).unwrap();
     }
