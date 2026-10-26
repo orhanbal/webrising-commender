@@ -1524,6 +1524,7 @@ fn append_impl(
     Ok(json!({ "ok": true, "path": path.to_string_lossy(), "appendedBytes": bytes.len() }))
 }
 
+#[cfg(test)]
 pub fn replace_text(
     policy: &PathPolicy,
     raw: &str,
@@ -1991,6 +1992,7 @@ fn save_undo_snapshot(
 }
 
 /// List bounded, disk-persisted undo snapshots for an allowlisted regular file.
+#[cfg(test)]
 pub fn versions(policy: &PathPolicy, raw: &str) -> Result<Value> {
     versions_impl(policy, raw, None)
 }
@@ -2025,6 +2027,7 @@ fn versions_impl(policy: &PathPolicy, raw: &str, undo_scope: Option<&str>) -> Re
 
 /// Undo a guarded text replacement only if the current bytes still match its
 /// post-edit digest. Snapshot files are read-only evidence, never executable.
+#[cfg(test)]
 pub fn undo(policy: &PathPolicy, raw: &str, undo_id: &str, expected_sha256: &str) -> Result<Value> {
     undo_impl(policy, raw, undo_id, expected_sha256, None)
 }
@@ -4031,8 +4034,8 @@ mod undo_version_tests {
         let path = root.join("edit.txt");
         let snapshot = root.join(format!("{}-{}.undo", undo_prefix(&path), Uuid::new_v4()));
         fs::write(&snapshot, b"123456").unwrap();
-        assert!(ensure_undo_capacity(&root, &path, 5, 10).is_err());
-        assert!(ensure_undo_capacity(&root, &path, 4, 10).is_ok());
+        assert!(ensure_undo_capacity(&root, &path, 5, 10, None).is_err());
+        assert!(ensure_undo_capacity(&root, &path, 4, 10, None).is_ok());
         assert_eq!(fs::read(&snapshot).unwrap(), b"123456");
         fs::remove_dir_all(root).unwrap();
     }
