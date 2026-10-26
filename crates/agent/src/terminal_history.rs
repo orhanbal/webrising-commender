@@ -134,6 +134,20 @@ impl HistoryStore {
         Ok(lock)
     }
 
+    // Test-only fault barrier: deterministic SIGKILL after fsync or rename.
+    // Not compiled into release builds; no runtime fault-injection surface.
+    #[cfg(test)]
+    fn pause_for_crash_fixture(phase: &str) -> Result<()> {
+        if std::env::var("WCTH_CRASH_PHASE").as_deref() == Ok(phase) {
+            let marker = std::env::var("WCTH_CRASH_MARKER")?;
+            fs::write(marker, phase.as_bytes())?;
+            loop {
+                std::thread::sleep(Duration::from_secs(1));
+            }
+        }
+        Ok(())
+    }
+
     fn valid_id(id: &str) -> Result<()> {
         if Uuid::parse_str(id).map(|u| u.to_string()).ok().as_deref() != Some(id) {
             return Err(anyhow!("invalid terminal session id"));
@@ -218,8 +232,12 @@ impl HistoryStore {
             checksum.update(b);
             f.write_all(&checksum.finalize())?;
             f.sync_all()?;
+            #[cfg(test)]
+            Self::pause_for_crash_fixture("before_rename")?;
             // Unique generations avoid non-atomic overwrite on Windows.
             fs::rename(&temp, &target)?;
+            #[cfg(test)]
+            Self::pause_for_crash_fixture("after_rename")?;
             #[cfg(unix)]
             File::open(&self.dir)?.sync_all()?;
             Ok(())
@@ -399,6 +417,73 @@ impl HistoryStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Executed only when launched as a child test process. The parent sends
+    // SIGKILL at the deterministic barrier rather than trusting timing.
+    #[cfg(unix)]
+    #[test]
+    fn process_crash_snapshot_worker() {
+        let Ok(root) = std::env::var("WCTH_CRASH_WORKER_ROOT") else {
+            return;
+        };
+        let id = std::env::var("WCTH_CRASH_WORKER_ID").unwrap();
+        let phase = std::env::var("WCTH_CRASH_PHASE").unwrap();
+        let total = if phase == "before_rename" { 6 } else { 9 };
+        let store = HistoryStore::at(PathBuf::from(root)).unwrap();
+        store
+            .save(&id, total, &VecDeque::from(b"newer".to_vec()))
+            .unwrap();
+        panic!("crash worker escaped the fault barrier");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sigkill_during_snapshot_write_preserves_last_complete_generation() {
+        use std::process::{Command, Stdio};
+        let dir = std::env::temp_dir().join(format!("wcth-crash-{}", Uuid::new_v4()));
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let id = Uuid::new_v4().to_string();
+        store.save(&id, 3, &VecDeque::from(b"old".to_vec())).unwrap();
+        let marker = dir.join("crash-ready");
+        for (phase, expected_total) in [("before_rename", 3_u64), ("after_rename", 9_u64)] {
+            let _ = fs::remove_file(&marker);
+            let mut child = Command::new(std::env::current_exe().unwrap())
+                .arg("--exact")
+                .arg("terminal_history::tests::process_crash_snapshot_worker")
+                .arg("--nocapture")
+                .env("WCTH_CRASH_WORKER_ROOT", &dir)
+                .env("WCTH_CRASH_WORKER_ID", &id)
+                .env("WCTH_CRASH_PHASE", phase)
+                .env("WCTH_CRASH_MARKER", &marker)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap();
+            let start = std::time::Instant::now();
+            while !marker.exists() && start.elapsed() < Duration::from_secs(10) {
+                if let Some(status) = child.try_wait().unwrap() {
+                    panic!("crash worker exited before barrier: {status}");
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            // Never leave a blocked worker alive on assertion failure.
+            let ready = marker.exists();
+            unsafe {
+                libc::kill(child.id() as i32, libc::SIGKILL);
+            }
+            let status = child.wait().unwrap();
+            assert!(ready, "worker did not reach {phase} barrier");
+            assert!(!status.success(), "SIGKILL worker unexpectedly succeeded");
+            // Before rename, only the old committed snapshot is visible.
+            // After rename, the new generation wins and startup prune removes
+            // the old generation. This is process-crash, not power-loss proof.
+            assert_eq!(store.load(&id).unwrap().0, expected_total);
+            let restarted = HistoryStore::at(dir.clone()).unwrap();
+            assert_eq!(restarted.load(&id).unwrap().0, expected_total);
+            assert_eq!(restarted.versions(&id).unwrap().len(), 1);
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn lock_contention_times_out_without_pruning_or_writing() {
