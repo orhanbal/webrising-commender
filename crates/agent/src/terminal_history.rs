@@ -386,7 +386,10 @@ mod tests {
         ready_rx.recv_timeout(Duration::from_secs(3)).unwrap();
         assert!(done_rx.recv_timeout(Duration::from_millis(100)).is_err());
         drop(held);
-        done_rx.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
+        done_rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .unwrap();
         worker.join().unwrap();
         fs::remove_dir_all(dir).unwrap();
     }
@@ -445,8 +448,15 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(snapshots.len(), MAX_ARCHIVES);
         for name in snapshots.iter().take(5) {
-            let (id, _) = name.strip_suffix(".hist").unwrap().rsplit_once('-').unwrap();
-            assert_eq!(store.load(id).unwrap().1, VecDeque::from(b"cross-process-output".to_vec()));
+            let (id, _) = name
+                .strip_suffix(".hist")
+                .unwrap()
+                .rsplit_once('-')
+                .unwrap();
+            assert_eq!(
+                store.load(id).unwrap().1,
+                VecDeque::from(b"cross-process-output".to_vec())
+            );
         }
         fs::remove_dir_all(dir).unwrap();
     }
