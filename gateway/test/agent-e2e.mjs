@@ -1062,6 +1062,94 @@ try {
   assert.equal(fs.readFileSync(raceFile, "utf8"), "race-seed");
   fs.rmSync(foreignSnapshot);
   console.log("agent-e2e: foreign undo owner hidden and restore denied");
+
+  // 3B real multi-principal acceptance: two independently authenticated API
+  // tokens in the same tenant may edit the same allowlisted file, but must
+  // never list or restore each other's durable undo snapshots. A third token
+  // from another tenant cannot even address the enrolled device. The MCP
+  // caller cannot forge the scope via tool arguments.
+  const actorA = await jsonFetch("/api/tokens", {
+    method: "POST", headers: authHeaders,
+    body: JSON.stringify({ name: "E2E Undo Actor A", role: "operator" }),
+  });
+  const actorB = await jsonFetch("/api/tokens", {
+    method: "POST", headers: authHeaders,
+    body: JSON.stringify({ name: "E2E Undo Actor B", role: "operator" }),
+  });
+  const otherTenant = await jsonFetch("/api/organizations", {
+    method: "POST", headers: authHeaders,
+    body: JSON.stringify({ name: "E2E Undo Isolation Tenant" }),
+  });
+  const tenantActor = await jsonFetch("/api/tokens", {
+    method: "POST", headers: authHeaders,
+    body: JSON.stringify({
+      name: "E2E Other Tenant Actor", role: "operator",
+      organizationId: otherTenant.item.id,
+    }),
+  });
+  const headersFor = (token) => ({
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+  });
+  const toolAs = async (headers, id, name, args) => {
+    const response = await jsonFetch("/mcp", {
+      method: "POST", headers,
+      body: JSON.stringify({
+        jsonrpc: "2.0", id, method: "tools/call",
+        params: { name, arguments: args },
+      }),
+    });
+    return toolData(response);
+  };
+  const headersA = headersFor(actorA.token);
+  const headersB = headersFor(actorB.token);
+  const headersTenant = headersFor(tenantActor.token);
+  for (const [writerHeaders, readerHeaders, id, replacement] of [
+    [headersA, headersB, 1610, "actor-a-edited"],
+    [headersB, headersA, 1620, "actor-b-edited"],
+  ]) {
+    const edit = await toolAs(writerHeaders, id, "fs_replace", {
+      device_id: deviceId, path: raceFile, search: "race-seed", replace: replacement,
+    });
+    assert.equal(edit.ok, true, JSON.stringify(edit));
+    assert.match(edit.undoId, /^[0-9a-f-]{36}$/);
+    const ownVersions = await toolAs(writerHeaders, id + 1, "fs_versions", {
+      device_id: deviceId, path: raceFile,
+    });
+    assert.ok(ownVersions.versions.some((item) => item.undoId === edit.undoId));
+    const foreignVersions = await toolAs(readerHeaders, id + 2, "fs_versions", {
+      device_id: deviceId, path: raceFile,
+    });
+    assert.equal(foreignVersions.versions.some((item) => item.undoId === edit.undoId), false);
+    const foreignRestore = await toolAs(readerHeaders, id + 3, "fs_undo", {
+      device_id: deviceId, path: raceFile, undo_id: edit.undoId,
+      expected_sha256: edit.sha256,
+      organization_id: otherTenant.item.id, actor: "control-api",
+      owner_scope: "0".repeat(64),
+    });
+    assert.equal(typeof foreignRestore.error, "string", JSON.stringify(foreignRestore));
+    assert.equal(fs.readFileSync(raceFile, "utf8"), replacement);
+    const restoredByOwner = await toolAs(writerHeaders, id + 4, "fs_undo", {
+      device_id: deviceId, path: raceFile, undo_id: edit.undoId,
+      expected_sha256: edit.sha256,
+    });
+    assert.equal(restoredByOwner.ok, true, JSON.stringify(restoredByOwner));
+    assert.equal(fs.readFileSync(raceFile, "utf8"), "race-seed");
+  }
+  const tenantDevices = await toolAs(headersTenant, 1630, "devices_list", {});
+  assert.equal(tenantDevices.some((item) => item.id === deviceId), false);
+  for (const [id, name, args] of [
+    [1631, "fs_versions", { device_id: deviceId, path: raceFile }],
+    [1632, "fs_replace", {
+      device_id: deviceId, path: raceFile,
+      search: "race-seed", replace: "cross-tenant-write",
+    }],
+  ]) {
+    const denied = await toolAs(headersTenant, id, name, args);
+    assert.equal(denied.error, "device_not_found", JSON.stringify(denied));
+  }
+  assert.equal(fs.readFileSync(raceFile, "utf8"), "race-seed");
+  console.log("agent-e2e: two real actors isolated undo; foreign tenant device denied");
   // 3B retention: age a real Agent-created snapshot on disk and verify that
   // the next MCP listing prunes it, without modifying the edited source file.
   const expiring = await tool(574, "fs_replace", {
