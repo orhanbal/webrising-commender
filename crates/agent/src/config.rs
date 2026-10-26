@@ -33,7 +33,7 @@ fn validate_config_parent_chain(parent: &Path) -> Result<()> {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(error.into()),
         }
-        if home.as_deref() == Some(ancestor) || temporary_root == ancestor {
+        if home.as_deref() == Some(ancestor) || temporary_root.as_path() == ancestor {
             break;
         }
     }
