@@ -1391,7 +1391,11 @@ fn write_impl(
     } else {
         None
     };
-    if let Err(error) = atomic_write(&path, &bytes, previous.as_ref().map(|(_, sha)| sha.as_str())) {
+    if let Err(error) = atomic_write(
+        &path,
+        &bytes,
+        previous.as_ref().map(|(_, sha)| sha.as_str()),
+    ) {
         if let Some((_, snapshot_path, _)) = &snapshot {
             let _ = fs::remove_file(snapshot_path);
         }
@@ -2388,7 +2392,7 @@ mod atomic_write_parent_tests {
         assert_eq!(
             fs::read_dir(&base)
                 .unwrap()
-                .filter_map(Result::ok)
+                .filter_map(|entry| entry.ok())
                 .filter(|entry| entry.file_name().to_string_lossy().starts_with(".wecommander-"))
                 .count(),
             0
