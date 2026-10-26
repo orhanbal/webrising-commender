@@ -414,7 +414,8 @@ mod tests {
     #[test]
     fn config_rejects_symlinked_grandparent_before_mkdir_or_secret_read() {
         use std::os::unix::fs::symlink;
-        let root = std::env::temp_dir().join(format!("wc-config-grandparent-{}", uuid::Uuid::new_v4()));
+        let root =
+            std::env::temp_dir().join(format!("wc-config-grandparent-{}", uuid::Uuid::new_v4()));
         let destination = root.join("destination");
         let actual_parent = destination.join("private");
         fs::create_dir_all(&actual_parent).unwrap();
@@ -429,15 +430,19 @@ mod tests {
         };
         let actual_path = actual_parent.join("agent.json");
         config.save(&actual_path).unwrap();
+        let original_bytes = fs::read(&actual_path).unwrap();
         let alias = root.join("alias");
         symlink(&destination, &alias).unwrap();
         let redirected = alias.join("private").join("agent.json");
-        assert!(AgentConfig::load(&redirected).unwrap_err().to_string().contains("unsafe_agent_config_parent"));
-        assert!(config.save(&redirected).unwrap_err().to_string().contains("unsafe_agent_config_parent"));
-        assert_eq!(fs::read(&actual_path).unwrap(), fs::read(&destination.join("private/agent.json")).unwrap());
+        let load_error = AgentConfig::load(&redirected).unwrap_err();
+        assert!(load_error.to_string().contains("unsafe_agent_config_parent"));
+        let save_error = config.save(&redirected).unwrap_err();
+        assert!(save_error.to_string().contains("unsafe_agent_config_parent"));
+        assert_eq!(fs::read(&actual_path).unwrap(), original_bytes);
 
         let nonexistent = alias.join("new-private").join("agent.json");
-        assert!(config.save(&nonexistent).unwrap_err().to_string().contains("unsafe_agent_config_parent"));
+        let create_error = config.save(&nonexistent).unwrap_err();
+        assert!(create_error.to_string().contains("unsafe_agent_config_parent"));
         assert!(!destination.join("new-private").exists());
         fs::remove_dir_all(root).unwrap();
     }
@@ -446,7 +451,8 @@ mod tests {
     #[test]
     fn windows_config_junction_grandparent_cannot_redirect_credentials() {
         use std::process::Command;
-        let root = std::env::temp_dir().join(format!("wc-config-junction-{}", uuid::Uuid::new_v4()));
+        let root =
+            std::env::temp_dir().join(format!("wc-config-junction-{}", uuid::Uuid::new_v4()));
         let outside = root.join("outside");
         fs::create_dir_all(&outside).unwrap();
         let config = AgentConfig {
@@ -479,10 +485,10 @@ mod tests {
         assert!(AgentConfig::load(&redirected).is_err());
         assert!(config.save(&redirected).is_err());
         assert_eq!(fs::read(&original).unwrap(), original_bytes);
-        assert!(config.save(&junction.join("new-private").join("agent.json")).is_err());
+        let new_path = junction.join("new-private").join("agent.json");
+        assert!(config.save(&new_path).is_err());
         assert!(!outside.join("new-private").exists());
         fs::remove_dir(&junction).unwrap();
         fs::remove_dir_all(root).unwrap();
     }
-
 }
