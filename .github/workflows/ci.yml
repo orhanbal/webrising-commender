@@ -58,6 +58,9 @@ jobs:
       - name: Windows undo snapshot junction rejection
         if: runner.os == 'Windows'
         run: cargo test -p webrising-commender-agent windows_undo_junction_ -- --nocapture
+      - name: Windows config credential junction rejection
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_config_junction_ -- --nocapture
 
   gateway:
     runs-on: ubuntu-latest
