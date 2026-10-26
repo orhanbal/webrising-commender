@@ -1672,7 +1672,7 @@ try {
   assert.equal(typeof quotaSession.sessionId, "string");
   await tool(337, "terminal_input", {
     device_id: deviceId, session_id: quotaSession.sessionId,
-    data_base64: Buffer.from("echo LIVE_HISTORY_QUOTA_OK\\n").toString("base64"),
+    data_base64: Buffer.from("echo LIVE_HISTORY_QUOTA_OK\n").toString("base64"),
   });
   await waitFor(async () => {
     const page = await tool(338, "terminal_read_page", {
