@@ -17,6 +17,8 @@ const CHECKSUM_BYTES: usize = 32;
 const CAP: usize = 1024 * 1024;
 const TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const MAX_ARCHIVES: usize = 64;
+// A wedged second Agent must not block all terminal operations indefinitely.
+const LOCK_WAIT: Duration = Duration::from_secs(5);
 
 // One device namespace per enrollment; snapshots are read-only after restart.
 pub struct HistoryStore {
@@ -80,6 +82,10 @@ impl HistoryStore {
     // Keep this file forever: deleting a lock file allows different processes
     // to lock different inodes and bypass the archive quota.
     fn lock_directory(&self) -> Result<File> {
+        self.lock_directory_with_timeout(LOCK_WAIT)
+    }
+
+    fn lock_directory_with_timeout(&self, timeout: Duration) -> Result<File> {
         let path = self.dir.join(".history.lock");
         let mut options = OpenOptions::new();
         options.read(true).write(true).create(true);
@@ -93,10 +99,26 @@ impl HistoryStore {
         if !lock.metadata()?.is_file() {
             return Err(anyhow!("unsafe terminal history lock"));
         }
-        // std::fs::File::lock is cross-process on Unix and Windows (Rust >= 1.89).
-        // A failed lock must fail closed; never prune without holding it.
-        lock.lock()
-            .context("terminal history filesystem lock failed")?;
+        // try_lock uses the same cross-process OS lock as File::lock (Rust >=
+        // 1.89). A wedged process cannot stall terminal reads/writes forever.
+        // Never read, save, or prune after a timeout: fail closed instead.
+        let start = std::time::Instant::now();
+        loop {
+            match lock.try_lock() {
+                Ok(()) => break,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    if start.elapsed() >= timeout {
+                        return Err(anyhow!("terminal history filesystem lock timeout"));
+                    }
+                    std::thread::sleep(
+                        Duration::from_millis(25).min(timeout.saturating_sub(start.elapsed())),
+                    );
+                }
+                Err(error) => {
+                    return Err(anyhow!("terminal history filesystem lock failed: {error}"));
+                }
+            }
+        }
         let path_meta = fs::symlink_metadata(&path)?;
         if !path_meta.is_file() || path_meta.file_type().is_symlink() {
             return Err(anyhow!("unsafe terminal history lock"));
@@ -369,6 +391,60 @@ impl HistoryStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lock_contention_times_out_without_pruning_or_writing() {
+        let dir = std::env::temp_dir().join(format!("wcth-timeout-{}", Uuid::new_v4()));
+        let a = HistoryStore::at(dir.clone()).unwrap();
+        let b = HistoryStore::at(dir.clone()).unwrap();
+        let stale = dir.join(format!(".{}.tmp", Uuid::new_v4()));
+        fs::write(&stale, b"must-survive-timeout").unwrap();
+        let old = SystemTime::now() - Duration::from_secs(7200);
+        File::open(&stale)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(old))
+            .unwrap();
+
+        let held = a.lock_directory().unwrap();
+        let start = std::time::Instant::now();
+        let error = b
+            .lock_directory_with_timeout(Duration::from_millis(100))
+            .unwrap_err();
+        assert!(error.to_string().contains("lock timeout"));
+        assert!(start.elapsed() < Duration::from_secs(2));
+        assert_eq!(fs::read(&stale).unwrap(), b"must-survive-timeout");
+        drop(held);
+
+        // Once the owner releases the lock, ordinary maintenance resumes.
+        b.prune().unwrap();
+        assert!(!stale.exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn expired_archive_is_removed_while_current_and_foreign_files_survive() {
+        let dir = std::env::temp_dir().join(format!("wcth-ttl-{}", Uuid::new_v4()));
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let expired_id = Uuid::new_v4().to_string();
+        let current_id = Uuid::new_v4().to_string();
+        let bytes = VecDeque::from(b"bounded".to_vec());
+        store.save(&expired_id, bytes.len() as u64, &bytes).unwrap();
+        let expired_path = store.versions(&expired_id).unwrap().pop().unwrap().1;
+        File::open(&expired_path)
+            .unwrap()
+            .set_times(
+                fs::FileTimes::new()
+                    .set_modified(SystemTime::now() - TTL - Duration::from_secs(60)),
+            )
+            .unwrap();
+        let foreign = dir.join("foreign-admin-file");
+        fs::write(&foreign, b"keep").unwrap();
+        store.save(&current_id, bytes.len() as u64, &bytes).unwrap();
+        assert!(store.versions(&expired_id).unwrap().is_empty());
+        assert_eq!(store.load(&current_id).unwrap().1, bytes);
+        assert_eq!(fs::read(&foreign).unwrap(), b"keep");
+        fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn independent_stores_wait_for_same_directory_lock() {
