@@ -106,7 +106,7 @@ impl HistoryStore {
         loop {
             match lock.try_lock() {
                 Ok(()) => break,
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                Err(std::fs::TryLockError::WouldBlock) => {
                     if start.elapsed() >= timeout {
                         return Err(anyhow!("terminal history filesystem lock timeout"));
                     }
