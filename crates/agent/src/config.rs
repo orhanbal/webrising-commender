@@ -364,7 +364,8 @@ mod tests {
     #[test]
     fn config_hardlink_is_rejected_without_replacing_original_credentials() {
         use std::os::unix::fs::MetadataExt;
-        let root = std::env::temp_dir().join(format!("wc-config-hardlink-{}", uuid::Uuid::new_v4()));
+        let root =
+            std::env::temp_dir().join(format!("wc-config-hardlink-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
         let original = root.join("original.json");
         let alias = root.join("alias.json");
@@ -390,7 +391,8 @@ mod tests {
             .to_string()
             .contains("unsafe_agent_config_hardlink"));
         config.device_token = "replacement-secret".into();
-        assert!(config.save(&alias)
+        assert!(config
+            .save(&alias)
             .unwrap_err()
             .to_string()
             .contains("unsafe_agent_config_hardlink"));
