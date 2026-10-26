@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context, Result};
+use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, VecDeque},
     fs::{self, File, OpenOptions},
@@ -9,7 +10,10 @@ use std::{
 };
 use uuid::Uuid;
 
-const MAGIC: &[u8; 8] = b"WCTH0001";
+const MAGIC_V1: &[u8; 8] = b"WCTH0001";
+const MAGIC_V2: &[u8; 8] = b"WCTH0002";
+const HEADER_BYTES: usize = 20;
+const CHECKSUM_BYTES: usize = 32;
 const CAP: usize = 1024 * 1024;
 const TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const MAX_ARCHIVES: usize = 64;
@@ -117,12 +121,22 @@ impl HistoryStore {
         }
         let result = (|| -> Result<()> {
             let mut f = options.open(&temp)?;
-            f.write_all(MAGIC)?;
-            f.write_all(&total.to_le_bytes())?;
-            f.write_all(&(bytes.len() as u32).to_le_bytes())?;
+            f.write_all(MAGIC_V2)?;
+            let total_bytes = total.to_le_bytes();
+            let count_bytes = (bytes.len() as u32).to_le_bytes();
+            f.write_all(&total_bytes)?;
+            f.write_all(&count_bytes)?;
             let (a, b) = bytes.as_slices();
             f.write_all(a)?;
             f.write_all(b)?;
+            // Version 2 protects the durable output against silent same-size
+            // corruption. The checksum covers the sequence, length and data.
+            let mut checksum = Sha256::new();
+            checksum.update(total_bytes);
+            checksum.update(count_bytes);
+            checksum.update(a);
+            checksum.update(b);
+            f.write_all(&checksum.finalize())?;
             f.sync_all()?;
             // Unique generations avoid non-atomic overwrite on Windows.
             fs::rename(&temp, &target)?;
@@ -153,7 +167,7 @@ impl HistoryStore {
             .pop()
             .ok_or_else(|| anyhow!("terminal session not found"))?;
         let meta = fs::symlink_metadata(&path)?;
-        if !meta.is_file() || meta.file_type().is_symlink() || meta.len() > (CAP + 20) as u64 {
+        if !meta.is_file() || meta.file_type().is_symlink() || meta.len() > (CAP + HEADER_BYTES + CHECKSUM_BYTES) as u64 {
             return Err(anyhow!("unsafe terminal history snapshot"));
         }
         // Pin the opened inode and reject a last-moment symlink swap on
@@ -167,7 +181,7 @@ impl HistoryStore {
         }
         let snapshot = options.open(&path)?;
         let opened_meta = snapshot.metadata()?;
-        if !opened_meta.is_file() || opened_meta.len() > (CAP + 20) as u64 {
+        if !opened_meta.is_file() || opened_meta.len() > (CAP + HEADER_BYTES + CHECKSUM_BYTES) as u64 {
             return Err(anyhow!("unsafe terminal history snapshot"));
         }
         if SystemTime::now()
@@ -178,16 +192,33 @@ impl HistoryStore {
             return Err(anyhow!("terminal history expired"));
         }
         let mut raw = Vec::new();
-        snapshot.take((CAP + 21) as u64).read_to_end(&mut raw)?;
-        if raw.len() < 20 || &raw[..8] != MAGIC {
+        snapshot
+            .take((CAP + HEADER_BYTES + CHECKSUM_BYTES + 1) as u64)
+            .read_to_end(&mut raw)?;
+        if raw.len() < HEADER_BYTES {
             return Err(anyhow!("corrupt terminal history"));
         }
+        let is_v2 = if &raw[..8] == MAGIC_V2 {
+            true
+        } else if &raw[..8] == MAGIC_V1 {
+            false
+        } else {
+            return Err(anyhow!("corrupt terminal history"));
+        };
         let total = u64::from_le_bytes(raw[8..16].try_into()?);
         let count = u32::from_le_bytes(raw[16..20].try_into()?) as usize;
-        if total != seq || count > CAP || raw.len() != count + 20 || total < count as u64 {
+        let payload_end = HEADER_BYTES + count;
+        let expected_len = payload_end + if is_v2 { CHECKSUM_BYTES } else { 0 };
+        if total != seq || count > CAP || raw.len() != expected_len || total < count as u64 {
             return Err(anyhow!("corrupt terminal history bounds"));
         }
-        Ok((total, raw[20..].iter().copied().collect()))
+        if is_v2 {
+            let checksum = Sha256::digest(&raw[8..payload_end]);
+            if checksum.as_slice() != &raw[payload_end..] {
+                return Err(anyhow!("corrupt terminal history checksum"));
+            }
+        }
+        Ok((total, raw[HEADER_BYTES..payload_end].iter().copied().collect()))
     }
 
     pub fn prune(&self) -> Result<()> {
@@ -335,6 +366,43 @@ mod tests {
             fs::remove_file(outside).unwrap();
         }
     }
+    #[test]
+    fn v2_snapshot_rejects_same_length_payload_corruption() {
+        let dir = std::env::temp_dir().join(format!("wcth-integrity-{}", Uuid::new_v4()));
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let id = Uuid::new_v4().to_string();
+        store
+            .save(&id, 3, &VecDeque::from(b"abc".to_vec()))
+            .unwrap();
+        let path = store.versions(&id).unwrap().pop().unwrap().1;
+        let mut raw = fs::read(&path).unwrap();
+        assert_eq!(&raw[..8], MAGIC_V2);
+        raw[HEADER_BYTES] ^= 1;
+        fs::write(&path, raw).unwrap();
+        assert!(store
+            .load(&id)
+            .unwrap_err()
+            .to_string()
+            .contains("corrupt terminal history checksum"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn legacy_v1_snapshot_remains_readable() {
+        let dir = std::env::temp_dir().join(format!("wcth-legacy-{}", Uuid::new_v4()));
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let id = Uuid::new_v4().to_string();
+        let mut raw = MAGIC_V1.to_vec();
+        raw.extend_from_slice(&3_u64.to_le_bytes());
+        raw.extend_from_slice(&3_u32.to_le_bytes());
+        raw.extend_from_slice(b"abc");
+        fs::write(dir.join(format!("{id}-3.hist")), raw).unwrap();
+        let (total, bytes) = store.load(&id).unwrap();
+        assert_eq!(total, 3);
+        assert_eq!(bytes, VecDeque::from(b"abc".to_vec()));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
     #[test]
     fn prune_removes_only_owned_old_staging_and_preserves_unknown_files() {
         let dir = std::env::temp_dir().join(format!("wcth-prune-{}", Uuid::new_v4()));
