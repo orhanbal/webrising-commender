@@ -1,3 +1,11 @@
+## 26 Ekim 2026 — 3B/2D süreçler arası undo snapshot kota kilidi (DAR PASSED, GENEL PENDING)
+
+- **A / PASSED:** Giriş `main` HEAD [`74b4aae5`](https://github.com/orhanbal/webrising-commender/commit/74b4aae5071b6dd7a4706650aa6ce9692051a4f3), [CI #40377003225](https://github.com/orhanbal/webrising-commender/actions/runs/40377003225) **17/17 completed/success**; Rust 97/97, Agent MCP E2E PASSED, 4/4 artifact. Kritik kırmızı CI yoktu.
+- **B / PASSED (dar 3B/2D):** [`fb671908`](https://github.com/orhanbal/webrising-commender/commit/fb6719088c3080168e21bb86c46a6df1d06853f3) `fs_ops.rs` içinde undo snapshot kayıt/liste/geri alma akışlarını kalıcı `.undo.lock` üzerinden **süreçler arası OS kilidi** altında seri hale getirdi. En fazla 5 saniye bekleme, Unix O_NOFOLLOW/inode/nlink doğrulaması, kilit dosyasını retention/kota sayımından hariç tutma ve timeout'ta fail-closed var. Mevcut MCP şemaları ve tenant/actor/device scope değişmedi; ücretli runtime bağımlılığı eklenmedi.
+- **C / PASSED (dar negatif kabul):** Ayrı test işletim sistemi süreciyle lock contention → bounded timeout → release sonrası recovery ve kalıcı lock inode koruması test edildi. `process_undo_lock_worker` ve `undo_quota_lock_is_cross_process_bounded_and_recovers` Linux Rust CI'da PASSED. Bu, tüm platformlarda fiziksel kabul veya işbirliği yapmayan harici dosya yazıcılarına karşı transactional CAS kanıtı değildir.
+- **D / PASSED (KOD HEAD):** [CI #40382950306](https://github.com/orhanbal/webrising-commender/actions/runs/40382950306) at [`fb671908`](https://github.com/orhanbal/webrising-commender/commit/fb6719088c3080168e21bb86c46a6df1d06853f3): **17/17 jobs SUCCESS**, Rustfmt/Clippy PASSED, **99/99 Rust tests**, Agent MCP E2E PASSED; Linux/Windows/macOS/dashboard **4/4 artifacts** (`expired=false`). Bu plan commitinin **kendi HEAD CI sonucu ayrıca doğrulanmalıdır**.
+- **Açık kapılar:** **3B PENDING** (genel rollback, Windows reparse/parent yarışları, fiziksel OS, uzun soak); **2D PENDING** (tüm terminal/process/undo kota ve yarış E2E); **3A PENDING** (son SHA okuma–rename arasında noncooperative TOCTOU); **2B PENDING** (24 saat soak, gerçek MCP stale-writer). Fiziksel Windows/macOS/Ubuntu, canlı ChatGPT/Claude, Windows imza/SmartScreen ve Apple notarization **BLOCKED_EXTERNAL**. Genel eşdeğerlik **PENDING**. Yalnız `orhanbal/webrising-commender/main`; üretim/sunucu/başka repo/Desktop Commander/Remote Desktop Commander kullanılmadı.
+
 ## 26 Ekim 2026 — 3A guarded external-writer race: kod HEAD CI KABULÜ PASSED, genel 3A PENDING
 
 - **A / PASSED:** Önceki `451aafa3` [CI #40365126968](https://github.com/orhanbal/webrising-commender/actions/runs/40365126968) 17/17; Rust 95/95; Gateway→Agent→MCP PASSED. Girişte kırmızı CI yoktu.
@@ -22,9 +30,9 @@
 
 # WECOMMANDER — Hourly 1A–10D acceptance queue
 
-Last reviewed: 2026-10-26 (3A guarded SHA revalidation code CI PASSED, full 3A PENDING). **PENDING is not a claim that the feature is absent**; it means all required schema + Gateway/TypeScript + Rust Agent + authorization + real E2E + negative + applicable OS gates have not been evidenced. Prior accepted slices must not be repeated. No paid/limited runtime, production deployment, other repository, Desktop Commander, or Remote Desktop Commander.
+Last reviewed: 2026-10-26 (3B/2D cross-process undo lock code CI PASSED; overall 3B/2D PENDING). **PENDING is not a claim that the feature is absent**; it means all required schema + Gateway/TypeScript + Rust Agent + authorization + real E2E + negative + applicable OS gates have not been evidenced. Prior accepted slices must not be repeated. No paid/limited runtime, production deployment, other repository, Desktop Commander, or Remote Desktop Commander.
 
-Latest verified code HEAD: [`95a9daf6`](https://github.com/orhanbal/webrising-commender/commit/95a9daf6adb5d387f7cc9cb17d1c85aee1a1aac8); [CI #40375901141](https://github.com/orhanbal/webrising-commender/actions/runs/40375901141) 17/17 PASSED, Rust 97/97, real Agent MCP E2E PASSED, 4/4 artifacts. Documentation HEAD CI must be checked separately.
+Latest verified code HEAD: [`fb671908`](https://github.com/orhanbal/webrising-commender/commit/fb6719088c3080168e21bb86c46a6df1d06853f3); [CI #40382950306](https://github.com/orhanbal/webrising-commender/actions/runs/40382950306) 17/17 PASSED, Rust 99/99, Agent MCP E2E PASSED, 4/4 artifacts. Documentation HEAD CI must be checked separately.
 
 | Item | Scope | Overall acceptance |
 |---|---|---|
@@ -35,9 +43,9 @@ Latest verified code HEAD: [`95a9daf6`](https://github.com/orhanbal/webrising-co
 | 2A | PTY/REPL prompt and paged output | PENDING (full acceptance not yet established; partial implementations may exist) |
 | 2B | Durable terminal history and retention | PENDING (V1→V2 and 240-save/6-restart Rust tests PASSED on `451aafa3`; Windows junction negatives 2/2 PASSED; 24h soak, MCP stale writer, physical OS open) |
 | 2C | Process tree terminate/kill/cancel/cleanup | PENDING (full acceptance not yet established; partial implementations may exist) |
-| 2D | Terminal/process/history quota and concurrency | PENDING (full acceptance not yet established; partial implementations may exist) |
+| 2D | Terminal/process/history quota and concurrency | PENDING (cross-process undo quota OS lock and bounded timeout PASSED on `fb671908`; full terminal/process/undo E2E and physical OS open) |
 | 3A | Atomic file edit with SHA CAS and filesystem race safety | PENDING (pre-rename SHA revalidation, cross-process negative test and real MCP stale-SHA E2E PASSED on `95a9daf6`; noncooperative last-instant TOCTOU and physical OS gates open) |
-| 3B | Rollback, snapshot crash resilience and recovery | PENDING (SIGKILL test PASSED; full crash/rollback gates open) |
+| 3B | Rollback, snapshot crash resilience and recovery | PENDING (SIGKILL test and cross-process undo quota lock/negative tests PASSED; full crash/rollback, Windows reparse and physical OS gates open) |
 | 3C | Config policy, shell allowlist, audit | PENDING (full acceptance not yet established; partial implementations may exist) |
 | 3D | Tool history/usage/log secure paging | PENDING (full acceptance not yet established; partial implementations may exist) |
 | 4A | XLSX/XLSM read workbook/sheet/range/search | PENDING (full acceptance not yet established; partial implementations may exist) |
