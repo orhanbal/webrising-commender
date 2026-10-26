@@ -999,7 +999,9 @@ mod tests {
             }
             assert_eq!(store.load(&id).unwrap(), (total, expected.clone()));
             assert_eq!(store.versions(&id).unwrap().len(), 1);
-            assert!(store.save(&id, total - 1, &expected).is_err());
+            assert!(store
+                .save(&id, total - 1, &VecDeque::from(vec![cycle]))
+                .is_err());
         }
         let reopened = HistoryStore::at(dir.clone()).unwrap();
         assert_eq!(reopened.load(&id).unwrap(), (total, expected));
