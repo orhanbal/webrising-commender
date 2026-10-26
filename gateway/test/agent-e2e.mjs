@@ -1725,6 +1725,55 @@ try {
   assert.equal(quotaStopped.ok, true, JSON.stringify(quotaStopped));
   console.log("agent-e2e: live MCP PTY save enforced 64-archive quota without restart");
 
+  // 2B: exercise the five-second HistoryStore filesystem lock timeout through
+  // the real authenticated MCP -> Gateway -> Rust Agent path. The lock holder
+  // is an independent Linux process (util-linux is test-only, not a runtime
+  // dependency). A timeout must not modify the archived terminal data.
+  if (process.platform === "linux") {
+    const historyLockPath = path.join(historyDirectory, ".history.lock");
+    assert.equal(fs.existsSync(historyLockPath), true);
+    const filesBeforeLock = fs.readdirSync(historyDirectory).sort();
+    let lockReady = false;
+    let lockHolderError = "";
+    const lockHolder = spawn("flock", [
+      "-x", "-F", historyLockPath, "sh", "-c",
+      "printf 'HISTORY_LOCK_HELD\\n'; exec sleep 15",
+    ], { stdio: ["ignore", "pipe", "pipe"] });
+    lockHolder.stdout.on("data", (chunk) => {
+      if (String(chunk).includes("HISTORY_LOCK_HELD")) lockReady = true;
+    });
+    lockHolder.stderr.on("data", (chunk) => { lockHolderError += String(chunk); });
+    try {
+      await waitFor(() => {
+        if (lockHolder.exitCode !== null || lockHolder.signalCode !== null) {
+          throw new Error(`lock holder exited before acquiring lock: ${lockHolderError}`);
+        }
+        return lockReady;
+      }, 5000, 50);
+      const beganWaiting = Date.now();
+      const blockedArchive = await tool(355, "terminal_read_page", {
+        device_id: deviceId, session_id: quotaSession.sessionId,
+        offset_bytes: -8192, max_bytes: 8192,
+      });
+      assert.match(String(blockedArchive.error), /terminal history filesystem lock timeout/i);
+      assert.ok(Date.now() - beganWaiting >= 4000, "MCP lock timeout was not bounded by the real wait");
+      assert.deepEqual(fs.readdirSync(historyDirectory).sort(), filesBeforeLock,
+        "timed-out archive read unexpectedly changed the history directory");
+    } finally {
+      lockHolder.kill("SIGTERM");
+      if (lockHolder.exitCode === null && lockHolder.signalCode === null) {
+        await new Promise((resolve) => lockHolder.once("exit", resolve));
+      }
+    }
+    const archiveAfterLock = await tool(356, "terminal_read_page", {
+      device_id: deviceId, session_id: quotaSession.sessionId,
+      offset_bytes: -8192, max_bytes: 8192,
+    });
+    assert.equal(archiveAfterLock.archived, true, JSON.stringify(archiveAfterLock));
+    assert.match(archiveAfterLock.text, /LIVE_HISTORY_QUOTA_OK/);
+    console.log("agent-e2e: independent OS lock denied archived PTY MCP read after bounded timeout; unlock recovered");
+  }
+
   const taskAction = {
     kind: "task_start",
     command: "sleep 1; printf PERSISTENT_TASK_OK",
