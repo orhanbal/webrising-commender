@@ -1922,7 +1922,6 @@ mod undo_crash_cleanup_tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
-
     #[cfg(windows)]
     #[test]
     fn windows_undo_junction_parent_cannot_redirect_lock_creation() {
