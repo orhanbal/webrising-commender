@@ -1,3 +1,11 @@
+## 26 Ekim 2026 — 3A guarded external-writer race: kod HEAD CI KABULÜ PASSED, genel 3A PENDING
+
+- **A / PASSED:** Önceki `451aafa3` [CI #40365126968](https://github.com/orhanbal/webrising-commender/actions/runs/40365126968) 17/17; Rust 95/95; Gateway→Agent→MCP PASSED. Girişte kırmızı CI yoktu.
+- **B / PASSED (dar kod + güvenlik kabulü):** [`1828594f`](https://github.com/orhanbal/webrising-commender/commit/1828594fb458eda21b71b3b7dd5ed85127655d4a) guarded fs_write/fs_append/fs_replace/fs_undo için atomic rename öncesi pinned-parent/no-follow/bounded SHA tekrar doğrulaması ekledi. Rustfmt [`0a0f86f5`](https://github.com/orhanbal/webrising-commender/commit/0a0f86f5b27f8a740aaee000c31ab30f3c4704be), Clippy [`95a9daf6`](https://github.com/orhanbal/webrising-commender/commit/95a9daf6adb5d387f7cc9cb17d1c85aee1a1aac8) düzeltmeleriyle kapatıldı. **Bu, noncooperating external writer'a karşı linearizable CAS garantisi değildir.**
+- **C / PASSED (dar testler):** Ayrı OS süreç staging sonrası harici dosya değişimi negatif Rust testi `external_process_edit_during_atomic_stage_is_rejected` PASSED; harici güncelleme korunuyor ve staging artığı kalmıyor. Gerçek authenticated Gateway→Agent→MCP `fs_replace` eski SHA negatif E2E PASSED; log `agent-e2e: external stale SHA edit rejected; competing data preserved` ve `agent-e2e: ok`.
+- **D / PASSED (KOD HEAD):** [CI #40375901141](https://github.com/orhanbal/webrising-commender/actions/runs/40375901141) at [`95a9daf6`](https://github.com/orhanbal/webrising-commender/commit/95a9daf6adb5d387f7cc9cb17d1c85aee1a1aac8) **17/17 jobs completed/success**, Rustfmt/Clippy PASSED, **Rust 97/97**, Agent E2E PASSED, Windows/macOS CI builds PASSED; Linux/Windows/macOS/dashboard **4/4 artifacts**, `expired=false`. Önceki kırmızı Rustfmt ve Clippy işlerinin onarıldığı doğrulandı. **Bu dokümantasyon commitinin kendi HEAD CI sonucu ayrıca doğrulanacak.**
+- **Genel kabul:** **3A PENDING** (son SHA kontrolü ile rename arasındaki işbirliği yapmayan harici yazıcı TOCTOU yarışı, OS/izin sınırları ve fiziksel testler); **2B PENDING** (24 saat soak, gerçek MCP stale-writer). Fiziksel Windows/macOS/Ubuntu, canlı ChatGPT/Claude, Windows imza/SmartScreen ve Apple notarization **BLOCKED_EXTERNAL**. Genel Desktop Commander eşdeğerliği **PENDING**. Yalnız `orhanbal/webrising-commender/main`; üretim/sunucu/başka repo/Desktop Commander/Remote Desktop Commander yok, ücretli runtime eklenmedi.
+
 ## 26 Ekim 2026 — A/B/C/D: 3A external-writer SHA revalidation (CI PENDING)
 
 - **A / PASSED (giriş HEAD):** [CI #40365126968](https://github.com/orhanbal/webrising-commender/actions/runs/40365126968) at `451aafa397b909229285122ca79f81422ef0381f` **17/17 completed/success**; Rust job **95/95 tests**, real Gateway→Rust Agent→MCP E2E **PASSED**, Linux/Windows/macOS/dashboard **4/4 artifact (expired=false)**. V1→V2 history migration and 240-save/6-restart bounded tests passed; **24-hour soak remains PENDING**. [Distribution #40366154748](https://github.com/orhanbal/webrising-commender/actions/runs/40366154748) succeeded. No entry P0/CI red.
@@ -14,9 +22,9 @@
 
 # WECOMMANDER — Hourly 1A–10D acceptance queue
 
-Last reviewed: 2026-10-26 (3A external-writer SHA revalidation, code CI pending). **PENDING is not a claim that the feature is absent**; it means all required schema + Gateway/TypeScript + Rust Agent + authorization + real E2E + negative + applicable OS gates have not been evidenced. Prior accepted slices must not be repeated. No paid/limited runtime, production deployment, other repository, Desktop Commander, or Remote Desktop Commander.
+Last reviewed: 2026-10-26 (3A guarded SHA revalidation code CI PASSED, full 3A PENDING). **PENDING is not a claim that the feature is absent**; it means all required schema + Gateway/TypeScript + Rust Agent + authorization + real E2E + negative + applicable OS gates have not been evidenced. Prior accepted slices must not be repeated. No paid/limited runtime, production deployment, other repository, Desktop Commander, or Remote Desktop Commander.
 
-Latest code HEAD: [`25dd2a65`](https://github.com/orhanbal/webrising-commender/commit/25dd2a65b49aa770fb99d89a8a8f1a5618bd8480); [CI #40375031032](https://github.com/orhanbal/webrising-commender/actions/runs/40375031032) PENDING. Prior HEAD `451aafa3` [CI #40365126968](https://github.com/orhanbal/webrising-commender/actions/runs/40365126968) 17/17 PASSED, Rust 95/95, 4/4 artifacts.
+Latest verified code HEAD: [`95a9daf6`](https://github.com/orhanbal/webrising-commender/commit/95a9daf6adb5d387f7cc9cb17d1c85aee1a1aac8); [CI #40375901141](https://github.com/orhanbal/webrising-commender/actions/runs/40375901141) 17/17 PASSED, Rust 97/97, real Agent MCP E2E PASSED, 4/4 artifacts. Documentation HEAD CI must be checked separately.
 
 | Item | Scope | Overall acceptance |
 |---|---|---|
@@ -28,7 +36,7 @@ Latest code HEAD: [`25dd2a65`](https://github.com/orhanbal/webrising-commender/c
 | 2B | Durable terminal history and retention | PENDING (V1→V2 and 240-save/6-restart Rust tests PASSED on `451aafa3`; Windows junction negatives 2/2 PASSED; 24h soak, MCP stale writer, physical OS open) |
 | 2C | Process tree terminate/kill/cancel/cleanup | PENDING (full acceptance not yet established; partial implementations may exist) |
 | 2D | Terminal/process/history quota and concurrency | PENDING (full acceptance not yet established; partial implementations may exist) |
-| 3A | Atomic file edit with SHA CAS and filesystem race safety | PENDING (guarded pre-rename SHA revalidation and separate-process race negative test coded at `25dd2a65`; CI and noncooperative last-instant TOCTOU acceptance open) |
+| 3A | Atomic file edit with SHA CAS and filesystem race safety | PENDING (pre-rename SHA revalidation, cross-process negative test and real MCP stale-SHA E2E PASSED on `95a9daf6`; noncooperative last-instant TOCTOU and physical OS gates open) |
 | 3B | Rollback, snapshot crash resilience and recovery | PENDING (SIGKILL test PASSED; full crash/rollback gates open) |
 | 3C | Config policy, shell allowlist, audit | PENDING (full acceptance not yet established; partial implementations may exist) |
 | 3D | Tool history/usage/log secure paging | PENDING (full acceptance not yet established; partial implementations may exist) |
