@@ -2170,7 +2170,7 @@ mod undo_scope_tests {
 // Recheck a guarded edit against the actual opened file immediately before
 // committing the staged replacement. This narrows the external-writer window;
 // it is not a transactional CAS against uncooperative processes.
-fn verify_atomic_write_guard(mut existing: fs::File, expected: &str) -> Result<()> {
+fn verify_atomic_write_guard(existing: fs::File, expected: &str) -> Result<()> {
     let metadata = existing.metadata()?;
     if !metadata.is_file() || metadata.len() > HARD_READ_MAX as u64 {
         return Err(anyhow!("file_changed_since_read"));
