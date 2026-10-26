@@ -1427,6 +1427,23 @@ try {
   });
   assert.ok(terminals.items.some((item) => item.sessionId === started.sessionId && item.running));
 
+  // 2B: two authenticated principals must not observe or control each other's
+  // live terminal, even when both have access to the same enrolled device.
+  for (const [headers, requestId] of [[headersA, 340], [headersB, 350]]) {
+    const foreignList = await toolAs(headers, requestId, "terminal_list", { device_id: deviceId });
+    assert.equal(foreignList.items.some((item) => item.sessionId === started.sessionId), false);
+    const foreignPage = await toolAs(headers, requestId + 1, "terminal_read_page", {
+      device_id: deviceId, session_id: started.sessionId,
+    });
+    assert.match(String(foreignPage.error), /terminal session not found/i);
+    const foreignInput = await toolAs(headers, requestId + 2, "terminal_input", {
+      device_id: deviceId, session_id: started.sessionId,
+      data_base64: Buffer.from("echo UNAUTHORIZED\\n").toString("base64"),
+    });
+    assert.match(String(foreignInput.error), /terminal session not found/i);
+  }
+  console.log("agent-e2e: two real actors denied foreign live terminal list/read/input");
+
   await tool(106, "terminal_input", {
     device_id: deviceId,
     session_id: started.sessionId,
@@ -1592,8 +1609,12 @@ try {
   });
   // 2B negative restart acceptance: the native HistoryStore may reclaim
   // expired UUID staging files, never unrelated old dotfiles in its directory.
-  const historyDirectory = path.join(tempRoot, "xdg-data", "webrising-commender",
+  const historyDeviceDirectory = path.join(tempRoot, "xdg-data", "webrising-commender",
     "terminal-history", deviceId);
+  const scopedHistoryDirs = fs.readdirSync(historyDeviceDirectory).filter((name) =>
+    /^[a-f0-9]{64}$/.test(name) && fs.statSync(path.join(historyDeviceDirectory, name)).isDirectory());
+  assert.equal(scopedHistoryDirs.length, 1, "one authenticated admin terminal history namespace expected");
+  const historyDirectory = path.join(historyDeviceDirectory, scopedHistoryDirs[0]);
   assert.equal(fs.existsSync(historyDirectory), true);
   const oldHistoryStage = path.join(historyDirectory, ".00000000-0000-4000-8000-000000000003.tmp");
   const foreignHistoryStage = path.join(historyDirectory, ".foreign-maintenance.tmp");
@@ -1639,6 +1660,11 @@ try {
   const archiveFiles = fs.readdirSync(historyDirectory).filter((name) =>
     name.startsWith(`${archiveSession.sessionId}-`) && name.endsWith(".hist"));
   assert.equal(archiveFiles.length, 1);
+  const foreignArchived = await toolAs(headersA, 354, "terminal_read_page", {
+    device_id: deviceId, session_id: archiveSession.sessionId,
+  });
+  assert.match(String(foreignArchived.error), /terminal session not found/i);
+  console.log("agent-e2e: foreign actor denied durable PTY history after SIGKILL/restart");
   const archivePath = path.join(historyDirectory, archiveFiles[0]);
   const archiveRaw = fs.readFileSync(archivePath);
   assert.equal(archiveRaw.subarray(0, 8).toString("ascii"), "WCTH0002");
