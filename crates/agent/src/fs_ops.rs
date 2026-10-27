@@ -1952,6 +1952,16 @@ fn undo_storage_usage(dir: &Path) -> Result<(usize, u64)> {
         if !metadata.is_file() || metadata.file_type().is_symlink() {
             return Err(anyhow!("unsafe_undo_storage_entry"));
         }
+        // A hardlinked snapshot can alias a file outside our private store.
+        // Reject it before reading or retention pruning; a shared inode is
+        // not private evidence even if its filename looks like ours.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if metadata.nlink() != 1 {
+                return Err(anyhow!("unsafe_undo_storage_hardlink"));
+            }
+        }
         let name = entry.file_name().to_string_lossy().into_owned();
         // The persistent coordination inode is not an undo snapshot and must
         // not consume a version slot or be deleted by retention pruning.
@@ -2149,6 +2159,24 @@ mod undo_crash_cleanup_tests {
         fs::remove_dir_all(root).unwrap();
         fs::remove_dir_all(outside).unwrap();
     }
+    #[cfg(unix)]
+    #[test]
+    fn hardlinked_undo_snapshot_fails_closed_before_pruning_or_reading() {
+        let dir = std::env::temp_dir().join(format!("commender-undo-hardlink-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let outside = dir.with_extension("outside");
+        fs::write(&outside, b"outside-private").unwrap();
+        let alias = dir.join(format!("{}-{}.undo", "a".repeat(64), Uuid::new_v4()));
+        fs::hard_link(&outside, &alias).unwrap();
+        let error = undo_storage_usage(&dir).unwrap_err();
+        assert!(error.to_string().contains("unsafe_undo_storage_hardlink"));
+        assert_eq!(fs::read(&outside).unwrap(), b"outside-private");
+        fs::remove_file(&alias).unwrap();
+        assert_eq!(undo_storage_usage(&dir).unwrap(), (0, 0));
+        fs::remove_dir_all(dir).unwrap();
+        fs::remove_file(outside).unwrap();
+    }
+
     #[cfg(unix)]
     #[test]
     fn symlink_in_staging_directory_fails_closed_without_following_target() {
@@ -2562,6 +2590,15 @@ fn verify_atomic_write_guard(existing: fs::File, expected: &str) -> Result<()> {
     if !metadata.is_file() || metadata.len() > HARD_READ_MAX as u64 {
         return Err(anyhow!("file_changed_since_read"));
     }
+    // A hardlinked target may be changed through an alias without touching
+    // this path. Guarded edits cannot claim isolation for shared inodes.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if metadata.nlink() != 1 {
+            return Err(anyhow!("file_changed_since_read"));
+        }
+    }
     let mut current = Vec::new();
     existing
         .take(HARD_READ_MAX as u64 + 1)
@@ -2814,6 +2851,33 @@ mod atomic_write_parent_tests {
             0
         );
         fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn guarded_atomic_write_rejects_hardlinked_target_without_changing_alias() {
+        let dir = std::env::temp_dir().join(format!("commender-cas-hardlink-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("target.txt");
+        let alias = dir.join("alias.txt");
+        fs::write(&target, b"seed").unwrap();
+        fs::hard_link(&target, &alias).unwrap();
+        let expected = format!("{:x}", Sha256::digest(b"seed"));
+        let error = atomic_write(&target, b"agent-update", Some(&expected)).unwrap_err();
+        assert!(error.to_string().contains("file_changed_since_read"));
+        assert_eq!(fs::read(&target).unwrap(), b"seed");
+        assert_eq!(fs::read(&alias).unwrap(), b"seed");
+        assert_eq!(
+            fs::read_dir(&dir)
+                .unwrap()
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| entry.file_name().to_string_lossy().starts_with(".wecommander-"))
+                .count(),
+            0
+        );
+        fs::remove_file(&alias).unwrap();
+        atomic_write(&target, b"agent-update", Some(&expected)).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"agent-update");
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
