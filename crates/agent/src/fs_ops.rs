@@ -713,6 +713,25 @@ mod windows_file_reparse_tests {
     }
 
     #[test]
+    fn guarded_write_rejects_hardlinked_target_and_preserves_both_aliases() {
+        let root = std::env::temp_dir().join(format!("wc-write-hardlink-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let original = root.join("original.txt");
+        let alias = root.join("alias.txt");
+        fs::write(&original, b"before").unwrap();
+        fs::hard_link(&original, &alias).unwrap();
+        let sha = format!("{:x}", Sha256::digest(b"before"));
+        let error = atomic_write(&original, b"after", Some(&sha)).unwrap_err();
+        assert!(error.to_string().contains("file_changed_since_read"));
+        assert_eq!(fs::read(&original).unwrap(), b"before");
+        assert_eq!(fs::read(&alias).unwrap(), b"before");
+        fs::remove_file(&alias).unwrap();
+        atomic_write(&original, b"after", Some(&sha)).unwrap();
+        assert_eq!(fs::read(&original).unwrap(), b"after");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn parent_swap_after_resolution_cannot_redirect_atomic_write() {
         let base = std::env::temp_dir().join(format!("wc-write-swap-{}", Uuid::new_v4()));
         let allowed = base.join("allowed");
@@ -1836,6 +1855,51 @@ fn undo_directory_lock() -> Result<std::sync::MutexGuard<'static, ()>> {
 // points in every existing ancestor before creating, locking, reading or
 // pruning the private undo store. This is fail-closed path validation, not a
 // substitute for a Windows handle-relative traversal under hostile swaps.
+// Stable Rust has no Windows MetadataExt::number_of_links. Inspect the
+// already-open handle, not a replaceable pathname. A shared inode cannot be
+// treated as private undo evidence or a conflict-guarded write target.
+#[cfg(windows)]
+fn reject_windows_hardlinked_file(file: &fs::File) -> Result<()> {
+    use std::os::windows::io::AsRawHandle;
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct ByHandleFileInformation {
+        attributes: u32,
+        created: [u32; 2],
+        accessed: [u32; 2],
+        modified: [u32; 2],
+        volume_serial: u32,
+        size_high: u32,
+        size_low: u32,
+        link_count: u32,
+        index_high: u32,
+        index_low: u32,
+    }
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        #[link_name = "GetFileInformationByHandle"]
+        fn get_file_information_by_handle(
+            handle: *mut std::ffi::c_void,
+            info: *mut ByHandleFileInformation,
+        ) -> i32;
+    }
+
+    let mut info = ByHandleFileInformation::default();
+    // SAFETY: file owns a live handle and info matches BY_HANDLE_FILE_INFORMATION.
+    if unsafe { get_file_information_by_handle(file.as_raw_handle(), &mut info) } == 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    if info.attributes & 0x400 != 0 {
+        return Err(anyhow!("unsafe_undo_storage_entry"));
+    }
+    if info.link_count != 1 {
+        return Err(anyhow!("unsafe_undo_storage_hardlink"));
+    }
+    Ok(())
+}
+
 fn reject_windows_undo_reparse_ancestors(path: &Path) -> Result<()> {
     #[cfg(windows)]
     {
@@ -1907,6 +1971,7 @@ fn undo_cross_process_lock_with_timeout(dir: &Path, timeout: Duration) -> Result
         if path_meta.file_attributes() & 0x400 != 0 {
             return Err(anyhow!("unsafe_undo_lock_reparse_point"));
         }
+        reject_windows_hardlinked_file(&lock)?;
     }
     #[cfg(unix)]
     {
@@ -1962,6 +2027,8 @@ fn undo_storage_usage(dir: &Path) -> Result<(usize, u64)> {
                 return Err(anyhow!("unsafe_undo_storage_hardlink"));
             }
         }
+        #[cfg(windows)]
+        reject_windows_hardlinked_file(&open_regular_read(&entry.path())?)?;
         let name = entry.file_name().to_string_lossy().into_owned();
         // The persistent coordination inode is not an undo snapshot and must
         // not consume a version slot or be deleted by retention pruning.
@@ -2159,9 +2226,9 @@ mod undo_crash_cleanup_tests {
         fs::remove_dir_all(root).unwrap();
         fs::remove_dir_all(outside).unwrap();
     }
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     #[test]
-    fn hardlinked_undo_snapshot_fails_closed_before_pruning_or_reading() {
+    fn undo_hardlink_snapshot_fails_closed_before_pruning_or_reading() {
         let dir = std::env::temp_dir().join(format!("commender-undo-hardlink-{}", Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
         let outside = dir.with_extension("outside");
@@ -2173,6 +2240,24 @@ mod undo_crash_cleanup_tests {
         assert_eq!(fs::read(&outside).unwrap(), b"outside-private");
         fs::remove_file(&alias).unwrap();
         assert_eq!(undo_storage_usage(&dir).unwrap(), (0, 0));
+        fs::remove_dir_all(dir).unwrap();
+        fs::remove_file(outside).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_undo_hardlink_lock_rejected_without_touching_external_file() {
+        let dir = std::env::temp_dir().join(format!("wc-undo-lock-link-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let outside = dir.with_extension("outside");
+        fs::write(&outside, b"external-lock-content").unwrap();
+        let alias = dir.join(".undo.lock");
+        fs::hard_link(&outside, &alias).unwrap();
+        let error = undo_cross_process_lock(&dir).unwrap_err();
+        assert!(error.to_string().contains("unsafe_undo_storage_hardlink"));
+        assert_eq!(fs::read(&outside).unwrap(), b"external-lock-content");
+        fs::remove_file(&alias).unwrap();
+        drop(undo_cross_process_lock(&dir).unwrap());
         fs::remove_dir_all(dir).unwrap();
         fs::remove_file(outside).unwrap();
     }
@@ -2334,7 +2419,10 @@ fn undo_entries(path: &Path, dir: &Path, scope: Option<&str>) -> Result<Vec<(Str
         // Legacy v1 snapshots have no owner; authenticated requests cannot
         // list them. v2 snapshots are bound to org/actor/enrolled device.
         let mut payload = Vec::new();
-        open_regular_read(&entry.path())?
+        let reader = open_regular_read(&entry.path())?;
+        #[cfg(windows)]
+        reject_windows_hardlinked_file(&reader)?;
+        reader
             .take(MAX_UNDO_FILE_BYTES + 1)
             .read_to_end(&mut payload)?;
         if payload.len() as u64 > MAX_UNDO_FILE_BYTES {
@@ -2482,6 +2570,8 @@ fn undo_impl(
     undo_storage_usage(&dir)?;
     let snapshot = dir.join(format!("{}-{}.undo", undo_prefix(&path), id));
     let mut reader = open_regular_read(&snapshot)?;
+    #[cfg(windows)]
+    reject_windows_hardlinked_file(&reader)?;
     let mut encoded = Vec::new();
     std::io::Read::by_ref(&mut reader)
         .take(MAX_UNDO_FILE_BYTES + 1)
@@ -2592,6 +2682,10 @@ fn verify_atomic_write_guard(existing: fs::File, expected: &str) -> Result<()> {
     }
     // A hardlinked target may be changed through an alias without touching
     // this path. Guarded edits cannot claim isolation for shared inodes.
+    #[cfg(windows)]
+    if reject_windows_hardlinked_file(&existing).is_err() {
+        return Err(anyhow!("file_changed_since_read"));
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
