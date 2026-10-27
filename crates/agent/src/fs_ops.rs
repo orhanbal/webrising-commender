@@ -2475,6 +2475,22 @@ fn undo_dir(_path: &Path, create: bool) -> Result<Option<std::path::PathBuf>> {
     Ok(Some(dir))
 }
 
+// Quota scanning and opening a snapshot are separate filesystem operations.
+// Recheck the opened inode: an external process can replace a safe directory
+// entry with a hardlink between those operations.
+fn reject_undo_hardlinked_handle(file: &fs::File) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if file.metadata()?.nlink() != 1 {
+            return Err(anyhow!("unsafe_undo_storage_hardlink"));
+        }
+    }
+    #[cfg(windows)]
+    reject_windows_hardlinked_file(file)?;
+    Ok(())
+}
+
 fn undo_entries(path: &Path, dir: &Path, scope: Option<&str>) -> Result<Vec<(String, u64)>> {
     reject_windows_undo_reparse_ancestors(dir)?;
     let prefix = format!("{}-", undo_prefix(path));
@@ -2499,8 +2515,10 @@ fn undo_entries(path: &Path, dir: &Path, scope: Option<&str>) -> Result<Vec<(Str
         // list them. v2 snapshots are bound to org/actor/enrolled device.
         let mut payload = Vec::new();
         let reader = open_regular_read(&entry.path())?;
-        #[cfg(windows)]
-        reject_windows_hardlinked_file(&reader)?;
+        reject_undo_hardlinked_handle(&reader)?;
+        // Report the size of the inode we actually validated and read, not
+        // the possibly stale path metadata from before opening the file.
+        let snapshot_bytes = reader.metadata()?.len();
         reader
             .take(MAX_UNDO_FILE_BYTES + 1)
             .read_to_end(&mut payload)?;
@@ -2529,7 +2547,7 @@ fn undo_entries(path: &Path, dir: &Path, scope: Option<&str>) -> Result<Vec<(Str
         {
             return Err(anyhow!("undo_snapshot_checksum_mismatch"));
         }
-        result.push((id.to_owned(), meta.len()));
+        result.push((id.to_owned(), snapshot_bytes));
     }
     result.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(result)
@@ -2666,8 +2684,7 @@ fn undo_impl(
     undo_storage_usage(&dir)?;
     let snapshot = dir.join(format!("{}-{}.undo", undo_prefix(&path), id));
     let mut reader = open_regular_read(&snapshot)?;
-    #[cfg(windows)]
-    reject_windows_hardlinked_file(&reader)?;
+    reject_undo_hardlinked_handle(&reader)?;
     let mut encoded = Vec::new();
     std::io::Read::by_ref(&mut reader)
         .take(MAX_UNDO_FILE_BYTES + 1)
@@ -2714,6 +2731,36 @@ fn undo_impl(
         "sha256": format!("{:x}", Sha256::digest(&previous)),
         "previousSha256": current_sha, "undoConsumed": consumed
     }))
+}
+
+#[cfg(all(test, unix))]
+mod undo_open_handle_tests {
+    use super::*;
+
+    #[test]
+    fn hardlink_inserted_after_quota_scan_is_rejected_by_snapshot_reader() {
+        let root =
+            std::env::temp_dir().join(format!("commender-undo-open-{}", Uuid::new_v4()));
+        let dir = root.join("private");
+        fs::create_dir_all(&dir).unwrap();
+        let target = root.join("file.txt");
+        fs::write(&target, b"current").unwrap();
+        let outside = root.join("external");
+        fs::write(&outside, b"outside").unwrap();
+
+        assert_eq!(undo_storage_usage(&dir).unwrap(), (0, 0));
+        // Simulate an uncooperative writer inserting a hardlink after the
+        // quota scan, but before fs_versions opens the snapshot.
+        let alias = dir.join(format!("{}-{}.undo", undo_prefix(&target), Uuid::new_v4()));
+        fs::hard_link(&outside, &alias).unwrap();
+        let error = undo_entries(&target, &dir, None).unwrap_err();
+        assert!(error.to_string().contains("unsafe_undo_storage_hardlink"));
+        // The same opened-handle guard also protects fs_undo after its scan.
+        let file = open_regular_read(&alias).unwrap();
+        assert!(reject_undo_hardlinked_handle(&file).is_err());
+        assert_eq!(fs::read(&outside).unwrap(), b"outside");
+        fs::remove_dir_all(&root).unwrap();
+    }
 }
 
 #[cfg(test)]
