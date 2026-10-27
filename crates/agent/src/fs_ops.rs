@@ -737,8 +737,7 @@ mod windows_file_reparse_tests {
             return;
         };
         let expected = format!("{:x}", Sha256::digest(b"seed"));
-        let error = atomic_write(Path::new(&raw), b"agent-update", Some(&expected))
-            .unwrap_err();
+        let error = atomic_write(Path::new(&raw), b"agent-update", Some(&expected)).unwrap_err();
         assert!(
             error.to_string().contains("file_changed_since_read"),
             "unexpected guard error: {error}"
