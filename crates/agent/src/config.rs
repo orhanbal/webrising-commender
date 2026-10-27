@@ -8,6 +8,52 @@ use std::{
 
 const MAX_AGENT_CONFIG_BYTES: u64 = 256 * 1024;
 
+// std::os::windows::fs::MetadataExt::number_of_links is nightly-only.
+// Query the opened file handle directly; a path-only check can be swapped.
+#[cfg(windows)]
+fn reject_windows_config_hardlink(file: &fs::File) -> Result<()> {
+    use std::os::windows::io::AsRawHandle;
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct ByHandleFileInformation {
+        attributes: u32,
+        created: [u32; 2],
+        accessed: [u32; 2],
+        modified: [u32; 2],
+        volume_serial: u32,
+        size_high: u32,
+        size_low: u32,
+        link_count: u32,
+        index_high: u32,
+        index_low: u32,
+    }
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        #[link_name = "GetFileInformationByHandle"]
+        fn get_file_information_by_handle(
+            handle: *mut std::ffi::c_void,
+            info: *mut ByHandleFileInformation,
+        ) -> i32;
+    }
+
+    let mut info = ByHandleFileInformation::default();
+    // SAFETY: the handle is owned by `file` and remains open during the call;
+    // `info` is a correctly laid-out writable BY_HANDLE_FILE_INFORMATION.
+    if unsafe { get_file_information_by_handle(file.as_raw_handle(), &mut info) } == 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    if info.attributes & 0x400 != 0 {
+        return Err(anyhow!("unsafe_agent_config_target"));
+    }
+    if info.link_count != 1 {
+        return Err(anyhow!("unsafe_agent_config_hardlink"));
+    }
+    Ok(())
+}
+
+
 // Reject an untrusted redirect at any component below the user's home or
 // the OS temporary root, not just at the immediate config directory.
 // These roots are trust boundaries: macOS, for example, uses /var -> /private/var.
@@ -126,6 +172,8 @@ impl AgentConfig {
                 return Err(anyhow!("unsafe_agent_config_hardlink"));
             }
         }
+        #[cfg(windows)]
+        reject_windows_config_hardlink(&file)?;
         let mut raw = Vec::new();
         file.take(MAX_AGENT_CONFIG_BYTES + 1)
             .read_to_end(&mut raw)?;
@@ -159,7 +207,18 @@ impl AgentConfig {
                         return Err(anyhow!("unsafe_agent_config_hardlink"));
                     }
                 }
-                #[cfg(not(unix))]
+                #[cfg(windows)]
+                {
+                    use std::os::windows::fs::OpenOptionsExt;
+                    let mut options = fs::OpenOptions::new();
+                    options.read(true).custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
+                    let existing = options.open(path)?;
+                    if !existing.metadata()?.is_file() {
+                        return Err(anyhow!("unsafe_agent_config_target"));
+                    }
+                    reject_windows_config_hardlink(&existing)?;
+                }
+                #[cfg(not(any(unix, windows)))]
                 let _ = meta;
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -515,6 +574,49 @@ mod tests {
             .to_string()
             .contains("unsafe_agent_config_parent"));
         assert!(!destination.join("new-private").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_config_hardlink_rejects_alias_without_overwriting_credentials() {
+        let root =
+            std::env::temp_dir().join(format!("wc-config-win-hardlink-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let original = root.join("original.json");
+        let alias = root.join("alias.json");
+        let mut config = AgentConfig {
+            device_id: "device".into(),
+            device_token: "original-secret".into(),
+            approval_key: "original-approval".into(),
+            gateway_ws_url: String::new(),
+            control_url: String::new(),
+            name: "test".into(),
+            allowed_roots: vec![root.clone()],
+        };
+        config.save(&original).unwrap();
+        fs::hard_link(&original, &alias).unwrap();
+        let before = fs::read(&original).unwrap();
+        assert!(AgentConfig::load(&alias)
+            .unwrap_err()
+            .to_string()
+            .contains("unsafe_agent_config_hardlink"));
+        assert!(AgentConfig::load(&original)
+            .unwrap_err()
+            .to_string()
+            .contains("unsafe_agent_config_hardlink"));
+        config.device_token = "replacement-secret".into();
+        assert!(config
+            .save(&alias)
+            .unwrap_err()
+            .to_string()
+            .contains("unsafe_agent_config_hardlink"));
+        assert_eq!(fs::read(&original).unwrap(), before);
+        fs::remove_file(&alias).unwrap();
+        assert_eq!(
+            AgentConfig::load(&original).unwrap().device_token,
+            "original-secret"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
