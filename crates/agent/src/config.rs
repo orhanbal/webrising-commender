@@ -329,7 +329,7 @@ impl AgentConfig {
         }
         #[cfg(unix)]
         {
-            return save_config_pinned_unix(path, parent, &data);
+            save_config_pinned_unix(path, parent, &data)
         }
         #[cfg(not(unix))]
         {
