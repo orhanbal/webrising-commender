@@ -731,7 +731,10 @@ mod tests {
             String::from_utf8_lossy(&output.stderr)
         );
         assert_eq!(fs::read(&outside_target).unwrap(), b"outside-must-survive");
-        assert_eq!(fs::read(relocated.join("agent.json")).unwrap(), b"existing-private");
+        assert_eq!(
+            fs::read(relocated.join("agent.json")).unwrap(),
+            b"existing-private"
+        );
         assert_eq!(fs::read_dir(&relocated).unwrap().count(), 1);
         fs::remove_dir_all(root).unwrap();
     }
