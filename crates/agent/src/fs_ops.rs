@@ -1859,23 +1859,25 @@ fn undo_directory_lock() -> Result<std::sync::MutexGuard<'static, ()>> {
 // already-open handle, not a replaceable pathname. A shared inode cannot be
 // treated as private undo evidence or a conflict-guarded write target.
 #[cfg(windows)]
-fn reject_windows_hardlinked_file(file: &fs::File) -> Result<()> {
+#[repr(C)]
+#[derive(Default)]
+struct ByHandleFileInformation {
+    attributes: u32,
+    created: [u32; 2],
+    accessed: [u32; 2],
+    modified: [u32; 2],
+    volume_serial: u32,
+    size_high: u32,
+    size_low: u32,
+    link_count: u32,
+    index_high: u32,
+    index_low: u32,
+}
+
+#[cfg(windows)]
+fn windows_file_information(file: &fs::File) -> Result<ByHandleFileInformation> {
     use std::os::windows::io::AsRawHandle;
 
-    #[repr(C)]
-    #[derive(Default)]
-    struct ByHandleFileInformation {
-        attributes: u32,
-        created: [u32; 2],
-        accessed: [u32; 2],
-        modified: [u32; 2],
-        volume_serial: u32,
-        size_high: u32,
-        size_low: u32,
-        link_count: u32,
-        index_high: u32,
-        index_low: u32,
-    }
 
     #[link(name = "kernel32")]
     unsafe extern "system" {
@@ -1891,6 +1893,18 @@ fn reject_windows_hardlinked_file(file: &fs::File) -> Result<()> {
     if unsafe { get_file_information_by_handle(file.as_raw_handle(), &mut info) } == 0 {
         return Err(std::io::Error::last_os_error().into());
     }
+    Ok(info)
+}
+
+#[cfg(windows)]
+fn windows_file_identity(file: &fs::File) -> Result<(u32, u32, u32)> {
+    let info = windows_file_information(file)?;
+    Ok((info.volume_serial, info.index_high, info.index_low))
+}
+
+#[cfg(windows)]
+fn reject_windows_hardlinked_file(file: &fs::File) -> Result<()> {
+    let info = windows_file_information(file)?;
     if info.attributes & 0x400 != 0 {
         return Err(anyhow!("unsafe_undo_storage_entry"));
     }
@@ -2844,12 +2858,34 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
         if let Ok(existing) = fs::metadata(path) {
             file.set_permissions(existing.permissions())?;
         }
+        // Pin the original Windows file identity before staging. A competing
+        // writer can replace a file with the same bytes but a new file ID.
+        // The final SHA alone cannot detect that ABA replacement.
+        #[cfg(windows)]
+        let original_guard_file = if expected_sha256.is_some() {
+            Some(open_regular_read(path).map_err(|_| anyhow!("file_changed_since_read"))?)
+        } else {
+            None
+        };
         file.write_all(bytes)?;
         file.sync_all()?;
         drop(file);
         if let Some(expected) = expected_sha256 {
             let existing =
                 open_regular_read(path).map_err(|_| anyhow!("file_changed_since_read"))?;
+            #[cfg(windows)]
+            {
+                let original = original_guard_file
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("file_changed_since_read"))?;
+                if windows_file_identity(original)
+                    .map_err(|_| anyhow!("file_changed_since_read"))?
+                    != windows_file_identity(&existing)
+                        .map_err(|_| anyhow!("file_changed_since_read"))?
+                {
+                    return Err(anyhow!("file_changed_since_read"));
+                }
+            }
             verify_atomic_write_guard(existing, expected)?;
         }
         #[cfg(windows)]
