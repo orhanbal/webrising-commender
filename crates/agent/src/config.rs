@@ -114,6 +114,93 @@ pub struct RouteResponse {
     pub region: Option<String>,
 }
 
+#[cfg(unix)]
+fn save_config_pinned_unix(path: &Path, parent: &Path, data: &[u8]) -> Result<()> {
+    use std::ffi::CString;
+    use std::os::fd::{AsRawFd, FromRawFd};
+
+    // Hold the directory inode through staging, publication and cleanup.
+    // A swapped ancestor pathname cannot redirect credentials elsewhere.
+    let (directory, target) = crate::fs_ops::rename_parent_handle(path)?;
+    let temporary = CString::new(format!(".agent-config-{}.tmp", uuid::Uuid::new_v4()))?;
+    let fd = unsafe {
+        libc::openat(
+            directory.as_raw_fd(),
+            temporary.as_ptr(),
+            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            0o600,
+        )
+    };
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let mut staged = unsafe { fs::File::from_raw_fd(fd) };
+    let result = (|| -> Result<()> {
+        staged.write_all(data)?;
+        staged.sync_all()?;
+        drop(staged);
+        #[cfg(test)]
+        pause_config_stage_fixture()?;
+        validate_config_parent_chain(parent)?;
+        // Check the destination through the pinned parent, not a path stat.
+        let current_fd = unsafe {
+            libc::openat(
+                directory.as_raw_fd(),
+                target.as_ptr(),
+                libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
+            )
+        };
+        if current_fd >= 0 {
+            let current = unsafe { fs::File::from_raw_fd(current_fd) };
+            let meta = current.metadata()?;
+            use std::os::unix::fs::MetadataExt;
+            if !meta.is_file() || meta.nlink() != 1 {
+                return Err(anyhow!("unsafe_agent_config_target"));
+            }
+        } else {
+            let error = std::io::Error::last_os_error();
+            if error.kind() != std::io::ErrorKind::NotFound {
+                return Err(error.into());
+            }
+        }
+        let status = unsafe {
+            libc::renameat(
+                directory.as_raw_fd(),
+                temporary.as_ptr(),
+                directory.as_raw_fd(),
+                target.as_ptr(),
+            )
+        };
+        if status != 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        let _ = directory.sync_all();
+        Ok(())
+    })();
+    if result.is_err() {
+        unsafe {
+            libc::unlinkat(directory.as_raw_fd(), temporary.as_ptr(), 0);
+        }
+    }
+    result
+}
+
+#[cfg(all(test, unix))]
+fn pause_config_stage_fixture() -> Result<()> {
+    if let Ok(marker) = std::env::var("WCCFG_STAGE_MARKER") {
+        let release = std::env::var("WCCFG_STAGE_RELEASE")?;
+        fs::write(marker, b"staged")?;
+        let start = std::time::Instant::now();
+        while !Path::new(&release).exists() {
+            if start.elapsed() > std::time::Duration::from_secs(10) {
+                return Err(anyhow!("config_stage_fixture_timeout"));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+    Ok(())
+}
+
 impl AgentConfig {
     pub fn default_path() -> Result<PathBuf> {
         let base =
@@ -191,6 +278,9 @@ impl AgentConfig {
         // Check before mkdir: otherwise an ancestor link could create a new
         // directory outside the intended config tree before being rejected.
         validate_config_parent_chain(parent)?;
+        #[cfg(unix)]
+        crate::fs_ops::mkdir_pinned_unix(parent, true)?;
+        #[cfg(not(unix))]
         fs::create_dir_all(parent)?;
         validate_config_parent_chain(parent)?;
         // Never follow an existing config symlink when writing credentials.
@@ -237,37 +327,29 @@ impl AgentConfig {
         if data.len() as u64 > MAX_AGENT_CONFIG_BYTES {
             return Err(anyhow!("agent_config_too_large"));
         }
-        let temporary = parent.join(format!(".agent-config-{}.tmp", uuid::Uuid::new_v4()));
-        let result = (|| -> Result<()> {
-            let mut options = fs::OpenOptions::new();
-            options.write(true).create_new(true);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::OpenOptionsExt;
-                options.mode(0o600);
-            }
-            let mut file = options.open(&temporary)?;
-            file.write_all(&data)?;
-            file.sync_all()?;
-            drop(file);
-            // Narrow the window for a replaced ancestor before publication.
-            // This is not a handle-relative, adversarial TOCTOU guarantee.
-            validate_config_parent_chain(parent)?;
-            // Publish only fully synced content; failed writes preserve the
-            // previous config instead of truncating its secrets or JSON.
-            fs::rename(&temporary, path)?;
-            #[cfg(unix)]
-            {
-                if let Ok(directory) = fs::File::open(parent) {
-                    let _ = directory.sync_all();
-                }
-            }
-            Ok(())
-        })();
-        if result.is_err() {
-            let _ = fs::remove_file(&temporary);
+        #[cfg(unix)]
+        {
+            return save_config_pinned_unix(path, parent, &data);
         }
-        result
+        #[cfg(not(unix))]
+        {
+            let temporary = parent.join(format!(".agent-config-{}.tmp", uuid::Uuid::new_v4()));
+            let result = (|| -> Result<()> {
+                let mut options = fs::OpenOptions::new();
+                options.write(true).create_new(true);
+                let mut file = options.open(&temporary)?;
+                file.write_all(&data)?;
+                file.sync_all()?;
+                drop(file);
+                validate_config_parent_chain(parent)?;
+                fs::rename(&temporary, path)?;
+                Ok(())
+            })();
+            if result.is_err() {
+                let _ = fs::remove_file(&temporary);
+            }
+            result
+        }
     }
 
     pub fn masked_json(&self) -> Result<String> {
