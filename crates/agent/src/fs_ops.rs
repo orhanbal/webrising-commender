@@ -2691,7 +2691,7 @@ mod atomic_write_parent_tests {
 /// alone is insufficient when another process swaps an ancestor to a symlink
 /// between authorization and renameat2/renameatx_np.
 #[cfg(unix)]
-fn rename_parent_handle(path: &Path) -> Result<(fs::File, std::ffi::CString)> {
+pub(crate) fn rename_parent_handle(path: &Path) -> Result<(fs::File, std::ffi::CString)> {
     use std::ffi::CString;
     use std::os::fd::{AsRawFd, FromRawFd};
     use std::os::unix::ffi::OsStrExt;
