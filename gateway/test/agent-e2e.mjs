@@ -1333,6 +1333,39 @@ try {
   assert.equal(typeof missingUndoWrite.error, "string");
   assert.equal(fs.existsSync(path.join(tempRoot, "missing-undo.txt")), false);
   console.log("agent-e2e: guarded fs_write binary undo, stale SHA and missing target passed");
+
+  // 3A/3B: exercise the real MCP -> Gateway -> Agent authorization path.
+  // A hardlinked target has an alias outside this pathname; guarded writes
+  // must fail closed without changing either alias or leaving undo evidence.
+  if (process.platform !== "win32") {
+    const hardlinkedPath = path.join(tempRoot, "guarded-hardlink.txt");
+    const hardlinkAlias = path.join(tempRoot, "guarded-hardlink-alias.txt");
+    fs.writeFileSync(hardlinkedPath, "shared-seed");
+    fs.linkSync(hardlinkedPath, hardlinkAlias);
+    const hardlinkSha = createHash("sha256").update("shared-seed").digest("hex");
+    const rejectedHardlink = await tool(1582, "fs_write", {
+      device_id: deviceId, path: hardlinkedPath,
+      content_base64: Buffer.from("not-published").toString("base64"),
+      expected_sha256: hardlinkSha, with_undo: true,
+    });
+    assert.match(String(rejectedHardlink.error), /file_changed_since_read/);
+    assert.equal(fs.readFileSync(hardlinkedPath, "utf8"), "shared-seed");
+    assert.equal(fs.readFileSync(hardlinkAlias, "utf8"), "shared-seed");
+    const rejectedVersions = await tool(1583, "fs_versions", {
+      device_id: deviceId, path: hardlinkedPath,
+    });
+    assert.equal(rejectedVersions.versions.length, 0);
+    fs.unlinkSync(hardlinkAlias);
+    const acceptedAfterUnlink = await tool(1584, "fs_write", {
+      device_id: deviceId, path: hardlinkedPath,
+      content_base64: Buffer.from("published").toString("base64"),
+      expected_sha256: hardlinkSha, with_undo: true,
+    });
+    assert.equal(acceptedAfterUnlink.ok, true, JSON.stringify(acceptedAfterUnlink));
+    assert.equal(fs.readFileSync(hardlinkedPath, "utf8"), "published");
+    console.log("agent-e2e: guarded hardlink rejection, no undo leak, and recovery passed");
+  }
+
   const guardedAppend = await tool(584, "fs_append", {
     device_id: deviceId, path: versionedPath,
     content_base64: Buffer.from([7, 8]).toString("base64"),
