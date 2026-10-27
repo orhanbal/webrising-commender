@@ -70,6 +70,9 @@ jobs:
         run: cargo test -p webrising-commender-agent retention_prune_ -- --nocapture
       - name: Native undo snapshot consumption identity guard
         run: cargo test -p webrising-commender-agent undo_consumption_ -- --nocapture
+      - name: Unix undo quota intermediate ABA identity guard
+        if: runner.os != 'Windows'
+        run: cargo test -p webrising-commender-agent quota_rejects_intermediate_aba_even_when_path_metadata_matches -- --nocapture
       - name: Unix undo unlink pinned parent rejection
         if: runner.os != 'Windows'
         run: cargo test -p webrising-commender-agent undo_unlink_rejects_symlinked_parent_without_touching_outside_file -- --nocapture
