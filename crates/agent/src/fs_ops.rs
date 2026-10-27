@@ -732,6 +732,72 @@ mod windows_file_reparse_tests {
     }
 
     #[test]
+    fn windows_same_content_swap_worker() {
+        let Ok(raw) = std::env::var("WCF_WIN_CAS_TARGET") else {
+            return;
+        };
+        let expected = format!("{:x}", Sha256::digest(b"seed"));
+        let error = atomic_write(Path::new(&raw), b"agent-update", Some(&expected))
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("file_changed_since_read"),
+            "unexpected guard error: {error}"
+        );
+    }
+
+    #[test]
+    fn windows_same_content_swap_during_stage_is_rejected() {
+        use std::process::Stdio;
+        let base = std::env::temp_dir().join(format!("wc-win-aba-{}", Uuid::new_v4()));
+        fs::create_dir_all(&base).unwrap();
+        let target = base.join("target.txt");
+        let retired = base.join("retired.txt");
+        let marker = base.join("staged.marker");
+        let release = base.join("release.marker");
+        fs::write(&target, b"seed").unwrap();
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("fs_ops::windows_file_reparse_tests::windows_same_content_swap_worker")
+            .arg("--nocapture")
+            .env("WCF_WIN_CAS_TARGET", &target)
+            .env("WCF_WIN_CAS_MARKER", &marker)
+            .env("WCF_WIN_CAS_RELEASE", &release)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let started = Instant::now();
+        while !marker.exists() && started.elapsed() < Duration::from_secs(10) {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("guard worker exited before staging: {status}");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if !marker.exists() {
+            let _ = child.kill();
+            panic!("guard worker never reached the staging barrier");
+        }
+        // A distinct file identity with the same SHA must not be overwritten.
+        fs::rename(&target, &retired).unwrap();
+        fs::write(&target, b"seed").unwrap();
+        fs::write(&release, b"continue").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "guard worker failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"seed");
+        assert_eq!(fs::read(&retired).unwrap(), b"seed");
+        assert!(
+            fs::read_dir(&base)
+                .unwrap()
+                .all(|entry| !entry.unwrap().file_name().to_string_lossy().starts_with(".wecommander-"))
+        );
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
     fn parent_swap_after_resolution_cannot_redirect_atomic_write() {
         let base = std::env::temp_dir().join(format!("wc-write-swap-{}", Uuid::new_v4()));
         let allowed = base.join("allowed");
@@ -1878,7 +1944,6 @@ struct ByHandleFileInformation {
 fn windows_file_information(file: &fs::File) -> Result<ByHandleFileInformation> {
     use std::os::windows::io::AsRawHandle;
 
-
     #[link(name = "kernel32")]
     unsafe extern "system" {
         #[link_name = "GetFileInformationByHandle"]
@@ -2836,6 +2901,24 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
     result
 }
 
+// The Windows runner uses a separate test process to replace a target with
+// a new file ID containing identical bytes during the staging window.
+#[cfg(all(test, windows))]
+fn pause_for_windows_external_edit_fixture() -> Result<()> {
+    if let Ok(marker) = std::env::var("WCF_WIN_CAS_MARKER") {
+        let release = std::env::var("WCF_WIN_CAS_RELEASE")?;
+        fs::write(marker, b"staged")?;
+        let started = Instant::now();
+        while !Path::new(&release).exists() {
+            if started.elapsed() > Duration::from_secs(10) {
+                return Err(anyhow!("windows_external_edit_fixture_timeout"));
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(not(unix))]
 fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Result<()> {
     let parent = path
@@ -2870,6 +2953,8 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
         file.write_all(bytes)?;
         file.sync_all()?;
         drop(file);
+        #[cfg(all(test, windows))]
+        pause_for_windows_external_edit_fixture()?;
         if let Some(expected) = expected_sha256 {
             let existing =
                 open_regular_read(path).map_err(|_| anyhow!("file_changed_since_read"))?;
