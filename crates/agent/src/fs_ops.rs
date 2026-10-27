@@ -2085,6 +2085,24 @@ fn undo_temporary_name(name: &str) -> bool {
         .is_some_and(|id| Uuid::parse_str(id).is_ok())
 }
 
+// Retention and quota decisions must use the file we actually opened, not
+// stale path metadata collected before another process changed the entry.
+fn checked_undo_storage_metadata(path: &Path, observed: &fs::Metadata) -> Result<fs::Metadata> {
+    let reader = open_regular_read(path).map_err(|_| anyhow!("unsafe_undo_storage_entry"))?;
+    reject_undo_hardlinked_handle(&reader)?;
+    let current = reader.metadata()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if observed.dev() != current.dev() || observed.ino() != current.ino() {
+            return Err(anyhow!("undo_storage_entry_changed"));
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = observed;
+    Ok(current)
+}
+
 fn undo_storage_usage(dir: &Path) -> Result<(usize, u64)> {
     reject_windows_undo_reparse_ancestors(dir)?;
     let mut count = 0_usize;
@@ -2092,22 +2110,13 @@ fn undo_storage_usage(dir: &Path) -> Result<(usize, u64)> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         reject_windows_undo_reparse_ancestors(&entry.path())?;
-        let metadata = fs::symlink_metadata(entry.path())?;
-        if !metadata.is_file() || metadata.file_type().is_symlink() {
+        let observed = fs::symlink_metadata(entry.path())?;
+        if !observed.is_file() || observed.file_type().is_symlink() {
             return Err(anyhow!("unsafe_undo_storage_entry"));
         }
-        // A hardlinked snapshot can alias a file outside our private store.
-        // Reject it before reading or retention pruning; a shared inode is
-        // not private evidence even if its filename looks like ours.
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt;
-            if metadata.nlink() != 1 {
-                return Err(anyhow!("unsafe_undo_storage_hardlink"));
-            }
-        }
-        #[cfg(windows)]
-        reject_windows_hardlinked_file(&open_regular_read(&entry.path())?)?;
+        // Check the opened handle for hardlinks and inode replacement.
+        // The same opened inode supplies the quota size and retention age.
+        let metadata = checked_undo_storage_metadata(&entry.path(), &observed)?;
         let name = entry.file_name().to_string_lossy().into_owned();
         // The persistent coordination inode is not an undo snapshot and must
         // not consume a version slot or be deleted by retention pruning.
@@ -2138,6 +2147,42 @@ fn undo_storage_usage(dir: &Path) -> Result<(usize, u64)> {
             .ok_or_else(|| anyhow!("undo_snapshot_quota_exceeded"))?;
     }
     Ok((count, total_bytes))
+}
+
+#[cfg(test)]
+mod undo_scan_handle_tests {
+    use super::*;
+
+    #[test]
+    fn quota_uses_open_handle_size_after_metadata_becomes_stale() {
+        let root = std::env::temp_dir().join(format!("wc-undo-scan-size-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let entry = root.join("unrecognized-private-data");
+        fs::write(&entry, b"old").unwrap();
+        let observed = fs::symlink_metadata(&entry).unwrap();
+        fs::write(&entry, b"new-longer-content").unwrap();
+        let current = checked_undo_storage_metadata(&entry, &observed).unwrap();
+        assert_eq!(current.len(), b"new-longer-content".len() as u64);
+        assert_eq!(undo_storage_usage(&root).unwrap(), (1, current.len()));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn quota_rejects_same_content_inode_swap_after_metadata_scan() {
+        let root = std::env::temp_dir().join(format!("wc-undo-scan-aba-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let entry = root.join("unrecognized-private-data");
+        let replacement = root.join("replacement");
+        fs::write(&entry, b"same-bytes").unwrap();
+        fs::write(&replacement, b"same-bytes").unwrap();
+        let observed = fs::symlink_metadata(&entry).unwrap();
+        fs::rename(&replacement, &entry).unwrap();
+        let error = checked_undo_storage_metadata(&entry, &observed).unwrap_err();
+        assert!(error.to_string().contains("undo_storage_entry_changed"));
+        assert_eq!(fs::read(&entry).unwrap(), b"same-bytes");
+        fs::remove_dir_all(root).unwrap();
+    }
 }
 
 #[cfg(test)]
