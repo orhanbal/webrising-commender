@@ -2949,7 +2949,7 @@ mod move_collision_tests {
 /// allowlisted path alone does not protect mkdir against a later parent-symlink
 /// swap; mkdirat/openat keep each step pinned to the directory we inspected.
 #[cfg(unix)]
-fn mkdir_pinned_unix(path: &Path, recursive: bool) -> Result<()> {
+pub(crate) fn mkdir_pinned_unix(path: &Path, recursive: bool) -> Result<()> {
     use std::ffi::CString;
     use std::os::fd::{AsRawFd, FromRawFd};
     use std::os::unix::ffi::OsStrExt;
