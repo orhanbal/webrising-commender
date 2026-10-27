@@ -659,6 +659,91 @@ mod windows_file_reparse_tests {
         fs::remove_dir(&alias).unwrap();
         fs::remove_dir_all(root).unwrap();
     }
+
+    #[test]
+    fn junction_parent_cannot_redirect_atomic_write_staging() {
+        let base = std::env::temp_dir().join(format!("wc-write-junction-{}", Uuid::new_v4()));
+        let allowed = base.join("allowed");
+        let outside = base.join("outside");
+        let alias = allowed.join("redirect");
+        fs::create_dir_all(&allowed).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let secret = outside.join("private.txt");
+        fs::write(&secret, b"outside-private").unwrap();
+        let output = Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(&alias)
+            .arg(&outside)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "junction fixture failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        // Neither a replacement nor a new file may stage bytes outside the
+        // allowlisted directory, even for an unguarded write.
+        assert!(atomic_write(&alias.join("private.txt"), b"overwrite", None).is_err());
+        assert!(atomic_write(&alias.join("created.txt"), b"create", None).is_err());
+        assert_eq!(fs::read(&secret).unwrap(), b"outside-private");
+        assert!(!outside.join("created.txt").exists());
+        assert_eq!(fs::read_dir(&outside).unwrap().count(), 1);
+
+        // The same protection must apply to the public fs_write entrypoint.
+        let policy = PathPolicy::new(std::slice::from_ref(&allowed)).unwrap();
+        assert!(write(
+            &policy,
+            alias.join("nested/file.txt").to_str().unwrap(),
+            &STANDARD.encode(b"unsafe"),
+            true,
+            None,
+            false,
+        )
+        .is_err());
+        assert!(!outside.join("nested").exists());
+
+        // Ordinary writes into a non-reparse parent still work.
+        atomic_write(&allowed.join("safe.txt"), b"safe", None).unwrap();
+        assert_eq!(fs::read(allowed.join("safe.txt")).unwrap(), b"safe");
+        fs::remove_dir(&alias).unwrap();
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn parent_swap_after_resolution_cannot_redirect_atomic_write() {
+        let base = std::env::temp_dir().join(format!("wc-write-swap-{}", Uuid::new_v4()));
+        let allowed = base.join("allowed");
+        let working = allowed.join("working");
+        let outside = base.join("outside");
+        fs::create_dir_all(&working).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&allowed)).unwrap();
+        let resolved = policy
+            .resolve_for_create(working.join("created.txt").to_str().unwrap())
+            .unwrap();
+        fs::rename(&working, allowed.join("relocated")).unwrap();
+        let output = Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(&working)
+            .arg(&outside)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "junction swap fixture failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(atomic_write(&resolved, b"redirected", None).is_err());
+        assert!(!outside.join("created.txt").exists());
+        assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
+        fs::remove_dir(&working).unwrap();
+        fs::remove_dir_all(base).unwrap();
+    }
 }
 
 #[cfg(test)]
