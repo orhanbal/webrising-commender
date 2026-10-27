@@ -209,7 +209,10 @@ impl AgentConfig {
                 }
                 #[cfg(windows)]
                 {
-                    use std::os::windows::fs::OpenOptionsExt;
+                    use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
+                    if meta.file_attributes() & 0x400 != 0 {
+                        return Err(anyhow!("unsafe_agent_config_target"));
+                    }
                     let mut options = fs::OpenOptions::new();
                     options.read(true).custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
                     let existing = options.open(path)?;
