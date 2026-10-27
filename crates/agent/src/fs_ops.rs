@@ -2739,8 +2739,7 @@ mod undo_open_handle_tests {
 
     #[test]
     fn hardlink_inserted_after_quota_scan_is_rejected_by_snapshot_reader() {
-        let root =
-            std::env::temp_dir().join(format!("commender-undo-open-{}", Uuid::new_v4()));
+        let root = std::env::temp_dir().join(Uuid::new_v4().to_string());
         let dir = root.join("private");
         fs::create_dir_all(&dir).unwrap();
         let target = root.join("file.txt");
@@ -2751,7 +2750,8 @@ mod undo_open_handle_tests {
         assert_eq!(undo_storage_usage(&dir).unwrap(), (0, 0));
         // Simulate an uncooperative writer inserting a hardlink after the
         // quota scan, but before fs_versions opens the snapshot.
-        let alias = dir.join(format!("{}-{}.undo", undo_prefix(&target), Uuid::new_v4()));
+        let prefix = undo_prefix(&target);
+        let alias = dir.join(format!("{prefix}-{}.undo", Uuid::new_v4()));
         fs::hard_link(&outside, &alias).unwrap();
         let error = undo_entries(&target, &dir, None).unwrap_err();
         assert!(error.to_string().contains("unsafe_undo_storage_hardlink"));
