@@ -64,6 +64,9 @@ jobs:
       - name: Windows config credential hardlink rejection
         if: runner.os == 'Windows'
         run: cargo test -p webrising-commender-agent windows_config_hardlink_ -- --nocapture
+      - name: Windows direct file handle reparse rejection
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_file_reparse_tests -- --nocapture
 
   gateway:
     runs-on: ubuntu-latest
