@@ -1049,6 +1049,7 @@ try {
     expected_sha256: currentRaceSha,
   });
   assert.equal(restored.ok, true);
+  assert.equal(restored.undoConsumed, true, "undo must consume the verified snapshot");
   assert.equal(fs.readFileSync(raceFile, "utf8"), "race-seed");
   const replay = await tool(573, "fs_undo", {
     device_id: deviceId, path: raceFile, undo_id: winningEdit.undoId,
