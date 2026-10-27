@@ -2252,8 +2252,8 @@ mod undo_scan_handle_tests {
         let pinned = open_regular_read(&entry).unwrap();
         fs::rename(&entry, &preserved).unwrap();
         fs::write(&entry, b"same-bytes").unwrap();
-        let error = prune_expired_undo_entry(&entry, &observed, &pinned, Duration::ZERO)
-            .unwrap_err();
+        let error =
+            prune_expired_undo_entry(&entry, &observed, &pinned, Duration::ZERO).unwrap_err();
         assert!(error.to_string().contains("undo_storage_entry_changed"));
         assert_eq!(fs::read(&entry).unwrap(), b"same-bytes");
         assert_eq!(fs::read(&preserved).unwrap(), b"same-bytes");
@@ -2278,9 +2278,11 @@ mod undo_scan_handle_tests {
         .unwrap()
         .is_some());
         assert_eq!(fs::read(&entry).unwrap(), b"private-staging");
-        assert!(prune_expired_undo_entry(&entry, &observed, &pinned, Duration::ZERO)
-            .unwrap()
-            .is_none());
+        assert!(
+            prune_expired_undo_entry(&entry, &observed, &pinned, Duration::ZERO)
+                .unwrap()
+                .is_none()
+        );
         assert!(!entry.exists());
         drop(pinned);
         fs::remove_dir_all(root).unwrap();
