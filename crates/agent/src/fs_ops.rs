@@ -2553,6 +2553,22 @@ fn undo_entries(path: &Path, dir: &Path, scope: Option<&str>) -> Result<Vec<(Str
     Ok(result)
 }
 
+// Publishing a snapshot must never replace a pre-existing destination,
+// even if an external process races the UUID-named file into place. A failed
+// publication must not delete that other file during cleanup.
+fn publish_undo_snapshot(temporary: &Path, destination: &Path, dir: &Path) -> Result<()> {
+    rename_noreplace(temporary, destination)?;
+    // The snapshot is now visible. A directory sync failure must not turn
+    // a successful publication into an error that could discard its undo ID.
+    #[cfg(unix)]
+    if let Ok(directory) = fs::File::open(dir) {
+        let _ = directory.sync_all();
+    }
+    #[cfg(not(unix))]
+    let _ = dir;
+    Ok(())
+}
+
 fn save_undo_snapshot(
     path: &Path,
     previous: &[u8],
@@ -2597,14 +2613,12 @@ fn save_undo_snapshot(
         file.write_all(&payload)?;
         file.sync_all()?;
         drop(file);
-        fs::rename(&temporary, &destination)?;
-        #[cfg(unix)]
-        fs::File::open(&dir)?.sync_all()?;
-        Ok(())
+        publish_undo_snapshot(&temporary, &destination, &dir)
     })();
     if result.is_err() {
+        // The destination may belong to another writer if publication failed.
+        // Only our unique staging file is safe to remove.
         let _ = fs::remove_file(&temporary);
-        let _ = fs::remove_file(&destination);
     }
     result?;
     Ok((id, destination))
