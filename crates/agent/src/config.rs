@@ -53,7 +53,6 @@ fn reject_windows_config_hardlink(file: &fs::File) -> Result<()> {
     Ok(())
 }
 
-
 // Reject an untrusted redirect at any component below the user's home or
 // the OS temporary root, not just at the immediate config directory.
 // These roots are trust boundaries: macOS, for example, uses /var -> /private/var.
