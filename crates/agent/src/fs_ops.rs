@@ -2870,7 +2870,10 @@ mod atomic_write_parent_tests {
             fs::read_dir(&dir)
                 .unwrap()
                 .filter_map(|entry| entry.ok())
-                .filter(|entry| entry.file_name().to_string_lossy().starts_with(".wecommander-"))
+                .filter(|entry| entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".wecommander-"))
                 .count(),
             0
         );
