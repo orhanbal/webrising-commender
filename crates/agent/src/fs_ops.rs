@@ -2116,6 +2116,58 @@ fn checked_undo_storage_metadata(
     Ok(current)
 }
 
+// Keep undo cleanup inside a pinned directory on Unix. A path-based
+// remove_file can follow a parent swapped to an outside-root symlink after
+// the snapshot was validated. This does not make final-leaf unlink an atomic
+// compare-and-delete operation against a hostile concurrent writer.
+fn unlink_undo_snapshot(path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::fd::AsRawFd;
+        let (parent, name) = rename_parent_handle(path)?;
+        let status = unsafe { libc::unlinkat(parent.as_raw_fd(), name.as_ptr(), 0) };
+        if status != 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        reject_windows_undo_reparse_ancestors(path)?;
+        fs::remove_file(path)?;
+    }
+    Ok(())
+}
+
+// Do not consume a different snapshot with identical bytes after an ABA
+// replacement. The final leaf-name race is still open; fail closed on any
+// observable identity change and never follow symlinked Unix ancestors.
+fn remove_undo_snapshot_checked(path: &Path, expected: &fs::File) -> Result<()> {
+    let current =
+        open_regular_read(path).map_err(|_| anyhow!("undo_snapshot_changed_before_unlink"))?;
+    reject_undo_hardlinked_handle(&current)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let before = expected.metadata()?;
+        let now = current.metadata()?;
+        if before.dev() != now.dev() || before.ino() != now.ino() {
+            return Err(anyhow!("undo_snapshot_changed_before_unlink"));
+        }
+    }
+    #[cfg(windows)]
+    {
+        if windows_file_identity(expected)? != windows_file_identity(&current)? {
+            return Err(anyhow!("undo_snapshot_changed_before_unlink"));
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (expected, current);
+        return Err(anyhow!("undo_snapshot_unlink_unsupported"));
+    }
+    unlink_undo_snapshot(path)
+}
+
 // Re-open immediately before retention unlink: a path can be replaced after
 // the quota scan. This is fail-closed identity/age validation, not atomic
 // unlink-by-handle; hostile concurrent renames remain a known limitation.
@@ -2135,7 +2187,7 @@ fn prune_expired_undo_entry(
     if !expired {
         return Ok(Some(current));
     }
-    fs::remove_file(path)?;
+    remove_undo_snapshot_checked(path, observed_handle)?;
     Ok(None)
 }
 
@@ -2203,6 +2255,59 @@ fn undo_storage_usage(dir: &Path) -> Result<(usize, u64)> {
 #[cfg(test)]
 mod undo_scan_handle_tests {
     use super::*;
+
+    #[test]
+    fn undo_consumption_rejects_same_content_replacement() {
+        let root = std::env::temp_dir().join(format!("wc-undo-consume-aba-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let entry = root.join(format!("{}-{}.undo", "a".repeat(64), Uuid::new_v4()));
+        let preserved = root.join("preserved");
+        fs::write(&entry, b"same-bytes").unwrap();
+        let pinned = open_regular_read(&entry).unwrap();
+        fs::rename(&entry, &preserved).unwrap();
+        fs::write(&entry, b"same-bytes").unwrap();
+        let error = remove_undo_snapshot_checked(&entry, &pinned).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("undo_snapshot_changed_before_unlink"));
+        assert_eq!(fs::read(&entry).unwrap(), b"same-bytes");
+        assert_eq!(fs::read(&preserved).unwrap(), b"same-bytes");
+        drop(pinned);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn undo_consumption_removes_unchanged_snapshot() {
+        let root = std::env::temp_dir().join(format!("wc-undo-consume-ok-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let entry = root.join(format!("{}-{}.undo", "a".repeat(64), Uuid::new_v4()));
+        fs::write(&entry, b"private-snapshot").unwrap();
+        let pinned = open_regular_read(&entry).unwrap();
+        remove_undo_snapshot_checked(&entry, &pinned).unwrap();
+        assert!(!entry.exists());
+        drop(pinned);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn undo_unlink_rejects_symlinked_parent_without_touching_outside_file() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!("wc-undo-unlink-link-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let outside = root.join("outside");
+        fs::create_dir(&outside).unwrap();
+        let name = format!("{}-{}.undo", "a".repeat(64), Uuid::new_v4());
+        fs::write(outside.join(&name), b"outside-private").unwrap();
+        symlink(&outside, root.join("swapped-parent")).unwrap();
+        assert!(unlink_undo_snapshot(&root.join("swapped-parent").join(&name)).is_err());
+        assert_eq!(fs::read(outside.join(&name)).unwrap(), b"outside-private");
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn quota_uses_open_handle_size_after_metadata_becomes_stale() {
@@ -2921,7 +3026,7 @@ fn undo_impl(
         return Err(anyhow!("file_changed_since_edit"));
     }
     atomic_write(&path, &previous, Some(&current_sha))?;
-    let consumed = fs::remove_file(&snapshot).is_ok();
+    let consumed = remove_undo_snapshot_checked(&snapshot, &reader).is_ok();
     Ok(json!({
         "ok": true, "path": path.to_string_lossy(),
         "sha256": format!("{:x}", Sha256::digest(&previous)),
