@@ -68,6 +68,11 @@ jobs:
         run: cargo test -p webrising-commender-agent windows_quota_rejects_same_content_file_identity_swap -- --nocapture
       - name: Native undo retention pruning identity and age
         run: cargo test -p webrising-commender-agent retention_prune_ -- --nocapture
+      - name: Native undo snapshot consumption identity guard
+        run: cargo test -p webrising-commender-agent undo_consumption_ -- --nocapture
+      - name: Unix undo unlink pinned parent rejection
+        if: runner.os != 'Windows'
+        run: cargo test -p webrising-commender-agent undo_unlink_rejects_symlinked_parent_without_touching_outside_file -- --nocapture
       - name: Windows config credential junction rejection
         if: runner.os == 'Windows'
         run: cargo test -p webrising-commender-agent windows_config_junction_ -- --nocapture
