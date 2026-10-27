@@ -63,6 +63,9 @@ jobs:
       - name: Windows undo hardlink isolation
         if: runner.os == 'Windows'
         run: cargo test -p webrising-commender-agent undo_hardlink -- --nocapture
+      - name: Windows undo quota file identity ABA rejection
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_quota_rejects_same_content_file_identity_swap -- --nocapture
       - name: Windows config credential junction rejection
         if: runner.os == 'Windows'
         run: cargo test -p webrising-commender-agent windows_config_junction_ -- --nocapture
