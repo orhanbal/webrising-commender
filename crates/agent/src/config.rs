@@ -185,6 +185,44 @@ fn save_config_pinned_unix(path: &Path, parent: &Path, data: &[u8]) -> Result<()
     result
 }
 
+// Read credentials through a pinned directory descriptor. A pathname-only
+// check followed by OpenOptions::open can follow a swapped parent symlink.
+#[cfg(unix)]
+fn open_config_pinned_unix(path: &Path) -> Result<fs::File> {
+    use std::os::fd::{AsRawFd, FromRawFd};
+
+    let (directory, target) = crate::fs_ops::rename_parent_handle(path)?;
+    #[cfg(test)]
+    pause_config_read_fixture()?;
+    let fd = unsafe {
+        libc::openat(
+            directory.as_raw_fd(),
+            target.as_ptr(),
+            libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
+        )
+    };
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    Ok(unsafe { fs::File::from_raw_fd(fd) })
+}
+
+#[cfg(all(test, unix))]
+fn pause_config_read_fixture() -> Result<()> {
+    if let Ok(marker) = std::env::var("WCCFG_READ_MARKER") {
+        let release = std::env::var("WCCFG_READ_RELEASE")?;
+        fs::write(marker, b"pinned")?;
+        let start = std::time::Instant::now();
+        while !Path::new(&release).exists() {
+            if start.elapsed() > std::time::Duration::from_secs(10) {
+                return Err(anyhow!("config_read_fixture_timeout"));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(all(test, unix))]
 fn pause_config_stage_fixture() -> Result<()> {
     if let Ok(marker) = std::env::var("WCCFG_STAGE_MARKER") {
@@ -219,31 +257,27 @@ impl AgentConfig {
         fs::symlink_metadata(parent)?;
         // A config holds device credentials: never follow a replaced symlink,
         // read a directory/device, or allocate unbounded memory for JSON.
-        let metadata = fs::symlink_metadata(path)
+        #[cfg(unix)]
+        let file = open_config_pinned_unix(path)
             .with_context(|| format!("cannot read config {}", path.display()))?;
-        if !metadata.is_file() || metadata.file_type().is_symlink() {
-            return Err(anyhow!("unsafe_agent_config_target"));
-        }
-        let mut options = fs::OpenOptions::new();
-        options.read(true);
-        #[cfg(target_os = "linux")]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.custom_flags(0o400000); // O_NOFOLLOW
-        }
-        #[cfg(target_os = "macos")]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.custom_flags(0x100); // O_NOFOLLOW
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::fs::OpenOptionsExt;
-            options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
-        }
-        let file = options
-            .open(path)
-            .with_context(|| format!("cannot read config {}", path.display()))?;
+        #[cfg(not(unix))]
+        let file = {
+            let metadata = fs::symlink_metadata(path)
+                .with_context(|| format!("cannot read config {}", path.display()))?;
+            if !metadata.is_file() || metadata.file_type().is_symlink() {
+                return Err(anyhow!("unsafe_agent_config_target"));
+            }
+            let mut options = fs::OpenOptions::new();
+            options.read(true);
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::OpenOptionsExt;
+                options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
+            }
+            options
+                .open(path)
+                .with_context(|| format!("cannot read config {}", path.display()))?
+        };
         let opened = file.metadata()?;
         if !opened.is_file() || opened.len() > MAX_AGENT_CONFIG_BYTES {
             return Err(anyhow!("unsafe_agent_config_target"));
