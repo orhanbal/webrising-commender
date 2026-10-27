@@ -2423,7 +2423,10 @@ mod undo_scan_handle_tests {
         )
         .unwrap_err();
         assert!(error.to_string().contains("injected_post_move_failure"));
-        assert!(!entry.exists(), "untrusted hold must not become a valid undo");
+        assert!(
+            !entry.exists(),
+            "untrusted hold must not become a valid undo"
+        );
         assert_eq!(fs::read(&parked).unwrap(), b"verified-snapshot");
         let holds: Vec<_> = fs::read_dir(&root)
             .unwrap()
@@ -2461,7 +2464,10 @@ mod undo_scan_handle_tests {
             fs::read_dir(&root)
                 .unwrap()
                 .filter_map(|item| item.ok())
-                .filter(|item| item.file_name().to_string_lossy().starts_with(".undo-quarantine-"))
+                .filter(|item| item
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".undo-quarantine-"))
                 .count(),
             0
         );
