@@ -2557,6 +2557,17 @@ fn undo_entries(path: &Path, dir: &Path, scope: Option<&str>) -> Result<Vec<(Str
 // even if an external process races the UUID-named file into place. A failed
 // publication must not delete that other file during cleanup.
 fn publish_undo_snapshot(temporary: &Path, destination: &Path, dir: &Path) -> Result<()> {
+    // MoveFileW uses pathnames rather than pinned directory handles. Reject
+    // static junction/reparse ancestors at the final publication boundary,
+    // not only when the private undo directory was first resolved. This
+    // narrows the Windows swap window; hostile concurrent swaps still need
+    // handle-relative publication for full isolation.
+    #[cfg(windows)]
+    {
+        reject_windows_undo_reparse_ancestors(temporary)?;
+        reject_windows_undo_reparse_ancestors(destination)?;
+        reject_windows_undo_reparse_ancestors(dir)?;
+    }
     rename_noreplace(temporary, destination)?;
     // The snapshot is now visible. A directory sync failure must not turn
     // a successful publication into an error that could discard its undo ID.
@@ -2774,6 +2785,65 @@ mod undo_publication_tests {
         publish_undo_snapshot(&temporary, &destination, &root).unwrap();
         assert_eq!(fs::read(&destination).unwrap(), b"staged-snapshot");
         assert!(!temporary.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_junction_parent_cannot_redirect_snapshot_publication() {
+        use std::process::Command;
+        let root = std::env::temp_dir().join(format!("wc-undo-publish-junction-{}", Uuid::new_v4()));
+        let outside = root.join("outside");
+        let alias = root.join("redirect");
+        fs::create_dir_all(&outside).unwrap();
+        let staged_name = format!(".{}.tmp", Uuid::new_v4());
+        let destination_name = format!("{}-{}.undo", "a".repeat(64), Uuid::new_v4());
+        let external_staged = outside.join(&staged_name);
+        let external_destination = outside.join(&destination_name);
+        fs::write(&external_staged, b"external-staging").unwrap();
+        let output = Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(&alias)
+            .arg(&outside)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "junction fixture failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        // Even if a previous directory check succeeded before a junction
+        // swap, the final Windows publication boundary must fail closed.
+        assert!(publish_undo_snapshot(
+            &alias.join(&staged_name),
+            &alias.join(&destination_name),
+            &alias
+        )
+        .is_err());
+        assert_eq!(fs::read(&external_staged).unwrap(), b"external-staging");
+        assert!(!external_destination.exists());
+
+        // A safe source must not be moved into a redirected destination.
+        let safe_staged = root.join(format!(".{}.tmp", Uuid::new_v4()));
+        fs::write(&safe_staged, b"private-staging").unwrap();
+        assert!(publish_undo_snapshot(
+            &safe_staged,
+            &alias.join(&destination_name),
+            &root
+        )
+        .is_err());
+        assert_eq!(fs::read(&safe_staged).unwrap(), b"private-staging");
+        assert!(!external_destination.exists());
+
+        // A normal private directory still publishes without data loss.
+        let safe_destination = root.join(&destination_name);
+        publish_undo_snapshot(&safe_staged, &safe_destination, &root).unwrap();
+        assert_eq!(fs::read(&safe_destination).unwrap(), b"private-staging");
+        assert!(!safe_staged.exists());
+        fs::remove_dir(&alias).unwrap();
         fs::remove_dir_all(root).unwrap();
     }
 }
