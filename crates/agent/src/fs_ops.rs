@@ -2155,11 +2155,11 @@ fn undo_snapshot_identity_matches(expected: &fs::File, actual: &fs::File) -> Res
         use std::os::unix::fs::MetadataExt;
         let before = expected.metadata()?;
         let now = actual.metadata()?;
-        return Ok(before.dev() == now.dev() && before.ino() == now.ino());
+        Ok(before.dev() == now.dev() && before.ino() == now.ino())
     }
     #[cfg(windows)]
     {
-        return Ok(windows_file_identity(expected)? == windows_file_identity(actual)?);
+        Ok(windows_file_identity(expected)? == windows_file_identity(actual)?)
     }
     #[cfg(not(any(unix, windows)))]
     {
