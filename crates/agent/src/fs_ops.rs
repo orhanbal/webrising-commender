@@ -625,7 +625,6 @@ fn open_regular_append(path: &Path) -> Result<fs::File> {
     }
 }
 
-
 #[cfg(all(test, windows))]
 mod windows_file_reparse_tests {
     use super::*;
