@@ -1418,7 +1418,13 @@ fn write_impl(
             #[cfg(unix)]
             mkdir_pinned_unix(parent, true)?;
             #[cfg(not(unix))]
-            fs::create_dir_all(parent)?;
+            {
+                #[cfg(windows)]
+                reject_windows_undo_reparse_ancestors(parent)?;
+                fs::create_dir_all(parent)?;
+                #[cfg(windows)]
+                reject_windows_undo_reparse_ancestors(parent)?;
+            }
         }
     }
     // Opt-in undo never silently overwrites a missing, oversized or symlink
@@ -2589,12 +2595,20 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
     let parent = path
         .parent()
         .ok_or_else(|| anyhow!("missing parent directory"))?;
+    // Windows junctions can redirect an otherwise allowlisted pathname.
+    // Validate before creating a staging file and again before publishing it.
+    // These path checks are fail-closed for static reparse points; hostile
+    // concurrent swaps still require handle-relative Windows traversal.
+    #[cfg(windows)]
+    reject_windows_undo_reparse_ancestors(path)?;
     let temporary = parent.join(format!(".wecommander-{}.tmp", Uuid::new_v4()));
     let result = (|| -> Result<()> {
         let mut file = fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&temporary)?;
+        #[cfg(windows)]
+        reject_windows_undo_reparse_ancestors(path)?;
         if let Ok(existing) = fs::metadata(path) {
             file.set_permissions(existing.permissions())?;
         }
@@ -2606,6 +2620,8 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
                 open_regular_read(path).map_err(|_| anyhow!("file_changed_since_read"))?;
             verify_atomic_write_guard(existing, expected)?;
         }
+        #[cfg(windows)]
+        reject_windows_undo_reparse_ancestors(path)?;
         fs::rename(&temporary, path).context("atomic replace failed")?;
         // A synced temporary file does not make its directory entry durable.
         // Best-effort directory sync improves crash recovery on Unix. Never
