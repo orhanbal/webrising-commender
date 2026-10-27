@@ -789,11 +789,12 @@ mod windows_file_reparse_tests {
         );
         assert_eq!(fs::read(&target).unwrap(), b"seed");
         assert_eq!(fs::read(&retired).unwrap(), b"seed");
-        assert!(
-            fs::read_dir(&base)
-                .unwrap()
-                .all(|entry| !entry.unwrap().file_name().to_string_lossy().starts_with(".wecommander-"))
-        );
+        let staged_files: Vec<_> = fs::read_dir(&base)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .filter(|name| name.to_string_lossy().starts_with(".wecommander-"))
+            .collect();
+        assert!(staged_files.is_empty());
         fs::remove_dir_all(base).unwrap();
     }
 
