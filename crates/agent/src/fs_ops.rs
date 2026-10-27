@@ -2098,7 +2098,15 @@ fn checked_undo_storage_metadata(
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        if observed.dev() != current.dev() || observed.ino() != current.ino() {
+        // The directory scan and the first open are distinct observations.
+        // A -> B -> A path swap can make lstat and the final reader agree
+        // while the first opened handle still points at B. Bind all three.
+        let first = observed_handle.metadata()?;
+        if observed.dev() != current.dev()
+            || observed.ino() != current.ino()
+            || first.dev() != current.dev()
+            || first.ino() != current.ino()
+        {
             return Err(anyhow!("undo_storage_entry_changed"));
         }
     }
@@ -2306,6 +2314,32 @@ mod undo_scan_handle_tests {
         symlink(&outside, root.join("swapped-parent")).unwrap();
         assert!(unlink_undo_snapshot(&root.join("swapped-parent").join(&name)).is_err());
         assert_eq!(fs::read(outside.join(&name)).unwrap(), b"outside-private");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn quota_rejects_intermediate_aba_even_when_path_metadata_matches() {
+        let root = std::env::temp_dir().join(format!("wc-undo-scan-aba-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let entry = root.join("private-snapshot");
+        let original = root.join("original");
+        let replacement = root.join("replacement");
+        fs::write(&entry, b"same-bytes").unwrap();
+        let observed = fs::symlink_metadata(&entry).unwrap();
+        fs::rename(&entry, &original).unwrap();
+        fs::write(&entry, b"same-bytes").unwrap();
+        let pinned = open_regular_read(&entry).unwrap();
+        fs::rename(&entry, &replacement).unwrap();
+        fs::rename(&original, &entry).unwrap();
+        // The initial path metadata and final reader see A, but the
+        // intermediate opened handle sees B. Quota must fail closed.
+        let error = checked_undo_storage_metadata(&entry, &observed, &pinned).unwrap_err();
+        assert!(error.to_string().contains("undo_storage_entry_changed"));
+        assert_eq!(fs::read(&entry).unwrap(), b"same-bytes");
+        assert_eq!(fs::read(&replacement).unwrap(), b"same-bytes");
+        drop(pinned);
         fs::remove_dir_all(root).unwrap();
     }
 
