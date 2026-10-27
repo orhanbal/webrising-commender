@@ -561,6 +561,8 @@ fn open_regular_read(path: &Path) -> Result<fs::File> {
     }
     #[cfg(not(unix))]
     {
+        #[cfg(windows)]
+        reject_windows_undo_reparse_ancestors(path)?;
         let mut options = fs::OpenOptions::new();
         options.read(true);
         #[cfg(windows)]
@@ -569,8 +571,19 @@ fn open_regular_read(path: &Path) -> Result<fs::File> {
             options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
         }
         let file = options.open(path)?;
-        if !file.metadata()?.is_file() {
+        let metadata = file.metadata()?;
+        if !metadata.is_file() {
             return Err(anyhow!("path is not a regular file"));
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            if metadata.file_attributes() & 0x400 != 0 {
+                return Err(anyhow!("unsafe_file_reparse_target"));
+            }
+            // Narrow the ancestor-swap window after opening the handle.
+            // This is not a substitute for handle-relative Windows traversal.
+            reject_windows_undo_reparse_ancestors(path)?;
         }
         Ok(file)
     }
@@ -586,6 +599,8 @@ fn open_regular_append(path: &Path) -> Result<fs::File> {
     }
     #[cfg(not(unix))]
     {
+        #[cfg(windows)]
+        reject_windows_undo_reparse_ancestors(path)?;
         let mut options = fs::OpenOptions::new();
         options.append(true).create(true);
         #[cfg(windows)]
@@ -598,7 +613,52 @@ fn open_regular_append(path: &Path) -> Result<fs::File> {
         if !metadata.is_file() || metadata.file_type().is_symlink() {
             return Err(anyhow!("path is not a regular append target"));
         }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            if metadata.file_attributes() & 0x400 != 0 {
+                return Err(anyhow!("unsafe_file_reparse_target"));
+            }
+            reject_windows_undo_reparse_ancestors(path)?;
+        }
         Ok(file)
+    }
+}
+
+
+#[cfg(all(test, windows))]
+mod windows_file_reparse_tests {
+    use super::*;
+    use std::process::Command;
+
+    #[test]
+    fn junction_parent_cannot_redirect_direct_read_or_append() {
+        let root = std::env::temp_dir().join(format!("wc-file-junction-{}", Uuid::new_v4()));
+        let outside = root.join("outside");
+        let alias = root.join("alias");
+        fs::create_dir_all(&outside).unwrap();
+        let outside_file = outside.join("private.txt");
+        fs::write(&outside_file, b"outside-private").unwrap();
+        let output = Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(&alias)
+            .arg(&outside)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "junction fixture failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let redirected = alias.join("private.txt");
+        assert!(open_regular_read(&redirected).is_err());
+        assert!(open_regular_append(&redirected).is_err());
+        assert_eq!(fs::read(&outside_file).unwrap(), b"outside-private");
+        assert!(open_regular_read(&outside_file).is_ok());
+        fs::remove_dir(&alias).unwrap();
+        fs::remove_dir_all(root).unwrap();
     }
 }
 
