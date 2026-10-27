@@ -2747,6 +2747,35 @@ fn undo_impl(
     }))
 }
 
+#[cfg(test)]
+mod undo_publication_tests {
+    use super::*;
+
+    #[test]
+    fn competing_snapshot_destination_is_not_overwritten() {
+        let root =
+            std::env::temp_dir().join(format!("commender-undo-publish-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let temporary = root.join(format!(".{}.tmp", Uuid::new_v4()));
+        let destination = root.join(format!("{}-{}.undo", "a".repeat(64), Uuid::new_v4()));
+        fs::write(&temporary, b"staged-snapshot").unwrap();
+        fs::write(&destination, b"competing-snapshot").unwrap();
+
+        // A collision must not replace or remove the other writer's data.
+        assert!(publish_undo_snapshot(&temporary, &destination, &root).is_err());
+        assert_eq!(fs::read(&destination).unwrap(), b"competing-snapshot");
+        assert_eq!(fs::read(&temporary).unwrap(), b"staged-snapshot");
+
+        // Publishing without a collision still atomically moves our staging
+        // file into place and leaves no staging file behind.
+        fs::remove_file(&destination).unwrap();
+        publish_undo_snapshot(&temporary, &destination, &root).unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), b"staged-snapshot");
+        assert!(!temporary.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
 #[cfg(all(test, unix))]
 mod undo_open_handle_tests {
     use super::*;
