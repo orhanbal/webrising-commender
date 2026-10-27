@@ -614,6 +614,11 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("unsafe_agent_config_hardlink"));
+        assert!(config
+            .save(&original)
+            .unwrap_err()
+            .to_string()
+            .contains("unsafe_agent_config_hardlink"));
         assert_eq!(fs::read(&original).unwrap(), before);
         fs::remove_file(&alias).unwrap();
         assert_eq!(
