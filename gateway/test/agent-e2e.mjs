@@ -1291,7 +1291,50 @@ try {
     device_id: deviceId, path: raceFile,
   });
   assert.ok(recoveredListing.versions.some((item) => item.undoId === restartEdit.undoId));
-  console.log("agent-e2e: tampered and hardlinked undo snapshots rejected; recovery passed");
+
+  // 3B: a snapshot claiming to belong to a different path must not be
+  // advertised or restored, even when its previous-content digest is valid.
+  const foreignPathRecord = JSON.parse(intactUndoSnapshot.toString("utf8"));
+  foreignPathRecord.path = path.join(tempRoot, "foreign-undo-target");
+  fs.writeFileSync(persistedSnapshot, JSON.stringify(foreignPathRecord));
+  const foreignPathListing = await tool(1706, "fs_versions", {
+    device_id: deviceId, path: raceFile,
+  });
+  assert.match(String(foreignPathListing.error), /undo_snapshot_path_mismatch/);
+  const foreignPathRestore = await tool(1707, "fs_undo", {
+    device_id: deviceId, path: raceFile, undo_id: restartEdit.undoId,
+    expected_sha256: restartEdit.sha256,
+  });
+  assert.match(String(foreignPathRestore.error), /undo_snapshot_path_mismatch/);
+  assert.equal(fs.readFileSync(raceFile, "utf8"), "restart-edited");
+  fs.writeFileSync(persistedSnapshot, intactUndoSnapshot);
+
+  // 3B: a symlink planted at the private snapshot path must never be
+  // followed, consumed or pruned through either real MCP entrypoint.
+  const externalUndoTarget = path.join(tempRoot, "external-undo-symlink-target");
+  const parkedSnapshot = path.join(tempRoot, "parked-undo-snapshot");
+  fs.writeFileSync(externalUndoTarget, intactUndoSnapshot);
+  fs.renameSync(persistedSnapshot, parkedSnapshot);
+  fs.symlinkSync(externalUndoTarget, persistedSnapshot);
+  const symlinkListing = await tool(1708, "fs_versions", {
+    device_id: deviceId, path: raceFile,
+  });
+  assert.match(String(symlinkListing.error), /unsafe_undo_storage_entry/);
+  const symlinkRestore = await tool(1709, "fs_undo", {
+    device_id: deviceId, path: raceFile, undo_id: restartEdit.undoId,
+    expected_sha256: restartEdit.sha256,
+  });
+  assert.match(String(symlinkRestore.error), /unsafe_undo_storage_entry/);
+  assert.equal(fs.readFileSync(raceFile, "utf8"), "restart-edited");
+  assert.deepEqual(fs.readFileSync(externalUndoTarget), intactUndoSnapshot);
+  fs.unlinkSync(persistedSnapshot);
+  fs.renameSync(parkedSnapshot, persistedSnapshot);
+  fs.unlinkSync(externalUndoTarget);
+  const recoveredAfterSymlink = await tool(1710, "fs_versions", {
+    device_id: deviceId, path: raceFile,
+  });
+  assert.ok(recoveredAfterSymlink.versions.some((item) => item.undoId === restartEdit.undoId));
+  console.log("agent-e2e: tampered, hardlinked, path-forged and symlinked undo snapshots rejected; recovery passed");
 
   const killedAgent = agent;
   assert.equal(killedAgent.kill("SIGKILL"), true, "native Agent must be running before crash test");
