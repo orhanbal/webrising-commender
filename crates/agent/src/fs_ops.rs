@@ -2792,7 +2792,8 @@ mod undo_publication_tests {
     #[test]
     fn windows_junction_parent_cannot_redirect_snapshot_publication() {
         use std::process::Command;
-        let root = std::env::temp_dir().join(format!("wc-undo-publish-junction-{}", Uuid::new_v4()));
+        let root =
+            std::env::temp_dir().join(format!("wc-undo-publish-junction-{}", Uuid::new_v4()));
         let outside = root.join("outside");
         let alias = root.join("redirect");
         fs::create_dir_all(&outside).unwrap();
