@@ -2753,8 +2753,7 @@ mod undo_publication_tests {
 
     #[test]
     fn competing_snapshot_destination_is_not_overwritten() {
-        let root =
-            std::env::temp_dir().join(format!("commender-undo-publish-{}", Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("commender-undo-publish-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
         // macOS temp_dir() may start with /var, a symlink to /private/var.
         // The no-follow publication deliberately rejects symlink ancestors.
