@@ -2364,19 +2364,21 @@ mod undo_scan_handle_tests {
         assert!(error
             .to_string()
             .contains("undo_snapshot_changed_before_unlink"));
-        assert_eq!(fs::read(&entry).unwrap(), b"same-bytes");
+        // The replacement is untrusted: preserve it under .hold rather
+        // than restoring it to a valid snapshot filename.
+        assert!(!entry.exists());
         assert_eq!(fs::read(&original).unwrap(), b"same-bytes");
-        assert_eq!(
-            fs::read_dir(&root)
-                .unwrap()
-                .filter_map(|entry| entry.ok())
-                .filter(|entry| entry
-                    .file_name()
+        let holds: Vec<_> = fs::read_dir(&root)
+            .unwrap()
+            .filter_map(|item| item.ok())
+            .filter(|item| {
+                item.file_name()
                     .to_string_lossy()
-                    .starts_with(".undo-quarantine-"))
-                .count(),
-            0
-        );
+                    .starts_with(".undo-quarantine-")
+            })
+            .collect();
+        assert_eq!(holds.len(), 1);
+        assert_eq!(fs::read(holds[0].path()).unwrap(), b"same-bytes");
         drop(pinned);
         fs::remove_dir_all(root).unwrap();
     }
@@ -2396,8 +2398,19 @@ mod undo_scan_handle_tests {
         })
         .unwrap_err();
         assert!(error.to_string().contains("unsafe_undo_storage_hardlink"));
-        assert_eq!(fs::read(&entry).unwrap(), b"private-snapshot");
+        assert!(!entry.exists(), "hardlinked hold must not be restored");
         assert_eq!(fs::read(&alias).unwrap(), b"private-snapshot");
+        let holds: Vec<_> = fs::read_dir(&root)
+            .unwrap()
+            .filter_map(|item| item.ok())
+            .filter(|item| {
+                item.file_name()
+                    .to_string_lossy()
+                    .starts_with(".undo-quarantine-")
+            })
+            .collect();
+        assert_eq!(holds.len(), 1);
+        assert_eq!(fs::read(holds[0].path()).unwrap(), b"private-snapshot");
         drop(pinned);
         fs::remove_dir_all(root).unwrap();
     }
