@@ -2116,6 +2116,29 @@ fn checked_undo_storage_metadata(
     Ok(current)
 }
 
+// Re-open immediately before retention unlink: a path can be replaced after
+// the quota scan. This is fail-closed identity/age validation, not atomic
+// unlink-by-handle; hostile concurrent renames remain a known limitation.
+fn prune_expired_undo_entry(
+    path: &Path,
+    observed: &fs::Metadata,
+    observed_handle: &fs::File,
+    retention: Duration,
+) -> Result<Option<fs::Metadata>> {
+    reject_windows_undo_reparse_ancestors(path)?;
+    let current = checked_undo_storage_metadata(path, observed, observed_handle)?;
+    let expired = current
+        .modified()
+        .ok()
+        .and_then(|modified| std::time::SystemTime::now().duration_since(modified).ok())
+        .is_some_and(|age| age >= retention);
+    if !expired {
+        return Ok(Some(current));
+    }
+    fs::remove_file(path)?;
+    Ok(None)
+}
+
 fn undo_storage_usage(dir: &Path) -> Result<(usize, u64)> {
     reject_windows_undo_reparse_ancestors(dir)?;
     let mut count = 0_usize;
@@ -2154,10 +2177,21 @@ fn undo_storage_usage(dir: &Path) -> Result<(usize, u64)> {
                 .and_then(|modified| std::time::SystemTime::now().duration_since(modified).ok())
                 .is_some_and(|age| age >= retention)
         });
-        if expired {
-            fs::remove_file(entry.path())?;
-            continue;
-        }
+        let metadata = if expired {
+            // The first scan is only a candidate: check identity and age again
+            // before unlink, and use refreshed metadata if the file was renewed.
+            match prune_expired_undo_entry(
+                &entry.path(),
+                &observed,
+                &observed_handle,
+                retention.ok_or_else(|| anyhow!("invalid_undo_retention"))?,
+            )? {
+                Some(current) => current,
+                None => continue,
+            }
+        } else {
+            metadata
+        };
         count += 1;
         total_bytes = total_bytes
             .checked_add(metadata.len())
@@ -2203,6 +2237,51 @@ mod undo_scan_handle_tests {
         assert!(error.to_string().contains("undo_storage_entry_changed"));
         assert_eq!(fs::read(&entry).unwrap(), b"same-bytes");
         assert_eq!(fs::read(&original).unwrap(), b"same-bytes");
+        drop(pinned);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn retention_prune_rejects_same_content_replacement() {
+        let root = std::env::temp_dir().join(format!("wc-undo-prune-swap-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let entry = root.join(format!(".{}.tmp", Uuid::new_v4()));
+        let preserved = root.join("preserved");
+        fs::write(&entry, b"same-bytes").unwrap();
+        let observed = fs::symlink_metadata(&entry).unwrap();
+        let pinned = open_regular_read(&entry).unwrap();
+        fs::rename(&entry, &preserved).unwrap();
+        fs::write(&entry, b"same-bytes").unwrap();
+        let error = prune_expired_undo_entry(&entry, &observed, &pinned, Duration::ZERO)
+            .unwrap_err();
+        assert!(error.to_string().contains("undo_storage_entry_changed"));
+        assert_eq!(fs::read(&entry).unwrap(), b"same-bytes");
+        assert_eq!(fs::read(&preserved).unwrap(), b"same-bytes");
+        drop(pinned);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn retention_prune_keeps_nonexpired_entry_and_removes_expired_entry() {
+        let root = std::env::temp_dir().join(format!("wc-undo-prune-age-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let entry = root.join(format!(".{}.tmp", Uuid::new_v4()));
+        fs::write(&entry, b"private-staging").unwrap();
+        let observed = fs::symlink_metadata(&entry).unwrap();
+        let pinned = open_regular_read(&entry).unwrap();
+        assert!(prune_expired_undo_entry(
+            &entry,
+            &observed,
+            &pinned,
+            Duration::from_secs(24 * 60 * 60),
+        )
+        .unwrap()
+        .is_some());
+        assert_eq!(fs::read(&entry).unwrap(), b"private-staging");
+        assert!(prune_expired_undo_entry(&entry, &observed, &pinned, Duration::ZERO)
+            .unwrap()
+            .is_none());
+        assert!(!entry.exists());
         drop(pinned);
         fs::remove_dir_all(root).unwrap();
     }
