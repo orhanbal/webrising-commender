@@ -2830,12 +2830,9 @@ mod undo_publication_tests {
         // A safe source must not be moved into a redirected destination.
         let safe_staged = root.join(format!(".{}.tmp", Uuid::new_v4()));
         fs::write(&safe_staged, b"private-staging").unwrap();
-        assert!(publish_undo_snapshot(
-            &safe_staged,
-            &alias.join(&destination_name),
-            &root
-        )
-        .is_err());
+        assert!(
+            publish_undo_snapshot(&safe_staged, &alias.join(&destination_name), &root).is_err()
+        );
         assert_eq!(fs::read(&safe_staged).unwrap(), b"private-staging");
         assert!(!external_destination.exists());
 
