@@ -790,7 +790,8 @@ mod tests {
         use std::os::unix::fs::symlink;
         use std::process::{Command, Stdio};
 
-        let root = std::env::temp_dir().join(format!("wc-config-read-swap-{}", uuid::Uuid::new_v4()));
+        let root =
+            std::env::temp_dir().join(format!("wc-config-read-swap-{}", uuid::Uuid::new_v4()));
         let parent = root.join("private");
         let relocated = root.join("relocated");
         let outside = root.join("outside");
