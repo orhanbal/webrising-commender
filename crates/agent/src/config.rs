@@ -773,6 +773,84 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn config_parent_swap_load_worker() {
+        let Ok(raw) = std::env::var("WCCFG_READ_TARGET") else {
+            return;
+        };
+        let config = AgentConfig::load(Path::new(&raw)).unwrap();
+        assert_eq!(config.device_token, "original-secret");
+        assert_eq!(config.approval_key, "original-approval");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn concurrent_parent_symlink_swap_cannot_redirect_credential_read() {
+        use std::os::unix::fs::symlink;
+        use std::process::{Command, Stdio};
+
+        let root = std::env::temp_dir().join(format!("wc-config-read-swap-{}", uuid::Uuid::new_v4()));
+        let parent = root.join("private");
+        let relocated = root.join("relocated");
+        let outside = root.join("outside");
+        fs::create_dir_all(&parent).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let target = parent.join("agent.json");
+        let outside_target = outside.join("agent.json");
+        let mut config = AgentConfig {
+            device_id: "device".into(),
+            device_token: "original-secret".into(),
+            approval_key: "original-approval".into(),
+            gateway_ws_url: String::new(),
+            control_url: String::new(),
+            name: String::new(),
+            allowed_roots: vec![root.clone()],
+        };
+        config.save(&target).unwrap();
+        config.device_token = "outside-secret".into();
+        config.approval_key = "outside-approval".into();
+        config.save(&outside_target).unwrap();
+        let original = fs::read(&target).unwrap();
+        let external = fs::read(&outside_target).unwrap();
+        let marker = root.join("read-pinned.marker");
+        let release = root.join("read-release.marker");
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("config::tests::config_parent_swap_load_worker")
+            .arg("--nocapture")
+            .env("WCCFG_READ_TARGET", &target)
+            .env("WCCFG_READ_MARKER", &marker)
+            .env("WCCFG_READ_RELEASE", &release)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let start = std::time::Instant::now();
+        while !marker.exists() && start.elapsed() < std::time::Duration::from_secs(10) {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("config read worker exited before pinning: {status}");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        if !marker.exists() {
+            let _ = child.kill();
+            panic!("config read worker did not pin parent");
+        }
+        fs::rename(&parent, &relocated).unwrap();
+        symlink(&outside, &parent).unwrap();
+        fs::write(&release, b"continue").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "config read worker failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read(relocated.join("agent.json")).unwrap(), original);
+        assert_eq!(fs::read(&outside_target).unwrap(), external);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[cfg(windows)]
     #[test]
     fn windows_config_hardlink_rejects_alias_without_overwriting_credentials() {
