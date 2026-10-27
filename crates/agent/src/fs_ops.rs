@@ -2756,6 +2756,9 @@ mod undo_publication_tests {
         let root =
             std::env::temp_dir().join(format!("commender-undo-publish-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
+        // macOS temp_dir() may start with /var, a symlink to /private/var.
+        // The no-follow publication deliberately rejects symlink ancestors.
+        let root = fs::canonicalize(root).unwrap();
         let temporary = root.join(format!(".{}.tmp", Uuid::new_v4()));
         let destination = root.join(format!("{}-{}.undo", "a".repeat(64), Uuid::new_v4()));
         fs::write(&temporary, b"staged-snapshot").unwrap();
