@@ -61,6 +61,9 @@ jobs:
       - name: Windows config credential junction rejection
         if: runner.os == 'Windows'
         run: cargo test -p webrising-commender-agent windows_config_junction_ -- --nocapture
+      - name: Windows config credential hardlink rejection
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_config_hardlink_ -- --nocapture
 
   gateway:
     runs-on: ubuntu-latest
