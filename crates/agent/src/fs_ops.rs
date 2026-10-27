@@ -2129,8 +2129,8 @@ fn undo_storage_usage(dir: &Path) -> Result<(usize, u64)> {
         }
         // Capture the first opened identity before the quota reader opens
         // the path again; Windows cannot compare Unix dev/ino metadata.
-        let observed_handle = open_regular_read(&entry.path())
-            .map_err(|_| anyhow!("unsafe_undo_storage_entry"))?;
+        let observed_handle =
+            open_regular_read(&entry.path()).map_err(|_| anyhow!("unsafe_undo_storage_entry"))?;
         reject_undo_hardlinked_handle(&observed_handle)?;
         // The quota reader's handle supplies size and retention age.
         let metadata = checked_undo_storage_metadata(&entry.path(), &observed, &observed_handle)?;
