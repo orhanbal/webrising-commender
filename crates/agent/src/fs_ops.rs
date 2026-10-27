@@ -2610,6 +2610,9 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
         return Err(std::io::Error::last_os_error().into());
     }
     let mut file = unsafe { fs::File::from_raw_fd(fd) };
+    // Keep the original inode alive until publication. A different inode with
+    // identical bytes is still an external replacement (ABA), not our edit.
+    let mut original_guard_file: Option<fs::File> = None;
     let result = (|| -> Result<()> {
         // Do not follow a replaced target symlink while copying permissions.
         // O_NONBLOCK prevents an attacker-controlled FIFO from hanging the agent.
@@ -2627,6 +2630,9 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
                 return Err(anyhow!("atomic_replace_requires_regular_file"));
             }
             file.set_permissions(metadata.permissions())?;
+            if expected_sha256.is_some() {
+                original_guard_file = Some(existing);
+            }
         } else {
             let error = std::io::Error::last_os_error();
             if error.kind() != std::io::ErrorKind::NotFound {
@@ -2649,7 +2655,17 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
             if current_fd < 0 {
                 return Err(anyhow!("file_changed_since_read"));
             }
-            verify_atomic_write_guard(unsafe { fs::File::from_raw_fd(current_fd) }, expected)?;
+            let current = unsafe { fs::File::from_raw_fd(current_fd) };
+            use std::os::unix::fs::MetadataExt;
+            let original = original_guard_file
+                .as_ref()
+                .ok_or_else(|| anyhow!("file_changed_since_read"))?;
+            let before = original.metadata()?;
+            let after = current.metadata()?;
+            if before.dev() != after.dev() || before.ino() != after.ino() {
+                return Err(anyhow!("file_changed_since_read"));
+            }
+            verify_atomic_write_guard(current, expected)?;
         }
         let status = unsafe {
             libc::renameat(
@@ -2786,6 +2802,62 @@ mod atomic_write_parent_tests {
             String::from_utf8_lossy(&output.stderr)
         );
         assert_eq!(fs::read(&target).unwrap(), b"external-update");
+        assert_eq!(
+            fs::read_dir(&base)
+                .unwrap()
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".wecommander-"))
+                .count(),
+            0
+        );
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn external_same_content_inode_replacement_during_stage_is_rejected() {
+        use std::process::{Command, Stdio};
+        let base = std::env::temp_dir().join(format!("commender-external-aba-{}", Uuid::new_v4()));
+        fs::create_dir_all(&base).unwrap();
+        let target = base.join("target.txt");
+        let marker = base.join("staged.marker");
+        let release = base.join("release.marker");
+        fs::write(&target, b"seed").unwrap();
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("fs_ops::atomic_write_parent_tests::process_atomic_guard_worker")
+            .arg("--nocapture")
+            .env("WCF_CAS_TARGET", &target)
+            .env("WCF_CAS_MARKER", &marker)
+            .env("WCF_CAS_RELEASE", &release)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let started = Instant::now();
+        while !marker.exists() && started.elapsed() < Duration::from_secs(10) {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("guard worker exited before staging: {status}");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if !marker.exists() {
+            let _ = child.kill();
+            panic!("guard worker never reached the staging barrier");
+        }
+        let replacement = base.join("replacement.txt");
+        fs::write(&replacement, b"seed").unwrap();
+        fs::rename(&replacement, &target).unwrap();
+        fs::write(&release, b"continue").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "guard worker accepted an ABA replacement: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"seed");
         assert_eq!(
             fs::read_dir(&base)
                 .unwrap()
