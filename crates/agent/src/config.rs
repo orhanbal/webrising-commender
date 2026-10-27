@@ -661,6 +661,81 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn config_parent_swap_save_worker() {
+        let Ok(raw) = std::env::var("WCCFG_TARGET") else {
+            return;
+        };
+        let target = Path::new(&raw);
+        let root = target.parent().unwrap().parent().unwrap();
+        let config = AgentConfig {
+            device_id: "device".into(),
+            device_token: "new-secret-must-not-leak".into(),
+            approval_key: "new-approval-must-not-leak".into(),
+            gateway_ws_url: String::new(),
+            control_url: String::new(),
+            name: String::new(),
+            allowed_roots: vec![root.to_path_buf()],
+        };
+        assert!(config.save(target).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn concurrent_parent_symlink_swap_never_redirects_credential_save() {
+        use std::os::unix::fs::symlink;
+        use std::process::{Command, Stdio};
+
+        let root = std::env::temp_dir().join(format!("wc-config-swap-{}", uuid::Uuid::new_v4()));
+        let parent = root.join("private");
+        let relocated = root.join("relocated");
+        let outside = root.join("outside");
+        fs::create_dir_all(&parent).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let target = parent.join("agent.json");
+        let outside_target = outside.join("agent.json");
+        fs::write(&target, b"existing-private").unwrap();
+        fs::write(&outside_target, b"outside-must-survive").unwrap();
+        let marker = root.join("staged.marker");
+        let release = root.join("release.marker");
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("config::tests::config_parent_swap_save_worker")
+            .arg("--nocapture")
+            .env("WCCFG_TARGET", &target)
+            .env("WCCFG_STAGE_MARKER", &marker)
+            .env("WCCFG_STAGE_RELEASE", &release)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let start = std::time::Instant::now();
+        while !marker.exists() && start.elapsed() < std::time::Duration::from_secs(10) {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("config worker exited before stage: {status}");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        if !marker.exists() {
+            let _ = child.kill();
+            panic!("config worker did not stage");
+        }
+        fs::rename(&parent, &relocated).unwrap();
+        symlink(&outside, &parent).unwrap();
+        fs::write(&release, b"continue").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "config worker failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read(&outside_target).unwrap(), b"outside-must-survive");
+        assert_eq!(fs::read(relocated.join("agent.json")).unwrap(), b"existing-private");
+        assert_eq!(fs::read_dir(&relocated).unwrap().count(), 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[cfg(windows)]
     #[test]
     fn windows_config_hardlink_rejects_alias_without_overwriting_credentials() {
