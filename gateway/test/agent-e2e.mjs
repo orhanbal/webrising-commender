@@ -1247,6 +1247,52 @@ try {
   const persistedSnapshot = path.join(versionDirectory, `${racePrefix}-${restartEdit.undoId}.undo`);
   assert.equal(fs.existsSync(persistedSnapshot), true);
 
+  // 3B: a parseable but tampered undo record must not appear as restorable.
+  // Verify both listing and restore fail closed, with no source mutation or
+  // snapshot consumption. Repair the fixture and verify normal recovery.
+  const intactUndoSnapshot = fs.readFileSync(persistedSnapshot);
+  const tamperedUndoRecord = JSON.parse(intactUndoSnapshot.toString("utf8"));
+  tamperedUndoRecord.previousSha256 = "0".repeat(64);
+  fs.writeFileSync(persistedSnapshot, JSON.stringify(tamperedUndoRecord));
+  const tamperedListing = await tool(1700, "fs_versions", {
+    device_id: deviceId, path: raceFile,
+  });
+  assert.match(String(tamperedListing.error), /undo_snapshot_checksum_mismatch/);
+  const tamperedRestore = await tool(1701, "fs_undo", {
+    device_id: deviceId, path: raceFile, undo_id: restartEdit.undoId,
+    expected_sha256: restartEdit.sha256,
+  });
+  assert.match(String(tamperedRestore.error), /undo_snapshot_checksum_mismatch/);
+  assert.equal(fs.readFileSync(raceFile, "utf8"), "restart-edited");
+  assert.equal(fs.existsSync(persistedSnapshot), true);
+  fs.writeFileSync(persistedSnapshot, intactUndoSnapshot);
+  const repairedListing = await tool(1702, "fs_versions", {
+    device_id: deviceId, path: raceFile,
+  });
+  assert.ok(repairedListing.versions.some((item) => item.undoId === restartEdit.undoId));
+
+  // 3B: an outside hardlink alias of a private undo inode is not private
+  // evidence. Both MCP entrypoints must refuse it before pruning/restoring.
+  const outsideUndoAlias = path.join(tempRoot, "external-undo-hardlink");
+  fs.linkSync(persistedSnapshot, outsideUndoAlias);
+  const linkedListing = await tool(1703, "fs_versions", {
+    device_id: deviceId, path: raceFile,
+  });
+  assert.match(String(linkedListing.error), /unsafe_undo_storage_hardlink/);
+  const linkedRestore = await tool(1704, "fs_undo", {
+    device_id: deviceId, path: raceFile, undo_id: restartEdit.undoId,
+    expected_sha256: restartEdit.sha256,
+  });
+  assert.match(String(linkedRestore.error), /unsafe_undo_storage_hardlink/);
+  assert.equal(fs.readFileSync(raceFile, "utf8"), "restart-edited");
+  assert.deepEqual(fs.readFileSync(outsideUndoAlias), intactUndoSnapshot);
+  fs.unlinkSync(outsideUndoAlias);
+  const recoveredListing = await tool(1705, "fs_versions", {
+    device_id: deviceId, path: raceFile,
+  });
+  assert.ok(recoveredListing.versions.some((item) => item.undoId === restartEdit.undoId));
+  console.log("agent-e2e: tampered and hardlinked undo snapshots rejected; recovery passed");
+
   const killedAgent = agent;
   assert.equal(killedAgent.kill("SIGKILL"), true, "native Agent must be running before crash test");
   await new Promise((resolve, reject) => {

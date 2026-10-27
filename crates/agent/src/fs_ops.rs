@@ -2512,6 +2512,23 @@ fn undo_entries(path: &Path, dir: &Path, scope: Option<&str>) -> Result<Vec<(Str
         if record["version"] != version || record["ownerScope"].as_str() != scope {
             continue;
         }
+        // A parseable snapshot with a forged previous digest must never be
+        // advertised as restorable. Verify the bounded payload at listing
+        // time as well as immediately before the actual rollback.
+        if record["path"].as_str() != Some(path.to_string_lossy().as_ref()) {
+            return Err(anyhow!("undo_snapshot_path_mismatch"));
+        }
+        let previous = STANDARD.decode(
+            record["contentBase64"]
+                .as_str()
+                .ok_or_else(|| anyhow!("invalid_undo_snapshot"))?,
+        )?;
+        if previous.len() > HARD_READ_MAX
+            || record["previousSha256"].as_str()
+                != Some(format!("{:x}", Sha256::digest(&previous)).as_str())
+        {
+            return Err(anyhow!("undo_snapshot_checksum_mismatch"));
+        }
         result.push((id.to_owned(), meta.len()));
     }
     result.sort_by(|a, b| a.0.cmp(&b.0));
