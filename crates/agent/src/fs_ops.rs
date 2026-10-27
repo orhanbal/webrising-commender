@@ -2245,6 +2245,8 @@ mod undo_scan_handle_tests {
     fn retention_prune_rejects_same_content_replacement() {
         let root = std::env::temp_dir().join(format!("wc-undo-prune-swap-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
+        // macOS temp_dir() may traverse /var -> /private/var.
+        let root = fs::canonicalize(root).unwrap();
         let entry = root.join(format!(".{}.tmp", Uuid::new_v4()));
         let preserved = root.join("preserved");
         fs::write(&entry, b"same-bytes").unwrap();
@@ -2265,6 +2267,8 @@ mod undo_scan_handle_tests {
     fn retention_prune_keeps_nonexpired_entry_and_removes_expired_entry() {
         let root = std::env::temp_dir().join(format!("wc-undo-prune-age-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
+        // macOS temp_dir() may traverse /var -> /private/var.
+        let root = fs::canonicalize(root).unwrap();
         let entry = root.join(format!(".{}.tmp", Uuid::new_v4()));
         fs::write(&entry, b"private-staging").unwrap();
         let observed = fs::symlink_metadata(&entry).unwrap();
