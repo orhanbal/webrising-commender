@@ -2518,8 +2518,8 @@ fn unlink_undo_snapshot_windows_with_hook(
 
     before_delete()?;
     reject_windows_undo_reparse_ancestors(path)?;
-    let named = open_regular_read(path)
-        .map_err(|_| anyhow!("undo_snapshot_changed_before_unlink"))?;
+    let named =
+        open_regular_read(path).map_err(|_| anyhow!("undo_snapshot_changed_before_unlink"))?;
     reject_undo_hardlinked_handle(&named)?;
     if !undo_snapshot_identity_matches(&delete_handle, &named)?
         || undo_quarantine_digest(&named)? != digest
@@ -3238,7 +3238,9 @@ mod undo_scan_handle_tests {
             Ok(())
         })
         .unwrap_err();
-        assert!(error.to_string().contains("undo_snapshot_changed_before_unlink"));
+        assert!(error
+            .to_string()
+            .contains("undo_snapshot_changed_before_unlink"));
         assert_eq!(fs::read(&entry).unwrap(), b"untrusted-replacement");
         assert_eq!(fs::read(&parked).unwrap(), b"verified-snapshot");
         drop(pinned);
@@ -3276,7 +3278,10 @@ mod undo_scan_handle_tests {
         symlink(&outside, root.join("swapped-parent")).unwrap();
         let verified = open_regular_read(&outside.join(&name)).unwrap();
         let digest = undo_quarantine_digest(&verified).unwrap();
-        assert!(unlink_undo_snapshot(&root.join("swapped-parent").join(&name), &verified, &digest).is_err());
+        assert!(
+            unlink_undo_snapshot(&root.join("swapped-parent").join(&name), &verified, &digest)
+                .is_err()
+        );
         drop(verified);
         assert_eq!(fs::read(outside.join(&name)).unwrap(), b"outside-private");
         fs::remove_dir_all(root).unwrap();
