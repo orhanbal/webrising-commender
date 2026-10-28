@@ -3938,6 +3938,7 @@ mod atomic_write_parent_tests {
     fn atomic_create_succeeds_when_target_remains_absent() {
         let base = std::env::temp_dir().join(format!("commender-create-ok-{}", Uuid::new_v4()));
         fs::create_dir_all(&base).unwrap();
+        let base = fs::canonicalize(base).unwrap();
         let target = base.join("new.txt");
         atomic_write(&target, b"agent-create", None).unwrap();
         assert_eq!(fs::read(&target).unwrap(), b"agent-create");
@@ -3949,6 +3950,7 @@ mod atomic_write_parent_tests {
         use std::process::{Command, Stdio};
         let base = std::env::temp_dir().join(format!("commender-create-race-{}", Uuid::new_v4()));
         fs::create_dir_all(&base).unwrap();
+        let base = fs::canonicalize(base).unwrap();
         let target = base.join("new.txt");
         let marker = base.join("staged.marker");
         let release = base.join("release.marker");
