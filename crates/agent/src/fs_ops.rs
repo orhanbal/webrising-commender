@@ -3430,12 +3430,13 @@ mod undo_scan_handle_tests {
         fs::remove_dir_all(root).unwrap();
     }
 
-    // Inject a real NTFS junction into the parent AFTER the original file
-    // was opened for DELETE. The outside file has identical bytes: only
-    // ancestor reparse validation (not SHA) can reject this redirection.
+    // A Windows DELETE-capable open handle may prevent renaming its parent
+    // (ERROR_ACCESS_DENIED). If the OS permits the rename, inject a junction
+    // and require the reparse guard to reject the redirected outside leaf.
+    // Both outcomes must preserve the outside bytes; neither is an MCP E2E.
     #[cfg(windows)]
     #[test]
-    fn windows_undo_handle_unlink_rejects_late_junction_ancestor_swap() {
+    fn windows_undo_handle_unlink_preserves_outside_when_late_junction_swap_attempted() {
         use std::process::Command;
 
         let root = std::env::temp_dir().join(format!("wc-undo-late-junction-{}", Uuid::new_v4()));
@@ -3450,8 +3451,15 @@ mod undo_scan_handle_tests {
         fs::write(&outside_entry, b"verified-snapshot").unwrap();
         let pinned = open_regular_read(&entry).unwrap();
         let digest = undo_quarantine_digest(&pinned).unwrap();
+        let mut swapped = false;
         let error = unlink_undo_snapshot_windows_with_hook(&entry, &pinned, &digest, || {
-            fs::rename(&live, &parked)?;
+            match fs::rename(&live, &parked) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                    return Err(anyhow!("windows_ancestor_rename_denied: {error}"));
+                }
+                Err(error) => return Err(error.into()),
+            }
             let output = Command::new("cmd")
                 .arg("/C")
                 .arg("mklink")
@@ -3465,20 +3473,29 @@ mod undo_scan_handle_tests {
                     String::from_utf8_lossy(&output.stderr)
                 ));
             }
+            swapped = true;
             Ok(())
         })
         .unwrap_err();
-        assert!(
-            error.to_string().contains("unsafe_undo_reparse_ancestor"),
-            "late junction must be rejected by ancestor guard: {error}"
-        );
+        if swapped {
+            assert!(
+                error.to_string().contains("unsafe_undo_reparse_ancestor"),
+                "late junction must be rejected by ancestor guard: {error}"
+            );
+            assert_eq!(
+                fs::read(parked.join("verified.hold")).unwrap(),
+                b"verified-snapshot"
+            );
+            fs::remove_dir(&live).unwrap();
+            fs::rename(&parked, &live).unwrap();
+        } else {
+            assert!(
+                error.to_string().contains("windows_ancestor_rename_denied"),
+                "Windows must block the ancestor swap: {error}"
+            );
+            assert_eq!(fs::read(&entry).unwrap(), b"verified-snapshot");
+        }
         assert_eq!(fs::read(&outside_entry).unwrap(), b"verified-snapshot");
-        assert_eq!(
-            fs::read(parked.join("verified.hold")).unwrap(),
-            b"verified-snapshot"
-        );
-        fs::remove_dir(&live).unwrap();
-        fs::rename(&parked, &live).unwrap();
         unlink_undo_snapshot(&entry, &pinned, &digest).unwrap();
         assert!(!entry.exists(), "safe retry must delete only original leaf");
         assert_eq!(fs::read(&outside_entry).unwrap(), b"verified-snapshot");
