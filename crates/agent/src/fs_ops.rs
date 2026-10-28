@@ -4922,7 +4922,10 @@ mod atomic_digest_race_tests {
             error.to_string().contains("file_changed_since_read"),
             "{error}"
         );
-        assert_eq!(fs::metadata(&path).unwrap().len(), MAX_ATOMIC_UNGUARDED_SCAN + 1);
+        assert_eq!(
+            fs::metadata(&path).unwrap().len(),
+            MAX_ATOMIC_UNGUARDED_SCAN + 1
+        );
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
         fs::remove_dir_all(dir).unwrap();
     }
