@@ -796,6 +796,64 @@ mod windows_file_reparse_tests {
     }
 
     #[test]
+    fn windows_atomic_replace_no_sha_worker() {
+        let Ok(raw) = std::env::var("WCF_WIN_NO_SHA_TARGET") else {
+            return;
+        };
+        let error = atomic_write(Path::new(&raw), b"agent-update", None).unwrap_err();
+        assert!(
+            error.to_string().contains("file_changed_since_read"),
+            "unexpected unguarded replacement error: {error}"
+        );
+    }
+
+    #[test]
+    fn windows_atomic_replace_no_sha_swap_during_stage_is_rejected() {
+        use std::process::Stdio;
+        let base = std::env::temp_dir().join(format!("wc-win-no-sha-{}", Uuid::new_v4()));
+        fs::create_dir_all(&base).unwrap();
+        let target = base.join("target.txt");
+        let retired = base.join("retired.txt");
+        let marker = base.join("staged.marker");
+        let release = base.join("release.marker");
+        fs::write(&target, b"seed").unwrap();
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("fs_ops::windows_file_reparse_tests::windows_atomic_replace_no_sha_worker")
+            .arg("--nocapture")
+            .env("WCF_WIN_NO_SHA_TARGET", &target)
+            .env("WCF_WIN_CAS_MARKER", &marker)
+            .env("WCF_WIN_CAS_RELEASE", &release)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let started = Instant::now();
+        while !marker.exists() && started.elapsed() < Duration::from_secs(10) {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("Windows no-SHA worker exited before staging: {status}");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if !marker.exists() {
+            let _ = child.kill();
+            panic!("Windows no-SHA worker never reached staging barrier");
+        }
+        fs::rename(&target, &retired).unwrap();
+        fs::write(&target, b"external-file").unwrap();
+        fs::write(&release, b"continue").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "Windows no-SHA worker failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"external-file");
+        assert_eq!(fs::read(&retired).unwrap(), b"seed");
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
     fn windows_same_content_swap_worker() {
         let Ok(raw) = std::env::var("WCF_WIN_CAS_TARGET") else {
             return;
@@ -3857,7 +3915,9 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
         // writer can replace a file with the same bytes but a new file ID.
         // The final SHA alone cannot detect that ABA replacement.
         #[cfg(windows)]
-        let original_guard_file = if expected_sha256.is_some() {
+        let original_guard_file = if !target_was_missing {
+            // Also pin unconditional replacements: a competing file swap
+            // must not silently overwrite a different Windows file ID.
             Some(open_regular_read(path).map_err(|_| anyhow!("file_changed_since_read"))?)
         } else {
             None
@@ -3867,7 +3927,7 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
         drop(file);
         #[cfg(all(test, windows))]
         pause_for_windows_external_edit_fixture()?;
-        if let Some(expected) = expected_sha256 {
+        if !target_was_missing {
             let existing =
                 open_regular_read(path).map_err(|_| anyhow!("file_changed_since_read"))?;
             #[cfg(windows)]
@@ -3883,7 +3943,11 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
                     return Err(anyhow!("file_changed_since_read"));
                 }
             }
-            verify_atomic_write_guard(existing, expected)?;
+            if let Some(expected) = expected_sha256 {
+                verify_atomic_write_guard(existing, expected)?;
+            }
+        } else if expected_sha256.is_some() {
+            return Err(anyhow!("file_changed_since_read"));
         }
         #[cfg(windows)]
         reject_windows_undo_reparse_ancestors(path)?;
