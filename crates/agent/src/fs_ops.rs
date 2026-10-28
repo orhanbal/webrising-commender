@@ -4396,6 +4396,75 @@ mod atomic_digest_race_tests {
     }
 
     #[test]
+    fn unguarded_large_file_external_inplace_edit_worker() {
+        let Ok(raw) = std::env::var("WCF_LARGE_INPLACE_TARGET") else {
+            return;
+        };
+        let error = atomic_write(Path::new(&raw), b"agent-update", None).unwrap_err();
+        assert!(error.to_string().contains("file_changed_since_read"), "{error}");
+    }
+
+    #[test]
+    fn unguarded_large_file_external_inplace_edit_is_rejected() {
+        use std::process::{Command, Stdio};
+        let dir = std::env::temp_dir().join(format!("wc-digest-large-race-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let dir = fs::canonicalize(dir).unwrap();
+        let target = dir.join("target.bin");
+        let marker = dir.join("staged.marker");
+        let release = dir.join("release.marker");
+        let original = vec![b'x'; HARD_READ_MAX + 4096];
+        fs::write(&target, &original).unwrap();
+        let marker_var = if cfg!(windows) {
+            "WCF_WIN_CAS_MARKER"
+        } else {
+            "WCF_CAS_MARKER"
+        };
+        let release_var = if cfg!(windows) {
+            "WCF_WIN_CAS_RELEASE"
+        } else {
+            "WCF_CAS_RELEASE"
+        };
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("fs_ops::atomic_digest_race_tests::unguarded_large_file_external_inplace_edit_worker")
+            .arg("--nocapture")
+            .env("WCF_LARGE_INPLACE_TARGET", &target)
+            .env(marker_var, &marker)
+            .env(release_var, &release)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let start = Instant::now();
+        while !marker.exists() && start.elapsed() < Duration::from_secs(10) {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("large-file worker exited before staging: {status}");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if !marker.exists() {
+            let _ = child.kill();
+            panic!("large-file worker never reached staging");
+        }
+        let mut external = fs::OpenOptions::new().write(true).open(&target).unwrap();
+        external.write_all(b"attacker").unwrap();
+        external.sync_all().unwrap();
+        drop(external);
+        fs::write(&release, b"continue").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "large-file worker failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let preserved = fs::read(&target).unwrap();
+        assert_eq!(preserved.len(), original.len());
+        assert_eq!(&preserved[..8], b"attacker");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn unguarded_digest_keeps_bounded_unchanged_file() {
         let dir = std::env::temp_dir().join(format!("wc-digest-ok-{}", Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
