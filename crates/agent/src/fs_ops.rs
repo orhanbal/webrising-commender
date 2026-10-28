@@ -3399,12 +3399,12 @@ fn undo_entries(path: &Path, dir: &Path, scope: Option<&str>) -> Result<Vec<(Str
         // Legacy v1 snapshots have no owner; authenticated requests cannot
         // list them. v2 snapshots are bound to org/actor/enrolled device.
         let mut payload = Vec::new();
-        let reader = open_regular_read(&entry.path())?;
+        let mut reader = open_regular_read(&entry.path())?;
         reject_undo_hardlinked_handle(&reader)?;
         // Report the size of the inode we actually validated and read, not
         // the possibly stale path metadata from before opening the file.
         let snapshot_bytes = reader.metadata()?.len();
-        reader
+        std::io::Read::by_ref(&mut reader)
             .take(MAX_UNDO_FILE_BYTES + 1)
             .read_to_end(&mut payload)?;
         if payload.len() as u64 > MAX_UNDO_FILE_BYTES {
