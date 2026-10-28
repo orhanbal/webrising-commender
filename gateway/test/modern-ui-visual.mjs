@@ -241,8 +241,18 @@ try{
  assert.ok(await evalJs("document.body.textContent.includes('Cancellation & refund requests')"),"Super admin must expose support-request queue");
  await visit("/console/brand","Brand assets","modern-console-brand");
  await evalJs("(()=>{const field=document.querySelector('input[type=file]');const svg='<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"60\" height=\"40\"><rect width=\"60\" height=\"40\" fill=\"red\"/></svg>';const dt=new DataTransfer();dt.items.add(new File([svg],'fixture.svg',{type:'image/svg+xml'}));field.files=dt.files;field.dispatchEvent(new Event('change',{bubbles:true}))})()");
- await sleep(300);
- assert.ok(await evalJs("document.querySelector('img[src^=\"data:image/png;base64,\"]')!==null"),"SVG logo must become previewable raster PNG before upload");
+ // SVG decoding and canvas rasterization are asynchronous in headless Chrome.
+ // Poll the actual preview state rather than assuming a 300 ms GPU budget.
+ let rasterReady=false;
+ let rasterError="";
+ for(let attempt=0;attempt<50;attempt++){
+  rasterReady=await evalJs("document.querySelector('img[src^=\\\"data:image/png;base64,\\\"]')!==null");
+  if(rasterReady)break;
+  rasterError=await evalJs("document.querySelector('[role=alert]')?.textContent||''");
+  if(rasterError)break;
+  await sleep(100);
+ }
+ assert.ok(rasterReady,"SVG logo must become previewable raster PNG before upload"+(rasterError?": "+rasterError:" (timed out)"));
 
  await visit("/console/legal","Privacy & terms editor","modern-console-legal");
  await evalJs("document.querySelector('.dash-toolbar .locale-trigger').click()");
