@@ -102,6 +102,8 @@ jobs:
         run: cargo test -p webrising-commender-agent retention_prune_ -- --nocapture
       - name: Native undo snapshot consumption identity guard
         run: cargo test -p webrising-commender-agent undo_consumption_ -- --nocapture
+      - name: Native undo snapshot bounded-read identity and byte integrity
+        run: cargo test -p webrising-commender-agent undo_read_ -- --nocapture
       - name: Unix undo quota intermediate ABA identity guard
         if: runner.os != 'Windows'
         run: cargo test -p webrising-commender-agent quota_rejects_intermediate_aba_even_when_path_metadata_matches -- --nocapture
