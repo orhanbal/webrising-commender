@@ -11,7 +11,7 @@ const MAX_AGENT_CONFIG_BYTES: u64 = 256 * 1024;
 // std::os::windows::fs::MetadataExt::number_of_links is nightly-only.
 // Query the opened file handle directly; a path-only check can be swapped.
 #[cfg(windows)]
-fn reject_windows_config_hardlink(file: &fs::File) -> Result<()> {
+fn reject_windows_config_hardlink(file: &fs::File) -> Result<(u32, u64)> {
     use std::os::windows::io::AsRawHandle;
 
     #[repr(C)]
@@ -50,7 +50,13 @@ fn reject_windows_config_hardlink(file: &fs::File) -> Result<()> {
     if info.link_count != 1 {
         return Err(anyhow!("unsafe_agent_config_hardlink"));
     }
-    Ok(())
+    if !file.metadata()?.is_file() {
+        return Err(anyhow!("unsafe_agent_config_target"));
+    }
+    Ok((
+        info.volume_serial,
+        (u64::from(info.index_high) << 32) | u64::from(info.index_low),
+    ))
 }
 
 // Reject an untrusted redirect at any component below the user's home or
@@ -294,6 +300,22 @@ fn pause_config_stage_fixture() -> Result<()> {
     Ok(())
 }
 
+#[cfg(all(test, windows))]
+fn pause_windows_config_stage_fixture() -> Result<()> {
+    if let Ok(marker) = std::env::var("WCCFG_STAGE_MARKER") {
+        let release = std::env::var("WCCFG_STAGE_RELEASE")?;
+        fs::write(marker, b"staged")?;
+        let start = std::time::Instant::now();
+        while !Path::new(&release).exists() {
+            if start.elapsed() > std::time::Duration::from_secs(10) {
+                return Err(anyhow!("config_stage_fixture_timeout"));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+    Ok(())
+}
+
 impl AgentConfig {
     pub fn default_path() -> Result<PathBuf> {
         let base =
@@ -420,7 +442,77 @@ impl AgentConfig {
         {
             save_config_pinned_unix(path, parent, &data)
         }
-        #[cfg(not(unix))]
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            let temporary = parent.join(format!(".agent-config-{}.tmp", uuid::Uuid::new_v4()));
+            // Keep the original handle pinned through publication and cleanup.
+            // Never remove a different process's replacement of the staging leaf.
+            let mut pinned: Option<fs::File> = None;
+            let result = (|| -> Result<()> {
+                let mut options = fs::OpenOptions::new();
+                options.read(true).write(true).create_new(true);
+                let mut staged = options.open(&temporary)?;
+                pinned = Some(staged.try_clone()?);
+                staged.write_all(&data)?;
+                staged.sync_all()?;
+                #[cfg(test)]
+                pause_windows_config_stage_fixture()?;
+                validate_config_parent_chain(parent)?;
+
+                let expected = reject_windows_config_hardlink(&staged)?;
+                let mut reader_options = fs::OpenOptions::new();
+                reader_options.read(true).custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
+                let reader = reader_options
+                    .open(&temporary)
+                    .map_err(|_| anyhow!("unsafe_agent_config_staging"))?;
+                let observed = reject_windows_config_hardlink(&reader)
+                    .map_err(|_| anyhow!("unsafe_agent_config_staging"))?;
+                if expected != observed || reader.metadata()?.len() != data.len() as u64 {
+                    return Err(anyhow!("unsafe_agent_config_staging"));
+                }
+                let mut actual = Vec::new();
+                reader
+                    .take(MAX_AGENT_CONFIG_BYTES + 1)
+                    .read_to_end(&mut actual)?;
+                if actual != data {
+                    return Err(anyhow!("unsafe_agent_config_staging"));
+                }
+                // Re-check the destination immediately before publishing.
+                // A hostile last-instant rename remains a documented TOCTOU
+                // limit until Windows handle-relative publication is added.
+                match reader_options.open(path) {
+                    Ok(current) => {
+                        reject_windows_config_hardlink(&current)?;
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error.into()),
+                }
+                validate_config_parent_chain(parent)?;
+                fs::rename(&temporary, path)?;
+                Ok(())
+            })();
+            if result.is_err() {
+                if let Some(original) = pinned.as_ref() {
+                    let mut reader_options = fs::OpenOptions::new();
+                    reader_options.read(true).custom_flags(0x00200000);
+                    if let Ok(current) = reader_options.open(&temporary) {
+                        if let (Ok(before), Ok(after)) = (
+                            reject_windows_config_hardlink(original),
+                            reject_windows_config_hardlink(&current),
+                        ) {
+                            if before == after {
+                                // Path-based unlink still has a final-leaf
+                                // race; never claim atomic compare-and-unlink.
+                                let _ = fs::remove_file(&temporary);
+                            }
+                        }
+                    }
+                }
+            }
+            result
+        }
+        #[cfg(not(any(unix, windows)))]
         {
             let temporary = parent.join(format!(".agent-config-{}.tmp", uuid::Uuid::new_v4()));
             let result = (|| -> Result<()> {
@@ -1031,6 +1123,129 @@ mod tests {
         assert_eq!(fs::read(relocated.join("agent.json")).unwrap(), original);
         assert_eq!(fs::read(&outside_target).unwrap(), external);
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_config_stage_tamper_save_worker() {
+        let Ok(raw) = std::env::var("WCCFG_TAMPER_TARGET") else {
+            return;
+        };
+        let target = Path::new(&raw);
+        let root = target.parent().unwrap().parent().unwrap();
+        let config = AgentConfig {
+            device_id: "device".into(),
+            device_token: "new-secret-must-not-publish".into(),
+            approval_key: "new-approval-must-not-publish".into(),
+            gateway_ws_url: String::new(),
+            control_url: String::new(),
+            name: String::new(),
+            allowed_roots: vec![root.to_path_buf()],
+        };
+        let error = config.save(target).unwrap_err();
+        assert!(
+            error.to_string().contains("unsafe_agent_config_staging"),
+            "{error}"
+        );
+    }
+
+    #[cfg(windows)]
+    fn exercise_windows_config_stage_tamper(replace_leaf: bool) {
+        use std::process::{Command, Stdio};
+        let root = std::env::temp_dir().join(format!(
+            "wc-win-config-stage-tamper-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let parent = root.join("private");
+        fs::create_dir_all(&parent).unwrap();
+        let target = parent.join("agent.json");
+        let config = AgentConfig {
+            device_id: "device".into(),
+            device_token: "original-secret".into(),
+            approval_key: "original-approval".into(),
+            gateway_ws_url: String::new(),
+            control_url: String::new(),
+            name: "test".into(),
+            allowed_roots: vec![root.clone()],
+        };
+        config.save(&target).unwrap();
+        let original = fs::read(&target).unwrap();
+        let marker = root.join("stage.marker");
+        let release = root.join("release.marker");
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("config::tests::windows_config_stage_tamper_save_worker")
+            .arg("--nocapture")
+            .env("WCCFG_TAMPER_TARGET", &target)
+            .env("WCCFG_STAGE_MARKER", &marker)
+            .env("WCCFG_STAGE_RELEASE", &release)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let start = std::time::Instant::now();
+        while !marker.exists() && start.elapsed() < std::time::Duration::from_secs(10) {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("Windows config worker exited before stage: {status}");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        if !marker.exists() {
+            let _ = child.kill();
+            panic!("Windows config worker never reached staging barrier");
+        }
+        let staging = fs::read_dir(&parent)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .find(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with(".agent-config-")
+            })
+            .expect("Windows staging file not found");
+        let displaced = parent.join("displaced.tmp");
+        if replace_leaf {
+            fs::rename(&staging, &displaced).unwrap();
+            fs::write(&staging, b"untrusted-replacement").unwrap();
+        } else {
+            fs::write(&staging, b"untrusted-inplace").unwrap();
+        }
+        fs::write(&release, b"continue").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "Windows config worker failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read(&target).unwrap(), original);
+        assert_eq!(
+            AgentConfig::load(&target).unwrap().device_token,
+            "original-secret"
+        );
+        if replace_leaf {
+            assert_eq!(fs::read(&staging).unwrap(), b"untrusted-replacement");
+            assert!(fs::read(&displaced)
+                .unwrap()
+                .windows(b"new-secret-must-not-publish".len())
+                .any(|window| window == b"new-secret-must-not-publish"));
+        } else {
+            assert!(!staging.exists());
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_config_stage_leaf_replacement_cannot_publish_or_delete_untrusted_file() {
+        exercise_windows_config_stage_tamper(true);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_config_stage_inplace_tamper_cannot_publish_credentials() {
+        exercise_windows_config_stage_tamper(false);
     }
 
     #[cfg(windows)]
