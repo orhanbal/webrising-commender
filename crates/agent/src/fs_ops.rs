@@ -2467,6 +2467,29 @@ fn undo_snapshot_identity_matches(expected: &fs::File, actual: &fs::File) -> Res
     }
 }
 
+// Compare bounded bytes on both sides of the quarantine rename. File identity
+// alone cannot detect an in-place rewrite of the same inode during cleanup.
+// This is a race reduction, not a kernel-level atomic compare-and-unlink.
+fn undo_quarantine_digest(mut file: &fs::File) -> Result<String> {
+    let mut digest = Sha256::new();
+    let mut chunk = [0_u8; 16 * 1024];
+    let mut total = 0_u64;
+    loop {
+        let count = file.read(&mut chunk)?;
+        if count == 0 {
+            break;
+        }
+        total = total
+            .checked_add(count as u64)
+            .ok_or_else(|| anyhow!("undo_snapshot_too_large"))?;
+        if total > HARD_WRITE_MAX as u64 {
+            return Err(anyhow!("undo_snapshot_too_large"));
+        }
+        digest.update(&chunk[..count]);
+    }
+    Ok(format!("{:x}", digest.finalize()))
+}
+
 fn remove_undo_snapshot_checked(path: &Path, expected: &fs::File) -> Result<()> {
     remove_undo_snapshot_checked_with_hook(path, expected, || Ok(()))
 }
@@ -2496,6 +2519,7 @@ fn remove_undo_snapshot_checked_with_hooks(
     if !undo_snapshot_identity_matches(expected, &current)? {
         return Err(anyhow!("undo_snapshot_changed_before_unlink"));
     }
+    let original_digest = undo_quarantine_digest(&current)?;
     drop(current);
     before_move()?;
 
@@ -2512,7 +2536,9 @@ fn remove_undo_snapshot_checked_with_hooks(
         let moved = open_regular_read(&quarantine)
             .map_err(|_| anyhow!("undo_snapshot_changed_before_unlink"))?;
         reject_undo_hardlinked_handle(&moved)?;
-        if !undo_snapshot_identity_matches(expected, &moved)? {
+        if !undo_snapshot_identity_matches(expected, &moved)?
+            || undo_quarantine_digest(&moved)? != original_digest
+        {
             return Err(anyhow!("undo_snapshot_changed_before_unlink"));
         }
         unlink_undo_snapshot(&quarantine)
@@ -2527,6 +2553,8 @@ fn remove_undo_snapshot_checked_with_hooks(
             if let Ok(held) = open_regular_read(&quarantine) {
                 if reject_undo_hardlinked_handle(&held).is_ok()
                     && undo_snapshot_identity_matches(expected, &held).unwrap_or(false)
+                    && undo_quarantine_digest(&held)
+                        .is_ok_and(|digest| digest == original_digest)
                 {
                     let _ = rename_noreplace(&quarantine, path);
                 }
@@ -2806,6 +2834,78 @@ mod undo_scan_handle_tests {
             .collect();
         assert_eq!(holds.len(), 1);
         assert_eq!(fs::read(&holds[0]).unwrap(), b"untrusted-quarantine");
+        drop(pinned);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn undo_consumption_quarantine_rejects_inplace_tamper_after_move() {
+        let root = std::env::temp_dir().join(format!("wc-undo-hold-inplace-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let entry = root.join(format!("{}-{}.undo", "a".repeat(64), Uuid::new_v4()));
+        fs::write(&entry, b"verified-snapshot").unwrap();
+        let pinned = open_regular_read(&entry).unwrap();
+        let error = remove_undo_snapshot_checked_with_hooks(
+            &entry,
+            &pinned,
+            || Ok(()),
+            |hold| {
+                fs::write(hold, b"modified-snapshot")?;
+                Ok(())
+            },
+        )
+        .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("undo_snapshot_changed_before_unlink"));
+        assert!(!entry.exists(), "tampered hold must not be restored");
+        let holds: Vec<_> = fs::read_dir(&root)
+            .unwrap()
+            .filter_map(|item| item.ok())
+            .filter(|item| {
+                item.file_name()
+                    .to_string_lossy()
+                    .starts_with(".undo-quarantine-")
+            })
+            .collect();
+        assert_eq!(holds.len(), 1);
+        assert_eq!(fs::read(holds[0].path()).unwrap(), b"modified-snapshot");
+        drop(pinned);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn undo_consumption_quarantine_recovery_rejects_inplace_tamper() {
+        let root = std::env::temp_dir().join(format!("wc-undo-hold-recovery-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let entry = root.join(format!("{}-{}.undo", "a".repeat(64), Uuid::new_v4()));
+        fs::write(&entry, b"verified-snapshot").unwrap();
+        let pinned = open_regular_read(&entry).unwrap();
+        let error = remove_undo_snapshot_checked_with_hooks(
+            &entry,
+            &pinned,
+            || Ok(()),
+            |hold| {
+                fs::write(hold, b"modified-snapshot")?;
+                Err(anyhow!("injected_post_move_failure"))
+            },
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("injected_post_move_failure"));
+        assert!(!entry.exists(), "tampered hold must not be restored");
+        let holds: Vec<_> = fs::read_dir(&root)
+            .unwrap()
+            .filter_map(|item| item.ok())
+            .filter(|item| {
+                item.file_name()
+                    .to_string_lossy()
+                    .starts_with(".undo-quarantine-")
+            })
+            .collect();
+        assert_eq!(holds.len(), 1);
+        assert_eq!(fs::read(holds[0].path()).unwrap(), b"modified-snapshot");
         drop(pinned);
         fs::remove_dir_all(root).unwrap();
     }
