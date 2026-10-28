@@ -732,6 +732,70 @@ mod windows_file_reparse_tests {
     }
 
     #[test]
+    fn windows_atomic_create_worker() {
+        let Ok(raw) = std::env::var("WCF_WIN_CREATE_TARGET") else {
+            return;
+        };
+        assert!(
+            atomic_write(Path::new(&raw), b"agent-create", None).is_err(),
+            "external creator's file was overwritten"
+        );
+    }
+
+    #[test]
+    fn windows_atomic_create_rejects_external_creation_during_stage() {
+        use std::process::Stdio;
+        let root = std::env::temp_dir().join(format!("wc-win-create-race-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("new.txt");
+        let marker = root.join("staged.marker");
+        let release = root.join("release.marker");
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("fs_ops::windows_file_reparse_tests::windows_atomic_create_worker")
+            .arg("--nocapture")
+            .env("WCF_WIN_CREATE_TARGET", &target)
+            .env("WCF_WIN_CAS_MARKER", &marker)
+            .env("WCF_WIN_CAS_RELEASE", &release)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let started = Instant::now();
+        while !marker.exists() && started.elapsed() < Duration::from_secs(10) {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("Windows create worker exited before staging: {status}");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if !marker.exists() {
+            let _ = child.kill();
+            panic!("Windows create worker never reached staging barrier");
+        }
+        fs::write(&target, b"external-create").unwrap();
+        fs::write(&release, b"continue").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "Windows create worker failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"external-create");
+        assert_eq!(
+            fs::read_dir(&root)
+                .unwrap()
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".wecommander-"))
+                .count(),
+            0
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn windows_same_content_swap_worker() {
         let Ok(raw) = std::env::var("WCF_WIN_CAS_TARGET") else {
             return;
@@ -3770,8 +3834,18 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
             .open(&temporary)?;
         #[cfg(windows)]
         reject_windows_undo_reparse_ancestors(path)?;
-        if let Ok(existing) = fs::metadata(path) {
-            file.set_permissions(existing.permissions())?;
+        let mut target_was_missing = false;
+        match fs::symlink_metadata(path) {
+            Ok(existing) => {
+                if !existing.is_file() {
+                    return Err(anyhow!("atomic_replace_requires_regular_file"));
+                }
+                file.set_permissions(existing.permissions())?;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                target_was_missing = true;
+            }
+            Err(error) => return Err(error.into()),
         }
         // Pin the original Windows file identity before staging. A competing
         // writer can replace a file with the same bytes but a new file ID.
@@ -3807,7 +3881,12 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
         }
         #[cfg(windows)]
         reject_windows_undo_reparse_ancestors(path)?;
-        fs::rename(&temporary, path).context("atomic replace failed")?;
+        if target_was_missing {
+            // MoveFileW rejects a destination created during staging.
+            rename_noreplace(&temporary, path).context("atomic create collision")?;
+        } else {
+            fs::rename(&temporary, path).context("atomic replace failed")?;
+        }
         // A synced temporary file does not make its directory entry durable.
         // Best-effort directory sync improves crash recovery on Unix. Never
         // fail *after* rename: callers would otherwise delete their undo
