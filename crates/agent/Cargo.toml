@@ -9,6 +9,11 @@ authors.workspace = true
 name = "webrising-commender"
 path = "src/main.rs"
 
+[features]
+# Opt-in deterministic interprocess barriers for CI-only real MCP acceptance.
+# Release artifacts must never enable this feature.
+ci-race-fixtures = []
+
 [dependencies]
 anyhow = "1.0"
 base64 = "0.22"

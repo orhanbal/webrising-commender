@@ -18,6 +18,9 @@ const agentBinary =
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "commender-agent-e2e-"));
 const configPath = path.join(tempRoot, "agent.json");
+const mcpCasTarget = path.join(tempRoot, "mcp-midstage-race.txt");
+const mcpCasMarker = path.join(tempRoot, "mcp-midstage.marker");
+const mcpCasRelease = path.join(tempRoot, "mcp-midstage.release");
 let agent;
 let agentLog = "";
 
@@ -108,7 +111,14 @@ try {
   const startAgent = () => {
     const child = spawn(agentBinary, ["--config", configPath, "run"], {
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, RUST_LOG: "info", XDG_DATA_HOME: path.join(tempRoot, "xdg-data") },
+      env: {
+        ...process.env,
+        RUST_LOG: "info",
+        XDG_DATA_HOME: path.join(tempRoot, "xdg-data"),
+        WCF_MCP_CAS_TARGET: mcpCasTarget,
+        WCF_MCP_CAS_MARKER: mcpCasMarker,
+        WCF_MCP_CAS_RELEASE: mcpCasRelease,
+      },
     });
     child.stdout.on("data", (chunk) => { agentLog += chunk.toString(); });
     child.stderr.on("data", (chunk) => { agentLog += chunk.toString(); });
@@ -1521,6 +1531,37 @@ try {
   assert.equal(acceptedUnguardedHardlink.ok, true, JSON.stringify(acceptedUnguardedHardlink));
   assert.equal(fs.readFileSync(unguardedHardlinkPath, "utf8"), "published-after-unlink");
   console.log("agent-e2e: unguarded MCP hardlink alias rejected; safe retry accepted");
+
+  // 3A: deterministic *real* MCP -> Gateway -> Rust Agent interprocess
+  // race. The CI-only Agent barrier stops after staging, before the final
+  // digest. The test process then edits the same inode without a SHA token.
+  // Neither the external bytes nor the original should be overwritten.
+  fs.writeFileSync(mcpCasTarget, "original-mcp");
+  const pendingMcpCas = tool(1755, "fs_write", {
+    device_id: deviceId, path: mcpCasTarget,
+    content_base64: Buffer.from("must-not-publish").toString("base64"),
+  });
+  try {
+    await waitFor(() => fs.existsSync(mcpCasMarker), 20000, 20);
+    fs.writeFileSync(mcpCasTarget, "external-mcp");
+  } finally {
+    fs.writeFileSync(mcpCasRelease, "continue");
+  }
+  const rejectedMcpCas = await pendingMcpCas;
+  assert.match(String(rejectedMcpCas.error), /file_changed_since_read/, JSON.stringify(rejectedMcpCas));
+  assert.equal(fs.readFileSync(mcpCasTarget, "utf8"), "external-mcp");
+  assert.equal(
+    fs.readdirSync(tempRoot).filter((name) => name.startsWith(".wecommander-") && name.endsWith(".tmp")).length,
+    0,
+    "rejected MCP race must not leak staging files",
+  );
+  const retriedMcpCas = await tool(1756, "fs_write", {
+    device_id: deviceId, path: mcpCasTarget,
+    content_base64: Buffer.from("safe-retry").toString("base64"),
+  });
+  assert.equal(retriedMcpCas.ok, true, JSON.stringify(retriedMcpCas));
+  assert.equal(fs.readFileSync(mcpCasTarget, "utf8"), "safe-retry");
+  console.log("agent-e2e: cross-process midstage MCP edit rejected, external bytes preserved, retry passed");
 
   const guardedAppend = await tool(584, "fs_append", {
     device_id: deviceId, path: versionedPath,

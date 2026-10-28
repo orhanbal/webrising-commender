@@ -295,7 +295,8 @@ jobs:
         working-directory: gateway
       - run: npm run build
         working-directory: gateway
-      - run: cargo build -p webrising-commender-agent
+      - name: Build opt-in debug Agent with deterministic MCP race fixture
+        run: cargo build -p webrising-commender-agent --features ci-race-fixtures
       - name: Start gateway
         working-directory: gateway
         run: |

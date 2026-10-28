@@ -4345,6 +4345,30 @@ fn pause_for_external_edit_fixture() -> Result<()> {
     Ok(())
 }
 
+// This barrier is compiled only into opt-in debug CI Agents, never release
+// packages. It exercises a real MCP request while an independent OS process
+// changes the original target after staging and before final conflict checks.
+#[cfg(all(unix, feature = "ci-race-fixtures", debug_assertions))]
+fn pause_for_mcp_external_edit_fixture(path: &Path) -> Result<()> {
+    let Ok(target) = std::env::var("WCF_MCP_CAS_TARGET") else {
+        return Ok(());
+    };
+    if path != Path::new(&target) {
+        return Ok(());
+    }
+    let marker = std::env::var("WCF_MCP_CAS_MARKER")?;
+    let release = std::env::var("WCF_MCP_CAS_RELEASE")?;
+    fs::write(marker, b"staged")?;
+    let started = Instant::now();
+    while !Path::new(&release).exists() {
+        if started.elapsed() > Duration::from_secs(20) {
+            return Err(anyhow!("mcp_external_edit_fixture_timeout"));
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    Ok(())
+}
+
 // An initially absent target must not overwrite a file created by an
 // independent process while the Agent stages its contents. Use the same
 // pinned directory handle for the kernel's no-replace publication.
@@ -4468,6 +4492,8 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
         }
         file.write_all(bytes)?;
         file.sync_all()?;
+        #[cfg(all(unix, feature = "ci-race-fixtures", debug_assertions))]
+        pause_for_mcp_external_edit_fixture(path)?;
         #[cfg(test)]
         pause_for_external_edit_fixture()?;
         // A competing local process can replace the UUID staging leaf while
