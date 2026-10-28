@@ -2637,7 +2637,9 @@ mod undo_scan_handle_tests {
         fs::rename(&snapshot, &original).unwrap();
         fs::write(&snapshot, b"snapshot-data").unwrap();
         let error = verify_undo_snapshot_read(&snapshot, &pinned, &read_bytes).unwrap_err();
-        assert!(error.to_string().contains("undo_snapshot_changed_during_read"));
+        assert!(error
+            .to_string()
+            .contains("undo_snapshot_changed_during_read"));
         assert_eq!(fs::read(&snapshot).unwrap(), b"snapshot-data");
         assert_eq!(fs::read(&original).unwrap(), b"snapshot-data");
         drop(pinned);
@@ -2655,7 +2657,9 @@ mod undo_scan_handle_tests {
         let read_bytes = fs::read(&snapshot).unwrap();
         fs::write(&snapshot, b"tampered-data").unwrap();
         let error = verify_undo_snapshot_read(&snapshot, &pinned, &read_bytes).unwrap_err();
-        assert!(error.to_string().contains("undo_snapshot_changed_during_read"));
+        assert!(error
+            .to_string()
+            .contains("undo_snapshot_changed_during_read"));
         assert_eq!(fs::read(&snapshot).unwrap(), b"tampered-data");
         drop(pinned);
         fs::remove_dir_all(root).unwrap();
