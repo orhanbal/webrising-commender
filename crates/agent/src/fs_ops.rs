@@ -3842,9 +3842,10 @@ fn verify_atomic_write_guard(existing: fs::File, expected: &str) -> Result<()> {
     Ok(())
 }
 
-// An unguarded replacement should still detect an in-place external writer
-// during staging. Hash only bounded existing files; this is a best-effort
-// conflict check, not an atomic compare-and-swap at the final rename.
+// An unguarded replacement must not silently skip conflict detection for
+// existing files larger than the single-read limit. Stream up to the paged-file
+// budget and fail closed above it. This is still not a kernel-level CAS against
+// an uncooperative writer between the final digest and rename.
 fn atomic_unconditional_original_digest(file: &fs::File) -> Result<Option<String>> {
     atomic_unconditional_original_digest_with_hook(file, || Ok(()))
 }
@@ -3857,23 +3858,23 @@ fn atomic_unconditional_original_digest_with_hook(
     after_size_check: impl FnOnce() -> Result<()>,
 ) -> Result<Option<String>> {
     let initial_len = file.metadata()?.len();
-    if initial_len > HARD_READ_MAX as u64 {
-        return Ok(None);
+    if initial_len > MAX_PAGED_FILE {
+        return Err(anyhow!("file_changed_since_read"));
     }
     after_size_check()?;
     let mut reader = file.try_clone()?;
     let mut digest = Sha256::new();
     let mut buffer = [0_u8; 16 * 1024];
-    let mut total = 0_usize;
+    let mut total = 0_u64;
     loop {
         let count = reader.read(&mut buffer)?;
         if count == 0 {
             break;
         }
         total = total
-            .checked_add(count)
+            .checked_add(count as u64)
             .ok_or_else(|| anyhow!("file_changed_since_read"))?;
-        if total > HARD_READ_MAX {
+        if total > MAX_PAGED_FILE {
             return Err(anyhow!("file_changed_since_read"));
         }
         digest.update(&buffer[..count]);
@@ -4331,6 +4332,65 @@ mod atomic_digest_race_tests {
         .unwrap_err();
         assert!(error.to_string().contains("file_changed_since_read"));
         assert_eq!(fs::read(&path).unwrap(), b"x");
+        drop(file);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unguarded_digest_protects_existing_file_above_single_read_limit() {
+        let dir = std::env::temp_dir().join(format!("wc-digest-large-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let dir = fs::canonicalize(dir).unwrap();
+        let path = dir.join("target.bin");
+        let original = vec![b'x'; HARD_READ_MAX + 4096];
+        fs::write(&path, &original).unwrap();
+        let file = fs::File::open(&path).unwrap();
+        assert_eq!(
+            atomic_unconditional_original_digest(&file).unwrap(),
+            Some(format!("{:x}", Sha256::digest(&original)))
+        );
+        drop(file);
+        atomic_write(&path, b"updated", None).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"updated");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unguarded_digest_rejects_existing_file_above_streaming_budget() {
+        let dir = std::env::temp_dir().join(format!("wc-digest-oversize-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let dir = fs::canonicalize(dir).unwrap();
+        let path = dir.join("target.bin");
+        fs::write(&path, b"x").unwrap();
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(MAX_PAGED_FILE + 1)
+            .unwrap();
+        let error = atomic_write(&path, b"must-not-overwrite", None).unwrap_err();
+        assert!(error.to_string().contains("file_changed_since_read"), "{error}");
+        assert_eq!(fs::metadata(&path).unwrap().len(), MAX_PAGED_FILE + 1);
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unguarded_digest_rejects_growth_past_streaming_budget() {
+        let dir = std::env::temp_dir().join(format!("wc-digest-overgrow-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("target.bin");
+        fs::write(&path, b"seed").unwrap();
+        let file = fs::File::open(&path).unwrap();
+        let error = atomic_unconditional_original_digest_with_hook(&file, || {
+            fs::OpenOptions::new()
+                .write(true)
+                .open(&path)?
+                .set_len(MAX_PAGED_FILE + 1)?;
+            Ok(())
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("file_changed_since_read"), "{error}");
         drop(file);
         fs::remove_dir_all(dir).unwrap();
     }
