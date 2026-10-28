@@ -3754,7 +3754,8 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
     use std::os::fd::{AsRawFd, FromRawFd};
 
     let (parent, target) = rename_parent_handle(path)?;
-    let temporary = CString::new(format!(".wecommander-{}.tmp", Uuid::new_v4()))?;
+    let temporary_name = format!(".wecommander-{}.tmp", Uuid::new_v4());
+    let temporary = CString::new(temporary_name.as_str())?;
     let fd = unsafe {
         libc::openat(
             parent.as_raw_fd(),
@@ -3802,6 +3803,30 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
         file.sync_all()?;
         #[cfg(test)]
         pause_for_external_edit_fixture()?;
+        // A competing local process can replace the UUID staging leaf while
+        // the original staging handle remains open. Never publish a different
+        // inode, even if the target itself still passes its SHA/identity guard.
+        let staged_fd = unsafe {
+            libc::openat(
+                parent.as_raw_fd(),
+                temporary.as_ptr(),
+                libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        };
+        if staged_fd < 0 {
+            return Err(anyhow!("atomic_staging_changed"));
+        }
+        let staged_now = unsafe { fs::File::from_raw_fd(staged_fd) };
+        use std::os::unix::fs::MetadataExt;
+        let staged_before = file.metadata()?;
+        let staged_after = staged_now.metadata()?;
+        if !staged_after.is_file()
+            || staged_before.dev() != staged_after.dev()
+            || staged_before.ino() != staged_after.ino()
+            || staged_after.nlink() != 1
+        {
+            return Err(anyhow!("atomic_staging_changed"));
+        }
         if !target_was_missing {
             // Re-open relative to the pinned parent; never trust a path stat.
             // Reject a swapped inode even for an unconditional edit. This is
@@ -3854,9 +3879,9 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
         Ok(())
     })();
     if result.is_err() {
-        unsafe {
-            libc::unlinkat(parent.as_raw_fd(), temporary.as_ptr(), 0);
-        }
+        // The staging pathname may now belong to a different process. Use
+        // identity-checked quarantine cleanup instead of unlinking by name.
+        let _ = remove_undo_snapshot_checked(&path.with_file_name(&temporary_name), &file);
     }
     result
 }
@@ -3891,13 +3916,18 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
     #[cfg(windows)]
     reject_windows_undo_reparse_ancestors(path)?;
     let temporary = parent.join(format!(".wecommander-{}.tmp", Uuid::new_v4()));
+    #[cfg(windows)]
+    let mut staged_identity: Option<(u32, u32, u32)> = None;
     let result = (|| -> Result<()> {
         let mut file = fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&temporary)?;
         #[cfg(windows)]
-        reject_windows_undo_reparse_ancestors(path)?;
+        {
+            staged_identity = Some(windows_file_identity(&file)?);
+            reject_windows_undo_reparse_ancestors(path)?;
+        }
         let mut target_was_missing = false;
         match fs::symlink_metadata(path) {
             Ok(existing) => {
@@ -3927,6 +3957,18 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
         drop(file);
         #[cfg(all(test, windows))]
         pause_for_windows_external_edit_fixture()?;
+        #[cfg(windows)]
+        {
+            // The staged leaf is a separate security boundary from the target.
+            // Detect a same-name replacement before MoveFileW/fs::rename.
+            let staged_now = open_regular_read(&temporary)
+                .map_err(|_| anyhow!("atomic_staging_changed"))?;
+            if Some(windows_file_identity(&staged_now)?) != staged_identity
+                || reject_windows_hardlinked_file(&staged_now).is_err()
+            {
+                return Err(anyhow!("atomic_staging_changed"));
+            }
+        }
         if !target_was_missing {
             let existing =
                 open_regular_read(path).map_err(|_| anyhow!("file_changed_since_read"))?;
@@ -3970,6 +4012,15 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
         Ok(())
     })();
     if result.is_err() {
+        #[cfg(windows)]
+        if let Some(identity) = staged_identity {
+            if let Ok(current) = open_regular_read(&temporary) {
+                if windows_file_identity(&current).ok() == Some(identity) {
+                    let _ = remove_undo_snapshot_checked(&temporary, &current);
+                }
+            }
+        }
+        #[cfg(not(windows))]
         let _ = fs::remove_file(&temporary);
     }
     result
