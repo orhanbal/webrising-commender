@@ -732,6 +732,76 @@ mod windows_file_reparse_tests {
     }
 
     #[test]
+    fn windows_atomic_staging_swap_worker() {
+        let Ok(raw) = std::env::var("WCF_WIN_STAGE_SWAP_TARGET") else {
+            return;
+        };
+        let error = atomic_write(Path::new(&raw), b"agent-update", None).unwrap_err();
+        assert!(
+            error.to_string().contains("atomic_staging_changed"),
+            "unexpected staging error: {error}"
+        );
+    }
+
+    #[test]
+    fn windows_atomic_staging_swap_rejects_untrusted_publication_and_cleanup() {
+        use std::process::Stdio;
+        let base = std::env::temp_dir().join(format!("wc-win-stage-swap-{}", Uuid::new_v4()));
+        fs::create_dir_all(&base).unwrap();
+        let target = base.join("target.txt");
+        let marker = base.join("staged.marker");
+        let release = base.join("release.marker");
+        let parked = base.join("parked-stage.txt");
+        fs::write(&target, b"seed").unwrap();
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("fs_ops::windows_file_reparse_tests::windows_atomic_staging_swap_worker")
+            .arg("--nocapture")
+            .env("WCF_WIN_STAGE_SWAP_TARGET", &target)
+            .env("WCF_WIN_CAS_MARKER", &marker)
+            .env("WCF_WIN_CAS_RELEASE", &release)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let started = Instant::now();
+        while !marker.exists() && started.elapsed() < Duration::from_secs(10) {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("Windows staging worker exited before barrier: {status}");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if !marker.exists() {
+            let _ = child.kill();
+            panic!("Windows staging worker never reached barrier");
+        }
+        let stage = fs::read_dir(&base)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| {
+                path.file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with(".wecommander-"))
+            })
+            .expect("missing staging leaf");
+        fs::rename(&stage, &parked).unwrap();
+        fs::write(&stage, b"attacker-stage").unwrap();
+        fs::write(&release, b"continue").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "Windows staging worker failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"seed");
+        assert_eq!(fs::read(&stage).unwrap(), b"attacker-stage");
+        assert_eq!(fs::read(&parked).unwrap(), b"agent-update");
+        fs::remove_file(&stage).unwrap();
+        atomic_write(&target, b"recovered", None).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"recovered");
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
     fn windows_atomic_create_worker() {
         let Ok(raw) = std::env::var("WCF_WIN_CREATE_TARGET") else {
             return;
@@ -4033,6 +4103,77 @@ mod atomic_write_parent_tests {
 
     // The competing writer is a separate OS process, not another thread
     // sharing the Agent's in-memory mutation lock.
+    #[test]
+    fn process_atomic_staging_swap_worker() {
+        let Ok(raw) = std::env::var("WCF_STAGE_SWAP_TARGET") else {
+            return;
+        };
+        let error = atomic_write(Path::new(&raw), b"agent-update", None).unwrap_err();
+        assert!(
+            error.to_string().contains("atomic_staging_changed"),
+            "unexpected staging error: {error}"
+        );
+    }
+
+    #[test]
+    fn atomic_staging_swap_rejects_untrusted_publication_and_cleanup() {
+        use std::process::{Command, Stdio};
+        let base = std::env::temp_dir().join(format!("wc-stage-swap-{}", Uuid::new_v4()));
+        fs::create_dir_all(&base).unwrap();
+        let base = fs::canonicalize(base).unwrap();
+        let target = base.join("target.txt");
+        let marker = base.join("staged.marker");
+        let release = base.join("release.marker");
+        let parked = base.join("parked-stage.txt");
+        fs::write(&target, b"seed").unwrap();
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("fs_ops::atomic_write_parent_tests::process_atomic_staging_swap_worker")
+            .arg("--nocapture")
+            .env("WCF_STAGE_SWAP_TARGET", &target)
+            .env("WCF_CAS_MARKER", &marker)
+            .env("WCF_CAS_RELEASE", &release)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let started = Instant::now();
+        while !marker.exists() && started.elapsed() < Duration::from_secs(10) {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("Unix staging worker exited before barrier: {status}");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if !marker.exists() {
+            let _ = child.kill();
+            panic!("Unix staging worker never reached barrier");
+        }
+        let stage = fs::read_dir(&base)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| {
+                path.file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with(".wecommander-"))
+            })
+            .expect("missing staging leaf");
+        fs::rename(&stage, &parked).unwrap();
+        fs::write(&stage, b"attacker-stage").unwrap();
+        fs::write(&release, b"continue").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "Unix staging worker failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"seed");
+        assert_eq!(fs::read(&stage).unwrap(), b"attacker-stage");
+        assert_eq!(fs::read(&parked).unwrap(), b"agent-update");
+        fs::remove_file(&stage).unwrap();
+        atomic_write(&target, b"recovered", None).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"recovered");
+        fs::remove_dir_all(base).unwrap();
+    }
+
     #[test]
     fn process_atomic_guard_worker() {
         let Ok(raw) = std::env::var("WCF_CAS_TARGET") else {
