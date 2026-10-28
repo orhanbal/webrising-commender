@@ -72,6 +72,8 @@ jobs:
       - name: Windows atomic staging leaf substitution and safe cleanup
         if: runner.os == 'Windows'
         run: cargo test -p webrising-commender-agent windows_atomic_staging_ -- --nocapture
+      - name: Native unguarded digest growth and truncation race
+        run: cargo test -p webrising-commender-agent atomic_digest_race_tests -- --nocapture
       - name: Windows terminal history junction rejection
         if: runner.os == 'Windows'
         run: cargo test -p webrising-commender-agent windows_junction_ -- --nocapture
