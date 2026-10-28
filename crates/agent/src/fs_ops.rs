@@ -3366,7 +3366,9 @@ mod undo_scan_handle_tests {
             Ok(())
         })
         .unwrap_err();
-        assert!(error.to_string().contains("undo_snapshot_changed_before_unlink"));
+        assert!(error
+            .to_string()
+            .contains("undo_snapshot_changed_before_unlink"));
         assert_eq!(fs::read(&entry).unwrap(), b"untrusted-replacement");
         assert_eq!(fs::read(&parked).unwrap(), b"verified-snapshot");
         drop(pinned);
@@ -3388,7 +3390,9 @@ mod undo_scan_handle_tests {
             Ok(())
         })
         .unwrap_err();
-        assert!(error.to_string().contains("undo_snapshot_changed_before_unlink"));
+        assert!(error
+            .to_string()
+            .contains("undo_snapshot_changed_before_unlink"));
         assert_eq!(fs::read(&entry).unwrap(), b"tampered-snapshot");
         drop(pinned);
         fs::remove_dir_all(root).unwrap();
