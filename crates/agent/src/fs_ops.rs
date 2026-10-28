@@ -2530,6 +2530,34 @@ fn pause_for_mcp_undo_quarantine_fixture(path: &Path) -> Result<()> {
     Ok(())
 }
 
+// Opt-in second barrier after the first quarantine digest, before the final
+// pathname re-open. It tests post-digest hostile edits through real MCP, not
+// an atomic compare-and-unlink guarantee. Absent from release binaries.
+#[cfg(all(unix, feature = "ci-race-fixtures", debug_assertions))]
+fn pause_for_mcp_undo_postdigest_fixture(path: &Path) -> Result<()> {
+    let Ok(target) = std::env::var("WCF_MCP_UNDO_POSTDIGEST_TARGET") else {
+        return Ok(());
+    };
+    let prefix = format!("{}-", undo_prefix(Path::new(&target)));
+    if !path
+        .file_name()
+        .is_some_and(|name| name.to_string_lossy().starts_with(&prefix))
+    {
+        return Ok(());
+    }
+    let marker = std::env::var("WCF_MCP_UNDO_POSTDIGEST_MARKER")?;
+    let release = std::env::var("WCF_MCP_UNDO_POSTDIGEST_RELEASE")?;
+    fs::write(marker, b"postdigest")?;
+    let started = Instant::now();
+    while !Path::new(&release).exists() {
+        if started.elapsed() > Duration::from_secs(20) {
+            return Err(anyhow!("mcp_undo_postdigest_fixture_timeout"));
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    Ok(())
+}
+
 fn remove_undo_snapshot_checked(path: &Path, expected: &fs::File) -> Result<()> {
     remove_undo_snapshot_checked_with_hook(path, expected, || Ok(()))
 }
@@ -2600,6 +2628,8 @@ fn remove_undo_snapshot_checked_with_all_hooks(
         // deleting by pathname would then target a different inode. Re-open
         // and recheck identity, link count and bounded content before unlink.
         before_unlink(&quarantine)?;
+        #[cfg(all(unix, feature = "ci-race-fixtures", debug_assertions))]
+        pause_for_mcp_undo_postdigest_fixture(path)?;
         let final_leaf = open_regular_read(&quarantine)
             .map_err(|_| anyhow!("undo_snapshot_changed_before_unlink"))?;
         reject_undo_hardlinked_handle(&final_leaf)?;

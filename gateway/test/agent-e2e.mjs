@@ -24,6 +24,9 @@ const mcpCasRelease = path.join(tempRoot, "mcp-midstage.release");
 const mcpUndoTarget = path.join(tempRoot, "mcp-undo-quarantine-race.txt");
 const mcpUndoMarker = path.join(tempRoot, "mcp-undo-quarantine.marker");
 const mcpUndoRelease = path.join(tempRoot, "mcp-undo-quarantine.release");
+const mcpUndoPostdigestTarget = path.join(tempRoot, "mcp-undo-postdigest-race.txt");
+const mcpUndoPostdigestMarker = path.join(tempRoot, "mcp-undo-postdigest.marker");
+const mcpUndoPostdigestRelease = path.join(tempRoot, "mcp-undo-postdigest.release");
 let agent;
 let agentLog = "";
 
@@ -124,6 +127,9 @@ try {
         WCF_MCP_UNDO_TARGET: mcpUndoTarget,
         WCF_MCP_UNDO_MARKER: mcpUndoMarker,
         WCF_MCP_UNDO_RELEASE: mcpUndoRelease,
+        WCF_MCP_UNDO_POSTDIGEST_TARGET: mcpUndoPostdigestTarget,
+        WCF_MCP_UNDO_POSTDIGEST_MARKER: mcpUndoPostdigestMarker,
+        WCF_MCP_UNDO_POSTDIGEST_RELEASE: mcpUndoPostdigestRelease,
       },
     });
     child.stdout.on("data", (chunk) => { agentLog += chunk.toString(); });
@@ -1118,6 +1124,51 @@ try {
   fs.rmSync(mcpUndoMarker, { force: true });
   fs.rmSync(mcpUndoRelease, { force: true });
   console.log("agent-e2e: MCP undo quarantine leaf-swap and in-place tamper rejected");
+
+  // 3B post-digest race: an external process swaps the .hold pathname or
+  // rewrites its pinned inode after the first digest, before the final check.
+  // The real MCP call must preserve attacker bytes and refuse consumption.
+  const postdigestPrefix = createHash("sha256").update(mcpUndoPostdigestTarget).digest("hex");
+  for (const [index, attack] of ["leaf-swap", "inplace-tamper"].entries()) {
+    fs.rmSync(mcpUndoPostdigestMarker, { force: true });
+    fs.rmSync(mcpUndoPostdigestRelease, { force: true });
+    fs.writeFileSync(mcpUndoPostdigestTarget, "postdigest-seed");
+    const edit = await tool(1830 + index * 10, "fs_replace", {
+      device_id: deviceId, path: mcpUndoPostdigestTarget,
+      search: "postdigest-seed", replace: "postdigest-updated",
+    });
+    assert.equal(edit.ok, true, JSON.stringify(edit));
+    const snapshot = path.join(undoRaceDir, `${postdigestPrefix}-${edit.undoId}.undo`);
+    const snapshotBytes = fs.readFileSync(snapshot);
+    const pendingUndo = tool(1831 + index * 10, "fs_undo", {
+      device_id: deviceId, path: mcpUndoPostdigestTarget, undo_id: edit.undoId,
+      expected_sha256: edit.sha256,
+    });
+    await waitFor(() => fs.existsSync(mcpUndoPostdigestMarker), 15000, 20);
+    const holds = fs.readdirSync(undoRaceDir)
+      .filter((name) => name.startsWith(".undo-quarantine-") && name.endsWith(".hold"));
+    assert.equal(holds.length, 1, JSON.stringify(holds));
+    const hold = path.join(undoRaceDir, holds[0]);
+    const parked = path.join(tempRoot, `parked-postdigest-${index}.snapshot`);
+    if (attack === "leaf-swap") fs.renameSync(hold, parked);
+    fs.writeFileSync(hold, "untrusted-postdigest");
+    fs.writeFileSync(mcpUndoPostdigestRelease, "continue");
+    const result = await pendingUndo;
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(result.undoConsumed, false, "post-digest tamper must not consume undo");
+    assert.equal(fs.readFileSync(mcpUndoPostdigestTarget, "utf8"), "postdigest-seed");
+    assert.equal(fs.readFileSync(hold, "utf8"), "untrusted-postdigest");
+    assert.equal(fs.existsSync(snapshot), false, "untrusted hold must not become valid undo");
+    if (attack === "leaf-swap") {
+      assert.deepEqual(fs.readFileSync(parked), snapshotBytes);
+      fs.rmSync(parked);
+    }
+    fs.rmSync(hold);
+  }
+  fs.rmSync(mcpUndoPostdigestMarker, { force: true });
+  fs.rmSync(mcpUndoPostdigestRelease, { force: true });
+  console.log("agent-e2e: MCP post-digest quarantine leaf-swap and in-place tamper rejected");
+
 
   // Foreign tenant/actor/device owner evidence must remain invisible.
   const foreignUndoId = "11111111-1111-4111-8111-111111111111";
