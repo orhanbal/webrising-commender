@@ -2625,6 +2625,57 @@ mod undo_scan_handle_tests {
     use super::*;
 
     #[test]
+    fn undo_read_rejects_same_content_leaf_replacement() {
+        let root = std::env::temp_dir().join(format!("wc-undo-read-swap-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let snapshot = root.join(format!("{}-{}.undo", "a".repeat(64), Uuid::new_v4()));
+        let original = root.join("original");
+        fs::write(&snapshot, b"snapshot-data").unwrap();
+        let pinned = open_regular_read(&snapshot).unwrap();
+        let read_bytes = fs::read(&snapshot).unwrap();
+        fs::rename(&snapshot, &original).unwrap();
+        fs::write(&snapshot, b"snapshot-data").unwrap();
+        let error = verify_undo_snapshot_read(&snapshot, &pinned, &read_bytes).unwrap_err();
+        assert!(error.to_string().contains("undo_snapshot_changed_during_read"));
+        assert_eq!(fs::read(&snapshot).unwrap(), b"snapshot-data");
+        assert_eq!(fs::read(&original).unwrap(), b"snapshot-data");
+        drop(pinned);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn undo_read_rejects_same_inode_content_tampering() {
+        let root = std::env::temp_dir().join(format!("wc-undo-read-tamper-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let snapshot = root.join(format!("{}-{}.undo", "a".repeat(64), Uuid::new_v4()));
+        fs::write(&snapshot, b"snapshot-data").unwrap();
+        let pinned = open_regular_read(&snapshot).unwrap();
+        let read_bytes = fs::read(&snapshot).unwrap();
+        fs::write(&snapshot, b"tampered-data").unwrap();
+        let error = verify_undo_snapshot_read(&snapshot, &pinned, &read_bytes).unwrap_err();
+        assert!(error.to_string().contains("undo_snapshot_changed_during_read"));
+        assert_eq!(fs::read(&snapshot).unwrap(), b"tampered-data");
+        drop(pinned);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn undo_read_accepts_unchanged_snapshot() {
+        let root = std::env::temp_dir().join(format!("wc-undo-read-ok-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let snapshot = root.join(format!("{}-{}.undo", "a".repeat(64), Uuid::new_v4()));
+        fs::write(&snapshot, b"snapshot-data").unwrap();
+        let pinned = open_regular_read(&snapshot).unwrap();
+        let read_bytes = fs::read(&snapshot).unwrap();
+        verify_undo_snapshot_read(&snapshot, &pinned, &read_bytes).unwrap();
+        drop(pinned);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn undo_consumption_rejects_same_content_replacement() {
         let root = std::env::temp_dir().join(format!("wc-undo-consume-aba-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
@@ -3303,6 +3354,24 @@ fn reject_undo_hardlinked_handle(file: &fs::File) -> Result<()> {
     Ok(())
 }
 
+// A snapshot's path may be swapped after its handle was opened, or its
+// contents changed in-place while a bounded read was in progress. Before
+// advertising or restoring it, bind the exact bytes read to the still-named
+// regular file and its pinned identity. This narrows read-time races; a
+// hostile writer after this final check still requires handle-relative CAS.
+fn verify_undo_snapshot_read(path: &Path, pinned: &fs::File, bytes: &[u8]) -> Result<()> {
+    let current =
+        open_regular_read(path).map_err(|_| anyhow!("undo_snapshot_changed_during_read"))?;
+    reject_undo_hardlinked_handle(&current)
+        .map_err(|_| anyhow!("undo_snapshot_changed_during_read"))?;
+    if !undo_snapshot_identity_matches(pinned, &current)?
+        || !atomic_staged_bytes_match(&current, bytes)?
+    {
+        return Err(anyhow!("undo_snapshot_changed_during_read"));
+    }
+    Ok(())
+}
+
 fn undo_entries(path: &Path, dir: &Path, scope: Option<&str>) -> Result<Vec<(String, u64)>> {
     reject_windows_undo_reparse_ancestors(dir)?;
     let prefix = format!("{}-", undo_prefix(path));
@@ -3337,6 +3406,7 @@ fn undo_entries(path: &Path, dir: &Path, scope: Option<&str>) -> Result<Vec<(Str
         if payload.len() as u64 > MAX_UNDO_FILE_BYTES {
             return Err(anyhow!("undo_snapshot_too_large"));
         }
+        verify_undo_snapshot_read(&entry.path(), &reader, &payload)?;
         let record: Value = serde_json::from_slice(&payload).context("invalid_undo_snapshot")?;
         let version = if scope.is_some() { 2 } else { 1 };
         if record["version"] != version || record["ownerScope"].as_str() != scope {
@@ -3575,6 +3645,7 @@ fn undo_impl(
     if encoded.len() as u64 > MAX_UNDO_FILE_BYTES {
         return Err(anyhow!("undo_snapshot_too_large"));
     }
+    verify_undo_snapshot_read(&snapshot, &reader, &encoded)?;
     let record: Value = serde_json::from_slice(&encoded).context("invalid_undo_snapshot")?;
     let expected_version = if undo_scope.is_some() { 2 } else { 1 };
     if record["version"] != expected_version || record["ownerScope"].as_str() != undo_scope {
