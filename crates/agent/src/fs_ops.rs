@@ -2492,6 +2492,33 @@ fn undo_quarantine_digest(mut file: &fs::File) -> Result<String> {
     Ok(format!("{:x}", digest.finalize()))
 }
 
+// Opt-in debug-only interprocess pause after a real undo snapshot has been
+// quarantined. Production/release binaries never contain this fixture.
+#[cfg(all(unix, feature = "ci-race-fixtures", debug_assertions))]
+fn pause_for_mcp_undo_quarantine_fixture(path: &Path) -> Result<()> {
+    let Ok(target) = std::env::var("WCF_MCP_UNDO_TARGET") else {
+        return Ok(());
+    };
+    let prefix = format!("{}-", undo_prefix(Path::new(&target)));
+    if !path
+        .file_name()
+        .is_some_and(|name| name.to_string_lossy().starts_with(&prefix))
+    {
+        return Ok(());
+    }
+    let marker = std::env::var("WCF_MCP_UNDO_MARKER")?;
+    let release = std::env::var("WCF_MCP_UNDO_RELEASE")?;
+    fs::write(marker, b"quarantined")?;
+    let started = Instant::now();
+    while !Path::new(&release).exists() {
+        if started.elapsed() > Duration::from_secs(20) {
+            return Err(anyhow!("mcp_undo_quarantine_fixture_timeout"));
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    Ok(())
+}
+
 fn remove_undo_snapshot_checked(path: &Path, expected: &fs::File) -> Result<()> {
     remove_undo_snapshot_checked_with_hook(path, expected, || Ok(()))
 }
@@ -2546,6 +2573,8 @@ fn remove_undo_snapshot_checked_with_all_hooks(
     rename_noreplace(path, &quarantine)?;
     let result = (|| -> Result<()> {
         after_move(&quarantine)?;
+        #[cfg(all(unix, feature = "ci-race-fixtures", debug_assertions))]
+        pause_for_mcp_undo_quarantine_fixture(path)?;
         reject_windows_undo_reparse_ancestors(&quarantine)?;
         let moved = open_regular_read(&quarantine)
             .map_err(|_| anyhow!("undo_snapshot_changed_before_unlink"))?;
