@@ -155,7 +155,7 @@ fn save_config_pinned_unix(path: &Path, parent: &Path, data: &[u8]) -> Result<()
         if staged_fd < 0 {
             return Err(anyhow!("unsafe_agent_config_staging"));
         }
-        let mut staged_reader = unsafe { fs::File::from_raw_fd(staged_fd) };
+        let staged_reader = unsafe { fs::File::from_raw_fd(staged_fd) };
         use std::os::unix::fs::MetadataExt;
         let before = staged.metadata()?;
         let after = staged_reader.metadata()?;
