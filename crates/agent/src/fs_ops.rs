@@ -2553,8 +2553,7 @@ fn remove_undo_snapshot_checked_with_hooks(
             if let Ok(held) = open_regular_read(&quarantine) {
                 if reject_undo_hardlinked_handle(&held).is_ok()
                     && undo_snapshot_identity_matches(expected, &held).unwrap_or(false)
-                    && undo_quarantine_digest(&held)
-                        .is_ok_and(|digest| digest == original_digest)
+                    && undo_quarantine_digest(&held).is_ok_and(|digest| digest == original_digest)
                 {
                     let _ = rename_noreplace(&quarantine, path);
                 }
