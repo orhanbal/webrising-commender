@@ -1458,7 +1458,8 @@ try {
 
   // 3A real MCP vertical: the unguarded atomic writer must digest existing
   // files beyond the 4 MiB single-read budget instead of skipping conflict
-  // detection. The 32 MiB streaming ceiling is fail-closed, not an overwrite.
+  // detection. Existing files above the 32 MiB paged-read cap can be edited;
+  // the separate 128 MiB conflict-scan ceiling remains fail-closed.
   const largeUnguardedPath = path.join(tempRoot, "large-unguarded-mcp.bin");
   fs.writeFileSync(largeUnguardedPath, Buffer.alloc(4 * 1024 * 1024 + 17, 0x61));
   const largeUnguardedWrite = await tool(1750, "fs_write", {
@@ -1468,8 +1469,18 @@ try {
   assert.equal(largeUnguardedWrite.ok, true, JSON.stringify(largeUnguardedWrite));
   assert.equal(fs.readFileSync(largeUnguardedPath, "utf8"), "large-file-updated");
 
+  const beyondPagedPath = path.join(tempRoot, "beyond-paged-unguarded-mcp.bin");
+  fs.writeFileSync(beyondPagedPath, Buffer.from("paged-seed"));
+  fs.truncateSync(beyondPagedPath, 32 * 1024 * 1024 + 1);
+  const beyondPagedWrite = await tool(1754, "fs_write", {
+    device_id: deviceId, path: beyondPagedPath,
+    content_base64: Buffer.from("published-beyond-paged-limit").toString("base64"),
+  });
+  assert.equal(beyondPagedWrite.ok, true, JSON.stringify(beyondPagedWrite));
+  assert.equal(fs.readFileSync(beyondPagedPath, "utf8"), "published-beyond-paged-limit");
+
   const overBudgetPath = path.join(tempRoot, "oversized-unguarded-mcp.bin");
-  const overBudgetSize = 32 * 1024 * 1024 + 1;
+  const overBudgetSize = 128 * 1024 * 1024 + 1;
   fs.writeFileSync(overBudgetPath, Buffer.alloc(1, 0x6b));
   fs.truncateSync(overBudgetPath, overBudgetSize);
   const overBudgetWrite = await tool(1751, "fs_write", {
@@ -1486,7 +1497,7 @@ try {
   } finally {
     fs.closeSync(overBudgetFd);
   }
-  console.log("agent-e2e: unguarded >4MiB MCP write accepted; >32MiB fail-closed without data loss");
+  console.log("agent-e2e: unguarded >32MiB MCP write accepted; >128MiB fail-closed without data loss");
 
   // 3A: unlike an expected-SHA write, this path has no client CAS token.
   // The Agent still must reject hardlink aliases through MCP and preserve

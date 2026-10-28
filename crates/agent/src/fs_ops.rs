@@ -14,6 +14,8 @@ use uuid::Uuid;
 
 const DEFAULT_READ_MAX: usize = 1024 * 1024;
 const MAX_PAGED_FILE: u64 = 32 * 1024 * 1024;
+// Two bounded disk scans per unguarded atomic replacement; independent of paged reads.
+const MAX_ATOMIC_UNGUARDED_SCAN: u64 = 128 * 1024 * 1024;
 const MAX_PAGE_BYTES: usize = 256 * 1024;
 const HARD_READ_MAX: usize = 4 * 1024 * 1024;
 const HARD_WRITE_MAX: usize = 8 * 1024 * 1024;
@@ -4259,8 +4261,8 @@ fn atomic_unconditional_reject_shared_inode(file: &fs::File) -> Result<()> {
 }
 
 // An unguarded replacement must not silently skip conflict detection for
-// existing files larger than the single-read limit. Stream up to the paged-file
-// budget and fail closed above it. This is still not a kernel-level CAS against
+// existing files larger than the single-read limit. Stream up to the separate
+// atomic conflict-scan budget and fail closed above it. This is still not a kernel-level CAS against
 // an uncooperative writer between the final digest and rename.
 fn atomic_unconditional_original_digest(file: &fs::File) -> Result<Option<String>> {
     atomic_unconditional_original_digest_with_hook(file, || Ok(()))
@@ -4274,7 +4276,7 @@ fn atomic_unconditional_original_digest_with_hook(
     after_size_check: impl FnOnce() -> Result<()>,
 ) -> Result<Option<String>> {
     let initial_metadata = file.metadata()?;
-    if !initial_metadata.is_file() || initial_metadata.len() > MAX_PAGED_FILE {
+    if !initial_metadata.is_file() || initial_metadata.len() > MAX_ATOMIC_UNGUARDED_SCAN {
         return Err(anyhow!("file_changed_since_read"));
     }
     atomic_unconditional_reject_shared_inode(file)?;
@@ -4293,7 +4295,7 @@ fn atomic_unconditional_original_digest_with_hook(
         total = total
             .checked_add(count as u64)
             .ok_or_else(|| anyhow!("file_changed_since_read"))?;
-        if total > MAX_PAGED_FILE {
+        if total > MAX_ATOMIC_UNGUARDED_SCAN {
             return Err(anyhow!("file_changed_since_read"));
         }
         digest.update(&buffer[..count]);
@@ -4888,6 +4890,21 @@ mod atomic_digest_race_tests {
     }
 
     #[test]
+    fn unguarded_digest_accepts_file_above_paged_read_limit() {
+        let dir = std::env::temp_dir().join(format!("wc-digest-paged-plus-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let dir = fs::canonicalize(dir).unwrap();
+        let path = dir.join("target.bin");
+        let mut file = fs::File::create(&path).unwrap();
+        file.write_all(b"seed").unwrap();
+        file.set_len(MAX_PAGED_FILE + 1).unwrap();
+        drop(file);
+        atomic_write(&path, b"updated", None).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"updated");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn unguarded_digest_rejects_existing_file_above_streaming_budget() {
         let dir = std::env::temp_dir().join(format!("wc-digest-oversize-{}", Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
@@ -4898,14 +4915,14 @@ mod atomic_digest_race_tests {
             .write(true)
             .open(&path)
             .unwrap()
-            .set_len(MAX_PAGED_FILE + 1)
+            .set_len(MAX_ATOMIC_UNGUARDED_SCAN + 1)
             .unwrap();
         let error = atomic_write(&path, b"must-not-overwrite", None).unwrap_err();
         assert!(
             error.to_string().contains("file_changed_since_read"),
             "{error}"
         );
-        assert_eq!(fs::metadata(&path).unwrap().len(), MAX_PAGED_FILE + 1);
+        assert_eq!(fs::metadata(&path).unwrap().len(), MAX_ATOMIC_UNGUARDED_SCAN + 1);
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
         fs::remove_dir_all(dir).unwrap();
     }
@@ -4921,7 +4938,7 @@ mod atomic_digest_race_tests {
             fs::OpenOptions::new()
                 .write(true)
                 .open(&path)?
-                .set_len(MAX_PAGED_FILE + 1)?;
+                .set_len(MAX_ATOMIC_UNGUARDED_SCAN + 1)?;
             Ok(())
         })
         .unwrap_err();
