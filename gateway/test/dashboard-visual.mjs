@@ -198,8 +198,16 @@ try{
  const landingLightPng=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
  writeFileSync(join(shots,"landing-windows-light.png"),Buffer.from(landingLightPng.data,"base64"));
  await call("Page.navigate",{url:base+"/app"});
- for(let i=0;i<20;i++){if(await evalJs("document.body.classList.contains('light')"))break;await delay(80)}
- assert.equal(await evalJs("document.body.classList.contains('light')"),true,"Theme selected on landing did not persist into app");
+ // Page.navigate resolves before the next document's body necessarily exists.
+ // Wait for the destination dashboard as well as its persisted theme; never
+ // evaluate body.classList against the transient empty navigation document.
+ let appLightReady=false;
+ for(let i=0;i<60;i++){
+  appLightReady=await evalJs("Boolean(document.body?.classList.contains('light') && document.querySelector('#dashboardPage'))");
+  if(appLightReady)break;
+  await delay(80);
+ }
+ assert.equal(appLightReady,true,"Theme selected on landing did not persist into app");
 
  // User-reported 1840 × 830 Windows desktop: dashboard should fit without zooming.
  await call("Emulation.setDeviceMetricsOverride",{width:1840,height:830,deviceScaleFactor:1,mobile:false});
