@@ -72,6 +72,12 @@ jobs:
       - name: Windows atomic staging leaf substitution and safe cleanup
         if: runner.os == 'Windows'
         run: cargo test -p webrising-commender-agent windows_atomic_staging_ -- --nocapture
+      - name: macOS credential staging leaf replacement rejection
+        if: runner.os == 'macOS'
+        run: cargo test -p webrising-commender-agent config_stage_leaf_replacement_cannot_publish_or_delete_untrusted_file -- --nocapture
+      - name: macOS credential staging same-inode tamper rejection
+        if: runner.os == 'macOS'
+        run: cargo test -p webrising-commender-agent config_stage_inplace_tamper_cannot_publish_credentials -- --nocapture
       - name: Native unguarded digest growth and truncation race
         run: cargo test -p webrising-commender-agent atomic_digest_race_tests -- --nocapture
       - name: Windows terminal history junction rejection
