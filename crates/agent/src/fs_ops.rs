@@ -3375,7 +3375,8 @@ mod undo_scan_handle_tests {
     #[cfg(windows)]
     #[test]
     fn windows_undo_handle_unlink_rejects_late_hardlink_after_first_digest() {
-        let root = std::env::temp_dir().join(format!("wc-undo-handle-late-link-{}", Uuid::new_v4()));
+        let root =
+            std::env::temp_dir().join(format!("wc-undo-handle-late-link-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
         let root = fs::canonicalize(root).unwrap();
         let entry = root.join("verified.hold");
@@ -3393,7 +3394,10 @@ mod undo_scan_handle_tests {
         assert_eq!(fs::read(&alias).unwrap(), b"verified-snapshot");
         fs::remove_file(&alias).unwrap();
         unlink_undo_snapshot(&entry, &pinned, &digest).unwrap();
-        assert!(!entry.exists(), "safe retry must consume only the verified leaf");
+        assert!(
+            !entry.exists(),
+            "safe retry must consume only the verified leaf"
+        );
         drop(pinned);
         fs::remove_dir_all(root).unwrap();
     }
