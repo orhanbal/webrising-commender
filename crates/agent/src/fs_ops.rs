@@ -3349,6 +3349,55 @@ mod undo_scan_handle_tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn windows_undo_handle_unlink_rejects_inplace_tamper_after_first_digest() {
+        let root = std::env::temp_dir().join(format!("wc-undo-handle-tamper-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let entry = root.join("verified.hold");
+        fs::write(&entry, b"verified-snapshot").unwrap();
+        let pinned = open_regular_read(&entry).unwrap();
+        let digest = undo_quarantine_digest(&pinned).unwrap();
+        let error = unlink_undo_snapshot_windows_with_hook(&entry, &pinned, &digest, || {
+            fs::write(&entry, b"untrusted-tamper")?;
+            Ok(())
+        })
+        .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("undo_snapshot_changed_before_unlink"));
+        assert_eq!(fs::read(&entry).unwrap(), b"untrusted-tamper");
+        drop(pinned);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_undo_handle_unlink_rejects_late_hardlink_after_first_digest() {
+        let root = std::env::temp_dir().join(format!("wc-undo-handle-late-link-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let entry = root.join("verified.hold");
+        let alias = root.join("alias.hold");
+        fs::write(&entry, b"verified-snapshot").unwrap();
+        let pinned = open_regular_read(&entry).unwrap();
+        let digest = undo_quarantine_digest(&pinned).unwrap();
+        let error = unlink_undo_snapshot_windows_with_hook(&entry, &pinned, &digest, || {
+            fs::hard_link(&entry, &alias)?;
+            Ok(())
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("unsafe_undo_storage_hardlink"));
+        assert_eq!(fs::read(&entry).unwrap(), b"verified-snapshot");
+        assert_eq!(fs::read(&alias).unwrap(), b"verified-snapshot");
+        fs::remove_file(&alias).unwrap();
+        unlink_undo_snapshot(&entry, &pinned, &digest).unwrap();
+        assert!(!entry.exists(), "safe retry must consume only the verified leaf");
+        drop(pinned);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[cfg(unix)]
     #[test]
     fn unix_undo_unlink_rejects_late_leaf_swap_at_pinned_parent() {
