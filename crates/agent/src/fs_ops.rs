@@ -2440,9 +2440,10 @@ fn checked_undo_storage_metadata(
 // remove_file can follow a parent swapped to an outside-root symlink after
 // the snapshot was validated. This does not make final-leaf unlink an atomic
 // compare-and-delete operation against a hostile concurrent writer.
-fn unlink_undo_snapshot(path: &Path) -> Result<()> {
+fn unlink_undo_snapshot(path: &Path, verified: &fs::File, digest: &str) -> Result<()> {
     #[cfg(unix)]
     {
+        let _ = (verified, digest);
         use std::os::fd::AsRawFd;
         let (parent, name) = rename_parent_handle(path)?;
         let status = unsafe { libc::unlinkat(parent.as_raw_fd(), name.as_ptr(), 0) };
@@ -2450,10 +2451,100 @@ fn unlink_undo_snapshot(path: &Path) -> Result<()> {
             return Err(std::io::Error::last_os_error().into());
         }
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    unlink_undo_snapshot_windows_with_hook(path, verified, digest, || Ok(()))?;
+    #[cfg(not(any(unix, windows)))]
     {
-        reject_windows_undo_reparse_ancestors(path)?;
-        fs::remove_file(path)?;
+        let _ = (path, verified, digest);
+        return Err(anyhow!("undo_snapshot_unlink_unsupported"));
+    }
+    Ok(())
+}
+
+// Windows can mark the *opened file* for deletion rather than removing a
+// pathname that an uncooperative writer may replace after verification.
+// The DELETE-capable handle is revalidated against the pinned snapshot and
+// the currently named leaf. POSIX disposition unlinks that opened file, not
+// an attacker-controlled replacement of the name. This is NOT an atomic
+// content-CAS: a writer with a separate writable handle may still mutate
+// the original inode after the final digest.
+#[cfg(windows)]
+fn unlink_undo_snapshot_windows_with_hook(
+    path: &Path,
+    verified: &fs::File,
+    digest: &str,
+    before_delete: impl FnOnce() -> Result<()>,
+) -> Result<()> {
+    use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
+
+    #[repr(C)]
+    struct FileDispositionInfoEx {
+        flags: u32,
+    }
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        #[link_name = "SetFileInformationByHandle"]
+        fn set_file_information_by_handle(
+            handle: *mut std::ffi::c_void,
+            info_class: i32,
+            info: *const FileDispositionInfoEx,
+            info_size: u32,
+        ) -> i32;
+    }
+
+    const GENERIC_READ: u32 = 0x8000_0000;
+    const DELETE_ACCESS: u32 = 0x0001_0000;
+    const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+    const FILE_DISPOSITION_INFO_EX_CLASS: i32 = 21;
+    const FILE_DISPOSITION_FLAG_DELETE: u32 = 0x0000_0001;
+    const FILE_DISPOSITION_FLAG_POSIX_SEMANTICS: u32 = 0x0000_0002;
+
+    reject_windows_undo_reparse_ancestors(path)?;
+    let mut options = fs::OpenOptions::new();
+    options
+        .read(true)
+        .access_mode(GENERIC_READ | DELETE_ACCESS)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    let delete_handle = options
+        .open(path)
+        .map_err(|_| anyhow!("undo_snapshot_changed_before_unlink"))?;
+    reject_windows_hardlinked_file(&delete_handle)?;
+    if !undo_snapshot_identity_matches(verified, &delete_handle)?
+        || undo_quarantine_digest(&delete_handle)? != digest
+    {
+        return Err(anyhow!("undo_snapshot_changed_before_unlink"));
+    }
+
+    before_delete()?;
+    reject_windows_undo_reparse_ancestors(path)?;
+    let named = open_regular_read(path)
+        .map_err(|_| anyhow!("undo_snapshot_changed_before_unlink"))?;
+    reject_undo_hardlinked_handle(&named)?;
+    if !undo_snapshot_identity_matches(&delete_handle, &named)?
+        || undo_quarantine_digest(&named)? != digest
+    {
+        return Err(anyhow!("undo_snapshot_changed_before_unlink"));
+    }
+
+    let disposition = FileDispositionInfoEx {
+        flags: FILE_DISPOSITION_FLAG_DELETE | FILE_DISPOSITION_FLAG_POSIX_SEMANTICS,
+    };
+    // SAFETY: delete_handle is live and the class/structure layout matches
+    // FILE_DISPOSITION_INFO_EX; no caller-provided pointer is retained.
+    if unsafe {
+        set_file_information_by_handle(
+            delete_handle.as_raw_handle(),
+            FILE_DISPOSITION_INFO_EX_CLASS,
+            &disposition,
+            std::mem::size_of::<FileDispositionInfoEx>() as u32,
+        )
+    } == 0
+    {
+        return Err(anyhow!(
+            "undo_snapshot_handle_unlink_failed: {}",
+            std::io::Error::last_os_error()
+        ));
     }
     Ok(())
 }
@@ -2638,7 +2729,7 @@ fn remove_undo_snapshot_checked_with_all_hooks(
         {
             return Err(anyhow!("undo_snapshot_changed_before_unlink"));
         }
-        unlink_undo_snapshot(&quarantine)
+        unlink_undo_snapshot(&quarantine, &final_leaf, &original_digest)
     })();
     if result.is_err() {
         // A failed post-move check must not restore a different file that
@@ -3130,6 +3221,46 @@ mod undo_scan_handle_tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn windows_undo_handle_unlink_rejects_late_leaf_swap() {
+        let root = std::env::temp_dir().join(format!("wc-undo-handle-swap-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let entry = root.join("verified.hold");
+        let parked = root.join("parked.hold");
+        fs::write(&entry, b"verified-snapshot").unwrap();
+        let pinned = open_regular_read(&entry).unwrap();
+        let digest = undo_quarantine_digest(&pinned).unwrap();
+        let error = unlink_undo_snapshot_windows_with_hook(&entry, &pinned, &digest, || {
+            fs::rename(&entry, &parked)?;
+            fs::write(&entry, b"untrusted-replacement")?;
+            Ok(())
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("undo_snapshot_changed_before_unlink"));
+        assert_eq!(fs::read(&entry).unwrap(), b"untrusted-replacement");
+        assert_eq!(fs::read(&parked).unwrap(), b"verified-snapshot");
+        drop(pinned);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_undo_handle_unlink_deletes_verified_leaf() {
+        let root = std::env::temp_dir().join(format!("wc-undo-handle-delete-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let entry = root.join("verified.hold");
+        fs::write(&entry, b"verified-snapshot").unwrap();
+        let pinned = open_regular_read(&entry).unwrap();
+        let digest = undo_quarantine_digest(&pinned).unwrap();
+        unlink_undo_snapshot(&entry, &pinned, &digest).unwrap();
+        drop(pinned);
+        assert!(!entry.exists(), "the verified leaf must be unlinked");
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[cfg(unix)]
     #[test]
     fn undo_unlink_rejects_symlinked_parent_without_touching_outside_file() {
@@ -3143,7 +3274,10 @@ mod undo_scan_handle_tests {
         let name = format!("{}-{}.undo", "a".repeat(64), Uuid::new_v4());
         fs::write(outside.join(&name), b"outside-private").unwrap();
         symlink(&outside, root.join("swapped-parent")).unwrap();
-        assert!(unlink_undo_snapshot(&root.join("swapped-parent").join(&name)).is_err());
+        let verified = open_regular_read(&outside.join(&name)).unwrap();
+        let digest = undo_quarantine_digest(&verified).unwrap();
+        assert!(unlink_undo_snapshot(&root.join("swapped-parent").join(&name), &verified, &digest).is_err());
+        drop(verified);
         assert_eq!(fs::read(outside.join(&name)).unwrap(), b"outside-private");
         fs::remove_dir_all(root).unwrap();
     }
