@@ -1129,7 +1129,7 @@ try {
   // rewrites its pinned inode after the first digest, before the final check.
   // The real MCP call must preserve attacker bytes and refuse consumption.
   const postdigestPrefix = createHash("sha256").update(mcpUndoPostdigestTarget).digest("hex");
-  for (const [index, attack] of ["leaf-swap", "inplace-tamper"].entries()) {
+  for (const [index, attack] of ["leaf-swap", "inplace-tamper", "late-hardlink", "symlink-swap"].entries()) {
     fs.rmSync(mcpUndoPostdigestMarker, { force: true });
     fs.rmSync(mcpUndoPostdigestRelease, { force: true });
     fs.writeFileSync(mcpUndoPostdigestTarget, "postdigest-seed");
@@ -1150,24 +1150,49 @@ try {
     assert.equal(holds.length, 1, JSON.stringify(holds));
     const hold = path.join(undoRaceDir, holds[0]);
     const parked = path.join(tempRoot, `parked-postdigest-${index}.snapshot`);
-    if (attack === "leaf-swap") fs.renameSync(hold, parked);
-    fs.writeFileSync(hold, "untrusted-postdigest");
+    const outside = path.join(tempRoot, `outside-postdigest-${index}.txt`);
+    if (attack === "leaf-swap" || attack === "symlink-swap") {
+      fs.renameSync(hold, parked);
+    }
+    if (attack === "leaf-swap" || attack === "inplace-tamper") {
+      fs.writeFileSync(hold, "untrusted-postdigest");
+    } else if (attack === "late-hardlink") {
+      // Link count changes after the first digest: deletion must fail closed.
+      fs.linkSync(hold, parked);
+    } else if (attack === "symlink-swap") {
+      // The .hold pathname now points outside the undo directory.
+      fs.writeFileSync(outside, "outside-must-survive");
+      fs.symlinkSync(outside, hold);
+    }
     fs.writeFileSync(mcpUndoPostdigestRelease, "continue");
     const result = await pendingUndo;
     assert.equal(result.ok, true, JSON.stringify(result));
     assert.equal(result.undoConsumed, false, "post-digest tamper must not consume undo");
     assert.equal(fs.readFileSync(mcpUndoPostdigestTarget, "utf8"), "postdigest-seed");
-    assert.equal(fs.readFileSync(hold, "utf8"), "untrusted-postdigest");
+    if (attack === "leaf-swap" || attack === "inplace-tamper") {
+      assert.equal(fs.readFileSync(hold, "utf8"), "untrusted-postdigest");
+    } else if (attack === "late-hardlink") {
+      assert.deepEqual(fs.readFileSync(hold), snapshotBytes);
+      assert.deepEqual(fs.readFileSync(parked), snapshotBytes);
+      assert.equal(fs.statSync(hold).nlink, 2, "hardlinked hold must remain untouched");
+    } else if (attack === "symlink-swap") {
+      assert.equal(fs.lstatSync(hold).isSymbolicLink(), true);
+      assert.equal(fs.readFileSync(outside, "utf8"), "outside-must-survive");
+      assert.deepEqual(fs.readFileSync(parked), snapshotBytes);
+    }
     assert.equal(fs.existsSync(snapshot), false, "untrusted hold must not become valid undo");
     if (attack === "leaf-swap") {
       assert.deepEqual(fs.readFileSync(parked), snapshotBytes);
-      fs.rmSync(parked);
     }
     fs.rmSync(hold);
+    if (attack === "leaf-swap" || attack === "late-hardlink" || attack === "symlink-swap") {
+      fs.rmSync(parked);
+    }
+    if (attack === "symlink-swap") fs.rmSync(outside);
   }
   fs.rmSync(mcpUndoPostdigestMarker, { force: true });
   fs.rmSync(mcpUndoPostdigestRelease, { force: true });
-  console.log("agent-e2e: MCP post-digest quarantine leaf-swap and in-place tamper rejected");
+  console.log("agent-e2e: MCP post-digest leaf-swap, in-place tamper, late hardlink and symlink swap rejected");
 
 
   // Foreign tenant/actor/device owner evidence must remain invisible.
