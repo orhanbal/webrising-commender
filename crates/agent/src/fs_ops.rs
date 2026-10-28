@@ -3681,7 +3681,7 @@ fn publish_atomic_create_noreplace(
     Ok(())
 }
 
-#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
 fn publish_atomic_create_noreplace(
     _parent: &fs::File,
     _temporary: &std::ffi::CStr,
