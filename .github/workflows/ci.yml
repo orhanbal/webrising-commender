@@ -54,6 +54,9 @@ jobs:
       - run: cargo check -p webrising-commender-agent
       - name: Native undo snapshot publication collision and recovery
         run: cargo test -p webrising-commender-agent undo_publication_tests -- --nocapture
+      - name: Native atomic create no-overwrite race
+        if: runner.os == 'macOS'
+        run: cargo test -p webrising-commender-agent atomic_create_ -- --nocapture
       - name: Windows terminal history junction rejection
         if: runner.os == 'Windows'
         run: cargo test -p webrising-commender-agent windows_junction_ -- --nocapture
