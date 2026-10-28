@@ -4309,7 +4309,10 @@ mod atomic_digest_race_tests {
         })
         .unwrap_err();
         assert!(error.to_string().contains("file_changed_since_read"));
-        assert_eq!(fs::metadata(&path).unwrap().len(), (HARD_READ_MAX + 1) as u64);
+        assert_eq!(
+            fs::metadata(&path).unwrap().len(),
+            (HARD_READ_MAX + 1) as u64
+        );
         drop(file);
         fs::remove_dir_all(dir).unwrap();
     }
