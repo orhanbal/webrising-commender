@@ -3842,6 +3842,26 @@ fn verify_atomic_write_guard(existing: fs::File, expected: &str) -> Result<()> {
     Ok(())
 }
 
+// Shared inodes can be modified through another pathname while an unguarded
+// replacement is staged. Match the guarded-write hardlink policy, including
+// links added after the initial metadata check. This narrows, but cannot
+// eliminate, the final validation-to-rename race with uncooperative writers.
+fn atomic_unconditional_reject_shared_inode(file: &fs::File) -> Result<()> {
+    #[cfg(windows)]
+    if reject_windows_hardlinked_file(file).is_err() {
+        return Err(anyhow!("file_changed_since_read"));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let metadata = file.metadata()?;
+        if !metadata.is_file() || metadata.nlink() != 1 {
+            return Err(anyhow!("file_changed_since_read"));
+        }
+    }
+    Ok(())
+}
+
 // An unguarded replacement must not silently skip conflict detection for
 // existing files larger than the single-read limit. Stream up to the paged-file
 // budget and fail closed above it. This is still not a kernel-level CAS against
@@ -3857,11 +3877,14 @@ fn atomic_unconditional_original_digest_with_hook(
     file: &fs::File,
     after_size_check: impl FnOnce() -> Result<()>,
 ) -> Result<Option<String>> {
-    let initial_len = file.metadata()?.len();
-    if initial_len > MAX_PAGED_FILE {
+    let initial_metadata = file.metadata()?;
+    if !initial_metadata.is_file() || initial_metadata.len() > MAX_PAGED_FILE {
         return Err(anyhow!("file_changed_since_read"));
     }
+    atomic_unconditional_reject_shared_inode(file)?;
+    let initial_len = initial_metadata.len();
     after_size_check()?;
+    atomic_unconditional_reject_shared_inode(file)?;
     let mut reader = file.try_clone()?;
     let mut digest = Sha256::new();
     let mut buffer = [0_u8; 16 * 1024];
@@ -3879,9 +3902,10 @@ fn atomic_unconditional_original_digest_with_hook(
         }
         digest.update(&buffer[..count]);
     }
-    if total != initial_len {
+    if total != initial_len || file.metadata()?.len() != initial_len {
         return Err(anyhow!("file_changed_since_read"));
     }
+    atomic_unconditional_reject_shared_inode(file)?;
     Ok(Some(format!("{:x}", digest.finalize())))
 }
 
@@ -4332,6 +4356,44 @@ mod atomic_digest_race_tests {
         .unwrap_err();
         assert!(error.to_string().contains("file_changed_since_read"));
         assert_eq!(fs::read(&path).unwrap(), b"x");
+        drop(file);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unguarded_atomic_write_rejects_existing_hardlink_without_touching_alias() {
+        let dir = std::env::temp_dir().join(format!("wc-digest-hardlink-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let dir = fs::canonicalize(dir).unwrap();
+        let path = dir.join("target.txt");
+        let alias = dir.join("alias.txt");
+        fs::write(&path, b"original").unwrap();
+        fs::hard_link(&path, &alias).unwrap();
+        let error = atomic_write(&path, b"agent-update", None).unwrap_err();
+        assert!(error.to_string().contains("file_changed_since_read"), "{error}");
+        assert_eq!(fs::read(&path).unwrap(), b"original");
+        assert_eq!(fs::read(&alias).unwrap(), b"original");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 2);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unguarded_digest_rejects_hardlink_added_after_initial_check() {
+        let dir = std::env::temp_dir().join(format!("wc-digest-link-race-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let dir = fs::canonicalize(dir).unwrap();
+        let path = dir.join("target.txt");
+        let alias = dir.join("late-alias.txt");
+        fs::write(&path, b"original").unwrap();
+        let file = fs::File::open(&path).unwrap();
+        let error = atomic_unconditional_original_digest_with_hook(&file, || {
+            fs::hard_link(&path, &alias)?;
+            Ok(())
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("file_changed_since_read"), "{error}");
+        assert_eq!(fs::read(&path).unwrap(), b"original");
+        assert_eq!(fs::read(&alias).unwrap(), b"original");
         drop(file);
         fs::remove_dir_all(dir).unwrap();
     }
