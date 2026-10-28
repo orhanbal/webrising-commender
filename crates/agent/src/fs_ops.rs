@@ -3560,6 +3560,72 @@ fn pause_for_external_edit_fixture() -> Result<()> {
     Ok(())
 }
 
+// An initially absent target must not overwrite a file created by an
+// independent process while the Agent stages its contents. Use the same
+// pinned directory handle for the kernel's no-replace publication.
+#[cfg(target_os = "linux")]
+fn publish_atomic_create_noreplace(
+    parent: &fs::File,
+    temporary: &std::ffi::CStr,
+    target: &std::ffi::CStr,
+) -> Result<()> {
+    use std::os::fd::AsRawFd;
+    let status = unsafe {
+        libc::syscall(
+            libc::SYS_renameat2,
+            parent.as_raw_fd(),
+            temporary.as_ptr(),
+            parent.as_raw_fd(),
+            target.as_ptr(),
+            1u32, // RENAME_NOREPLACE
+        )
+    };
+    if status != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn publish_atomic_create_noreplace(
+    parent: &fs::File,
+    temporary: &std::ffi::CStr,
+    target: &std::ffi::CStr,
+) -> Result<()> {
+    use std::os::fd::AsRawFd;
+    unsafe extern "C" {
+        fn renameatx_np(
+            fromfd: libc::c_int,
+            from: *const libc::c_char,
+            tofd: libc::c_int,
+            to: *const libc::c_char,
+            flags: libc::c_uint,
+        ) -> libc::c_int;
+    }
+    let status = unsafe {
+        renameatx_np(
+            parent.as_raw_fd(),
+            temporary.as_ptr(),
+            parent.as_raw_fd(),
+            target.as_ptr(),
+            0x4, // RENAME_EXCL
+        )
+    };
+    if status != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    Ok(())
+}
+
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos")))]
+fn publish_atomic_create_noreplace(
+    _parent: &fs::File,
+    _temporary: &std::ffi::CStr,
+    _target: &std::ffi::CStr,
+) -> Result<()> {
+    Err(anyhow!("atomic_create_noreplace_unsupported"))
+}
+
 #[cfg(unix)]
 fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Result<()> {
     use std::ffi::CString;
@@ -3582,6 +3648,7 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
     // Keep the original inode alive until publication. A different inode with
     // identical bytes is still an external replacement (ABA), not our edit.
     let mut original_guard_file: Option<fs::File> = None;
+    let mut target_was_missing = false;
     let result = (|| -> Result<()> {
         // Do not follow a replaced target symlink while copying permissions.
         // O_NONBLOCK prevents an attacker-controlled FIFO from hanging the agent.
@@ -3607,6 +3674,7 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
             if error.kind() != std::io::ErrorKind::NotFound {
                 return Err(error.into());
             }
+            target_was_missing = true;
         }
         file.write_all(bytes)?;
         file.sync_all()?;
@@ -3636,16 +3704,21 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
             }
             verify_atomic_write_guard(current, expected)?;
         }
-        let status = unsafe {
-            libc::renameat(
-                parent.as_raw_fd(),
-                temporary.as_ptr(),
-                parent.as_raw_fd(),
-                target.as_ptr(),
-            )
-        };
-        if status != 0 {
-            return Err(std::io::Error::last_os_error().into());
+        if target_was_missing {
+            // A competing creator owns the target; never clobber it.
+            publish_atomic_create_noreplace(&parent, &temporary, &target)?;
+        } else {
+            let status = unsafe {
+                libc::renameat(
+                    parent.as_raw_fd(),
+                    temporary.as_ptr(),
+                    parent.as_raw_fd(),
+                    target.as_ptr(),
+                )
+            };
+            if status != 0 {
+                return Err(std::io::Error::last_os_error().into());
+            }
         }
         // Never report a post-rename sync failure as a failed edit: undo
         // callers would otherwise discard a snapshot for a visible write.
@@ -3771,6 +3844,78 @@ mod atomic_write_parent_tests {
             error.to_string().contains("file_changed_since_read"),
             "unexpected guard error: {error}"
         );
+    }
+
+    #[test]
+    fn process_atomic_create_worker() {
+        let Ok(raw) = std::env::var("WCF_CREATE_TARGET") else {
+            return;
+        };
+        let result = atomic_write(Path::new(&raw), b"agent-create", None);
+        assert!(result.is_err(), "competing create was overwritten");
+    }
+
+    #[test]
+    fn atomic_create_succeeds_when_target_remains_absent() {
+        let base = std::env::temp_dir().join(format!("commender-create-ok-{}", Uuid::new_v4()));
+        fs::create_dir_all(&base).unwrap();
+        let target = base.join("new.txt");
+        atomic_write(&target, b"agent-create", None).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"agent-create");
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn atomic_create_rejects_external_process_creation_during_stage() {
+        use std::process::{Command, Stdio};
+        let base = std::env::temp_dir().join(format!("commender-create-race-{}", Uuid::new_v4()));
+        fs::create_dir_all(&base).unwrap();
+        let target = base.join("new.txt");
+        let marker = base.join("staged.marker");
+        let release = base.join("release.marker");
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("fs_ops::atomic_write_parent_tests::process_atomic_create_worker")
+            .arg("--nocapture")
+            .env("WCF_CREATE_TARGET", &target)
+            .env("WCF_CAS_MARKER", &marker)
+            .env("WCF_CAS_RELEASE", &release)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let started = Instant::now();
+        while !marker.exists() && started.elapsed() < Duration::from_secs(10) {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("create worker exited before staging: {status}");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if !marker.exists() {
+            let _ = child.kill();
+            panic!("create worker never reached staging barrier");
+        }
+        fs::write(&target, b"external-create").unwrap();
+        fs::write(&release, b"continue").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "create worker failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"external-create");
+        assert_eq!(
+            fs::read_dir(&base)
+                .unwrap()
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".wecommander-"))
+                .count(),
+            0
+        );
+        fs::remove_dir_all(base).unwrap();
     }
 
     #[test]
