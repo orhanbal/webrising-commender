@@ -1456,6 +1456,61 @@ try {
     console.log("agent-e2e: guarded hardlink rejection, no undo leak, and recovery passed");
   }
 
+  // 3A real MCP vertical: the unguarded atomic writer must digest existing
+  // files beyond the 4 MiB single-read budget instead of skipping conflict
+  // detection. The 32 MiB streaming ceiling is fail-closed, not an overwrite.
+  const largeUnguardedPath = path.join(tempRoot, "large-unguarded-mcp.bin");
+  fs.writeFileSync(largeUnguardedPath, Buffer.alloc(4 * 1024 * 1024 + 17, 0x61));
+  const largeUnguardedWrite = await tool(1750, "fs_write", {
+    device_id: deviceId, path: largeUnguardedPath,
+    content_base64: Buffer.from("large-file-updated").toString("base64"),
+  });
+  assert.equal(largeUnguardedWrite.ok, true, JSON.stringify(largeUnguardedWrite));
+  assert.equal(fs.readFileSync(largeUnguardedPath, "utf8"), "large-file-updated");
+
+  const overBudgetPath = path.join(tempRoot, "oversized-unguarded-mcp.bin");
+  const overBudgetSize = 32 * 1024 * 1024 + 1;
+  fs.writeFileSync(overBudgetPath, Buffer.alloc(1, 0x6b));
+  fs.truncateSync(overBudgetPath, overBudgetSize);
+  const overBudgetWrite = await tool(1751, "fs_write", {
+    device_id: deviceId, path: overBudgetPath,
+    content_base64: Buffer.from("must-not-overwrite").toString("base64"),
+  });
+  assert.match(String(overBudgetWrite.error), /file_changed_since_read/, JSON.stringify(overBudgetWrite));
+  assert.equal(fs.statSync(overBudgetPath).size, overBudgetSize);
+  const overBudgetFd = fs.openSync(overBudgetPath, "r");
+  try {
+    const firstByte = Buffer.alloc(1);
+    assert.equal(fs.readSync(overBudgetFd, firstByte, 0, 1, 0), 1);
+    assert.equal(firstByte[0], 0x6b);
+  } finally {
+    fs.closeSync(overBudgetFd);
+  }
+  console.log("agent-e2e: unguarded >4MiB MCP write accepted; >32MiB fail-closed without data loss");
+
+  // 3A: unlike an expected-SHA write, this path has no client CAS token.
+  // The Agent still must reject hardlink aliases through MCP and preserve
+  // the other pathname. Removing the alias must restore normal operation.
+  const unguardedHardlinkPath = path.join(tempRoot, "unguarded-mcp-hardlink.txt");
+  const unguardedHardlinkAlias = path.join(tempRoot, "unguarded-mcp-hardlink-alias.txt");
+  fs.writeFileSync(unguardedHardlinkPath, "unguarded-shared-seed");
+  fs.linkSync(unguardedHardlinkPath, unguardedHardlinkAlias);
+  const rejectedUnguardedHardlink = await tool(1752, "fs_write", {
+    device_id: deviceId, path: unguardedHardlinkPath,
+    content_base64: Buffer.from("must-not-publish").toString("base64"),
+  });
+  assert.match(String(rejectedUnguardedHardlink.error), /file_changed_since_read/, JSON.stringify(rejectedUnguardedHardlink));
+  assert.equal(fs.readFileSync(unguardedHardlinkPath, "utf8"), "unguarded-shared-seed");
+  assert.equal(fs.readFileSync(unguardedHardlinkAlias, "utf8"), "unguarded-shared-seed");
+  fs.unlinkSync(unguardedHardlinkAlias);
+  const acceptedUnguardedHardlink = await tool(1753, "fs_write", {
+    device_id: deviceId, path: unguardedHardlinkPath,
+    content_base64: Buffer.from("published-after-unlink").toString("base64"),
+  });
+  assert.equal(acceptedUnguardedHardlink.ok, true, JSON.stringify(acceptedUnguardedHardlink));
+  assert.equal(fs.readFileSync(unguardedHardlinkPath, "utf8"), "published-after-unlink");
+  console.log("agent-e2e: unguarded MCP hardlink alias rejected; safe retry accepted");
+
   const guardedAppend = await tool(584, "fs_append", {
     device_id: deviceId, path: versionedPath,
     content_base64: Buffer.from([7, 8]).toString("base64"),
