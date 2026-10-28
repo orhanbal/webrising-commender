@@ -3137,7 +3137,9 @@ fn save_undo_snapshot(
             options.mode(0o600);
         }
         staged = Some(options.open(&temporary)?);
-        let file = staged.as_mut().ok_or_else(|| anyhow!("undo_staging_unavailable"))?;
+        let file = staged
+            .as_mut()
+            .ok_or_else(|| anyhow!("undo_staging_unavailable"))?;
         file.write_all(&payload)?;
         file.sync_all()?;
         publish_undo_snapshot(&temporary, &destination, &dir)?;
@@ -3156,7 +3158,11 @@ fn save_undo_snapshot(
         }
     }
     result?;
-    Ok((id, destination, staged.ok_or_else(|| anyhow!("undo_staging_unavailable"))?))
+    Ok((
+        id,
+        destination,
+        staged.ok_or_else(|| anyhow!("undo_staging_unavailable"))?,
+    ))
 }
 
 /// List bounded, disk-persisted undo snapshots for an allowlisted regular file.
@@ -3333,6 +3339,33 @@ mod undo_publication_tests {
         drop(published);
         remove_undo_snapshot_checked(&destination, &staged).unwrap();
         assert!(!destination.exists());
+        drop(staged);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failed_edit_cleanup_preserves_replaced_published_snapshot() {
+        let root = std::env::temp_dir().join(format!("wc-undo-failed-cleanup-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let temporary = root.join(format!(".{}.tmp", Uuid::new_v4()));
+        let destination = root.join(format!("{}-{}.undo", "a".repeat(64), Uuid::new_v4()));
+        let displaced = root.join("original-snapshot");
+        let mut staged = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .unwrap();
+        staged.write_all(b"our-snapshot").unwrap();
+        staged.sync_all().unwrap();
+        publish_undo_snapshot(&temporary, &destination, &root).unwrap();
+        // Simulate an uncooperative writer replacing the undo leaf before a
+        // failed atomic edit attempts cleanup. Never unlink that writer's file.
+        fs::rename(&destination, &displaced).unwrap();
+        fs::write(&destination, b"external-snapshot").unwrap();
+        assert!(remove_undo_snapshot_checked(&destination, &staged).is_err());
+        assert_eq!(fs::read(&destination).unwrap(), b"external-snapshot");
+        assert_eq!(fs::read(&displaced).unwrap(), b"our-snapshot");
         drop(staged);
         fs::remove_dir_all(root).unwrap();
     }
