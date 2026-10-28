@@ -856,10 +856,8 @@ mod tests {
     fn exercise_config_staging_tamper(replace_leaf: bool) {
         use std::process::{Command, Stdio};
 
-        let root = std::env::temp_dir().join(format!(
-            "wc-config-stage-tamper-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("wc-config-stage-tamper-{}", uuid::Uuid::new_v4()));
         let parent = root.join("private");
         fs::create_dir_all(&parent).unwrap();
         let target = parent.join("agent.json");
