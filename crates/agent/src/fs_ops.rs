@@ -4405,6 +4405,74 @@ mod atomic_digest_race_tests {
     }
 
     #[test]
+    fn unguarded_late_hardlink_worker() {
+        let Ok(raw) = std::env::var("WCF_LATE_LINK_TARGET") else {
+            return;
+        };
+        let error = atomic_write(Path::new(&raw), b"agent-update", None).unwrap_err();
+        assert!(
+            error.to_string().contains("file_changed_since_read"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn unguarded_late_hardlink_from_other_process_is_rejected() {
+        use std::process::{Command, Stdio};
+        let dir = std::env::temp_dir().join(format!("wc-late-link-process-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let dir = fs::canonicalize(dir).unwrap();
+        let target = dir.join("target.txt");
+        let alias = dir.join("alias.txt");
+        let marker = dir.join("staged.marker");
+        let release = dir.join("release.marker");
+        fs::write(&target, b"original").unwrap();
+        let marker_var = if cfg!(windows) {
+            "WCF_WIN_CAS_MARKER"
+        } else {
+            "WCF_CAS_MARKER"
+        };
+        let release_var = if cfg!(windows) {
+            "WCF_WIN_CAS_RELEASE"
+        } else {
+            "WCF_CAS_RELEASE"
+        };
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("fs_ops::atomic_digest_race_tests::unguarded_late_hardlink_worker")
+            .arg("--nocapture")
+            .env("WCF_LATE_LINK_TARGET", &target)
+            .env(marker_var, &marker)
+            .env(release_var, &release)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let started = Instant::now();
+        while !marker.exists() && started.elapsed() < Duration::from_secs(10) {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("late hardlink worker exited before barrier: {status}");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if !marker.exists() {
+            let _ = child.kill();
+            panic!("late hardlink worker never reached barrier");
+        }
+        fs::hard_link(&target, &alias).unwrap();
+        fs::write(&release, b"continue").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "late hardlink worker failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"original");
+        assert_eq!(fs::read(&alias).unwrap(), b"original");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn unguarded_digest_protects_existing_file_above_single_read_limit() {
         let dir = std::env::temp_dir().join(format!("wc-digest-large-{}", Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
