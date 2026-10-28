@@ -1562,6 +1562,56 @@ try {
   assert.equal(retriedMcpCas.ok, true, JSON.stringify(retriedMcpCas));
   assert.equal(fs.readFileSync(mcpCasTarget, "utf8"), "safe-retry");
   console.log("agent-e2e: cross-process midstage MCP edit rejected, external bytes preserved, retry passed");
+  
+  // 3A/3B: a guarded MCP write must reject a same-byte, different-inode
+  // replacement (ABA) during staging. A matching client SHA alone cannot
+  // authorize overwriting a new owner's inode. Failed undo snapshots must
+  // not remain available, and a subsequent guarded write/undo must work.
+  fs.rmSync(mcpCasMarker);
+  fs.rmSync(mcpCasRelease);
+  const abaSeed = "guarded-mcp-aba-seed";
+  const abaSeedSha = createHash("sha256").update(abaSeed).digest("hex");
+  fs.writeFileSync(mcpCasTarget, abaSeed);
+  const pendingGuardedAba = tool(1757, "fs_write", {
+    device_id: deviceId, path: mcpCasTarget,
+    content_base64: Buffer.from("must-not-publish-guarded").toString("base64"),
+    expected_sha256: abaSeedSha, with_undo: true,
+  });
+  try {
+    await waitFor(() => fs.existsSync(mcpCasMarker), 20000, 20);
+    const replacement = path.join(tempRoot, "mcp-aba-replacement.txt");
+    fs.writeFileSync(replacement, abaSeed);
+    fs.renameSync(replacement, mcpCasTarget);
+  } finally {
+    fs.writeFileSync(mcpCasRelease, "continue");
+  }
+  const rejectedGuardedAba = await pendingGuardedAba;
+  assert.match(String(rejectedGuardedAba.error), /file_changed_since_read/, JSON.stringify(rejectedGuardedAba));
+  assert.equal(fs.readFileSync(mcpCasTarget, "utf8"), abaSeed);
+  assert.equal(
+    fs.readdirSync(tempRoot).filter((name) => name.startsWith(".wecommander-") && name.endsWith(".tmp")).length,
+    0,
+    "guarded ABA rejection must not leak staging files",
+  );
+  const rejectedAbaVersions = await tool(1758, "fs_versions", {
+    device_id: deviceId, path: mcpCasTarget,
+  });
+  assert.equal(rejectedAbaVersions.versions.length, 0, "rejected guarded ABA must not retain undo snapshots");
+  const guardedAbaRetry = await tool(1759, "fs_write", {
+    device_id: deviceId, path: mcpCasTarget,
+    content_base64: Buffer.from("guarded-mcp-retry").toString("base64"),
+    expected_sha256: abaSeedSha, with_undo: true,
+  });
+  assert.equal(guardedAbaRetry.ok, true, JSON.stringify(guardedAbaRetry));
+  assert.match(guardedAbaRetry.undoId, /^[0-9a-f-]{36}$/);
+  assert.equal(fs.readFileSync(mcpCasTarget, "utf8"), "guarded-mcp-retry");
+  const guardedAbaUndo = await tool(1760, "fs_undo", {
+    device_id: deviceId, path: mcpCasTarget,
+    undo_id: guardedAbaRetry.undoId, expected_sha256: guardedAbaRetry.sha256,
+  });
+  assert.equal(guardedAbaUndo.ok, true, JSON.stringify(guardedAbaUndo));
+  assert.equal(fs.readFileSync(mcpCasTarget, "utf8"), abaSeed);
+  console.log("agent-e2e: guarded same-byte MCP inode ABA rejected; no undo leak; guarded retry and undo passed");
 
   const guardedAppend = await tool(584, "fs_append", {
     device_id: deviceId, path: versionedPath,
