@@ -2442,21 +2442,56 @@ fn checked_undo_storage_metadata(
 // compare-and-delete operation against a hostile concurrent writer.
 fn unlink_undo_snapshot(path: &Path, verified: &fs::File, digest: &str) -> Result<()> {
     #[cfg(unix)]
-    {
-        let _ = (verified, digest);
-        use std::os::fd::AsRawFd;
-        let (parent, name) = rename_parent_handle(path)?;
-        let status = unsafe { libc::unlinkat(parent.as_raw_fd(), name.as_ptr(), 0) };
-        if status != 0 {
-            return Err(std::io::Error::last_os_error().into());
-        }
-    }
+    unlink_undo_snapshot_unix_with_hook(path, verified, digest, || Ok(()))?;
     #[cfg(windows)]
     unlink_undo_snapshot_windows_with_hook(path, verified, digest, || Ok(()))?;
     #[cfg(not(any(unix, windows)))]
     {
         let _ = (path, verified, digest);
         return Err(anyhow!("undo_snapshot_unlink_unsupported"));
+    }
+    Ok(())
+}
+
+// Re-open the leaf relative to the same pinned parent that unlinkat uses.
+// This closes the gap between a pathname-based final check and the directory
+// handle used for deletion. It does NOT make the last comparison and unlinkat
+// a kernel-atomic content CAS against a hostile writer.
+#[cfg(unix)]
+fn unlink_undo_snapshot_unix_with_hook(
+    path: &Path,
+    verified: &fs::File,
+    digest: &str,
+    before_unlink: impl FnOnce() -> Result<()>,
+) -> Result<()> {
+    use std::os::fd::{AsRawFd, FromRawFd};
+
+    let (parent, name) = rename_parent_handle(path)?;
+    before_unlink()?;
+    let fd = unsafe {
+        libc::openat(
+            parent.as_raw_fd(),
+            name.as_ptr(),
+            libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK,
+        )
+    };
+    if fd < 0 {
+        return Err(anyhow!("undo_snapshot_changed_before_unlink"));
+    }
+    // SAFETY: openat returned a new owned descriptor, transferred to File.
+    let named = unsafe { fs::File::from_raw_fd(fd) };
+    if !named.metadata()?.is_file() {
+        return Err(anyhow!("undo_snapshot_changed_before_unlink"));
+    }
+    reject_undo_hardlinked_handle(&named)?;
+    if !undo_snapshot_identity_matches(verified, &named)?
+        || undo_quarantine_digest(&named)? != digest
+    {
+        return Err(anyhow!("undo_snapshot_changed_before_unlink"));
+    }
+    let status = unsafe { libc::unlinkat(parent.as_raw_fd(), name.as_ptr(), 0) };
+    if status != 0 {
+        return Err(std::io::Error::last_os_error().into());
     }
     Ok(())
 }
@@ -3310,6 +3345,51 @@ mod undo_scan_handle_tests {
         assert!(unlink_undo_snapshot(&entry, &pinned, &digest).is_err());
         assert_eq!(fs::read(&entry).unwrap(), b"shared-private");
         assert_eq!(fs::read(&alias).unwrap(), b"shared-private");
+        drop(pinned);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_undo_unlink_rejects_late_leaf_swap_at_pinned_parent() {
+        let root = std::env::temp_dir().join(format!("wc-undo-final-leaf-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let entry = root.join("verified.hold");
+        let parked = root.join("parked.hold");
+        fs::write(&entry, b"verified-snapshot").unwrap();
+        let pinned = open_regular_read(&entry).unwrap();
+        let digest = undo_quarantine_digest(&pinned).unwrap();
+        let error = unlink_undo_snapshot_unix_with_hook(&entry, &pinned, &digest, || {
+            fs::rename(&entry, &parked)?;
+            fs::write(&entry, b"untrusted-replacement")?;
+            Ok(())
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("undo_snapshot_changed_before_unlink"));
+        assert_eq!(fs::read(&entry).unwrap(), b"untrusted-replacement");
+        assert_eq!(fs::read(&parked).unwrap(), b"verified-snapshot");
+        drop(pinned);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_undo_unlink_rejects_late_inplace_tamper_at_pinned_parent() {
+        let root = std::env::temp_dir().join(format!("wc-undo-final-tamper-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let entry = root.join("verified.hold");
+        fs::write(&entry, b"verified-snapshot").unwrap();
+        let pinned = open_regular_read(&entry).unwrap();
+        let digest = undo_quarantine_digest(&pinned).unwrap();
+        let error = unlink_undo_snapshot_unix_with_hook(&entry, &pinned, &digest, || {
+            fs::write(&entry, b"tampered-snapshot")?;
+            Ok(())
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("undo_snapshot_changed_before_unlink"));
+        assert_eq!(fs::read(&entry).unwrap(), b"tampered-snapshot");
         drop(pinned);
         fs::remove_dir_all(root).unwrap();
     }
