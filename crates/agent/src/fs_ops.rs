@@ -988,6 +988,49 @@ mod windows_file_reparse_tests {
     }
 
     #[test]
+    fn windows_atomic_replace_no_sha_inplace_edit_is_rejected() {
+        use std::process::Stdio;
+        let base = std::env::temp_dir().join(format!("wc-win-inplace-no-sha-{}", Uuid::new_v4()));
+        fs::create_dir_all(&base).unwrap();
+        let target = base.join("target.txt");
+        let marker = base.join("staged.marker");
+        let release = base.join("release.marker");
+        fs::write(&target, b"seed").unwrap();
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("fs_ops::windows_file_reparse_tests::windows_atomic_replace_no_sha_worker")
+            .arg("--nocapture")
+            .env("WCF_WIN_NO_SHA_TARGET", &target)
+            .env("WCF_WIN_CAS_MARKER", &marker)
+            .env("WCF_WIN_CAS_RELEASE", &release)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let started = Instant::now();
+        while !marker.exists() && started.elapsed() < Duration::from_secs(10) {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("Windows in-place worker exited before staging: {status}");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if !marker.exists() {
+            let _ = child.kill();
+            panic!("Windows in-place worker never reached staging barrier");
+        }
+        fs::write(&target, b"evil").unwrap();
+        fs::write(&release, b"continue").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "Windows in-place worker failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"evil");
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
     fn windows_same_content_swap_worker() {
         let Ok(raw) = std::env::var("WCF_WIN_CAS_TARGET") else {
             return;
@@ -3799,6 +3842,33 @@ fn verify_atomic_write_guard(existing: fs::File, expected: &str) -> Result<()> {
     Ok(())
 }
 
+// An unguarded replacement should still detect an in-place external writer
+// during staging. Hash only bounded existing files; this is a best-effort
+// conflict check, not an atomic compare-and-swap at the final rename.
+fn atomic_unconditional_original_digest(file: &fs::File) -> Result<Option<String>> {
+    if file.metadata()?.len() > HARD_READ_MAX as u64 {
+        return Ok(None);
+    }
+    let mut reader = file.try_clone()?;
+    let mut digest = Sha256::new();
+    let mut buffer = [0_u8; 16 * 1024];
+    let mut total = 0_usize;
+    loop {
+        let count = reader.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        total = total
+            .checked_add(count)
+            .ok_or_else(|| anyhow!("file_changed_since_read"))?;
+        if total > HARD_READ_MAX {
+            return Ok(None);
+        }
+        digest.update(&buffer[..count]);
+    }
+    Ok(Some(format!("{:x}", digest.finalize())))
+}
+
 // Compare the staged file's actual bytes with the intended payload without
 // allocating another payload-sized buffer. A same-inode in-place modification
 // is not detected by file-ID checks alone.
@@ -3926,6 +3996,7 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
     // Keep the original inode alive until publication. A different inode with
     // identical bytes is still an external replacement (ABA), not our edit.
     let mut original_guard_file: Option<fs::File> = None;
+    let mut original_unguarded_digest: Option<String> = None;
     let mut target_was_missing = false;
     let result = (|| -> Result<()> {
         // Do not follow a replaced target symlink while copying permissions.
@@ -3944,6 +4015,9 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
                 return Err(anyhow!("atomic_replace_requires_regular_file"));
             }
             file.set_permissions(metadata.permissions())?;
+            if expected_sha256.is_none() {
+                original_unguarded_digest = atomic_unconditional_original_digest(&existing)?;
+            }
             // Pin the initial file identity even when the caller did not
             // request a SHA guard. An external replacement must not be lost.
             original_guard_file = Some(existing);
@@ -4009,6 +4083,10 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
             }
             if let Some(expected) = expected_sha256 {
                 verify_atomic_write_guard(current, expected)?;
+            } else if let Some(before) = original_unguarded_digest.as_deref() {
+                if atomic_unconditional_original_digest(&current)?.as_deref() != Some(before) {
+                    return Err(anyhow!("file_changed_since_read"));
+                }
             }
         } else if expected_sha256.is_some() {
             return Err(anyhow!("file_changed_since_read"));
@@ -4108,6 +4186,16 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
         } else {
             None
         };
+        #[cfg(windows)]
+        let original_unguarded_digest = if expected_sha256.is_none() {
+            original_guard_file
+                .as_ref()
+                .map(atomic_unconditional_original_digest)
+                .transpose()?
+                .flatten()
+        } else {
+            None
+        };
         file.write_all(bytes)?;
         file.sync_all()?;
         drop(file);
@@ -4144,6 +4232,12 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
             }
             if let Some(expected) = expected_sha256 {
                 verify_atomic_write_guard(existing, expected)?;
+            }
+            #[cfg(windows)]
+            if let Some(before) = original_unguarded_digest.as_deref() {
+                if atomic_unconditional_original_digest(&existing)?.as_deref() != Some(before) {
+                    return Err(anyhow!("file_changed_since_read"));
+                }
             }
         } else if expected_sha256.is_some() {
             return Err(anyhow!("file_changed_since_read"));
@@ -4469,6 +4563,51 @@ mod atomic_write_parent_tests {
         );
         assert_eq!(fs::read(&target).unwrap(), b"external-file");
         assert_eq!(fs::read(&displaced).unwrap(), b"seed");
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn atomic_replace_no_sha_rejects_external_inplace_edit() {
+        use std::process::{Command, Stdio};
+        let base = std::env::temp_dir().join(format!("wc-inplace-no-sha-{}", Uuid::new_v4()));
+        fs::create_dir_all(&base).unwrap();
+        let base = fs::canonicalize(base).unwrap();
+        let target = base.join("target.txt");
+        let marker = base.join("staged.marker");
+        let release = base.join("release.marker");
+        fs::write(&target, b"seed").unwrap();
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("fs_ops::atomic_write_parent_tests::process_atomic_replace_no_sha_worker")
+            .arg("--nocapture")
+            .env("WCF_REPLACE_NO_SHA_TARGET", &target)
+            .env("WCF_CAS_MARKER", &marker)
+            .env("WCF_CAS_RELEASE", &release)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let started = Instant::now();
+        while !marker.exists() && started.elapsed() < Duration::from_secs(10) {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("in-place worker exited before staging: {status}");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if !marker.exists() {
+            let _ = child.kill();
+            panic!("in-place worker never reached staging barrier");
+        }
+        // Same inode and same length: file-ID and size alone cannot detect it.
+        fs::write(&target, b"evil").unwrap();
+        fs::write(&release, b"continue").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "in-place worker failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"evil");
         fs::remove_dir_all(base).unwrap();
     }
 
