@@ -3719,15 +3719,12 @@ mod undo_publication_tests {
         // still points at the displaced original, so a path-only read fails.
         fs::rename(&temporary, &displaced).unwrap();
         fs::write(&temporary, b"foreign-snapshot").unwrap();
-        let error = publish_undo_snapshot_checked(
-            &temporary,
-            &destination,
-            &root,
-            &staged,
-            payload,
-        )
-        .unwrap_err();
-        assert!(error.to_string().contains("undo_snapshot_changed_during_publication"));
+        let error =
+            publish_undo_snapshot_checked(&temporary, &destination, &root, &staged, payload)
+                .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("undo_snapshot_changed_during_publication"));
         assert!(!destination.exists());
         assert_eq!(fs::read(&temporary).unwrap(), b"foreign-snapshot");
         assert_eq!(fs::read(&displaced).unwrap(), payload);
@@ -3756,15 +3753,12 @@ mod undo_publication_tests {
         let observed = open_regular_read(&temporary).unwrap();
         assert!(undo_snapshot_identity_matches(&staged, &observed).unwrap());
         drop(observed);
-        let error = publish_undo_snapshot_checked(
-            &temporary,
-            &destination,
-            &root,
-            &staged,
-            payload,
-        )
-        .unwrap_err();
-        assert!(error.to_string().contains("undo_snapshot_changed_during_publication"));
+        let error =
+            publish_undo_snapshot_checked(&temporary, &destination, &root, &staged, payload)
+                .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("undo_snapshot_changed_during_publication"));
         assert!(!destination.exists());
         assert_eq!(fs::read(&temporary).unwrap(), b"foreign-snapshot");
         drop(staged);
