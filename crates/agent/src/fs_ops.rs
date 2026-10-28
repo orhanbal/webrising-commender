@@ -3263,6 +3263,57 @@ mod undo_scan_handle_tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn windows_undo_handle_unlink_rejects_junction_parent() {
+        use std::process::Command;
+
+        let root = std::env::temp_dir().join(format!("wc-undo-handle-junction-{}", Uuid::new_v4()));
+        let outside = root.join("outside");
+        let alias = root.join("alias");
+        fs::create_dir_all(&outside).unwrap();
+        let entry = outside.join("verified.hold");
+        fs::write(&entry, b"outside-private").unwrap();
+        let output = Command::new("cmd")
+            .arg("/C")
+            .arg("mklink")
+            .arg("/J")
+            .arg(&alias)
+            .arg(&outside)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "junction fixture failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let pinned = open_regular_read(&entry).unwrap();
+        let digest = undo_quarantine_digest(&pinned).unwrap();
+        assert!(unlink_undo_snapshot(&alias.join("verified.hold"), &pinned, &digest).is_err());
+        assert_eq!(fs::read(&entry).unwrap(), b"outside-private");
+        drop(pinned);
+        fs::remove_dir(&alias).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_undo_handle_unlink_rejects_hardlinked_leaf() {
+        let root = std::env::temp_dir().join(format!("wc-undo-handle-hardlink-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let entry = root.join("verified.hold");
+        let alias = root.join("other.hold");
+        fs::write(&entry, b"shared-private").unwrap();
+        let pinned = open_regular_read(&entry).unwrap();
+        let digest = undo_quarantine_digest(&pinned).unwrap();
+        fs::hard_link(&entry, &alias).unwrap();
+        assert!(unlink_undo_snapshot(&entry, &pinned, &digest).is_err());
+        assert_eq!(fs::read(&entry).unwrap(), b"shared-private");
+        assert_eq!(fs::read(&alias).unwrap(), b"shared-private");
+        drop(pinned);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[cfg(unix)]
     #[test]
     fn undo_unlink_rejects_symlinked_parent_without_touching_outside_file() {
