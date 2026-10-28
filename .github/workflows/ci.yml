@@ -60,6 +60,12 @@ jobs:
       - name: Windows atomic create no-overwrite race
         if: runner.os == 'Windows'
         run: cargo test -p webrising-commender-agent windows_atomic_create_ -- --nocapture
+      - name: Native unconditional replace identity race
+        if: runner.os == 'macOS'
+        run: cargo test -p webrising-commender-agent atomic_replace_no_sha_ -- --nocapture
+      - name: Windows unconditional replace identity race
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_atomic_replace_no_sha_ -- --nocapture
       - name: Windows terminal history junction rejection
         if: runner.os == 'Windows'
         run: cargo test -p webrising-commender-agent windows_junction_ -- --nocapture
