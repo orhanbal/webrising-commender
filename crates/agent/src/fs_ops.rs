@@ -5002,10 +5002,19 @@ mod atomic_digest_race_tests {
             false,
         )
         .unwrap_err();
-        assert!(error.to_string().contains("file_changed_since_read"), "{error}");
-        assert_eq!(fs::metadata(&path).unwrap().len(), MAX_ATOMIC_UNGUARDED_SCAN + 1);
+        assert!(
+            error.to_string().contains("file_changed_since_read"),
+            "{error}"
+        );
+        assert_eq!(
+            fs::metadata(&path).unwrap().len(),
+            MAX_ATOMIC_UNGUARDED_SCAN + 1
+        );
         let mut first = [0_u8; 8];
-        fs::File::open(&path).unwrap().read_exact(&mut first).unwrap();
+        fs::File::open(&path)
+            .unwrap()
+            .read_exact(&mut first)
+            .unwrap();
         assert_eq!(&first, b"preserve");
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
         fs::remove_dir_all(dir).unwrap();
