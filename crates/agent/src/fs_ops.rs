@@ -3473,10 +3473,7 @@ mod undo_scan_handle_tests {
             "late junction must be rejected by ancestor guard: {error}"
         );
         assert_eq!(fs::read(&outside_entry).unwrap(), b"verified-snapshot");
-        assert_eq!(
-            fs::read(parked.join("verified.hold")).unwrap(),
-            b"verified-snapshot"
-        );
+        assert_eq!(fs::read(parked.join("verified.hold")).unwrap(), b"verified-snapshot");
         fs::remove_dir(&live).unwrap();
         fs::rename(&parked, &live).unwrap();
         unlink_undo_snapshot(&entry, &pinned, &digest).unwrap();
