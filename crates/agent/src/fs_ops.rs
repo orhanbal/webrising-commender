@@ -3846,9 +3846,21 @@ fn verify_atomic_write_guard(existing: fs::File, expected: &str) -> Result<()> {
 // during staging. Hash only bounded existing files; this is a best-effort
 // conflict check, not an atomic compare-and-swap at the final rename.
 fn atomic_unconditional_original_digest(file: &fs::File) -> Result<Option<String>> {
-    if file.metadata()?.len() > HARD_READ_MAX as u64 {
+    atomic_unconditional_original_digest_with_hook(file, || Ok(()))
+}
+
+// The hook makes metadata-to-read races deterministic in native regression
+// tests; production passes a no-op. An initially bounded file must never
+// silently lose its conflict guard if another writer grows or truncates it.
+fn atomic_unconditional_original_digest_with_hook(
+    file: &fs::File,
+    after_size_check: impl FnOnce() -> Result<()>,
+) -> Result<Option<String>> {
+    let initial_len = file.metadata()?.len();
+    if initial_len > HARD_READ_MAX as u64 {
         return Ok(None);
     }
+    after_size_check()?;
     let mut reader = file.try_clone()?;
     let mut digest = Sha256::new();
     let mut buffer = [0_u8; 16 * 1024];
@@ -3862,9 +3874,12 @@ fn atomic_unconditional_original_digest(file: &fs::File) -> Result<Option<String
             .checked_add(count)
             .ok_or_else(|| anyhow!("file_changed_since_read"))?;
         if total > HARD_READ_MAX {
-            return Ok(None);
+            return Err(anyhow!("file_changed_since_read"));
         }
         digest.update(&buffer[..count]);
+    }
+    if total as u64 != initial_len {
+        return Err(anyhow!("file_changed_since_read"));
     }
     Ok(Some(format!("{:x}", digest.finalize())))
 }
@@ -4275,6 +4290,60 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
         let _ = fs::remove_file(&temporary);
     }
     result
+}
+
+#[cfg(test)]
+mod atomic_digest_race_tests {
+    use super::*;
+
+    #[test]
+    fn unguarded_digest_rejects_growth_after_initial_size_check() {
+        let dir = std::env::temp_dir().join(format!("wc-digest-grow-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("target.txt");
+        fs::write(&path, b"seed").unwrap();
+        let file = fs::File::open(&path).unwrap();
+        let error = atomic_unconditional_original_digest_with_hook(&file, || {
+            fs::write(&path, vec![b'x'; HARD_READ_MAX + 1])?;
+            Ok(())
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("file_changed_since_read"));
+        assert_eq!(fs::metadata(&path).unwrap().len(), (HARD_READ_MAX + 1) as u64);
+        drop(file);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unguarded_digest_rejects_truncation_after_initial_size_check() {
+        let dir = std::env::temp_dir().join(format!("wc-digest-shrink-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("target.txt");
+        fs::write(&path, b"original").unwrap();
+        let file = fs::File::open(&path).unwrap();
+        let error = atomic_unconditional_original_digest_with_hook(&file, || {
+            fs::write(&path, b"x")?;
+            Ok(())
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("file_changed_since_read"));
+        assert_eq!(fs::read(&path).unwrap(), b"x");
+        drop(file);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unguarded_digest_keeps_bounded_unchanged_file() {
+        let dir = std::env::temp_dir().join(format!("wc-digest-ok-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("target.txt");
+        fs::write(&path, b"unchanged").unwrap();
+        let file = fs::File::open(&path).unwrap();
+        let digest = atomic_unconditional_original_digest(&file).unwrap();
+        assert_eq!(digest, Some(format!("{:x}", Sha256::digest(b"unchanged"))));
+        drop(file);
+        fs::remove_dir_all(dir).unwrap();
+    }
 }
 
 #[cfg(all(test, unix))]
