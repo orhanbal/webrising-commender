@@ -3365,6 +3365,39 @@ fn undo_entries(path: &Path, dir: &Path, scope: Option<&str>) -> Result<Vec<(Str
     Ok(result)
 }
 
+// Verify the actual staged inode and payload on both sides of publication.
+// The UUID staging pathname is not trusted: a local writer can replace its
+// leaf or alter the same inode while the Agent still holds its original handle.
+// This narrows the staging race, but is not a kernel-level compare-and-rename
+// against a hostile writer acting after the final check.
+fn publish_undo_snapshot_checked(
+    temporary: &Path,
+    destination: &Path,
+    dir: &Path,
+    staged: &fs::File,
+    payload: &[u8],
+) -> Result<()> {
+    let candidate = open_regular_read(temporary)
+        .map_err(|_| anyhow!("undo_snapshot_changed_during_publication"))?;
+    reject_undo_hardlinked_handle(&candidate)?;
+    if !undo_snapshot_identity_matches(staged, &candidate)?
+        || !atomic_staged_bytes_match(&candidate, payload)?
+    {
+        return Err(anyhow!("undo_snapshot_changed_during_publication"));
+    }
+    drop(candidate);
+    publish_undo_snapshot(temporary, destination, dir)?;
+    let published = open_regular_read(destination)
+        .map_err(|_| anyhow!("undo_snapshot_changed_during_publication"))?;
+    reject_undo_hardlinked_handle(&published)?;
+    if !undo_snapshot_identity_matches(staged, &published)?
+        || !atomic_staged_bytes_match(&published, payload)?
+    {
+        return Err(anyhow!("undo_snapshot_changed_during_publication"));
+    }
+    Ok(())
+}
+
 // Publishing a snapshot must never replace a pre-existing destination,
 // even if an external process races the UUID-named file into place. A failed
 // publication must not delete that other file during cleanup.
@@ -3441,11 +3474,7 @@ fn save_undo_snapshot(
             .ok_or_else(|| anyhow!("undo_staging_unavailable"))?;
         file.write_all(&payload)?;
         file.sync_all()?;
-        publish_undo_snapshot(&temporary, &destination, &dir)?;
-        let published = open_regular_read(&destination)?;
-        if !undo_snapshot_identity_matches(file, &published)? {
-            return Err(anyhow!("undo_snapshot_changed_during_publication"));
-        }
+        publish_undo_snapshot_checked(&temporary, &destination, &dir, file, &payload)?;
         Ok(())
     })();
     if result.is_err() {
@@ -3665,6 +3694,102 @@ mod undo_publication_tests {
         assert!(remove_undo_snapshot_checked(&destination, &staged).is_err());
         assert_eq!(fs::read(&destination).unwrap(), b"external-snapshot");
         assert_eq!(fs::read(&displaced).unwrap(), b"our-snapshot");
+        drop(staged);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn snapshot_staging_leaf_swap_is_rejected_before_publication() {
+        let root = std::env::temp_dir().join(format!("wc-undo-stage-swap-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let temporary = root.join(format!(".{}.tmp", Uuid::new_v4()));
+        let displaced = root.join("displaced-original");
+        let destination = root.join(format!("{}-{}.undo", "a".repeat(64), Uuid::new_v4()));
+        let payload = b"private-snapshot";
+        let mut staged = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .unwrap();
+        staged.write_all(payload).unwrap();
+        staged.sync_all().unwrap();
+
+        // An independent actor now owns the UUID leaf. The pinned handle
+        // still points at the displaced original, so a path-only read fails.
+        fs::rename(&temporary, &displaced).unwrap();
+        fs::write(&temporary, b"foreign-snapshot").unwrap();
+        let error = publish_undo_snapshot_checked(
+            &temporary,
+            &destination,
+            &root,
+            &staged,
+            payload,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("undo_snapshot_changed_during_publication"));
+        assert!(!destination.exists());
+        assert_eq!(fs::read(&temporary).unwrap(), b"foreign-snapshot");
+        assert_eq!(fs::read(&displaced).unwrap(), payload);
+        drop(staged);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn snapshot_staging_inplace_tamper_is_rejected_before_publication() {
+        let root = std::env::temp_dir().join(format!("wc-undo-stage-inplace-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let temporary = root.join(format!(".{}.tmp", Uuid::new_v4()));
+        let destination = root.join(format!("{}-{}.undo", "a".repeat(64), Uuid::new_v4()));
+        let payload = b"private-snapshot";
+        let mut staged = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .unwrap();
+        staged.write_all(payload).unwrap();
+        staged.sync_all().unwrap();
+
+        // Identity and length remain unchanged, but the bytes are hostile.
+        fs::write(&temporary, b"foreign-snapshot").unwrap();
+        let observed = open_regular_read(&temporary).unwrap();
+        assert!(undo_snapshot_identity_matches(&staged, &observed).unwrap());
+        drop(observed);
+        let error = publish_undo_snapshot_checked(
+            &temporary,
+            &destination,
+            &root,
+            &staged,
+            payload,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("undo_snapshot_changed_during_publication"));
+        assert!(!destination.exists());
+        assert_eq!(fs::read(&temporary).unwrap(), b"foreign-snapshot");
+        drop(staged);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn verified_snapshot_staging_publishes_expected_payload() {
+        let root = std::env::temp_dir().join(format!("wc-undo-stage-valid-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let temporary = root.join(format!(".{}.tmp", Uuid::new_v4()));
+        let destination = root.join(format!("{}-{}.undo", "a".repeat(64), Uuid::new_v4()));
+        let payload = b"private-snapshot";
+        let mut staged = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .unwrap();
+        staged.write_all(payload).unwrap();
+        staged.sync_all().unwrap();
+        publish_undo_snapshot_checked(&temporary, &destination, &root, &staged, payload).unwrap();
+        assert!(!temporary.exists());
+        assert_eq!(fs::read(&destination).unwrap(), payload);
+        remove_undo_snapshot_checked(&destination, &staged).unwrap();
         drop(staged);
         fs::remove_dir_all(root).unwrap();
     }
