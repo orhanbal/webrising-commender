@@ -246,7 +246,7 @@ try{
  let rasterReady=false;
  let rasterError="";
  for(let attempt=0;attempt<50;attempt++){
-  rasterReady=await evalJs("document.querySelector('img[src^=\\\"data:image/png;base64,\\\"]')!==null");
+  rasterReady=await evalJs("document.querySelector('img[src^=\"data:image/png;base64,\"]')!==null");
   if(rasterReady)break;
   rasterError=await evalJs("document.querySelector('[role=alert]')?.textContent||''");
   if(rasterError)break;
