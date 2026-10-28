@@ -4369,7 +4369,10 @@ mod atomic_digest_race_tests {
             .set_len(MAX_PAGED_FILE + 1)
             .unwrap();
         let error = atomic_write(&path, b"must-not-overwrite", None).unwrap_err();
-        assert!(error.to_string().contains("file_changed_since_read"), "{error}");
+        assert!(
+            error.to_string().contains("file_changed_since_read"),
+            "{error}"
+        );
         assert_eq!(fs::metadata(&path).unwrap().len(), MAX_PAGED_FILE + 1);
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
         fs::remove_dir_all(dir).unwrap();
@@ -4390,7 +4393,10 @@ mod atomic_digest_race_tests {
             Ok(())
         })
         .unwrap_err();
-        assert!(error.to_string().contains("file_changed_since_read"), "{error}");
+        assert!(
+            error.to_string().contains("file_changed_since_read"),
+            "{error}"
+        );
         drop(file);
         fs::remove_dir_all(dir).unwrap();
     }
@@ -4401,7 +4407,10 @@ mod atomic_digest_race_tests {
             return;
         };
         let error = atomic_write(Path::new(&raw), b"agent-update", None).unwrap_err();
-        assert!(error.to_string().contains("file_changed_since_read"), "{error}");
+        assert!(
+            error.to_string().contains("file_changed_since_read"),
+            "{error}"
+        );
     }
 
     #[test]
