@@ -4231,7 +4231,7 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
                 }
             }
             if let Some(expected) = expected_sha256 {
-                verify_atomic_write_guard(existing, expected)?;
+                verify_atomic_write_guard(existing.try_clone()?, expected)?;
             }
             #[cfg(windows)]
             if let Some(before) = original_unguarded_digest.as_deref() {
