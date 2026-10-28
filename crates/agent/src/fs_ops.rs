@@ -4031,8 +4031,8 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
         {
             // The staged leaf is a separate security boundary from the target.
             // Detect a same-name replacement before MoveFileW/fs::rename.
-            let staged_now = open_regular_read(&temporary)
-                .map_err(|_| anyhow!("atomic_staging_changed"))?;
+            let staged_now =
+                open_regular_read(&temporary).map_err(|_| anyhow!("atomic_staging_changed"))?;
             if Some(windows_file_identity(&staged_now)?) != staged_identity
                 || reject_windows_hardlinked_file(&staged_now).is_err()
             {
