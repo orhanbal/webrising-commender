@@ -1620,9 +1620,9 @@ fn write_impl(
         let (original, previous_sha) = previous
             .as_ref()
             .ok_or_else(|| anyhow!("undo_requires_existing_file"))?;
-        let (id, snapshot_path) =
+        let (id, snapshot_path, pinned) =
             save_undo_snapshot(&path, original, previous_sha, &next_sha, undo_scope)?;
-        Some((id, snapshot_path, previous_sha.clone()))
+        Some((id, snapshot_path, pinned, previous_sha.clone()))
     } else {
         None
     };
@@ -1631,15 +1631,15 @@ fn write_impl(
         &bytes,
         previous.as_ref().map(|(_, sha)| sha.as_str()),
     ) {
-        if let Some((_, snapshot_path, _)) = &snapshot {
-            let _ = fs::remove_file(snapshot_path);
+        if let Some((_, snapshot_path, pinned, _)) = &snapshot {
+            let _ = remove_undo_snapshot_checked(snapshot_path, pinned);
         }
         return Err(error);
     }
     let mut response = json!({
         "ok": true, "path": path.to_string_lossy(), "size": bytes.len()
     });
-    if let Some((id, _, previous_sha)) = snapshot {
+    if let Some((id, _, _, previous_sha)) = snapshot {
         response["undoId"] = json!(id);
         response["previousSha256"] = json!(previous_sha);
         response["sha256"] = json!(next_sha);
@@ -1736,8 +1736,8 @@ fn append_impl(
             None
         };
         if let Err(error) = atomic_write(&path, &updated, Some(&previous_sha)) {
-            if let Some((_, snapshot_path)) = &snapshot {
-                let _ = fs::remove_file(snapshot_path);
+            if let Some((_, snapshot_path, pinned)) = &snapshot {
+                let _ = remove_undo_snapshot_checked(snapshot_path, pinned);
             }
             return Err(error);
         }
@@ -1745,7 +1745,7 @@ fn append_impl(
             "ok": true, "path": path.to_string_lossy(), "appendedBytes": bytes.len(),
             "previousSha256": previous_sha, "sha256": next_sha
         });
-        if let Some((id, _)) = snapshot {
+        if let Some((id, _, _)) = snapshot {
             response["undoId"] = json!(id);
         }
         return Ok(response);
@@ -1872,7 +1872,7 @@ fn replace_text_impl(
     }
 
     let next_sha256 = format!("{:x}", Sha256::digest(updated.as_bytes()));
-    let (undo_id, snapshot) = save_undo_snapshot(
+    let (undo_id, snapshot, pinned) = save_undo_snapshot(
         &path,
         original.as_bytes(),
         &previous_sha256,
@@ -1880,7 +1880,7 @@ fn replace_text_impl(
         undo_scope,
     )?;
     if let Err(error) = atomic_write(&path, updated.as_bytes(), Some(&previous_sha256)) {
-        let _ = fs::remove_file(&snapshot);
+        let _ = remove_undo_snapshot_checked(&snapshot, &pinned);
         return Err(error);
     }
     Ok(json!({
@@ -3099,7 +3099,7 @@ fn save_undo_snapshot(
     previous_sha: &str,
     next_sha: &str,
     undo_scope: Option<&str>,
-) -> Result<(String, std::path::PathBuf)> {
+) -> Result<(String, std::path::PathBuf, fs::File)> {
     let _directory_guard = undo_directory_lock()?;
     let dir = undo_dir(path, true)?.ok_or_else(|| anyhow!("undo_directory_unavailable"))?;
     let _filesystem_guard = undo_cross_process_lock(&dir)?;
@@ -3125,6 +3125,9 @@ fn save_undo_snapshot(
         MAX_UNDO_TOTAL_BYTES,
         undo_scope,
     )?;
+    // Pin the staging inode before publication. An external process may swap
+    // the staging or final pathname; never clean up a different inode.
+    let mut staged: Option<fs::File> = None;
     let result = (|| -> Result<()> {
         let mut options = fs::OpenOptions::new();
         options.write(true).create_new(true);
@@ -3133,19 +3136,27 @@ fn save_undo_snapshot(
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
         }
-        let mut file = options.open(&temporary)?;
+        staged = Some(options.open(&temporary)?);
+        let file = staged.as_mut().ok_or_else(|| anyhow!("undo_staging_unavailable"))?;
         file.write_all(&payload)?;
         file.sync_all()?;
-        drop(file);
-        publish_undo_snapshot(&temporary, &destination, &dir)
+        publish_undo_snapshot(&temporary, &destination, &dir)?;
+        let published = open_regular_read(&destination)?;
+        if !undo_snapshot_identity_matches(file, &published)? {
+            return Err(anyhow!("undo_snapshot_changed_during_publication"));
+        }
+        Ok(())
     })();
     if result.is_err() {
-        // The destination may belong to another writer if publication failed.
-        // Only our unique staging file is safe to remove.
-        let _ = fs::remove_file(&temporary);
+        // A failed publication may leave an attacker-controlled entry at
+        // either name. Only delete a leaf matching our pinned staging handle.
+        if let Some(pinned) = staged.as_ref() {
+            let _ = remove_undo_snapshot_checked(&temporary, pinned);
+            let _ = remove_undo_snapshot_checked(&destination, pinned);
+        }
     }
     result?;
-    Ok((id, destination))
+    Ok((id, destination, staged.ok_or_else(|| anyhow!("undo_staging_unavailable"))?))
 }
 
 /// List bounded, disk-persisted undo snapshots for an allowlisted regular file.
@@ -3298,6 +3309,31 @@ mod undo_publication_tests {
         publish_undo_snapshot(&temporary, &destination, &root).unwrap();
         assert_eq!(fs::read(&destination).unwrap(), b"staged-snapshot");
         assert!(!temporary.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn published_snapshot_preserves_pinned_staging_identity() {
+        let root = std::env::temp_dir().join(format!("wc-undo-pinned-publish-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let temporary = root.join(format!(".{}.tmp", Uuid::new_v4()));
+        let destination = root.join(format!("{}-{}.undo", "a".repeat(64), Uuid::new_v4()));
+        let mut staged = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .unwrap();
+        staged.write_all(b"private-snapshot").unwrap();
+        staged.sync_all().unwrap();
+        // Publication must work with the staging handle still open on all OSes.
+        publish_undo_snapshot(&temporary, &destination, &root).unwrap();
+        let published = open_regular_read(&destination).unwrap();
+        assert!(undo_snapshot_identity_matches(&staged, &published).unwrap());
+        drop(published);
+        remove_undo_snapshot_checked(&destination, &staged).unwrap();
+        assert!(!destination.exists());
+        drop(staged);
         fs::remove_dir_all(root).unwrap();
     }
 
