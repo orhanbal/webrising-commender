@@ -1541,6 +1541,28 @@ try {
   assert.equal(beyondPagedWrite.ok, true, JSON.stringify(beyondPagedWrite));
   assert.equal(fs.readFileSync(beyondPagedPath, "utf8"), "published-beyond-paged-limit");
 
+  // SHA-guarded writes without undo use bounded streaming verification,
+  // not the 4 MiB in-memory undo snapshot limit. Exercise real MCP routing.
+  const largeGuardedPath = path.join(tempRoot, "large-guarded-no-undo-mcp.bin");
+  fs.writeFileSync(largeGuardedPath, Buffer.from("guarded-seed"));
+  fs.truncateSync(largeGuardedPath, 32 * 1024 * 1024 + 1);
+  const largeGuardedSha = createHash("sha256").update(fs.readFileSync(largeGuardedPath)).digest("hex");
+  const staleLargeGuard = await tool(1761, "fs_write", {
+    device_id: deviceId, path: largeGuardedPath,
+    content_base64: Buffer.from("must-not-overwrite").toString("base64"),
+    expected_sha256: "0".repeat(64), with_undo: false,
+  });
+  assert.match(String(staleLargeGuard.error), /file_changed_since_read/, JSON.stringify(staleLargeGuard));
+  assert.equal(fs.statSync(largeGuardedPath).size, 32 * 1024 * 1024 + 1);
+  const acceptedLargeGuard = await tool(1762, "fs_write", {
+    device_id: deviceId, path: largeGuardedPath,
+    content_base64: Buffer.from("guarded-large-updated").toString("base64"),
+    expected_sha256: largeGuardedSha, with_undo: false,
+  });
+  assert.equal(acceptedLargeGuard.ok, true, JSON.stringify(acceptedLargeGuard));
+  assert.equal(fs.readFileSync(largeGuardedPath, "utf8"), "guarded-large-updated");
+  console.log("agent-e2e: SHA-guarded >32MiB no-undo MCP write accepted; stale SHA rejected");
+
   const overBudgetPath = path.join(tempRoot, "oversized-unguarded-mcp.bin");
   const overBudgetSize = 128 * 1024 * 1024 + 1;
   fs.writeFileSync(overBudgetPath, Buffer.alloc(1, 0x6b));

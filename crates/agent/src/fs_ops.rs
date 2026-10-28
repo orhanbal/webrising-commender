@@ -1900,7 +1900,8 @@ fn write_impl(
     }
     // Opt-in undo never silently overwrites a missing, oversized or symlink
     // target. The existing unguarded API remains backward compatible.
-    let previous = if with_undo || expected_sha256.is_some() {
+    let previous = if with_undo {
+        // Undo snapshots remain bounded by the 4 MiB restore contract.
         let mut original = Vec::new();
         open_regular_read(&path)?
             .take(HARD_READ_MAX as u64 + 1)
@@ -1913,6 +1914,16 @@ fn write_impl(
             return Err(anyhow!("file_changed_since_read"));
         }
         Some((original, sha))
+    } else if let Some(expected) = expected_sha256 {
+        // A SHA-guarded write without undo needs only a digest, not a 4 MiB
+        // in-memory snapshot. Stream through the hardlink-aware conflict scan.
+        let original = open_regular_read(&path)?;
+        let sha = atomic_unconditional_original_digest(&original)?
+            .ok_or_else(|| anyhow!("file_changed_since_read"))?;
+        if !sha.eq_ignore_ascii_case(expected) {
+            return Err(anyhow!("file_changed_since_read"));
+        }
+        Some((Vec::new(), sha))
     } else {
         None
     };
@@ -4240,30 +4251,11 @@ mod undo_scope_tests {
 // committing the staged replacement. This narrows the external-writer window;
 // it is not a transactional CAS against uncooperative processes.
 fn verify_atomic_write_guard(existing: fs::File, expected: &str) -> Result<()> {
-    let metadata = existing.metadata()?;
-    if !metadata.is_file() || metadata.len() > HARD_READ_MAX as u64 {
-        return Err(anyhow!("file_changed_since_read"));
-    }
-    // A hardlinked target may be changed through an alias without touching
-    // this path. Guarded edits cannot claim isolation for shared inodes.
-    #[cfg(windows)]
-    if reject_windows_hardlinked_file(&existing).is_err() {
-        return Err(anyhow!("file_changed_since_read"));
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        if metadata.nlink() != 1 {
-            return Err(anyhow!("file_changed_since_read"));
-        }
-    }
-    let mut current = Vec::new();
-    existing
-        .take(HARD_READ_MAX as u64 + 1)
-        .read_to_end(&mut current)?;
-    if current.len() > HARD_READ_MAX
-        || !format!("{:x}", Sha256::digest(&current)).eq_ignore_ascii_case(expected)
-    {
+    // Match the preflight scan budget and hardlink policy. Never allocate
+    // the original file in memory or silently skip conflict protection.
+    let current = atomic_unconditional_original_digest(&existing)?
+        .ok_or_else(|| anyhow!("file_changed_since_read"))?;
+    if !current.eq_ignore_ascii_case(expected) {
         return Err(anyhow!("file_changed_since_read"));
     }
     Ok(())
@@ -4956,6 +4948,66 @@ mod atomic_digest_race_tests {
         drop(file);
         atomic_write(&path, b"updated", None).unwrap();
         assert_eq!(fs::read(&path).unwrap(), b"updated");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn guarded_sha_without_undo_streams_existing_file_above_paged_limit() {
+        let dir = std::env::temp_dir().join(format!("wc-guarded-large-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let dir = fs::canonicalize(dir).unwrap();
+        let path = dir.join("target.bin");
+        let mut original = fs::File::create(&path).unwrap();
+        original.write_all(b"guarded-seed").unwrap();
+        original.set_len(MAX_PAGED_FILE + 1).unwrap();
+        drop(original);
+        let expected = atomic_unconditional_original_digest(&fs::File::open(&path).unwrap())
+            .unwrap()
+            .unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&dir)).unwrap();
+        let response = write(
+            &policy,
+            path.to_str().unwrap(),
+            &STANDARD.encode(b"guarded-large-updated"),
+            false,
+            Some(&expected),
+            false,
+        )
+        .unwrap();
+        assert_eq!(response["ok"], true);
+        assert_eq!(fs::read(&path).unwrap(), b"guarded-large-updated");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn guarded_sha_without_undo_rejects_oversized_source_without_data_loss() {
+        let dir = std::env::temp_dir().join(format!("wc-guarded-overlimit-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let dir = fs::canonicalize(dir).unwrap();
+        let path = dir.join("target.bin");
+        fs::write(&path, b"preserve").unwrap();
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(MAX_ATOMIC_UNGUARDED_SCAN + 1)
+            .unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&dir)).unwrap();
+        let error = write(
+            &policy,
+            path.to_str().unwrap(),
+            &STANDARD.encode(b"must-not-overwrite"),
+            false,
+            Some(&"0".repeat(64)),
+            false,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("file_changed_since_read"), "{error}");
+        assert_eq!(fs::metadata(&path).unwrap().len(), MAX_ATOMIC_UNGUARDED_SCAN + 1);
+        let mut first = [0_u8; 8];
+        fs::File::open(&path).unwrap().read_exact(&mut first).unwrap();
+        assert_eq!(&first, b"preserve");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
         fs::remove_dir_all(dir).unwrap();
     }
 
