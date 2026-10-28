@@ -4370,7 +4370,10 @@ mod atomic_digest_race_tests {
         fs::write(&path, b"original").unwrap();
         fs::hard_link(&path, &alias).unwrap();
         let error = atomic_write(&path, b"agent-update", None).unwrap_err();
-        assert!(error.to_string().contains("file_changed_since_read"), "{error}");
+        assert!(
+            error.to_string().contains("file_changed_since_read"),
+            "{error}"
+        );
         assert_eq!(fs::read(&path).unwrap(), b"original");
         assert_eq!(fs::read(&alias).unwrap(), b"original");
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 2);
@@ -4391,7 +4394,10 @@ mod atomic_digest_race_tests {
             Ok(())
         })
         .unwrap_err();
-        assert!(error.to_string().contains("file_changed_since_read"), "{error}");
+        assert!(
+            error.to_string().contains("file_changed_since_read"),
+            "{error}"
+        );
         assert_eq!(fs::read(&path).unwrap(), b"original");
         assert_eq!(fs::read(&alias).unwrap(), b"original");
         drop(file);
