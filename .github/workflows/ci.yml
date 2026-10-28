@@ -66,6 +66,12 @@ jobs:
       - name: Windows unconditional replace identity race
         if: runner.os == 'Windows'
         run: cargo test -p webrising-commender-agent windows_atomic_replace_no_sha_ -- --nocapture
+      - name: Native atomic staging leaf substitution and safe cleanup
+        if: runner.os == 'macOS'
+        run: cargo test -p webrising-commender-agent atomic_staging_swap_ -- --nocapture
+      - name: Windows atomic staging leaf substitution and safe cleanup
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_atomic_staging_swap_ -- --nocapture
       - name: Windows terminal history junction rejection
         if: runner.os == 'Windows'
         run: cargo test -p webrising-commender-agent windows_junction_ -- --nocapture
