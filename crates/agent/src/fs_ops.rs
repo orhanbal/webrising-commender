@@ -3879,7 +3879,7 @@ fn atomic_unconditional_original_digest_with_hook(
         }
         digest.update(&buffer[..count]);
     }
-    if total as u64 != initial_len {
+    if total != initial_len {
         return Err(anyhow!("file_changed_since_read"));
     }
     Ok(Some(format!("{:x}", digest.finalize())))
