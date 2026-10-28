@@ -3402,6 +3402,90 @@ mod undo_scan_handle_tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    // A same-byte replacement after the DELETE-capable handle is opened
+    // must not be mistaken for the original inode merely because SHA matches.
+    #[cfg(windows)]
+    #[test]
+    fn windows_undo_handle_unlink_rejects_late_same_byte_inode_swap() {
+        let root = std::env::temp_dir().join(format!("wc-undo-late-aba-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let entry = root.join("verified.hold");
+        let parked = root.join("parked.hold");
+        fs::write(&entry, b"verified-snapshot").unwrap();
+        let pinned = open_regular_read(&entry).unwrap();
+        let digest = undo_quarantine_digest(&pinned).unwrap();
+        let error = unlink_undo_snapshot_windows_with_hook(&entry, &pinned, &digest, || {
+            fs::rename(&entry, &parked)?;
+            fs::write(&entry, b"verified-snapshot")?;
+            Ok(())
+        })
+        .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("undo_snapshot_changed_before_unlink"));
+        assert_eq!(fs::read(&entry).unwrap(), b"verified-snapshot");
+        assert_eq!(fs::read(&parked).unwrap(), b"verified-snapshot");
+        drop(pinned);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    // Inject a real NTFS junction into the parent AFTER the original file
+    // was opened for DELETE. The outside file has identical bytes: only
+    // ancestor reparse validation (not SHA) can reject this redirection.
+    #[cfg(windows)]
+    #[test]
+    fn windows_undo_handle_unlink_rejects_late_junction_ancestor_swap() {
+        use std::process::Command;
+
+        let root = std::env::temp_dir().join(format!("wc-undo-late-junction-{}", Uuid::new_v4()));
+        let live = root.join("live");
+        let parked = root.join("parked");
+        let outside = root.join("outside");
+        fs::create_dir_all(&live).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let entry = live.join("verified.hold");
+        let outside_entry = outside.join("verified.hold");
+        fs::write(&entry, b"verified-snapshot").unwrap();
+        fs::write(&outside_entry, b"verified-snapshot").unwrap();
+        let pinned = open_regular_read(&entry).unwrap();
+        let digest = undo_quarantine_digest(&pinned).unwrap();
+        let error = unlink_undo_snapshot_windows_with_hook(&entry, &pinned, &digest, || {
+            fs::rename(&live, &parked)?;
+            let output = Command::new("cmd")
+                .arg("/C")
+                .arg("mklink")
+                .arg("/J")
+                .arg(&live)
+                .arg(&outside)
+                .output()?;
+            if !output.status.success() {
+                return Err(anyhow!(
+                    "junction_fixture_failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                ));
+            }
+            Ok(())
+        })
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("unsafe_undo_reparse_ancestor"),
+            "late junction must be rejected by ancestor guard: {error}"
+        );
+        assert_eq!(fs::read(&outside_entry).unwrap(), b"verified-snapshot");
+        assert_eq!(
+            fs::read(parked.join("verified.hold")).unwrap(),
+            b"verified-snapshot"
+        );
+        fs::remove_dir(&live).unwrap();
+        fs::rename(&parked, &live).unwrap();
+        unlink_undo_snapshot(&entry, &pinned, &digest).unwrap();
+        assert!(!entry.exists(), "safe retry must delete only original leaf");
+        assert_eq!(fs::read(&outside_entry).unwrap(), b"verified-snapshot");
+        drop(pinned);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[cfg(unix)]
     #[test]
     fn unix_undo_unlink_rejects_late_leaf_swap_at_pinned_parent() {
