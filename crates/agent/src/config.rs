@@ -138,10 +138,42 @@ fn save_config_pinned_unix(path: &Path, parent: &Path, data: &[u8]) -> Result<()
     let result = (|| -> Result<()> {
         staged.write_all(data)?;
         staged.sync_all()?;
-        drop(staged);
         #[cfg(test)]
         pause_config_stage_fixture()?;
         validate_config_parent_chain(parent)?;
+        // The temporary leaf is untrusted even though we created it with
+        // O_EXCL: another local process can replace it while we are paused.
+        // Verify the inode and the actual bytes through the pinned parent
+        // before publishing credentials, not merely the pathname.
+        let staged_fd = unsafe {
+            libc::openat(
+                directory.as_raw_fd(),
+                temporary.as_ptr(),
+                libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        };
+        if staged_fd < 0 {
+            return Err(anyhow!("unsafe_agent_config_staging"));
+        }
+        let mut staged_reader = unsafe { fs::File::from_raw_fd(staged_fd) };
+        use std::os::unix::fs::MetadataExt;
+        let before = staged.metadata()?;
+        let after = staged_reader.metadata()?;
+        if !after.is_file()
+            || before.dev() != after.dev()
+            || before.ino() != after.ino()
+            || after.nlink() != 1
+            || after.len() != data.len() as u64
+        {
+            return Err(anyhow!("unsafe_agent_config_staging"));
+        }
+        let mut staged_bytes = Vec::new();
+        staged_reader
+            .take(MAX_AGENT_CONFIG_BYTES + 1)
+            .read_to_end(&mut staged_bytes)?;
+        if staged_bytes != data {
+            return Err(anyhow!("unsafe_agent_config_staging"));
+        }
         // Check the destination through the pinned parent, not a path stat.
         let current_fd = unsafe {
             libc::openat(
@@ -178,8 +210,31 @@ fn save_config_pinned_unix(path: &Path, parent: &Path, data: &[u8]) -> Result<()
         Ok(())
     })();
     if result.is_err() {
-        unsafe {
-            libc::unlinkat(directory.as_raw_fd(), temporary.as_ptr(), 0);
+        // Never delete a different process's replacement of our staging
+        // pathname. Cleanup is relative to the pinned parent, so a swapped
+        // ancestor cannot redirect it. A final-leaf swap after this check
+        // remains a known non-atomic unlink limitation.
+        let current_fd = unsafe {
+            libc::openat(
+                directory.as_raw_fd(),
+                temporary.as_ptr(),
+                libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        };
+        if current_fd >= 0 {
+            let current = unsafe { fs::File::from_raw_fd(current_fd) };
+            use std::os::unix::fs::MetadataExt;
+            if let (Ok(original), Ok(now)) = (staged.metadata(), current.metadata()) {
+                if now.is_file()
+                    && original.dev() == now.dev()
+                    && original.ino() == now.ino()
+                    && now.nlink() == 1
+                {
+                    unsafe {
+                        libc::unlinkat(directory.as_raw_fd(), temporary.as_ptr(), 0);
+                    }
+                }
+            }
         }
     }
     result
@@ -771,6 +826,130 @@ mod tests {
         );
         assert_eq!(fs::read_dir(&relocated).unwrap().count(), 1);
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn config_stage_tamper_save_worker() {
+        let Ok(raw) = std::env::var("WCCFG_TAMPER_TARGET") else {
+            return;
+        };
+        let target = Path::new(&raw);
+        let root = target.parent().unwrap().parent().unwrap();
+        let config = AgentConfig {
+            device_id: "device".into(),
+            device_token: "new-secret-must-not-publish".into(),
+            approval_key: "new-approval-must-not-publish".into(),
+            gateway_ws_url: String::new(),
+            control_url: String::new(),
+            name: String::new(),
+            allowed_roots: vec![root.to_path_buf()],
+        };
+        let error = config.save(target).unwrap_err();
+        assert!(
+            error.to_string().contains("unsafe_agent_config_staging"),
+            "{error}"
+        );
+    }
+
+    #[cfg(unix)]
+    fn exercise_config_staging_tamper(replace_leaf: bool) {
+        use std::process::{Command, Stdio};
+
+        let root = std::env::temp_dir().join(format!(
+            "wc-config-stage-tamper-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let parent = root.join("private");
+        fs::create_dir_all(&parent).unwrap();
+        let target = parent.join("agent.json");
+        let config = AgentConfig {
+            device_id: "device".into(),
+            device_token: "original-secret".into(),
+            approval_key: "original-approval".into(),
+            gateway_ws_url: String::new(),
+            control_url: String::new(),
+            name: String::new(),
+            allowed_roots: vec![root.clone()],
+        };
+        config.save(&target).unwrap();
+        let original = fs::read(&target).unwrap();
+        let marker = root.join("stage.marker");
+        let release = root.join("release.marker");
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("config::tests::config_stage_tamper_save_worker")
+            .arg("--nocapture")
+            .env("WCCFG_TAMPER_TARGET", &target)
+            .env("WCCFG_STAGE_MARKER", &marker)
+            .env("WCCFG_STAGE_RELEASE", &release)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let start = std::time::Instant::now();
+        while !marker.exists() && start.elapsed() < std::time::Duration::from_secs(10) {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("config staging worker exited early: {status}");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        if !marker.exists() {
+            let _ = child.kill();
+            panic!("config staging worker never reached barrier");
+        }
+        let staging = fs::read_dir(&parent)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .find(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with(".agent-config-")
+            })
+            .expect("staging file not found");
+        let displaced = parent.join("displaced.tmp");
+        if replace_leaf {
+            fs::rename(&staging, &displaced).unwrap();
+            fs::write(&staging, b"untrusted-replacement").unwrap();
+        } else {
+            fs::write(&staging, b"untrusted-inplace").unwrap();
+        }
+        fs::write(&release, b"continue").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "config staging worker failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read(&target).unwrap(), original);
+        assert_eq!(
+            AgentConfig::load(&target).unwrap().device_token,
+            "original-secret"
+        );
+        if replace_leaf {
+            assert_eq!(fs::read(&staging).unwrap(), b"untrusted-replacement");
+            assert!(fs::read(&displaced)
+                .unwrap()
+                .windows(b"new-secret-must-not-publish".len())
+                .any(|window| window == b"new-secret-must-not-publish"));
+        } else {
+            assert!(!staging.exists());
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn config_stage_leaf_replacement_cannot_publish_or_delete_untrusted_file() {
+        exercise_config_staging_tamper(true);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn config_stage_inplace_tamper_cannot_publish_credentials() {
+        exercise_config_staging_tamper(false);
     }
 
     #[cfg(unix)]
