@@ -3730,9 +3730,9 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
                 return Err(anyhow!("atomic_replace_requires_regular_file"));
             }
             file.set_permissions(metadata.permissions())?;
-            if expected_sha256.is_some() {
-                original_guard_file = Some(existing);
-            }
+            // Pin the initial file identity even when the caller did not
+            // request a SHA guard. An external replacement must not be lost.
+            original_guard_file = Some(existing);
         } else {
             let error = std::io::Error::last_os_error();
             if error.kind() != std::io::ErrorKind::NotFound {
@@ -3744,8 +3744,10 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
         file.sync_all()?;
         #[cfg(test)]
         pause_for_external_edit_fixture()?;
-        if let Some(expected) = expected_sha256 {
+        if !target_was_missing {
             // Re-open relative to the pinned parent; never trust a path stat.
+            // Reject a swapped inode even for an unconditional edit. This is
+            // not a kernel-level CAS against a last-instant external writer.
             let current_fd = unsafe {
                 libc::openat(
                     parent.as_raw_fd(),
@@ -3766,7 +3768,11 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
             if before.dev() != after.dev() || before.ino() != after.ino() {
                 return Err(anyhow!("file_changed_since_read"));
             }
-            verify_atomic_write_guard(current, expected)?;
+            if let Some(expected) = expected_sha256 {
+                verify_atomic_write_guard(current, expected)?;
+            }
+        } else if expected_sha256.is_some() {
+            return Err(anyhow!("file_changed_since_read"));
         }
         if target_was_missing {
             // A competing creator owns the target; never clobber it.
@@ -3926,6 +3932,18 @@ mod atomic_write_parent_tests {
     }
 
     #[test]
+    fn process_atomic_replace_no_sha_worker() {
+        let Ok(raw) = std::env::var("WCF_REPLACE_NO_SHA_TARGET") else {
+            return;
+        };
+        let error = atomic_write(Path::new(&raw), b"agent-update", None).unwrap_err();
+        assert!(
+            error.to_string().contains("file_changed_since_read"),
+            "unexpected replacement guard error: {error}"
+        );
+    }
+
+    #[test]
     fn process_atomic_create_worker() {
         let Ok(raw) = std::env::var("WCF_CREATE_TARGET") else {
             return;
@@ -3996,6 +4014,53 @@ mod atomic_write_parent_tests {
                 .count(),
             0
         );
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn atomic_replace_no_sha_rejects_external_file_swap() {
+        use std::process::{Command, Stdio};
+        let base = std::env::temp_dir().join(format!("commender-no-sha-race-{}", Uuid::new_v4()));
+        fs::create_dir_all(&base).unwrap();
+        let base = fs::canonicalize(base).unwrap();
+        let target = base.join("target.txt");
+        let displaced = base.join("displaced.txt");
+        let marker = base.join("staged.marker");
+        let release = base.join("release.marker");
+        fs::write(&target, b"seed").unwrap();
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("fs_ops::atomic_write_parent_tests::process_atomic_replace_no_sha_worker")
+            .arg("--nocapture")
+            .env("WCF_REPLACE_NO_SHA_TARGET", &target)
+            .env("WCF_CAS_MARKER", &marker)
+            .env("WCF_CAS_RELEASE", &release)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let started = Instant::now();
+        while !marker.exists() && started.elapsed() < Duration::from_secs(10) {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("unguarded replace worker exited before staging: {status}");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if !marker.exists() {
+            let _ = child.kill();
+            panic!("unguarded replace worker never reached staging barrier");
+        }
+        fs::rename(&target, &displaced).unwrap();
+        fs::write(&target, b"external-file").unwrap();
+        fs::write(&release, b"continue").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "unguarded replace worker failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"external-file");
+        assert_eq!(fs::read(&displaced).unwrap(), b"seed");
         fs::remove_dir_all(base).unwrap();
     }
 
