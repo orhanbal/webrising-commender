@@ -3735,6 +3735,27 @@ fn verify_atomic_write_guard(existing: fs::File, expected: &str) -> Result<()> {
     Ok(())
 }
 
+// Compare the staged file's actual bytes with the intended payload without
+// allocating another payload-sized buffer. A same-inode in-place modification
+// is not detected by file-ID checks alone.
+fn atomic_staged_bytes_match(mut staged: &fs::File, expected: &[u8]) -> Result<bool> {
+    let mut checked = 0_usize;
+    let mut chunk = [0_u8; 16 * 1024];
+    loop {
+        let count = staged.read(&mut chunk)?;
+        if count == 0 {
+            return Ok(checked == expected.len());
+        }
+        let Some(end) = checked.checked_add(count) else {
+            return Ok(false);
+        };
+        if end > expected.len() || chunk[..count] != expected[checked..end] {
+            return Ok(false);
+        }
+        checked = end;
+    }
+}
+
 // Test-only interprocess barrier, excluded from production Agent binaries.
 #[cfg(all(test, unix))]
 fn pause_for_external_edit_fixture() -> Result<()> {
@@ -3894,6 +3915,7 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
             || staged_before.dev() != staged_after.dev()
             || staged_before.ino() != staged_after.ino()
             || staged_after.nlink() != 1
+            || !atomic_staged_bytes_match(&staged_now, bytes)?
         {
             return Err(anyhow!("atomic_staging_changed"));
         }
@@ -4035,6 +4057,7 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
                 open_regular_read(&temporary).map_err(|_| anyhow!("atomic_staging_changed"))?;
             if Some(windows_file_identity(&staged_now)?) != staged_identity
                 || reject_windows_hardlinked_file(&staged_now).is_err()
+                || !atomic_staged_bytes_match(&staged_now, bytes)?
             {
                 return Err(anyhow!("atomic_staging_changed"));
             }
