@@ -858,6 +858,10 @@ mod tests {
 
         let root =
             std::env::temp_dir().join(format!("wc-config-stage-tamper-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        // macOS may expose its temporary root through /var -> /private/var.
+        // Pinned O_NOFOLLOW traversal must receive the canonical path.
+        let root = fs::canonicalize(root).unwrap();
         let parent = root.join("private");
         fs::create_dir_all(&parent).unwrap();
         let target = parent.join("agent.json");
