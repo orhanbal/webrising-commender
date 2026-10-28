@@ -113,6 +113,9 @@ jobs:
       - name: Unix undo unlink pinned parent rejection
         if: runner.os != 'Windows'
         run: cargo test -p webrising-commender-agent undo_unlink_rejects_symlinked_parent_without_touching_outside_file -- --nocapture
+      - name: Unix undo final leaf pinned-parent identity and digest
+        if: runner.os != 'Windows'
+        run: cargo test -p webrising-commender-agent unix_undo_unlink_ -- --nocapture
       - name: Windows config credential junction rejection
         if: runner.os == 'Windows'
         run: cargo test -p webrising-commender-agent windows_config_junction_ -- --nocapture
