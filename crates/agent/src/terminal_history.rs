@@ -69,6 +69,10 @@ pub struct HistoryStore {
     // A regular-directory rename/swap must not reset a live terminal quota.
     #[cfg(unix)]
     dir_identity: (u64, u64),
+    // Windows directory file IDs prevent an in-process quota reset when a
+    // normal directory (not a junction) is substituted after initialization.
+    #[cfg(windows)]
+    dir_identity: (u32, u32, u32),
 }
 
 impl HistoryStore {
@@ -115,10 +119,14 @@ impl HistoryStore {
             let meta = fs::symlink_metadata(&dir)?;
             (meta.dev(), meta.ino())
         };
+        #[cfg(windows)]
+        let dir_identity = Self::windows_directory_identity(&dir)?;
         let store = Self {
             dir,
             mutex: Mutex::new(()),
             #[cfg(unix)]
+            dir_identity,
+            #[cfg(windows)]
             dir_identity,
         };
         store.prune()?;
@@ -141,6 +149,42 @@ impl HistoryStore {
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                 Err(error) => return Err(error.into()),
             }
+        }
+        Ok(())
+    }
+
+    // Open the directory itself, not an entry beneath it. Windows reparse
+    // checks alone do not detect replacement with another ordinary directory.
+    #[cfg(windows)]
+    fn windows_directory_identity(path: &std::path::Path) -> Result<(u32, u32, u32)> {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+
+        Self::reject_windows_reparse_ancestors(path)?;
+        let mut options = OpenOptions::new();
+        options.read(true).custom_flags(
+            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+        );
+        let pinned = options.open(path)?;
+        let info = windows_history_lock_info(&pinned)?;
+        if info.attributes & FILE_ATTRIBUTE_DIRECTORY == 0
+            || info.attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0
+        {
+            return Err(anyhow!("unsafe terminal live slot directory"));
+        }
+        Self::reject_windows_reparse_ancestors(path)?;
+        Ok((info.volume_serial, info.index_high, info.index_low))
+    }
+
+    #[cfg(windows)]
+    fn verify_windows_live_slot_directory_identity(&self) -> Result<()> {
+        let current = Self::windows_directory_identity(&self.dir)
+            .map_err(|_| anyhow!("terminal live slot directory changed"))?;
+        if current != self.dir_identity {
+            return Err(anyhow!("terminal live slot directory changed"));
         }
         Ok(())
     }
@@ -292,12 +336,18 @@ impl HistoryStore {
     ) -> Result<File> {
         #[cfg(unix)]
         self.verify_live_slot_directory_identity()?;
+        #[cfg(windows)]
+        self.verify_windows_live_slot_directory_identity()?;
         let _directory_lock = self.lock_directory()?;
         #[cfg(unix)]
         self.verify_live_slot_directory_lock(&_directory_lock)?;
+        #[cfg(windows)]
+        self.verify_windows_live_slot_directory_identity()?;
         after_directory_lock()?;
         #[cfg(unix)]
         self.verify_live_slot_directory_lock(&_directory_lock)?;
+        #[cfg(windows)]
+        self.verify_windows_live_slot_directory_identity()?;
         for index in 0..MAX_LIVE_TERMINAL_SLOTS {
             // The path can change after lock_directory() returns. Do not
             // create a slot through a substituted scope or device parent.
@@ -305,7 +355,7 @@ impl HistoryStore {
             #[cfg(unix)]
             self.verify_live_slot_directory_lock(&_directory_lock)?;
             #[cfg(windows)]
-            Self::reject_windows_reparse_ancestors(&self.dir)?;
+            self.verify_windows_live_slot_directory_identity()?;
             let path = self.dir.join(format!(".terminal-slot-{index:02}.lock"));
             let mut options = OpenOptions::new();
             options.read(true).write(true).create(true);
@@ -324,7 +374,10 @@ impl HistoryStore {
             #[cfg(unix)]
             self.verify_live_slot_directory_lock(&_directory_lock)?;
             #[cfg(windows)]
-            Self::reject_windows_reparse_ancestors(&path)?;
+            {
+                Self::reject_windows_reparse_ancestors(&path)?;
+                self.verify_windows_live_slot_directory_identity()?;
+            }
             let opened = slot.metadata()?;
             if !opened.is_file() {
                 return Err(anyhow!("unsafe terminal live slot"));
@@ -384,6 +437,8 @@ impl HistoryStore {
                     }
                     #[cfg(unix)]
                     self.verify_live_slot_directory_lock(&_directory_lock)?;
+                    #[cfg(windows)]
+                    self.verify_windows_live_slot_directory_identity()?;
                     continue;
                 }
                 Err(error) => return Err(anyhow!("terminal live slot lock failed: {error}")),
@@ -427,6 +482,8 @@ impl HistoryStore {
             }
             #[cfg(unix)]
             self.verify_live_slot_directory_lock(&_directory_lock)?;
+            #[cfg(windows)]
+            self.verify_windows_live_slot_directory_identity()?;
             return Ok(slot);
         }
         Err(anyhow!(
@@ -2138,6 +2195,30 @@ mod tests {
 
         fs::remove_file(&scope).unwrap();
         fs::rename(&parked, &scope).unwrap();
+        let lease = store.reserve_live_slot().unwrap();
+        drop(lease);
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_live_slot_rejects_regular_directory_swap_and_recovers() {
+        let root = std::env::temp_dir().join(format!("wcth-win-dir-swap-{}", Uuid::new_v4()));
+        let dir = root.join("device");
+        let parked = root.join("device-parked");
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        fs::rename(&dir, &parked).unwrap();
+        fs::create_dir(&dir).unwrap();
+
+        // The substituted directory is ordinary, not a junction or symlink.
+        // No new lock or terminal lease may be created in its quota namespace.
+        let error = store.reserve_live_slot().unwrap_err();
+        assert!(error.to_string().contains("directory changed"), "{error}");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 0);
+
+        fs::remove_dir(&dir).unwrap();
+        fs::rename(&parked, &dir).unwrap();
         let lease = store.reserve_live_slot().unwrap();
         drop(lease);
         drop(store);
