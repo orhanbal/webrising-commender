@@ -2642,6 +2642,10 @@ fn undo_snapshot_identity_matches(expected: &fs::File, actual: &fs::File) -> Res
 // alone cannot detect an in-place rewrite of the same inode during cleanup.
 // This is a race reduction, not a kernel-level atomic compare-and-unlink.
 fn undo_quarantine_digest(mut file: &fs::File) -> Result<String> {
+    use std::io::{Seek, SeekFrom};
+    // Callers may revalidate the same pinned handle more than once. Always
+    // hash from byte zero rather than silently hashing an exhausted cursor.
+    file.seek(SeekFrom::Start(0))?;
     let mut digest = Sha256::new();
     let mut chunk = [0_u8; 16 * 1024];
     let mut total = 0_u64;
