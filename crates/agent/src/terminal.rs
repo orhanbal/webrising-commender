@@ -461,6 +461,22 @@ impl TerminalManager {
                         return Err(error.into());
                     }
                 }
+                // kill() can return before the child is actually reaped.
+                // Do not unregister a still-live child; bound the wait so a
+                // stuck OS process cannot indefinitely block the session map.
+                let mut exited = child.try_wait()?.is_some();
+                for _ in 0..100 {
+                    if exited {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    exited = child.try_wait()?.is_some();
+                }
+                if !exited {
+                    return Err(anyhow!(
+                        "terminal child did not exit after kill; session retained"
+                    ));
+                }
             }
         }
         sessions.remove(id);
