@@ -2317,6 +2317,17 @@ fn undo_cross_process_lock(dir: &Path) -> Result<fs::File> {
 }
 
 fn undo_cross_process_lock_with_timeout(dir: &Path, timeout: Duration) -> Result<fs::File> {
+    undo_cross_process_lock_with_timeout_and_hook(dir, timeout, || Ok(()))
+}
+
+// The post-acquisition hook is a no-op in production. Native tests use it to
+// replace the named lock after the original inode has been locked, without a
+// timing-dependent race or a second Agent process.
+fn undo_cross_process_lock_with_timeout_and_hook(
+    dir: &Path,
+    timeout: Duration,
+    after_lock: impl FnOnce() -> Result<()>,
+) -> Result<fs::File> {
     reject_windows_undo_reparse_ancestors(dir)?;
     let path = dir.join(".undo.lock");
     let mut options = fs::OpenOptions::new();
@@ -2351,6 +2362,7 @@ fn undo_cross_process_lock_with_timeout(dir: &Path, timeout: Duration) -> Result
             Err(error) => return Err(anyhow!("undo_storage_lock_failed: {error}")),
         }
     }
+    after_lock()?;
     reject_windows_undo_reparse_ancestors(dir)?;
     let path_meta = fs::symlink_metadata(&path)?;
     if !path_meta.is_file() || path_meta.file_type().is_symlink() {
@@ -2363,6 +2375,15 @@ fn undo_cross_process_lock_with_timeout(dir: &Path, timeout: Duration) -> Result
             return Err(anyhow!("unsafe_undo_lock_reparse_point"));
         }
         reject_windows_hardlinked_file(&lock)?;
+        // A rename after opening the lock can leave this process holding an
+        // obsolete inode while another Agent locks a newly named .undo.lock.
+        // Bind the acquired lock handle to the current directory entry.
+        let named = open_regular_read(&path)
+            .map_err(|_| anyhow!("undo_storage_lock_replaced_or_linked"))?;
+        reject_windows_hardlinked_file(&named)?;
+        if windows_file_identity(&lock)? != windows_file_identity(&named)? {
+            return Err(anyhow!("undo_storage_lock_replaced_or_linked"));
+        }
     }
     #[cfg(unix)]
     {
@@ -3832,6 +3853,100 @@ mod undo_scan_handle_tests {
 #[cfg(test)]
 mod undo_crash_cleanup_tests {
     use super::*;
+
+    #[test]
+    fn undo_lock_rejects_post_acquire_inode_swap_or_os_denial() {
+        let dir = std::env::temp_dir().join(format!("wc-undo-lock-aba-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let dir = fs::canonicalize(dir).unwrap();
+        let path = dir.join(".undo.lock");
+        let parked = dir.join("parked-lock");
+        fs::write(&path, b"original-lock").unwrap();
+        let mut swapped = false;
+        let result = undo_cross_process_lock_with_timeout_and_hook(
+            &dir,
+            Duration::from_secs(1),
+            || {
+                match fs::rename(&path, &parked) {
+                    Ok(()) => {}
+                    #[cfg(windows)]
+                    Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                        return Err(anyhow!("windows_lock_rename_denied: {error}"));
+                    }
+                    Err(error) => return Err(error.into()),
+                }
+                swapped = true;
+                fs::write(&path, b"replacement-lock")?;
+                Ok(())
+            },
+        );
+        let error = result.unwrap_err();
+        if swapped {
+            assert!(
+                error.to_string().contains("undo_storage_lock_replaced_or_linked"),
+                "post-acquisition lock swap must fail closed: {error}"
+            );
+            assert_eq!(fs::read(&path).unwrap(), b"replacement-lock");
+            assert_eq!(fs::read(&parked).unwrap(), b"original-lock");
+        } else {
+            #[cfg(windows)]
+            assert!(
+                error.to_string().contains("windows_lock_rename_denied"),
+                "unexpected Windows ancestor lock outcome: {error}"
+            );
+            #[cfg(not(windows))]
+            panic!("Unix must permit renaming an open advisory-locked inode: {error}");
+            assert_eq!(fs::read(&path).unwrap(), b"original-lock");
+        }
+        drop(undo_cross_process_lock(&dir).unwrap());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn undo_lock_rejects_post_acquire_hardlink_or_os_denial() {
+        let dir = std::env::temp_dir().join(format!("wc-undo-lock-link-race-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let dir = fs::canonicalize(dir).unwrap();
+        let path = dir.join(".undo.lock");
+        let alias = dir.join("external-alias");
+        fs::write(&path, b"private-lock").unwrap();
+        let mut linked = false;
+        let result = undo_cross_process_lock_with_timeout_and_hook(
+            &dir,
+            Duration::from_secs(1),
+            || {
+                match fs::hard_link(&path, &alias) {
+                    Ok(()) => linked = true,
+                    Err(error)
+                        if cfg!(windows)
+                            && error.kind() == std::io::ErrorKind::PermissionDenied =>
+                    {
+                        return Err(anyhow!("windows_lock_hardlink_denied: {error}"));
+                    }
+                    Err(error) => return Err(error.into()),
+                }
+                Ok(())
+            },
+        );
+        let error = result.unwrap_err();
+        if linked {
+            assert!(
+                error.to_string().contains("unsafe_undo_storage_hardlink")
+                    || error.to_string().contains("undo_storage_lock_replaced_or_linked"),
+                "post-acquisition lock hardlink must fail closed: {error}"
+            );
+            assert_eq!(fs::read(&alias).unwrap(), b"private-lock");
+            fs::remove_file(&alias).unwrap();
+        } else {
+            assert!(
+                error.to_string().contains("windows_lock_hardlink_denied"),
+                "unexpected lock hardlink outcome: {error}"
+            );
+        }
+        assert_eq!(fs::read(&path).unwrap(), b"private-lock");
+        drop(undo_cross_process_lock(&dir).unwrap());
+        fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn process_undo_lock_worker() {
