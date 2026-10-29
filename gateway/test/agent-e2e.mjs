@@ -2662,6 +2662,24 @@ try {
         }
         return lockReady;
       }, 5000, 50);
+      // A second process already holds the OS mutex. A hardlinked lock
+      // must be rejected immediately, not after the normal five-second
+      // contention timeout. This is the real approved MCP -> Agent path.
+      const busyAlias = path.join(historyDirectory, ".history-lock-busy-alias");
+      fs.linkSync(historyLockPath, busyAlias);
+      try {
+        const beganUnsafe = Date.now();
+        const unsafeBusyLock = await tool(22060, "terminal_read_page", {
+          device_id: deviceId, session_id: quotaSession.sessionId,
+          offset_bytes: -8192, max_bytes: 8192,
+        });
+        assert.match(String(unsafeBusyLock.error), /terminal history lock was replaced or hardlinked/i);
+        assert.ok(Date.now() - beganUnsafe < 2500,
+          "hardlinked busy history mutex must fail before the OS lock timeout");
+      } finally {
+        fs.unlinkSync(busyAlias);
+      }
+      console.log("agent-e2e: hardlinked busy history mutex rejected before lock wait");
       const beganWaiting = Date.now();
       const blockedArchive = await tool(355, "terminal_read_page", {
         device_id: deviceId, session_id: quotaSession.sessionId,
