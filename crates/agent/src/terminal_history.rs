@@ -413,6 +413,21 @@ impl HistoryStore {
         {
             return Err(anyhow!("unsafe terminal history snapshot"));
         }
+        // Capture the original Windows leaf identity before the test-only
+        // open-race hook. A same-byte replacement must not be accepted merely
+        // because its checksum and generation are unchanged.
+        #[cfg(windows)]
+        let before_info = {
+            use std::os::windows::fs::OpenOptionsExt;
+            let mut original_options = OpenOptions::new();
+            original_options.read(true).custom_flags(0x0020_0000); // OPEN_REPARSE_POINT
+            let original = original_options.open(&path)?;
+            let info = windows_history_lock_info(&original)?;
+            if info.attributes & 0x400 != 0 || info.link_count != 1 {
+                return Err(anyhow!("terminal history snapshot changed or hardlinked"));
+            }
+            info
+        };
         // A hostile FIFO substituted after lstat must not block the Agent
         // before fstat can reject its non-regular file type.
         before_open()?;
@@ -425,12 +440,30 @@ impl HistoryStore {
             use std::os::unix::fs::OpenOptionsExt;
             options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK);
         }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            // Do not follow a substituted Windows file symlink/reparse leaf.
+            options.custom_flags(0x0020_0000); // FILE_FLAG_OPEN_REPARSE_POINT
+        }
         let snapshot = options.open(&path)?;
         let opened_meta = snapshot.metadata()?;
         if !opened_meta.is_file()
             || opened_meta.len() > (CAP + HEADER_BYTES + CHECKSUM_BYTES) as u64
         {
             return Err(anyhow!("unsafe terminal history snapshot"));
+        }
+        #[cfg(windows)]
+        {
+            let opened = windows_history_lock_info(&snapshot)?;
+            if opened.attributes & 0x400 != 0
+                || opened.link_count != 1
+                || opened.volume_serial != before_info.volume_serial
+                || opened.index_high != before_info.index_high
+                || opened.index_low != before_info.index_low
+            {
+                return Err(anyhow!("terminal history snapshot changed or hardlinked"));
+            }
         }
         #[cfg(unix)]
         {
@@ -791,7 +824,7 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     #[test]
     fn snapshot_open_rejects_same_content_inode_swap() {
         let dir = std::env::temp_dir().join(format!("wcth-snapshot-aba-{}", Uuid::new_v4()));
@@ -817,7 +850,7 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     #[test]
     fn snapshot_open_rejects_late_hardlink() {
         let dir = std::env::temp_dir().join(format!("wcth-snapshot-link-{}", Uuid::new_v4()));

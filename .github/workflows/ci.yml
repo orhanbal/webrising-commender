@@ -56,8 +56,7 @@ jobs:
         run: cargo test -p webrising-commender-agent undo_lock_rejects_post_acquire_ -- --nocapture
       - name: Native terminal history lock inode and hardlink race
         run: cargo test -p webrising-commender-agent terminal_history::tests::lock_rejects_post_acquire_ -- --nocapture
-      - name: macOS terminal snapshot open race and FIFO safety
-        if: runner.os == 'macOS'
+      - name: Native terminal snapshot inode and hardlink race (Unix FIFO safety)
         run: cargo test -p webrising-commender-agent terminal_history::tests::snapshot_open_rejects_ -- --nocapture
       - name: Native undo snapshot publication collision and recovery
         run: cargo test -p webrising-commender-agent undo_publication_tests -- --nocapture
