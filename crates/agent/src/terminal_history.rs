@@ -98,6 +98,8 @@ impl HistoryStore {
     fn at(dir: PathBuf) -> Result<Self> {
         #[cfg(windows)]
         Self::reject_windows_reparse_ancestors(&dir)?;
+        #[cfg(unix)]
+        Self::reject_unix_linked_history_path(&dir)?;
         fs::create_dir_all(&dir)?;
         // Never chmod arbitrary parents (e.g. /tmp in isolated tests).
         Self::secure_dir(&dir)?;
@@ -120,6 +122,25 @@ impl HistoryStore {
             match fs::symlink_metadata(ancestor) {
                 Ok(meta) if meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 => {
                     return Err(anyhow!("unsafe terminal history reparse point"));
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Ok(())
+    }
+
+    // Protect the history leaf and its immediate parent (the scoped device
+    // directory). Do not walk every Unix ancestor: macOS /var can legitimately
+    // be a symlink to /private/var. This is a fail-closed path check, not an
+    // atomic dirfd-relative traversal guarantee.
+    #[cfg(unix)]
+    fn reject_unix_linked_history_path(path: &std::path::Path) -> Result<()> {
+        for candidate in [path, path.parent().unwrap_or(path)] {
+            match fs::symlink_metadata(candidate) {
+                Ok(meta) if meta.file_type().is_symlink() => {
+                    return Err(anyhow!("unsafe terminal history symlink ancestor"));
                 }
                 Ok(_) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -163,6 +184,8 @@ impl HistoryStore {
     ) -> Result<File> {
         #[cfg(windows)]
         Self::secure_dir(&self.dir)?;
+        #[cfg(unix)]
+        Self::reject_unix_linked_history_path(&self.dir)?;
         let path = self.dir.join(".history.lock");
         let mut options = OpenOptions::new();
         options.read(true).write(true).create(true);
@@ -211,6 +234,8 @@ impl HistoryStore {
             }
         }
         after_lock()?;
+        #[cfg(unix)]
+        Self::reject_unix_linked_history_path(&self.dir)?;
         #[cfg(windows)]
         {
             Self::secure_dir(&self.dir)?;
@@ -1064,6 +1089,40 @@ mod tests {
         assert_eq!(fs::read(&outside).unwrap(), b"do-not-touch");
         fs::remove_dir_all(dir).unwrap();
         fs::remove_file(outside).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_symlinked_scope_parent_cannot_redirect_history_creation() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!("wcth-parent-{}", Uuid::new_v4()));
+        let outside = root.join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        let alias = root.join("linked");
+        symlink(&outside, &alias).unwrap();
+        assert!(HistoryStore::at(alias.join("scoped")).is_err());
+        assert!(!outside.join("scoped").exists());
+        assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_history_directory_swap_after_open_fails_closed() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!("wcth-dir-swap-{}", Uuid::new_v4()));
+        let history = root.join("history");
+        let outside = root.join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        let store = HistoryStore::at(history.clone()).unwrap();
+        fs::remove_file(history.join(".history.lock")).unwrap();
+        fs::remove_dir(&history).unwrap();
+        symlink(&outside, &history).unwrap();
+        let id = Uuid::new_v4().to_string();
+        let error = store.save(&id, 1, &VecDeque::from(b"x".to_vec())).unwrap_err();
+        assert!(error.to_string().contains("symlink ancestor"), "{error}");
+        assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[cfg(windows)]
