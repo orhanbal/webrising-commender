@@ -234,9 +234,7 @@ impl HistoryStore {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::MetadataExt;
-                if opened.dev() != named.dev()
-                    || opened.ino() != named.ino()
-                    || opened.nlink() != 1
+                if opened.dev() != named.dev() || opened.ino() != named.ino() || opened.nlink() != 1
                 {
                     return Err(anyhow!("terminal live slot replaced or hardlinked"));
                 }
@@ -1748,7 +1746,11 @@ mod tests {
             let store = if index % 2 == 0 { &first } else { &second };
             leases.push(store.reserve_live_slot().unwrap());
         }
-        assert!(first.reserve_live_slot().unwrap_err().to_string().contains("too many terminal sessions"));
+        assert!(first
+            .reserve_live_slot()
+            .unwrap_err()
+            .to_string()
+            .contains("too many terminal sessions"));
         drop(leases.pop());
         let recovered = second.reserve_live_slot().unwrap();
         drop(recovered);
@@ -1811,7 +1813,11 @@ mod tests {
             let _ = child.wait();
             panic!("live slot subprocess failed to acquire its slot");
         }
-        assert!(store.reserve_live_slot().unwrap_err().to_string().contains("too many terminal sessions"));
+        assert!(store
+            .reserve_live_slot()
+            .unwrap_err()
+            .to_string()
+            .contains("too many terminal sessions"));
         fs::write(dir.join("helper-release"), b"release").unwrap();
         assert!(child.wait().unwrap().success());
         let recovered = store.reserve_live_slot().unwrap();
