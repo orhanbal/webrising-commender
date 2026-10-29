@@ -165,7 +165,9 @@ impl HistoryStore {
 
         Self::reject_windows_reparse_ancestors(path)?;
         let mut options = OpenOptions::new();
-        options.read(true).custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT);
+        options
+            .read(true)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT);
         let pinned = options.open(path)?;
         let info = windows_history_lock_info(&pinned)?;
         if info.attributes & FILE_ATTRIBUTE_DIRECTORY == 0
