@@ -235,7 +235,9 @@ impl HistoryStore {
             }
             #[cfg(unix)]
             if !Self::unix_live_slot_permissions_ok(&opened) {
-                return Err(anyhow!("unsafe terminal live slot permissions or ownership"));
+                return Err(anyhow!(
+                    "unsafe terminal live slot permissions or ownership"
+                ));
             }
             match slot.try_lock() {
                 Ok(()) => {}
@@ -1916,5 +1918,4 @@ mod tests {
         drop(store);
         fs::remove_dir_all(dir).unwrap();
     }
-
 }
