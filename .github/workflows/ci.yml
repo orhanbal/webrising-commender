@@ -52,6 +52,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo check -p webrising-commender-agent
+      - name: Native PTY master reader/writer pre-spawn acquisition
+        run: cargo test -p webrising-commender-agent terminal::tests::pty_master_handles_are_available_before_child_spawn -- --nocapture
       - name: Native post-acquisition undo quota lock inode and hardlink race
         run: cargo test -p webrising-commender-agent undo_lock_rejects_post_acquire_ -- --nocapture
       - name: Native terminal history lock inode and hardlink race
