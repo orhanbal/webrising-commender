@@ -2222,6 +2222,67 @@ try {
     console.log("agent-e2e: hardlinked history lock denied archived MCP read; unlink recovered");
   }
 
+  // 2B/2D: an attacker-controlled FIFO must not block a terminal history
+  // read before the lock's file-type validation. This is a real authenticated
+  // MCP -> Gateway -> Agent negative test, not a mocked filesystem call.
+  if (process.platform === "linux") {
+    const historyLock = path.join(historyDirectory, ".history.lock");
+    const parkedLock = path.join(historyDirectory, ".history-lock-fifo-parked");
+    fs.renameSync(historyLock, parkedLock);
+    try {
+      const fifo = spawnSync("mkfifo", [historyLock], { encoding: "utf8", timeout: 5000 });
+      assert.equal(fifo.status, 0, `mkfifo failed: ${fifo.stderr || fifo.error || ""}`);
+      const began = Date.now();
+      const deniedFifo = await tool(359, "terminal_read_page", {
+        device_id: deviceId, session_id: quotaSession.sessionId,
+        offset_bytes: -8192, max_bytes: 8192,
+      });
+      assert.match(String(deniedFifo.error), /unsafe terminal history lock/i);
+      assert.ok(Date.now() - began < 5000, "FIFO substitution stalled MCP history read");
+      assert.equal(fs.statSync(historyLock).isFIFO(), true);
+    } finally {
+      if (fs.existsSync(historyLock)) fs.unlinkSync(historyLock);
+      fs.renameSync(parkedLock, historyLock);
+    }
+    const afterFifo = await tool(360, "terminal_read_page", {
+      device_id: deviceId, session_id: quotaSession.sessionId,
+      offset_bytes: -8192, max_bytes: 8192,
+    });
+    assert.equal(afterFifo.archived, true, JSON.stringify(afterFifo));
+    assert.match(afterFifo.text, /LIVE_HISTORY_QUOTA_OK/);
+    console.log("agent-e2e: FIFO history lock rejected promptly; original lock restored archived MCP read");
+
+    // A symlink to an outside file must also be rejected without following or
+    // changing that target; restore the original inode and prove recovery.
+    const parkedSymlinkLock = path.join(historyDirectory, ".history-lock-symlink-parked");
+    const outsideLock = path.join(tempRoot, "foreign-history-lock-sentinel");
+    fs.writeFileSync(outsideLock, "FOREIGN_LOCK_MUST_REMAIN_UNCHANGED");
+    fs.renameSync(historyLock, parkedSymlinkLock);
+    try {
+      fs.symlinkSync(outsideLock, historyLock);
+      const deniedSymlink = await tool(361, "terminal_read_page", {
+        device_id: deviceId, session_id: quotaSession.sessionId,
+        offset_bytes: -8192, max_bytes: 8192,
+      });
+      assert.match(String(deniedSymlink.error), /too many levels|symbolic link|symlink|os error 40|unsafe terminal history lock/i);
+      assert.equal(fs.readFileSync(outsideLock, "utf8"), "FOREIGN_LOCK_MUST_REMAIN_UNCHANGED");
+      assert.equal(fs.lstatSync(historyLock).isSymbolicLink(), true);
+    } finally {
+      if (fs.existsSync(historyLock) || fs.existsSync(outsideLock)) {
+        if (fs.lstatSync(historyLock, { throwIfNoEntry: false })) fs.unlinkSync(historyLock);
+      }
+      fs.renameSync(parkedSymlinkLock, historyLock);
+      fs.rmSync(outsideLock, { force: true });
+    }
+    const afterSymlink = await tool(362, "terminal_read_page", {
+      device_id: deviceId, session_id: quotaSession.sessionId,
+      offset_bytes: -8192, max_bytes: 8192,
+    });
+    assert.equal(afterSymlink.archived, true, JSON.stringify(afterSymlink));
+    assert.match(afterSymlink.text, /LIVE_HISTORY_QUOTA_OK/);
+    console.log("agent-e2e: symlink history lock denied without outside data loss; archived MCP read recovered");
+  }
+
   // 2B: exercise the five-second HistoryStore filesystem lock timeout through
   // the real authenticated MCP -> Gateway -> Rust Agent path. The lock holder
   // is an independent Linux process (util-linux is test-only, not a runtime
