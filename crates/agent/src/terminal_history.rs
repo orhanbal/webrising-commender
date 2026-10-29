@@ -175,7 +175,9 @@ impl HistoryStore {
         {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
-            options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+            // A substituted FIFO must not stall the Agent before the
+            // descriptor is checked for a regular file.
+            options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK);
         }
         let lock = options.open(&path)?;
         if !lock.metadata()?.is_file() {
