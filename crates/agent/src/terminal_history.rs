@@ -255,7 +255,9 @@ impl HistoryStore {
                     || !Self::unix_live_slot_permissions_ok(&held)
                     || !Self::unix_live_slot_permissions_ok(&named)
                 {
-                    return Err(anyhow!("terminal live slot replaced, hardlinked or unsafe permissions"));
+                    return Err(anyhow!(
+                        "terminal live slot replaced, hardlinked or unsafe permissions"
+                    ));
                 }
             }
             #[cfg(windows)]
@@ -1755,6 +1757,26 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn live_slot_rejects_unsafe_unix_permissions_and_recovers() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!("wcth-live-mode-{}", Uuid::new_v4()));
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let lease = store.reserve_live_slot().unwrap();
+        drop(lease);
+        let slot = dir.join(".terminal-slot-00.lock");
+        fs::set_permissions(&slot, fs::Permissions::from_mode(0o666)).unwrap();
+        let error = store.reserve_live_slot().unwrap_err();
+        assert!(error.to_string().contains("permissions or ownership"));
+        fs::set_permissions(&slot, fs::Permissions::from_mode(0o600)).unwrap();
+        let recovered = store.reserve_live_slot().unwrap();
+        drop(recovered);
+        drop(store);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
     #[test]
     fn live_slot_quota_is_shared_by_independent_stores() {
         let dir = std::env::temp_dir().join(format!("wcth-live-slots-{}", Uuid::new_v4()));
@@ -1845,4 +1867,54 @@ mod tests {
         drop(store);
         fs::remove_dir_all(dir).unwrap();
     }
+    // An Agent crash must release its kernel-held slot lease without
+    // deleting/recreating the stable slot inode. A graceful exit is covered
+    // by the separate cross-process quota test above.
+    #[test]
+    fn live_slot_recovers_after_subprocess_kill() {
+        use std::process::{Command, Stdio};
+
+        let dir = std::env::temp_dir().join(format!("wcth-live-crash-{}", Uuid::new_v4()));
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let leases = (0..MAX_LIVE_TERMINAL_SLOTS - 1)
+            .map(|_| store.reserve_live_slot().unwrap())
+            .collect::<Vec<_>>();
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("live_slot_subprocess_helper")
+            .arg("--ignored")
+            .arg("--test-threads=1")
+            .env("WCTH_LIVE_SLOT_HELPER_DIR", &dir)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let ready = (0..200).any(|_| {
+            if dir.join("helper-ready").exists() {
+                return true;
+            }
+            if child.try_wait().unwrap().is_some() {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+            false
+        });
+        if !ready {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("live slot crash helper failed to acquire its slot");
+        }
+        assert!(store
+            .reserve_live_slot()
+            .unwrap_err()
+            .to_string()
+            .contains("too many terminal sessions"));
+        child.kill().unwrap();
+        let _ = child.wait().unwrap();
+        let recovered = store.reserve_live_slot().unwrap();
+        drop(recovered);
+        drop(leases);
+        drop(store);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
 }
