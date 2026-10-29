@@ -196,6 +196,17 @@ impl HistoryStore {
         Ok(())
     }
 
+    // A previously provisioned slot must remain private to the Agent's OS
+    // identity. Check even busy slots: otherwise a compromised lockfile can
+    // be silently skipped until a later admission attempt.
+    #[cfg(unix)]
+    fn unix_live_slot_permissions_ok(meta: &fs::Metadata) -> bool {
+        use std::os::unix::fs::MetadataExt;
+        // SAFETY: geteuid has no pointers or mutable state.
+        let uid = unsafe { libc::geteuid() };
+        meta.uid() == uid && meta.mode() & 0o777 == 0o600 && meta.nlink() == 1
+    }
+
     // Reserve a device-wide live terminal slot before spawning the child.
     // Stable slot filenames are NEVER unlinked: otherwise separate processes
     // could lock different inodes and each admit 32 active terminals.
@@ -222,6 +233,10 @@ impl HistoryStore {
             if !opened.is_file() {
                 return Err(anyhow!("unsafe terminal live slot"));
             }
+            #[cfg(unix)]
+            if !Self::unix_live_slot_permissions_ok(&opened) {
+                return Err(anyhow!("unsafe terminal live slot permissions or ownership"));
+            }
             match slot.try_lock() {
                 Ok(()) => {}
                 Err(std::fs::TryLockError::WouldBlock) => continue,
@@ -234,9 +249,13 @@ impl HistoryStore {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::MetadataExt;
-                if opened.dev() != named.dev() || opened.ino() != named.ino() || opened.nlink() != 1
+                let held = slot.metadata()?;
+                if opened.dev() != named.dev()
+                    || opened.ino() != named.ino()
+                    || !Self::unix_live_slot_permissions_ok(&held)
+                    || !Self::unix_live_slot_permissions_ok(&named)
                 {
-                    return Err(anyhow!("terminal live slot replaced or hardlinked"));
+                    return Err(anyhow!("terminal live slot replaced, hardlinked or unsafe permissions"));
                 }
             }
             #[cfg(windows)]
