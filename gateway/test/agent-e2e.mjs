@@ -2196,6 +2196,32 @@ try {
   assert.equal(quotaStopped.ok, true, JSON.stringify(quotaStopped));
   console.log("agent-e2e: live MCP PTY save enforced 64-archive quota without restart");
 
+  // 2B/2D: an independent process can hardlink the persistent lock inode.
+  // A real authenticated MCP archived read must fail closed instead of
+  // treating an externally aliased lock as a private quota mutex.
+  if (process.platform === "linux") {
+    const historyLock = path.join(historyDirectory, ".history.lock");
+    const historyAlias = path.join(historyDirectory, ".history-lock-alias");
+    fs.linkSync(historyLock, historyAlias);
+    try {
+      const deniedHistory = await tool(357, "terminal_read_page", {
+        device_id: deviceId, session_id: quotaSession.sessionId,
+        offset_bytes: -8192, max_bytes: 8192,
+      });
+      assert.match(String(deniedHistory.error), /terminal history lock was replaced or hardlinked/i);
+      assert.equal(fs.statSync(historyAlias).ino, fs.statSync(historyLock).ino);
+    } finally {
+      fs.unlinkSync(historyAlias);
+    }
+    const recoveredHistory = await tool(358, "terminal_read_page", {
+      device_id: deviceId, session_id: quotaSession.sessionId,
+      offset_bytes: -8192, max_bytes: 8192,
+    });
+    assert.equal(recoveredHistory.archived, true, JSON.stringify(recoveredHistory));
+    assert.match(recoveredHistory.text, /LIVE_HISTORY_QUOTA_OK/);
+    console.log("agent-e2e: hardlinked history lock denied archived MCP read; unlink recovered");
+  }
+
   // 2B: exercise the five-second HistoryStore filesystem lock timeout through
   // the real authenticated MCP -> Gateway -> Rust Agent path. The lock holder
   // is an independent Linux process (util-linux is test-only, not a runtime
