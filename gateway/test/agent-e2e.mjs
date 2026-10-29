@@ -2041,6 +2041,37 @@ try {
   });
   assert.equal(typeof started.sessionId, "string");
 
+  // 2D: a same-UID actor can replace the device history directory with a
+  // different *regular* directory, not only a symlink. The Agent's existing
+  // HistoryStore must reject the new inode before creating a fresh lock/slot
+  // pool, or an attacker could reset the 32-session cross-process quota.
+  if (process.platform === "linux") {
+    const parkedDeviceDir = preflightHistoryDirectory + ".parked-regular-swap";
+    assert.equal(fs.existsSync(parkedDeviceDir), false);
+    fs.renameSync(preflightHistoryDirectory, parkedDeviceDir);
+    fs.mkdirSync(preflightHistoryDirectory, { mode: 0o700 });
+    try {
+      const swappedToken = await approval(deviceId, startAction);
+      const deniedSwap = await tool(22038, "terminal_start", {
+        device_id: deviceId, cwd: tempRoot, cols: 100, rows: 30,
+        approval_token: swappedToken,
+      });
+      assert.match(String(deniedSwap.error), /terminal live slot directory changed/i,
+        JSON.stringify(deniedSwap));
+      assert.equal(fs.existsSync(path.join(preflightHistoryDirectory, ".terminal-slot-00.lock")),
+        false, "a replacement regular directory must not gain a new terminal slot");
+      assert.equal(fs.existsSync(path.join(preflightHistoryDirectory, ".history.lock")),
+        false, "a replacement regular directory must not gain a new quota mutex");
+      const stillLive = await tool(22039, "terminal_list", { device_id: deviceId });
+      assert.ok(stillLive.items.some((item) =>
+        item.sessionId === started.sessionId && item.running));
+    } finally {
+      fs.rmSync(preflightHistoryDirectory, { recursive: true, force: true });
+      fs.renameSync(parkedDeviceDir, preflightHistoryDirectory);
+    }
+    console.log("agent-e2e: regular device history directory swap denied without quota reset");
+  }
+
   // 2D real authenticated MCP: an active terminal owns the OS lock for
   // slot 00. If that busy inode acquires a hardlink, another terminal_start
   // must fail closed instead of skipping it and admitting slot 01. Removing
