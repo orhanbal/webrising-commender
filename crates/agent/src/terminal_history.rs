@@ -337,10 +337,21 @@ impl HistoryStore {
             return Err(anyhow!("unsafe terminal history lock"));
         }
         #[cfg(unix)]
-        if !Self::unix_private_lock_mode_ok(&lock.metadata()?) {
-            return Err(anyhow!(
-                "unsafe terminal history lock permissions or ownership"
-            ));
+        {
+            use std::os::unix::fs::MetadataExt;
+            let opened = lock.metadata()?;
+            if !Self::unix_private_lock_mode_ok(&opened) {
+                return Err(anyhow!(
+                    "unsafe terminal history lock permissions or ownership"
+                ));
+            }
+            // A hardlinked mutex must be rejected before waiting for an OS
+            // lock: an attacker must not turn a known-unsafe inode into a
+            // five-second denial of service. Recheck after acquisition too,
+            // since the link count can change while waiting.
+            if opened.nlink() != 1 {
+                return Err(anyhow!("terminal history lock was replaced or hardlinked"));
+            }
         }
         #[cfg(windows)]
         {
