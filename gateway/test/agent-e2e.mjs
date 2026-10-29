@@ -1901,6 +1901,39 @@ try {
     "failed terminal cwd validation must not create durable history");
   console.log("agent-e2e: rejected terminal cwd did not create phantom history archive");
 
+  // 2D: a PTY spawn failure occurs AFTER the empty history snapshot was
+  // reserved. Verify the Agent reclaims only that snapshot and does not
+  // publish a phantom live session through the authenticated MCP path.
+  const archivedNames = () => fs.existsSync(preflightHistoryDirectory)
+    ? fs.readdirSync(preflightHistoryDirectory, { recursive: true })
+      .map(String).filter((name) => name.endsWith(".hist")).sort()
+    : [];
+  const beforeFailedSpawnArchives = archivedNames();
+  const beforeFailedSpawnSessions = await tool(1881, "terminal_list", {
+    device_id: deviceId,
+  });
+  const nonexistentShell = path.join(tempRoot, "no-such-pty-shell-binary");
+  assert.equal(fs.existsSync(nonexistentShell), false);
+  const failedSpawnAction = {
+    kind: "terminal_start", shell: nonexistentShell,
+    cwd: tempRoot, cols: 100, rows: 30,
+  };
+  const failedSpawnToken = await approval(deviceId, failedSpawnAction);
+  const failedSpawn = await tool(1882, "terminal_start", {
+    device_id: deviceId, shell: nonexistentShell,
+    cwd: tempRoot, cols: 100, rows: 30,
+    approval_token: failedSpawnToken,
+  });
+  assert.equal(typeof failedSpawn.error, "string", JSON.stringify(failedSpawn));
+  assert.deepEqual(archivedNames(), beforeFailedSpawnArchives,
+    "failed PTY spawn must reclaim its empty durable snapshot");
+  const afterFailedSpawnSessions = await tool(1883, "terminal_list", {
+    device_id: deviceId,
+  });
+  assert.deepEqual(afterFailedSpawnSessions.items, beforeFailedSpawnSessions.items,
+    "failed PTY spawn must not publish a live terminal session");
+  console.log("agent-e2e: failed PTY spawn reclaimed empty history and no session leaked");
+
   const startAction = {
     kind: "terminal_start",
     cwd: tempRoot,
