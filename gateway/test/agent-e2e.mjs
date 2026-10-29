@@ -2165,6 +2165,45 @@ try {
   });
   assert.ok(!terminalsAfterStop.items.some((item) => item.sessionId === started.sessionId));
 
+  // 2D: a child that has already exited must still be stoppable, and a
+  // duplicate stop must not unregister any other session.
+  // Exercise authenticated MCP -> Gateway -> Rust PTY.
+  const exitStartToken = await approval(deviceId, startAction);
+  const exitSession = await tool(405, "terminal_start", {
+    device_id: deviceId, cwd: tempRoot, cols: 100, rows: 30,
+    approval_token: exitStartToken,
+  });
+  assert.equal(typeof exitSession.sessionId, "string");
+  await tool(406, "terminal_input", {
+    device_id: deviceId, session_id: exitSession.sessionId,
+    data_base64: Buffer.from("exit\n").toString("base64"),
+  });
+  await waitFor(async () => {
+    const state = await tool(407, "terminal_list", { device_id: deviceId });
+    return state.items.some((item) =>
+      item.sessionId === exitSession.sessionId && item.running === false);
+  }, 10000, 100);
+  const exitStopToken = await approval(deviceId, {
+    kind: "terminal_stop", sessionId: exitSession.sessionId,
+  });
+  const exitedStop = await tool(408, "terminal_stop", {
+    device_id: deviceId, session_id: exitSession.sessionId,
+    approval_token: exitStopToken,
+  });
+  assert.equal(exitedStop.ok, true, JSON.stringify(exitedStop));
+  const afterExitedStop = await tool(409, "terminal_list", { device_id: deviceId });
+  assert.ok(!afterExitedStop.items.some((item) => item.sessionId === exitSession.sessionId));
+  const duplicateStopToken = await approval(deviceId, {
+    kind: "terminal_stop", sessionId: exitSession.sessionId,
+  });
+  const duplicateStop = await tool(410, "terminal_stop", {
+    device_id: deviceId, session_id: exitSession.sessionId,
+    approval_token: duplicateStopToken,
+  });
+  assert.match(String(duplicateStop.error), /terminal session not found/i);
+  console.log("agent-e2e: already-exited PTY stop removed only its own session");
+
+
 
   // 2B: preserve bounded PTY output through a real Rust Agent SIGKILL.
   const archiveToken = await approval(deviceId, startAction);

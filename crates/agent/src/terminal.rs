@@ -443,17 +443,27 @@ impl TerminalManager {
         {
             return Err(anyhow!("terminal session not found"));
         }
+        // Keep the session registered until termination succeeds. Removing it
+        // first can strand a live child if the child lock or kill fails.
         let session = sessions
-            .remove(id)
+            .get(id)
             .ok_or_else(|| anyhow!("terminal session not found"))?;
-        drop(sessions);
-
-        let mut child = session
-            .child
-            .lock()
-            .map_err(|_| anyhow!("terminal child lock poisoned"))?;
-        child.kill()?;
-
+        {
+            let mut child = session
+                .child
+                .lock()
+                .map_err(|_| anyhow!("terminal child lock poisoned"))?;
+            if child.try_wait()?.is_none() {
+                if let Err(error) = child.kill() {
+                    // The process may have exited between try_wait and kill.
+                    // Retain the session on a genuine termination failure.
+                    if child.try_wait()?.is_none() {
+                        return Err(error.into());
+                    }
+                }
+            }
+        }
+        sessions.remove(id);
         Ok(json!({ "ok": true }))
     }
 
