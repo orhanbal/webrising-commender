@@ -292,18 +292,18 @@ impl HistoryStore {
     ) -> Result<File> {
         #[cfg(unix)]
         self.verify_live_slot_directory_identity()?;
-        let directory_lock = self.lock_directory()?;
+        let _directory_lock = self.lock_directory()?;
         #[cfg(unix)]
-        self.verify_live_slot_directory_lock(&directory_lock)?;
+        self.verify_live_slot_directory_lock(&_directory_lock)?;
         after_directory_lock()?;
         #[cfg(unix)]
-        self.verify_live_slot_directory_lock(&directory_lock)?;
+        self.verify_live_slot_directory_lock(&_directory_lock)?;
         for index in 0..MAX_LIVE_TERMINAL_SLOTS {
             // The path can change after lock_directory() returns. Do not
             // create a slot through a substituted scope or device parent.
             // This is detection, not kernel-atomic dirfd traversal.
             #[cfg(unix)]
-            self.verify_live_slot_directory_lock(&directory_lock)?;
+            self.verify_live_slot_directory_lock(&_directory_lock)?;
             #[cfg(windows)]
             Self::reject_windows_reparse_ancestors(&self.dir)?;
             let path = self.dir.join(format!(".terminal-slot-{index:02}.lock"));
@@ -322,7 +322,7 @@ impl HistoryStore {
             }
             let slot = options.open(&path)?;
             #[cfg(unix)]
-            self.verify_live_slot_directory_lock(&directory_lock)?;
+            self.verify_live_slot_directory_lock(&_directory_lock)?;
             #[cfg(windows)]
             Self::reject_windows_reparse_ancestors(&path)?;
             let opened = slot.metadata()?;
@@ -337,7 +337,7 @@ impl HistoryStore {
             }
             after_slot_open(index, &path)?;
             #[cfg(unix)]
-            self.verify_live_slot_directory_lock(&directory_lock)?;
+            self.verify_live_slot_directory_lock(&_directory_lock)?;
             match slot.try_lock() {
                 Ok(()) => {}
                 Err(std::fs::TryLockError::WouldBlock) => {
@@ -383,7 +383,7 @@ impl HistoryStore {
                         }
                     }
                     #[cfg(unix)]
-                    self.verify_live_slot_directory_lock(&directory_lock)?;
+                    self.verify_live_slot_directory_lock(&_directory_lock)?;
                     continue;
                 }
                 Err(error) => return Err(anyhow!("terminal live slot lock failed: {error}")),
@@ -426,7 +426,7 @@ impl HistoryStore {
                 }
             }
             #[cfg(unix)]
-            self.verify_live_slot_directory_lock(&directory_lock)?;
+            self.verify_live_slot_directory_lock(&_directory_lock)?;
             return Ok(slot);
         }
         Err(anyhow!(
