@@ -1248,6 +1248,13 @@ mod tests {
             #[cfg(not(windows))]
             panic!("Unix must permit renaming an open advisory-locked inode: {error}");
         }
+        // The replacement was created with ordinary default file permissions.
+        // Restore the original private lock inode before asserting recovery;
+        // accepting a world-readable replacement would violate the new guard.
+        if swapped {
+            fs::remove_file(&path).unwrap();
+            fs::rename(&parked, &path).unwrap();
+        }
         drop(store.lock_directory().unwrap());
         fs::remove_dir_all(dir).unwrap();
     }
