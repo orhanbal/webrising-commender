@@ -224,7 +224,10 @@ impl HistoryStore {
 
     // Test-only fault barrier models a directory swap immediately after the
     // history mutex is acquired. Production always passes a no-op.
-    fn reserve_live_slot_with_hook(&self, after_directory_lock: impl FnOnce() -> Result<()>) -> Result<File> {
+    fn reserve_live_slot_with_hook(
+        &self,
+        after_directory_lock: impl FnOnce() -> Result<()>,
+    ) -> Result<File> {
         let _directory_lock = self.lock_directory()?;
         after_directory_lock()?;
         for index in 0..MAX_LIVE_TERMINAL_SLOTS {
