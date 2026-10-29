@@ -1954,6 +1954,32 @@ try {
     "repeated failed PTY starts must not leak live sessions");
   console.log("agent-e2e: repeated failed PTY starts left no phantom archives or sessions");
 
+  // 2D: exercise concurrent authenticated MCP starts against the same Agent.
+  // Failed OS spawns must release every reservation and leave neither a
+  // session nor a durable archive, even when the starts race for the map.
+  const concurrentFailedTokens = [];
+  for (let attempt = 0; attempt < 5; attempt++) {
+    concurrentFailedTokens.push(await approval(deviceId, failedSpawnAction));
+  }
+  const concurrentFailedStarts = await Promise.all(
+    concurrentFailedTokens.map((approval_token, attempt) =>
+      tool(22020 + attempt, "terminal_start", {
+        device_id: deviceId, shell: nonexistentShell,
+        cwd: tempRoot, cols: 100, rows: 30, approval_token,
+      })),
+  );
+  for (const failed of concurrentFailedStarts) {
+    assert.equal(typeof failed.error, "string", JSON.stringify(failed));
+  }
+  assert.deepEqual(archivedNames(), beforeFailedSpawnArchives,
+    "concurrent failed PTY starts must not leave durable snapshots");
+  const afterConcurrentFailures = await tool(22026, "terminal_list", {
+    device_id: deviceId,
+  });
+  assert.deepEqual(afterConcurrentFailures.items, beforeFailedSpawnSessions.items,
+    "concurrent failed PTY starts must not leak live sessions");
+  console.log("agent-e2e: concurrent failed PTY starts preserved archive and session quotas");
+
   const startAction = {
     kind: "terminal_start",
     cwd: tempRoot,
