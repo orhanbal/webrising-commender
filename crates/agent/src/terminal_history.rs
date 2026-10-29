@@ -219,8 +219,22 @@ impl HistoryStore {
     // could lock different inodes and each admit 32 active terminals.
     // The held File owns the OS lock until the Session is removed or dies.
     pub fn reserve_live_slot(&self) -> Result<File> {
+        self.reserve_live_slot_with_hook(|| Ok(()))
+    }
+
+    // Test-only fault barrier models a directory swap immediately after the
+    // history mutex is acquired. Production always passes a no-op.
+    fn reserve_live_slot_with_hook(&self, after_directory_lock: impl FnOnce() -> Result<()>) -> Result<File> {
         let _directory_lock = self.lock_directory()?;
+        after_directory_lock()?;
         for index in 0..MAX_LIVE_TERMINAL_SLOTS {
+            // The path can change after lock_directory() returns. Do not
+            // create a slot through a substituted scope or device parent.
+            // This is detection, not kernel-atomic dirfd traversal.
+            #[cfg(unix)]
+            Self::reject_unix_linked_history_path(&self.dir)?;
+            #[cfg(windows)]
+            Self::reject_windows_reparse_ancestors(&self.dir)?;
             let path = self.dir.join(format!(".terminal-slot-{index:02}.lock"));
             let mut options = OpenOptions::new();
             options.read(true).write(true).create(true);
@@ -236,6 +250,10 @@ impl HistoryStore {
                 options.custom_flags(0x0020_0000); // FILE_FLAG_OPEN_REPARSE_POINT
             }
             let slot = options.open(&path)?;
+            #[cfg(unix)]
+            Self::reject_unix_linked_history_path(&self.dir)?;
+            #[cfg(windows)]
+            Self::reject_windows_reparse_ancestors(&path)?;
             let opened = slot.metadata()?;
             if !opened.is_file() {
                 return Err(anyhow!("unsafe terminal live slot"));
@@ -1970,6 +1988,39 @@ mod tests {
         drop(recovered);
         drop(store);
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn live_slot_rejects_scope_swap_after_history_lock_without_outside_creation() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!("wcth-slot-swap-{}", Uuid::new_v4()));
+        let device = root.join("device");
+        let scope = device.join("scope");
+        let parked = device.join("scope-parked");
+        let outside = root.join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("sentinel"), b"UNCHANGED").unwrap();
+        let store = HistoryStore::at(scope.clone()).unwrap();
+
+        let error = store
+            .reserve_live_slot_with_hook(|| {
+                fs::rename(&scope, &parked)?;
+                symlink(&outside, &scope)?;
+                Ok(())
+            })
+            .unwrap_err();
+        assert!(error.to_string().contains("symlink ancestor"), "{error}");
+        assert_eq!(fs::read(outside.join("sentinel")).unwrap(), b"UNCHANGED");
+        assert_eq!(fs::read_dir(&outside).unwrap().count(), 1);
+
+        fs::remove_file(&scope).unwrap();
+        fs::rename(&parked, &scope).unwrap();
+        let lease = store.reserve_live_slot().unwrap();
+        drop(lease);
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
