@@ -228,6 +228,16 @@ impl HistoryStore {
         &self,
         after_directory_lock: impl FnOnce() -> Result<()>,
     ) -> Result<File> {
+        self.reserve_live_slot_with_hooks(after_directory_lock, |_, _| Ok(()))
+    }
+
+    // The second hook is only used by deterministic native race tests. In
+    // production it is a no-op and cannot be supplied by an MCP caller.
+    fn reserve_live_slot_with_hooks(
+        &self,
+        after_directory_lock: impl FnOnce() -> Result<()>,
+        mut after_slot_open: impl FnMut(usize, &std::path::Path) -> Result<()>,
+    ) -> Result<File> {
         let _directory_lock = self.lock_directory()?;
         after_directory_lock()?;
         for index in 0..MAX_LIVE_TERMINAL_SLOTS {
@@ -267,9 +277,53 @@ impl HistoryStore {
                     "unsafe terminal live slot permissions or ownership"
                 ));
             }
+            after_slot_open(index, &path)?;
             match slot.try_lock() {
                 Ok(()) => {}
-                Err(std::fs::TryLockError::WouldBlock) => continue,
+                Err(std::fs::TryLockError::WouldBlock) => {
+                    // A busy slot is still part of the shared quota. Check its
+                    // pathname even though we cannot acquire its OS lock: a
+                    // rename/hardlink/chmod after open must not be silently
+                    // skipped while admitting a second slot.
+                    let named = fs::symlink_metadata(&path)?;
+                    if !named.is_file() || named.file_type().is_symlink() {
+                        return Err(anyhow!("unsafe busy terminal live slot"));
+                    }
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::MetadataExt;
+                        let held = slot.metadata()?;
+                        if held.dev() != named.dev()
+                            || held.ino() != named.ino()
+                            || !Self::unix_live_slot_permissions_ok(&held)
+                            || !Self::unix_live_slot_permissions_ok(&named)
+                        {
+                            return Err(anyhow!(
+                                "busy terminal live slot replaced, hardlinked or unsafe permissions"
+                            ));
+                        }
+                    }
+                    #[cfg(windows)]
+                    {
+                        use std::os::windows::fs::OpenOptionsExt;
+                        let held = windows_history_lock_info(&slot)?;
+                        let mut named_options = OpenOptions::new();
+                        named_options.read(true).custom_flags(0x0020_0000);
+                        let current_file = named_options.open(&path)?;
+                        let current = windows_history_lock_info(&current_file)?;
+                        if held.attributes & 0x400 != 0
+                            || current.attributes & 0x400 != 0
+                            || held.link_count != 1
+                            || current.link_count != 1
+                            || held.volume_serial != current.volume_serial
+                            || held.index_high != current.index_high
+                            || held.index_low != current.index_low
+                        {
+                            return Err(anyhow!("busy terminal live slot replaced or hardlinked"));
+                        }
+                    }
+                    continue;
+                }
                 Err(error) => return Err(anyhow!("terminal live slot lock failed: {error}")),
             }
             let named = fs::symlink_metadata(&path)?;
@@ -2024,6 +2078,44 @@ mod tests {
         drop(lease);
         drop(store);
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn busy_live_slot_rejects_mid_open_hardlink_and_recovers() {
+        let dir = std::env::temp_dir().join(format!("wcth-live-busy-race-{}", Uuid::new_v4()));
+        let first = HistoryStore::at(dir.clone()).unwrap();
+        let second = HistoryStore::at(dir.clone()).unwrap();
+        let held = first.reserve_live_slot().unwrap();
+        let slot = dir.join(".terminal-slot-00.lock");
+        let alias = dir.join("busy-slot-alias");
+
+        // The second Agent opens the already-locked inode while it is safe.
+        // Before try_lock returns WouldBlock, another actor adds a hardlink.
+        // The admission must reject instead of skipping to free slot 01.
+        let error = second
+            .reserve_live_slot_with_hooks(
+                || Ok(()),
+                |index, path| {
+                    if index == 0 {
+                        assert_eq!(path, slot.as_path());
+                        fs::hard_link(path, &alias)?;
+                    }
+                    Ok(())
+                },
+            )
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("busy terminal live slot"),
+            "{error}"
+        );
+        fs::remove_file(&alias).unwrap();
+        drop(held);
+        let recovered = second.reserve_live_slot().unwrap();
+        drop(recovered);
+        drop(first);
+        drop(second);
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
