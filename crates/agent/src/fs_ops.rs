@@ -3889,13 +3889,15 @@ mod undo_crash_cleanup_tests {
             assert_eq!(fs::read(&parked).unwrap(), b"original-lock");
         } else {
             #[cfg(windows)]
-            assert!(
-                error.to_string().contains("windows_lock_rename_denied"),
-                "unexpected Windows ancestor lock outcome: {error}"
-            );
+            {
+                assert!(
+                    error.to_string().contains("windows_lock_rename_denied"),
+                    "unexpected Windows ancestor lock outcome: {error}"
+                );
+                assert_eq!(fs::read(&path).unwrap(), b"original-lock");
+            }
             #[cfg(not(windows))]
             panic!("Unix must permit renaming an open advisory-locked inode: {error}");
-            assert_eq!(fs::read(&path).unwrap(), b"original-lock");
         }
         drop(undo_cross_process_lock(&dir).unwrap());
         fs::remove_dir_all(dir).unwrap();
