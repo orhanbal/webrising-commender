@@ -1986,6 +1986,32 @@ try {
     cols: 100,
     rows: 30,
   };
+  // 2D: a substituted live-slot symlink must fail closed through the real
+  // authenticated MCP -> Gateway -> Agent path, not lock an outside file.
+  if (process.platform === "linux") {
+    const deviceHistoryDir = path.join(tempRoot, "xdg-data", "webrising-commender",
+      "terminal-history", deviceId);
+    const slotPath = path.join(deviceHistoryDir, ".terminal-slot-00.lock");
+    const backupSlotPath = slotPath + ".backup";
+    const outsideSlot = path.join(tempRoot, "outside-live-slot-sentinel");
+    assert.ok(fs.existsSync(slotPath), "failed starts should have provisioned the stable slot");
+    fs.writeFileSync(outsideSlot, "outside-slot-untouched");
+    fs.renameSync(slotPath, backupSlotPath);
+    fs.symlinkSync(outsideSlot, slotPath);
+    try {
+      const attackToken = await approval(deviceId, startAction);
+      const denied = await tool(22030, "terminal_start", {
+        device_id: deviceId, cwd: tempRoot, cols: 100, rows: 30,
+        approval_token: attackToken,
+      });
+      assert.equal(typeof denied.error, "string", JSON.stringify(denied));
+      assert.equal(fs.readFileSync(outsideSlot, "utf8"), "outside-slot-untouched");
+    } finally {
+      fs.unlinkSync(slotPath);
+      fs.renameSync(backupSlotPath, slotPath);
+    }
+    console.log("agent-e2e: substituted live terminal slot symlink rejected by MCP");
+  }
   const startToken = await approval(deviceId, startAction);
   const started = await tool(105, "terminal_start", {
     device_id: deviceId,

@@ -17,6 +17,8 @@ const CHECKSUM_BYTES: usize = 32;
 const CAP: usize = 1024 * 1024;
 const TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const MAX_ARCHIVES: usize = 64;
+// The on-disk lease pool is shared by independent Agent processes for one device.
+const MAX_LIVE_TERMINAL_SLOTS: usize = 32;
 // A wedged second Agent must not block all terminal operations indefinitely.
 const LOCK_WAIT: Duration = Duration::from_secs(5);
 
@@ -192,6 +194,77 @@ impl HistoryStore {
             return Err(std::io::Error::last_os_error().into());
         }
         Ok(())
+    }
+
+    // Reserve a device-wide live terminal slot before spawning the child.
+    // Stable slot filenames are NEVER unlinked: otherwise separate processes
+    // could lock different inodes and each admit 32 active terminals.
+    // The held File owns the OS lock until the Session is removed or dies.
+    pub fn reserve_live_slot(&self) -> Result<File> {
+        let _directory_lock = self.lock_directory()?;
+        for index in 0..MAX_LIVE_TERMINAL_SLOTS {
+            let path = self.dir.join(format!(".terminal-slot-{index:02}.lock"));
+            let mut options = OpenOptions::new();
+            options.read(true).write(true).create(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+                options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK);
+            }
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::OpenOptionsExt;
+                options.custom_flags(0x0020_0000); // FILE_FLAG_OPEN_REPARSE_POINT
+            }
+            let slot = options.open(&path)?;
+            let opened = slot.metadata()?;
+            if !opened.is_file() {
+                return Err(anyhow!("unsafe terminal live slot"));
+            }
+            match slot.try_lock() {
+                Ok(()) => {}
+                Err(std::fs::TryLockError::WouldBlock) => continue,
+                Err(error) => return Err(anyhow!("terminal live slot lock failed: {error}")),
+            }
+            let named = fs::symlink_metadata(&path)?;
+            if !named.is_file() || named.file_type().is_symlink() {
+                return Err(anyhow!("unsafe terminal live slot"));
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::MetadataExt;
+                if opened.dev() != named.dev()
+                    || opened.ino() != named.ino()
+                    || opened.nlink() != 1
+                {
+                    return Err(anyhow!("terminal live slot replaced or hardlinked"));
+                }
+            }
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::OpenOptionsExt;
+                let held = windows_history_lock_info(&slot)?;
+                let mut named_options = OpenOptions::new();
+                named_options.read(true).custom_flags(0x0020_0000);
+                let current_file = named_options.open(&path)?;
+                let current = windows_history_lock_info(&current_file)?;
+                if held.attributes & 0x400 != 0
+                    || current.attributes & 0x400 != 0
+                    || held.link_count != 1
+                    || current.link_count != 1
+                    || held.volume_serial != current.volume_serial
+                    || held.index_high != current.index_high
+                    || held.index_low != current.index_low
+                {
+                    return Err(anyhow!("terminal live slot replaced or hardlinked"));
+                }
+            }
+            return Ok(slot);
+        }
+        Err(anyhow!(
+            "too many terminal sessions; limit is {MAX_LIVE_TERMINAL_SLOTS}"
+        ))
     }
 
     // Keep this file forever: deleting a lock file allows different processes
@@ -1662,6 +1735,89 @@ mod tests {
         assert!(!stale.exists(), "only expired UUID staging may be removed");
         assert_eq!(fs::read(&unknown).unwrap(), b"keep-unless-owned");
         assert_eq!(fs::read(&malformed).unwrap(), b"keep-unless-owned");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn live_slot_quota_is_shared_by_independent_stores() {
+        let dir = std::env::temp_dir().join(format!("wcth-live-slots-{}", Uuid::new_v4()));
+        let first = HistoryStore::at(dir.clone()).unwrap();
+        let second = HistoryStore::at(dir.clone()).unwrap();
+        let mut leases = Vec::new();
+        for index in 0..MAX_LIVE_TERMINAL_SLOTS {
+            let store = if index % 2 == 0 { &first } else { &second };
+            leases.push(store.reserve_live_slot().unwrap());
+        }
+        assert!(first.reserve_live_slot().unwrap_err().to_string().contains("too many terminal sessions"));
+        drop(leases.pop());
+        let recovered = second.reserve_live_slot().unwrap();
+        drop(recovered);
+        drop(leases);
+        drop(first);
+        drop(second);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    // The child is invoked by the parent test through the real Rust test
+    // executable. This exercises OS locks between processes, not just threads.
+    #[test]
+    #[ignore]
+    fn live_slot_subprocess_helper() {
+        let Ok(dir) = std::env::var("WCTH_LIVE_SLOT_HELPER_DIR") else {
+            return;
+        };
+        let dir = PathBuf::from(dir);
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let _lease = store.reserve_live_slot().unwrap();
+        fs::write(dir.join("helper-ready"), b"ready").unwrap();
+        for _ in 0..200 {
+            if dir.join("helper-release").exists() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        panic!("live slot helper timed out");
+    }
+
+    #[test]
+    fn live_slot_quota_is_enforced_across_processes() {
+        use std::process::{Command, Stdio};
+        let dir = std::env::temp_dir().join(format!("wcth-live-process-{}", Uuid::new_v4()));
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let mut leases = (0..MAX_LIVE_TERMINAL_SLOTS - 1)
+            .map(|_| store.reserve_live_slot().unwrap())
+            .collect::<Vec<_>>();
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("live_slot_subprocess_helper")
+            .arg("--ignored")
+            .arg("--test-threads=1")
+            .env("WCTH_LIVE_SLOT_HELPER_DIR", &dir)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let ready = (0..200).any(|_| {
+            if dir.join("helper-ready").exists() {
+                return true;
+            }
+            if child.try_wait().unwrap().is_some() {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+            false
+        });
+        if !ready {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("live slot subprocess failed to acquire its slot");
+        }
+        assert!(store.reserve_live_slot().unwrap_err().to_string().contains("too many terminal sessions"));
+        fs::write(dir.join("helper-release"), b"release").unwrap();
+        assert!(child.wait().unwrap().success());
+        let recovered = store.reserve_live_slot().unwrap();
+        drop(recovered);
+        leases.clear();
+        drop(store);
         fs::remove_dir_all(dir).unwrap();
     }
 }

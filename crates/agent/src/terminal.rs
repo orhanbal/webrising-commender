@@ -5,6 +5,7 @@ use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize}
 use serde_json::{json, Value};
 use std::{
     collections::{HashMap, VecDeque},
+    fs::File,
     io::{Read, Write},
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -143,6 +144,8 @@ struct Session {
     buffer: Arc<Mutex<VecDeque<u8>>>,
     history: Arc<Mutex<OutputHistory>>,
     owner_scope: String,
+    // Holds a device-wide OS file lock until this session is retired.
+    _live_slot: Option<File>,
 }
 
 #[derive(Clone, Default)]
@@ -170,6 +173,13 @@ impl TerminalManager {
         scope: &str,
     ) -> Result<Value> {
         let reservation = self.reserve_start()?;
+        // Cross-process quota: independent Agents for the same device share
+        // stable OS-locked slot files, not only this process's session map.
+        let live_slot = self
+            .store
+            .as_ref()
+            .map(|store| store.reserve_live_slot())
+            .transpose()?;
         // Allocate the archive before spawning an OS child. A disk failure
         // must never leave an untracked live shell behind.
         let id = Uuid::new_v4().to_string();
@@ -281,6 +291,7 @@ impl TerminalManager {
             buffer,
             history,
             owner_scope: scope.to_owned(),
+            _live_slot: live_slot,
         });
 
         sessions.insert(id.clone(), session);
