@@ -368,6 +368,29 @@ impl HistoryStore {
             match lock.try_lock() {
                 Ok(()) => break,
                 Err(std::fs::TryLockError::WouldBlock) => {
+                    // A lock that was private at open time can be hardlinked,
+                    // chmodded or renamed while another Agent holds it. Do
+                    // not wait five seconds on a now-unsafe inode; reject the
+                    // mutation even before the OS mutex becomes available.
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::MetadataExt;
+                        let held = lock.metadata()?;
+                        let named = fs::symlink_metadata(&path)?;
+                        if !named.is_file()
+                            || named.file_type().is_symlink()
+                            || held.dev() != named.dev()
+                            || held.ino() != named.ino()
+                            || held.nlink() != 1
+                            || named.nlink() != 1
+                            || !Self::unix_private_lock_mode_ok(&held)
+                            || !Self::unix_private_lock_mode_ok(&named)
+                        {
+                            return Err(anyhow!(
+                                "terminal history lock replaced, hardlinked or unsafe while busy"
+                            ));
+                        }
+                    }
                     if start.elapsed() >= timeout {
                         return Err(anyhow!("terminal history filesystem lock timeout"));
                     }
@@ -1479,6 +1502,41 @@ mod tests {
         fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o600)).unwrap();
         drop(store.lock_directory().unwrap());
         drop(store);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn busy_history_lock_rejects_midwait_permission_change_promptly() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::sync::mpsc;
+
+        let dir = std::env::temp_dir().join(format!("wcth-busy-chmod-{}", Uuid::new_v4()));
+        let first = HistoryStore::at(dir.clone()).unwrap();
+        let second = HistoryStore::at(dir.clone()).unwrap();
+        let held = first.lock_directory().unwrap();
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            ready_tx.send(()).unwrap();
+            done_tx
+                .send(second.lock_directory_with_timeout(Duration::from_secs(3)).map(|_| ()))
+                .unwrap();
+        });
+        ready_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(done_rx.recv_timeout(Duration::from_millis(120)).is_err());
+        let lock_path = dir.join(".history.lock");
+        fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o666)).unwrap();
+        let error = done_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("unsafe busy lock should fail before normal timeout")
+            .unwrap_err();
+        assert!(error.to_string().contains("unsafe while busy"), "{error}");
+        fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o600)).unwrap();
+        drop(held);
+        worker.join().unwrap();
+        drop(first.lock_directory().unwrap());
+        drop(first);
         fs::remove_dir_all(dir).unwrap();
     }
 
