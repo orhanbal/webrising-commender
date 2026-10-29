@@ -2202,6 +2202,38 @@ try {
   });
   assert.match(String(duplicateStop.error), /terminal session not found/i);
   console.log("agent-e2e: already-exited PTY stop removed only its own session");
+  
+  // 2D: a successful stop of a still-running PTY must not return while its
+  // direct child remains alive (or unreaped). This is not a process-tree test.
+  const liveStopStartToken = await approval(deviceId, startAction);
+  const liveStopSession = await tool(411, "terminal_start", {
+    device_id: deviceId, cwd: tempRoot, cols: 100, rows: 30,
+    approval_token: liveStopStartToken,
+  });
+  assert.equal(typeof liveStopSession.sessionId, "string");
+  const liveStopList = await tool(412, "terminal_list", { device_id: deviceId });
+  const liveStopItem = liveStopList.items.find((item) =>
+    item.sessionId === liveStopSession.sessionId);
+  assert.ok(liveStopItem?.running, "new PTY child must be running before stop");
+  assert.ok(Number.isSafeInteger(liveStopItem.pid) && liveStopItem.pid > 0);
+  const liveStopToken = await approval(deviceId, {
+    kind: "terminal_stop", sessionId: liveStopSession.sessionId,
+  });
+  const liveStopped = await tool(413, "terminal_stop", {
+    device_id: deviceId, session_id: liveStopSession.sessionId,
+    approval_token: liveStopToken,
+  });
+  assert.equal(liveStopped.ok, true, JSON.stringify(liveStopped));
+  assert.throws(
+    () => process.kill(liveStopItem.pid, 0),
+    (error) => error?.code === "ESRCH",
+    "terminal_stop must reap the direct child before reporting success",
+  );
+  const afterLiveStop = await tool(414, "terminal_list", { device_id: deviceId });
+  assert.ok(!afterLiveStop.items.some((item) =>
+    item.sessionId === liveStopSession.sessionId));
+  console.log("agent-e2e: live PTY stop reaped direct child before unregister");
+
 
 
 
