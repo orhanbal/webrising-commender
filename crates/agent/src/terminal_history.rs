@@ -1119,7 +1119,9 @@ mod tests {
         fs::remove_dir(&history).unwrap();
         symlink(&outside, &history).unwrap();
         let id = Uuid::new_v4().to_string();
-        let error = store.save(&id, 1, &VecDeque::from(b"x".to_vec())).unwrap_err();
+        let error = store
+            .save(&id, 1, &VecDeque::from(b"x".to_vec()))
+            .unwrap_err();
         assert!(error.to_string().contains("symlink ancestor"), "{error}");
         assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
         fs::remove_dir_all(root).unwrap();
