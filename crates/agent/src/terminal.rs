@@ -172,8 +172,14 @@ impl TerminalManager {
             command.cwd(root);
         }
 
-        // Validate shell/cwd and open the PTY before reserving durable disk
-        // history. A rejected cwd must not consume a 24h archive slot.
+        // Acquire both fallible master-side handles before spawning a child.
+        // Otherwise a failed reader/writer setup after spawn can orphan a live
+        // shell and leave an unused durable-history archive behind.
+        let mut reader = pair.master.try_clone_reader()?;
+        let writer = pair.master.take_writer()?;
+
+        // Validate shell/cwd and prepare the PTY before reserving durable disk
+        // history. A rejected cwd or PTY handle must not consume an archive slot.
         let history_store = self
             .store
             .as_ref()
@@ -199,8 +205,6 @@ impl TerminalManager {
         };
         drop(pair.slave);
 
-        let mut reader = pair.master.try_clone_reader()?;
-        let writer = pair.master.take_writer()?;
         let buffer = Arc::new(Mutex::new(VecDeque::new()));
         let read_buffer = Arc::clone(&buffer);
         let history = Arc::new(Mutex::new(OutputHistory::default()));
@@ -470,6 +474,23 @@ fn default_shell() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pty_master_handles_are_available_before_child_spawn() {
+        // This ordering is essential: after spawn there must be no fallible
+        // PTY reader/writer acquisition that could strand an untracked child.
+        let pair = native_pty_system()
+            .openpty(PtySize {
+                rows: 30,
+                cols: 100,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .unwrap();
+        let _reader = pair.master.try_clone_reader().unwrap();
+        let _writer = pair.master.take_writer().unwrap();
+        // No shell was started and no terminal history was allocated.
+    }
 
     #[test]
     fn concurrent_start_reservations_enforce_quota_and_release_on_drop() {
