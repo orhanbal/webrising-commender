@@ -2011,6 +2011,25 @@ try {
       fs.renameSync(backupSlotPath, slotPath);
     }
     console.log("agent-e2e: substituted live terminal slot symlink rejected by MCP");
+
+    // A pre-existing live-slot inode with widened Unix permissions must
+    // fail closed even if the pathname is regular and the OS lock is free.
+    // Restore the original mode and confirm the ordinary PTY start below
+    // remains possible; this is a real authenticated Gateway -> Agent call.
+    const originalMode = fs.statSync(slotPath).mode & 0o777;
+    fs.chmodSync(slotPath, 0o666);
+    try {
+      const modeToken = await approval(deviceId, startAction);
+      const deniedMode = await tool(22031, "terminal_start", {
+        device_id: deviceId, cwd: tempRoot, cols: 100, rows: 30,
+        approval_token: modeToken,
+      });
+      assert.equal(typeof deniedMode.error, "string", JSON.stringify(deniedMode));
+      assert.match(deniedMode.error, /permissions|ownership|unsafe/i);
+    } finally {
+      fs.chmodSync(slotPath, originalMode);
+    }
+    console.log("agent-e2e: world-writable live terminal slot denied by MCP");
   }
   const startToken = await approval(deviceId, startAction);
   const started = await tool(105, "terminal_start", {
