@@ -338,7 +338,9 @@ impl HistoryStore {
         }
         #[cfg(unix)]
         if !Self::unix_private_lock_mode_ok(&lock.metadata()?) {
-            return Err(anyhow!("unsafe terminal history lock permissions or ownership"));
+            return Err(anyhow!(
+                "unsafe terminal history lock permissions or ownership"
+            ));
         }
         #[cfg(windows)]
         {
@@ -417,7 +419,9 @@ impl HistoryStore {
             if !Self::unix_private_lock_mode_ok(&held_meta)
                 || !Self::unix_private_lock_mode_ok(&path_meta)
             {
-                return Err(anyhow!("unsafe terminal history lock permissions or ownership"));
+                return Err(anyhow!(
+                    "unsafe terminal history lock permissions or ownership"
+                ));
             }
         }
         Ok(lock)
