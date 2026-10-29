@@ -518,7 +518,9 @@ impl HistoryStore {
         let checksum = Sha256::digest(&expected[8..]);
         expected.extend_from_slice(&checksum);
         if raw != expected {
-            return Err(anyhow!("refusing to discard modified terminal startup history"));
+            return Err(anyhow!(
+                "refusing to discard modified terminal startup history"
+            ));
         }
         drop(opened);
         fs::remove_file(path)?;
