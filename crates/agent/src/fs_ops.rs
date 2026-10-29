@@ -2510,6 +2510,19 @@ fn unlink_undo_snapshot_windows_with_hook(
     digest: &str,
     before_delete: impl FnOnce() -> Result<()>,
 ) -> Result<()> {
+    unlink_undo_snapshot_windows_with_hooks(path, verified, digest, before_delete, || Ok(()))
+}
+
+// A test-only second hook exercises changes after the named-leaf digest.
+// Production supplies a no-op; it still performs the final handle checks.
+#[cfg(windows)]
+fn unlink_undo_snapshot_windows_with_hooks(
+    path: &Path,
+    verified: &fs::File,
+    digest: &str,
+    before_delete: impl FnOnce() -> Result<()>,
+    before_disposition: impl FnOnce() -> Result<()>,
+) -> Result<()> {
     use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
 
     #[repr(C)]
@@ -2558,6 +2571,25 @@ fn unlink_undo_snapshot_windows_with_hook(
     reject_undo_hardlinked_handle(&named)?;
     if !undo_snapshot_identity_matches(&delete_handle, &named)?
         || undo_quarantine_digest(&named)? != digest
+    {
+        return Err(anyhow!("undo_snapshot_changed_before_unlink"));
+    }
+
+    before_disposition()?;
+    // The named-leaf digest may take time. Recheck the DELETE handle's
+    // current link count and bytes, and the named leaf's identity, just
+    // before disposition. This narrows, but does not eliminate, a hostile
+    // writer's final check-to-disposition race.
+    reject_windows_undo_reparse_ancestors(path)?;
+    reject_windows_hardlinked_file(&delete_handle)?;
+    if undo_quarantine_digest(&delete_handle)? != digest {
+        return Err(anyhow!("undo_snapshot_changed_before_unlink"));
+    }
+    let final_named =
+        open_regular_read(path).map_err(|_| anyhow!("undo_snapshot_changed_before_unlink"))?;
+    reject_undo_hardlinked_handle(&final_named)?;
+    if !undo_snapshot_identity_matches(&delete_handle, &final_named)?
+        || undo_quarantine_digest(&final_named)? != digest
     {
         return Err(anyhow!("undo_snapshot_changed_before_unlink"));
     }
@@ -3398,6 +3430,71 @@ mod undo_scan_handle_tests {
             !entry.exists(),
             "safe retry must consume only the verified leaf"
         );
+        drop(pinned);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    // A hardlink created after the final named-leaf digest must not allow
+    // disposition of an inode that has gained an external alias.
+    #[cfg(windows)]
+    #[test]
+    fn windows_undo_handle_unlink_rejects_hardlink_after_final_digest() {
+        let root = std::env::temp_dir().join(format!("wc-undo-final-link-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let entry = root.join("verified.hold");
+        let alias = root.join("external-alias.hold");
+        fs::write(&entry, b"verified-snapshot").unwrap();
+        let pinned = open_regular_read(&entry).unwrap();
+        let digest = undo_quarantine_digest(&pinned).unwrap();
+        let error = unlink_undo_snapshot_windows_with_hooks(
+            &entry,
+            &pinned,
+            &digest,
+            || Ok(()),
+            || {
+                fs::hard_link(&entry, &alias)?;
+                Ok(())
+            },
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("unsafe_undo_storage_hardlink"));
+        assert_eq!(fs::read(&entry).unwrap(), b"verified-snapshot");
+        assert_eq!(fs::read(&alias).unwrap(), b"verified-snapshot");
+        fs::remove_file(&alias).unwrap();
+        unlink_undo_snapshot(&entry, &pinned, &digest).unwrap();
+        assert!(!entry.exists(), "retry must consume only the verified leaf");
+        drop(pinned);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    // An in-place writer may change the inode after the named-leaf digest.
+    // Rechecking the DELETE-capable handle must reject its changed bytes.
+    #[cfg(windows)]
+    #[test]
+    fn windows_undo_handle_unlink_rejects_tamper_after_final_digest() {
+        let root = std::env::temp_dir().join(format!("wc-undo-final-tamper-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(root).unwrap();
+        let entry = root.join("verified.hold");
+        fs::write(&entry, b"verified-snapshot").unwrap();
+        let pinned = open_regular_read(&entry).unwrap();
+        let digest = undo_quarantine_digest(&pinned).unwrap();
+        let error = unlink_undo_snapshot_windows_with_hooks(
+            &entry,
+            &pinned,
+            &digest,
+            || Ok(()),
+            || {
+                fs::write(&entry, b"untrusted-tamper")?;
+                Ok(())
+            },
+        )
+        .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("undo_snapshot_changed_before_unlink"));
+        assert_eq!(fs::read(&entry).unwrap(), b"untrusted-tamper");
         drop(pinned);
         fs::remove_dir_all(root).unwrap();
     }
