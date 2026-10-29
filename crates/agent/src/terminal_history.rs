@@ -1570,7 +1570,11 @@ mod tests {
         let worker = std::thread::spawn(move || {
             ready_tx.send(()).unwrap();
             done_tx
-                .send(second.lock_directory_with_timeout(Duration::from_secs(3)).map(|_| ()))
+                .send(
+                    second
+                        .lock_directory_with_timeout(Duration::from_secs(3))
+                        .map(|_| ()),
+                )
                 .unwrap();
         });
         ready_rx.recv_timeout(Duration::from_secs(2)).unwrap();
