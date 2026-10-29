@@ -155,16 +155,6 @@ impl TerminalManager {
         // Allocate the archive before spawning an OS child. A disk failure
         // must never leave an untracked live shell behind.
         let id = Uuid::new_v4().to_string();
-        let history_store = self
-            .store
-            .as_ref()
-            .map(|store| store.scoped(scope))
-            .transpose()?
-            .map(Arc::new);
-        if let Some(store) = &history_store {
-            store.save(&id, 0, &VecDeque::new())?;
-        }
-
         let pty = native_pty_system();
         let pair = pty.openpty(PtySize {
             rows: rows.clamp(5, 300),
@@ -180,6 +170,18 @@ impl TerminalManager {
             command.cwd(policy.resolve_existing(raw)?);
         } else if let Some(root) = policy.roots().first() {
             command.cwd(root);
+        }
+
+        // Validate shell/cwd and open the PTY before reserving durable disk
+        // history. A rejected cwd must not consume a 24h archive slot.
+        let history_store = self
+            .store
+            .as_ref()
+            .map(|store| store.scoped(scope))
+            .transpose()?
+            .map(Arc::new);
+        if let Some(store) = &history_store {
+            store.save(&id, 0, &VecDeque::new())?;
         }
 
         let child = pair.slave.spawn_command(command)?;

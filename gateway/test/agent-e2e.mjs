@@ -1877,6 +1877,30 @@ try {
   assert.equal(executed.success, true);
   assert.match(executed.stdout, /agent-process-ok/);
 
+  // 2D real authenticated MCP negative: a non-existent cwd must fail
+  // before an empty terminal-history archive or scoped directory is created.
+  // This checks the actual Gateway -> Rust Agent startup path, not a mock.
+  const preflightHistoryDirectory = path.join(tempRoot, "xdg-data",
+    "webrising-commender", "terminal-history", deviceId);
+  const historyEntries = () => fs.existsSync(preflightHistoryDirectory)
+    ? fs.readdirSync(preflightHistoryDirectory).sort() : [];
+  const beforeRejectedStart = historyEntries();
+  const invalidTerminalCwd = path.join(tempRoot, "missing-terminal-cwd");
+  assert.equal(fs.existsSync(invalidTerminalCwd), false);
+  const invalidTerminalAction = {
+    kind: "terminal_start", cwd: invalidTerminalCwd, cols: 100, rows: 30,
+  };
+  const invalidTerminalToken = await approval(deviceId, invalidTerminalAction);
+  const rejectedTerminalStart = await tool(1880, "terminal_start", {
+    device_id: deviceId, cwd: invalidTerminalCwd, cols: 100, rows: 30,
+    approval_token: invalidTerminalToken,
+  });
+  assert.equal(typeof rejectedTerminalStart.error, "string",
+    JSON.stringify(rejectedTerminalStart));
+  assert.deepEqual(historyEntries(), beforeRejectedStart,
+    "failed terminal cwd validation must not create durable history");
+  console.log("agent-e2e: rejected terminal cwd did not create phantom history archive");
+
   const startAction = {
     kind: "terminal_start",
     cwd: tempRoot,
