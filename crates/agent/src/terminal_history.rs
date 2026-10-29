@@ -196,15 +196,22 @@ impl HistoryStore {
         Ok(())
     }
 
-    // A previously provisioned slot must remain private to the Agent's OS
-    // identity. Check even busy slots: otherwise a compromised lockfile can
-    // be silently skipped until a later admission attempt.
+    // Both the history mutex and live-terminal leases must remain private to
+    // the Agent's effective OS identity, even when the file already exists.
     #[cfg(unix)]
-    fn unix_live_slot_permissions_ok(meta: &fs::Metadata) -> bool {
+    fn unix_private_lock_mode_ok(meta: &fs::Metadata) -> bool {
         use std::os::unix::fs::MetadataExt;
         // SAFETY: geteuid has no pointers or mutable state.
         let uid = unsafe { libc::geteuid() };
-        meta.uid() == uid && meta.mode() & 0o777 == 0o600 && meta.nlink() == 1
+        meta.uid() == uid && meta.mode() & 0o777 == 0o600
+    }
+
+    // Check even busy live slots: otherwise a compromised lockfile can be
+    // silently skipped until a later admission attempt.
+    #[cfg(unix)]
+    fn unix_live_slot_permissions_ok(meta: &fs::Metadata) -> bool {
+        use std::os::unix::fs::MetadataExt;
+        Self::unix_private_lock_mode_ok(meta) && meta.nlink() == 1
     }
 
     // Reserve a device-wide live terminal slot before spawning the child.
@@ -329,6 +336,10 @@ impl HistoryStore {
         if !lock.metadata()?.is_file() {
             return Err(anyhow!("unsafe terminal history lock"));
         }
+        #[cfg(unix)]
+        if !Self::unix_private_lock_mode_ok(&lock.metadata()?) {
+            return Err(anyhow!("unsafe terminal history lock permissions or ownership"));
+        }
         #[cfg(windows)]
         {
             let info = windows_history_lock_info(&lock)?;
@@ -400,6 +411,13 @@ impl HistoryStore {
                 || held_meta.nlink() != 1
             {
                 return Err(anyhow!("terminal history lock was replaced or hardlinked"));
+            }
+            // Recheck after acquiring the kernel lock: a chmod or pathname
+            // substitution during the wait must never authorize archive I/O.
+            if !Self::unix_private_lock_mode_ok(&held_meta)
+                || !Self::unix_private_lock_mode_ok(&path_meta)
+            {
+                return Err(anyhow!("unsafe terminal history lock permissions or ownership"));
             }
         }
         Ok(lock)
@@ -1401,6 +1419,44 @@ mod tests {
                 VecDeque::from(b"cross-process-output".to_vec())
             );
         }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn history_lock_rejects_world_writable_mode_and_recovers() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!("wcth-lock-mode-{}", Uuid::new_v4()));
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let lock_path = dir.join(".history.lock");
+        fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o666)).unwrap();
+        let error = store.lock_directory().unwrap_err();
+        assert!(error.to_string().contains("permissions or ownership"));
+        fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o600)).unwrap();
+        drop(store.lock_directory().unwrap());
+        drop(store);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn history_lock_rejects_mode_change_after_acquisition() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!("wcth-lock-race-{}", Uuid::new_v4()));
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let lock_path = dir.join(".history.lock");
+        let error = store
+            .lock_directory_with_timeout_and_hook(LOCK_WAIT, || {
+                fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o666))?;
+                Ok(())
+            })
+            .unwrap_err();
+        assert!(error.to_string().contains("permissions or ownership"));
+        fs::set_permissions(&lock_path, fs::Permissions::from_mode(0o600)).unwrap();
+        drop(store.lock_directory().unwrap());
+        drop(store);
         fs::remove_dir_all(dir).unwrap();
     }
 

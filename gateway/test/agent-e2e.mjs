@@ -2553,6 +2553,31 @@ try {
     console.log("agent-e2e: hardlinked history lock denied archived MCP read; unlink recovered");
   }
 
+  // 2B/2D: the durable history mutex must be private even when it is a
+  // regular file. Reject a world-writable lock through real authenticated
+  // MCP archived reads; restoring 0600 must recover the original archive.
+  if (process.platform === "linux") {
+    const historyLock = path.join(historyDirectory, ".history.lock");
+    const originalMode = fs.statSync(historyLock).mode & 0o777;
+    fs.chmodSync(historyLock, 0o666);
+    try {
+      const deniedMode = await tool(22050, "terminal_read_page", {
+        device_id: deviceId, session_id: quotaSession.sessionId,
+        offset_bytes: -8192, max_bytes: 8192,
+      });
+      assert.match(String(deniedMode.error), /terminal history lock permissions or ownership/i);
+    } finally {
+      fs.chmodSync(historyLock, originalMode);
+    }
+    const recoveredMode = await tool(22051, "terminal_read_page", {
+      device_id: deviceId, session_id: quotaSession.sessionId,
+      offset_bytes: -8192, max_bytes: 8192,
+    });
+    assert.equal(recoveredMode.archived, true, JSON.stringify(recoveredMode));
+    assert.match(recoveredMode.text, /LIVE_HISTORY_QUOTA_OK/);
+    console.log("agent-e2e: world-writable history lock denied archived MCP read; chmod recovered");
+  }
+
   // 2B/2D: an attacker-controlled FIFO must not block a terminal history
   // read before the lock's file-type validation. This is a real authenticated
   // MCP -> Gateway -> Agent negative test, not a mocked filesystem call.
