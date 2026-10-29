@@ -158,9 +158,38 @@ impl HistoryStore {
             return Err(anyhow!("unsafe terminal history directory"));
         }
         #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+        Self::chmod_pinned_unix_dir(path, &meta, || Ok(()))?;
+        Ok(())
+    }
+
+    // A pathname chmod follows a substituted symlink between lstat and
+    // chmod, potentially changing an unrelated directory's permissions.
+    // Pin the directory with O_NOFOLLOW and chmod the verified descriptor.
+    // This protects the leaf, not every ancestor (full dirfd traversal is
+    // still an independent acceptance gate).
+    #[cfg(unix)]
+    fn chmod_pinned_unix_dir(
+        path: &std::path::Path,
+        expected: &fs::Metadata,
+        before_open: impl FnOnce() -> Result<()>,
+    ) -> Result<()> {
+        use std::os::fd::AsRawFd;
+        use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+
+        before_open()?;
+        let mut options = OpenOptions::new();
+        options
+            .read(true)
+            .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC);
+        let pinned = options.open(path)?;
+        let actual = pinned.metadata()?;
+        if !actual.is_dir() || actual.dev() != expected.dev() || actual.ino() != expected.ino() {
+            return Err(anyhow!("terminal history directory changed before chmod"));
+        }
+        // SAFETY: pinned owns a live directory descriptor; fchmod does not
+        // re-resolve the pathname and cannot follow a swapped leaf symlink.
+        if unsafe { libc::fchmod(pinned.as_raw_fd(), 0o700) } != 0 {
+            return Err(std::io::Error::last_os_error().into());
         }
         Ok(())
     }
@@ -631,6 +660,72 @@ impl HistoryStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn pinned_history_directory_chmod_rejects_symlink_swap_without_touching_outside() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+
+        let base = std::env::temp_dir().join(format!("wcth-chmod-link-{}", Uuid::new_v4()));
+        let owned = base.join("owned");
+        let parked = base.join("parked");
+        let outside = base.join("outside");
+        fs::create_dir_all(&owned).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::set_permissions(&outside, fs::Permissions::from_mode(0o755)).unwrap();
+        let original = fs::symlink_metadata(&owned).unwrap();
+
+        let result = HistoryStore::chmod_pinned_unix_dir(&owned, &original, || {
+            fs::rename(&owned, &parked)?;
+            symlink(&outside, &owned)?;
+            Ok(())
+        });
+        assert!(result.is_err(), "symlink replacement must fail closed");
+        assert_eq!(
+            fs::metadata(&outside).unwrap().permissions().mode() & 0o777,
+            0o755,
+            "an outside directory must never be chmodded"
+        );
+        fs::remove_file(&owned).unwrap();
+        fs::rename(&parked, &owned).unwrap();
+        HistoryStore::secure_dir(&owned).unwrap();
+        assert_eq!(
+            fs::metadata(&owned).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pinned_history_directory_chmod_rejects_same_path_inode_replacement() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let base = std::env::temp_dir().join(format!("wcth-chmod-inode-{}", Uuid::new_v4()));
+        let owned = base.join("owned");
+        let parked = base.join("parked");
+        fs::create_dir_all(&owned).unwrap();
+        let original = fs::symlink_metadata(&owned).unwrap();
+
+        let result = HistoryStore::chmod_pinned_unix_dir(&owned, &original, || {
+            fs::rename(&owned, &parked)?;
+            fs::create_dir(&owned)?;
+            fs::set_permissions(&owned, fs::Permissions::from_mode(0o755))?;
+            Ok(())
+        });
+        assert!(
+            result.unwrap_err().to_string().contains("directory changed"),
+            "same pathname with another inode must be rejected"
+        );
+        assert_eq!(
+            fs::metadata(&owned).unwrap().permissions().mode() & 0o777,
+            0o755,
+            "replacement directory permissions must remain unchanged"
+        );
+        fs::remove_dir(&owned).unwrap();
+        fs::rename(&parked, &owned).unwrap();
+        fs::remove_dir_all(base).unwrap();
+    }
 
     // Executed only when launched as a child test process. The parent sends
     // SIGKILL at the deterministic barrier rather than trusting timing.
