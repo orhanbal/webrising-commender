@@ -2180,12 +2180,14 @@ mod tests {
         let dir = root.join("device");
         let parked = root.join("device-parked");
         let store = HistoryStore::at(dir.clone()).unwrap();
-        let error = store.reserve_live_slot_with_hook(|| {
-            fs::rename(&dir, &parked)?;
-            fs::create_dir(&dir)?;
-            fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
-            Ok(())
-        }).unwrap_err();
+        let error = store
+            .reserve_live_slot_with_hook(|| {
+                fs::rename(&dir, &parked)?;
+                fs::create_dir(&dir)?;
+                fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
+                Ok(())
+            })
+            .unwrap_err();
         assert!(error.to_string().contains("directory changed"), "{error}");
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 0);
 
