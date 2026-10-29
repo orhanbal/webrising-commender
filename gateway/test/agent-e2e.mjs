@@ -2478,6 +2478,15 @@ try {
         offset_bytes: -8192, max_bytes: 8192,
       });
       assert.match(String(deniedParent.error), /unsafe terminal history symlink ancestor/i);
+      // The same replaced device parent must not admit a new PTY or
+      // provision a stable live-slot file in the outside directory.
+      const swappedStartToken = await approval(deviceId, startAction);
+      const deniedSlotStart = await tool(22065, "terminal_start", {
+        device_id: deviceId, cwd: tempRoot, cols: 100, rows: 30,
+        approval_token: swappedStartToken,
+      });
+      assert.match(String(deniedSlotStart.error), /unsafe terminal history symlink ancestor/i);
+      assert.deepEqual(fs.readdirSync(outsideHistory), ["sentinel"]);
       assert.equal(fs.readFileSync(sentinel, "utf8"), "OUTSIDE_HISTORY_UNCHANGED");
       assert.deepEqual(fs.readdirSync(outsideHistory), ["sentinel"]);
     } finally {
@@ -2494,6 +2503,7 @@ try {
     assert.match(afterParent.text, /LIVE_HISTORY_QUOTA_OK/);
     assert.equal(fs.readFileSync(sentinel, "utf8"), "OUTSIDE_HISTORY_UNCHANGED");
     console.log("agent-e2e: symlinked history leaf/device parent denied; restored inode recovered MCP archive");
+    console.log("agent-e2e: swapped device parent denied terminal_start without outside live-slot creation");
   }
 
   // 2B/2D: hardlinking an archived snapshot outside the private
