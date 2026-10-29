@@ -20,7 +20,6 @@ const MAX_ARCHIVES: usize = 64;
 // A wedged second Agent must not block all terminal operations indefinitely.
 const LOCK_WAIT: Duration = Duration::from_secs(5);
 
-
 // Inspect the opened Windows file handle rather than pathname metadata: a
 // replaced or hardlinked .history.lock must not split the cross-process quota.
 #[cfg(windows)]
@@ -731,26 +730,25 @@ mod tests {
         let path = dir.join(".history.lock");
         let parked = dir.join("parked-lock");
         let mut swapped = false;
-        let result = store.lock_directory_with_timeout_and_hook(
-            Duration::from_secs(1),
-            || {
-                match fs::rename(&path, &parked) {
-                    Ok(()) => {}
-                    #[cfg(windows)]
-                    Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
-                        return Err(anyhow!("windows_history_lock_rename_denied: {error}"));
-                    }
-                    Err(error) => return Err(error.into()),
+        let result = store.lock_directory_with_timeout_and_hook(Duration::from_secs(1), || {
+            match fs::rename(&path, &parked) {
+                Ok(()) => {}
+                #[cfg(windows)]
+                Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                    return Err(anyhow!("windows_history_lock_rename_denied: {error}"));
                 }
-                swapped = true;
-                fs::write(&path, b"replacement-lock")?;
-                Ok(())
-            },
-        );
+                Err(error) => return Err(error.into()),
+            }
+            swapped = true;
+            fs::write(&path, b"replacement-lock")?;
+            Ok(())
+        });
         let error = result.unwrap_err();
         if swapped {
             assert!(
-                error.to_string().contains("terminal history lock was replaced"),
+                error
+                    .to_string()
+                    .contains("terminal history lock was replaced"),
                 "post-acquisition history lock swap must fail closed: {error}"
             );
             assert_eq!(fs::read(&path).unwrap(), b"replacement-lock");
@@ -758,7 +756,9 @@ mod tests {
         } else {
             #[cfg(windows)]
             assert!(
-                error.to_string().contains("windows_history_lock_rename_denied"),
+                error
+                    .to_string()
+                    .contains("windows_history_lock_rename_denied"),
                 "unexpected Windows history lock outcome: {error}"
             );
             #[cfg(not(windows))]
@@ -776,34 +776,31 @@ mod tests {
         let path = dir.join(".history.lock");
         let alias = dir.join("outside-alias");
         let mut linked = false;
-        let result = store.lock_directory_with_timeout_and_hook(
-            Duration::from_secs(1),
-            || {
-                match fs::hard_link(&path, &alias) {
-                    Ok(()) => linked = true,
-                    Err(error)
-                        if cfg!(windows)
-                            && error.kind() == std::io::ErrorKind::PermissionDenied =>
-                    {
-                        return Err(anyhow!("windows_history_lock_hardlink_denied: {error}"));
-                    }
-                    Err(error) => return Err(error.into()),
+        let result = store.lock_directory_with_timeout_and_hook(Duration::from_secs(1), || {
+            match fs::hard_link(&path, &alias) {
+                Ok(()) => linked = true,
+                Err(error)
+                    if cfg!(windows) && error.kind() == std::io::ErrorKind::PermissionDenied =>
+                {
+                    return Err(anyhow!("windows_history_lock_hardlink_denied: {error}"));
                 }
-                Ok(())
-            },
-        );
+                Err(error) => return Err(error.into()),
+            }
+            Ok(())
+        });
         let error = result.unwrap_err();
         if linked {
             assert!(
-                error.to_string().contains("hardlink")
-                    || error.to_string().contains("hardlinked"),
+                error.to_string().contains("hardlink") || error.to_string().contains("hardlinked"),
                 "post-acquisition history lock hardlink must fail closed: {error}"
             );
             assert_eq!(fs::read(&alias).unwrap(), fs::read(&path).unwrap());
             fs::remove_file(&alias).unwrap();
         } else {
             assert!(
-                error.to_string().contains("windows_history_lock_hardlink_denied"),
+                error
+                    .to_string()
+                    .contains("windows_history_lock_hardlink_denied"),
                 "unexpected history lock hardlink outcome: {error}"
             );
         }
