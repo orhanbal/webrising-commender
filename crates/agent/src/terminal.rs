@@ -190,6 +190,22 @@ impl TerminalManager {
             store.save(&id, 0, &VecDeque::new())?;
         }
 
+        // The session map must be writable BEFORE creating the OS child.
+        // A poisoned map discovered after spawn would otherwise strand a
+        // live shell with no session ID or way to stop it through MCP.
+        // Hold this guard until registration, including the spawn itself.
+        let mut sessions = match self.sessions.lock() {
+            Ok(sessions) => sessions,
+            Err(_) => {
+                if let Some(store) = &history_store {
+                    store.discard_unstarted(&id).context(
+                        "terminal session lock poisoned; startup archive cleanup failed",
+                    )?;
+                }
+                return Err(anyhow!("terminal session lock poisoned"));
+            }
+        };
+
         let child = match pair.slave.spawn_command(command) {
             Ok(child) => child,
             Err(error) => {
@@ -249,10 +265,6 @@ impl TerminalManager {
             owner_scope: scope.to_owned(),
         });
 
-        let mut sessions = self
-            .sessions
-            .lock()
-            .map_err(|_| anyhow!("terminal session lock poisoned"))?;
         sessions.insert(id.clone(), session);
         // Release the reservation while holding the same mutex used to count
         // active sessions: another starter can never observe a quota gap.
