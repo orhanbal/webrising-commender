@@ -173,13 +173,6 @@ impl TerminalManager {
         scope: &str,
     ) -> Result<Value> {
         let reservation = self.reserve_start()?;
-        // Cross-process quota: independent Agents for the same device share
-        // stable OS-locked slot files, not only this process's session map.
-        let live_slot = self
-            .store
-            .as_ref()
-            .map(|store| store.reserve_live_slot())
-            .transpose()?;
         // Allocate the archive before spawning an OS child. A disk failure
         // must never leave an untracked live shell behind.
         let id = Uuid::new_v4().to_string();
@@ -205,6 +198,15 @@ impl TerminalManager {
         // shell and leave an unused durable-history archive behind.
         let mut reader = pair.master.try_clone_reader()?;
         let writer = pair.master.take_writer()?;
+
+        // Cross-process quota is reserved only after cwd and PTY preflight.
+        // Invalid requests must not create even a stable slot file on disk.
+        // The lease remains held until the session is removed.
+        let live_slot = self
+            .store
+            .as_ref()
+            .map(|store| store.reserve_live_slot())
+            .transpose()?;
 
         // Validate shell/cwd and prepare the PTY before reserving durable disk
         // history. A rejected cwd or PTY handle must not consume an archive slot.
