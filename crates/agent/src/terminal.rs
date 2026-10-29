@@ -15,6 +15,24 @@ use uuid::Uuid;
 
 const BUFFER_CAP: usize = 1024 * 1024;
 const MAX_SESSIONS: usize = 32;
+const MAX_TERMINAL_INPUT_BYTES: usize = 256 * 1024;
+const MAX_TERMINAL_INPUT_BASE64_BYTES: usize = MAX_TERMINAL_INPUT_BYTES.div_ceil(3) * 4;
+
+// Reject oversized base64 BEFORE decoding, not after allocating an
+// unbounded output buffer. The decoded check is still required because
+// adjacent byte lengths can share the same padded base64 length.
+fn decode_terminal_input(data_base64: &str) -> Result<Vec<u8>> {
+    if data_base64.len() > MAX_TERMINAL_INPUT_BASE64_BYTES {
+        return Err(anyhow!("terminal input too large"));
+    }
+    let data = STANDARD
+        .decode(data_base64)
+        .context("invalid base64 terminal input")?;
+    if data.len() > MAX_TERMINAL_INPUT_BYTES {
+        return Err(anyhow!("terminal input too large"));
+    }
+    Ok(data)
+}
 
 // A bounded, non-consuming history independent of the destructive PTY read queue.
 // Offsets refer to the absolute byte position in the session's output stream.
@@ -329,12 +347,7 @@ impl TerminalManager {
 
     pub fn input(&self, id: &str, data_base64: &str, scope: &str) -> Result<Value> {
         let session = self.get(id, scope)?;
-        let data = STANDARD
-            .decode(data_base64)
-            .context("invalid base64 terminal input")?;
-        if data.len() > 256 * 1024 {
-            return Err(anyhow!("terminal input too large"));
-        }
+        let data = decode_terminal_input(data_base64)?;
         let mut writer = session
             .writer
             .lock()
@@ -565,6 +578,36 @@ mod tests {
         assert_eq!(manager.pending_starts.load(Ordering::SeqCst), 1);
         drop(after_failure);
         assert_eq!(manager.pending_starts.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn terminal_input_base64_preflight_and_decoded_boundary() {
+        let at_limit = STANDARD.encode(vec![b'x'; MAX_TERMINAL_INPUT_BYTES]);
+        assert_eq!(at_limit.len(), MAX_TERMINAL_INPUT_BASE64_BYTES);
+        assert_eq!(
+            decode_terminal_input(&at_limit).unwrap().len(),
+            MAX_TERMINAL_INPUT_BYTES
+        );
+
+        // 256 KiB + 1 byte has the SAME padded base64 length as 256 KiB.
+        // The decoded-size guard must remain in place.
+        let one_byte_over = STANDARD.encode(vec![b'x'; MAX_TERMINAL_INPUT_BYTES + 1]);
+        assert_eq!(one_byte_over.len(), MAX_TERMINAL_INPUT_BASE64_BYTES);
+        assert!(decode_terminal_input(&one_byte_over)
+            .unwrap_err()
+            .to_string()
+            .contains("terminal input too large"));
+
+        // This rejection happens before base64 decoding/allocation.
+        let encoded_over = "A".repeat(MAX_TERMINAL_INPUT_BASE64_BYTES + 4);
+        assert!(decode_terminal_input(&encoded_over)
+            .unwrap_err()
+            .to_string()
+            .contains("terminal input too large"));
+        assert!(decode_terminal_input("%%%")
+            .unwrap_err()
+            .to_string()
+            .contains("invalid base64 terminal input"));
     }
 
     #[test]

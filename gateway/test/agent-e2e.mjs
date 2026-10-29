@@ -2001,6 +2001,25 @@ try {
   });
   assert.ok(terminals.items.some((item) => item.sessionId === started.sessionId && item.running));
 
+  // 2D: Gateway rejects an overlong encoded payload before relaying;
+  // Rust Agent independently rejects 256 KiB + 1 decoded byte even though
+  // that input shares the same padded base64 length as exactly 256 KiB.
+  const oversizedEncodedInput = Buffer.alloc(256 * 1024 + 4, 0x41).toString("base64");
+  assert.ok(oversizedEncodedInput.length > Math.ceil((256 * 1024) / 3) * 4);
+  const gatewayInputRejection = await tool(22030, "terminal_input", {
+    device_id: deviceId, session_id: started.sessionId,
+    data_base64: oversizedEncodedInput,
+  });
+  assert.match(String(gatewayInputRejection.error), /terminal_input_too_large/);
+  const decodedOverflowInput = Buffer.alloc(256 * 1024 + 1, 0x42).toString("base64");
+  assert.equal(decodedOverflowInput.length, Math.ceil((256 * 1024) / 3) * 4);
+  const agentInputRejection = await tool(22031, "terminal_input", {
+    device_id: deviceId, session_id: started.sessionId,
+    data_base64: decodedOverflowInput,
+  });
+  assert.match(String(agentInputRejection.error), /terminal input too large/i);
+  console.log("agent-e2e: oversized PTY base64 rejected by Gateway and decoded boundary by Rust Agent");
+
   // 2B: two authenticated principals must not observe or control each other's
   // live terminal, even when both have access to the same enrolled device.
   for (const [headers, requestId] of [[headersA, 340], [headersB, 350]]) {

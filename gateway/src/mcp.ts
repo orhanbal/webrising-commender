@@ -9,6 +9,10 @@ import { startSearch, searchPage, listSearches, stopSearch, controlSearch } from
 
 type JsonRpcRequest = { jsonrpc?: string; id?: string | number | null; method?: string; params?: any };
 
+// Agent's decoded terminal input cap is 256 KiB. Advertise and enforce
+// the corresponding padded base64 bound before relaying to a device.
+const MAX_TERMINAL_INPUT_BASE64_BYTES = Math.ceil((256 * 1024) / 3) * 4;
+
 const tools = [
   {
     name: "devices_list",
@@ -158,7 +162,7 @@ const tools = [
     { shell: str(), cwd: str(), cols: integer(), rows: integer(), approval_token: str() },
     [],
   ),
-  tool("terminal_input", "Write bytes to an existing PTY session.", { session_id: str(), data_base64: str() }, ["session_id", "data_base64"]),
+  tool("terminal_input", "Write at most 256 KiB of decoded bytes to an existing PTY session.", { session_id: str(), data_base64: { type: "string", maxLength: MAX_TERMINAL_INPUT_BASE64_BYTES } }, ["session_id", "data_base64"]),
   tool("terminal_read", "Read buffered PTY output.", { session_id: str(), max_bytes: integer() }, ["session_id"]),
   tool(
     "terminal_read_page",
@@ -414,6 +418,13 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
   const requiredRole = risk === "low" ? "viewer" : "operator";
   if (!roleAtLeast(principal, requiredRole)) {
     return ok(request.id, toolResult({ error: "forbidden", required_role: requiredRole }, true));
+  }
+
+  if (name === "terminal_input" &&
+      (typeof args.data_base64 !== "string" ||
+       args.data_base64.length > MAX_TERMINAL_INPUT_BASE64_BYTES)) {
+    await audit(orgId, principal.actor, deviceId, name, risk, "denied", "terminal_input_too_large");
+    return ok(request.id, toolResult({ error: "terminal_input_too_large" }, true));
   }
 
   let approvalToken = typeof args.approval_token === "string" ? args.approval_token : undefined;
