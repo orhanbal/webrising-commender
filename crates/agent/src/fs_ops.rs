@@ -2911,6 +2911,22 @@ mod undo_scan_handle_tests {
     use super::*;
 
     #[test]
+    fn undo_read_digest_rechecks_same_pinned_handle_from_byte_zero() {
+        let root = std::env::temp_dir().join(format!("wc-undo-digest-rewind-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let snapshot = root.join("snapshot.undo");
+        fs::write(&snapshot, b"snapshot-data").unwrap();
+        let pinned = open_regular_read(&snapshot).unwrap();
+        let expected = format!("{:x}", Sha256::digest(b"snapshot-data"));
+        assert_eq!(undo_quarantine_digest(&pinned).unwrap(), expected);
+        assert_eq!(undo_quarantine_digest(&pinned).unwrap(), expected);
+        fs::write(&snapshot, b"changed-by-writer").unwrap();
+        assert_ne!(undo_quarantine_digest(&pinned).unwrap(), expected);
+        drop(pinned);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn undo_read_rejects_same_content_leaf_replacement() {
         let root = std::env::temp_dir().join(format!("wc-undo-read-swap-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
