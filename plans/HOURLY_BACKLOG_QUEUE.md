@@ -1,3 +1,9 @@
+## 29 Ekim 2026 03:15 TRT — D/CI macOS fixture path regression repair
+
+- **A / FAILED → FIXED:** [CI #40792469709](https://github.com/orhanbal/webrising-commender/actions/runs/40792469709) macOS native `undo_read_digest_rechecks_same_pinned_handle_from_byte_zero` FAILED: macOS `temp_dir()` returned a `/var` symlink path while secure pinned Unix traversal requires a canonical ancestor. This is a **test fixture path issue**, not evidence of a production bypass. Canonicalize the temporary root before opening the snapshot, as in existing native tests.
+- **B/C / unchanged:** Windows final-disposition handle revalidation and repeated SHA digest rewind remain the production and test changes; no new tool schema or runtime dependency. The real authenticated MCP E2E is a regression gate, **not** a new Windows junction MCP acceptance.
+- **D / PENDING:** The fix and five plans are committed together; verify the **new main HEAD** 17/17 CI, 165+ Rust tests, 10 Windows undo tests, native macOS test, real Agent E2E, four same-SHA artifacts, and distribution before PASS. 3A/3B and overall parity **PENDING**; external physical/ChatGPT/Claude/signing/notarization gates **BLOCKED_EXTERNAL**.
+
 ## 29 Ekim 2026 03:00 TRT — 3B Windows undo son doğrulama ve digest regresyonu (A/B/C/D)
 
 - **A / PASSED giriş, FAILED → FIXED ara CI:** Giriş `main` HEAD `53612c9f1c60f2827b489a26ca48862d49594c40`; [CI #40786020521](https://github.com/orhanbal/webrising-commender/actions/runs/40786020521) 17/17 ve [distribution #40786679834](https://github.com/orhanbal/webrising-commender/actions/runs/40786679834) success. İlk kod [CI #40791805349](https://github.com/orhanbal/webrising-commender/actions/runs/40791805349) Windows `undo_publication_tests` 2/7 FAILED: tekrarlanan SHA kontrolü aynı pinned handle'ın tüketilmiş okuma konumundan başlıyordu. Bu hata `345f1b12` ile düzeltildi. İlk CI sonradan cancelled; ilk Windows job başarısızlığı logla doğrulandı.

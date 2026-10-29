@@ -2914,6 +2914,9 @@ mod undo_scan_handle_tests {
     fn undo_read_digest_rechecks_same_pinned_handle_from_byte_zero() {
         let root = std::env::temp_dir().join(format!("wc-undo-digest-rewind-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
+        // macOS temp_dir may be /var -> /private/var; pinned Unix traversal
+        // requires the canonical ancestor chain.
+        let root = fs::canonicalize(root).unwrap();
         let snapshot = root.join("snapshot.undo");
         fs::write(&snapshot, b"snapshot-data").unwrap();
         let pinned = open_regular_read(&snapshot).unwrap();
