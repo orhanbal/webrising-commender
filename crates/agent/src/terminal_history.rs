@@ -384,6 +384,16 @@ impl HistoryStore {
     }
 
     pub fn load(&self, id: &str) -> Result<(u64, VecDeque<u8>)> {
+        self.load_with_hook(id, || Ok(()))
+    }
+
+    // Production uses a no-op hook; native tests replace the snapshot leaf
+    // between pathname validation and opening the pinned descriptor.
+    fn load_with_hook(
+        &self,
+        id: &str,
+        before_open: impl FnOnce() -> Result<()>,
+    ) -> Result<(u64, VecDeque<u8>)> {
         Self::valid_id(id)?;
         let _lock = self
             .mutex
@@ -403,6 +413,9 @@ impl HistoryStore {
         {
             return Err(anyhow!("unsafe terminal history snapshot"));
         }
+        // A hostile FIFO substituted after lstat must not block the Agent
+        // before fstat can reject its non-regular file type.
+        before_open()?;
         // Pin the opened inode and reject a last-moment symlink swap on
         // Unix. Inspect the descriptor, not the earlier pathname metadata.
         let mut options = OpenOptions::new();
@@ -410,7 +423,7 @@ impl HistoryStore {
         #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
-            options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+            options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK);
         }
         let snapshot = options.open(&path)?;
         let opened_meta = snapshot.metadata()?;
@@ -418,6 +431,18 @@ impl HistoryStore {
             || opened_meta.len() > (CAP + HEADER_BYTES + CHECKSUM_BYTES) as u64
         {
             return Err(anyhow!("unsafe terminal history snapshot"));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            // Reject a same-content inode swap or late hardlink to an
+            // external path, even when the archive header is still valid.
+            if opened_meta.dev() != meta.dev()
+                || opened_meta.ino() != meta.ino()
+                || opened_meta.nlink() != 1
+            {
+                return Err(anyhow!("terminal history snapshot changed or hardlinked"));
+            }
         }
         if SystemTime::now()
             .duration_since(opened_meta.modified()?)
@@ -721,6 +746,82 @@ mod tests {
         assert_eq!(duplicate.len(), newer.len());
         assert!(store.save(&id, newer.len() as u64, &duplicate).is_err());
         assert_eq!(store.load(&id).unwrap().1, newer);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn snapshot_open_rejects_fifo_substitution_without_blocking() {
+        use std::os::unix::fs::FileTypeExt;
+        use std::process::Command;
+        let dir = std::env::temp_dir().join(format!("wcth-snapshot-fifo-{}", Uuid::new_v4()));
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let id = Uuid::new_v4().to_string();
+        let data = VecDeque::from(b"safe".to_vec());
+        store.save(&id, 4, &data).unwrap();
+        let snapshot = store.versions(&id).unwrap().pop().unwrap().1;
+        let parked = dir.join("parked-snapshot");
+        let start = std::time::Instant::now();
+        let result = store.load_with_hook(&id, || {
+            fs::rename(&snapshot, &parked)?;
+            let status = Command::new("mkfifo").arg(&snapshot).status()?;
+            if !status.success() {
+                return Err(anyhow!("mkfifo fixture failed"));
+            }
+            Ok(())
+        });
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("unsafe terminal history snapshot"), "{error}");
+        assert!(start.elapsed() < Duration::from_secs(2), "FIFO open blocked");
+        assert!(fs::symlink_metadata(&snapshot).unwrap().file_type().is_fifo());
+        fs::remove_file(&snapshot).unwrap();
+        fs::rename(&parked, &snapshot).unwrap();
+        assert_eq!(store.load(&id).unwrap(), (4, data));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn snapshot_open_rejects_same_content_inode_swap() {
+        let dir = std::env::temp_dir().join(format!("wcth-snapshot-aba-{}", Uuid::new_v4()));
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let id = Uuid::new_v4().to_string();
+        let data = VecDeque::from(b"safe".to_vec());
+        store.save(&id, 4, &data).unwrap();
+        let snapshot = store.versions(&id).unwrap().pop().unwrap().1;
+        let parked = dir.join("parked-snapshot");
+        let result = store.load_with_hook(&id, || {
+            fs::rename(&snapshot, &parked)?;
+            fs::copy(&parked, &snapshot)?;
+            Ok(())
+        });
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("snapshot changed or hardlinked"), "{error}");
+        assert_eq!(fs::read(&snapshot).unwrap(), fs::read(&parked).unwrap());
+        fs::remove_file(&parked).unwrap();
+        assert_eq!(store.load(&id).unwrap(), (4, data));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn snapshot_open_rejects_late_hardlink() {
+        let dir = std::env::temp_dir().join(format!("wcth-snapshot-link-{}", Uuid::new_v4()));
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let id = Uuid::new_v4().to_string();
+        let data = VecDeque::from(b"safe".to_vec());
+        store.save(&id, 4, &data).unwrap();
+        let snapshot = store.versions(&id).unwrap().pop().unwrap().1;
+        let alias = dir.join("outside-snapshot-alias");
+        let result = store.load_with_hook(&id, || {
+            fs::hard_link(&snapshot, &alias)?;
+            Ok(())
+        });
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("snapshot changed or hardlinked"), "{error}");
+        assert_eq!(fs::read(&snapshot).unwrap(), fs::read(&alias).unwrap());
+        fs::remove_file(&alias).unwrap();
+        assert_eq!(store.load(&id).unwrap(), (4, data));
         fs::remove_dir_all(dir).unwrap();
     }
 

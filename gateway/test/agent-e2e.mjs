@@ -2196,6 +2196,37 @@ try {
   assert.equal(quotaStopped.ok, true, JSON.stringify(quotaStopped));
   console.log("agent-e2e: live MCP PTY save enforced 64-archive quota without restart");
 
+  // 2B/2D: hardlinking an archived snapshot outside the private
+  // namespace must fail closed through the authenticated MCP path.
+  // Removing the alias must recover the original durable output.
+  if (process.platform === "linux") {
+    const snapshotName = fs.readdirSync(historyDirectory).find((name) =>
+      name.startsWith(`${quotaSession.sessionId}-`) && name.endsWith(".hist"));
+    assert.equal(typeof snapshotName, "string");
+    const snapshotPath = path.join(historyDirectory, snapshotName);
+    const snapshotAlias = path.join(historyDirectory, "outside-snapshot-alias");
+    const beforeSnapshot = fs.readFileSync(snapshotPath);
+    fs.linkSync(snapshotPath, snapshotAlias);
+    try {
+      const deniedSnapshot = await tool(363, "terminal_read_page", {
+        device_id: deviceId, session_id: quotaSession.sessionId,
+        offset_bytes: -8192, max_bytes: 8192,
+      });
+      assert.match(String(deniedSnapshot.error), /terminal history snapshot changed or hardlinked/i);
+      assert.deepEqual(fs.readFileSync(snapshotPath), beforeSnapshot);
+      assert.deepEqual(fs.readFileSync(snapshotAlias), beforeSnapshot);
+    } finally {
+      fs.unlinkSync(snapshotAlias);
+    }
+    const recoveredSnapshot = await tool(364, "terminal_read_page", {
+      device_id: deviceId, session_id: quotaSession.sessionId,
+      offset_bytes: -8192, max_bytes: 8192,
+    });
+    assert.equal(recoveredSnapshot.archived, true, JSON.stringify(recoveredSnapshot));
+    assert.match(recoveredSnapshot.text, /LIVE_HISTORY_QUOTA_OK/);
+    console.log("agent-e2e: hardlinked history snapshot rejected; alias removal recovered archived MCP read");
+  }
+
   // 2B/2D: an independent process can hardlink the persistent lock inode.
   // A real authenticated MCP archived read must fail closed instead of
   // treating an externally aliased lock as a private quota mutex.
