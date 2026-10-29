@@ -65,6 +65,10 @@ fn windows_history_lock_info(file: &File) -> Result<WindowsHistoryLockInfo> {
 pub struct HistoryStore {
     dir: PathBuf,
     mutex: Mutex<()>,
+    // Stable device/scope directory identity captured at initialization.
+    // A regular-directory rename/swap must not reset a live terminal quota.
+    #[cfg(unix)]
+    dir_identity: (u64, u64),
 }
 
 impl HistoryStore {
@@ -105,9 +109,17 @@ impl HistoryStore {
         fs::create_dir_all(&dir)?;
         // Never chmod arbitrary parents (e.g. /tmp in isolated tests).
         Self::secure_dir(&dir)?;
+        #[cfg(unix)]
+        let dir_identity = {
+            use std::os::unix::fs::MetadataExt;
+            let meta = fs::symlink_metadata(&dir)?;
+            (meta.dev(), meta.ino())
+        };
         let store = Self {
             dir,
             mutex: Mutex::new(()),
+            #[cfg(unix)]
+            dir_identity,
         };
         store.prune()?;
         Ok(store)
@@ -214,6 +226,46 @@ impl HistoryStore {
         Self::unix_private_lock_mode_ok(meta) && meta.nlink() == 1
     }
 
+    // Keep the device's live-slot quota bound to the same directory inode
+    // throughout this Agent's lifetime. A replacement regular directory is
+    // not a symlink, so path-only checks cannot detect a quota reset.
+    #[cfg(unix)]
+    fn verify_live_slot_directory_identity(&self) -> Result<()> {
+        use std::os::unix::fs::MetadataExt;
+        Self::reject_unix_linked_history_path(&self.dir)?;
+        let named = fs::symlink_metadata(&self.dir)
+            .map_err(|_| anyhow!("terminal live slot directory changed"))?;
+        if !named.is_dir() || (named.dev(), named.ino()) != self.dir_identity {
+            return Err(anyhow!("terminal live slot directory changed"));
+        }
+        Ok(())
+    }
+
+    // A directory rename between acquiring .history.lock and opening a slot
+    // could otherwise admit a new quota pool. Check that the named mutex is
+    // still the inode whose OS lock we hold. This is fail-closed detection,
+    // not a substitute for kernel-atomic dirfd-relative traversal.
+    #[cfg(unix)]
+    fn verify_live_slot_directory_lock(&self, held_lock: &File) -> Result<()> {
+        use std::os::unix::fs::MetadataExt;
+        self.verify_live_slot_directory_identity()?;
+        let named = fs::symlink_metadata(self.dir.join(".history.lock"))
+            .map_err(|_| anyhow!("terminal live slot history lock changed"))?;
+        let held = held_lock.metadata()?;
+        if !named.is_file()
+            || named.file_type().is_symlink()
+            || named.dev() != held.dev()
+            || named.ino() != held.ino()
+            || named.nlink() != 1
+            || held.nlink() != 1
+            || !Self::unix_private_lock_mode_ok(&named)
+            || !Self::unix_private_lock_mode_ok(&held)
+        {
+            return Err(anyhow!("terminal live slot history lock changed"));
+        }
+        Ok(())
+    }
+
     // Reserve a device-wide live terminal slot before spawning the child.
     // Stable slot filenames are NEVER unlinked: otherwise separate processes
     // could lock different inodes and each admit 32 active terminals.
@@ -238,14 +290,20 @@ impl HistoryStore {
         after_directory_lock: impl FnOnce() -> Result<()>,
         mut after_slot_open: impl FnMut(usize, &std::path::Path) -> Result<()>,
     ) -> Result<File> {
-        let _directory_lock = self.lock_directory()?;
+        #[cfg(unix)]
+        self.verify_live_slot_directory_identity()?;
+        let directory_lock = self.lock_directory()?;
+        #[cfg(unix)]
+        self.verify_live_slot_directory_lock(&directory_lock)?;
         after_directory_lock()?;
+        #[cfg(unix)]
+        self.verify_live_slot_directory_lock(&directory_lock)?;
         for index in 0..MAX_LIVE_TERMINAL_SLOTS {
             // The path can change after lock_directory() returns. Do not
             // create a slot through a substituted scope or device parent.
             // This is detection, not kernel-atomic dirfd traversal.
             #[cfg(unix)]
-            Self::reject_unix_linked_history_path(&self.dir)?;
+            self.verify_live_slot_directory_lock(&directory_lock)?;
             #[cfg(windows)]
             Self::reject_windows_reparse_ancestors(&self.dir)?;
             let path = self.dir.join(format!(".terminal-slot-{index:02}.lock"));
@@ -264,7 +322,7 @@ impl HistoryStore {
             }
             let slot = options.open(&path)?;
             #[cfg(unix)]
-            Self::reject_unix_linked_history_path(&self.dir)?;
+            self.verify_live_slot_directory_lock(&directory_lock)?;
             #[cfg(windows)]
             Self::reject_windows_reparse_ancestors(&path)?;
             let opened = slot.metadata()?;
@@ -278,6 +336,8 @@ impl HistoryStore {
                 ));
             }
             after_slot_open(index, &path)?;
+            #[cfg(unix)]
+            self.verify_live_slot_directory_lock(&directory_lock)?;
             match slot.try_lock() {
                 Ok(()) => {}
                 Err(std::fs::TryLockError::WouldBlock) => {
@@ -322,6 +382,8 @@ impl HistoryStore {
                             return Err(anyhow!("busy terminal live slot replaced or hardlinked"));
                         }
                     }
+                    #[cfg(unix)]
+                    self.verify_live_slot_directory_lock(&directory_lock)?;
                     continue;
                 }
                 Err(error) => return Err(anyhow!("terminal live slot lock failed: {error}")),
@@ -363,6 +425,8 @@ impl HistoryStore {
                     return Err(anyhow!("terminal live slot replaced or hardlinked"));
                 }
             }
+            #[cfg(unix)]
+            self.verify_live_slot_directory_lock(&directory_lock)?;
             return Ok(slot);
         }
         Err(anyhow!(
@@ -2076,6 +2140,59 @@ mod tests {
         fs::rename(&parked, &scope).unwrap();
         let lease = store.reserve_live_slot().unwrap();
         drop(lease);
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn live_slot_rejects_regular_directory_swap_and_recovers() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!("wcth-regular-dir-swap-{}", Uuid::new_v4()));
+        let dir = root.join("device");
+        let parked = root.join("device-parked");
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        fs::rename(&dir, &parked).unwrap();
+        fs::create_dir(&dir).unwrap();
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+
+        // Unlike a symlink, the substituted directory looks entirely normal.
+        // It must not mint a fresh .history.lock or new terminal lease pool.
+        let error = store.reserve_live_slot().unwrap_err();
+        assert!(error.to_string().contains("directory changed"), "{error}");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 0);
+
+        fs::remove_dir(&dir).unwrap();
+        fs::rename(&parked, &dir).unwrap();
+        let recovered = store.reserve_live_slot().unwrap();
+        drop(recovered);
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn live_slot_rejects_regular_directory_swap_after_lock() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!("wcth-postlock-dir-swap-{}", Uuid::new_v4()));
+        let dir = root.join("device");
+        let parked = root.join("device-parked");
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let error = store.reserve_live_slot_with_hook(|| {
+            fs::rename(&dir, &parked)?;
+            fs::create_dir(&dir)?;
+            fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
+            Ok(())
+        }).unwrap_err();
+        assert!(error.to_string().contains("directory changed"), "{error}");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 0);
+
+        fs::remove_dir(&dir).unwrap();
+        fs::rename(&parked, &dir).unwrap();
+        let recovered = store.reserve_live_slot().unwrap();
+        drop(recovered);
         drop(store);
         fs::remove_dir_all(root).unwrap();
     }
