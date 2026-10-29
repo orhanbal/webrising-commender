@@ -1934,6 +1934,26 @@ try {
     "failed PTY spawn must not publish a live terminal session");
   console.log("agent-e2e: failed PTY spawn reclaimed empty history and no session leaked");
 
+  // 2D: repeated failed starts must release their pending-start reservations
+  // and must not accumulate empty history snapshots. The subsequent real
+  // successful start below also checks recovery after these failures.
+  for (let retry = 0; retry < 3; retry++) {
+    const token = await approval(deviceId, failedSpawnAction);
+    const failed = await tool(22001 + retry, "terminal_start", {
+      device_id: deviceId, shell: nonexistentShell,
+      cwd: tempRoot, cols: 100, rows: 30, approval_token: token,
+    });
+    assert.equal(typeof failed.error, "string", JSON.stringify(failed));
+    assert.deepEqual(archivedNames(), beforeFailedSpawnArchives,
+      "repeated failed PTY starts must not leak durable snapshots");
+  }
+  const afterRepeatedFailures = await tool(22004, "terminal_list", {
+    device_id: deviceId,
+  });
+  assert.deepEqual(afterRepeatedFailures.items, beforeFailedSpawnSessions.items,
+    "repeated failed PTY starts must not leak live sessions");
+  console.log("agent-e2e: repeated failed PTY starts left no phantom archives or sessions");
+
   const startAction = {
     kind: "terminal_start",
     cwd: tempRoot,
