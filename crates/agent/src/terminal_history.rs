@@ -437,6 +437,96 @@ impl HistoryStore {
         Ok(())
     }
 
+    // Called only when a PTY child failed to spawn. Never remove a real
+    // session's output or a replaced/hardlinked archive under this name.
+    // The cross-process lock serializes this with save/prune by other Agents.
+    pub fn discard_unstarted(&self, id: &str) -> Result<()> {
+        Self::valid_id(id)?;
+        let _lock = self
+            .mutex
+            .lock()
+            .map_err(|_| anyhow!("terminal history lock poisoned"))?;
+        let _file_lock = self.lock_directory()?;
+        let versions = self.versions(id)?;
+        if versions.is_empty() {
+            // A concurrent quota prune may already have removed it.
+            return Ok(());
+        }
+        if versions.len() != 1 || versions[0].0 != 0 {
+            return Err(anyhow!("refusing to discard nonempty terminal history"));
+        }
+        let path = &versions[0].1;
+        #[cfg(windows)]
+        Self::reject_windows_reparse_ancestors(path)?;
+        let meta = fs::symlink_metadata(path)?;
+        if !meta.is_file()
+            || meta.file_type().is_symlink()
+            || meta.len() != (HEADER_BYTES + CHECKSUM_BYTES) as u64
+        {
+            return Err(anyhow!("unsafe terminal startup history snapshot"));
+        }
+        let mut options = OpenOptions::new();
+        options.read(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK);
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.custom_flags(0x0020_0000); // FILE_FLAG_OPEN_REPARSE_POINT
+        }
+        let mut opened = options.open(path)?;
+        let actual = opened.metadata()?;
+        if !actual.is_file() || actual.len() != meta.len() {
+            return Err(anyhow!("terminal startup history changed"));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if actual.dev() != meta.dev() || actual.ino() != meta.ino() || actual.nlink() != 1 {
+                return Err(anyhow!("terminal startup history changed or hardlinked"));
+            }
+        }
+        #[cfg(windows)]
+        {
+            let info = windows_history_lock_info(&opened)?;
+            if info.attributes & 0x400 != 0 || info.link_count != 1 {
+                return Err(anyhow!("terminal startup history changed or hardlinked"));
+            }
+            let mut named_options = OpenOptions::new();
+            use std::os::windows::fs::OpenOptionsExt;
+            named_options.read(true).custom_flags(0x0020_0000);
+            let named = named_options.open(path)?;
+            let current = windows_history_lock_info(&named)?;
+            if current.attributes & 0x400 != 0
+                || current.link_count != 1
+                || info.volume_serial != current.volume_serial
+                || info.index_high != current.index_high
+                || info.index_low != current.index_low
+            {
+                return Err(anyhow!("terminal startup history changed"));
+            }
+        }
+        let mut raw = Vec::new();
+        opened.read_to_end(&mut raw)?;
+        let mut expected = Vec::with_capacity(HEADER_BYTES + CHECKSUM_BYTES);
+        expected.extend_from_slice(MAGIC_V2);
+        expected.extend_from_slice(&0_u64.to_le_bytes());
+        expected.extend_from_slice(&0_u32.to_le_bytes());
+        let checksum = Sha256::digest(&expected[8..]);
+        expected.extend_from_slice(&checksum);
+        if raw != expected {
+            return Err(anyhow!("refusing to discard modified terminal startup history"));
+        }
+        drop(opened);
+        fs::remove_file(path)?;
+        #[cfg(unix)]
+        File::open(&self.dir)?.sync_all()?;
+        Ok(())
+    }
+
     pub fn load(&self, id: &str) -> Result<(u64, VecDeque<u8>)> {
         self.load_with_hook(id, || Ok(()))
     }
