@@ -2707,6 +2707,41 @@ try {
         fs.chmodSync(historyLockPath, originalBusyMode);
       }
       console.log("agent-e2e: busy history mutex chmod race rejected before timeout");
+
+      // 2B/2D: a second process holds the history mutex while an attacker
+      // substitutes the scoped directory with a symlink. A queued MCP read
+      // must fail promptly and must not read or modify the outside target.
+      const parkedBusyHistory = historyDirectory + ".busy-parked";
+      const outsideBusyHistory = path.join(tempRoot, "outside-busy-history");
+      fs.mkdirSync(outsideBusyHistory);
+      fs.writeFileSync(path.join(outsideBusyHistory, "sentinel"), "OUTSIDE_UNCHANGED");
+      const beganSwap = Date.now();
+      const pendingSwapRead = tool(22062, "terminal_read_page", {
+        device_id: deviceId, session_id: quotaSession.sessionId,
+        offset_bytes: -8192, max_bytes: 8192,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      fs.renameSync(historyDirectory, parkedBusyHistory);
+      try {
+        fs.symlinkSync(outsideBusyHistory, historyDirectory, "dir");
+        const swappedRead = await Promise.race([
+          pendingSwapRead,
+          new Promise((_, reject) => setTimeout(() =>
+            reject(new Error("swapped busy history directory stalled MCP read")), 2500)),
+        ]);
+        assert.match(String(swappedRead.error), /unsafe terminal history symlink ancestor/i);
+        assert.ok(Date.now() - beganSwap < 3000,
+          "busy history directory swap must fail before OS lock timeout");
+        assert.deepEqual(fs.readdirSync(outsideBusyHistory), ["sentinel"]);
+        assert.equal(fs.readFileSync(path.join(outsideBusyHistory, "sentinel"), "utf8"),
+          "OUTSIDE_UNCHANGED");
+      } finally {
+        if (fs.lstatSync(historyDirectory, { throwIfNoEntry: false })?.isSymbolicLink()) {
+          fs.unlinkSync(historyDirectory);
+        }
+        fs.renameSync(parkedBusyHistory, historyDirectory);
+      }
+      console.log("agent-e2e: busy history directory symlink swap denied before timeout");
       const beganWaiting = Date.now();
       const blockedArchive = await tool(355, "terminal_read_page", {
         device_id: deviceId, session_id: quotaSession.sessionId,

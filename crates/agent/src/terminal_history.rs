@@ -368,6 +368,12 @@ impl HistoryStore {
             match lock.try_lock() {
                 Ok(()) => break,
                 Err(std::fs::TryLockError::WouldBlock) => {
+                    // The scoped directory or device parent can be swapped for
+                    // a symlink while another Agent holds this OS lock. Check
+                    // on every retry rather than waiting for the full timeout.
+                    // This is fail-closed detection, not atomic dirfd traversal.
+                    #[cfg(unix)]
+                    Self::reject_unix_linked_history_path(&self.dir)?;
                     // A lock that was private at open time can be hardlinked,
                     // chmodded or renamed while another Agent holds it. Do
                     // not wait five seconds on a now-unsafe inode; reject the
@@ -1542,6 +1548,49 @@ mod tests {
         drop(first.lock_directory().unwrap());
         drop(first);
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn busy_history_lock_rejects_midwait_directory_symlink_swap() {
+        use std::os::unix::fs::symlink;
+        use std::sync::mpsc;
+
+        let root = std::env::temp_dir().join(format!("wcth-busy-dir-{}", Uuid::new_v4()));
+        let dir = root.join("history");
+        let parked = root.join("history-parked");
+        let outside = root.join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("sentinel"), b"unchanged").unwrap();
+        let first = HistoryStore::at(dir.clone()).unwrap();
+        let second = HistoryStore::at(dir.clone()).unwrap();
+        let held = first.lock_directory().unwrap();
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            ready_tx.send(()).unwrap();
+            done_tx
+                .send(second.lock_directory_with_timeout(Duration::from_secs(3)).map(|_| ()))
+                .unwrap();
+        });
+        ready_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(done_rx.recv_timeout(Duration::from_millis(120)).is_err());
+        fs::rename(&dir, &parked).unwrap();
+        symlink(&outside, &dir).unwrap();
+        let error = done_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("directory swap must fail before lock timeout")
+            .unwrap_err();
+        assert!(error.to_string().contains("symlink ancestor"), "{error}");
+        assert_eq!(fs::read(outside.join("sentinel")).unwrap(), b"unchanged");
+        assert_eq!(fs::read_dir(&outside).unwrap().count(), 1);
+        fs::remove_file(&dir).unwrap();
+        fs::rename(&parked, &dir).unwrap();
+        drop(held);
+        worker.join().unwrap();
+        drop(first.lock_directory().unwrap());
+        drop(first);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[cfg(unix)]
