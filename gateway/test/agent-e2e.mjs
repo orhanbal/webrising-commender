@@ -2196,6 +2196,68 @@ try {
   assert.equal(quotaStopped.ok, true, JSON.stringify(quotaStopped));
   console.log("agent-e2e: live MCP PTY save enforced 64-archive quota without restart");
 
+  // 2B/2D: authenticate through the real MCP transport while an external
+  // process replaces either the scoped history directory or its device
+  // ancestor with a symlink. Reject before reading or creating archives,
+  // preserve the external sentinel, and recover after restoring the inode.
+  // This tests the known leaf/immediate-parent guard, not full dirfd traversal.
+  if (process.platform === "linux") {
+    const outsideHistory = path.join(tempRoot, "outside-history-directory");
+    fs.mkdirSync(outsideHistory);
+    const sentinel = path.join(outsideHistory, "sentinel");
+    fs.writeFileSync(sentinel, "OUTSIDE_HISTORY_UNCHANGED");
+
+    const parkedHistory = path.join(historyDeviceDirectory, ".scoped-history-parked");
+    fs.renameSync(historyDirectory, parkedHistory);
+    try {
+      fs.symlinkSync(outsideHistory, historyDirectory, "dir");
+      const deniedLeaf = await tool(365, "terminal_read_page", {
+        device_id: deviceId, session_id: quotaSession.sessionId,
+        offset_bytes: -8192, max_bytes: 8192,
+      });
+      assert.match(String(deniedLeaf.error), /unsafe terminal history symlink ancestor/i);
+      assert.equal(fs.readFileSync(sentinel, "utf8"), "OUTSIDE_HISTORY_UNCHANGED");
+      assert.deepEqual(fs.readdirSync(outsideHistory), ["sentinel"]);
+    } finally {
+      if (fs.lstatSync(historyDirectory, { throwIfNoEntry: false })?.isSymbolicLink()) {
+        fs.unlinkSync(historyDirectory);
+      }
+      fs.renameSync(parkedHistory, historyDirectory);
+    }
+    const afterLeaf = await tool(366, "terminal_read_page", {
+      device_id: deviceId, session_id: quotaSession.sessionId,
+      offset_bytes: -8192, max_bytes: 8192,
+    });
+    assert.equal(afterLeaf.archived, true, JSON.stringify(afterLeaf));
+    assert.match(afterLeaf.text, /LIVE_HISTORY_QUOTA_OK/);
+
+    const parkedDevice = historyDeviceDirectory + ".parked";
+    fs.renameSync(historyDeviceDirectory, parkedDevice);
+    try {
+      fs.symlinkSync(outsideHistory, historyDeviceDirectory, "dir");
+      const deniedParent = await tool(367, "terminal_read_page", {
+        device_id: deviceId, session_id: quotaSession.sessionId,
+        offset_bytes: -8192, max_bytes: 8192,
+      });
+      assert.match(String(deniedParent.error), /unsafe terminal history symlink ancestor/i);
+      assert.equal(fs.readFileSync(sentinel, "utf8"), "OUTSIDE_HISTORY_UNCHANGED");
+      assert.deepEqual(fs.readdirSync(outsideHistory), ["sentinel"]);
+    } finally {
+      if (fs.lstatSync(historyDeviceDirectory, { throwIfNoEntry: false })?.isSymbolicLink()) {
+        fs.unlinkSync(historyDeviceDirectory);
+      }
+      fs.renameSync(parkedDevice, historyDeviceDirectory);
+    }
+    const afterParent = await tool(368, "terminal_read_page", {
+      device_id: deviceId, session_id: quotaSession.sessionId,
+      offset_bytes: -8192, max_bytes: 8192,
+    });
+    assert.equal(afterParent.archived, true, JSON.stringify(afterParent));
+    assert.match(afterParent.text, /LIVE_HISTORY_QUOTA_OK/);
+    assert.equal(fs.readFileSync(sentinel, "utf8"), "OUTSIDE_HISTORY_UNCHANGED");
+    console.log("agent-e2e: symlinked history leaf/device parent denied; restored inode recovered MCP archive");
+  }
+
   // 2B/2D: hardlinking an archived snapshot outside the private
   // namespace must fail closed through the authenticated MCP path.
   // Removing the alias must recover the original durable output.
