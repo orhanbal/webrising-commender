@@ -2268,9 +2268,7 @@ try {
       assert.equal(fs.readFileSync(outsideLock, "utf8"), "FOREIGN_LOCK_MUST_REMAIN_UNCHANGED");
       assert.equal(fs.lstatSync(historyLock).isSymbolicLink(), true);
     } finally {
-      if (fs.existsSync(historyLock) || fs.existsSync(outsideLock)) {
-        if (fs.lstatSync(historyLock, { throwIfNoEntry: false })) fs.unlinkSync(historyLock);
-      }
+      if (fs.lstatSync(historyLock, { throwIfNoEntry: false })) fs.unlinkSync(historyLock);
       fs.renameSync(parkedSymlinkLock, historyLock);
       fs.rmSync(outsideLock, { force: true });
     }
