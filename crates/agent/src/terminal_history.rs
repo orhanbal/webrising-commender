@@ -714,7 +714,10 @@ mod tests {
             Ok(())
         });
         assert!(
-            result.unwrap_err().to_string().contains("directory changed"),
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("directory changed"),
             "same pathname with another inode must be rejected"
         );
         assert_eq!(
