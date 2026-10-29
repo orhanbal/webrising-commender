@@ -2680,6 +2680,33 @@ try {
         fs.unlinkSync(busyAlias);
       }
       console.log("agent-e2e: hardlinked busy history mutex rejected before lock wait");
+
+      // 2B/2D: an independently held OS mutex must also reject a permission
+      // mutation DURING the wait. This goes through the authenticated MCP
+      // Gateway and real Rust Agent, rather than a mock history store.
+      const beganMutation = Date.now();
+      const pendingUnsafeRead = tool(22061, "terminal_read_page", {
+        device_id: deviceId, session_id: quotaSession.sessionId,
+        offset_bytes: -8192, max_bytes: 8192,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      const originalBusyMode = fs.statSync(historyLockPath).mode & 0o777;
+      fs.chmodSync(historyLockPath, 0o666);
+      try {
+        const mutatedBusyLock = await Promise.race([
+          pendingUnsafeRead,
+          new Promise((_, reject) => setTimeout(
+            () => reject(new Error("mutated busy history lock stalled MCP read")), 2500,
+          )),
+        ]);
+        assert.match(String(mutatedBusyLock.error),
+          /unsafe while busy|terminal history lock permissions or ownership/i);
+        assert.ok(Date.now() - beganMutation < 3000,
+          "mutated busy history lock must reject before five-second timeout");
+      } finally {
+        fs.chmodSync(historyLockPath, originalBusyMode);
+      }
+      console.log("agent-e2e: busy history mutex chmod race rejected before timeout");
       const beganWaiting = Date.now();
       const blockedArchive = await tool(355, "terminal_read_page", {
         device_id: deviceId, session_id: quotaSession.sessionId,
