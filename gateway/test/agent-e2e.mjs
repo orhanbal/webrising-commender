@@ -2041,6 +2041,46 @@ try {
   });
   assert.equal(typeof started.sessionId, "string");
 
+  // 2D real authenticated MCP: an active terminal owns the OS lock for
+  // slot 00. If that busy inode acquires a hardlink, another terminal_start
+  // must fail closed instead of skipping it and admitting slot 01. Removing
+  // the alias must restore admission without interrupting the first PTY.
+  if (process.platform === "linux") {
+    const busySlot = path.join(preflightHistoryDirectory, ".terminal-slot-00.lock");
+    const busyAlias = path.join(tempRoot, "busy-live-slot-hardlink");
+    assert.equal(fs.existsSync(busySlot), true);
+    fs.linkSync(busySlot, busyAlias);
+    try {
+      const busyToken = await approval(deviceId, startAction);
+      const deniedBusy = await tool(22034, "terminal_start", {
+        device_id: deviceId, cwd: tempRoot, cols: 100, rows: 30,
+        approval_token: busyToken,
+      });
+      assert.match(String(deniedBusy.error), /hardlink|unsafe|permissions/i,
+        JSON.stringify(deniedBusy));
+      const duringAttack = await tool(22035, "terminal_list", { device_id: deviceId });
+      assert.ok(duringAttack.items.some((item) =>
+        item.sessionId === started.sessionId && item.running));
+    } finally {
+      fs.unlinkSync(busyAlias);
+    }
+    const retryToken = await approval(deviceId, startAction);
+    const recoveredBusy = await tool(22036, "terminal_start", {
+      device_id: deviceId, cwd: tempRoot, cols: 100, rows: 30,
+      approval_token: retryToken,
+    });
+    assert.equal(typeof recoveredBusy.sessionId, "string", JSON.stringify(recoveredBusy));
+    const retryStopToken = await approval(deviceId, {
+      kind: "terminal_stop", sessionId: recoveredBusy.sessionId,
+    });
+    const retryStopped = await tool(22037, "terminal_stop", {
+      device_id: deviceId, session_id: recoveredBusy.sessionId,
+      approval_token: retryStopToken,
+    });
+    assert.equal(retryStopped.ok, true, JSON.stringify(retryStopped));
+    console.log("agent-e2e: busy live PTY slot hardlink denied; removal recovered admission");
+  }
+
   const terminals = await tool(121, "terminal_list", {
     device_id: deviceId,
   });
