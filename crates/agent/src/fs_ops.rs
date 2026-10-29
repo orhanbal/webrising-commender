@@ -15,7 +15,7 @@ use uuid::Uuid;
 const DEFAULT_READ_MAX: usize = 1024 * 1024;
 const MAX_PAGED_FILE: u64 = 32 * 1024 * 1024;
 // Two bounded disk scans per unguarded atomic replacement; independent of paged reads.
-const MAX_ATOMIC_UNGUARDED_SCAN: u64 = 128 * 1024 * 1024;
+const MAX_ATOMIC_UNGUARDED_SCAN: u64 = 256 * 1024 * 1024;
 const MAX_PAGE_BYTES: usize = 256 * 1024;
 const HARD_READ_MAX: usize = 4 * 1024 * 1024;
 const HARD_WRITE_MAX: usize = 8 * 1024 * 1024;
@@ -5526,6 +5526,27 @@ mod atomic_digest_race_tests {
         drop(file);
         atomic_write(&path, b"updated", None).unwrap();
         assert_eq!(fs::read(&path).unwrap(), b"updated");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    // 3A: the conflict scanner is bounded by disk I/O, not the old 128 MiB
+    // ceiling or an in-memory copy. Preserve all source bytes on failure.
+    #[test]
+    fn unguarded_atomic_write_streams_existing_file_above_128mib() {
+        let dir = std::env::temp_dir().join(format!("wc-unguarded-128plus-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let dir = fs::canonicalize(dir).unwrap();
+        let path = dir.join("target.bin");
+        fs::write(&path, b"original").unwrap();
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(128 * 1024 * 1024 + 1)
+            .unwrap();
+        atomic_write(&path, b"bounded-streaming-replacement", None).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"bounded-streaming-replacement");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
         fs::remove_dir_all(dir).unwrap();
     }
 

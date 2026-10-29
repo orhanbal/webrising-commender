@@ -1639,8 +1639,35 @@ try {
   assert.equal(fs.readFileSync(largeGuardedPath, "utf8"), "guarded-large-updated");
   console.log("agent-e2e: SHA-guarded >32MiB no-undo MCP write accepted; stale SHA rejected");
 
+  // 3A: real authenticated MCP must accept a >128 MiB existing source
+  // without an undo snapshot, while keeping SHA conflict protection.
+  // Stream the fixture digest to avoid a 128 MiB Node heap allocation.
+  const aboveOldCapPath = path.join(tempRoot, "above-128mib-guarded-mcp.bin");
+  fs.writeFileSync(aboveOldCapPath, Buffer.from("large-guarded-seed"));
+  fs.truncateSync(aboveOldCapPath, 128 * 1024 * 1024 + 1);
+  const aboveOldCapHash = createHash("sha256");
+  for await (const chunk of fs.createReadStream(aboveOldCapPath, { highWaterMark: 1024 * 1024 })) {
+    aboveOldCapHash.update(chunk);
+  }
+  const aboveOldCapSha = aboveOldCapHash.digest("hex");
+  const staleAboveOldCap = await tool(1763, "fs_write", {
+    device_id: deviceId, path: aboveOldCapPath,
+    content_base64: Buffer.from("must-not-overwrite").toString("base64"),
+    expected_sha256: "0".repeat(64), with_undo: false,
+  });
+  assert.match(String(staleAboveOldCap.error), /file_changed_since_read/, JSON.stringify(staleAboveOldCap));
+  assert.equal(fs.statSync(aboveOldCapPath).size, 128 * 1024 * 1024 + 1);
+  const acceptedAboveOldCap = await tool(1764, "fs_write", {
+    device_id: deviceId, path: aboveOldCapPath,
+    content_base64: Buffer.from("guarded-128plus-updated").toString("base64"),
+    expected_sha256: aboveOldCapSha, with_undo: false,
+  });
+  assert.equal(acceptedAboveOldCap.ok, true, JSON.stringify(acceptedAboveOldCap));
+  assert.equal(fs.readFileSync(aboveOldCapPath, "utf8"), "guarded-128plus-updated");
+  console.log("agent-e2e: >128MiB SHA-guarded MCP streaming accepted; stale SHA rejected");
+
   const overBudgetPath = path.join(tempRoot, "oversized-unguarded-mcp.bin");
-  const overBudgetSize = 128 * 1024 * 1024 + 1;
+  const overBudgetSize = 256 * 1024 * 1024 + 1;
   fs.writeFileSync(overBudgetPath, Buffer.alloc(1, 0x6b));
   fs.truncateSync(overBudgetPath, overBudgetSize);
   const overBudgetWrite = await tool(1751, "fs_write", {
