@@ -1,3 +1,10 @@
+## 29 Ekim 2026 04:15 TRT — 3A D kabul kanıtı ve E2E log düzeltmesi
+
+- **A / PASSED:** Giriş `main` `d35e0edb7815883d1ab7508ef38507431e9fac60`, [CI #40797715350](https://github.com/orhanbal/webrising-commender/actions/runs/40797715350) **17/17 completed/success**, Linux Rust **166/166**, native Windows/macOS, gerçek `agent-e2e: >128MiB SHA-guarded MCP streaming accepted; stale SHA rejected` ve `agent-e2e: ok`. Linux/Windows/macOS/dashboard **4/4** artifact aynı SHA, `expired=false`. [Platform distribution #40798192055](https://github.com/orhanbal/webrising-commender/actions/runs/40798192055) kontrol anında **PENDING**.
+- **B/C / PASSED (dar kabul):** 256 MiB conflict-scan budget ile 128 MiB + 1 bayt guarded gerçek MCP ve unguarded Rust native yazma başarılı; yanlış SHA reddedildi. 256 MiB + 1 bayt dosya fail-closed ve veri koruma negatif testi çalıştı. Mevcut izin/auth/allowlist/risk zinciri korundu.
+- **D / LOG FIX, NEW HEAD CI PENDING:** E2E başarı logundaki eski `>128MiB fail-closed` metni gerçek yeni 256 MiB sınırıyla çelişiyordu; `>256MiB fail-closed` olarak düzeltildi. Bu commit'in kendi 17/17 CI/artifact/distribution kanıtı tamamlanmadan son HEAD **PASSED** ilan edilmez.
+- **Kalan:** **3A PENDING** (final digest→rename kernel CAS ve 256 MiB üzeri); **3B PENDING** (Windows junction MCP, Unix kernel CAS, rollback); **2B/2D, 3C/9A ve kalan 1A–10D PENDING**. Fiziksel OS, canlı ChatGPT/Claude, imza/notarization **BLOCKED_EXTERNAL**. Genel eşdeğerlik **PENDING**. Self-hosted core unlimited, yeni ücretli runtime yok. Yalnız bu repo `main`.
+
 ## 29 Ekim 2026 04:00 TRT — 3A >128 MiB bounded streaming genişletmesi (A/B/C/D)
 
 - **A / PASSED (giriş HEAD):** `main` `e25b08def3809e25abec5d9304d1093439e28229`; [CI #40792931639](https://github.com/orhanbal/webrising-commender/actions/runs/40792931639) **17/17 success**, Rust **165/165**, Windows undo **10/10**, macOS native testler, gerçek Agent E2E `agent-e2e: ok`; dört aynı-SHA artifact `expired=false`. [Platform distribution #40793521167](https://github.com/orhanbal/webrising-commender/actions/runs/40793521167) success. Kırmızı P0 CI yok.

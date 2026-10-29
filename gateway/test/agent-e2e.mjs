@@ -1684,7 +1684,7 @@ try {
   } finally {
     fs.closeSync(overBudgetFd);
   }
-  console.log("agent-e2e: unguarded >32MiB MCP write accepted; >128MiB fail-closed without data loss");
+  console.log("agent-e2e: unguarded >32MiB MCP write accepted; >256MiB fail-closed without data loss");
 
   // 3A: unlike an expected-SHA write, this path has no client CAS token.
   // The Agent still must reject hardlink aliases through MCP and preserve
