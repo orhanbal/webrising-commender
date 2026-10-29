@@ -3863,10 +3863,8 @@ mod undo_crash_cleanup_tests {
         let parked = dir.join("parked-lock");
         fs::write(&path, b"original-lock").unwrap();
         let mut swapped = false;
-        let result = undo_cross_process_lock_with_timeout_and_hook(
-            &dir,
-            Duration::from_secs(1),
-            || {
+        let result =
+            undo_cross_process_lock_with_timeout_and_hook(&dir, Duration::from_secs(1), || {
                 match fs::rename(&path, &parked) {
                     Ok(()) => {}
                     #[cfg(windows)]
@@ -3878,12 +3876,13 @@ mod undo_crash_cleanup_tests {
                 swapped = true;
                 fs::write(&path, b"replacement-lock")?;
                 Ok(())
-            },
-        );
+            });
         let error = result.unwrap_err();
         if swapped {
             assert!(
-                error.to_string().contains("undo_storage_lock_replaced_or_linked"),
+                error
+                    .to_string()
+                    .contains("undo_storage_lock_replaced_or_linked"),
                 "post-acquisition lock swap must fail closed: {error}"
             );
             assert_eq!(fs::read(&path).unwrap(), b"replacement-lock");
@@ -3911,10 +3910,8 @@ mod undo_crash_cleanup_tests {
         let alias = dir.join("external-alias");
         fs::write(&path, b"private-lock").unwrap();
         let mut linked = false;
-        let result = undo_cross_process_lock_with_timeout_and_hook(
-            &dir,
-            Duration::from_secs(1),
-            || {
+        let result =
+            undo_cross_process_lock_with_timeout_and_hook(&dir, Duration::from_secs(1), || {
                 match fs::hard_link(&path, &alias) {
                     Ok(()) => linked = true,
                     Err(error)
@@ -3926,13 +3923,14 @@ mod undo_crash_cleanup_tests {
                     Err(error) => return Err(error.into()),
                 }
                 Ok(())
-            },
-        );
+            });
         let error = result.unwrap_err();
         if linked {
             assert!(
                 error.to_string().contains("unsafe_undo_storage_hardlink")
-                    || error.to_string().contains("undo_storage_lock_replaced_or_linked"),
+                    || error
+                        .to_string()
+                        .contains("undo_storage_lock_replaced_or_linked"),
                 "post-acquisition lock hardlink must fail closed: {error}"
             );
             assert_eq!(fs::read(&alias).unwrap(), b"private-lock");
