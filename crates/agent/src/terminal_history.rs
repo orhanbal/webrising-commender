@@ -771,9 +771,20 @@ mod tests {
             Ok(())
         });
         let error = result.unwrap_err();
-        assert!(error.to_string().contains("unsafe terminal history snapshot"), "{error}");
-        assert!(start.elapsed() < Duration::from_secs(2), "FIFO open blocked");
-        assert!(fs::symlink_metadata(&snapshot).unwrap().file_type().is_fifo());
+        assert!(
+            error
+                .to_string()
+                .contains("unsafe terminal history snapshot"),
+            "{error}"
+        );
+        assert!(
+            start.elapsed() < Duration::from_secs(2),
+            "FIFO open blocked"
+        );
+        assert!(fs::symlink_metadata(&snapshot)
+            .unwrap()
+            .file_type()
+            .is_fifo());
         fs::remove_file(&snapshot).unwrap();
         fs::rename(&parked, &snapshot).unwrap();
         assert_eq!(store.load(&id).unwrap(), (4, data));
@@ -796,7 +807,10 @@ mod tests {
             Ok(())
         });
         let error = result.unwrap_err();
-        assert!(error.to_string().contains("snapshot changed or hardlinked"), "{error}");
+        assert!(
+            error.to_string().contains("snapshot changed or hardlinked"),
+            "{error}"
+        );
         assert_eq!(fs::read(&snapshot).unwrap(), fs::read(&parked).unwrap());
         fs::remove_file(&parked).unwrap();
         assert_eq!(store.load(&id).unwrap(), (4, data));
@@ -818,7 +832,10 @@ mod tests {
             Ok(())
         });
         let error = result.unwrap_err();
-        assert!(error.to_string().contains("snapshot changed or hardlinked"), "{error}");
+        assert!(
+            error.to_string().contains("snapshot changed or hardlinked"),
+            "{error}"
+        );
         assert_eq!(fs::read(&snapshot).unwrap(), fs::read(&alias).unwrap());
         fs::remove_file(&alias).unwrap();
         assert_eq!(store.load(&id).unwrap(), (4, data));
