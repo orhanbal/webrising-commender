@@ -184,7 +184,19 @@ impl TerminalManager {
             store.save(&id, 0, &VecDeque::new())?;
         }
 
-        let child = pair.slave.spawn_command(command)?;
+        let child = match pair.slave.spawn_command(command) {
+            Ok(child) => child,
+            Err(error) => {
+                // Keep the pre-spawn durability check, but do not retain a
+                // phantom 24-hour archive when no OS child was created.
+                if let Some(store) = &history_store {
+                    store.discard_unstarted(&id).with_context(|| {
+                        format!("terminal spawn failed ({error}); startup archive cleanup failed")
+                    })?;
+                }
+                return Err(error.into());
+            }
+        };
         drop(pair.slave);
 
         let mut reader = pair.master.try_clone_reader()?;
