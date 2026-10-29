@@ -194,7 +194,7 @@ impl TerminalManager {
                         format!("terminal spawn failed ({error}); startup archive cleanup failed")
                     })?;
                 }
-                return Err(error.into());
+                return Err(error);
             }
         };
         drop(pair.slave);
