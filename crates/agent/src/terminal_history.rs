@@ -2082,7 +2082,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn busy_live_slot_rejects_mid_open_hardlink_and_recovers() {
+    fn busy_live_slot_rejects_mid_open_mutations_and_recovers() {
         let dir = std::env::temp_dir().join(format!("wcth-live-busy-race-{}", Uuid::new_v4()));
         let first = HistoryStore::at(dir.clone()).unwrap();
         let second = HistoryStore::at(dir.clone()).unwrap();
@@ -2110,6 +2110,31 @@ mod tests {
             "{error}"
         );
         fs::remove_file(&alias).unwrap();
+
+        // Also catch a regular-file inode swap during the same busy-lock
+        // window. Permission-only checks cannot distinguish this replacement.
+        use std::os::unix::fs::PermissionsExt;
+        let parked = dir.join("busy-slot-parked");
+        let swap_error = second
+            .reserve_live_slot_with_hooks(
+                || Ok(()),
+                |index, path| {
+                    if index == 0 {
+                        fs::rename(path, &parked)?;
+                        fs::write(path, b"replacement")?;
+                        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+                    }
+                    Ok(())
+                },
+            )
+            .unwrap_err();
+        assert!(
+            swap_error.to_string().contains("busy terminal live slot"),
+            "{swap_error}"
+        );
+        fs::remove_file(&slot).unwrap();
+        fs::rename(&parked, &slot).unwrap();
+
         drop(held);
         let recovered = second.reserve_live_slot().unwrap();
         drop(recovered);
