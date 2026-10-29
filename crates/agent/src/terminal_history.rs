@@ -1175,6 +1175,49 @@ mod tests {
     }
 
     #[test]
+    fn failed_spawn_cleanup_removes_only_verified_empty_archive() {
+        let dir = std::env::temp_dir().join(format!("wcth-startup-cleanup-{}", Uuid::new_v4()));
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let empty = VecDeque::new();
+        let initial = Uuid::new_v4().to_string();
+        store.save(&initial, 0, &empty).unwrap();
+        assert_eq!(store.load(&initial).unwrap().0, 0);
+        store.discard_unstarted(&initial).unwrap();
+        assert!(store.load(&initial).is_err());
+        // A second cleanup after a quota prune is harmless.
+        store.discard_unstarted(&initial).unwrap();
+
+        let active = Uuid::new_v4().to_string();
+        store
+            .save(&active, 1, &VecDeque::from(b"x".to_vec()))
+            .unwrap();
+        assert!(store.discard_unstarted(&active).is_err());
+        assert_eq!(store.load(&active).unwrap().0, 1);
+
+        let tampered = Uuid::new_v4().to_string();
+        store.save(&tampered, 0, &empty).unwrap();
+        let snapshot = dir.join(format!("{tampered}-0.hist"));
+        let mut raw = fs::read(&snapshot).unwrap();
+        raw[HEADER_BYTES] ^= 1;
+        fs::write(&snapshot, &raw).unwrap();
+        assert!(store.discard_unstarted(&tampered).is_err());
+        assert!(snapshot.exists(), "tampered archive must not be deleted");
+
+        let linked = Uuid::new_v4().to_string();
+        store.save(&linked, 0, &empty).unwrap();
+        let linked_snapshot = dir.join(format!("{linked}-0.hist"));
+        let alias = dir.join("external-hardlink");
+        if fs::hard_link(&linked_snapshot, &alias).is_ok() {
+            assert!(store.discard_unstarted(&linked).is_err());
+            assert!(linked_snapshot.exists());
+            assert!(alias.exists());
+            fs::remove_file(alias).unwrap();
+        }
+        store.discard_unstarted(&linked).unwrap();
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn independent_stores_wait_for_same_directory_lock() {
         use std::sync::mpsc;
         let dir = std::env::temp_dir().join(format!("wcth-lock-{}", Uuid::new_v4()));
