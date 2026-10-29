@@ -20,6 +20,46 @@ const MAX_ARCHIVES: usize = 64;
 // A wedged second Agent must not block all terminal operations indefinitely.
 const LOCK_WAIT: Duration = Duration::from_secs(5);
 
+
+// Inspect the opened Windows file handle rather than pathname metadata: a
+// replaced or hardlinked .history.lock must not split the cross-process quota.
+#[cfg(windows)]
+#[repr(C)]
+#[derive(Default)]
+struct WindowsHistoryLockInfo {
+    attributes: u32,
+    created: [u32; 2],
+    accessed: [u32; 2],
+    modified: [u32; 2],
+    volume_serial: u32,
+    size_high: u32,
+    size_low: u32,
+    link_count: u32,
+    index_high: u32,
+    index_low: u32,
+}
+
+#[cfg(windows)]
+fn windows_history_lock_info(file: &File) -> Result<WindowsHistoryLockInfo> {
+    use std::os::windows::io::AsRawHandle;
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        #[link_name = "GetFileInformationByHandle"]
+        fn get_file_information_by_handle(
+            handle: *mut std::ffi::c_void,
+            info: *mut WindowsHistoryLockInfo,
+        ) -> i32;
+    }
+
+    let mut info = WindowsHistoryLockInfo::default();
+    // SAFETY: file owns the handle and info has the Windows ABI layout.
+    if unsafe { get_file_information_by_handle(file.as_raw_handle(), &mut info) } == 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    Ok(info)
+}
+
 // One device namespace per enrollment; snapshots are read-only after restart.
 pub struct HistoryStore {
     dir: PathBuf,
@@ -112,11 +152,26 @@ impl HistoryStore {
     }
 
     fn lock_directory_with_timeout(&self, timeout: Duration) -> Result<File> {
+        self.lock_directory_with_timeout_and_hook(timeout, || Ok(()))
+    }
+
+    // The hook is a no-op in production. Native tests inject a deterministic
+    // directory-entry change after the OS lock has been acquired.
+    fn lock_directory_with_timeout_and_hook(
+        &self,
+        timeout: Duration,
+        after_lock: impl FnOnce() -> Result<()>,
+    ) -> Result<File> {
         #[cfg(windows)]
         Self::secure_dir(&self.dir)?;
         let path = self.dir.join(".history.lock");
         let mut options = OpenOptions::new();
         options.read(true).write(true).create(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.custom_flags(0x0020_0000); // FILE_FLAG_OPEN_REPARSE_POINT
+        }
         #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
@@ -126,6 +181,13 @@ impl HistoryStore {
         let lock = options.open(&path)?;
         if !lock.metadata()?.is_file() {
             return Err(anyhow!("unsafe terminal history lock"));
+        }
+        #[cfg(windows)]
+        {
+            let info = windows_history_lock_info(&lock)?;
+            if info.attributes & 0x400 != 0 || info.link_count != 1 {
+                return Err(anyhow!("unsafe terminal history lock reparse or hardlink"));
+            }
         }
         // try_lock uses the same cross-process OS lock as File::lock (Rust >=
         // 1.89). A wedged process cannot stall terminal reads/writes forever.
@@ -147,6 +209,7 @@ impl HistoryStore {
                 }
             }
         }
+        after_lock()?;
         #[cfg(windows)]
         {
             Self::secure_dir(&self.dir)?;
@@ -156,12 +219,38 @@ impl HistoryStore {
         if !path_meta.is_file() || path_meta.file_type().is_symlink() {
             return Err(anyhow!("unsafe terminal history lock"));
         }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            let mut named_options = OpenOptions::new();
+            named_options.read(true).custom_flags(0x0020_0000);
+            let named = named_options
+                .open(&path)
+                .map_err(|_| anyhow!("terminal history lock was replaced"))?;
+            let held = windows_history_lock_info(&lock)?;
+            let current = windows_history_lock_info(&named)?;
+            if held.attributes & 0x400 != 0 || current.attributes & 0x400 != 0 {
+                return Err(anyhow!("unsafe terminal history lock reparse point"));
+            }
+            if held.link_count != 1 || current.link_count != 1 {
+                return Err(anyhow!("unsafe terminal history lock hardlink"));
+            }
+            if held.volume_serial != current.volume_serial
+                || held.index_high != current.index_high
+                || held.index_low != current.index_low
+            {
+                return Err(anyhow!("terminal history lock was replaced"));
+            }
+        }
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
             let held_meta = lock.metadata()?;
-            if held_meta.dev() != path_meta.dev() || held_meta.ino() != path_meta.ino() {
-                return Err(anyhow!("terminal history lock was replaced"));
+            if held_meta.dev() != path_meta.dev()
+                || held_meta.ino() != path_meta.ino()
+                || held_meta.nlink() != 1
+            {
+                return Err(anyhow!("terminal history lock was replaced or hardlinked"));
             }
         }
         Ok(lock)
@@ -631,6 +720,94 @@ mod tests {
         assert_eq!(duplicate.len(), newer.len());
         assert!(store.save(&id, newer.len() as u64, &duplicate).is_err());
         assert_eq!(store.load(&id).unwrap().1, newer);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn lock_rejects_post_acquire_inode_swap_or_os_denial() {
+        let dir = std::env::temp_dir().join(format!("wcth-lock-aba-{}", Uuid::new_v4()));
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let dir = fs::canonicalize(dir).unwrap();
+        let path = dir.join(".history.lock");
+        let parked = dir.join("parked-lock");
+        let mut swapped = false;
+        let result = store.lock_directory_with_timeout_and_hook(
+            Duration::from_secs(1),
+            || {
+                match fs::rename(&path, &parked) {
+                    Ok(()) => {}
+                    #[cfg(windows)]
+                    Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                        return Err(anyhow!("windows_history_lock_rename_denied: {error}"));
+                    }
+                    Err(error) => return Err(error.into()),
+                }
+                swapped = true;
+                fs::write(&path, b"replacement-lock")?;
+                Ok(())
+            },
+        );
+        let error = result.unwrap_err();
+        if swapped {
+            assert!(
+                error.to_string().contains("terminal history lock was replaced"),
+                "post-acquisition history lock swap must fail closed: {error}"
+            );
+            assert_eq!(fs::read(&path).unwrap(), b"replacement-lock");
+            assert!(parked.exists());
+        } else {
+            #[cfg(windows)]
+            assert!(
+                error.to_string().contains("windows_history_lock_rename_denied"),
+                "unexpected Windows history lock outcome: {error}"
+            );
+            #[cfg(not(windows))]
+            panic!("Unix must permit renaming an open advisory-locked inode: {error}");
+        }
+        drop(store.lock_directory().unwrap());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn lock_rejects_post_acquire_hardlink_or_os_denial() {
+        let dir = std::env::temp_dir().join(format!("wcth-lock-link-{}", Uuid::new_v4()));
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let dir = fs::canonicalize(dir).unwrap();
+        let path = dir.join(".history.lock");
+        let alias = dir.join("outside-alias");
+        let mut linked = false;
+        let result = store.lock_directory_with_timeout_and_hook(
+            Duration::from_secs(1),
+            || {
+                match fs::hard_link(&path, &alias) {
+                    Ok(()) => linked = true,
+                    Err(error)
+                        if cfg!(windows)
+                            && error.kind() == std::io::ErrorKind::PermissionDenied =>
+                    {
+                        return Err(anyhow!("windows_history_lock_hardlink_denied: {error}"));
+                    }
+                    Err(error) => return Err(error.into()),
+                }
+                Ok(())
+            },
+        );
+        let error = result.unwrap_err();
+        if linked {
+            assert!(
+                error.to_string().contains("hardlink")
+                    || error.to_string().contains("hardlinked"),
+                "post-acquisition history lock hardlink must fail closed: {error}"
+            );
+            assert_eq!(fs::read(&alias).unwrap(), fs::read(&path).unwrap());
+            fs::remove_file(&alias).unwrap();
+        } else {
+            assert!(
+                error.to_string().contains("windows_history_lock_hardlink_denied"),
+                "unexpected history lock hardlink outcome: {error}"
+            );
+        }
+        drop(store.lock_directory().unwrap());
         fs::remove_dir_all(dir).unwrap();
     }
 
