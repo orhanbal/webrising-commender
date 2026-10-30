@@ -506,6 +506,12 @@ impl TerminalManager {
                 .child
                 .lock()
                 .map_err(|_| anyhow!("terminal child lock poisoned"))?;
+            // Terminate and wait for the entire Windows Job before returning.
+            // Closing the handle only when the final Arc<Session> drops could
+            // otherwise acknowledge stop while a concurrent reader still
+            // holds the session and its descendants remain alive.
+            #[cfg(windows)]
+            session._windows_job.terminate()?;
             if child.try_wait()?.is_none() {
                 // On Unix, a PTY shell normally leads its own process group.
                 // Terminating only the direct shell can leave its foreground
