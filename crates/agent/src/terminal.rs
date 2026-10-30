@@ -613,9 +613,24 @@ mod tests {
         // ConPTY startup is asynchronous. Do not send a command before the
         // interactive shell has produced its first prompt.
         let ready_deadline = Instant::now() + Duration::from_secs(10);
+        let mut last_cursor_query_bytes = 0_u64;
         loop {
             let page = manager.read_page(id, None, Some(16 * 1024), scope).unwrap();
-            if page["text"].as_str().unwrap_or("").contains('>') {
+            let output = page["text"].as_str().unwrap_or("");
+            let total_bytes = page["totalOutputBytes"].as_u64().unwrap_or(0);
+            // Windows ConPTY is a terminal *host*, not a terminal emulator.
+            // cmd.exe can ask the client for cursor position (CSI 6 n) before
+            // printing its first prompt. Without the CSI row;column R reply,
+            // it remains blocked at startup and no command can be entered.
+            // Reply once per newly observed query; do not spin on retained
+            // history and never weaken the real-descendant exit assertion.
+            if output.contains("\u{1b}[6n") && total_bytes > last_cursor_query_bytes {
+                manager
+                    .input(id, &STANDARD.encode(b"\u{1b}[1;1R"), scope)
+                    .expect("reply to ConPTY cursor position query");
+                last_cursor_query_bytes = total_bytes;
+            }
+            if output.contains('>') {
                 break;
             }
             if Instant::now() >= ready_deadline {
