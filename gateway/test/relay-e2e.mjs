@@ -457,7 +457,6 @@ try {
   probeTask = continuousMcpProbe(deviceId);
   await waitFor(() => probeStats.successes >= 2, 15_000, 100);
   const firstCrashAttempts = probeStats.attempts;
-  const firstCrashSuccesses = probeStats.successes;
   process.kill(relayBPid, "SIGKILL");
 
   // Heartbeat freshness is 45s, followed by the Agent's bounded route
@@ -474,7 +473,8 @@ try {
       : null;
   }, 150_000, 500);
   assert.equal(crashRecovered.connected_relay_id, "relay-a");
-  await waitFor(() => probeStats.successes > firstCrashSuccesses, 15_000, 200);
+  const firstRecoveredSuccesses = probeStats.successes;
+  await waitFor(() => probeStats.successes > firstRecoveredSuccesses, 15_000, 200);
   assert.ok(probeStats.attempts > firstCrashAttempts);
   const deadRelays = await jsonFetch("/api/admin/relays", {
     headers: authHeaders,
@@ -579,7 +579,6 @@ try {
   ).replaceAll("\0", " ");
   assert.match(relayACmd, /node.*dist\/index\.js/);
   const secondCrashAttempts = probeStats.attempts;
-  const secondCrashSuccesses = probeStats.successes;
   process.kill(relayAPid, "SIGKILL");
 
   const secondCrashRecovered = await waitFor(async () => {
@@ -591,7 +590,8 @@ try {
       ? item : null;
   }, 150_000, 500);
   assert.equal(secondCrashRecovered.connected_relay_id, "relay-b");
-  await waitFor(() => probeStats.successes > secondCrashSuccesses, 15_000, 200);
+  const secondRecoveredSuccesses = probeStats.successes;
+  await waitFor(() => probeStats.successes > secondRecoveredSuccesses, 15_000, 200);
   assert.ok(probeStats.attempts > secondCrashAttempts);
   const afterSecondCrash = toolText(await rpc(515, "tools/call", {
     name: "system_info", arguments: { device_id: deviceId },
