@@ -594,6 +594,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn windows_terminal_stop_kills_owned_ping_descendant() {
+        use base64::Engine as _;
         use std::time::{Duration, Instant};
         use sysinfo::{Pid, ProcessesToUpdate, System};
 
