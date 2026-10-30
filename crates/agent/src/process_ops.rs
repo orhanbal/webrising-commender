@@ -469,7 +469,10 @@ mod tests {
             // actually exist in the OS process snapshot before termination.
             let ping_ready = system.processes().values().any(|process| {
                 process.parent() == Some(pid)
-                    && process.name().to_string_lossy().eq_ignore_ascii_case("ping.exe")
+                    && process
+                        .name()
+                        .to_string_lossy()
+                        .eq_ignore_ascii_case("ping.exe")
             });
             if system.process(pid).is_some() && ping_ready {
                 break;
