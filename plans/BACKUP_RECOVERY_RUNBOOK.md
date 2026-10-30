@@ -49,3 +49,7 @@ The existing `scripts/restore-compose.sh` is destructive: it stops the gateway, 
 - Record the last successful backup/restore timestamps without exposing file contents.
 
 **Status:** scripts and CI drill code available. Actual production recovery and off-host retention are pending operator-level server access and a successful on-host test.
+
+### 30 October 2026 — CI relational recovery acceptance
+
+The disposable CI drill now seeds an inert organization, user and membership, removes those rows from its source after the dump, restores into a separate scratch database and verifies the relationship survived. A modified copy of the archive must fail the SHA-256 checksum check before restore. [Code CI #41045386900](https://github.com/orhanbal/webrising-commender/actions/runs/41045386900) passed the integration drill. The SHA-256 manifest detects accidental corruption but is **not** an authenticated signature. This does **not** establish production backup freshness, off-host retention, recovery point/time objectives, or real operator restore acceptance; all remain PENDING.
