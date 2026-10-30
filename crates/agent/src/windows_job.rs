@@ -6,14 +6,13 @@
 use anyhow::{anyhow, Context, Result};
 use std::{ffi::c_void, io, mem, ptr};
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, HANDLE},
+    Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE},
     System::{
         JobObjects::{
             AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
             SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
             JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
         },
-        Threading::{OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE},
     },
 };
 
@@ -25,9 +24,12 @@ unsafe impl Send for WindowsJob {}
 unsafe impl Sync for WindowsJob {}
 
 impl WindowsJob {
-    pub fn attach(pid: u32) -> Result<Self> {
-        if pid == 0 {
-            return Err(anyhow!("invalid PTY child pid"));
+    pub fn attach(process_handle: HANDLE) -> Result<Self> {
+        // Use the exact retained child HANDLE, not OpenProcess(pid): a PID
+        // can be recycled after the child exits and must never become authority
+        // to assign or kill an unrelated process.
+        if process_handle.is_null() || process_handle == INVALID_HANDLE_VALUE {
+            return Err(anyhow!("invalid owned PTY child handle"));
         }
         let handle = unsafe { CreateJobObjectW(ptr::null(), ptr::null()) };
         if handle.is_null() {
@@ -47,19 +49,8 @@ impl WindowsJob {
         if configured == 0 {
             return Err(io::Error::last_os_error()).context("configure PTY job kill-on-close");
         }
-        let process = unsafe { OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid) };
-        if process.is_null() {
-            return Err(io::Error::last_os_error()).context("open PTY process for job assignment");
-        }
-        let assigned = unsafe { AssignProcessToJobObject(job.0, process) };
-        let error = if assigned == 0 {
-            Some(io::Error::last_os_error())
-        } else {
-            None
-        };
-        unsafe { CloseHandle(process) };
-        if let Some(error) = error {
-            return Err(error).context("assign PTY process to kill-on-close job");
+        if unsafe { AssignProcessToJobObject(job.0, process_handle) } == 0 {
+            return Err(io::Error::last_os_error()).context("assign PTY process to kill-on-close job");
         }
         Ok(job)
     }
@@ -77,6 +68,7 @@ impl Drop for WindowsJob {
 mod tests {
     use super::*;
     use std::{
+        os::windows::io::AsRawHandle,
         process::Command,
         time::{Duration, Instant},
     };
@@ -90,7 +82,7 @@ mod tests {
             .args(["/D", "/C", "ping -n 3 127.0.0.1 > NUL & ping -n 30 127.0.0.1 > NUL"])
             .spawn()
             .expect("spawn disposable PTY-like command");
-        let job = match WindowsJob::attach(child.id()) {
+        let job = match WindowsJob::attach(child.as_raw_handle()) {
             Ok(job) => job,
             Err(error) => {
                 let _ = child.kill();
