@@ -321,8 +321,83 @@ try {
   assert.equal(oldRelay.drain, true);
   assert.ok(newRelay.connected_count >= 1);
 
+  // 9B: a drained relay must be able to rejoin the healthy pool. Move the
+  // same real Agent back to its original relay and prove that authenticated
+  // MCP requests still reach the native process after two routing changes.
+  // This is bounded failback acceptance, not an unplanned relay crash test.
+  const reenabled = await jsonFetch(
+    `/api/admin/relays/${encodeURIComponent(firstRelay)}`,
+    {
+      method: "PATCH",
+      headers: authHeaders,
+      body: JSON.stringify({ drain: false }),
+    },
+  );
+  assert.equal(reenabled.item.drain, false);
+  const drainedSecond = await jsonFetch(
+    `/api/admin/relays/${encodeURIComponent(secondConnected.connected_relay_id)}`,
+    {
+      method: "PATCH",
+      headers: authHeaders,
+      body: JSON.stringify({ drain: true }),
+    },
+  );
+  assert.equal(drainedSecond.item.drain, true);
+
+  const disconnectedAgain = await jsonFetch(
+    `/api/devices/${deviceId}/disconnect`,
+    { method: "POST", headers: authHeaders, body: "{}" },
+  );
+  assert.equal(disconnectedAgain.disconnected, true);
+  const recovered = await waitFor(async () => {
+    const devices = await jsonFetch("/api/devices", { headers: authHeaders });
+    const item = devices.items.find((candidate) => candidate.id === deviceId);
+    return item?.online &&
+      item.connected_relay_id === firstRelay &&
+      item.assigned_relay_id === firstRelay
+      ? item
+      : null;
+  }, 30_000);
+  assert.equal(recovered.connected_relay_id, firstRelay);
+
+  const afterFailback = toolText(await rpc(509, "tools/call", {
+    name: "system_info",
+    arguments: { device_id: deviceId },
+  }));
+  assert.equal(typeof afterFailback.cpuCount, "number");
+
+  // A fresh native file search proves more than a healthy relay registry:
+  // the MCP request is routed through the recovered relay to the real Agent.
+  const failbackSearch = toolText(await rpc(510, "tools/call", {
+    name: "start_search",
+    arguments: {
+      device_id: deviceId, path: tempRoot,
+      query: "relay-progress-fixture", search_type: "files",
+    },
+  }));
+  assert.equal(typeof failbackSearch.searchId, "string");
+  const failbackResults = await waitFor(async () => {
+    const page = toolText(await rpc(511, "tools/call", {
+      name: "get_more_search_results",
+      arguments: {
+        device_id: deviceId, search_id: failbackSearch.searchId,
+        offset: 0, length: 10,
+      },
+    }));
+    return page.status === "completed" ? page : null;
+  }, 20_000);
+  assert.ok(failbackResults.items.length > 0);
+  assert.ok(failbackResults.scannedEntries >= 32);
+  const finalRelays = await jsonFetch("/api/admin/relays", {
+    headers: authHeaders,
+  });
+  assert.equal(finalRelays.items.find((item) => item.id === firstRelay)?.drain, false);
+  assert.equal(
+    finalRelays.items.find((item) => item.id === secondConnected.connected_relay_id)?.drain,
+    true,
+  );
   console.log(
-    `relay-e2e: ok (${firstRelay} -> ${secondConnected.connected_relay_id})`,
+    `relay-e2e: failback ok (${firstRelay} -> ${secondConnected.connected_relay_id} -> ${firstRelay})`,
   );
 } catch (error) {
   console.error(agentLog);
