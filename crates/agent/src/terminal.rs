@@ -585,6 +585,60 @@ fn default_shell() -> String {
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
+    #[test]
+    fn windows_terminal_stop_kills_owned_ping_descendant() {
+        use std::time::{Duration, Instant};
+        use sysinfo::{Pid, ProcessesToUpdate, System};
+
+        let root = std::env::temp_dir().join(format!("wc-pty-job-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let manager = TerminalManager::default();
+        let session = manager
+            .start(&policy, Some("cmd.exe"), None, 80, 24, "windows-job-test")
+            .expect("start Windows PTY with mandatory job attachment");
+        let id = session["sessionId"].as_str().unwrap();
+        let items = manager.list("windows-job-test").unwrap();
+        let root_pid = items["items"][0]["pid"].as_u64().unwrap() as u32;
+        manager
+            .input(id, &STANDARD.encode(b"ping -n 30 127.0.0.1\r\n"), "windows-job-test")
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(8);
+        let descendant = loop {
+            let mut system = System::new();
+            system.refresh_processes(ProcessesToUpdate::All, true);
+            let found = system.processes().iter().find_map(|(pid, process)| {
+                (process.parent() == Some(Pid::from_u32(root_pid))
+                    && process.name().to_string_lossy().eq_ignore_ascii_case("ping.exe"))
+                .then_some((*pid, process.start_time()))
+            });
+            if found.is_some() || Instant::now() >= deadline {
+                break found;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        };
+        if descendant.is_none() {
+            let _ = manager.stop(id, "windows-job-test");
+        }
+        let (ping_pid, started) = descendant.expect("PTY command must spawn real ping descendant");
+        manager.stop(id, "windows-job-test").expect("stop owned PTY");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let mut system = System::new();
+            system.refresh_processes(ProcessesToUpdate::All, true);
+            if system
+                .process(ping_pid)
+                .is_none_or(|process| process.start_time() != started)
+            {
+                break;
+            }
+            assert!(Instant::now() < deadline, "owned PTY descendant survived stop");
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn pty_master_handles_are_available_before_child_spawn() {
         // This ordering is essential: after spawn there must be no fallible
