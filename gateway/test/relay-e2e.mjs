@@ -683,6 +683,54 @@ try {
     "relay-e2e: continuous authenticated MCP load recovered twice " +
       JSON.stringify({ ...probeStats, firstFailoverMs, secondFailoverMs }),
   );
+  // 9B: fault-window success alone is not an availability SLO. Stop the
+  // deliberate crash-window probe, then measure a separate steady-state
+  // interval with no injected faults. Do not silently count failures as PASS.
+  probeStop = true;
+  if (probeTask) {
+    await probeTask;
+    probeTask = null;
+  }
+  const steadyLatenciesMs = [];
+  const steadyFailures = [];
+  const steadyStartedAt = Date.now();
+  for (let i = 0; i < 60; i += 1) {
+    const startedAt = Date.now();
+    try {
+      const result = await rpc(
+        30_000 + i,
+        "tools/call",
+        { name: "system_info", arguments: { device_id: deviceId } },
+        AbortSignal.timeout(5_000),
+      );
+      assert.equal(typeof toolText(result).cpuCount, "number");
+      steadyLatenciesMs.push(Date.now() - startedAt);
+    } catch (error) {
+      steadyFailures.push({
+        iteration: i,
+        error: String(error?.message || error).slice(0, 200),
+      });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  const sortedLatencies = [...steadyLatenciesMs].sort((a, b) => a - b);
+  const p95Ms = sortedLatencies[Math.ceil(sortedLatencies.length * 0.95) - 1] ?? null;
+  const steadyStats = {
+    attempts: 60,
+    successes: steadyLatenciesMs.length,
+    failures: steadyFailures.length,
+    durationMs: Date.now() - steadyStartedAt,
+    p95Ms,
+    maxMs: sortedLatencies.at(-1) ?? null,
+  };
+  console.log("relay-e2e: post-failover steady-state MCP SLO " + JSON.stringify(steadyStats));
+  assert.equal(steadyFailures.length, 0,
+    "post-failover steady-state MCP requests failed: " + JSON.stringify(steadyFailures));
+  assert.ok(p95Ms !== null && p95Ms < 2_000,
+    "post-failover steady-state MCP p95 exceeded 2000ms: " + p95Ms);
+  assert.ok(steadyStats.durationMs >= 15_000,
+    "steady-state measurement window unexpectedly short");
+
 
 } catch (error) {
   console.error(agentLog);
