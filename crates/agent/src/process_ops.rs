@@ -465,13 +465,19 @@ mod tests {
         loop {
             let mut system = System::new();
             system.refresh_processes(ProcessesToUpdate::All, true);
-            if system.process(pid).is_some() {
+            // Do not exercise a trivial single-process kill: the child must
+            // actually exist in the OS process snapshot before termination.
+            let ping_ready = system.processes().values().any(|process| {
+                process.parent() == Some(pid)
+                    && process.name().to_string_lossy().eq_ignore_ascii_case("ping.exe")
+            });
+            if system.process(pid).is_some() && ping_ready {
                 break;
             }
             if std::time::Instant::now() >= deadline {
                 let _ = child.kill();
                 let _ = child.wait();
-                panic!("Windows test process was not visible");
+                panic!("Windows test shell and descendant were not visible");
             }
             std::thread::sleep(Duration::from_millis(25));
         }
@@ -482,6 +488,7 @@ mod tests {
         }
         let result = result.expect("Windows process tree termination");
         assert_eq!(result["terminationConfirmed"], true);
+        assert!(result["signaledDescendants"].as_u64().unwrap_or(0) >= 1);
         assert!(child.try_wait().unwrap().is_some(), "root child not reaped");
         let _ = child.wait();
     }
