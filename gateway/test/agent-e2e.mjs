@@ -29,6 +29,8 @@ const mcpUndoPostdigestMarker = path.join(tempRoot, "mcp-undo-postdigest.marker"
 const mcpUndoPostdigestRelease = path.join(tempRoot, "mcp-undo-postdigest.release");
 let agent;
 let agentLog = "";
+let secondAgent;
+let secondAgentLog = "";
 
 const authHeaders = {
   Authorization: `Bearer ${apiKey}`,
@@ -2083,6 +2085,118 @@ try {
     "concurrent PTY stops left live session records");
   console.log("agent-e2e: four concurrent approved PTY starts/stops preserved session isolation");
 
+  // 2D/9A: two independently paired native Agents must remain online together.
+  // Their approved PTY sessions and approval tokens are device-bound even
+  // while both agents share the same Gateway and allowed filesystem root.
+  const secondConfigPath = path.join(tempRoot, "agent-secondary.json");
+  const secondPairing = await jsonFetch("/api/pairing", {
+    method: "POST", headers: authHeaders, body: "{}",
+  });
+  const secondEnroll = spawnSync(agentBinary, [
+    "--config", secondConfigPath, "enroll",
+    "--control-url", base, "--pairing-code", secondPairing.pairingCode,
+    "--allowed-root", tempRoot,
+  ], { encoding: "utf8" });
+  assert.equal(secondEnroll.status, 0,
+    secondEnroll.stderr || secondEnroll.stdout || "second Agent enrollment failed");
+  const secondDeviceId = JSON.parse(fs.readFileSync(secondConfigPath, "utf8")).deviceId;
+  assert.equal(typeof secondDeviceId, "string");
+  assert.notEqual(secondDeviceId, deviceId, "independent pairing reused a device ID");
+  secondAgent = spawn(agentBinary, ["--config", secondConfigPath, "run"], {
+    stdio: ["ignore", "pipe", "pipe"],
+    env: {
+      ...process.env, RUST_LOG: "info",
+      XDG_DATA_HOME: path.join(tempRoot, "xdg-data-secondary"),
+    },
+  });
+  secondAgent.stdout.on("data", (chunk) => { secondAgentLog += String(chunk); });
+  secondAgent.stderr.on("data", (chunk) => { secondAgentLog += String(chunk); });
+  await waitFor(async () => {
+    const devices = await jsonFetch("/api/devices", { headers: authHeaders });
+    return [deviceId, secondDeviceId].every((id) =>
+      devices.items.some((item) => item.id === id && item.online));
+  }, 20000, 200);
+
+  const firstDeviceToken = await approval(deviceId, startAction);
+  const secondDeviceToken = await approval(secondDeviceId, startAction);
+  const [firstDeviceSession, secondDeviceSession] = await Promise.all([
+    tool(22400, "terminal_start", {
+      device_id: deviceId, cwd: tempRoot, cols: 100, rows: 30,
+      approval_token: firstDeviceToken,
+    }),
+    tool(22401, "terminal_start", {
+      device_id: secondDeviceId, cwd: tempRoot, cols: 100, rows: 30,
+      approval_token: secondDeviceToken,
+    }),
+  ]);
+  assert.equal(typeof firstDeviceSession.sessionId, "string",
+    JSON.stringify(firstDeviceSession));
+  assert.equal(typeof secondDeviceSession.sessionId, "string",
+    JSON.stringify(secondDeviceSession));
+  assert.notEqual(firstDeviceSession.sessionId, secondDeviceSession.sessionId);
+  const [firstDeviceList, secondDeviceList] = await Promise.all([
+    tool(22402, "terminal_list", { device_id: deviceId }),
+    tool(22403, "terminal_list", { device_id: secondDeviceId }),
+  ]);
+  assert.ok(firstDeviceList.items.some((item) =>
+    item.sessionId === firstDeviceSession.sessionId && item.running));
+  assert.ok(secondDeviceList.items.some((item) =>
+    item.sessionId === secondDeviceSession.sessionId && item.running));
+  assert.ok(!firstDeviceList.items.some((item) =>
+    item.sessionId === secondDeviceSession.sessionId));
+  assert.ok(!secondDeviceList.items.some((item) =>
+    item.sessionId === firstDeviceSession.sessionId));
+
+  const crossDevicePage = await tool(22404, "terminal_read_page", {
+    device_id: secondDeviceId, session_id: firstDeviceSession.sessionId,
+  });
+  assert.match(String(crossDevicePage.error), /terminal session not found/i);
+  const wrongDeviceStopToken = await approval(deviceId, {
+    kind: "terminal_stop", sessionId: secondDeviceSession.sessionId,
+  });
+  const deniedCrossDeviceStop = await tool(22405, "terminal_stop", {
+    device_id: secondDeviceId, session_id: secondDeviceSession.sessionId,
+    approval_token: wrongDeviceStopToken,
+  });
+  assert.equal(typeof deniedCrossDeviceStop.error, "string",
+    JSON.stringify(deniedCrossDeviceStop));
+  const secondStillRunning = await tool(22406, "terminal_list", {
+    device_id: secondDeviceId,
+  });
+  assert.ok(secondStillRunning.items.some((item) =>
+    item.sessionId === secondDeviceSession.sessionId && item.running),
+  "foreign-device approval stopped the second Agent PTY");
+
+  const firstStopToken = await approval(deviceId, {
+    kind: "terminal_stop", sessionId: firstDeviceSession.sessionId,
+  });
+  const secondStopToken = await approval(secondDeviceId, {
+    kind: "terminal_stop", sessionId: secondDeviceSession.sessionId,
+  });
+  const [firstStopped, secondStopped] = await Promise.all([
+    tool(22407, "terminal_stop", {
+      device_id: deviceId, session_id: firstDeviceSession.sessionId,
+      approval_token: firstStopToken,
+    }),
+    tool(22408, "terminal_stop", {
+      device_id: secondDeviceId, session_id: secondDeviceSession.sessionId,
+      approval_token: secondStopToken,
+    }),
+  ]);
+  assert.equal(firstStopped.ok, true, JSON.stringify(firstStopped));
+  assert.equal(secondStopped.ok, true, JSON.stringify(secondStopped));
+  const firstAfterSecondAgent = await tool(22409, "terminal_list", {
+    device_id: deviceId,
+  });
+  assert.ok(firstAfterSecondAgent.items.some((item) =>
+    item.sessionId === started.sessionId && item.running),
+  "second Agent PTY operations disturbed the first Agent's existing session");
+  console.log("agent-e2e: two paired live Agents isolated PTYs and rejected foreign approval");
+  secondAgent.kill("SIGTERM");
+  await waitFor(() => secondAgent.exitCode !== null || secondAgent.signalCode !== null,
+    10000, 50);
+  secondAgent = undefined;
+
   // 2D: a same-UID actor can replace the device history directory with a
   // different *regular* directory, not only a symlink. The Agent's existing
   // HistoryStore must reject the new inode before creating a fresh lock/slot
@@ -3141,10 +3255,12 @@ try {
 } catch (error) {
   console.error(error);
   if (agentLog) console.error("\n--- agent log ---\n" + agentLog);
+  if (secondAgentLog) console.error("\n--- second agent log ---\n" + secondAgentLog);
   process.exitCode = 1;
 } finally {
   if (agent && !agent.killed) {
     agent.kill("SIGTERM");
   }
+  if (secondAgent && secondAgent.exitCode === null) secondAgent.kill("SIGTERM");
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }
