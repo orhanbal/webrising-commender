@@ -83,6 +83,7 @@ const tempRoot = fs.mkdtempSync(
 const configPath = path.join(tempRoot, "agent.json");
 let agent = null;
 let agentLog = "";
+let restartedRelayB = null;
 
 try {
   const relayRegistry = await waitFor(async () => {
@@ -493,12 +494,115 @@ try {
   assert.equal(survivingUnsigned.status, 401);
   console.log("relay-e2e: unexpected relay-b SIGKILL recovered via relay-a with authenticated native MCP");
 
+
+  // 9B: exercise the opposite *unplanned* relay death after recovering the
+  // original node. This uses only CI-owned localhost processes, not servers.
+  // A successful registry heartbeat alone is insufficient: the Agent must
+  // reconnect and its existing native search session must remain readable.
+  const relayBRestartLog = "/tmp/commender-relay-b-restart.log";
+  const relayBLogFd = fs.openSync(relayBRestartLog, "a", 0o600);
+  try {
+    restartedRelayB = spawn(process.execPath, ["dist/index.js"], {
+      cwd: path.join(repoRoot, "gateway"),
+      stdio: ["ignore", relayBLogFd, relayBLogFd],
+      env: {
+        ...process.env,
+        PUBLIC_BASE_URL: "http://127.0.0.1:8789",
+        PORT: "8789",
+        CLUSTER_NODE_ID: "relay-b",
+        RELAY_REGION: "eu-central",
+        RELAY_PUBLIC_WS_URL: "ws://127.0.0.1:8789/agent",
+        RELAY_INTERNAL_BASE_URL: "http://127.0.0.1:8789",
+        RELAY_MAX_DEVICES: "10",
+      },
+    });
+  } finally {
+    fs.closeSync(relayBLogFd);
+  }
+  assert.ok(restartedRelayB.pid > 1);
+  fs.writeFileSync("/tmp/commender-relay-b.pid", String(restartedRelayB.pid));
+  await waitFor(async () => {
+    const response = await fetch("http://127.0.0.1:8789/health");
+    if (!response.ok) return null;
+    const relays = await jsonFetch("/api/admin/relays", { headers: authHeaders });
+    const relayB = relays.items.find((item) => item.id === "relay-b");
+    return relayB?.healthy && !relayB.drain ? relayB : null;
+  }, 40_000, 500);
+
+  // Verify both the node identity and command before sending a hard signal.
+  // A stale/recycled PID must never be used to terminate an unrelated task.
+  const relayAPid = Number(
+    fs.readFileSync("/tmp/commender-relay-a.pid", "utf8").trim(),
+  );
+  assert.ok(Number.isSafeInteger(relayAPid) && relayAPid > 1);
+  const relayAEnv = fs.readFileSync(
+    `/proc/${relayAPid}/environ`, "utf8",
+  ).split("\\0");
+  assert.ok(relayAEnv.includes("CLUSTER_NODE_ID=relay-a"));
+  assert.ok(relayAEnv.includes(
+    "RELAY_PUBLIC_WS_URL=ws://127.0.0.1:8788/agent",
+  ));
+  const relayACmd = fs.readFileSync(
+    `/proc/${relayAPid}/cmdline`, "utf8",
+  ).replaceAll("\\0", " ");
+  assert.match(relayACmd, /node.*dist\\/index\\.js/);
+  process.kill(relayAPid, "SIGKILL");
+
+  const secondCrashRecovered = await waitFor(async () => {
+    const devices = await jsonFetch("/api/devices", { headers: authHeaders });
+    const item = devices.items.find((candidate) => candidate.id === deviceId);
+    return item?.online &&
+      item.connected_relay_id === "relay-b" &&
+      item.assigned_relay_id === "relay-b"
+      ? item : null;
+  }, 150_000, 500);
+  assert.equal(secondCrashRecovered.connected_relay_id, "relay-b");
+  const afterSecondCrash = toolText(await rpc(515, "tools/call", {
+    name: "system_info", arguments: { device_id: deviceId },
+  }));
+  assert.equal(typeof afterSecondCrash.cpuCount, "number");
+
+  // The search completed before the relay crash. Its Agent-owned session
+  // must still be accessible through the newly selected relay.
+  const recoveredPage = toolText(await rpc(516, "tools/call", {
+    name: "get_more_search_results",
+    arguments: {
+      device_id: deviceId, search_id: crashSearch.searchId,
+      offset: 0, length: 10,
+    },
+  }));
+  assert.equal(recoveredPage.status, "completed");
+  assert.ok(recoveredPage.items.length > 0);
+  const relaysAfterSecondCrash = await jsonFetch("/api/admin/relays", {
+    headers: authHeaders,
+  });
+  assert.equal(
+    relaysAfterSecondCrash.items.find((item) => item.id === "relay-a")?.healthy,
+    false,
+  );
+  const unsignedSecondRelay = await fetch(
+    "http://127.0.0.1:8789/internal/relay/request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        deviceId, action: { kind: "system_info" },
+      }),
+    },
+  );
+  assert.equal(unsignedSecondRelay.status, 401);
+  console.log(
+    "relay-e2e: second unexpected relay-a SIGKILL recovered via restarted relay-b; native search survived both failovers",
+  );
+
 } catch (error) {
   console.error(agentLog);
   throw error;
 } finally {
   if (agent && !agent.killed) {
     agent.kill("SIGTERM");
+  }
+  if (restartedRelayB && !restartedRelayB.killed) {
+    restartedRelayB.kill("SIGTERM");
   }
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }
