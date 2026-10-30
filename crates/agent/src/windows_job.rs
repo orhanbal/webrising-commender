@@ -49,7 +49,8 @@ impl WindowsJob {
             return Err(io::Error::last_os_error()).context("configure PTY job kill-on-close");
         }
         if unsafe { AssignProcessToJobObject(job.0, process_handle) } == 0 {
-            return Err(io::Error::last_os_error()).context("assign PTY process to kill-on-close job");
+            return Err(io::Error::last_os_error())
+                .context("assign PTY process to kill-on-close job");
         }
         Ok(job)
     }
@@ -97,7 +98,11 @@ mod tests {
         // The second ping starts after assignment and therefore inherits the
         // job. The test never touches an unrelated PID or production machine.
         let mut child = Command::new("cmd.exe")
-            .args(["/D", "/C", "ping -n 3 127.0.0.1 > NUL & ping -n 30 127.0.0.1 > NUL"])
+            .args([
+                "/D",
+                "/C",
+                "ping -n 3 127.0.0.1 > NUL & ping -n 30 127.0.0.1 > NUL",
+            ])
             .spawn()
             .expect("spawn disposable PTY-like command");
         let job = match WindowsJob::attach(child.as_raw_handle()) {
@@ -116,7 +121,10 @@ mod tests {
             system.refresh_processes(ProcessesToUpdate::All, true);
             for (pid, process) in system.processes() {
                 if process.parent() == Some(Pid::from_u32(child.id()))
-                    && process.name().to_string_lossy().eq_ignore_ascii_case("ping.exe")
+                    && process
+                        .name()
+                        .to_string_lossy()
+                        .eq_ignore_ascii_case("ping.exe")
                 {
                     if first.is_none() {
                         first = Some(*pid);
@@ -137,7 +145,10 @@ mod tests {
         let exited = loop {
             let mut system = System::new();
             system.refresh_processes(ProcessesToUpdate::All, true);
-            if system.process(descendant).is_none_or(|p| p.start_time() != started) {
+            if system
+                .process(descendant)
+                .is_none_or(|p| p.start_time() != started)
+            {
                 break true;
             }
             if Instant::now() >= deadline {
