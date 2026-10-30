@@ -573,13 +573,16 @@ try {
   }));
   assert.equal(recoveredPage.status, "completed");
   assert.ok(recoveredPage.items.length > 0);
-  const relaysAfterSecondCrash = await jsonFetch("/api/admin/relays", {
-    headers: authHeaders,
-  });
-  assert.equal(
-    relaysAfterSecondCrash.items.find((item) => item.id === "relay-a")?.healthy,
-    false,
-  );
+  // Registry health uses a 45s heartbeat freshness window. Agent route
+  // recovery may finish sooner; do not mistake a stale healthy row for a
+  // still-running relay. Wait for the registry to expire the dead node.
+  const expiredRelayA = await waitFor(async () => {
+    const relays = await jsonFetch("/api/admin/relays", {
+      headers: authHeaders,
+    });
+    return relays.items.find((item) => item.id === "relay-a")?.healthy === false;
+  }, 90_000, 500);
+  assert.equal(expiredRelayA, true);
   const unsignedSecondRelay = await fetch(
     "http://127.0.0.1:8789/internal/relay/request", {
       method: "POST",
