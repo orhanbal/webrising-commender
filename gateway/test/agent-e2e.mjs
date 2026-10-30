@@ -2287,6 +2287,82 @@ try {
   "secondary restart disturbed primary Agent PTY");
   console.log("agent-e2e: secondary Agent SIGKILL/reconnect preserved durable PTY and device isolation");
 
+  // 2D/9B: repeat the real crash/reconnect sequence under primary PTY load.
+  // Each iteration writes a distinct durable secondary PTY transcript, kills
+  // only that native Agent, and verifies both archived data and device scoping.
+  // This is a bounded CI stress regression, NOT the 24-hour soak gate.
+  for (let cycle = 0; cycle < 2; cycle++) {
+    const cycleMarker = `SECONDARY_REPEAT_RECOVERY_${cycle}_OK`;
+    const cycleStartToken = await approval(secondDeviceId, startAction);
+    const cycleSession = await tool(22500 + cycle * 10, "terminal_start", {
+      device_id: secondDeviceId, cwd: tempRoot, cols: 100, rows: 30,
+      approval_token: cycleStartToken,
+    });
+    assert.equal(typeof cycleSession.sessionId, "string", JSON.stringify(cycleSession));
+    const cycleInput = await tool(22501 + cycle * 10, "terminal_input", {
+      device_id: secondDeviceId, session_id: cycleSession.sessionId,
+      data_base64: Buffer.from(`echo ${cycleMarker}\n`).toString("base64"),
+    });
+    assert.equal(typeof cycleInput.error, "undefined", JSON.stringify(cycleInput));
+    await waitFor(async () => {
+      const page = await tool(22502 + cycle * 10, "terminal_read_page", {
+        device_id: secondDeviceId, session_id: cycleSession.sessionId,
+        offset_bytes: -8192, max_bytes: 8192,
+      });
+      return page.historyDurable && String(page.text).includes(cycleMarker);
+    }, 15000, 150);
+
+    const previousSecondary = secondAgent;
+    const exited = new Promise((resolve) => previousSecondary.once("exit", resolve));
+    assert.equal(previousSecondary.kill("SIGKILL"), true);
+    await exited;
+    secondAgent = undefined;
+    await waitFor(async () => {
+      const devices = await jsonFetch("/api/devices", { headers: authHeaders });
+      return devices.items.some((item) => item.id === secondDeviceId && !item.online) &&
+        devices.items.some((item) => item.id === deviceId && item.online);
+    }, 20000, 200);
+    const primaryDuringCycle = await tool(22503 + cycle * 10, "terminal_list", {
+      device_id: deviceId,
+    });
+    assert.ok(primaryDuringCycle.items.some((item) =>
+      item.sessionId === started.sessionId && item.running),
+    "secondary crash disturbed primary PTY during repeated recovery");
+
+    secondAgent = spawn(agentBinary, ["--config", secondConfigPath, "run"], {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env, RUST_LOG: "info",
+        XDG_DATA_HOME: path.join(tempRoot, "xdg-data-secondary"),
+      },
+    });
+    secondAgent.stdout.on("data", (chunk) => { secondAgentLog += String(chunk); });
+    secondAgent.stderr.on("data", (chunk) => { secondAgentLog += String(chunk); });
+    await waitFor(async () => {
+      const devices = await jsonFetch("/api/devices", { headers: authHeaders });
+      return [deviceId, secondDeviceId].every((id) =>
+        devices.items.some((item) => item.id === id && item.online));
+    }, 20000, 200);
+    await waitFor(async () => {
+      const page = await tool(22504 + cycle * 10, "terminal_read_page", {
+        device_id: secondDeviceId, session_id: cycleSession.sessionId,
+        offset_bytes: -8192, max_bytes: 8192,
+      });
+      return page.archived && page.historyDurable &&
+        String(page.text).includes(cycleMarker);
+    }, 15000, 150);
+    const foreignRead = await tool(22505 + cycle * 10, "terminal_read_page", {
+      device_id: deviceId, session_id: cycleSession.sessionId,
+    });
+    assert.match(String(foreignRead.error), /terminal session not found/i);
+    const archivedInput = await tool(22506 + cycle * 10, "terminal_input", {
+      device_id: secondDeviceId, session_id: cycleSession.sessionId,
+      data_base64: Buffer.from("echo ARCHIVED_MUST_NOT_EXECUTE\n").toString("base64"),
+    });
+    assert.equal(typeof archivedInput.error, "string", JSON.stringify(archivedInput));
+  }
+  console.log("agent-e2e: two repeated secondary SIGKILL/reconnect cycles preserved durable PTYs and device isolation");
+
   secondAgent.kill("SIGTERM");
   await waitFor(() => secondAgent.exitCode !== null || secondAgent.signalCode !== null,
     10000, 50);
