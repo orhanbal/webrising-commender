@@ -75,7 +75,10 @@ async function probe(c) {
   return { ok: true };
 }
 async function main() {
-  const c = config(), start = Date.now(), latencies = [], errors = {};
+  // Date.now() can jump under NTP/manual clock changes. A 24-hour acceptance
+  // must measure actual monotonic elapsed time, never wall-clock advancement.
+  const c = config(), start = Date.now(), startedMonotonic = performance.now();
+  const deadline = startedMonotonic + c.duration, latencies = [], errors = {};
   let attempts = 0, successes = 0, fatal = null;
   do {
     const begin = performance.now(), result = await probe(c);
@@ -85,17 +88,20 @@ async function main() {
       errors[result.error] = (errors[result.error] || 0) + 1;
       if (result.fatal) fatal = result.error;
     }
-    if (fatal || Date.now() >= start + c.duration) break;
-    await sleep(Math.min(c.interval, Math.max(0, start + c.duration - Date.now())));
+    if (fatal || performance.now() >= deadline) break;
+    await sleep(Math.min(c.interval, Math.max(0, deadline - performance.now())));
   } while (true);
   latencies.sort((a, b) => a - b);
-  const elapsedMs = Date.now() - start, failureRate = (attempts - successes) / attempts;
+  const elapsedMs = Math.round(performance.now() - startedMonotonic);
+  const wallClockDriftMs = Date.now() - start - elapsedMs;
+  const failureRate = (attempts - successes) / attempts;
   const p95Ms = latencies.length ? latencies[Math.ceil(latencies.length * 0.95) - 1] : null;
   const passed = !fatal && elapsedMs >= c.duration && attempts >= c.minSamples &&
     failureRate <= c.maxFailureRate && p95Ms !== null && p95Ms < c.maxP95;
   const report = {
     schemaVersion: 1, startedAt: new Date(start).toISOString(), completedAt: new Date().toISOString(),
-    requestedDurationMs: c.duration, elapsedMs, attempts, successes, failures: attempts - successes,
+    requestedDurationMs: c.duration, elapsedMs, durationClock: "monotonic", wallClockDriftMs,
+    attempts, successes, failures: attempts - successes,
     failureRate, p95Ms, maxMs: latencies.length ? latencies[latencies.length - 1] : null,
     errorCounts: errors, fatal, passed,
     limits: { minSamples: c.minSamples, maxFailureRate: c.maxFailureRate, maxP95Ms: c.maxP95 },
