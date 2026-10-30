@@ -76,7 +76,10 @@ impl Drop for WindowsJob {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{process::Command, time::{Duration, Instant}};
+    use std::{
+        process::Command,
+        time::{Duration, Instant},
+    };
     use sysinfo::{Pid, ProcessesToUpdate, System};
 
     #[test]
@@ -96,6 +99,7 @@ mod tests {
             }
         };
         let deadline = Instant::now() + Duration::from_secs(8);
+        let mut first = None;
         let mut observed = None;
         while Instant::now() < deadline {
             let mut system = System::new();
@@ -104,7 +108,12 @@ mod tests {
                 if process.parent() == Some(Pid::from_u32(child.id()))
                     && process.name().to_string_lossy().eq_ignore_ascii_case("ping.exe")
                 {
-                    observed = Some((*pid, process.start_time()));
+                    if first.is_none() {
+                        first = Some(*pid);
+                    } else if first != Some(*pid) {
+                        // The second ping was spawned after job assignment.
+                        observed = Some((*pid, process.start_time()));
+                    }
                 }
             }
             if observed.is_some() {
@@ -112,7 +121,7 @@ mod tests {
             }
             std::thread::sleep(Duration::from_millis(25));
         }
-        let (descendant, started) = observed.expect("expected a real ping descendant");
+        let (descendant, started) = observed.expect("expected a late ping descendant");
         drop(job);
         let deadline = Instant::now() + Duration::from_secs(5);
         let exited = loop {
