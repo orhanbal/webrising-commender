@@ -260,8 +260,8 @@ impl TerminalManager {
         // separate 2C acceptance gate (suspended creation is not yet used).
         #[cfg(windows)]
         let windows_job = match child
-            .process_id()
-            .ok_or_else(|| anyhow!("PTY child pid unavailable"))
+            .as_raw_handle()
+            .ok_or_else(|| anyhow!("PTY child handle unavailable"))
             .and_then(crate::windows_job::WindowsJob::attach)
         {
             Ok(job) => job,
