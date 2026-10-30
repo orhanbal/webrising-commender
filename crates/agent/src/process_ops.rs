@@ -277,27 +277,52 @@ pub fn kill(pid: u32) -> Result<Value> {
     }
 
     let mut terminated_descendants = 0usize;
-    for (id, start_time) in snapshot {
-        let Some(process) = current.process(id) else {
+    for (id, start_time) in &snapshot {
+        let Some(process) = current.process(*id) else {
             continue;
         };
-        if process.start_time() != start_time {
+        if process.start_time() != *start_time {
             continue;
         }
         let killed = process
             .kill_with(Signal::Term)
             .unwrap_or_else(|| process.kill());
-        if id == target && !killed {
+        if *id == target && !killed {
             return Err(anyhow!("process could not be terminated"));
         }
-        if id != target && killed {
+        if *id != target && killed {
             terminated_descendants += 1;
         }
     }
+
+    // SIGTERM is advisory: shells and descendants can ignore it. After a
+    // bounded grace period, escalate only the original, still-identifiable
+    // process-tree snapshot. Never sweep unrelated new descendants or PIDs
+    // whose recorded start time changed. This is best-effort, not pidfd-based
+    // atomic process ownership.
+    let mut escalated_processes = 0usize;
+    #[cfg(unix)]
+    {
+        std::thread::sleep(Duration::from_millis(250));
+        current.refresh_processes(ProcessesToUpdate::All, true);
+        for (id, start_time) in &snapshot {
+            let Some(process) = current.process(*id) else {
+                continue;
+            };
+            if process.start_time() != *start_time {
+                continue;
+            }
+            if process.kill_with(Signal::Kill).unwrap_or_else(|| process.kill()) {
+                escalated_processes += 1;
+            }
+        }
+    }
+
     Ok(json!({
         "ok": true,
         "pid": pid,
-        "signaledDescendants": terminated_descendants
+        "signaledDescendants": terminated_descendants,
+        "escalatedProcesses": escalated_processes
     }))
 }
 
@@ -359,6 +384,37 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("protected"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn process_kill_escalates_term_ignoring_descendants() {
+        let root = std::env::temp_dir().join(format!("wc-kill-term-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let ready = root.join("ready");
+        let marker = root.join("leaked");
+        let command = format!(
+            "trap '' TERM; printf ready > '{}'; (sleep 2; printf leaked > '{}') & wait",
+            ready.display(),
+            marker.display()
+        );
+        let mut child = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(command)
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !ready.exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(ready.exists(), "TERM-ignoring child did not start");
+        let result = kill(child.id()).unwrap();
+        assert!(result["escalatedProcesses"].as_u64().unwrap_or(0) >= 1);
+        std::thread::sleep(Duration::from_millis(2300));
+        assert!(!marker.exists(), "SIGTERM-ignoring descendant survived");
+        let _ = child.kill();
+        let _ = child.wait();
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[cfg(unix)]
