@@ -515,10 +515,14 @@ try {
   const firstRecoveredSuccesses = probeStats.successes;
   await waitFor(() => probeStats.successes > firstRecoveredSuccesses, 15_000, 200);
   assert.ok(probeStats.attempts > firstCrashAttempts);
-  const deadRelays = await jsonFetch("/api/admin/relays", {
-    headers: authHeaders,
-  });
-  assert.equal(deadRelays.items.find((item) => item.id === "relay-b")?.healthy, false);
+  // Proactive failover can complete before the dead node's 45-second
+  // heartbeat lease expires; eventual registry expiry is a separate gate.
+  const expiredRelayB = await waitFor(async () => {
+    const relays = await jsonFetch("/api/admin/relays", { headers: authHeaders });
+    return relays.items.find((item) => item.id === "relay-b")?.healthy === false;
+  }, 90_000, 500);
+  assert.equal(expiredRelayB, true);
+  console.log(`relay-e2e: first proactive failover ${firstFailoverMs}ms`);
 
   const afterCrash = toolText(await rpc(512, "tools/call", {
     name: "system_info",
