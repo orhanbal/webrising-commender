@@ -148,6 +148,34 @@ try {
   const info = await tool(101, "system_info", { device_id: deviceId });
   assert.equal(typeof info.cpuCount, "number");
 
+  // 9B: Run the availability harness against the actual isolated Gateway
+  // and native Rust Agent. This short smoke is NOT a 24-hour soak acceptance.
+  const soakOutput = path.join(tempRoot, "real-agent-soak.json");
+  const soak = spawnSync(process.execPath, [path.join(repoRoot, "scripts", "soak-availability.mjs")], {
+    env: {
+      ...process.env,
+      COMMANDER_CONTROL_URL: base,
+      CONTROL_API_KEY: apiKey,
+      DEVICE_ID: deviceId,
+      SOAK_CONFIRM_ISOLATED: "YES",
+      SOAK_DURATION_MS: "1200",
+      SOAK_INTERVAL_MS: "150",
+      SOAK_REQUEST_TIMEOUT_MS: "5000",
+      SOAK_MIN_SAMPLES: "4",
+      SOAK_MAX_FAILURE_RATE: "0",
+      SOAK_OUTPUT: soakOutput,
+    },
+    encoding: "utf8",
+    timeout: 15000,
+  });
+  assert.equal(soak.status, 0, `real Agent soak smoke failed: ${soak.stderr || soak.stdout}`);
+  const soakReport = JSON.parse(fs.readFileSync(soakOutput, "utf8"));
+  assert.equal(soakReport.passed, true);
+  assert.equal(soakReport.failures, 0);
+  assert.ok(soakReport.attempts >= 4);
+  console.log("agent-e2e: real Gateway/Rust Agent authenticated availability smoke PASS (not 24h)");
+
+
   const policyInfo = await tool(210, "policy_info", { device_id: deviceId });
   assert.equal(policyInfo.agentMode, "restricted");
   assert.ok(policyInfo.allowedRoots.includes(tempRoot));
