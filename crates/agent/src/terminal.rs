@@ -626,7 +626,7 @@ mod tests {
             // history and never weaken the real-descendant exit assertion.
             if output.contains("\u{1b}[6n") && total_bytes > last_cursor_query_bytes {
                 manager
-                    .input(id, &STANDARD.encode(b"\u{1b}[1;1R"), scope)
+                    .input(id, &STANDARD.encode(b"\x1b[1;1R"), scope)
                     .expect("reply to ConPTY cursor position query");
                 last_cursor_query_bytes = total_bytes;
             }
