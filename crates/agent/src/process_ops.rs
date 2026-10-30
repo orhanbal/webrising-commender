@@ -394,9 +394,9 @@ mod tests {
         let ready = root.join("ready");
         let marker = root.join("leaked");
         let command = format!(
-            "trap '' TERM; printf ready > '{}'; (sleep 2; printf leaked > '{}') & wait",
-            ready.display(),
-            marker.display()
+            "trap '' TERM; (sleep 2; printf leaked > '{}') & printf ready > '{}'; wait",
+            marker.display(),
+            ready.display()
         );
         let mut child = std::process::Command::new("/bin/sh")
             .arg("-c")
