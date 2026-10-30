@@ -103,6 +103,9 @@ jobs:
       - name: Windows PTY Job Object owned descendant cleanup (2C)
         if: runner.os == 'Windows'
         run: cargo test -p webrising-commender-agent windows_job::tests::job_close_terminates_child_and_late_descendant -- --nocapture
+      - name: Windows real PTY stop kills owned child (2C)
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent terminal::tests::windows_terminal_stop_kills_owned_ping_descendant -- --nocapture
       - name: Native cross-process PTY slot contention and crash recovery
         run: cargo test -p webrising-commender-agent live_slot_quota_survives_parallel_subprocesses_and_crash -- --nocapture
       - name: Windows live PTY quota ordinary-directory swap and recovery
