@@ -253,7 +253,7 @@ async function chooseHealthyRelay(
     // A single healthy relay must remain usable after a transient WebSocket
     // disconnect. Prefer a different relay, but never strand the device when
     // no alternative is available.
-    return healthyRelayById(excludedRelayId, preferredRegion, queryable);
+    return healthyRelayById(excludedRelayId, null, queryable);
   }
   if (!row) return null;
   return {
