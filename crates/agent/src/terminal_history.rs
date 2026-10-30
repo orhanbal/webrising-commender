@@ -2471,10 +2471,16 @@ mod tests {
         for (index, helper) in helpers.iter_mut().enumerate() {
             let ready = dir.join(format!("helper-ready-{index}"));
             while !ready.exists() && std::time::Instant::now() < deadline {
-                assert!(helper.try_wait().unwrap().is_none(), "quota helper exited early");
+                assert!(
+                    helper.try_wait().unwrap().is_none(),
+                    "quota helper exited early"
+                );
                 std::thread::sleep(Duration::from_millis(25));
             }
-            assert!(ready.exists(), "quota helper {index} did not acquire a slot");
+            assert!(
+                ready.exists(),
+                "quota helper {index} did not acquire a slot"
+            );
         }
         assert!(store
             .reserve_live_slot()
