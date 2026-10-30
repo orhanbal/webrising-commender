@@ -3024,6 +3024,7 @@ try {
       });
       assert.equal(killed.ok, true, JSON.stringify(killed));
       assert.ok(killed.signaledDescendants >= 1, JSON.stringify(killed));
+      assert.equal(killed.terminationConfirmed, true, JSON.stringify(killed));
       await new Promise((resolve) => setTimeout(resolve, 2200));
       assert.equal(fs.existsSync(killMarker), false, "process_kill left a descendant alive");
     } finally {
@@ -3049,6 +3050,7 @@ try {
       });
       assert.equal(resistantResult.ok, true, JSON.stringify(resistantResult));
       assert.ok(resistantResult.escalatedProcesses >= 1, JSON.stringify(resistantResult));
+      assert.equal(resistantResult.terminationConfirmed, true, JSON.stringify(resistantResult));
       await new Promise((resolve) => setTimeout(resolve, 2300));
       assert.equal(fs.existsSync(resistantMarker), false,
         "SIGTERM-ignoring process tree survived approved process_kill");

@@ -319,13 +319,41 @@ pub fn kill(pid: u32) -> Result<Value> {
                 escalated_processes += 1;
             }
         }
+
+        // A successful signal delivery is not proof of termination. Wait
+        // briefly for the original PID/start-time snapshot to become exited
+        // or zombie; never claim success while a resistant process remains
+        // runnable. Zombies are already dead and await their own parent.
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        loop {
+            current.refresh_processes(ProcessesToUpdate::All, true);
+            let remaining = snapshot
+                .iter()
+                .filter(|(id, started)| {
+                    current.process(*id).is_some_and(|process| {
+                        process.start_time() == *started
+                            && process.status() != sysinfo::ProcessStatus::Zombie
+                    })
+                })
+                .count();
+            if remaining == 0 {
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(anyhow!(
+                    "process tree termination not confirmed for {remaining} processes"
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
     }
 
     Ok(json!({
         "ok": true,
         "pid": pid,
         "signaledDescendants": terminated_descendants,
-        "escalatedProcesses": escalated_processes
+        "escalatedProcesses": escalated_processes,
+        "terminationConfirmed": cfg!(unix)
     }))
 }
 
@@ -413,6 +441,11 @@ mod tests {
         assert!(ready.exists(), "TERM-ignoring child did not start");
         let result = kill(child.id()).unwrap();
         assert!(result["escalatedProcesses"].as_u64().unwrap_or(0) >= 1);
+        assert_eq!(result["terminationConfirmed"], true);
+        assert!(
+            child.try_wait().unwrap().is_some(),
+            "process_kill returned before the direct child exited"
+        );
         std::thread::sleep(Duration::from_millis(2300));
         assert!(!marker.exists(), "SIGTERM-ignoring descendant survived");
         let _ = child.kill();
