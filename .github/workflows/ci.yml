@@ -181,6 +181,8 @@ jobs:
           bash -n ../scripts/test-postgres-restore.sh
           bash -n ../scripts/ci-postgres-restore.sh
           node --check ../scripts/soak-restart.mjs
+          node --check ../scripts/soak-availability.mjs
+          node --test ../scripts/soak-availability.test.mjs
           node --check ../scripts/accept-production.mjs
 
   integration:
