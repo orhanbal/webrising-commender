@@ -32,7 +32,7 @@ async function serve(handler, fn) {
   finally { await new Promise(resolve => server.close(resolve)); }
 }
 test("healthy isolated MCP probes pass and report metrics", async () => {
-  await serve((_req, res) => { res.setHeader("Content-Type", "application/json"); res.end('{"data":{"os":"fixture"}}'); },
+  await serve((_req, res) => { res.setHeader("Content-Type", "application/json"); res.end('{"ok":true,"data":{"cpuCount":4}}'); },
     async url => { const r = await run(url); assert.equal(r.code, 0); assert.equal(r.report.passed, true);
       assert.equal(r.report.failures, 0); assert.ok(r.report.attempts >= 4); });
 });
@@ -40,7 +40,7 @@ test("intermittent HTTP 503 fails zero-error SLO", async () => {
   let count = 0;
   await serve((_req, res) => { count++; res.setHeader("Content-Type", "application/json");
     if (count % 2 === 0) res.statusCode = 503;
-    res.end(count % 2 === 0 ? '{}' : '{"data":{"os":"fixture"}}'); },
+    res.end(count % 2 === 0 ? '{}' : '{"ok":true,"data":{"cpuCount":4}}'); },
     async url => { const r = await run(url); assert.equal(r.code, 1); assert.equal(r.report.passed, false);
       assert.ok(r.report.errorCounts.HTTP_503 >= 1); });
 });
@@ -52,4 +52,57 @@ test("HTTP 401 stops early without masking authorization failures", async () => 
 test("non-isolated and remote HTTP targets are rejected", async () => {
   assert.equal((await run("http://example.com")).code, 1);
   assert.equal((await run("http://127.0.0.1:8787", { SOAK_CONFIRM_ISOLATED: "NO" })).code, 1);
+});
+
+test("HTTP 200 with explicit Gateway failure cannot produce false-green SLO", async () => {
+  await serve((_req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    res.end('{"ok":false,"data":{"cpuCount":4},"error":"agent_unavailable"}');
+  }, async url => {
+    const r = await run(url);
+    assert.equal(r.code, 1);
+    assert.equal(r.report.successes, 0);
+    assert.ok(r.report.errorCounts.INVALID_RESPONSE >= 1);
+  });
+});
+test("HTTP 200 without native Rust system_info is not a success", async () => {
+  await serve((_req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    res.end('{"ok":true,"data":{"os":"not-agent-proof"}}');
+  }, async url => {
+    const r = await run(url);
+    assert.equal(r.code, 1);
+    assert.equal(r.report.successes, 0);
+    assert.ok(r.report.errorCounts.INVALID_RESPONSE >= 1);
+  });
+});
+test("bearer-authenticated probes never follow HTTP redirects", async () => {
+  await serve((_req, res) => {
+    res.writeHead(302, { Location: "http://127.0.0.1:1/redirect" });
+    res.end();
+  }, async url => {
+    const r = await run(url);
+    assert.equal(r.code, 1);
+    assert.equal(r.report.successes, 0);
+    assert.ok(r.report.errorCounts.NETWORK >= 1);
+  });
+});
+test("oversized successful-looking responses are rejected before JSON parsing", async () => {
+  await serve((_req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ ok: true, data: { cpuCount: 4, padding: "x".repeat(70000) } }));
+  }, async url => {
+    const r = await run(url);
+    assert.equal(r.code, 1);
+    assert.equal(r.report.successes, 0);
+    assert.ok(r.report.errorCounts.RESPONSE_TOO_LARGE >= 1);
+  });
+});
+test("HTTP 403 stops immediately and is not treated as transient downtime", async () => {
+  await serve((_req, res) => { res.statusCode = 403; res.end("{}"); }, async url => {
+    const r = await run(url);
+    assert.equal(r.code, 1);
+    assert.equal(r.report.fatal, "HTTP_403");
+    assert.equal(r.report.attempts, 1);
+  });
 });
