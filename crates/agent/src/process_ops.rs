@@ -293,6 +293,11 @@ pub fn kill(pid: u32) -> Result<Value> {
             .kill_with(Signal::Term)
             .unwrap_or_else(|| process.kill());
         if *id == target && !killed {
+            // On Windows, terminating a child can make the waiting root exit
+            // before its own termination call. Defer the decision to the
+            // bounded PID/start-time exit verification below instead of
+            // treating an already-exited root as a failed tree termination.
+            #[cfg(not(windows))]
             return Err(anyhow!("process could not be terminated"));
         }
         if *id != target && killed {
