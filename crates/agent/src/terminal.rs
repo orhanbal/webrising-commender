@@ -610,12 +610,29 @@ mod tests {
         let items = manager.list(scope).unwrap();
         let root_pid = items["items"][0]["pid"].as_u64().unwrap() as u32;
 
-        // ConPTY startup is asynchronous. Do not send a command before the
-        // interactive shell has produced its first prompt.
+        // ConPTY startup is asynchronous. A real terminal answers the
+        // cursor-position request (CSI 6n) with CSI row;column R. This
+        // headless Windows acceptance test must emulate that part of the
+        // terminal protocol before cmd.exe can produce its first prompt.
+        // read_page(None) returns retained output, so count queries instead
+        // of answering the same request again on every polling iteration.
         let ready_deadline = Instant::now() + Duration::from_secs(10);
+        let mut answered_cursor_queries = 0_usize;
         loop {
             let page = manager.read_page(id, None, Some(16 * 1024), scope).unwrap();
-            if page["text"].as_str().unwrap_or("").contains('>') {
+            let text = page["text"].as_str().unwrap_or("");
+            let cursor_queries = text.matches("\u{1b}[6n").count();
+            if cursor_queries > 4 {
+                let _ = manager.stop(id, scope);
+                panic!("Windows ConPTY emitted too many cursor-position queries");
+            }
+            for _ in answered_cursor_queries..cursor_queries {
+                manager
+                    .input(id, &STANDARD.encode(b"\x1b[1;1R"), scope)
+                    .expect("answer ConPTY cursor-position request");
+            }
+            answered_cursor_queries = cursor_queries;
+            if text.contains('>') {
                 break;
             }
             if Instant::now() >= ready_deadline {
