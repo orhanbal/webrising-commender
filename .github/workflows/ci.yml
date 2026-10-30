@@ -102,7 +102,7 @@ jobs:
         run: cargo test -p webrising-commender-agent process_ops::tests::windows_process_kill_confirms_snapshot_exit -- --nocapture
       - name: Windows PTY Job Object owned descendant cleanup (2C)
         if: runner.os == 'Windows'
-        run: cargo test -p webrising-commender-agent windows_job::tests:: -- --nocapture
+        run: cargo test -p webrising-commender-agent windows_job::tests -- --nocapture
       - name: Windows real PTY stop kills owned child (2C)
         if: runner.os == 'Windows'
         run: cargo test -p webrising-commender-agent terminal::tests::windows_terminal_stop_kills_owned_ping_descendant -- --nocapture
