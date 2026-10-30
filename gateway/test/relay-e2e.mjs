@@ -206,6 +206,29 @@ try {
   });
   assert.equal(spoofedRoute.relayId, firstRelay);
 
+  // When the other relay is drained, a legitimate failed-route hint must
+  // fall back to the only healthy assigned relay rather than strand the Agent.
+  const temporarilyDrained = await jsonFetch("/api/admin/relays/relay-a", {
+    method: "PATCH", headers: authHeaders,
+    body: JSON.stringify({ drain: true }),
+  });
+  assert.equal(temporarilyDrained.item.drain, true);
+  const singleRelayRoute = await jsonFetch("/api/agent/route", {
+    method: "POST",
+    headers: {
+      "x-device-id": deviceId,
+      Authorization: `Bearer ${config.deviceToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ failedGatewayWsUrl: config.gatewayWsUrl }),
+  });
+  assert.equal(singleRelayRoute.relayId, firstRelay);
+  const reenabledStandby = await jsonFetch("/api/admin/relays/relay-a", {
+    method: "PATCH", headers: authHeaders,
+    body: JSON.stringify({ drain: false }),
+  });
+  assert.equal(reenabledStandby.item.drain, false);
+
   // Remote relay must forward *intermediate* native progress, not merely
   // the final snapshot. A 192-file fixture crosses the Agent's 32-entry
   // progress threshold and exercises MCP -> Gateway -> signed relay -> Rust.
