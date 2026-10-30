@@ -75,6 +75,12 @@ mod tests {
     use sysinfo::{Pid, ProcessesToUpdate, System};
 
     #[test]
+    fn invalid_child_handle_is_rejected_without_job_creation() {
+        assert!(WindowsJob::attach(ptr::null_mut()).is_err());
+        assert!(WindowsJob::attach(INVALID_HANDLE_VALUE).is_err());
+    }
+
+    #[test]
     fn job_close_terminates_child_and_late_descendant() {
         // The second ping starts after assignment and therefore inherits the
         // job. The test never touches an unrelated PID or production machine.
