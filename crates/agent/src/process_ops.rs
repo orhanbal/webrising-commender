@@ -284,6 +284,11 @@ pub fn kill(pid: u32) -> Result<Value> {
         if process.start_time() != *start_time {
             continue;
         }
+        // Windows has no POSIX SIGTERM; terminate the identified process
+        // directly. Unix keeps the bounded TERM -> KILL escalation below.
+        #[cfg(windows)]
+        let killed = process.kill();
+        #[cfg(not(windows))]
         let killed = process
             .kill_with(Signal::Term)
             .unwrap_or_else(|| process.kill());
@@ -348,12 +353,41 @@ pub fn kill(pid: u32) -> Result<Value> {
         }
     }
 
+    // Windows does not provide POSIX process groups. Confirm that every
+    // PID/start-time entry from the original snapshot has exited before
+    // acknowledging success. This is best-effort: children spawned after the
+    // snapshot still require Job Object ownership (separate 2C gate).
+    #[cfg(windows)]
+    {
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        loop {
+            current.refresh_processes(ProcessesToUpdate::All, true);
+            let remaining = snapshot
+                .iter()
+                .filter(|(id, started)| {
+                    current
+                        .process(*id)
+                        .is_some_and(|process| process.start_time() == *started)
+                })
+                .count();
+            if remaining == 0 {
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(anyhow!(
+                    "process tree termination not confirmed for {remaining} processes"
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+    }
+
     Ok(json!({
         "ok": true,
         "pid": pid,
         "signaledDescendants": terminated_descendants,
         "escalatedProcesses": escalated_processes,
-        "terminationConfirmed": cfg!(unix)
+        "terminationConfirmed": true
     }))
 }
 
@@ -415,6 +449,41 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("protected"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_process_kill_confirms_snapshot_exit() {
+        // The root shell and its ping child are disposable CI-owned processes.
+        // Confirmation is limited to the observed tree, not future children.
+        let mut child = std::process::Command::new("cmd.exe")
+            .args(["/D", "/C", "ping -n 30 127.0.0.1 > NUL"])
+            .spawn()
+            .expect("spawn disposable Windows process");
+        let pid = Pid::from_u32(child.id());
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let mut system = System::new();
+            system.refresh_processes(ProcessesToUpdate::All, true);
+            if system.process(pid).is_some() {
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("Windows test process was not visible");
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        let result = kill(child.id());
+        if result.is_err() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        let result = result.expect("Windows process tree termination");
+        assert_eq!(result["terminationConfirmed"], true);
+        assert!(child.try_wait().unwrap().is_some(), "root child not reaped");
+        let _ = child.wait();
     }
 
     #[cfg(unix)]
