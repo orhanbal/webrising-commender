@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import pg from "pg";
 
 const { Pool } = pg;
@@ -19,7 +20,7 @@ export async function migrate() {
     await client.query(
       "select pg_advisory_xact_lock(hashtext('webrising-commender:migrate'))",
     );
-    await client.query(`
+    const migrationSql = `
     create extension if not exists pgcrypto;
 
     create table if not exists organizations (
@@ -502,13 +503,36 @@ export async function migrate() {
     insert into organizations(name)
       select 'Self Hosted'
       where not exists(select 1 from organizations);
-    `);
+    `;
 
     const constraints = [
       ["devices_assigned_relay_fk", "assigned_relay_id"],
       ["devices_connected_relay_fk", "connected_relay_id"],
     ] as const;
 
+    // The SQL and FK definitions determine the migration revision. Unchanged
+    // restarts must not repeatedly acquire DDL locks on live business tables:
+    // concurrent audit writes and startup DDL can otherwise deadlock.
+    const fingerprint = crypto.createHash("sha256")
+      .update(migrationSql)
+      .update(JSON.stringify(constraints))
+      .digest("hex");
+    await client.query(`
+      create table if not exists commender_schema_migrations (
+        fingerprint text primary key,
+        applied_at timestamptz not null default now()
+      )
+    `);
+    const alreadyApplied = await client.query(
+      "select 1 from commender_schema_migrations where fingerprint=$1",
+      [fingerprint],
+    );
+    if (alreadyApplied.rowCount) {
+      await client.query("commit");
+      return;
+    }
+
+    await client.query(migrationSql);
     for (const [constraintName, columnName] of constraints) {
       const exists = await client.query(
         `select 1
@@ -528,6 +552,10 @@ export async function migrate() {
       }
     }
 
+    await client.query(
+      "insert into commender_schema_migrations(fingerprint) values($1)",
+      [fingerprint],
+    );
     await client.query("commit");
   } catch (error) {
     try {

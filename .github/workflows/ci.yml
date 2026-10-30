@@ -261,6 +261,8 @@ jobs:
           done
           cat /tmp/commender-gateway.log
           exit 1
+      - name: Verify repeat migrations do not lock live business tables
+        run: node test/migration-idempotence.mjs
       - name: Run integration acceptance
         run: npm run integration
       - name: Run OAuth 2.1 PKCE / ChatGPT MCP acceptance
