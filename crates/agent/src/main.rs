@@ -278,7 +278,10 @@ pub(crate) async fn run_until_shutdown(
     }
 }
 
-async fn refresh_gateway_route(config: &AgentConfig, failed_gateway_ws_url: &str) -> Option<String> {
+async fn refresh_gateway_route(
+    config: &AgentConfig,
+    failed_gateway_ws_url: &str,
+) -> Option<String> {
     let endpoint = format!(
         "{}/api/agent/route",
         config.control_url.trim_end_matches('/')
