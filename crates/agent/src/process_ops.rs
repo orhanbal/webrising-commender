@@ -312,7 +312,10 @@ pub fn kill(pid: u32) -> Result<Value> {
             if process.start_time() != *start_time {
                 continue;
             }
-            if process.kill_with(Signal::Kill).unwrap_or_else(|| process.kill()) {
+            if process
+                .kill_with(Signal::Kill)
+                .unwrap_or_else(|| process.kill())
+            {
                 escalated_processes += 1;
             }
         }
