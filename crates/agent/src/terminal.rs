@@ -146,6 +146,8 @@ struct Session {
     owner_scope: String,
     // Holds a device-wide OS file lock until this session is retired.
     _live_slot: Option<File>,
+    #[cfg(windows)]
+    _windows_job: crate::windows_job::WindowsJob,
 }
 
 #[derive(Clone, Default)]
@@ -236,7 +238,7 @@ impl TerminalManager {
             }
         };
 
-        let child = match pair.slave.spawn_command(command) {
+        let mut child = match pair.slave.spawn_command(command) {
             Ok(child) => child,
             Err(error) => {
                 // Keep the pre-spawn durability check, but do not retain a
@@ -247,6 +249,26 @@ impl TerminalManager {
                     })?;
                 }
                 return Err(error);
+            }
+        };
+        // Attach the PTY root to a kill-on-close Windows Job Object before
+        // publishing the session. A failed attachment must not leave a live,
+        // untracked shell behind. The short spawn-to-attach window remains a
+        // separate 2C acceptance gate (suspended creation is not yet used).
+        #[cfg(windows)]
+        let windows_job = match child
+            .process_id()
+            .ok_or_else(|| anyhow!("PTY child pid unavailable"))
+            .and_then(crate::windows_job::WindowsJob::attach)
+        {
+            Ok(job) => job,
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                if let Some(store) = &history_store {
+                    store.discard_unstarted(&id)?;
+                }
+                return Err(error.context("Windows PTY job assignment failed closed"));
             }
         };
         drop(pair.slave);
@@ -294,6 +316,8 @@ impl TerminalManager {
             history,
             owner_scope: scope.to_owned(),
             _live_slot: live_slot,
+            #[cfg(windows)]
+            _windows_job: windows_job,
         });
 
         sessions.insert(id.clone(), session);
