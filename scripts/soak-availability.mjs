@@ -39,14 +39,39 @@ async function probe(c) {
       method: "POST",
       headers: { Authorization: "Bearer " + c.key, "Content-Type": "application/json" },
       body: JSON.stringify({ deviceId: c.deviceId, action: { kind: "system_info" } }),
+      redirect: "error", // Never follow redirects with the control bearer token.
       signal: AbortSignal.timeout(c.timeout)
     });
   } catch (error) {
     return { error: error?.name === "TimeoutError" ? "TIMEOUT" : "NETWORK" };
   }
   if (!response.ok) return { error: "HTTP_" + response.status, fatal: response.status === 401 || response.status === 403 };
-  const body = await response.json().catch(() => null);
-  if (!body || !body.data || typeof body.data !== "object") return { error: "INVALID_RESPONSE" };
+  // A 2xx transport status is not sufficient: the Gateway must explicitly
+  // acknowledge success and return native system_info from the Rust Agent.
+  // Bound the response before parsing to avoid exhausting a 24-hour probe.
+  let body;
+  try {
+    if (!response.body) return { error: "INVALID_RESPONSE" };
+    const reader = response.body.getReader(), chunks = [];
+    let size = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > 65536) {
+        await reader.cancel();
+        return { error: "RESPONSE_TOO_LARGE" };
+      }
+      chunks.push(value);
+    }
+    body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    return { error: "INVALID_RESPONSE" };
+  }
+  if (body?.ok !== true || !body.data || typeof body.data !== "object" ||
+      !Number.isSafeInteger(body.data.cpuCount) || body.data.cpuCount < 1) {
+    return { error: "INVALID_RESPONSE" };
+  }
   return { ok: true };
 }
 async function main() {
