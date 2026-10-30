@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -104,5 +104,36 @@ test("HTTP 403 stops immediately and is not treated as transient downtime", asyn
     assert.equal(r.code, 1);
     assert.equal(r.report.fatal, "HTTP_403");
     assert.equal(r.report.attempts, 1);
+  });
+});
+
+test("monotonic soak duration resists forward and backward wall-clock jumps", async () => {
+  await serve((_req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    res.end('{"ok":true,"data":{"cpuCount":4}}');
+  }, async url => {
+    const dir = await mkdtemp(join(tmpdir(), "wc-soak-clock-"));
+    try {
+      for (const jump of [86400000, -86400000]) {
+        // Preload runs in the CHILD process only. It simulates a system clock
+        // correction after the probe starts; performance.now() remains steady.
+        const preload = join(dir, jump > 0 ? "forward.cjs" : "backward.cjs");
+        await writeFile(preload,
+          "const real=Date.now.bind(Date); const start=performance.now();" +
+          "Date.now=()=>real()+(performance.now()-start>=250?(" + jump + "):0);\n");
+        const started = performance.now();
+        const r = await run(url, { NODE_OPTIONS: "--require=" + preload });
+        const realElapsedMs = performance.now() - started;
+        assert.equal(r.code, 0, "clock jump must not cause a false failure");
+        assert.equal(r.report.passed, true);
+        assert.equal(r.report.durationClock, "monotonic");
+        assert.ok(r.report.elapsedMs >= 1100, "monotonic duration was truncated");
+        assert.ok(realElapsedMs >= 1000, "wall-clock jump ended soak early");
+        assert.ok(realElapsedMs < 4000, "backward wall-clock jump prolonged soak");
+        assert.ok(Math.abs(r.report.wallClockDriftMs) > 80000000,
+          "clock drift should be visible in the audit report");
+        assert.equal(Math.sign(r.report.wallClockDriftMs), Math.sign(jump));
+      }
+    } finally { await rm(dir, { recursive: true, force: true }); }
   });
 });
