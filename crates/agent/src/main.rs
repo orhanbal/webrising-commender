@@ -13,6 +13,8 @@ mod task_manager;
 mod terminal;
 mod terminal_history;
 #[cfg(windows)]
+mod windows_job;
+#[cfg(windows)]
 mod windows_service_host;
 
 use anyhow::{anyhow, Context, Result};
