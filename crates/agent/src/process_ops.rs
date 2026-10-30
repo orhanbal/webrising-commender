@@ -439,6 +439,37 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         assert!(ready.exists(), "TERM-ignoring child did not start");
+        // The parent writes "ready" immediately after spawning its
+        // background shell. On loaded CI runners the background shell may
+        // not yet have exec'd "sleep"; a tree snapshot taken in that gap
+        // cannot include a process that does not exist yet. Wait until the
+        // actual grandchild is visible before testing snapshot termination.
+        let sleep_observed = loop {
+            let mut processes = System::new();
+            processes.refresh_processes(ProcessesToUpdate::All, true);
+            let descendant = processes.processes().values().any(|process| {
+                if process.name().to_string_lossy() != "sleep" {
+                    return false;
+                }
+                let mut parent = process.parent();
+                for _ in 0..16 {
+                    match parent {
+                        Some(id) if id == Pid::from_u32(child.id()) => return true,
+                        Some(id) => parent = processes.process(id).and_then(|p| p.parent()),
+                        None => break,
+                    }
+                }
+                false
+            });
+            if descendant {
+                break true;
+            }
+            if std::time::Instant::now() >= deadline {
+                break false;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        assert!(sleep_observed, "TERM-ignoring grandchild was not ready");
         let result = kill(child.id()).unwrap();
         assert!(result["escalatedProcesses"].as_u64().unwrap_or(0) >= 1);
         assert_eq!(result["terminationConfirmed"], true);
