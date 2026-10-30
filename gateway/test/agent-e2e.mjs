@@ -2369,6 +2369,44 @@ try {
     item.sessionId === liveStopSession.sessionId));
   console.log("agent-e2e: live PTY stop reaped direct child before unregister");
 
+  // 2C/2D: killing only the PTY shell can orphan a non-interactive child
+  // still running in the shell's process group. Verify the real approved
+  // Gateway -> Rust Agent terminal_stop kills that group before returning.
+  // This covers Unix same-process-group descendants, not detached children.
+  if (process.platform === "linux") {
+    const groupReady = path.join(tempRoot, "pty-group-ready");
+    const groupLeak = path.join(tempRoot, "pty-group-descendant-leaked");
+    const groupStartToken = await approval(deviceId, startAction);
+    const groupSession = await tool(415, "terminal_start", {
+      device_id: deviceId, cwd: tempRoot, cols: 100, rows: 30,
+      approval_token: groupStartToken,
+    });
+    assert.equal(typeof groupSession.sessionId, "string", JSON.stringify(groupSession));
+    const groupCommand =
+      "exec /bin/sh -c 'printf ready > \"" + groupReady +
+      "\"; (sleep 2; printf leaked > \"" + groupLeak + "\") & wait'\n";
+    await tool(416, "terminal_input", {
+      device_id: deviceId, session_id: groupSession.sessionId,
+      data_base64: Buffer.from(groupCommand, "utf8").toString("base64"),
+    });
+    await waitFor(() => fs.existsSync(groupReady), 10000, 50);
+    const groupStopToken = await approval(deviceId, {
+      kind: "terminal_stop", sessionId: groupSession.sessionId,
+    });
+    const groupStopped = await tool(417, "terminal_stop", {
+      device_id: deviceId, session_id: groupSession.sessionId,
+      approval_token: groupStopToken,
+    });
+    assert.equal(groupStopped.ok, true, JSON.stringify(groupStopped));
+    await new Promise((resolve) => setTimeout(resolve, 2300));
+    assert.equal(fs.existsSync(groupLeak), false,
+      "terminal_stop left a same-process-group descendant alive");
+    const afterGroupStop = await tool(418, "terminal_list", { device_id: deviceId });
+    assert.ok(!afterGroupStop.items.some((item) =>
+      item.sessionId === groupSession.sessionId));
+    console.log("agent-e2e: Unix PTY stop killed same-process-group descendants");
+  }
+
 
 
 
