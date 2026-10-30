@@ -418,15 +418,15 @@ try {
   assert.ok(Number.isSafeInteger(relayBPid) && relayBPid > 1);
   const relayBEnv = fs.readFileSync(
     `/proc/${relayBPid}/environ`, "utf8",
-  ).split("\\0");
+  ).split("\0");
   assert.ok(relayBEnv.includes("CLUSTER_NODE_ID=relay-b"));
   assert.ok(relayBEnv.includes(
     "RELAY_PUBLIC_WS_URL=ws://127.0.0.1:8789/agent",
   ));
   const relayBCmd = fs.readFileSync(
     `/proc/${relayBPid}/cmdline`, "utf8",
-  ).replaceAll("\\0", " ");
-  assert.match(relayBCmd, /node.*dist\\/index\\.js/);
+  ).replaceAll("\0", " ");
+  assert.match(relayBCmd, /node.*dist\/index\.js/);
   process.kill(relayBPid, "SIGKILL");
 
   // Heartbeat freshness is 45s, followed by the Agent's bounded route
