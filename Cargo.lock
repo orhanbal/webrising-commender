@@ -2417,6 +2417,7 @@ dependencies = [
  "umya-spreadsheet",
  "uuid",
  "windows-service",
+ "windows-sys 0.61.2",
  "zip 4.6.1",
 ]
 
