@@ -399,6 +399,100 @@ try {
   console.log(
     `relay-e2e: failback ok (${firstRelay} -> ${secondConnected.connected_relay_id} -> ${firstRelay})`,
   );
+
+  // 9B: unplanned hard relay death is not an administrative drain.
+  // The CI runner owns this relay-b process; verify its exact environment
+  // before killing it to avoid touching an unrelated or recycled PID.
+  const standby = await jsonFetch(
+    `/api/admin/relays/${encodeURIComponent("relay-a")}`,
+    {
+      method: "PATCH",
+      headers: authHeaders,
+      body: JSON.stringify({ drain: false }),
+    },
+  );
+  assert.equal(standby.item.drain, false);
+  const relayBPid = Number(
+    fs.readFileSync("/tmp/commender-relay-b.pid", "utf8").trim(),
+  );
+  assert.ok(Number.isSafeInteger(relayBPid) && relayBPid > 1);
+  const relayBEnv = fs.readFileSync(
+    `/proc/${relayBPid}/environ`, "utf8",
+  ).split("\\0");
+  assert.ok(relayBEnv.includes("CLUSTER_NODE_ID=relay-b"));
+  assert.ok(relayBEnv.includes(
+    "RELAY_PUBLIC_WS_URL=ws://127.0.0.1:8789/agent",
+  ));
+  const relayBCmd = fs.readFileSync(
+    `/proc/${relayBPid}/cmdline`, "utf8",
+  ).replaceAll("\\0", " ");
+  assert.match(relayBCmd, /node.*dist\\/index\\.js/);
+  process.kill(relayBPid, "SIGKILL");
+
+  // Heartbeat freshness is 45s, followed by the Agent's bounded route
+  // refresh/backoff. No admin disconnect or drain of the dead relay.
+  const crashRecovered = await waitFor(async () => {
+    const devices = await jsonFetch("/api/devices", {
+      headers: authHeaders,
+    });
+    const item = devices.items.find((candidate) => candidate.id === deviceId);
+    return item?.online &&
+      item.connected_relay_id === "relay-a" &&
+      item.assigned_relay_id === "relay-a"
+      ? item
+      : null;
+  }, 150_000, 500);
+  assert.equal(crashRecovered.connected_relay_id, "relay-a");
+  const deadRelays = await jsonFetch("/api/admin/relays", {
+    headers: authHeaders,
+  });
+  assert.equal(deadRelays.items.find((item) => item.id === "relay-b")?.healthy, false);
+
+  const afterCrash = toolText(await rpc(512, "tools/call", {
+    name: "system_info",
+    arguments: { device_id: deviceId },
+  }));
+  assert.equal(typeof afterCrash.cpuCount, "number");
+  const crashSearch = toolText(await rpc(513, "tools/call", {
+    name: "start_search",
+    arguments: {
+      device_id: deviceId,
+      path: tempRoot,
+      query: "relay-progress-fixture",
+      search_type: "files",
+    },
+  }));
+  assert.equal(typeof crashSearch.searchId, "string");
+  const crashResults = await waitFor(async () => {
+    const page = toolText(await rpc(514, "tools/call", {
+      name: "get_more_search_results",
+      arguments: {
+        device_id: deviceId,
+        search_id: crashSearch.searchId,
+        offset: 0,
+        length: 10,
+      },
+    }));
+    return page.status === "completed" ? page : null;
+  }, 20_000);
+  assert.ok(crashResults.items.length > 0);
+  assert.ok(crashResults.scannedEntries >= 32);
+
+  // The surviving relay must retain the signed-internal trust boundary.
+  const survivingUnsigned = await fetch(
+    "http://127.0.0.1:8788/internal/relay/request",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        deviceId,
+        action: { kind: "system_info" },
+      }),
+    },
+  );
+  assert.equal(survivingUnsigned.status, 401);
+  console.log("relay-e2e: unexpected relay-b SIGKILL recovered via relay-a with authenticated native MCP");
+
 } catch (error) {
   console.error(agentLog);
   throw error;
