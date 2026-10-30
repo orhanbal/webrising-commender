@@ -480,14 +480,33 @@ impl TerminalManager {
                 .lock()
                 .map_err(|_| anyhow!("terminal child lock poisoned"))?;
             if child.try_wait()?.is_none() {
-                if let Err(error) = child.kill() {
-                    // The process may have exited between try_wait and kill.
-                    // Retain the session on a genuine termination failure.
-                    if child.try_wait()?.is_none() {
-                        return Err(error.into());
+                // On Unix, a PTY shell normally leads its own process group.
+                // Terminating only the direct shell can leave its foreground
+                // descendants alive after the session has been unregistered.
+                // Signal the group ONLY if the still-live child is its leader:
+                // never send a negative-PID signal to an unrelated group.
+                #[cfg(unix)]
+                let signaled_group = child.process_id().is_some_and(|id| {
+                    let Ok(pid) = i32::try_from(id) else {
+                        return false;
+                    };
+                    pid > 1
+                        && unsafe { libc::getpgid(pid) } == pid
+                        && unsafe { libc::kill(-pid, libc::SIGKILL) } == 0
+                });
+                #[cfg(not(unix))]
+                let signaled_group = false;
+
+                if !signaled_group {
+                    if let Err(error) = child.kill() {
+                        // The process may have exited between try_wait and kill.
+                        // Retain the session on a genuine termination failure.
+                        if child.try_wait()?.is_none() {
+                            return Err(error.into());
+                        }
                     }
                 }
-                // kill() can return before the child is actually reaped.
+                // kill() or the group signal can return before the child is reaped.
                 // Do not unregister a still-live child; bound the wait so a
                 // stuck OS process cannot indefinitely block the session map.
                 let mut exited = child.try_wait()?.is_some();
