@@ -39,10 +39,11 @@ async function jsonFetch(route, options = {}) {
   return body;
 }
 
-async function rpc(id, method, params = undefined) {
+async function rpc(id, method, params = undefined, signal = undefined) {
   return jsonFetch("/mcp", {
     method: "POST",
     headers: authHeaders,
+    signal,
     body: JSON.stringify({
       jsonrpc: "2.0",
       id,
@@ -84,6 +85,31 @@ const configPath = path.join(tempRoot, "agent.json");
 let agent = null;
 let agentLog = "";
 let restartedRelayB = null;
+let probeStop = false;
+let probeTask = null;
+const probeStats = { attempts: 0, successes: 0, failures: 0 };
+
+// 9B: bounded authenticated MCP traffic during two unplanned relay deaths.
+// Individual calls time out so shutdown cannot hang on a lost relay.
+async function continuousMcpProbe(deviceId) {
+  while (!probeStop) {
+    probeStats.attempts += 1;
+    try {
+      const response = await rpc(
+        8000 + probeStats.attempts,
+        "tools/call",
+        { name: "system_info", arguments: { device_id: deviceId } },
+        AbortSignal.timeout(8_000),
+      );
+      assert.equal(typeof toolText(response).cpuCount, "number");
+      probeStats.successes += 1;
+    } catch {
+      // Transient failover errors are allowed; recovered success is required.
+      probeStats.failures += 1;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 350));
+  }
+}
 
 try {
   const relayRegistry = await waitFor(async () => {
@@ -428,6 +454,10 @@ try {
     `/proc/${relayBPid}/cmdline`, "utf8",
   ).replaceAll("\0", " ");
   assert.match(relayBCmd, /node.*dist\/index\.js/);
+  probeTask = continuousMcpProbe(deviceId);
+  await waitFor(() => probeStats.successes >= 2, 15_000, 100);
+  const firstCrashAttempts = probeStats.attempts;
+  const firstCrashSuccesses = probeStats.successes;
   process.kill(relayBPid, "SIGKILL");
 
   // Heartbeat freshness is 45s, followed by the Agent's bounded route
@@ -444,6 +474,8 @@ try {
       : null;
   }, 150_000, 500);
   assert.equal(crashRecovered.connected_relay_id, "relay-a");
+  await waitFor(() => probeStats.successes > firstCrashSuccesses, 15_000, 200);
+  assert.ok(probeStats.attempts > firstCrashAttempts);
   const deadRelays = await jsonFetch("/api/admin/relays", {
     headers: authHeaders,
   });
@@ -546,6 +578,8 @@ try {
     `/proc/${relayAPid}/cmdline`, "utf8",
   ).replaceAll("\0", " ");
   assert.match(relayACmd, /node.*dist\/index\.js/);
+  const secondCrashAttempts = probeStats.attempts;
+  const secondCrashSuccesses = probeStats.successes;
   process.kill(relayAPid, "SIGKILL");
 
   const secondCrashRecovered = await waitFor(async () => {
@@ -557,6 +591,8 @@ try {
       ? item : null;
   }, 150_000, 500);
   assert.equal(secondCrashRecovered.connected_relay_id, "relay-b");
+  await waitFor(() => probeStats.successes > secondCrashSuccesses, 15_000, 200);
+  assert.ok(probeStats.attempts > secondCrashAttempts);
   const afterSecondCrash = toolText(await rpc(515, "tools/call", {
     name: "system_info", arguments: { device_id: deviceId },
   }));
@@ -596,11 +632,17 @@ try {
   console.log(
     "relay-e2e: second unexpected relay-a SIGKILL recovered via restarted relay-b; native search survived both failovers",
   );
+  console.log(
+    "relay-e2e: continuous authenticated MCP load recovered twice " +
+      JSON.stringify(probeStats),
+  );
 
 } catch (error) {
   console.error(agentLog);
   throw error;
 } finally {
+  probeStop = true;
+  if (probeTask) await probeTask;
   if (agent && !agent.killed) {
     agent.kill("SIGTERM");
   }
