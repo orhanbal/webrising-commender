@@ -249,6 +249,12 @@ async function chooseHealthyRelay(
     [nodeFreshSeconds, preferredRegion, excludedRelayId ?? null],
   );
   const row = result.rows[0];
+  if (!row && excludedRelayId) {
+    // A single healthy relay must remain usable after a transient WebSocket
+    // disconnect. Prefer a different relay, but never strand the device when
+    // no alternative is available.
+    return healthyRelayById(excludedRelayId, preferredRegion, queryable);
+  }
   if (!row) return null;
   return {
     id: row.id,
