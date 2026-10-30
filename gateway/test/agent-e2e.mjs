@@ -2041,6 +2041,48 @@ try {
   });
   assert.equal(typeof started.sessionId, "string");
 
+  // Four concurrent approved MCP starts and stops must preserve distinct
+  // live PTY sessions and leave the existing session undisturbed.
+  const parallelStartTokens = [];
+  for (let index = 0; index < 4; index++) {
+    parallelStartTokens.push(await approval(deviceId, startAction));
+  }
+  const parallelSessions = await Promise.all(parallelStartTokens.map(
+    (approval_token, index) => tool(22300 + index, "terminal_start", {
+      device_id: deviceId, cwd: tempRoot, cols: 100, rows: 30, approval_token,
+    }),
+  ));
+  const parallelIds = parallelSessions.map((session) => session.sessionId);
+  assert.ok(parallelIds.every((id) => typeof id === "string"),
+    JSON.stringify(parallelSessions));
+  assert.equal(new Set(parallelIds).size, 4, "concurrent starts reused a session ID");
+  const parallelList = await tool(22310, "terminal_list", { device_id: deviceId });
+  for (const sessionId of parallelIds) {
+    assert.ok(parallelList.items.some((item) => item.sessionId === sessionId && item.running),
+      "concurrent PTY session missing from Agent");
+  }
+  const parallelStopTokens = [];
+  for (const sessionId of parallelIds) {
+    parallelStopTokens.push(await approval(deviceId, {
+      kind: "terminal_stop", sessionId,
+    }));
+  }
+  const parallelStops = await Promise.all(parallelIds.map((sessionId, index) =>
+    tool(22320 + index, "terminal_stop", {
+      device_id: deviceId, session_id: sessionId,
+      approval_token: parallelStopTokens[index],
+    })));
+  assert.ok(parallelStops.every((result) => result.ok === true),
+    JSON.stringify(parallelStops));
+  const parallelAfter = await tool(22330, "terminal_list", { device_id: deviceId });
+  assert.ok(parallelAfter.items.some((item) =>
+    item.sessionId === started.sessionId && item.running),
+    "concurrent PTY stops disturbed the existing terminal");
+  assert.ok(parallelIds.every((id) =>
+    !parallelAfter.items.some((item) => item.sessionId === id)),
+    "concurrent PTY stops left live session records");
+  console.log("agent-e2e: four concurrent approved PTY starts/stops preserved session isolation");
+
   // 2D: a same-UID actor can replace the device history directory with a
   // different *regular* directory, not only a symlink. The Agent's existing
   // HistoryStore must reject the new inode before creating a fresh lock/slot

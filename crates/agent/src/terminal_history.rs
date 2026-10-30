@@ -2378,9 +2378,18 @@ mod tests {
         let dir = PathBuf::from(dir);
         let store = HistoryStore::at(dir.clone()).unwrap();
         let _lease = store.reserve_live_slot().unwrap();
-        fs::write(dir.join("helper-ready"), b"ready").unwrap();
+        let tag = std::env::var("WCTH_LIVE_SLOT_HELPER_TAG").ok();
+        let ready = tag.as_ref().map_or_else(
+            || "helper-ready".to_string(),
+            |tag| format!("helper-ready-{tag}"),
+        );
+        let release = tag.as_ref().map_or_else(
+            || "helper-release".to_string(),
+            |tag| format!("helper-release-{tag}"),
+        );
+        fs::write(dir.join(ready), b"ready").unwrap();
         for _ in 0..200 {
-            if dir.join("helper-release").exists() {
+            if dir.join(&release).exists() {
                 return;
             }
             std::thread::sleep(Duration::from_millis(25));
@@ -2433,6 +2442,65 @@ mod tests {
         drop(store);
         fs::remove_dir_all(dir).unwrap();
     }
+    // Four independent processes contend for the same stable slot pool.
+    // Crashing one holder must free exactly one slot, not reset the quota.
+    #[test]
+    fn live_slot_quota_survives_parallel_subprocesses_and_crash() {
+        use std::process::{Command, Stdio};
+
+        let dir = std::env::temp_dir().join(format!("wcth-live-parallel-{}", Uuid::new_v4()));
+        let store = HistoryStore::at(dir.clone()).unwrap();
+        let leases = (0..MAX_LIVE_TERMINAL_SLOTS - 4)
+            .map(|_| store.reserve_live_slot().unwrap())
+            .collect::<Vec<_>>();
+        let mut helpers = (0..4)
+            .map(|index| {
+                Command::new(std::env::current_exe().unwrap())
+                    .arg("live_slot_subprocess_helper")
+                    .arg("--ignored")
+                    .arg("--test-threads=1")
+                    .env("WCTH_LIVE_SLOT_HELPER_DIR", &dir)
+                    .env("WCTH_LIVE_SLOT_HELPER_TAG", index.to_string())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn()
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        for (index, helper) in helpers.iter_mut().enumerate() {
+            let ready = dir.join(format!("helper-ready-{index}"));
+            while !ready.exists() && std::time::Instant::now() < deadline {
+                assert!(helper.try_wait().unwrap().is_none(), "quota helper exited early");
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            assert!(ready.exists(), "quota helper {index} did not acquire a slot");
+        }
+        assert!(store
+            .reserve_live_slot()
+            .unwrap_err()
+            .to_string()
+            .contains("too many terminal sessions"));
+        helpers[0].kill().unwrap();
+        let _ = helpers[0].wait().unwrap();
+        let recovered = store.reserve_live_slot().unwrap();
+        assert!(store
+            .reserve_live_slot()
+            .unwrap_err()
+            .to_string()
+            .contains("too many terminal sessions"));
+        drop(recovered);
+        for index in 1..4 {
+            fs::write(dir.join(format!("helper-release-{index}")), b"release").unwrap();
+        }
+        for helper in helpers.iter_mut().skip(1) {
+            assert!(helper.wait().unwrap().success());
+        }
+        drop(leases);
+        drop(store);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
     // An Agent crash must release its kernel-held slot lease without
     // deleting/recreating the stable slot inode. A graceful exit is covered
     // by the separate cross-process quota test above.

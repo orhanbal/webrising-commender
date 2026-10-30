@@ -97,6 +97,8 @@ jobs:
         run: cargo test -p webrising-commender-agent windows_config_stage_inplace_tamper_cannot_publish_credentials -- --nocapture
       - name: Native unguarded digest growth and truncation race
         run: cargo test -p webrising-commender-agent atomic_digest_race_tests -- --nocapture
+      - name: Native cross-process PTY slot contention and crash recovery
+        run: cargo test -p webrising-commender-agent live_slot_quota_survives_parallel_subprocesses_and_crash -- --nocapture
       - name: Windows live PTY quota ordinary-directory swap and recovery
         if: runner.os == 'Windows'
         run: cargo test -p webrising-commender-agent windows_live_slot_rejects_regular_directory_swap_and_recovers -- --nocapture
