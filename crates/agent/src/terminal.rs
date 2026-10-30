@@ -602,23 +602,61 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
         let manager = TerminalManager::default();
+        let scope = "windows-job-test";
         let session = manager
-            .start(&policy, Some("cmd.exe"), None, 80, 24, "windows-job-test")
+            .start(&policy, Some("cmd.exe"), None, 80, 24, scope)
             .expect("start Windows PTY with mandatory job attachment");
         let id = session["sessionId"].as_str().unwrap();
-        let items = manager.list("windows-job-test").unwrap();
+        let items = manager.list(scope).unwrap();
         let root_pid = items["items"][0]["pid"].as_u64().unwrap() as u32;
+
+        // ConPTY startup is asynchronous. Do not send a command before the
+        // interactive shell has produced its first prompt.
+        let ready_deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let page = manager.read_page(id, None, Some(16 * 1024), scope).unwrap();
+            if page["text"].as_str().unwrap_or("").contains('>') {
+                break;
+            }
+            if Instant::now() >= ready_deadline {
+                let _ = manager.stop(id, scope);
+                panic!("Windows PTY shell did not become ready: {page}");
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+
+        // A single carriage return is the interactive Windows Enter key.
         manager
-            .input(id, &STANDARD.encode(b"ping -n 30 127.0.0.1\r\n"), "windows-job-test")
+            .input(id, &STANDARD.encode(b"ping -n 30 127.0.0.1\r"), scope)
             .unwrap();
-        let deadline = Instant::now() + Duration::from_secs(8);
+        let deadline = Instant::now() + Duration::from_secs(10);
         let descendant = loop {
             let mut system = System::new();
             system.refresh_processes(ProcessesToUpdate::All, true);
             let found = system.processes().iter().find_map(|(pid, process)| {
-                (process.parent() == Some(Pid::from_u32(root_pid))
-                    && process.name().to_string_lossy().eq_ignore_ascii_case("ping.exe"))
-                .then_some((*pid, process.start_time()))
+                if !process
+                    .name()
+                    .to_string_lossy()
+                    .eq_ignore_ascii_case("ping.exe")
+                {
+                    return None;
+                }
+                // Windows ConPTY can insert an intermediate process between
+                // the PTY root and its command. Require ancestry, not merely
+                // a matching process name on the CI host.
+                let mut parent = process.parent();
+                for _ in 0..12 {
+                    match parent {
+                        Some(ancestor) if ancestor == Pid::from_u32(root_pid) => {
+                            return Some((*pid, process.start_time()));
+                        }
+                        Some(ancestor) => {
+                            parent = system.process(ancestor).and_then(|p| p.parent());
+                        }
+                        None => break,
+                    }
+                }
+                None
             });
             if found.is_some() || Instant::now() >= deadline {
                 break found;
@@ -626,10 +664,12 @@ mod tests {
             std::thread::sleep(Duration::from_millis(25));
         };
         if descendant.is_none() {
-            let _ = manager.stop(id, "windows-job-test");
+            let page = manager.read_page(id, None, Some(16 * 1024), scope).unwrap();
+            let _ = manager.stop(id, scope);
+            panic!("PTY command must spawn real ping descendant: root={root_pid}, output={page}");
         }
-        let (ping_pid, started) = descendant.expect("PTY command must spawn real ping descendant");
-        manager.stop(id, "windows-job-test").expect("stop owned PTY");
+        let (ping_pid, started) = descendant.unwrap();
+        manager.stop(id, scope).expect("stop owned PTY");
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
             let mut system = System::new();
@@ -640,7 +680,10 @@ mod tests {
             {
                 break;
             }
-            assert!(Instant::now() < deadline, "owned PTY descendant survived stop");
+            assert!(
+                Instant::now() < deadline,
+                "owned PTY descendant survived stop"
+            );
             std::thread::sleep(Duration::from_millis(25));
         }
         std::fs::remove_dir_all(root).unwrap();
