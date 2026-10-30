@@ -3030,6 +3030,33 @@ try {
       if (killParent.exitCode === null) killParent.kill("SIGKILL");
     }
     console.log("agent-e2e: process_kill protected Agent and reaped visible descendants");
+    // 2C: SIGTERM alone does not stop a shell that explicitly ignores it.
+    // Exercise approved Gateway -> Rust Agent process_kill against a real
+    // TERM-ignoring parent and descendant, then require bounded escalation.
+    const resistantReady = path.join(tempRoot, "kill-term-resistant-ready");
+    const resistantMarker = path.join(tempRoot, "kill-term-resistant-leaked");
+    const resistantCommand =
+      "trap '' TERM; (sleep 2; printf leaked > '" + resistantMarker +
+      "') & printf ready > '" + resistantReady + "'; wait";
+    const resistantParent = spawn("/bin/sh", ["-c", resistantCommand], { stdio: "ignore" });
+    try {
+      await waitFor(() => fs.existsSync(resistantReady), 5000, 20);
+      const resistantToken = await approval(deviceId, {
+        kind: "process_kill", pid: resistantParent.pid,
+      });
+      const resistantResult = await tool(549, "process_kill", {
+        device_id: deviceId, pid: resistantParent.pid, approval_token: resistantToken,
+      });
+      assert.equal(resistantResult.ok, true, JSON.stringify(resistantResult));
+      assert.ok(resistantResult.escalatedProcesses >= 1, JSON.stringify(resistantResult));
+      await new Promise((resolve) => setTimeout(resolve, 2300));
+      assert.equal(fs.existsSync(resistantMarker), false,
+        "SIGTERM-ignoring process tree survived approved process_kill");
+    } finally {
+      if (resistantParent.exitCode === null) resistantParent.kill("SIGKILL");
+    }
+    console.log("agent-e2e: approved process_kill escalated TERM-ignoring descendants");
+
     console.log("agent-e2e: process timeout and task cancel reaped Unix descendants");
   }
 
