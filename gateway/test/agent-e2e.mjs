@@ -2192,6 +2192,101 @@ try {
     item.sessionId === started.sessionId && item.running),
   "second Agent PTY operations disturbed the first Agent's existing session");
   console.log("agent-e2e: two paired live Agents isolated PTYs and rejected foreign approval");
+
+  // 2B/2D/9B: crash just the secondary native Agent while its PTY has durable
+  // output. The primary Agent must stay online, and the restarted secondary
+  // must reuse its paired identity without exposing the archive to device A.
+  const secondaryArchiveToken = await approval(secondDeviceId, startAction);
+  const secondaryArchiveSession = await tool(22410, "terminal_start", {
+    device_id: secondDeviceId, cwd: tempRoot, cols: 100, rows: 30,
+    approval_token: secondaryArchiveToken,
+  });
+  assert.equal(typeof secondaryArchiveSession.sessionId, "string",
+    JSON.stringify(secondaryArchiveSession));
+  const secondaryMarker = "SECOND_AGENT_RECONNECT_DURABLE_OK";
+  await tool(22411, "terminal_input", {
+    device_id: secondDeviceId, session_id: secondaryArchiveSession.sessionId,
+    data_base64: Buffer.from(`echo ${secondaryMarker}\n`).toString("base64"),
+  });
+  await waitFor(async () => {
+    const page = await tool(22412, "terminal_read_page", {
+      device_id: secondDeviceId, session_id: secondaryArchiveSession.sessionId,
+      offset_bytes: -8192, max_bytes: 8192,
+    });
+    return page.historyDurable && String(page.text).includes(secondaryMarker);
+  }, 15000, 150);
+  const crashedSecondary = secondAgent;
+  const secondaryExit = new Promise((resolve) => crashedSecondary.once("exit", resolve));
+  assert.equal(crashedSecondary.kill("SIGKILL"), true);
+  await secondaryExit;
+  secondAgent = undefined;
+  await waitFor(async () => {
+    const devices = await jsonFetch("/api/devices", { headers: authHeaders });
+    const primary = devices.items.find((item) => item.id === deviceId);
+    const secondary = devices.items.find((item) => item.id === secondDeviceId);
+    return primary?.online === true && secondary?.online === false;
+  }, 20000, 200);
+  const primaryDuringSecondaryCrash = await tool(22413, "terminal_list", {
+    device_id: deviceId,
+  });
+  assert.ok(primaryDuringSecondaryCrash.items.some((item) =>
+    item.sessionId === started.sessionId && item.running),
+  "secondary crash disturbed primary Agent PTY");
+
+  secondAgent = spawn(agentBinary, ["--config", secondConfigPath, "run"], {
+    stdio: ["ignore", "pipe", "pipe"],
+    env: {
+      ...process.env, RUST_LOG: "info",
+      XDG_DATA_HOME: path.join(tempRoot, "xdg-data-secondary"),
+    },
+  });
+  secondAgent.stdout.on("data", (chunk) => { secondAgentLog += String(chunk); });
+  secondAgent.stderr.on("data", (chunk) => { secondAgentLog += String(chunk); });
+  await waitFor(async () => {
+    const devices = await jsonFetch("/api/devices", { headers: authHeaders });
+    return [deviceId, secondDeviceId].every((id) =>
+      devices.items.some((item) => item.id === id && item.online));
+  }, 20000, 200);
+  const secondaryArchived = await waitFor(async () => {
+    const page = await tool(22414, "terminal_read_page", {
+      device_id: secondDeviceId, session_id: secondaryArchiveSession.sessionId,
+      offset_bytes: -8192, max_bytes: 8192,
+    });
+    return page.archived && page.historyDurable &&
+      String(page.text).includes(secondaryMarker) ? page : false;
+  }, 15000, 150);
+  assert.equal(secondaryArchived.running, false);
+  const primaryCannotReadSecondary = await tool(22415, "terminal_read_page", {
+    device_id: deviceId, session_id: secondaryArchiveSession.sessionId,
+  });
+  assert.match(String(primaryCannotReadSecondary.error), /terminal session not found/i);
+  const cannotReattach = await tool(22416, "terminal_input", {
+    device_id: secondDeviceId, session_id: secondaryArchiveSession.sessionId,
+    data_base64: Buffer.from("echo SHOULD_NOT_RUN\n").toString("base64"),
+  });
+  assert.equal(typeof cannotReattach.error, "string", JSON.stringify(cannotReattach));
+  const resumedToken = await approval(secondDeviceId, startAction);
+  const resumedSession = await tool(22417, "terminal_start", {
+    device_id: secondDeviceId, cwd: tempRoot, cols: 100, rows: 30,
+    approval_token: resumedToken,
+  });
+  assert.equal(typeof resumedSession.sessionId, "string", JSON.stringify(resumedSession));
+  const resumedStopToken = await approval(secondDeviceId, {
+    kind: "terminal_stop", sessionId: resumedSession.sessionId,
+  });
+  const resumedStopped = await tool(22418, "terminal_stop", {
+    device_id: secondDeviceId, session_id: resumedSession.sessionId,
+    approval_token: resumedStopToken,
+  });
+  assert.equal(resumedStopped.ok, true, JSON.stringify(resumedStopped));
+  const primaryAfterSecondaryRecovery = await tool(22419, "terminal_list", {
+    device_id: deviceId,
+  });
+  assert.ok(primaryAfterSecondaryRecovery.items.some((item) =>
+    item.sessionId === started.sessionId && item.running),
+  "secondary restart disturbed primary Agent PTY");
+  console.log("agent-e2e: secondary Agent SIGKILL/reconnect preserved durable PTY and device isolation");
+
   secondAgent.kill("SIGTERM");
   await waitFor(() => secondAgent.exitCode !== null || secondAgent.signalCode !== null,
     10000, 50);
