@@ -238,7 +238,7 @@ impl TerminalManager {
             }
         };
 
-        let mut child = match pair.slave.spawn_command(command) {
+        let child = match pair.slave.spawn_command(command) {
             Ok(child) => child,
             Err(error) => {
                 // Keep the pre-spawn durability check, but do not retain a
@@ -251,6 +251,9 @@ impl TerminalManager {
                 return Err(error);
             }
         };
+        #[cfg(windows)]
+        let mut child = child;
+
         // Attach the PTY root to a kill-on-close Windows Job Object before
         // publishing the session. A failed attachment must not leave a live,
         // untracked shell behind. The short spawn-to-attach window remains a
