@@ -537,15 +537,15 @@ try {
   assert.ok(Number.isSafeInteger(relayAPid) && relayAPid > 1);
   const relayAEnv = fs.readFileSync(
     `/proc/${relayAPid}/environ`, "utf8",
-  ).split("\\0");
+  ).split("\0");
   assert.ok(relayAEnv.includes("CLUSTER_NODE_ID=relay-a"));
   assert.ok(relayAEnv.includes(
     "RELAY_PUBLIC_WS_URL=ws://127.0.0.1:8788/agent",
   ));
   const relayACmd = fs.readFileSync(
     `/proc/${relayAPid}/cmdline`, "utf8",
-  ).replaceAll("\\0", " ");
-  assert.match(relayACmd, /node.*dist\\/index\\.js/);
+  ).replaceAll("\0", " ");
+  assert.match(relayACmd, /node.*dist\/index\.js/);
   process.kill(relayAPid, "SIGKILL");
 
   const secondCrashRecovered = await waitFor(async () => {
