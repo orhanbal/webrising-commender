@@ -6,12 +6,13 @@
 use anyhow::{anyhow, Context, Result};
 use std::{ffi::c_void, io, mem, ptr};
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE},
+    Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0, WAIT_TIMEOUT},
     System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     },
+    System::Threading::WaitForSingleObject,
 };
 
 pub struct WindowsJob(HANDLE);
@@ -51,6 +52,19 @@ impl WindowsJob {
             return Err(io::Error::last_os_error()).context("assign PTY process to kill-on-close job");
         }
         Ok(job)
+    }
+
+    pub fn terminate(&self) -> Result<()> {
+        // An explicit stop must not acknowledge success merely because the
+        // PTY root exited while other clients still hold Arc<Session>.
+        if unsafe { TerminateJobObject(self.0, 1) } == 0 {
+            return Err(io::Error::last_os_error()).context("terminate owned PTY job");
+        }
+        match unsafe { WaitForSingleObject(self.0, 3000) } {
+            WAIT_OBJECT_0 => Ok(()),
+            WAIT_TIMEOUT => Err(anyhow!("owned PTY job did not terminate within 3 seconds")),
+            _ => Err(io::Error::last_os_error()).context("wait for owned PTY job termination"),
+        }
     }
 }
 
