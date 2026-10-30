@@ -194,6 +194,18 @@ try {
   );
   assert.equal(typeof infoBefore.cpuCount, "number");
 
+  // An authenticated device cannot exclude a relay using a fabricated URL.
+  const spoofedRoute = await jsonFetch("/api/agent/route", {
+    method: "POST",
+    headers: {
+      "x-device-id": deviceId,
+      Authorization: `Bearer ${config.deviceToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ failedGatewayWsUrl: "ws://127.0.0.1:65535/agent" }),
+  });
+  assert.equal(spoofedRoute.relayId, firstRelay);
+
   // Remote relay must forward *intermediate* native progress, not merely
   // the final snapshot. A 192-file fixture crosses the Agent's 32-entry
   // progress threshold and exercises MCP -> Gateway -> signed relay -> Rust.
@@ -457,6 +469,7 @@ try {
   probeTask = continuousMcpProbe(deviceId);
   await waitFor(() => probeStats.successes >= 2, 15_000, 100);
   const firstCrashAttempts = probeStats.attempts;
+  const firstCrashAt = Date.now();
   process.kill(relayBPid, "SIGKILL");
 
   // Heartbeat freshness is 45s, followed by the Agent's bounded route
@@ -473,6 +486,9 @@ try {
       : null;
   }, 150_000, 500);
   assert.equal(crashRecovered.connected_relay_id, "relay-a");
+  const firstFailoverMs = Date.now() - firstCrashAt;
+  assert.ok(firstFailoverMs < 45_000,
+    `Agent route-hint failover exceeded 45s: ${firstFailoverMs}ms`);
   const firstRecoveredSuccesses = probeStats.successes;
   await waitFor(() => probeStats.successes > firstRecoveredSuccesses, 15_000, 200);
   assert.ok(probeStats.attempts > firstCrashAttempts);
@@ -579,6 +595,7 @@ try {
   ).replaceAll("\0", " ");
   assert.match(relayACmd, /node.*dist\/index\.js/);
   const secondCrashAttempts = probeStats.attempts;
+  const secondCrashAt = Date.now();
   process.kill(relayAPid, "SIGKILL");
 
   const secondCrashRecovered = await waitFor(async () => {
@@ -590,6 +607,9 @@ try {
       ? item : null;
   }, 150_000, 500);
   assert.equal(secondCrashRecovered.connected_relay_id, "relay-b");
+  const secondFailoverMs = Date.now() - secondCrashAt;
+  assert.ok(secondFailoverMs < 45_000,
+    `Agent route-hint failover exceeded 45s: ${secondFailoverMs}ms`);
   const secondRecoveredSuccesses = probeStats.successes;
   await waitFor(() => probeStats.successes > secondRecoveredSuccesses, 15_000, 200);
   assert.ok(probeStats.attempts > secondCrashAttempts);
@@ -634,7 +654,7 @@ try {
   );
   console.log(
     "relay-e2e: continuous authenticated MCP load recovered twice " +
-      JSON.stringify(probeStats),
+      JSON.stringify({ ...probeStats, firstFailoverMs, secondFailoverMs }),
   );
 
 } catch (error) {

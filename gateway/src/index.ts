@@ -767,10 +767,13 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         });
       }
 
+      const routeHint = z.object({
+        failedGatewayWsUrl: z.string().max(2048).optional(),
+      }).parse(await readJson(req));
       const client = await db.connect();
       try {
         await client.query("begin");
-        const relay = await assignRelayForDevice(device.deviceId, client);
+        const relay = await assignRelayForDevice(device.deviceId, client, routeHint.failedGatewayWsUrl);
         if (!relay) {
           await client.query("rollback");
           return void json(res, 503, { error: "relay_unavailable" });

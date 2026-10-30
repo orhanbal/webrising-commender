@@ -255,7 +255,7 @@ pub(crate) async fn run_until_shutdown(
             backoff = Duration::from_secs(1);
         }
 
-        if let Some(route) = refresh_gateway_route(&config).await {
+        if let Some(route) = refresh_gateway_route(&config, &gateway_ws_url).await {
             if route != gateway_ws_url {
                 info!(gateway = %route, "updated gateway route");
                 gateway_ws_url = route;
@@ -278,7 +278,7 @@ pub(crate) async fn run_until_shutdown(
     }
 }
 
-async fn refresh_gateway_route(config: &AgentConfig) -> Option<String> {
+async fn refresh_gateway_route(config: &AgentConfig, failed_gateway_ws_url: &str) -> Option<String> {
     let endpoint = format!(
         "{}/api/agent/route",
         config.control_url.trim_end_matches('/')
@@ -292,6 +292,9 @@ async fn refresh_gateway_route(config: &AgentConfig) -> Option<String> {
         .post(endpoint)
         .header("x-device-id", &config.device_id)
         .bearer_auth(&config.device_token)
+        .json(&serde_json::json!({
+            "failedGatewayWsUrl": failed_gateway_ws_url,
+        }))
         .send()
         .await
     {

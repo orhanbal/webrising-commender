@@ -187,6 +187,7 @@ async function chooseHealthyRelay(
   organizationId: string,
   queryable: Queryable,
   currentRelayId?: string | null,
+  excludedRelayId?: string | null,
 ) {
   const org = await queryable.query<{ relay_region: string | null }>(
     "select relay_region from organizations where id=$1",
@@ -197,7 +198,7 @@ async function chooseHealthyRelay(
   }
   const preferredRegion = org.rows[0].relay_region;
 
-  if (currentRelayId) {
+  if (currentRelayId && currentRelayId !== excludedRelayId) {
     const current = await healthyRelayById(
       currentRelayId,
       preferredRegion,
@@ -227,6 +228,7 @@ async function chooseHealthyRelay(
       where r.enabled
         and not r.drain
         and r.last_seen_at>now()-($1::int*interval '1 second')
+        and ($3::text is null or r.id <> $3)
         and (
           select count(*)
             from devices d
@@ -244,7 +246,7 @@ async function chooseHealthyRelay(
         r.id asc
       for update skip locked
       limit 1`,
-    [nodeFreshSeconds, preferredRegion],
+    [nodeFreshSeconds, preferredRegion, excludedRelayId ?? null],
   );
   const row = result.rows[0];
   if (!row) return null;
@@ -259,18 +261,21 @@ async function chooseHealthyRelay(
 export async function assignRelayForDevice(
   deviceId: string,
   queryable: Queryable = db,
+  failedGatewayWsUrl?: string,
 ): Promise<RelayRoute | null> {
   if (!enabled) return null;
 
   const device = await queryable.query<{
     organization_id: string;
     assigned_relay_id: string | null;
+    assigned_ws_url: string | null;
   }>(
-    `select organization_id,assigned_relay_id
-       from devices
-      where id=$1
-        and revoked_at is null
-      for update`,
+    `select d.organization_id,d.assigned_relay_id,r.public_ws_url as assigned_ws_url
+       from devices d
+       left join relay_nodes r on r.id=d.assigned_relay_id
+      where d.id=$1
+        and d.revoked_at is null
+      for update of d`,
     [deviceId],
   );
   const row = device.rows[0];
@@ -278,10 +283,15 @@ export async function assignRelayForDevice(
     throw Object.assign(new Error("device_not_found"), { status: 404 });
   }
 
+  // Only the authenticated device's exact currently assigned URL may be
+  // excluded. A forged or stale hint cannot blacklist another relay.
+  const excludedRelayId = failedGatewayWsUrl && row.assigned_ws_url === failedGatewayWsUrl
+    ? row.assigned_relay_id : null;
   const relay = await chooseHealthyRelay(
     row.organization_id,
     queryable,
     row.assigned_relay_id,
+    excludedRelayId,
   );
   if (!relay) return null;
 
