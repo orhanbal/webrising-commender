@@ -17,6 +17,8 @@ services:
   gateway:
     build:
       context: ./gateway
+      args:
+        SOURCE_COMMIT: ${SOURCE_COMMIT:-unknown}
     restart: unless-stopped
     init: true
     read_only: true

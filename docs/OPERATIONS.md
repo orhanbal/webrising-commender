@@ -1,8 +1,11 @@
 # Operations
 
+Production releases: see [RELEASE_POLICY.md](RELEASE_POLICY.md). `main` is not a release.
+
 ## Health
 
 - `GET /health/live`: process liveness only.
+- `GET /health`: database readiness plus `build.commit`, the source commit the image was built from (`unknown` if the build did not receive `SOURCE_COMMIT`).
 - `GET /health`: PostgreSQL readiness.
 
 ## Backup and restore

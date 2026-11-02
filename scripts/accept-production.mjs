@@ -43,6 +43,11 @@ async function checkHealth() {
   assert.equal(response.status, 200);
   assert.equal(body.status, "ok");
   record("HTTPS health", true, `HTTP ${response.status}`);
+  const expectedCommit = (process.env.COMMANDER_EXPECTED_COMMIT || "").trim();
+  if (expectedCommit) {
+    assert.equal(body.build?.commit, expectedCommit, "deployed build commit does not match the released SHA");
+    record("Deployed commit", true, expectedCommit);
+  }
   if (base.protocol === "https:") {
     const hsts = response.headers.get("strict-transport-security") || "";
     assert.match(hsts, /max-age=\d+/i);

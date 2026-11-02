@@ -1,3 +1,8 @@
+### 2 November 2026 — Issue #30 release boundary: development no longer targets `main` directly
+
+- **Policy change (supersedes earlier "commit only to main" instructions):** `main` still deploys to production by Coolify webhook until the operator cut-over in `docs/RELEASE_POLICY.md` is applied. Until then, and afterwards too, agents push only to reviewable branches and open Draft PRs. Never push `main` or `production`; never run `promote-production`.
+- **Implemented on branch `release/production-boundary-issue30` (Draft PR):** `promote-production` workflow + `scripts/release-gate.mjs` (24 unit tests), read-only `bootstrap-locks`, `/health` `build.commit`. Live Coolify/GitHub-settings changes and zero/one-deployment evidence: **PENDING operator approval**.
+
 ### 30 October 2026 22:00 TRT — 2C Windows ConPTY cursor handshake: red CI resolved (A/B/C/D)
 
 - **A / FAILED → FIXED:** [Exact previous HEAD CI #41103692491](https://github.com/orhanbal/webrising-commender/actions/runs/41103692491) was **16/17 successful, 1 failed**: Windows native PTY test timed out while output was only `ESC[6n` (cursor-position query). Both Windows Job Object tests had passed, but `terminal::tests::windows_terminal_stop_kills_owned_ping_descendant` failed before command execution. This is an unhandled terminal-emulator handshake in the test, not proof that Job Object containment failed.

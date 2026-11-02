@@ -1,0 +1,94 @@
+name: promote-production
+
+# The only sanctioned writer of the `production` branch (Issue #30).
+# Coolify's production application tracks `production`, never `main`.
+# Pushes to main, PR merges, docs-only commits and green CI therefore cause no
+# production deployment; only an operator-approved run of this workflow does.
+#
+# Required one-time repository settings (operator, see docs/RELEASE_POLICY.md):
+#   * Environment `production` with required reviewers and
+#     "prevent self-review"; deployment branch policy limited to `main`.
+#   * Ruleset on `production`: block creation/update/deletion/force-push for
+#     everyone except the GitHub Actions bypass actor.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Full 40-character main commit SHA to release"
+        required: true
+        type: string
+      confirm_sha:
+        description: "Type the same SHA again"
+        required: true
+        type: string
+      mode:
+        description: "promote = fast-forward only; rollback = return to a previously released SHA"
+        required: true
+        default: promote
+        type: choice
+        options: [promote, rollback]
+      reason:
+        description: "Change/approval reference (ticket, PR, incident)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Release gate (exact-SHA main CI, distribution, ancestry)
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ inputs.sha }}
+          RELEASE_CONFIRM_SHA: ${{ inputs.confirm_sha }}
+          RELEASE_MODE: ${{ inputs.mode }}
+          RELEASE_MIN_CI_JOBS: "17"
+        run: node scripts/release-gate.mjs
+      - name: Move production ref and record release tag
+        env:
+          RELEASE_SHA: ${{ inputs.sha }}
+          RELEASE_MODE: ${{ inputs.mode }}
+          RELEASE_REASON: ${{ inputs.reason }}
+          PREVIOUS: ${{ steps.gate.outputs.previous_production }}
+          CI_RUN_ID: ${{ steps.gate.outputs.ci_run_id }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          tag="production-release/$(date -u +%Y%m%dT%H%M%SZ)-${RELEASE_SHA:0:12}"
+          printf 'mode: %s\nsha: %s\nprevious: %s\nci_run: %s\napproved_run: %s/%s/actions/runs/%s\nactor: %s\nreason: %s\n' \
+            "$RELEASE_MODE" "$RELEASE_SHA" "${PREVIOUS:-none}" "$CI_RUN_ID" \
+            "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_ACTOR" "$RELEASE_REASON" > "$RUNNER_TEMP/release-note"
+          git tag -a "$tag" "$RELEASE_SHA" -F "$RUNNER_TEMP/release-note"
+          if [[ -n "${PREVIOUS:-}" ]]; then
+            lease="--force-with-lease=refs/heads/production:${PREVIOUS}"
+          else
+            lease="--force-with-lease=refs/heads/production:"
+          fi
+          # promote is fast-forward (verified by the gate); rollback needs the lease
+          git push --atomic "$lease" origin "${RELEASE_SHA}:refs/heads/production" "refs/tags/${tag}"
+          {
+            echo "### Production ref moved"
+            echo "- production: \`${PREVIOUS:-none}\` → \`${RELEASE_SHA}\`"
+            echo "- tag: \`${tag}\`"
+            echo "- Next: confirm exactly one Coolify deployment for \`${RELEASE_SHA}\` and that \`/health\` reports \`build.commit\` = this SHA."
+          } >> "$GITHUB_STEP_SUMMARY"

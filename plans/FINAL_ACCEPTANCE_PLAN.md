@@ -24,6 +24,7 @@ This is the canonical closure plan for v1.0 acceptance. Update this file after e
 - [ ] **2. Production deployment and HTTPS/WSS**
   - [x] Coolify project exists: **WECOMMANDER** / production.
   - [x] Coolify application points to `orhanbal/webrising-commender` / `main`.
+  - [ ] **Issue #30 (P0):** Coolify must track the operator-gated `production` branch, not `main`. Repository controls are in `docs/RELEASE_POLICY.md`; the live Coolify branch switch and its zero/one-deployment evidence are PENDING an approved change window.
   - [x] Production compose entrypoint is `/docker-compose.yaml`.
   - [x] Required production secrets are configured in Coolify.
   - [x] Gateway FQDNs are assigned: `https://wecommander.webrising.tr` and `https://www.wecommander.webrising.tr`.
