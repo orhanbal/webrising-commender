@@ -1,7 +1,7 @@
 ### 2 November 2026 — Issue #30 release boundary: development no longer targets `main` directly
 
 - **Policy change (supersedes earlier "commit only to main" instructions):** `main` still deploys to production by Coolify webhook until the operator cut-over in `docs/RELEASE_POLICY.md` is applied. Until then, and afterwards too, agents push only to reviewable branches and open Draft PRs. Never push `main` or `production`; never run `promote-production`.
-- **Implemented on branch `release/production-boundary-issue30` (Draft PR):** `promote-production` workflow + `scripts/release-gate.mjs` (24 unit tests), read-only `bootstrap-locks`, `/health` `build.commit`. Live Coolify/GitHub-settings changes and zero/one-deployment evidence: **PENDING operator approval**.
+- **Implemented on branch `claude/hopeful-gates-k0ezvg` (Draft PR):** `promote-production` workflow + `scripts/release-gate.mjs` (24 unit tests), read-only `bootstrap-locks`, `/health` `build.commit`. Live Coolify/GitHub-settings changes and zero/one-deployment evidence: **PENDING operator approval**.
 
 ### 30 October 2026 22:00 TRT — 2C Windows ConPTY cursor handshake: red CI resolved (A/B/C/D)
 
