@@ -437,6 +437,11 @@ async function serveConsole(res: ServerResponse) {
   return servePublicHtml(res, "app.html", "console-not-found");
 }
 
+function wantsEventStream(req: IncomingMessage) {
+  const accept = String(req.headers.accept || "").toLowerCase();
+  return accept.includes("text/event-stream") && !accept.includes("text/html");
+}
+
 const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
   try {
     const url = new URL(req.url || "/", publicBaseUrl);
@@ -454,6 +459,15 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     if (req.method === "GET" && url.pathname.startsWith("/modern/assets/")) {
       if (await serveModernFile(res,url.pathname.slice("/modern/".length))) return;
       return void json(res,404,{error:"asset_not_found"});
+    }
+    // MCP Streamable HTTP (2025-06-18): this server opens no server-initiated
+    // SSE stream and has no session to terminate, so an event-stream GET and a
+    // DELETE must get 405 rather than the /mcp dashboard page or a 404.
+    // Browser navigation to /mcp (Accept: text/html) still serves the page.
+    if (url.pathname === "/mcp" && (req.method === "DELETE" || (req.method === "GET" && wantsEventStream(req)))) {
+      res.writeHead(405, { allow: "POST", ...securityHeaders() });
+      res.end();
+      return;
     }
     if (req.method === "GET" && modernPages.has(url.pathname)) {
       let seo:{title:string;description:string}|undefined;
