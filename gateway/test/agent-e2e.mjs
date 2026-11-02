@@ -3329,6 +3329,39 @@ try {
     assert.equal(canceledTask.canceled, true);
     await new Promise((resolve) => setTimeout(resolve, 2200));
     assert.equal(fs.existsSync(cancelMarker), false, "canceled descendant survived");
+
+    // 2C (Linux): descendants that leave the process group with setsid must
+    // not survive a completed command, a timeout or a task cancel either.
+    if (process.platform === "linux") {
+      const detached = (marker) => "setsid sh -c 'sleep 2; printf leaked > " + marker + "' >/dev/null 2>&1 &";
+      const doneMarker = path.join(tempRoot, "setsid-after-success-leaked");
+      const doneCommand = detached(doneMarker) + " echo started";
+      const doneToken = await approval(deviceId, { kind: "process_exec", command: doneCommand, cwd: tempRoot });
+      const done = await tool(9301, "process_exec", { device_id: deviceId, command: doneCommand, cwd: tempRoot, approval_token: doneToken });
+      assert.equal(done.exitCode, 0, JSON.stringify(done));
+      assert.equal(done.stdout.trim(), "started");
+
+      const slowMarker = path.join(tempRoot, "setsid-after-timeout-leaked");
+      const slowCommand = detached(slowMarker) + " sleep 30";
+      const slowToken = await approval(deviceId, { kind: "process_exec", command: slowCommand, cwd: tempRoot, timeoutMs: 300 });
+      const slow = await tool(9302, "process_exec", { device_id: deviceId, command: slowCommand, cwd: tempRoot, timeout_ms: 300, approval_token: slowToken });
+      assert.match(slow.error, /timed out/i);
+
+      const taskReady = path.join(tempRoot, "setsid-task-ready");
+      const taskMarker = path.join(tempRoot, "setsid-after-cancel-leaked");
+      const taskCommand = detached(taskMarker) + " printf ready > " + taskReady + "; sleep 30";
+      const taskToken = await approval(deviceId, { kind: "task_start", command: taskCommand, cwd: tempRoot, timeoutMs: 60000 });
+      const task = await tool(9303, "task_start", { device_id: deviceId, command: taskCommand, cwd: tempRoot, timeout_ms: 60000, approval_token: taskToken });
+      await waitFor(() => fs.existsSync(taskReady), 5000, 20);
+      const taskCancelToken = await approval(deviceId, { kind: "task_cancel", taskId: task.taskId });
+      const taskCanceled = await tool(9304, "task_cancel", { device_id: deviceId, task_id: task.taskId, approval_token: taskCancelToken });
+      assert.equal(taskCanceled.canceled, true);
+
+      await new Promise((resolve) => setTimeout(resolve, 3500));
+      for (const marker of [doneMarker, slowMarker, taskMarker])
+        assert.equal(fs.existsSync(marker), false, `setsid descendant survived: ${path.basename(marker)}`);
+      console.log("agent-e2e: setsid-detached descendants reaped after success, timeout and task cancel (Linux subreaper)");
+    }
     // 2D: cancellation immediately after task_start must always find the
     // published abort handle, even if the shell has not begun execution.
     const immediateMarker = path.join(tempRoot, "immediate-cancel-leaked");

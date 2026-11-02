@@ -7,6 +7,8 @@ mod ops;
 mod policy;
 mod process_ops;
 mod protocol;
+#[cfg(target_os = "linux")]
+mod reaper;
 mod spreadsheet_ops;
 mod system_ops;
 mod task_manager;
@@ -87,8 +89,17 @@ enum Command {
     Doctor,
 }
 
+fn main() -> Result<()> {
+    // Reaper mode must run before any async runtime threads exist.
+    #[cfg(target_os = "linux")]
+    if let Some(code) = reaper::run_if_requested() {
+        std::process::exit(code);
+    }
+    agent_main()
+}
+
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn agent_main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
