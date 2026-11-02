@@ -1,7 +1,7 @@
 name: promote-production
 
-# The only sanctioned writer of the `production` branch after its one-time
-# owner bootstrap (Issue #30). Coolify tracks `production`, never `main`, so
+# The only sanctioned writer of the `production` branch (Issue #30), including
+# its one-time creation (mode=bootstrap), so no local checkout is ever needed. Coolify tracks `production`, never `main`, so
 # pushes to main, PR merges, docs-only commits and green CI deploy nothing.
 #
 # Fail-closed chain (see docs/RELEASE_POLICY.md):
@@ -26,11 +26,11 @@ on:
         required: true
         type: string
       mode:
-        description: "promote = fast-forward only; rollback = return to a previously released SHA"
+        description: "promote = fast-forward only; rollback = return to a previously released SHA; bootstrap = one-time creation of production (no deploy)"
         required: true
         default: promote
         type: choice
-        options: [promote, rollback]
+        options: [promote, rollback, bootstrap]
       reason:
         description: "Change/approval reference (ticket, PR, incident)"
         required: true
@@ -87,26 +87,42 @@ jobs:
           CI_RUN_ID: ${{ steps.gate.outputs.ci_run_id }}
         run: |
           set -euo pipefail
-          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ && "$PREVIOUS" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::gate outputs missing"; exit 1; }
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::invalid sha"; exit 1; }
+          if [[ "$RELEASE_MODE" == "bootstrap" ]]; then
+            # The gate verified production does not exist; the empty lease makes the push fail if it appeared since.
+            [[ -z "$PREVIOUS" ]] || { echo "::error::bootstrap with an existing production head"; exit 1; }
+          else
+            [[ "$PREVIOUS" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::gate outputs missing"; exit 1; }
+          fi
           git config user.name "wecommander-release"
           git config user.email "wecommander-release@users.noreply.github.com"
           tag="production-release/$(date -u +%Y%m%dT%H%M%SZ)-${RELEASE_SHA:0:12}"
           printf 'mode: %s\nsha: %s\nprevious: %s\nci_run: %s\napproved_run: %s/%s/actions/runs/%s\nactor: %s\nreason: %s\n' \
-            "$RELEASE_MODE" "$RELEASE_SHA" "$PREVIOUS" "$CI_RUN_ID" \
+            "$RELEASE_MODE" "$RELEASE_SHA" "${PREVIOUS:-none}" "$CI_RUN_ID" \
             "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_ACTOR" "$RELEASE_REASON" > "$RUNNER_TEMP/release-note"
           git tag -a "$tag" "$RELEASE_SHA" -F "$RUNNER_TEMP/release-note"
           auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$APP_TOKEN" | base64 -w0)"
           echo "::add-mask::$(printf 'x-access-token:%s' "$APP_TOKEN" | base64 -w0)"
-          # The lease pins the head the gate approved; promote is a verified fast-forward.
+          # The lease pins the head the gate approved (empty = must not exist);
+          # promote is a verified fast-forward.
+          # Defense in depth: git skips the lease for a ref it does not change,
+          # so first require the remote head to be exactly what the gate saw.
+          current="$(git -c "http.https://github.com/.extraheader=$auth" ls-remote origin refs/heads/production | cut -f1)"
+          [[ "$current" == "$PREVIOUS" ]] || { echo "::error::production is '${current:-absent}', gate saw '${PREVIOUS:-absent}'"; exit 1; }
+          [[ "$current" != "$RELEASE_SHA" ]] || { echo "::error::production already at ${RELEASE_SHA}"; exit 1; }
           git -c "http.https://github.com/.extraheader=$auth" push --atomic \
             "--force-with-lease=refs/heads/production:${PREVIOUS}" \
             origin "${RELEASE_SHA}:refs/heads/production" "refs/tags/${tag}"
           {
             echo "### Production ref moved"
-            echo "- production: \`${PREVIOUS}\` → \`${RELEASE_SHA}\`"
+            echo "- production: \`${PREVIOUS:-none}\` → \`${RELEASE_SHA}\`"
             echo "- tag: \`${tag}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Bootstrap deploys nothing
+        if: ${{ inputs.mode == 'bootstrap' }}
+        run: echo "production created; Coolify must not track it yet, so no deployment is expected or verified." >> "$GITHUB_STEP_SUMMARY"
       - name: Verify the deployed build identity
+        if: ${{ inputs.mode != 'bootstrap' }}
         env:
           PRODUCTION_BASE_URL: ${{ vars.PRODUCTION_BASE_URL }}
           RELEASE_SHA: ${{ inputs.sha }}

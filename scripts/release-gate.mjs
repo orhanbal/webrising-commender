@@ -2,10 +2,9 @@
 // WECOMMANDER production release gate (Issue #30).
 //
 // Production never follows `main`. Coolify tracks the dedicated `production`
-// branch. That branch is created once by the owner (mode=bootstrap, see
-// scripts/bootstrap-production.sh) and afterwards moved only by the
-// `promote-production` workflow after the owner approves the `production`
-// environment. `production-guard` re-runs this gate in mode=audit on every
+// branch. That branch is created once (mode=bootstrap) and afterwards moved
+// (promote/rollback) only by the `promote-production` workflow, after the
+// owner approves the `production` environment. `production-guard` re-runs this gate in mode=audit on every
 // production/tag update and daily.
 //
 // The decision (`evaluateReleaseGate`) is pure and unit tested. The CLI only
@@ -19,6 +18,9 @@ import { pathToFileURL } from "node:url";
 export const SHA_RE = /^[0-9a-f]{40}$/;
 export const RELEASE_TAG_PREFIX = "production-release/";
 export const MODES = ["bootstrap", "promote", "rollback", "audit"];
+export const DIST_ARTIFACT_PREFIX = "WECOMMANDER-multiplatform-preview-";
+// run-name of ubuntu-distribution.yml ends with "(ci <workflow_run.id>/<run_attempt>)".
+export const DIST_MARKER_RE = /\(ci (\d+)\/(\d+)\)$/;
 
 // Every job of .github/workflows/ci.yml, matrix legs expanded. No job in ci.yml
 // is conditional, so each must be present and `success`; a skipped, cancelled,
@@ -58,6 +60,15 @@ export function releasedShasFromTags(tags = []) {
     else rejected.push(t.ref);
   }
   return { released: [...released], rejected };
+}
+
+const runTime = r => {
+  const t = Date.parse(r.run_started_at || r.created_at || "");
+  return Number.isFinite(t) ? t : 0;
+};
+/** Newest run by latest-attempt start time, then attempt, then id. */
+export function newestRun(runs) {
+  return [...runs].sort((a, b) => runTime(b) - runTime(a) || (b.run_attempt || 1) - (a.run_attempt || 1) || b.id - a.id)[0] || null;
 }
 
 /**
@@ -105,25 +116,30 @@ export function evaluateReleaseGate(f) {
       reasons.push("rollback target was never released to production (no valid production-release tag on this sha)");
   }
 
-  const pushRuns = (f.ciRuns || []).filter(r =>
-    r.head_sha === f.sha && r.event === "push" && r.head_branch === "main" && r.status === "completed");
-  const greenRun = pushRuns
-    .filter(r => r.conclusion === "success")
-    .sort((a, b) => (b.run_attempt || 1) - (a.run_attempt || 1) || b.id - a.id)[0];
+  // Only the newest run decides, never an older green one. A run's
+  // run_started_at moves forward on every re-run attempt, so a failed or
+  // cancelled re-run of an older run also supersedes an earlier success.
+  const ciRun = newestRun((f.ciRuns || []).filter(r =>
+    r.head_sha === f.sha && r.event === "push" && r.head_branch === "main"));
   let ciRunId = null;
-  if (!greenRun) {
-    reasons.push("no completed successful `ci` push run on main for this exact sha");
+  if (!ciRun) {
+    reasons.push("no `ci` push run on main for this exact sha");
+  } else if (ciRun.status !== "completed" || ciRun.conclusion !== "success") {
+    reasons.push(`newest \`ci\` run ${ciRun.id} (attempt ${ciRun.run_attempt || 1}) is ${ciRun.status}/${ciRun.conclusion}; an older success does not count`);
   } else {
-    ciRunId = greenRun.id;
+    ciRunId = ciRun.id;
+    const attempt = ciRun.run_attempt || 1;
     const jobs = f.ciJobs || [];
     const byName = new Map();
     for (const j of jobs) {
       if (byName.has(j.name)) reasons.push(`ci job "${j.name}" appears more than once`);
       byName.set(j.name, j);
+      if (j.run_id !== undefined && j.run_id !== ciRun.id) reasons.push(`ci job "${j.name}" belongs to run ${j.run_id}, not ${ciRun.id}`);
+      if (j.run_attempt !== undefined && j.run_attempt !== attempt) reasons.push(`ci job "${j.name}" is from attempt ${j.run_attempt}, not the latest attempt ${attempt}`);
     }
     for (const name of REQUIRED_CI_JOBS) {
       const j = byName.get(name);
-      if (!j) reasons.push(`required ci job "${name}" is missing from run ${greenRun.id}`);
+      if (!j) reasons.push(`required ci job "${name}" is missing from run ${ciRun.id}`);
       else if (j.status !== "completed" || j.conclusion !== "success") reasons.push(`required ci job "${name}" is ${j.status}/${j.conclusion}`);
       else if (j.head_sha && j.head_sha !== f.sha) reasons.push(`ci job "${name}" ran on ${j.head_sha}`);
     }
@@ -131,9 +147,33 @@ export function evaluateReleaseGate(f) {
       if (!REQUIRED_CI_JOBS.includes(name)) reasons.push(`unexpected ci job "${name}"; update REQUIRED_CI_JOBS with ci.yml`);
   }
 
-  const dist = (f.distributionRuns || []).some(r =>
-    r.head_sha === f.sha && r.status === "completed" && r.conclusion === "success");
-  if (!dist) reasons.push("no successful `platform-distribution` run for this exact sha");
+  // platform-distribution is a workflow_run workflow: GitHub lists it under
+  // the default branch head at trigger time, not under the commit it built,
+  // and every PR CI completion adds a skipped run. Associate it with the exact
+  // ci run instead: by its run-name marker "(ci <run id>/<attempt>)", or, for
+  // runs made before the marker existed, by the artifact named after the ci
+  // run number. Skipped runs are ignored: a distribution is skipped only when
+  // its ci run was not a successful main push, which the ci check refuses.
+  if (ciRun) {
+    const legacyArtifact = `${DIST_ARTIFACT_PREFIX}${ciRun.run_number}`;
+    const linked = (f.distributionRuns || []).filter(r => {
+      if (r.event !== "workflow_run" || r.conclusion === "skipped") return false;
+      const m = DIST_MARKER_RE.exec(r.display_title || "");
+      return m ? Number(m[1]) === ciRun.id : (r.artifactNames || []).includes(legacyArtifact);
+    });
+    const dist = newestRun(linked);
+    const attempt = ciRun.run_attempt || 1;
+    const distAttempt = dist && DIST_MARKER_RE.exec(dist.display_title || "");
+    if (!dist) {
+      reasons.push(`no \`platform-distribution\` run linked to ci run ${ciRun.id}`);
+    } else if (dist.status !== "completed" || dist.conclusion !== "success") {
+      reasons.push(`newest \`platform-distribution\` run ${dist.id} is ${dist.status}/${dist.conclusion}; an older success does not count`);
+    } else if (distAttempt && Number(distAttempt[2]) !== attempt) {
+      reasons.push(`newest \`platform-distribution\` run ${dist.id} belongs to ci attempt ${distAttempt[2]}, not the latest attempt ${attempt}`);
+    } else if (runTime(dist) < runTime(ciRun)) {
+      reasons.push(`newest \`platform-distribution\` run ${dist.id} predates the latest \`ci\` attempt; wait for the distribution of that attempt`);
+    }
+  }
 
   return { ok: reasons.length === 0, reasons, ciRunId };
 }
@@ -185,10 +225,23 @@ export async function gatherFacts(env) {
     && git(["merge-base", "--is-ancestor", sha, "refs/remotes/release-gate/main"], { allowFail: true }) !== null;
   if (productionSha)
     facts.productionIsAncestor = git(["merge-base", "--is-ancestor", productionSha, sha], { allowFail: true }) !== null;
-  facts.ciRuns = (await api(`repos/${repo}/actions/workflows/ci.yml/runs?head_sha=${sha}&event=push&per_page=50`, env)).workflow_runs || [];
-  const pre = evaluateReleaseGate({ ...facts, ciJobs: REQUIRED_CI_JOBS.map(name => ({ name, status: "completed", conclusion: "success" })) });
-  if (pre.ciRunId) facts.ciJobs = (await api(`repos/${repo}/actions/runs/${pre.ciRunId}/jobs?filter=latest&per_page=100`, env)).jobs || [];
-  facts.distributionRuns = (await api(`repos/${repo}/actions/workflows/ubuntu-distribution.yml/runs?head_sha=${sha}&per_page=50`, env)).workflow_runs || [];
+  facts.ciRuns = (await api(`repos/${repo}/actions/workflows/ci.yml/runs?head_sha=${sha}&event=push&per_page=100`, env)).workflow_runs || [];
+  const ciRun = newestRun(facts.ciRuns.filter(r => r.head_sha === sha && r.event === "push" && r.head_branch === "main"));
+  if (!ciRun) return facts;
+  if (ciRun.status === "completed" && ciRun.conclusion === "success")
+    facts.ciJobs = (await api(`repos/${repo}/actions/runs/${ciRun.id}/jobs?filter=latest&per_page=100`, env)).jobs || [];
+  // All distribution runs created since this ci run, every page (most are skipped PR runs).
+  const since = encodeURIComponent(`>=${ciRun.created_at}`);
+  for (let page = 1; page <= 20; page++) {
+    const runs = (await api(`repos/${repo}/actions/workflows/ubuntu-distribution.yml/runs?created=${since}&per_page=100&page=${page}`, env)).workflow_runs || [];
+    facts.distributionRuns.push(...runs);
+    if (runs.length < 100) break;
+    if (page === 20) throw new Error("too many platform-distribution runs to evaluate; refusing");
+  }
+  for (const r of facts.distributionRuns) {
+    if (r.event === "workflow_run" && r.conclusion !== "skipped" && !DIST_MARKER_RE.test(r.display_title || ""))
+      r.artifactNames = ((await api(`repos/${repo}/actions/runs/${r.id}/artifacts?per_page=100`, env)).artifacts || []).map(a => a.name);
+  }
   return facts;
 }
 
