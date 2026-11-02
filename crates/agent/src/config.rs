@@ -101,6 +101,35 @@ pub struct AgentConfig {
     pub control_url: String,
     pub name: String,
     pub allowed_roots: Vec<PathBuf>,
+    /// Device-local capability switches. Set only on the device (enroll
+    /// flags or the `capabilities` subcommand); the Gateway and AI clients
+    /// cannot change them. Missing in older configs means both enabled.
+    #[serde(default)]
+    pub capabilities: DeviceCapabilities,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceCapabilities {
+    /// process_exec, task_start, terminal_start/input, process_kill.
+    #[serde(default = "enabled")]
+    pub commands: bool,
+    /// fs_write/append/mkdir/delete/move/replace/undo, xlsx_write_cells.
+    #[serde(default = "enabled")]
+    pub file_writes: bool,
+}
+
+fn enabled() -> bool {
+    true
+}
+
+impl Default for DeviceCapabilities {
+    fn default() -> Self {
+        Self {
+            commands: true,
+            file_writes: true,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -581,6 +610,7 @@ mod tests {
             control_url: "https://example.invalid".into(),
             name: "test".into(),
             allowed_roots: vec![root.clone()],
+            capabilities: Default::default(),
         };
         config.save(&path).unwrap();
         assert_eq!(
@@ -614,6 +644,7 @@ mod tests {
             control_url: String::new(),
             name: "test".into(),
             allowed_roots: vec![root.clone()],
+            capabilities: Default::default(),
         };
         config.save(&path).unwrap();
         let original = fs::read(&path).unwrap();
@@ -644,6 +675,7 @@ mod tests {
             control_url: String::new(),
             name: "test".into(),
             allowed_roots: vec![root.clone()],
+            capabilities: Default::default(),
         };
         config.save(&path).unwrap();
         let original = fs::read(&path).unwrap();
@@ -679,6 +711,7 @@ mod tests {
             control_url: String::new(),
             name: String::new(),
             allowed_roots: vec![root.clone()],
+            capabilities: Default::default(),
         };
         assert!(config.save(&link).is_err());
         assert_eq!(fs::read(&target).unwrap(), b"unchanged");
@@ -701,6 +734,7 @@ mod tests {
             control_url: String::new(),
             name: "test".into(),
             allowed_roots: vec![root.clone()],
+            capabilities: Default::default(),
         };
         config.save(&original).unwrap();
         fs::hard_link(&original, &alias).unwrap();
@@ -762,6 +796,7 @@ mod tests {
             control_url: String::new(),
             name: String::new(),
             allowed_roots: vec![root.clone()],
+            capabilities: Default::default(),
         };
         config.save(&actual.join("agent.json")).unwrap();
         let alias = root.join("alias");
@@ -793,6 +828,7 @@ mod tests {
             control_url: String::new(),
             name: String::new(),
             allowed_roots: vec![root.clone()],
+            capabilities: Default::default(),
         };
         assert!(config.save(&link.join("agent.json")).is_err());
         assert!(!destination.join("agent.json").exists());
@@ -816,6 +852,7 @@ mod tests {
             control_url: String::new(),
             name: String::new(),
             allowed_roots: vec![root.clone()],
+            capabilities: Default::default(),
         };
         let actual_path = actual_parent.join("agent.json");
         config.save(&actual_path).unwrap();
@@ -858,6 +895,7 @@ mod tests {
             control_url: String::new(),
             name: String::new(),
             allowed_roots: vec![root.to_path_buf()],
+            capabilities: Default::default(),
         };
         assert!(config.save(target).is_err());
     }
@@ -936,6 +974,7 @@ mod tests {
             control_url: String::new(),
             name: String::new(),
             allowed_roots: vec![root.to_path_buf()],
+            capabilities: Default::default(),
         };
         let error = config.save(target).unwrap_err();
         assert!(
@@ -965,6 +1004,7 @@ mod tests {
             control_url: String::new(),
             name: String::new(),
             allowed_roots: vec![root.clone()],
+            capabilities: Default::default(),
         };
         config.save(&target).unwrap();
         let original = fs::read(&target).unwrap();
@@ -1080,6 +1120,7 @@ mod tests {
             control_url: String::new(),
             name: String::new(),
             allowed_roots: vec![root.clone()],
+            capabilities: Default::default(),
         };
         config.save(&target).unwrap();
         config.device_token = "outside-secret".into();
@@ -1141,6 +1182,7 @@ mod tests {
             control_url: String::new(),
             name: String::new(),
             allowed_roots: vec![root.to_path_buf()],
+            capabilities: Default::default(),
         };
         let error = config.save(target).unwrap_err();
         assert!(
@@ -1167,6 +1209,7 @@ mod tests {
             control_url: String::new(),
             name: "test".into(),
             allowed_roots: vec![root.clone()],
+            capabilities: Default::default(),
         };
         config.save(&target).unwrap();
         let original = fs::read(&target).unwrap();
@@ -1264,6 +1307,7 @@ mod tests {
             control_url: String::new(),
             name: "test".into(),
             allowed_roots: vec![root.clone()],
+            capabilities: Default::default(),
         };
         config.save(&original).unwrap();
         fs::hard_link(&original, &alias).unwrap();
@@ -1312,6 +1356,7 @@ mod tests {
             control_url: String::new(),
             name: String::new(),
             allowed_roots: vec![root.clone()],
+            capabilities: Default::default(),
         };
         let original = outside.join("private").join("agent.json");
         config.save(&original).unwrap();
@@ -1339,5 +1384,41 @@ mod tests {
         assert!(!outside.join("new-private").exists());
         fs::remove_dir(&junction).unwrap();
         fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod capability_config_tests {
+    use super::*;
+
+    fn base() -> serde_json::Value {
+        serde_json::json!({
+            "deviceId": "d", "deviceToken": "t", "approvalKey": "k",
+            "gatewayWsUrl": "wss://example.invalid/agent", "controlUrl": "https://example.invalid",
+            "name": "n", "allowedRoots": ["/tmp"]
+        })
+    }
+
+    #[test]
+    fn configs_written_before_capabilities_keep_everything_enabled() {
+        let config: AgentConfig = serde_json::from_value(base()).unwrap();
+        assert_eq!(config.capabilities, DeviceCapabilities::default());
+        assert!(config.capabilities.commands && config.capabilities.file_writes);
+    }
+
+    #[test]
+    fn disabled_capabilities_round_trip_and_partial_objects_default_to_enabled() {
+        let mut value = base();
+        value["capabilities"] = serde_json::json!({"commands": false, "fileWrites": false});
+        let config: AgentConfig = serde_json::from_value(value).unwrap();
+        assert!(!config.capabilities.commands && !config.capabilities.file_writes);
+        let again: AgentConfig =
+            serde_json::from_value(serde_json::to_value(&config).unwrap()).unwrap();
+        assert_eq!(again.capabilities, config.capabilities);
+
+        let mut partial = base();
+        partial["capabilities"] = serde_json::json!({"commands": false});
+        let config: AgentConfig = serde_json::from_value(partial).unwrap();
+        assert!(!config.capabilities.commands && config.capabilities.file_writes);
     }
 }

@@ -161,3 +161,27 @@ The v1.0 closure audit adds the following fail-closed boundaries:
 - Query-string result limits are converted to bounded integers before being passed to PostgreSQL.
 - `TRUST_PROXY_HEADERS` remains opt-in in the generic Compose deployment. The Coolify production stack enables it because the self-hosted Coolify proxy is the trusted ingress and overwrites forwarded client addressing.
 - Production relay HTTP calls, SMTP credentials, control credentials and PostgreSQL must remain on trusted/encrypted transport.
+
+## Device-local capabilities
+
+The device owner can switch off whole capability classes on a device. These
+switches live only in the Agent's local `agent.json`. The Gateway and AI
+clients cannot change them, and they are checked before approval
+verification, so even a valid human approval cannot override them.
+
+| Switch | Enroll flag | Refuses |
+|---|---|---|
+| `capabilities.commands = false` | `--no-commands` | `process_exec`, `process_kill`, `task_start`, `terminal_start`, `terminal_input` |
+| `capabilities.fileWrites = false` | `--read-only` | `fs_write`, `fs_append`, `fs_mkdir`, `fs_delete`, `fs_move`, `fs_replace`, `fs_undo`, `xlsx_write_cells` |
+
+- **Change later:** on the device run
+  `webrising-commender --config <path> capabilities --commands on|off --file-writes on|off`,
+  then restart the service.
+- **Ubuntu installer:** `setup-ubuntu.sh` / `wecommander-setup` accept
+  `--read-only` and `--no-commands`, and apply them to an existing
+  enrollment too.
+- **Reporting:** `policy_info` reports `agentMode` (`read_only` when both are
+  off), `commandExecution` and `fileWrites`.
+- **Defaults:** configs written before this feature keep both enabled.
+- **Tests:** `gateway/test/device-capabilities-e2e.mjs`.
+
