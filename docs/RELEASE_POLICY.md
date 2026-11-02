@@ -59,10 +59,25 @@ repository roles, teams, GitHub Apps and Dependabot.
 
 Each step is done once, by the owner, in a web UI, in this order. Claude and
 other agents do none of these steps and never receive the App private key.
-Steps 1–2 change nothing in production. Steps 3–7 form one change window.
+Steps 0–2 change nothing in production. Steps 3–7 form one change window.
 
-**Prerequisites:** PR #33 is reviewed, and the current deployment is healthy at
-`9bdcf23c52e841c6ffd551654f155edd49f347ed`.
+0. **Read-only pre-check and backup** (no change to production).
+   - Coolify → application → Deployments: note the commit SHA of the latest
+     *finished* deployment, and check that the application reports
+     `running:healthy`. Do not assume `9bdcf23c`: if the running commit
+     differs, use that SHA (call it `R`) wherever this procedure says
+     `9bdcf23c`, provided `R` is on `main` and its CI is green. The gate
+     refuses it otherwise.
+   - Take a PostgreSQL backup before the window: Coolify → the database
+     service → Backups → *Backup now*, or on the host
+     `COMMANDER_COMPOSE_FILE=docker-compose.yaml scripts/backup-compose.sh`.
+     The script writes a `.dump` plus a SHA-256 file. Confirm the file
+     exists and its checksum verifies. The cut-over itself runs no migration:
+     between `9bdcf23c` and this PR, `gateway/src` changes only the
+     `/health` response.
+   - This container cannot reach `wecommander.webrising.tr` (outside its
+     network policy) and holds no Coolify credentials, so the owner does
+     this step.
 
 1. **Release GitHub App** (github.com → Settings → Developer settings →
    GitHub Apps → New GitHub App).
@@ -94,6 +109,11 @@ Steps 1–2 change nothing in production. Steps 3–7 form one change window.
      - Bypass list: **`wecommander-release` App only**.
    - **New tag ruleset**: target `production-release/**`, restrict
      creations, updates and deletions, same single bypass.
+   - **Recommended: branch ruleset on `main`**: require a pull request
+     before merging, block force pushes and deletions. The `production`
+     environment secrets are available to any workflow file on `main`, so
+     unreviewed direct pushes to `main` are the remaining path to the App
+     key.
 3. **Coolify** (application `u5mlu98kqroo7w68zoa0syac`, Advanced/General).
    - Record the running commit (`9bdcf23c`).
    - Turn **Auto Deploy off**.
@@ -126,6 +146,12 @@ Steps 1–2 change nothing in production. Steps 3–7 form one change window.
    - Expected: exactly one Coolify deployment, of `M`; the job's last step
      reports `/health` `build.commit` = `M` twice in a row;
      `production-guard` passes.
+
+**Re-runs:** every run attempt evaluates the gate again from scratch (whether
+GitHub asks for a new environment approval on a re-run was not verified here).
+A re-run after success is refused ("already the production head"). A re-run
+after a failure is refused if `production` moved in between (remote head
+re-check and lease).
 
 **Rollback of the window:**
 - Before step 6: turn Auto Deploy back on. Nothing else changed in
