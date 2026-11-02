@@ -214,11 +214,7 @@ async fn exec_with_timeout_bounds(
                 group.signal(libc::SIGTERM);
                 // The Linux reaper SIGKILLs its whole descendant tree on
                 // SIGTERM; give it time to finish before killing the group.
-                let grace = if cfg!(target_os = "linux") {
-                    2_000
-                } else {
-                    250
-                };
+                let grace = if uses_reaper { 2_000 } else { 250 };
                 let _ = tokio::time::timeout(Duration::from_millis(grace), child.wait()).await;
                 group.finish();
             }
