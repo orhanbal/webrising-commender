@@ -437,6 +437,10 @@ async function serveConsole(res: ServerResponse) {
   return servePublicHtml(res, "app.html", "console-not-found");
 }
 
+// Versions a client may send in MCP-Protocol-Version after initialize. Without
+// the header the 2025-03-26 behaviour is assumed, which this server also serves.
+const SUPPORTED_MCP_PROTOCOL_VERSIONS = new Set(["2025-06-18", "2025-03-26"]);
+
 function wantsEventStream(req: IncomingMessage) {
   const accept = String(req.headers.accept || "").toLowerCase();
   return accept.includes("text/event-stream") && !accept.includes("text/html");
@@ -460,16 +464,9 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       if (await serveModernFile(res,url.pathname.slice("/modern/".length))) return;
       return void json(res,404,{error:"asset_not_found"});
     }
-    // MCP Streamable HTTP (2025-06-18): this server opens no server-initiated
-    // SSE stream and has no session to terminate, so an event-stream GET and a
-    // DELETE must get 405 rather than the /mcp dashboard page or a 404.
-    // Browser navigation to /mcp (Accept: text/html) still serves the page.
-    if (url.pathname === "/mcp" && (req.method === "DELETE" || (req.method === "GET" && wantsEventStream(req)))) {
-      res.writeHead(405, { allow: "POST", ...securityHeaders() });
-      res.end();
-      return;
-    }
-    if (req.method === "GET" && modernPages.has(url.pathname)) {
+    // Browser navigation to /mcp (Accept: text/html) serves the dashboard page;
+    // every other /mcp request is MCP transport and is authenticated below.
+    if (req.method === "GET" && modernPages.has(url.pathname) && !(url.pathname === "/mcp" && wantsEventStream(req))) {
       let seo:{title:string;description:string}|undefined;
       if(url.pathname==="/") {
         seo={
@@ -3717,7 +3714,20 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       return void json(res, 200, { items: result.rows });
     }
 
+    if (url.pathname === "/mcp" && req.method !== "POST") {
+      // MCP Streamable HTTP (2025-06-18): no server-initiated SSE stream and no
+      // session to terminate, so GET/DELETE (and any other method) get 405.
+      // Reached only after authentication, so unauthenticated clients still
+      // receive the 401 + WWW-Authenticate resource-metadata challenge first.
+      res.writeHead(405, { allow: "POST", ...securityHeaders() });
+      res.end();
+      return;
+    }
     if (req.method === "POST" && url.pathname === "/mcp") {
+      const protocolHeader = req.headers["mcp-protocol-version"];
+      if (protocolHeader !== undefined && !SUPPORTED_MCP_PROTOCOL_VERSIONS.has(String(protocolHeader))) {
+        return void json(res, 400, { error: "unsupported_mcp_protocol_version" });
+      }
       const payload = await readJson(req);
       if (Array.isArray(payload)) {
         const results = (await Promise.all(payload.map((item) => handleMcp(item, deviceRouter, principal!)))).filter(Boolean);
