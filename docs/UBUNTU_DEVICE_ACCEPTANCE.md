@@ -42,8 +42,18 @@ sudo install -d -o root -g wecommander -m 0750 /srv/wecommander-acceptance
 echo "hello from 148.135.181.148" | sudo tee /srv/wecommander-acceptance/readme.txt >/dev/null
 sudo chown root:wecommander /srv/wecommander-acceptance/readme.txt
 sudo chmod 0640 /srv/wecommander-acceptance/readme.txt
-sudo wecommander-setup --allowed-root /srv/wecommander-acceptance
+sudo wecommander-setup --allowed-root /srv/wecommander-acceptance --read-only --no-commands
 ```
+
+`--read-only --no-commands` (PR #39) makes the first, read-only phase
+enforced by the Agent on the device itself: even an approved command or
+write is refused, and only the owner can lift it, locally. These flags
+require an Agent package that contains PR #39. The pinned
+`ubuntu-preview-1530` package does not; with it, omit both flags and rely on
+the OS-level read-only directory and per-operation approvals. Before items
+11 and 13 the owner enables commands locally:
+`sudo -u wecommander /opt/wecommander/bin/webrising-commender --config /var/lib/webrising-commender/agent.json capabilities --commands on`
+followed by `sudo systemctl restart webrising-commender` (part of approval B).
 
 `wecommander-setup` (from the package, `/usr/bin/wecommander-setup`) checks the
 packaged binary's SHA-256 and passes the flags to `setup-ubuntu.sh`.
@@ -87,7 +97,7 @@ not replace this item.
 | 7 | `fs_list /srv/wecommander-acceptance` | Claude | `readme.txt` |
 | 8 | `fs_read …/readme.txt` | Claude | `hello from 148.135.181.148` |
 | 9 | `fs_read /etc/hostname`, `fs_list /var/lib/webrising-commender` | Claude | refused: outside allowed roots |
-| 10 | `process_exec "id"` without approval | Claude | `approval_required`, nothing runs |
+| 10 | `process_exec "id"` without approval | Claude | `approval_required`, nothing runs (with `--no-commands`, `policy_info` also shows `commandExecution: disabled`) |
 | 11 | admin approves exactly `id` (needs approval B), Claude retries | Claude | output `uid=…(wecommander)`, not root |
 | 12 | same `id` again | Claude | `approval_required` (single use) |
 | 13 | `task_start "for i in 1 2 3; do date; sleep 5; done"` (approval C), close the Claude session, new session → `task_status` | Claude | completed, three dates |
