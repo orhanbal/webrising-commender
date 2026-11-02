@@ -48,7 +48,7 @@ const tools = [
     ["path", "output_path", "sheet", "updates"]),
   tool(
     "fs_read_multiple",
-    "Read up to ten files in one call, retaining per-file errors. Each file is limited to 64 KiB.",
+    "Read up to ten files in one call, retaining per-file errors. Each file is limited to 64 KiB and the combined raw size to 256 KiB; files after the budget is exhausted fail individually.",
     { paths: { type: "array", items: { type: "string", minLength: 1, maxLength: 4096 }, minItems: 1, maxItems: 10 }, max_bytes: { type: "integer", minimum: 1, maximum: 65536 } },
     ["paths"],
   ),
