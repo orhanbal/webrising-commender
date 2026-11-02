@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Production release boundary (Issue #30): operator-approved `promote-production` workflow with an exact-SHA CI/distribution release gate, `production-release/*` tag ledger, read-only `bootstrap-locks`, and `build.commit` in `/health`. See `docs/RELEASE_POLICY.md`.
+- Production release boundary (Issue #30): `production` branch moved only by the owner-approved `promote-production` workflow through a dedicated release GitHub App; exact-SHA 17-job CI/distribution gate, annotated `production-release/*` ledger, unauthorized-update detection (`production-guard`), one-time `bootstrap-production.sh`, `/health` `build.commit` verified after each release, read-only `bootstrap-locks`. See `docs/RELEASE_POLICY.md`.
 - Added a dependency-free external production acceptance probe and an isolated Coolify Compose deployment model.
 - Hardened PUBLIC_BASE_URL validation, relay RPC redirect behavior, SMTP plaintext transport defaults and query-limit parsing.
 - Backup/restore and restart-soak tooling can now target an explicit production Compose file/project.

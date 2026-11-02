@@ -1,15 +1,18 @@
 name: promote-production
 
-# The only sanctioned writer of the `production` branch (Issue #30).
-# Coolify's production application tracks `production`, never `main`.
-# Pushes to main, PR merges, docs-only commits and green CI therefore cause no
-# production deployment; only an operator-approved run of this workflow does.
+# The only sanctioned writer of the `production` branch after its one-time
+# owner bootstrap (Issue #30). Coolify tracks `production`, never `main`, so
+# pushes to main, PR merges, docs-only commits and green CI deploy nothing.
 #
-# Required one-time repository settings (operator, see docs/RELEASE_POLICY.md):
-#   * Environment `production` with required reviewers and
-#     "prevent self-review"; deployment branch policy limited to `main`.
-#   * Ruleset on `production`: block creation/update/deletion/force-push for
-#     everyone except the GitHub Actions bypass actor.
+# Fail-closed chain (see docs/RELEASE_POLICY.md):
+#   * runs only when dispatched on `main`;
+#   * the job references the `production` environment, so it waits for the
+#     required reviewer; the release App key is an environment secret and is
+#     not released to the job before approval;
+#   * scripts/release-gate.mjs (from main) must pass;
+#   * only the release GitHub App may update `production` and
+#     `production-release/*` (rulesets); GITHUB_TOKEN cannot;
+#   * the job succeeds only when public /health reports build.commit == sha.
 
 on:
   workflow_dispatch:
@@ -34,7 +37,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
   actions: read
 
 concurrency:
@@ -43,28 +46,40 @@ concurrency:
 
 jobs:
   release:
-    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     environment: production
+    timeout-minutes: 45
     steps:
+      - name: Refuse dispatch from any ref other than main
+        if: ${{ github.ref != 'refs/heads/main' }}
+        run: |
+          echo "::error::promote-production must be dispatched on main (got $GITHUB_REF)"
+          exit 1
       - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Release gate (exact-SHA main CI, distribution, ancestry)
+      - name: Release gate (exact-SHA main CI, distribution, ancestry, release ledger)
         id: gate
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_SHA: ${{ inputs.sha }}
           RELEASE_CONFIRM_SHA: ${{ inputs.confirm_sha }}
           RELEASE_MODE: ${{ inputs.mode }}
-          RELEASE_MIN_CI_JOBS: "17"
         run: node scripts/release-gate.mjs
+      - name: Mint release App token (environment secrets, available only after approval)
+        id: app
+        env:
+          RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
+          RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+        run: node scripts/github-app-token.mjs
       - name: Move production ref and record release tag
         env:
+          APP_TOKEN: ${{ steps.app.outputs.token }}
           RELEASE_SHA: ${{ inputs.sha }}
           RELEASE_MODE: ${{ inputs.mode }}
           RELEASE_REASON: ${{ inputs.reason }}
@@ -72,23 +87,28 @@ jobs:
           CI_RUN_ID: ${{ steps.gate.outputs.ci_run_id }}
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ && "$PREVIOUS" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::gate outputs missing"; exit 1; }
+          git config user.name "wecommander-release"
+          git config user.email "wecommander-release@users.noreply.github.com"
           tag="production-release/$(date -u +%Y%m%dT%H%M%SZ)-${RELEASE_SHA:0:12}"
           printf 'mode: %s\nsha: %s\nprevious: %s\nci_run: %s\napproved_run: %s/%s/actions/runs/%s\nactor: %s\nreason: %s\n' \
-            "$RELEASE_MODE" "$RELEASE_SHA" "${PREVIOUS:-none}" "$CI_RUN_ID" \
+            "$RELEASE_MODE" "$RELEASE_SHA" "$PREVIOUS" "$CI_RUN_ID" \
             "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_ACTOR" "$RELEASE_REASON" > "$RUNNER_TEMP/release-note"
           git tag -a "$tag" "$RELEASE_SHA" -F "$RUNNER_TEMP/release-note"
-          if [[ -n "${PREVIOUS:-}" ]]; then
-            lease="--force-with-lease=refs/heads/production:${PREVIOUS}"
-          else
-            lease="--force-with-lease=refs/heads/production:"
-          fi
-          # promote is fast-forward (verified by the gate); rollback needs the lease
-          git push --atomic "$lease" origin "${RELEASE_SHA}:refs/heads/production" "refs/tags/${tag}"
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$APP_TOKEN" | base64 -w0)"
+          echo "::add-mask::$(printf 'x-access-token:%s' "$APP_TOKEN" | base64 -w0)"
+          # The lease pins the head the gate approved; promote is a verified fast-forward.
+          git -c "http.https://github.com/.extraheader=$auth" push --atomic \
+            "--force-with-lease=refs/heads/production:${PREVIOUS}" \
+            origin "${RELEASE_SHA}:refs/heads/production" "refs/tags/${tag}"
           {
             echo "### Production ref moved"
-            echo "- production: \`${PREVIOUS:-none}\` → \`${RELEASE_SHA}\`"
+            echo "- production: \`${PREVIOUS}\` → \`${RELEASE_SHA}\`"
             echo "- tag: \`${tag}\`"
-            echo "- Next: confirm exactly one Coolify deployment for \`${RELEASE_SHA}\` and that \`/health\` reports \`build.commit\` = this SHA."
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify the deployed build identity
+        env:
+          PRODUCTION_BASE_URL: ${{ vars.PRODUCTION_BASE_URL }}
+          RELEASE_SHA: ${{ inputs.sha }}
+          RELEASE_VERIFY_TIMEOUT_MS: "1800000"
+        run: node scripts/verify-release.mjs

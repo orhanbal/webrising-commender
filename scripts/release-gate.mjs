@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 // WECOMMANDER production release gate (Issue #30).
 //
-// Production must never follow `main`. Coolify tracks the dedicated
-// `production` branch, and that branch is only moved by the
-// `promote-production` workflow after a named operator approves the
-// `production` GitHub environment. This script is the deterministic decision
-// step of that workflow: it refuses to promote any SHA that is not exactly a
-// main commit with a fully green push CI run and a successful platform
-// distribution run for the same SHA.
+// Production never follows `main`. Coolify tracks the dedicated `production`
+// branch. That branch is created once by the owner (mode=bootstrap, see
+// scripts/bootstrap-production.sh) and afterwards moved only by the
+// `promote-production` workflow after the owner approves the `production`
+// environment. `production-guard` re-runs this gate in mode=audit on every
+// production/tag update and daily.
 //
-// The decision logic (`evaluateReleaseGate`) is pure and unit tested in
-// release-gate.test.mjs. The CLI only gathers facts via `git` and `gh api`.
+// The decision (`evaluateReleaseGate`) is pure and unit tested. The CLI only
+// gathers facts with `git` and the public GitHub REST API (GH_TOKEN optional),
+// so it needs no `gh` CLI and makes no writes.
 
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
@@ -18,38 +18,92 @@ import { pathToFileURL } from "node:url";
 
 export const SHA_RE = /^[0-9a-f]{40}$/;
 export const RELEASE_TAG_PREFIX = "production-release/";
-const OK_JOB_CONCLUSIONS = new Set(["success", "skipped"]);
+export const MODES = ["bootstrap", "promote", "rollback", "audit"];
+
+// Every job of .github/workflows/ci.yml, matrix legs expanded. No job in ci.yml
+// is conditional, so each must be present and `success`; a skipped, cancelled,
+// missing or extra job refuses the release. release-gate.test.mjs keeps this
+// list in sync with ci.yml.
+export const REQUIRED_CI_JOBS = Object.freeze([
+  "windows-powershell-preflight",
+  "rust",
+  "rust-platforms (windows-latest)",
+  "rust-platforms (macos-latest)",
+  "gateway",
+  "integration",
+  "agent-e2e",
+  "relay-e2e",
+  "tls-smoke",
+  "compose-smoke",
+  "installer-syntax (ubuntu-latest)",
+  "installer-syntax (windows-latest)",
+  "installer-syntax (macos-latest)",
+  "linux-acceptance-artifact",
+  "macos-acceptance-artifact",
+  "windows-acceptance-artifact",
+  "windows-service-smoke",
+]);
+
+/**
+ * A release tag counts only if it is an annotated tag under production-release/
+ * whose message records `sha: <commit>` for the commit it points at. Lightweight
+ * tags or tags whose message disagrees with their target are ignored (and
+ * reported), so a hand-made tag cannot whitelist a rollback target.
+ */
+export function releasedShasFromTags(tags = []) {
+  const released = new Set(), rejected = [];
+  for (const t of tags) {
+    const recorded = /^sha: ([0-9a-f]{40})$/m.exec(t.message || "")?.[1];
+    if (t.type === "tag" && SHA_RE.test(t.commit || "") && recorded === t.commit) released.add(t.commit);
+    else rejected.push(t.ref);
+  }
+  return { released: [...released], rejected };
+}
 
 /**
  * @param {object} f facts gathered by the CLI (or a test)
- * @param {"promote"|"rollback"} f.mode
- * @param {string} f.sha            requested commit (full 40-hex)
- * @param {string} f.confirmSha     operator re-typed commit, must equal sha
- * @param {boolean} f.shaIsOnMain   sha is an ancestor of (or equal to) origin/main
- * @param {string|null} f.productionSha current production branch head, null if absent
- * @param {boolean} f.productionIsAncestor production head is an ancestor of sha (fast-forward)
- * @param {string[]} f.releasedShas  SHAs carrying a production-release/* tag
- * @param {object[]} f.ciRuns       `ci` workflow runs for head_sha=sha
- * @param {object[]} f.ciJobs       jobs of the selected ci run (latest attempt)
+ * @param {string} f.mode            bootstrap | promote | rollback | audit
+ * @param {string} f.sha             commit to release (audit: current production head)
+ * @param {string} f.confirmSha      re-typed commit, must equal sha (audit: = sha)
+ * @param {boolean} f.shaIsOnMain    sha is reachable from origin/main
+ * @param {string|null} f.productionSha current production head, null if absent
+ * @param {boolean} f.productionIsAncestor production head is an ancestor of sha
+ * @param {object[]} f.releaseTags   [{ref,type,commit,message}] under production-release/
+ * @param {object[]} f.ciRuns        `ci` workflow runs for head_sha=sha
+ * @param {object[]} f.ciJobs        jobs of the selected run's latest attempt
  * @param {object[]} f.distributionRuns `platform-distribution` runs for head_sha=sha
- * @param {number} f.minCiJobs      lower bound of jobs the ci run must contain
  */
 export function evaluateReleaseGate(f) {
   const reasons = [];
   const mode = f.mode;
-  if (mode !== "promote" && mode !== "rollback") reasons.push(`unknown mode "${mode}"`);
+  if (!MODES.includes(mode)) reasons.push(`unknown mode "${mode}"`);
   if (typeof f.sha !== "string" || !SHA_RE.test(f.sha)) {
     reasons.push("sha must be a full lowercase 40-character commit id (no branch names, tags or short SHAs)");
     return { ok: false, reasons, ciRunId: null };
   }
   if (f.confirmSha !== f.sha) reasons.push("confirm_sha does not exactly match sha");
   if (!f.shaIsOnMain) reasons.push("sha is not reachable from origin/main; only reviewed main commits can be released");
-  if (f.productionSha && f.productionSha === f.sha) reasons.push("sha is already the production head; nothing to release");
 
-  if (mode === "promote" && f.productionSha && !f.productionIsAncestor)
-    reasons.push("promotion must fast-forward production; use mode=rollback to move production backwards");
-  if (mode === "rollback" && !(f.releasedShas || []).includes(f.sha))
-    reasons.push("rollback target was never released to production (no production-release/* tag on this sha)");
+  const { released } = releasedShasFromTags(f.releaseTags);
+  const prod = f.productionSha || null;
+  if (mode === "bootstrap") {
+    if (prod) reasons.push("production branch already exists; bootstrap is a one-time operation");
+    if (released.length || (f.releaseTags || []).length) reasons.push("production-release tags already exist; refusing to bootstrap twice");
+  } else if (!prod) {
+    reasons.push("production branch does not exist; run the one-time owner bootstrap first");
+  } else {
+    // Detect any production update that did not go through this gate.
+    if (!released.includes(prod)) reasons.push(`production head ${prod} has no valid production-release tag: possible unauthorized update, investigate before releasing`);
+    if (mode === "audit") {
+      if (f.sha !== prod) reasons.push("audit sha must be the current production head");
+    } else if (prod === f.sha) {
+      reasons.push("sha is already the production head; nothing to release");
+    }
+    if (mode === "promote" && !f.productionIsAncestor)
+      reasons.push("promotion must fast-forward production; use mode=rollback to move production backwards");
+    if (mode === "rollback" && !released.includes(f.sha))
+      reasons.push("rollback target was never released to production (no valid production-release tag on this sha)");
+  }
 
   const pushRuns = (f.ciRuns || []).filter(r =>
     r.head_sha === f.sha && r.event === "push" && r.head_branch === "main" && r.status === "completed");
@@ -62,12 +116,19 @@ export function evaluateReleaseGate(f) {
   } else {
     ciRunId = greenRun.id;
     const jobs = f.ciJobs || [];
-    const minJobs = Number.isInteger(f.minCiJobs) && f.minCiJobs > 0 ? f.minCiJobs : 1;
-    if (jobs.length < minJobs) reasons.push(`ci run ${greenRun.id} has ${jobs.length} jobs, expected at least ${minJobs}`);
-    const bad = jobs.filter(j => j.status !== "completed" || !OK_JOB_CONCLUSIONS.has(j.conclusion));
-    for (const j of bad) reasons.push(`ci job "${j.name}" is ${j.status}/${j.conclusion}`);
-    const succeeded = jobs.filter(j => j.conclusion === "success").length;
-    if (jobs.length && succeeded === 0) reasons.push("ci run contains no successful job");
+    const byName = new Map();
+    for (const j of jobs) {
+      if (byName.has(j.name)) reasons.push(`ci job "${j.name}" appears more than once`);
+      byName.set(j.name, j);
+    }
+    for (const name of REQUIRED_CI_JOBS) {
+      const j = byName.get(name);
+      if (!j) reasons.push(`required ci job "${name}" is missing from run ${greenRun.id}`);
+      else if (j.status !== "completed" || j.conclusion !== "success") reasons.push(`required ci job "${name}" is ${j.status}/${j.conclusion}`);
+      else if (j.head_sha && j.head_sha !== f.sha) reasons.push(`ci job "${name}" ran on ${j.head_sha}`);
+    }
+    for (const name of byName.keys())
+      if (!REQUIRED_CI_JOBS.includes(name)) reasons.push(`unexpected ci job "${name}"; update REQUIRED_CI_JOBS with ci.yml`);
   }
 
   const dist = (f.distributionRuns || []).some(r =>
@@ -77,65 +138,81 @@ export function evaluateReleaseGate(f) {
   return { ok: reasons.length === 0, reasons, ciRunId };
 }
 
-function sh(cmd, args, { allowFail = false } = {}) {
+function git(args, { allowFail = false } = {}) {
   try {
-    return execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   } catch (error) {
     if (allowFail) return null;
-    throw new Error(`${cmd} ${args.join(" ")} failed: ${(error.stderr || error.message || "").toString().trim()}`);
+    throw new Error(`git ${args.join(" ")} failed: ${(error.stderr || error.message || "").toString().trim()}`);
   }
 }
-const ghJson = path => JSON.parse(sh("gh", ["api", "-H", "Accept: application/vnd.github+json", path]));
 
-function gatherFacts(env) {
+async function api(path, env) {
+  const base = env.GITHUB_API_URL || "https://api.github.com";
+  const headers = { accept: "application/vnd.github+json", "x-github-api-version": "2022-11-28", "user-agent": "wecommander-release-gate" };
+  if (env.GH_TOKEN) headers.authorization = `Bearer ${env.GH_TOKEN}`;
+  const response = await fetch(`${base}/${path}`, { headers });
+  if (!response.ok) throw new Error(`GitHub API ${path} returned HTTP ${response.status}`);
+  return response.json();
+}
+
+export async function gatherFacts(env) {
   const repo = env.GITHUB_REPOSITORY;
-  const sha = (env.RELEASE_SHA || "").trim();
+  if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error("GITHUB_REPOSITORY (owner/name) is required");
+  const remote = env.RELEASE_GIT_REMOTE || "origin";
+  const mode = (env.RELEASE_MODE || "").trim();
+  git(["fetch", "--no-tags", remote, "+refs/heads/main:refs/remotes/release-gate/main"]);
+  git(["update-ref", "-d", "refs/remotes/release-gate/production"], { allowFail: true });
+  git(["fetch", "--no-tags", remote, "+refs/heads/production:refs/remotes/release-gate/production"], { allowFail: true });
+  git(["fetch", "--no-tags", remote, `+refs/tags/${RELEASE_TAG_PREFIX}*:refs/tags/${RELEASE_TAG_PREFIX}*`], { allowFail: true });
+  const productionSha = git(["rev-parse", "--verify", "-q", "refs/remotes/release-gate/production^{commit}"], { allowFail: true }) || null;
+  const sha = mode === "audit" ? (productionSha || "") : (env.RELEASE_SHA || "").trim();
   const facts = {
-    mode: (env.RELEASE_MODE || "promote").trim(),
-    sha,
-    confirmSha: (env.RELEASE_CONFIRM_SHA || "").trim(),
-    minCiJobs: Number.parseInt(env.RELEASE_MIN_CI_JOBS || "17", 10),
-    shaIsOnMain: false, productionSha: null, productionIsAncestor: false,
-    releasedShas: [], ciRuns: [], ciJobs: [], distributionRuns: [],
+    mode, sha,
+    confirmSha: mode === "audit" ? sha : (env.RELEASE_CONFIRM_SHA || "").trim(),
+    shaIsOnMain: false, productionSha, productionIsAncestor: false,
+    releaseTags: [], ciRuns: [], ciJobs: [], distributionRuns: [],
   };
-  if (!repo) throw new Error("GITHUB_REPOSITORY is required");
-  if (!SHA_RE.test(sha)) return facts; // evaluate() rejects it before any network call
-  sh("git", ["fetch", "--no-tags", "origin", "+refs/heads/main:refs/remotes/origin/main"]);
-  sh("git", ["fetch", "--no-tags", "origin", "+refs/heads/production:refs/remotes/origin/production"], { allowFail: true });
-  sh("git", ["fetch", "origin", `+refs/tags/${RELEASE_TAG_PREFIX}*:refs/tags/${RELEASE_TAG_PREFIX}*`], { allowFail: true });
-  facts.shaIsOnMain = sh("git", ["cat-file", "-e", `${sha}^{commit}`], { allowFail: true }) !== null
-    && sh("git", ["merge-base", "--is-ancestor", sha, "origin/main"], { allowFail: true }) !== null;
-  facts.productionSha = sh("git", ["rev-parse", "--verify", "-q", "refs/remotes/origin/production"], { allowFail: true }) || null;
-  if (facts.productionSha)
-    facts.productionIsAncestor = sh("git", ["merge-base", "--is-ancestor", facts.productionSha, sha], { allowFail: true }) !== null;
-  const tagged = sh("git", ["for-each-ref", "--format=%(*objectname)%(objectname)", `refs/tags/${RELEASE_TAG_PREFIX}`], { allowFail: true }) || "";
-  // annotated tags print "<commit><tagobject>", lightweight print "<commit>"
-  facts.releasedShas = tagged.split("\n").map(l => l.slice(0, 40)).filter(s => SHA_RE.test(s));
-  facts.ciRuns = ghJson(`repos/${repo}/actions/workflows/ci.yml/runs?head_sha=${sha}&per_page=50`).workflow_runs || [];
-  const pre = evaluateReleaseGate({ ...facts, ciJobs: [{ name: "probe", status: "completed", conclusion: "success" }] });
-  if (pre.ciRunId) facts.ciJobs = ghJson(`repos/${repo}/actions/runs/${pre.ciRunId}/jobs?filter=latest&per_page=100`).jobs || [];
-  facts.distributionRuns = ghJson(`repos/${repo}/actions/workflows/ubuntu-distribution.yml/runs?head_sha=${sha}&per_page=50`).workflow_runs || [];
+  const refs = git(["for-each-ref", "--format=%(refname)", `refs/tags/${RELEASE_TAG_PREFIX}`], { allowFail: true }) || "";
+  for (const ref of refs.split("\n").filter(Boolean)) {
+    const type = git(["cat-file", "-t", ref], { allowFail: true });
+    const commit = git(["rev-parse", "--verify", "-q", `${ref}^{commit}`], { allowFail: true });
+    const message = type === "tag" ? (git(["for-each-ref", "--format=%(contents)", ref], { allowFail: true }) || "") : "";
+    facts.releaseTags.push({ ref, type, commit, message });
+  }
+  if (!SHA_RE.test(sha)) return facts; // evaluate() refuses before any API call
+  facts.shaIsOnMain = git(["cat-file", "-e", `${sha}^{commit}`], { allowFail: true }) !== null
+    && git(["merge-base", "--is-ancestor", sha, "refs/remotes/release-gate/main"], { allowFail: true }) !== null;
+  if (productionSha)
+    facts.productionIsAncestor = git(["merge-base", "--is-ancestor", productionSha, sha], { allowFail: true }) !== null;
+  facts.ciRuns = (await api(`repos/${repo}/actions/workflows/ci.yml/runs?head_sha=${sha}&event=push&per_page=50`, env)).workflow_runs || [];
+  const pre = evaluateReleaseGate({ ...facts, ciJobs: REQUIRED_CI_JOBS.map(name => ({ name, status: "completed", conclusion: "success" })) });
+  if (pre.ciRunId) facts.ciJobs = (await api(`repos/${repo}/actions/runs/${pre.ciRunId}/jobs?filter=latest&per_page=100`, env)).jobs || [];
+  facts.distributionRuns = (await api(`repos/${repo}/actions/workflows/ubuntu-distribution.yml/runs?head_sha=${sha}&per_page=50`, env)).workflow_runs || [];
   return facts;
 }
 
-function main() {
-  const facts = gatherFacts(process.env);
+async function main() {
+  const facts = await gatherFacts(process.env);
   const result = evaluateReleaseGate(facts);
+  const { rejected } = releasedShasFromTags(facts.releaseTags);
   const lines = [
     `### Production release gate: ${result.ok ? "PASSED" : "REFUSED"}`,
     "",
-    `- mode: \`${facts.mode}\``,
-    `- requested sha: \`${facts.sha || "(empty)"}\``,
+    `- mode: \`${facts.mode || "(empty)"}\``,
+    `- sha: \`${facts.sha || "(empty)"}\``,
     `- current production: \`${facts.productionSha || "(branch absent)"}\``,
     `- ci run: ${result.ciRunId ? `#${result.ciRunId}` : "none"}`,
+    ...rejected.map(r => `- ignored invalid release tag: \`${r}\``),
     ...result.reasons.map(r => `- refused: ${r}`),
   ];
   console.log(lines.join("\n"));
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n");
-  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `ci_run_id=${result.ciRunId || ""}\nprevious_production=${facts.productionSha || ""}\n`);
-  process.exit(result.ok ? 0 : 1);
+  if (process.env.GITHUB_OUTPUT && result.ok)
+    appendFileSync(process.env.GITHUB_OUTPUT, `ci_run_id=${result.ciRunId}\nprevious_production=${facts.productionSha || ""}\n`);
+  process.exitCode = result.ok ? 0 : 1;
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
-  try { main(); } catch (error) { console.error(`release gate error: ${error.message}`); process.exit(2); }
+  main().catch(error => { console.error(`release gate error: ${error.message}`); process.exitCode = 2; });
 }
