@@ -16,10 +16,10 @@ separated as they are in production:
 
 | # | Check | Result (local, 2 Nov 2026) |
 |---|---|---|
-| 1 | 401 + `resource_metadata` challenge; `initialize` (2025-06-18); `notifications/initialized` → 202; `ping`; unknown method → -32601; event-stream `GET /mcp` and `DELETE /mcp` → 405 `Allow: POST` | PASSED |
+| 1 | 401 + `resource_metadata` challenge (also for an unauthenticated event-stream GET); `initialize` (2025-06-18); `notifications/initialized` → 202; `ping`; unknown method → -32601; authenticated non-POST (`GET` event-stream, `DELETE`, `PUT`, `PATCH`) → 405 `Allow: POST`; browser `GET /mcp` still serves the page; unsupported `MCP-Protocol-Version` → 400 | PASSED |
 | 2 | `tools/list`: 50 tools, unique names, object input schemas, `required` ⊆ `properties`, every HIGH-risk tool exposes `approval_token` | PASSED |
 | 3 | `devices_list` (own organization only), `system_info`, `fs_list`, `fs_read` inside the allowed root | PASSED |
-| 4 | outside-root read, list, `..` traversal and write refused; secret never in any response | PASSED |
+| 4 | outside-root read, list, `..` traversal and write refused with the allowed-root error; the same write inside the root succeeds; secret never in any response | PASSED |
 | 5 | HIGH-risk `process_exec` without approval → `approval_required`; AI token on the approval API → 401; forged token refused; admin deny keeps it blocked | PASSED |
 | 6 | admin-approved exact command runs once; a different command and a replay need a new approval | PASSED |
 | 7 | approved `task_start`; a new OAuth client and new MCP session read `task_status` = completed with full output | PASSED |

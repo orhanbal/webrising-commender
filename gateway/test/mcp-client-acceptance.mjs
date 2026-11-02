@@ -41,6 +41,7 @@ const SECRET = "TOP-SECRET-" + crypto.randomUUID();
 fs.writeFileSync(path.join(allowedRoot, "projects", "readme.txt"), "hello from the allowed root\n");
 fs.writeFileSync(path.join(outsideDir, "secret.txt"), SECRET + "\n");
 let agent, agentLog = "";
+const createdOrgs = [];
 const step = msg => console.log(`mcp-client-acceptance: ${msg}`);
 
 async function createUser(orgId, role) {
@@ -124,6 +125,7 @@ class McpClient {
 try {
   const org = (await db.query("insert into organizations(name) values('MCP client acceptance') returning id")).rows[0].id;
   const otherOrg = (await db.query("insert into organizations(name) values('MCP client acceptance (other tenant)') returning id")).rows[0].id;
+  createdOrgs.push(org, otherOrg);
   const operator = await createUser(org, "operator");
   const admin = await createUser(org, "admin");
   const stranger = await createUser(otherOrg, "owner");
@@ -150,15 +152,26 @@ try {
   assert.equal(unauth.status, 401);
   assert.match(unauth.headers.get("www-authenticate") || "", /resource_metadata=/);
   await ai.initialize();
-  const sse = await fetch(resource, { headers: { authorization: `Bearer ${aiToken}`, accept: "text/event-stream" } });
-  assert.equal(sse.status, 405, "event-stream GET must be 405");
-  assert.equal(sse.headers.get("allow"), "POST");
-  const del = await fetch(resource, { method: "DELETE", headers: { authorization: `Bearer ${aiToken}` } });
-  assert.equal(del.status, 405, "DELETE must be 405");
+  for (const method of ["GET", "DELETE", "PUT", "PATCH"]) {
+    const r = await fetch(resource, { method, headers: { authorization: `Bearer ${aiToken}`, accept: "text/event-stream" } });
+    assert.equal(r.status, 405, `${method} /mcp must be 405`);
+    assert.equal(r.headers.get("allow"), "POST");
+  }
+  // Unauthenticated transport probes get the OAuth challenge, not a 405.
+  const anonSse = await fetch(resource, { headers: { accept: "text/event-stream" } });
+  assert.equal(anonSse.status, 401, "unauthenticated event-stream GET must be challenged");
+  assert.match(anonSse.headers.get("www-authenticate") || "", /resource_metadata=/);
+  // Browser navigation to the /mcp dashboard page is unaffected.
+  const page = await fetch(resource, { headers: { accept: "text/html" } });
+  assert.notEqual(page.status, 405);
+  assert.notEqual(page.status, 401);
+  // Unsupported negotiated protocol version is rejected.
+  const badVersion = await fetch(resource, { method: "POST", headers: { ...ai.headers(), "mcp-protocol-version": "1999-01-01" }, body: '{"jsonrpc":"2.0","id":99,"method":"ping"}' });
+  assert.equal(badVersion.status, 400);
   assert.equal((await ai.request("ping")).error, undefined);
   const unknownMethod = await ai.request("resources/list");
   assert.equal(unknownMethod.error?.code, -32601);
-  step("initialize, initialized->202, ping, 401 challenge, GET/DELETE 405, -32601 PASSED");
+  step("initialize, initialized->202, ping, 401 challenge (also for SSE GET), non-POST 405, browser page kept, bad MCP-Protocol-Version 400, -32601 PASSED");
 
   // 2. Tool schemas.
   const { tools } = (await ai.request("tools/list")).result;
@@ -199,14 +212,19 @@ try {
     ["fs_read", { path: path.join(outsideDir, "secret.txt") }],
     ["fs_list", { path: outsideDir }],
     ["fs_read", { path: path.join(allowedRoot, "..", "outside", "secret.txt") }],
-    ["fs_write", { path: path.join(outsideDir, "planted.txt"), content: "x" }],
+    ["fs_write", { path: path.join(outsideDir, "planted.txt"), content_base64: Buffer.from("planted").toString("base64") }],
   ]) {
     const r = await ai.call(name, { device_id: deviceId, ...args });
     assert.equal(r.isError, true, `${name} ${args.path} must fail`);
+    assert.match(String(r.data.error), /outside configured allowed roots/, `${name} must be refused by the allowed-root policy, got ${r.text}`);
     assert.ok(!r.text.includes(SECRET), "secret must not leak");
   }
+  // Positive control: the same write inside the root succeeds, so the refusal above is the policy.
+  const okWrite = await ai.call("fs_write", { device_id: deviceId, path: path.join(allowedRoot, "projects", "written.txt"), content_base64: Buffer.from("inside").toString("base64") });
+  assert.equal(okWrite.isError, false, okWrite.text);
+  assert.equal(fs.readFileSync(path.join(allowedRoot, "projects", "written.txt"), "utf8"), "inside");
   assert.ok(!fs.existsSync(path.join(outsideDir, "planted.txt")));
-  step("outside-root read/list/traversal/write refused, no leak PASSED");
+  step("outside-root read/list/traversal/write refused by policy, inside write allowed, no leak PASSED");
 
   // 5. HIGH risk: approval required; AI cannot approve; deny blocks; approve allows once.
   const pending = async (name, args) => {
@@ -295,7 +313,14 @@ try {
   console.error(agentLog.slice(-4000));
   throw error;
 } finally {
-  agent?.kill("SIGTERM");
+  if (agent && agent.exitCode === null) {
+    const exited = new Promise(resolve => agent.once("exit", resolve));
+    agent.kill("SIGTERM");
+    await Promise.race([exited, new Promise(resolve => setTimeout(resolve, 5000))]);
+  }
+  if (createdOrgs.length) {
+    try { await db.query("delete from organizations where id = any($1::uuid[])", [createdOrgs]); } catch (error) { console.error(`cleanup: organizations kept (${error.code || error.message})`); }
+  }
   await db.end();
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }
