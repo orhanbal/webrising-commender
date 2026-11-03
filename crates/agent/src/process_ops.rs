@@ -116,7 +116,23 @@ async fn exec_with_timeout_bounds(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
+    // Windows: create the command suspended so it can be placed in a
+    // kill-on-close Job Object before any of its code runs (2C). Every
+    // descendant then inherits the job and dies with it.
+    #[cfg(windows)]
+    process.creation_flags(windows_sys::Win32::System::Threading::CREATE_SUSPENDED);
+
     let mut child = process.spawn().context("failed to start command")?;
+    #[cfg(windows)]
+    let job = {
+        let handle = child
+            .raw_handle()
+            .ok_or_else(|| anyhow!("spawned process has no handle"))?;
+        let pid = child
+            .id()
+            .ok_or_else(|| anyhow!("spawned process has no pid"))?;
+        crate::windows_job::contain_suspended(handle as _, pid)?
+    };
     #[cfg(unix)]
     let group = ProcessGroupGuard::new(
         child
@@ -149,6 +165,8 @@ async fn exec_with_timeout_bounds(
                 tokio::time::sleep(Duration::from_millis(250)).await;
                 group.signal(libc::SIGKILL);
             }
+            #[cfg(windows)]
+            let _ = job.terminate();
             let _ = child.kill().await;
             stdout_task.abort();
             stderr_task.abort();
@@ -160,6 +178,12 @@ async fn exec_with_timeout_bounds(
     // Reap those descendants before joining stdout/stderr readers.
     #[cfg(unix)]
     group.signal(libc::SIGKILL);
+
+    // A finished command must not leave background descendants behind.
+    // Closing the kill-on-close job ends them without waiting and releases
+    // pipes they may still hold before the readers are joined.
+    #[cfg(windows)]
+    drop(job);
 
     let stdout = stdout_task
         .await
@@ -610,5 +634,77 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(1200)).await;
         assert!(!marker.exists(), "canceled descendant survived");
         std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+// 2C (Windows): process_exec runs inside a kill-on-close Job Object assigned
+// while the command is still suspended, so background descendants started
+// with `start /b` cannot outlive a finished or timed-out command.
+#[cfg(all(test, windows))]
+mod windows_exec_job_tests {
+    use super::*;
+    use sysinfo::{ProcessRefreshKind, UpdateKind};
+
+    fn ping_with_marker_alive(marker: &str) -> bool {
+        let mut system = System::new();
+        system.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always),
+        );
+        system
+            .processes()
+            .values()
+            .any(|p| p.cmd().iter().any(|arg| arg.to_string_lossy() == marker))
+    }
+
+    fn policy() -> PathPolicy {
+        let root = std::env::temp_dir().join(format!("wc-win-exec-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        PathPolicy::new(std::slice::from_ref(&root)).unwrap()
+    }
+
+    async fn assert_gone(marker: &str) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while ping_with_marker_alive(marker) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "background descendant {marker} survived"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn windows_exec_job_kills_start_b_descendant_after_success() {
+        let policy = policy();
+        let marker = "127.0.0.37";
+        let command = format!("start /b ping -n 40 {marker} > NUL & echo done");
+        let result = exec(&policy, &command, None, Some(20_000)).await.unwrap();
+        assert_eq!(result["exitCode"], 0, "{result}");
+        assert!(result["stdout"].as_str().unwrap().contains("done"));
+        assert_gone(marker).await;
+    }
+
+    #[tokio::test]
+    async fn windows_exec_job_kills_start_b_descendant_on_timeout() {
+        let policy = policy();
+        let marker = "127.0.0.39";
+        let command = format!("start /b ping -n 40 {marker} > NUL & ping -n 30 127.0.0.1 > NUL");
+        let error = exec(&policy, &command, None, Some(1_500))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("timed out"), "{error}");
+        assert_gone(marker).await;
+    }
+
+    #[tokio::test]
+    async fn windows_exec_job_keeps_output_and_exit_code() {
+        let policy = policy();
+        let result = exec(&policy, "echo hello& exit /b 3", None, Some(20_000))
+            .await
+            .unwrap();
+        assert_eq!(result["exitCode"], 3, "{result}");
+        assert!(result["stdout"].as_str().unwrap().contains("hello"));
     }
 }
