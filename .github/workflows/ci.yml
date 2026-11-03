@@ -357,6 +357,8 @@ jobs:
         run: node gateway/test/native-restart-e2e.mjs content
       - name: Reject changed saved content during real Agent restart recovery
         run: node gateway/test/native-restart-e2e.mjs content-tampered
+      - name: Device-local capabilities (read-only / no-commands) with a real Agent
+        run: node gateway/test/device-capabilities-e2e.mjs
       - name: Restart gateway with MCP OAuth enabled
         working-directory: gateway
         env:

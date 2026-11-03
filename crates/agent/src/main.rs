@@ -81,6 +81,20 @@ enum Command {
         name: Option<String>,
         #[arg(long = "allowed-root")]
         allowed_roots: Vec<PathBuf>,
+        /// Refuse all file writes on this device (device-local policy).
+        #[arg(long)]
+        read_only: bool,
+        /// Refuse command execution, tasks and terminals on this device.
+        #[arg(long)]
+        no_commands: bool,
+    },
+    /// Show or change device-local capabilities. Requires write access to the
+    /// config file on this device; restart the service to apply.
+    Capabilities {
+        #[arg(long, value_parser = parse_on_off)]
+        commands: Option<bool>,
+        #[arg(long, value_parser = parse_on_off)]
+        file_writes: Option<bool>,
     },
     Run,
     #[cfg(windows)]
@@ -119,6 +133,8 @@ async fn agent_main() -> Result<()> {
             pairing_code,
             name,
             allowed_roots,
+            read_only,
+            no_commands,
         } => {
             enroll(
                 &config_path,
@@ -126,8 +142,30 @@ async fn agent_main() -> Result<()> {
                 &pairing_code,
                 name,
                 allowed_roots,
+                config::DeviceCapabilities {
+                    commands: !no_commands,
+                    file_writes: !read_only,
+                },
             )
             .await
+        }
+        Command::Capabilities {
+            commands,
+            file_writes,
+        } => {
+            let mut config = AgentConfig::load(&config_path)?;
+            if commands.is_some() || file_writes.is_some() {
+                if let Some(value) = commands {
+                    config.capabilities.commands = value;
+                }
+                if let Some(value) = file_writes {
+                    config.capabilities.file_writes = value;
+                }
+                config.save(&config_path)?;
+                println!("Saved. Restart the agent service to apply.");
+            }
+            print_capabilities(&config.capabilities);
+            Ok(())
         }
         Command::Run => {
             let config = AgentConfig::load(&config_path)?;
@@ -146,6 +184,7 @@ async fn agent_main() -> Result<()> {
             println!("config: ok");
             println!("device: {}", config.device_id);
             println!("gateway: {}", config.gateway_ws_url);
+            print_capabilities(&config.capabilities);
             println!("allowed roots: {}", policy.roots().len());
             for root in policy.roots() {
                 println!("  - {}", root.display());
@@ -161,6 +200,7 @@ async fn enroll(
     pairing_code: &str,
     name: Option<String>,
     mut allowed_roots: Vec<PathBuf>,
+    capabilities: config::DeviceCapabilities,
 ) -> Result<()> {
     if allowed_roots.is_empty() {
         allowed_roots.push(default_allowed_root()?);
@@ -202,6 +242,7 @@ async fn enroll(
         control_url: control_url.trim_end_matches('/').to_owned(),
         name: name.unwrap_or_else(|| hostname.clone()),
         allowed_roots,
+        capabilities,
     };
 
     config.save(config_path)?;
@@ -211,6 +252,20 @@ async fn enroll(
     println!("Config: {}", config_path.display());
     println!("Device: {}", config.device_id);
     Ok(())
+}
+
+fn parse_on_off(value: &str) -> std::result::Result<bool, String> {
+    match value {
+        "on" | "true" | "enabled" => Ok(true),
+        "off" | "false" | "disabled" => Ok(false),
+        _ => Err("expected on or off".into()),
+    }
+}
+
+fn print_capabilities(capabilities: &config::DeviceCapabilities) {
+    let state = |on: bool| if on { "enabled" } else { "disabled" };
+    println!("command execution: {}", state(capabilities.commands));
+    println!("file writes: {}", state(capabilities.file_writes));
 }
 
 async fn run(config: AgentConfig) -> Result<()> {
@@ -375,6 +430,7 @@ async fn connected_loop(
     active: Arc<Mutex<HashMap<String, ActiveRequest>>>,
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<()> {
+    let capabilities = config.capabilities;
     let mut request = gateway_ws_url.to_owned().into_client_request()?;
     request.headers_mut().insert(
         HeaderName::from_static("x-device-id"),
@@ -539,6 +595,7 @@ async fn connected_loop(
                                     // progress forwarder to exit instead of deadlocking the
                                     // normal operation while waiting for a channel close.
                                     search_progress: is_search.then_some(progress_tx),
+                                    capabilities,
                                 },
                                 action,
                             )
