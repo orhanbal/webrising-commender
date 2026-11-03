@@ -232,14 +232,75 @@ assert.equal(applied.data.status, "applied");
 assert.equal(applied.data.verified, true);
 assert.equal(applied.data.deployed, false);
 assert.deepEqual(applied.data.configuration, policy);
-assert.equal(patches().length, 1);
-assert.deepEqual(Object.keys(patches()[0].body).sort(), Object.keys(policy).sort());
-assert.ok(!("instant_deploy" in patches()[0].body));
+// Auto Deploy is enabled in its own, final PATCH after Coolify confirms the branch.
+assert.equal(patches().length, 2);
+assert.deepEqual(patches()[0].body, { git_branch: "production", include_source_commit_in_build: true, use_build_secrets: false });
+assert.deepEqual(patches()[1].body, { is_auto_deploy_enabled: true });
+assert.ok(patches().every((p) => !("instant_deploy" in p.body)));
 const again = await call(admin, "coolify_apply_configuration_change", { request_id: requestId });
 assert.equal(again.data.error, "change_request_not_approved_or_used");
-assert.equal(patches().length, 1, "approval cannot be reused");
+assert.equal(patches().length, 2, "approval cannot be reused");
 const audit2 = await call(admin, "coolify_get_configuration", { application_uuid: APP });
 assert.equal(audit2.data.compliant, true);
+assert.equal(audit2.data.release_invariant.ok, true);
+
+// 9b. Release invariant (Issue #30): Auto Deploy only while git_branch=production.
+const approve = async (proposalResult) => {
+  assert.equal(proposalResult.data.status, "pending_approval", JSON.stringify(proposalResult.data));
+  assert.equal((await decide(admin, proposalResult.data.request_id, { digest: proposalResult.data.digest, currentPassword: password })).status, 200);
+  return proposalResult.data.request_id;
+};
+const setState = (branch, auto) => { apps[APP].git_branch = branch; apps[APP].settings.is_auto_deploy_enabled = auto; };
+const requestCount = async () => Number((await dbc.query("select count(*) from coolify_change_requests")).rows[0].count);
+// Proposal stage: a single request that would create main + Auto Deploy is refused and not stored.
+let stored = await requestCount();
+const mainWhileAuto = await call(admin, "coolify_propose_configuration_change", { application_uuid: APP, changes: { git_branch: "main" }, reason: "invariant: branch main while auto on" });
+assert.equal(mainWhileAuto.data.error, "release_invariant_violation");
+setState("production", false);
+const bothAtOnce = await call(admin, "coolify_propose_configuration_change", { application_uuid: APP, changes: { git_branch: "main", is_auto_deploy_enabled: true }, reason: "invariant: both at once" });
+assert.equal(bothAtOnce.data.error, "release_invariant_violation");
+setState("main", false);
+const autoOnMain = await call(admin, "coolify_propose_configuration_change", { application_uuid: APP, changes: { is_auto_deploy_enabled: true }, reason: "invariant: auto on main" });
+assert.equal(autoOnMain.data.error, "release_invariant_violation");
+assert.equal(await requestCount(), stored, "refused proposals are not stored");
+let patchCount = patches().length;
+
+// Apply stage, order A then B: "Auto Deploy on" then "branch main", each valid alone.
+setState("production", false);
+const reqAutoOn = await approve(await call(admin, "coolify_propose_configuration_change", { application_uuid: APP, changes: { is_auto_deploy_enabled: true }, reason: "split A: auto on" }));
+const reqMain = await approve(await call(admin, "coolify_propose_configuration_change", { application_uuid: APP, changes: { git_branch: "main" }, reason: "split B: branch main" }));
+assert.equal((await call(admin, "coolify_apply_configuration_change", { request_id: reqAutoOn })).data.status, "applied");
+patchCount = patches().length;
+const splitB = await call(admin, "coolify_apply_configuration_change", { request_id: reqMain });
+assert.equal(splitB.data.error, "release_invariant_violation");
+assert.equal(patches().length, patchCount, "no PATCH for the combining request");
+assert.deepEqual([apps[APP].git_branch, apps[APP].settings.is_auto_deploy_enabled], ["production", true]);
+
+// Apply stage, order B then A: "branch main" then "Auto Deploy on".
+setState("production", false);
+const reqMain2 = await approve(await call(admin, "coolify_propose_configuration_change", { application_uuid: APP, changes: { git_branch: "main" }, reason: "split B2: branch main" }));
+const reqAutoOn2 = await approve(await call(admin, "coolify_propose_configuration_change", { application_uuid: APP, changes: { is_auto_deploy_enabled: true }, reason: "split A2: auto on" }));
+assert.equal((await call(admin, "coolify_apply_configuration_change", { request_id: reqMain2 })).data.status, "applied");
+patchCount = patches().length;
+const splitA = await call(admin, "coolify_apply_configuration_change", { request_id: reqAutoOn2 });
+assert.equal(splitA.data.error, "release_invariant_violation");
+assert.equal(patches().length, patchCount);
+assert.deepEqual([apps[APP].git_branch, apps[APP].settings.is_auto_deploy_enabled], ["main", false]);
+// The consumed request cannot be retried after the state is fixed.
+setState("production", false);
+assert.equal((await call(admin, "coolify_apply_configuration_change", { request_id: reqAutoOn2 })).data.error, "change_request_not_approved_or_used");
+
+// If Coolify silently ignores the branch change, Auto Deploy is never enabled.
+setState("main", false);
+const reqFix = await approve(await call(admin, "coolify_propose_configuration_change", { application_uuid: APP, changes: { git_branch: "production", is_auto_deploy_enabled: true }, reason: "gate: branch ignored" }));
+ignorePatchField = "git_branch";
+const gated = await call(admin, "coolify_apply_configuration_change", { request_id: reqFix });
+ignorePatchField = null;
+assert.equal(gated.data.error, "release_invariant_violation");
+assert.equal(gated.data.status, "verification_failed");
+assert.deepEqual([apps[APP].git_branch, apps[APP].settings.is_auto_deploy_enabled], ["main", false]);
+assert.ok(patches().slice(-1)[0].body.git_branch === "production" && !patches().some((p, i) => i >= patchCount && p.body.is_auto_deploy_enabled === true));
+setState("production", true);
 
 // 10. Coolify silently ignoring a field is reported as verification failure.
 const revert = await call(admin, "coolify_propose_configuration_change", { application_uuid: APP, changes: { is_auto_deploy_enabled: false }, reason: "verification test" });
@@ -251,10 +312,10 @@ assert.equal(unverified.data.status, "verification_failed");
 ignorePatchField = null;
 
 // 11. Denied requests stay denied.
-const denyMe = await call(admin, "coolify_propose_configuration_change", { application_uuid: APP, changes: { git_branch: "main" }, reason: "deny test" });
+const denyMe = await call(admin, "coolify_propose_configuration_change", { application_uuid: APP, changes: { use_build_secrets: true }, reason: "deny test" });
 assert.equal((await decide(admin, denyMe.data.request_id, { digest: denyMe.data.digest, currentPassword: password }, "deny")).status, 200);
 assert.equal((await call(admin, "coolify_apply_configuration_change", { request_id: denyMe.data.request_id })).data.error, "change_request_not_approved_or_used");
-assert.equal(apps[APP].git_branch, "production");
+assert.equal(apps[APP].settings.use_build_secrets, false);
 
 // 12. Audit trail exists and secrets never appear in audit, responses or logs.
 const auditRows = (await dbc.query("select tool,outcome,detail from audit_logs where organization_id=$1 and tool like 'coolify_%'", [org])).rows;

@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Scoped Coolify operations proxy for AI clients: platform-administrator-only `coolify_*` MCP tools limited to one allowlisted application (WECOMMANDER) and four release settings, human console approval bound to the exact diff digest, single-use apply with drift check and read-back verification, deploy/rollback always refused in favour of `promote-production`, full audit. See `docs/COOLIFY_OPERATIONS.md`.
+- Scoped Coolify operations proxy for AI clients: platform-administrator-only `coolify_*` MCP tools limited to the WECOMMANDER application (UUID fixed in code, any other allowlist fails closed) and four release settings, release invariant (Auto Deploy only with `git_branch=production`) enforced at proposal and apply time with safe PATCH ordering, human console approval bound to the exact diff digest, single-use apply with drift check and read-back verification, deploy/rollback always refused in favour of `promote-production`, full audit. See `docs/COOLIFY_OPERATIONS.md`.
 - Production release boundary (Issue #30): `production` branch moved only by the owner-approved `promote-production` workflow through a dedicated release GitHub App; exact-SHA 17-job CI/distribution gate, annotated `production-release/*` ledger, unauthorized-update detection (`production-guard`), one-time `mode=bootstrap` in the same workflow, newest-run-only CI/distribution evaluation, `/health` `build.commit` verified after each release, read-only `bootstrap-locks`. See `docs/RELEASE_POLICY.md`.
 - Added a dependency-free external production acceptance probe and an isolated Coolify Compose deployment model.
 - Hardened PUBLIC_BASE_URL validation, relay RPC redirect behavior, SMTP plaintext transport defaults and query-limit parsing.

@@ -28,6 +28,10 @@
 
 import { createHash } from "node:crypto";
 const UUID_RE = /^[a-z0-9]{16,40}$/;
+// First version: the only application this proxy may ever touch. The
+// environment must name exactly this UUID; anything else disables the proxy.
+export const WECOMMANDER_APPLICATION_UUID = "u5mlu98kqroo7w68zoa0syac";
+export const RELEASE_BRANCH = "production";
 const GIT_BRANCH_RE = /^(?!-)(?!.*\.\.)(?!\/)(?!.*\/$)(?!.*\.lock$)[A-Za-z0-9._/-]{1,100}$/;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -84,10 +88,9 @@ export function coolifySettingsFromEnv(env: NodeJS.ProcessEnv = process.env): Co
   const loopback = ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
   if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) return null;
   if (url.username || url.password || url.search || url.hash) return null;
-  if (!allowed.every((uuid) => UUID_RE.test(uuid))) return null;
-  // First version: one application only (WECOMMANDER). Widening the scope is
-  // a deliberate code change, not an environment edit.
-  if (allowed.length !== 1) return null;
+  // First version: WECOMMANDER only. Widening the scope is a deliberate code
+  // change, not an environment edit; a different or extra UUID fails closed.
+  if (allowed.length !== 1 || allowed[0] !== WECOMMANDER_APPLICATION_UUID) return null;
   const base = url.toString().replace(/\/+$/, "");
   return {
     baseUrl: base.endsWith("/api/v1") ? base : base + "/api/v1",
@@ -100,7 +103,7 @@ export class CoolifyClient {
   constructor(private readonly settings: CoolifySettings, private readonly fetchImpl: typeof fetch = fetch) {}
 
   isAllowed(uuid: string) {
-    return UUID_RE.test(uuid) && this.settings.allowedApplications.includes(uuid);
+    return uuid === WECOMMANDER_APPLICATION_UUID && this.settings.allowedApplications.includes(uuid);
   }
 
   private async request(method: "GET" | "PATCH", path: string, body?: unknown): Promise<any> {
@@ -250,6 +253,25 @@ function projectDeployment(row: any) {
     updated_at: pick("updated_at"),
     finished_at: pick("finished_at"),
   };
+}
+
+// Issue #30 safety invariant: while Auto Deploy is on, Coolify may only track
+// the `production` branch (moved exclusively by promote-production).
+// Otherwise a push to main or any other branch would deploy to production.
+export function releaseInvariantViolation(config: Pick<CoolifyConfig, "git_branch" | "is_auto_deploy_enabled">) {
+  return config.is_auto_deploy_enabled && config.git_branch !== RELEASE_BRANCH;
+}
+
+// Splits a change into PATCH steps so every intermediate Coolify state also
+// satisfies the invariant: Auto Deploy is turned off first and turned on last.
+export function safePatchSteps(after: ConfigChange): ConfigChange[] {
+  const rest: ConfigChange = { ...after };
+  delete rest.is_auto_deploy_enabled;
+  const steps: ConfigChange[] = [];
+  if (after.is_auto_deploy_enabled === false) steps.push({ is_auto_deploy_enabled: false });
+  if (Object.keys(rest).length) steps.push(rest);
+  if (after.is_auto_deploy_enabled === true) steps.push({ is_auto_deploy_enabled: true });
+  return steps;
 }
 
 export function policyAudit(config: CoolifyConfig, unverifiable: CoolifyConfigField[]) {

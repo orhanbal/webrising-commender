@@ -5,7 +5,7 @@ import { db } from "./db.js";
 import type { Principal } from "./auth.js";
 import {
   COOLIFY_CONFIG_FIELDS, CoolifyClient, CoolifyError, FIELD_IMPACT, RELEASE_POLICY,
-  changeDigest, coolifySettingsFromEnv, extractConfiguration, policyAudit, projectApplication, validateChange,
+  changeDigest, coolifySettingsFromEnv, releaseInvariantViolation, safePatchSteps, extractConfiguration, policyAudit, projectApplication, validateChange,
   type CoolifyConfigField, type ConfigChange,
 } from "./coolify-client.js";
 
@@ -141,7 +141,8 @@ export async function handleCoolifyTool(name: string, args: any, principal: Prin
     } else if (name === "coolify_get_configuration") {
       const { config, unverifiable } = extractConfiguration(await client.getApplication(appUuid));
       const checks = policyAudit(config, unverifiable);
-      data = { application_uuid: appUuid, configuration: config, unverifiable_fields: unverifiable, policy: RELEASE_POLICY, checks, compliant: checks.every((c) => c.compliant) };
+      const invariantOk = !unverifiable.includes("git_branch") && !unverifiable.includes("is_auto_deploy_enabled") && !releaseInvariantViolation(config);
+      data = { application_uuid: appUuid, configuration: config, unverifiable_fields: unverifiable, policy: RELEASE_POLICY, checks, compliant: checks.every((c) => c.compliant), release_invariant: { rule: "Auto Deploy only with git_branch=production", ok: invariantOk } };
     } else if (name === "coolify_list_deployments") {
       const skip = args.skip ?? 0;
       const take = args.take ?? 10;
@@ -203,6 +204,16 @@ async function proposeChange(client: CoolifyClient, appUuid: string, args: any, 
   if (!Object.keys(after).length) {
     await audit(principal, "coolify_propose_configuration_change", "medium", "success", { applicationUuid: appUuid, noChange: true });
     return { data: { status: "no_change", configuration: config } };
+  }
+  // The resulting state must keep the release invariant. Both fields must be
+  // readable to decide; otherwise fail closed.
+  if (unverifiable.includes("git_branch") || unverifiable.includes("is_auto_deploy_enabled")) {
+    throw new CoolifyError("current_value_unverifiable");
+  }
+  const resulting = { ...config, ...after };
+  if (releaseInvariantViolation(resulting)) {
+    await audit(principal, "coolify_propose_configuration_change", "medium", "denied", { applicationUuid: appUuid, reason: "release_invariant_violation", resulting: { git_branch: resulting.git_branch, is_auto_deploy_enabled: resulting.is_auto_deploy_enabled } });
+    return { isError: true, data: { error: "release_invariant_violation", message: "Auto Deploy may only be on while Git Branch is `production`.", resulting: { git_branch: resulting.git_branch, is_auto_deploy_enabled: resulting.is_auto_deploy_enabled } } };
   }
   const digest = changeDigest(appUuid, before, after);
   const inserted = await db.query<{ id: string; expires_at: Date }>(
@@ -283,7 +294,24 @@ async function applyChange(client: CoolifyClient, args: any, principal: Principa
       await finish("conflict", { drift, current: current.config }, "denied");
       return { data: { error: "configuration_changed_since_approval", drift, current: current.config }, isError: true };
     }
-    await client.patchConfiguration(row.application_uuid, row.after_values);
+    // Re-check the invariant against the live state: two separately approved
+    // requests (e.g. "Auto Deploy on" and "branch main") must not combine.
+    if (current.unverifiable.includes("git_branch") || current.unverifiable.includes("is_auto_deploy_enabled") ||
+        releaseInvariantViolation({ ...current.config, ...row.after_values })) {
+      await finish("conflict", { error: "release_invariant_violation", current: current.config }, "denied");
+      return { data: { error: "release_invariant_violation", message: "Auto Deploy may only be on while Git Branch is `production`.", current: current.config }, isError: true };
+    }
+    for (const step of safePatchSteps(row.after_values)) {
+      if (step.is_auto_deploy_enabled === true) {
+        // Enable Auto Deploy only after Coolify confirms it tracks `production`.
+        const gate = extractConfiguration(await client.getApplication(row.application_uuid));
+        if (gate.unverifiable.includes("git_branch") || releaseInvariantViolation({ ...gate.config, is_auto_deploy_enabled: true })) {
+          await finish("verification_failed", { error: "release_invariant_violation", configuration: gate.config }, "error");
+          return { data: { error: "release_invariant_violation", status: "verification_failed", message: "Auto Deploy was not enabled because Coolify does not report git_branch=production.", configuration: gate.config }, isError: true };
+        }
+      }
+      await client.patchConfiguration(row.application_uuid, step);
+    }
     const reread = extractConfiguration(await client.getApplication(row.application_uuid));
     const checks = fields.map((field) => ({ field, expected: row.after_values[field], actual: reread.unverifiable.includes(field) ? null : reread.config[field] }));
     const verified = checks.every((c) => c.expected === c.actual);

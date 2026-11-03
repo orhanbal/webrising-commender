@@ -7,6 +7,9 @@ import {
   coolifySettingsFromEnv,
   extractConfiguration,
   policyAudit,
+  releaseInvariantViolation,
+  safePatchSteps,
+  WECOMMANDER_APPLICATION_UUID,
   projectApplication,
   validateChange,
 } from "./coolify-client.js";
@@ -138,4 +141,38 @@ test("deployment listing strips logs and configuration snapshots", async () => {
   assert.equal(page.count, 1);
   assert.ok(!JSON.stringify(page).includes("TOKEN"));
   assert.ok(!JSON.stringify(page).includes("configuration_snapshot"));
+});
+
+test("only the WECOMMANDER UUID is accepted; any other allowlist fails closed", () => {
+  assert.equal(WECOMMANDER_APPLICATION_UUID, APP);
+  const env = (allowed: string) => ({ COOLIFY_API_URL: "https://coolify.example", COOLIFY_API_TOKEN: "t", COOLIFY_ALLOWED_APPLICATIONS: allowed });
+  assert.equal(coolifySettingsFromEnv(env(OTHER)), null, "a different single UUID is refused");
+  assert.equal(coolifySettingsFromEnv(env(OTHER + "," + APP)), null);
+  assert.equal(coolifySettingsFromEnv(env(APP.toUpperCase())), null);
+  assert.equal(coolifySettingsFromEnv(env(" " + APP + " "))?.allowedApplications[0], APP);
+});
+
+test("client refuses other applications even if constructed with a widened allowlist", async () => {
+  const { impl, calls } = mockFetch(() => new Response("{}"));
+  const client = new CoolifyClient({ baseUrl: "https://c/api/v1", token: "tok", allowedApplications: [OTHER, APP] }, impl);
+  assert.equal(client.isAllowed(OTHER), false);
+  await assert.rejects(client.getApplication(OTHER), (e: any) => e.code === "application_not_allowed");
+  assert.equal(calls.length, 0);
+});
+
+test("release invariant: Auto Deploy only with git_branch=production", () => {
+  assert.equal(releaseInvariantViolation({ git_branch: "production", is_auto_deploy_enabled: true }), false);
+  assert.equal(releaseInvariantViolation({ git_branch: "main", is_auto_deploy_enabled: false }), false);
+  assert.equal(releaseInvariantViolation({ git_branch: "main", is_auto_deploy_enabled: true }), true);
+  assert.equal(releaseInvariantViolation({ git_branch: "production-x", is_auto_deploy_enabled: true }), true);
+  assert.equal(releaseInvariantViolation({ git_branch: "Production", is_auto_deploy_enabled: true }), true);
+});
+
+test("PATCH steps turn Auto Deploy off first and on last", () => {
+  assert.deepEqual(safePatchSteps({ git_branch: "production", is_auto_deploy_enabled: true, use_build_secrets: false }),
+    [{ git_branch: "production", use_build_secrets: false }, { is_auto_deploy_enabled: true }]);
+  assert.deepEqual(safePatchSteps({ git_branch: "main", is_auto_deploy_enabled: false }),
+    [{ is_auto_deploy_enabled: false }, { git_branch: "main" }]);
+  assert.deepEqual(safePatchSteps({ use_build_secrets: false }), [{ use_build_secrets: false }]);
+  assert.deepEqual(safePatchSteps({ is_auto_deploy_enabled: true }), [{ is_auto_deploy_enabled: true }]);
 });

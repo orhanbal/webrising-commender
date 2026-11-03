@@ -8,7 +8,8 @@ every change needs a human approval in the console.
 ```
 AI client ──MCP──▶ WECOMMANDER gateway ──REST──▶ Coolify 4.5.3 ──▶ app u5mlu98kqroo7w68zoa0syac
                     │ platform administrator only
-                    │ one allowlisted application
+                    │ one application, fixed in code (u5mlu98kqroo7w68zoa0syac)
+                    │ release invariant: Auto Deploy only with git_branch=production
                     │ four whitelisted fields
                     │ approval bound to the exact diff (console, password)
                     │ single-use apply, drift check, read-back verification
@@ -81,6 +82,29 @@ apply anything; the AI then calls `coolify_apply_configuration_change`, which
 never deploys. With Auto Deploy on, the next GitHub push to `production`
 (made only by `promote-production`) deploys.
 
+### Release invariant (Issue #30)
+
+While Auto Deploy is on, Coolify may track only the `production` branch.
+Otherwise a push to `main` would deploy to production without passing
+`promote-production`. The invariant is enforced on the **resulting** state,
+which is the live Coolify values plus the change:
+
+- **Proposal:** a request whose result breaks the invariant is refused and not
+  stored. Examples: `git_branch=main` while Auto Deploy is on, or Auto Deploy
+  on while the branch is `main`.
+- **Apply:** the invariant is checked again against freshly read values. Two
+  requests that are each valid alone ("Auto Deploy on", "branch main") cannot
+  be combined, in either order. The second one is refused, and its approval
+  is consumed.
+- **PATCH order:** Auto Deploy is switched off in the first PATCH and on in
+  the last one. Before switching it on, the proxy re-reads Coolify and
+  requires `git_branch=production`. If Coolify ignored the branch change, Auto
+  Deploy stays off and the request ends as `verification_failed`.
+
+The proxy cannot stop someone from changing these settings directly in the
+Coolify UI. `coolify_get_configuration` reports `release_invariant.ok`, and
+`production-guard` still detects untagged `production` heads.
+
 Every call, including denials, is written to `audit_logs` (`tool` =
 `coolify_*`). Console decisions are written to `platform_admin_audit`. The
 token is never logged, audited or returned.
@@ -108,8 +132,10 @@ token is never logged, audited or returned.
 4. **Connect the AI client** to `https://<wecommander>/mcp` with OAuth as a
    platform administrator (docs/MCP_OAUTH.md).
 
-If anything is misconfigured (non-https URL, more than one UUID, empty
-token), the tools return `coolify_not_configured` and make no calls.
+If anything is misconfigured (non-https URL, empty token, or an allowlist
+other than exactly `u5mlu98kqroo7w68zoa0syac`), the tools return
+`coolify_not_configured` and make no calls. Supporting another application
+needs a code change and review, not an environment edit.
 
 ## First use: audit, then change only what is approved
 
@@ -128,3 +154,55 @@ check the four values by hand in the Coolify UI (application → Configuration
 
 To undo a change, propose the rollback values from the original request, and
 approve that request in the same way.
+
+## Residual risk: the token is team-wide
+
+Coolify cannot scope a token to one application, so the gateway's limits are
+enforced in software. The token has `read` + `write` on the **whole team**.
+
+**Anyone who obtains the token, or gains code execution in the gateway
+container** (where the token is a runtime environment variable), bypasses
+every proxy rule. They can call the Coolify API directly and can:
+
+- **read** every project, application, service, database and server of the
+  team. Secret values stay hidden because the token has no `read:sensitive`.
+- **change** any application's settings with `PATCH /applications/{uuid}`:
+  branch, repository, build and start commands, domains, health checks, labels
+  and Auto Deploy. The new values take effect on that application's next
+  deployment, for example a webhook push with Auto Deploy on.
+- **overwrite or delete** environment variables of applications, databases,
+  services, projects, servers and the team. Values cannot be read, but they
+  can be replaced.
+- **create applications**, **create, change or delete** projects,
+  environments, private keys (`/security/keys`), S3 storages, cloud tokens,
+  destinations and storages.
+- **change servers**: `PATCH`/`DELETE /servers/{uuid}`, proxy configuration,
+  docker cleanup, server migration, Cloudflare tunnel.
+- **delete** database backup schedules and executions.
+- **not** deploy, start, stop, restart, roll back, or delete applications and
+  databases. In v4.5.3 all of these require `deploy`.
+- **not** read or write secret values flagged as sensitive. That needs
+  `read:sensitive` or `write:sensitive`.
+
+The `write` ability is therefore much broader than the four fields the proxy
+uses. Server-level and key-level changes can affect every resource on that
+server. The abilities above were read from `routes/api.php` (`api.ability`
+middleware) at tag v4.5.3; re-check them after a Coolify upgrade.
+
+A compromised **platform administrator account** (password and session or
+OAuth) can propose and approve its own requests. It remains limited to the
+four fields, to WECOMMANDER, and to the release invariant.
+
+Mitigations:
+
+- Put WECOMMANDER in its **own Coolify team**, with no other resources. This
+  is the strongest available limit: the team-wide blast radius becomes
+  WECOMMANDER itself. In Coolify a server belongs to one team, so this also
+  means a server dedicated to WECOMMANDER. Until then, assume the token can
+  affect everything else in the current team and on its servers.
+- Never grant `deploy`, `root`, `read:sensitive` or `write:sensitive`.
+- Restrict the Coolify API with its IP allowlist to the gateway's address.
+- Rotate the token on any suspicion. Revoke it in Coolify (Keys & Tokens) to
+  disable the proxy immediately. The gateway then fails closed.
+- Review `audit_logs` (`coolify_*`), `platform_admin_audit`, Coolify's own
+  audit events and `production-guard` regularly.
