@@ -417,6 +417,9 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
   const risk = actionRisk(action.kind);
   const requiredRole = risk === "low" ? "viewer" : "operator";
   if (!roleAtLeast(principal, requiredRole)) {
+    // Record role denials too: a viewer probing write/exec tools is a
+    // security-relevant event, not just a client error.
+    await audit(orgId, principal.actor, deviceId, name, risk, "denied", `role_${requiredRole}_required`);
     return ok(request.id, toolResult({ error: "forbidden", required_role: requiredRole }, true));
   }
 
