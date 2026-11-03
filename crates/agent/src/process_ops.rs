@@ -462,6 +462,26 @@ pub fn kill(pid: u32) -> Result<Value> {
         return Err(anyhow!("process changed before termination"));
     }
 
+    // Unix: freeze the whole identified tree before signalling. Signalling a
+    // child first lets its still-running parent react to the child's death
+    // (a shell continues with its next command) before the parent's own
+    // signal arrives. With every member stopped, TERM/KILL are delivered to
+    // all of them before any of them runs again.
+    #[cfg(unix)]
+    let signal_tree = |signal: i32, current: &System| {
+        for (id, start_time) in &snapshot {
+            if let Some(process) = current.process(*id) {
+                if process.start_time() == *start_time {
+                    unsafe {
+                        libc::kill(id.as_u32() as i32, signal);
+                    }
+                }
+            }
+        }
+    };
+    #[cfg(unix)]
+    signal_tree(libc::SIGSTOP, &current);
+
     let mut terminated_descendants = 0usize;
     for (id, start_time) in &snapshot {
         let Some(process) = current.process(*id) else {
@@ -484,7 +504,11 @@ pub fn kill(pid: u32) -> Result<Value> {
             // bounded PID/start-time exit verification below instead of
             // treating an already-exited root as a failed tree termination.
             #[cfg(not(windows))]
-            return Err(anyhow!("process could not be terminated"));
+            {
+                // Never leave the frozen tree stopped on failure.
+                signal_tree(libc::SIGCONT, &current);
+                return Err(anyhow!("process could not be terminated"));
+            }
         }
         if *id != target && killed {
             terminated_descendants += 1;
@@ -499,8 +523,13 @@ pub fn kill(pid: u32) -> Result<Value> {
     let mut escalated_processes = 0usize;
     #[cfg(unix)]
     {
+        // Let every member handle its pending TERM at once.
+        signal_tree(libc::SIGCONT, &current);
         std::thread::sleep(Duration::from_millis(250));
         current.refresh_processes(ProcessesToUpdate::All, true);
+        // Freeze survivors again so the KILL escalation is not observable
+        // by any member before it applies to all of them.
+        signal_tree(libc::SIGSTOP, &current);
         for (id, start_time) in &snapshot {
             let Some(process) = current.process(*id) else {
                 continue;
@@ -930,5 +959,55 @@ mod macos_descendant_tests {
             .unwrap_err();
         assert!(error.to_string().contains("timed out"), "{error}");
         assert_gone(marker).await;
+    }
+}
+
+// 2C: process_kill must not let a parent run its next command after its
+// child was killed but before its own signal arrives (children-first race).
+// The race window is microseconds, so this test is probabilistic: it repeats
+// the scenario several times. The pre-fix code failed it intermittently
+// (also seen in CI as process_kill_escalates_term_ignoring_descendants).
+#[cfg(all(test, unix))]
+mod kill_freeze_tests {
+    use super::*;
+
+    fn round(index: usize) {
+        let root =
+            std::env::temp_dir().join(format!("wc-kill-freeze-{index}-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let ready = root.join("ready");
+        let marker = root.join("next-command-ran");
+        let command = format!(
+            "trap '' TERM; i=0; while [ $i -lt 200 ]; do sleep 30 & i=$((i+1)); done; printf ready > '{}'; sleep 30; printf ran > '{}'",
+            ready.display(),
+            marker.display()
+        );
+        let mut child = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(command)
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !ready.exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(ready.exists(), "shell did not start its children");
+        std::thread::sleep(Duration::from_millis(200));
+        let result = kill(child.id()).unwrap();
+        assert_eq!(result["terminationConfirmed"], true, "{result}");
+        let _ = child.wait();
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(
+            !marker.exists(),
+            "round {index}: the shell ran its next command after its child was killed"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn killed_shell_does_not_run_its_next_command() {
+        for index in 0..5 {
+            round(index);
+        }
     }
 }
