@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `coolify-ops` workflow: Coolify access for agents through GitHub Actions (environment-scoped read token; read+write token behind owner approval), limited to the WECOMMANDER application and the fixed release policy; read-only audit with real negative probe, policy apply with safe ordering and re-read verification, no deploys. See `docs/COOLIFY_ACTIONS_OPS.md`.
 - Production release boundary (Issue #30): `production` branch moved only by the owner-approved `promote-production` workflow through a dedicated release GitHub App; exact-SHA 17-job CI/distribution gate, annotated `production-release/*` ledger, unauthorized-update detection (`production-guard`), one-time `mode=bootstrap` in the same workflow, newest-run-only CI/distribution evaluation, `/health` `build.commit` verified after each release, read-only `bootstrap-locks`. See `docs/RELEASE_POLICY.md`.
 - Added a dependency-free external production acceptance probe and an isolated Coolify Compose deployment model.
 - Hardened PUBLIC_BASE_URL validation, relay RPC redirect behavior, SMTP plaintext transport defaults and query-limit parsing.

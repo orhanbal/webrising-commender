@@ -195,7 +195,7 @@ jobs:
           node --check ../scripts/release-gate.mjs
           node --check ../scripts/github-app-token.mjs
           node --check ../scripts/verify-release.mjs
-          node --test ../scripts/release-gate.test.mjs ../scripts/release-tools.test.mjs ../scripts/release-workflows.test.mjs
+          node --test ../scripts/release-gate.test.mjs ../scripts/release-tools.test.mjs ../scripts/release-workflows.test.mjs ../scripts/coolify-ops.test.mjs
           node --check ../scripts/accept-production.mjs
 
   integration:

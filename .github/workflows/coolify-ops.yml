@@ -1,0 +1,82 @@
+name: coolify-ops
+
+# Scoped Coolify operations for the WECOMMANDER application only
+# (docs/COOLIFY_ACTIONS_OPS.md). AI clients and humans dispatch this workflow;
+# nobody outside GitHub Actions sees a Coolify token.
+#
+#   audit                 environment coolify-read  (read-only token, no reviewer)
+#   apply-release-policy  environment coolify-write (read+write token, required
+#                         reviewer); can only move the four release settings to
+#                         the fixed policy in scripts/coolify-ops.mjs.
+#
+# Neither operation deploys, restarts or rolls back. Both environments must be
+# restricted to the `main` branch, so code on other branches never gets a token.
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "audit = read-only check; apply-release-policy = set git_branch=production, include_source_commit_in_build=on, use_build_secrets=off, then Auto Deploy=on (needs coolify-write approval)"
+        required: true
+        default: audit
+        type: choice
+        options: [audit, apply-release-policy]
+      reason:
+        description: "Why (ticket, issue, approval reference)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coolify-ops
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: ${{ inputs.operation == 'audit' }}
+    runs-on: ubuntu-latest
+    environment: coolify-read
+    timeout-minutes: 10
+    steps:
+      - name: Refuse dispatch from any ref other than main
+        if: ${{ github.ref != 'refs/heads/main' }}
+        run: |
+          echo "::error::coolify-ops must be dispatched on main (got $GITHUB_REF)"
+          exit 1
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Read-only Coolify audit (WECOMMANDER only)
+        env:
+          COOLIFY_OPERATION: audit
+          COOLIFY_READ_ONLY_PROBE: "true"
+          COOLIFY_API_URL: ${{ vars.COOLIFY_API_URL }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_READ_TOKEN }}
+          REASON: ${{ inputs.reason }}
+        run: node scripts/coolify-ops.mjs
+
+  apply-release-policy:
+    if: ${{ inputs.operation == 'apply-release-policy' }}
+    runs-on: ubuntu-latest
+    environment: coolify-write
+    timeout-minutes: 10
+    steps:
+      - name: Refuse dispatch from any ref other than main
+        if: ${{ github.ref != 'refs/heads/main' }}
+        run: |
+          echo "::error::coolify-ops must be dispatched on main (got $GITHUB_REF)"
+          exit 1
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Apply the fixed release policy, then verify by re-reading
+        env:
+          COOLIFY_OPERATION: apply-release-policy
+          COOLIFY_API_URL: ${{ vars.COOLIFY_API_URL }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_WRITE_TOKEN }}
+          REASON: ${{ inputs.reason }}
+        run: node scripts/coolify-ops.mjs
