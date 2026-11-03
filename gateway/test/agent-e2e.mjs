@@ -530,6 +530,16 @@ try {
   } finally {
     fs.rmSync(batchOutside, { force: true });
   }
+  // 1D: combined raw bytes are capped at 256 KiB; later files fail individually.
+  const budgetPaths = Array.from({ length: 6 }, (_, index) => path.join(tempRoot, `budget-${index}.bin`));
+  budgetPaths.forEach((item, index) => fs.writeFileSync(item, Buffer.alloc(index < 4 ? 60 * 1024 : index === 4 ? 20 * 1024 : 8 * 1024, 0x61)));
+  const budgetBatch = await tool(9201, "fs_read_multiple", { device_id: deviceId, paths: budgetPaths });
+  assert.equal(budgetBatch.count, 6);
+  for (const index of [0, 1, 2, 3, 5]) assert.equal(budgetBatch.items[index].ok, true, `budget item ${index}`);
+  assert.equal(budgetBatch.items[4].ok, false, "the item that would exceed 256 KiB fails");
+  assert.equal(budgetBatch.items[4].error, "read_failed");
+  assert.equal(budgetBatch.items[4].data, undefined);
+  console.log("agent-e2e: fs_read_multiple 256 KiB aggregate budget isolates the overflowing item");
   const emptyBatch = await tool(215, "fs_read_multiple", {
     device_id: deviceId, paths: [],
   });
