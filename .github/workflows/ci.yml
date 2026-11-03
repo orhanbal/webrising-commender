@@ -288,6 +288,8 @@ jobs:
         run: npm run integration
       - name: Run OAuth 2.1 PKCE / ChatGPT MCP acceptance
         run: node test/oauth-integration.mjs
+      - name: RBAC matrix over MCP (viewer vs operator, audited denials)
+        run: node test/rbac-matrix-e2e.mjs
       - name: Verify backup restore in disposable CI database
         working-directory: .
         run: bash scripts/ci-postgres-restore.sh
