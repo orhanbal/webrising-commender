@@ -540,6 +540,24 @@ try {
   assert.equal(budgetBatch.items[4].error, "read_failed");
   assert.equal(budgetBatch.items[4].data, undefined);
   console.log("agent-e2e: fs_read_multiple 256 KiB aggregate budget isolates the overflowing item");
+  // 3B: fs_delete with expected_sha256 deletes only unchanged content.
+  {
+    const cadPath = path.join(tempRoot, "compare-delete.txt");
+    fs.writeFileSync(cadPath, "keep-or-delete");
+    const goodSha = createHash("sha256").update("keep-or-delete").digest("hex");
+    const staleSha = createHash("sha256").update("something-else").digest("hex");
+    const staleToken = await approval(deviceId, { kind: "fs_delete", path: cadPath, recursive: false, expectedSha256: staleSha });
+    const stale = await tool(9401, "fs_delete", { device_id: deviceId, path: cadPath, recursive: false, expected_sha256: staleSha, approval_token: staleToken });
+    assert.match(String(stale.error), /file_changed_since_read/);
+    assert.equal(fs.readFileSync(cadPath, "utf8"), "keep-or-delete");
+    const goodToken = await approval(deviceId, { kind: "fs_delete", path: cadPath, recursive: false, expectedSha256: goodSha });
+    const swapped = await tool(9402, "fs_delete", { device_id: deviceId, path: cadPath, recursive: false, expected_sha256: staleSha, approval_token: goodToken });
+    assert.equal(typeof swapped.error, "string", "approval bound to one sha must not authorize another");
+    const good = await tool(9403, "fs_delete", { device_id: deviceId, path: cadPath, recursive: false, expected_sha256: goodSha, approval_token: goodToken });
+    assert.equal(good.ok, true, JSON.stringify(good));
+    assert.equal(fs.existsSync(cadPath), false);
+    console.log("agent-e2e: fs_delete expected_sha256 refuses stale content and deletes unchanged content");
+  }
   const emptyBatch = await tool(215, "fs_read_multiple", {
     device_id: deviceId, paths: [],
   });
