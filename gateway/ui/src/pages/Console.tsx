@@ -350,7 +350,7 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
          <button type="button" disabled={person.role==="owner"||person.user_id===admin.userId} className="rounded-xl border border-[var(--stroke)] px-4 py-2 disabled:opacity-40" onClick={()=>{setMemberTarget(person);setMemberRole(person.role==="viewer"||person.role==="operator"||person.role==="admin"?person.role:"viewer");setMemberPassword("");setMemberError("")}}>{ui("Edit role")}</button>
          <button type="button" disabled={person.role==="owner"||person.disabled||person.user_id===admin.userId} className="rounded-xl border border-[var(--stroke)] px-4 py-2 disabled:opacity-40" onClick={()=>{setRecoveryTarget(person);setMemberTarget(null);setRecoveryReason("");setRecoveryPassword("");setMemberError("")}}>{ui("Recover as owner")}</button>
        </div>)}</div>
-       {recoveryTarget&&<div className="border-t border-[var(--stroke)] mt-6 pt-5" aria-label="Owner recovery">
+       {recoveryTarget&&<div className="border-t border-[var(--stroke)] mt-6 pt-5" aria-label={ui("Owner recovery")}>
          <h3 className="font-semibold">{ui("Owner recovery")}: {recoveryTarget.email}</h3>
          <p className="muted text-sm mt-1">{ui("Adds the owner role to this verified member. Existing owners keep their role. You cannot recover yourself or another platform administrator.")}</p>
          <label className="block mt-4 text-sm">{ui("Reason (ticket or support reference, at least 10 characters)")}<input type="text" maxLength={500} className="block w-full mt-2 rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-3" value={recoveryReason} onChange={e=>setRecoveryReason(e.target.value)}/></label>
