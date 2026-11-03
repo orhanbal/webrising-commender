@@ -5163,6 +5163,145 @@ fn publish_atomic_create_noreplace(
     Err(anyhow!("atomic_create_noreplace_unsupported"))
 }
 
+// 3A (Linux): publish with renameat2(RENAME_EXCHANGE) so the inode that is
+// displaced is exactly the one that was at the target at that instant, then
+// verify it is still the original inode with the original bytes. A replacement
+// by rename or an in-place modification that happened at any time before the
+// exchange is therefore detected, and the exchange is reversed so the external
+// content stays in place. Returns Ok(false) when the filesystem does not
+// support the exchange; the caller then uses the previous renameat path.
+// Remaining POSIX limit: a writer holding a descriptor to the original inode
+// can still write to it after the exchange; that write lands in the
+// displaced file, which is then removed.
+#[cfg(target_os = "linux")]
+#[allow(clippy::too_many_arguments)]
+fn publish_by_exchange_linux(
+    parent: &fs::File,
+    temporary: &std::ffi::CStr,
+    target: &std::ffi::CStr,
+    staged: &fs::File,
+    original: &fs::File,
+    expected_sha256: Option<&str>,
+    unguarded_digest: Option<&str>,
+) -> Result<bool> {
+    use std::os::fd::{AsRawFd, FromRawFd};
+    use std::os::unix::fs::MetadataExt;
+    const RENAME_EXCHANGE: libc::c_uint = 2;
+    let exchange = || unsafe {
+        libc::syscall(
+            libc::SYS_renameat2,
+            parent.as_raw_fd(),
+            temporary.as_ptr(),
+            parent.as_raw_fd(),
+            target.as_ptr(),
+            RENAME_EXCHANGE,
+        )
+    };
+    if exchange() != 0 {
+        let error = std::io::Error::last_os_error();
+        return match error.raw_os_error() {
+            Some(libc::EINVAL) | Some(libc::ENOSYS) | Some(libc::EOPNOTSUPP) => Ok(false),
+            _ => Err(error.into()),
+        };
+    }
+    // The staging name now holds whatever was at the target.
+    let displaced_fd = unsafe {
+        libc::openat(
+            parent.as_raw_fd(),
+            temporary.as_ptr(),
+            libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    let verdict = (|| -> Result<fs::File> {
+        if displaced_fd < 0 {
+            return Err(anyhow!("file_changed_since_read"));
+        }
+        let displaced = unsafe { fs::File::from_raw_fd(displaced_fd) };
+        let before = original.metadata()?;
+        let after = displaced.metadata()?;
+        if !after.is_file() || before.dev() != after.dev() || before.ino() != after.ino() {
+            return Err(anyhow!("file_changed_since_read"));
+        }
+        let digest = atomic_unconditional_original_digest(&displaced)?;
+        let expected = expected_sha256.or(unguarded_digest);
+        if let Some(expected) = expected {
+            if !digest
+                .as_deref()
+                .is_some_and(|d| d.eq_ignore_ascii_case(expected))
+            {
+                return Err(anyhow!("file_changed_since_read"));
+            }
+        }
+        Ok(displaced)
+    })();
+    match verdict {
+        Ok(displaced) => {
+            // Remove the displaced original by name relative to the pinned
+            // parent, only while that name still refers to the same inode.
+            let still_fd = unsafe {
+                libc::openat(
+                    parent.as_raw_fd(),
+                    temporary.as_ptr(),
+                    libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                )
+            };
+            if still_fd >= 0 {
+                let still = unsafe { fs::File::from_raw_fd(still_fd) };
+                let a = still.metadata()?;
+                let b = displaced.metadata()?;
+                if a.dev() == b.dev() && a.ino() == b.ino() {
+                    unsafe {
+                        libc::unlinkat(parent.as_raw_fd(), temporary.as_ptr(), 0);
+                    }
+                }
+            }
+            Ok(true)
+        }
+        Err(conflict) => {
+            // Put the external content back, but only if the target still
+            // holds our staged inode; otherwise leave both files untouched.
+            let current_fd = unsafe {
+                libc::openat(
+                    parent.as_raw_fd(),
+                    target.as_ptr(),
+                    libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                )
+            };
+            if current_fd >= 0 {
+                let current = unsafe { fs::File::from_raw_fd(current_fd) };
+                let ours = staged.metadata()?;
+                let now = current.metadata()?;
+                if ours.dev() == now.dev() && ours.ino() == now.ino() && exchange() == 0 {
+                    return Err(conflict);
+                }
+            }
+            Err(anyhow!("atomic_exchange_conflict"))
+        }
+    }
+}
+
+#[cfg(test)]
+type PrePublishHook = Box<dyn FnOnce() + Send>;
+
+#[cfg(test)]
+fn pre_publish_hooks(
+) -> &'static std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, PrePublishHook>> {
+    static HOOKS: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, PrePublishHook>>,
+    > = std::sync::OnceLock::new();
+    HOOKS.get_or_init(Default::default)
+}
+
+/// Test-only: run a one-shot hook after the final conflict checks and just
+/// before publication, for this exact target path only.
+#[cfg(test)]
+fn run_pre_publish_test_hook(path: &Path) {
+    let hook = pre_publish_hooks().lock().unwrap().remove(path);
+    if let Some(hook) = hook {
+        hook();
+    }
+}
+
 #[cfg(unix)]
 fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Result<()> {
     use std::ffi::CString;
@@ -5283,20 +5422,42 @@ fn atomic_write(path: &Path, bytes: &[u8], expected_sha256: Option<&str>) -> Res
         } else if expected_sha256.is_some() {
             return Err(anyhow!("file_changed_since_read"));
         }
+        #[cfg(test)]
+        run_pre_publish_test_hook(path);
         if target_was_missing {
             // A competing creator owns the target; never clobber it.
             publish_atomic_create_noreplace(&parent, &temporary, &target)?;
         } else {
-            let status = unsafe {
-                libc::renameat(
-                    parent.as_raw_fd(),
-                    temporary.as_ptr(),
-                    parent.as_raw_fd(),
-                    target.as_ptr(),
-                )
+            let original = original_guard_file
+                .as_ref()
+                .ok_or_else(|| anyhow!("file_changed_since_read"))?;
+            #[cfg(target_os = "linux")]
+            let exchanged = publish_by_exchange_linux(
+                &parent,
+                &temporary,
+                &target,
+                &file,
+                original,
+                expected_sha256,
+                original_unguarded_digest.as_deref(),
+            )?;
+            #[cfg(not(target_os = "linux"))]
+            let exchanged = {
+                let _ = original;
+                false
             };
-            if status != 0 {
-                return Err(std::io::Error::last_os_error().into());
+            if !exchanged {
+                let status = unsafe {
+                    libc::renameat(
+                        parent.as_raw_fd(),
+                        temporary.as_ptr(),
+                        parent.as_raw_fd(),
+                        target.as_ptr(),
+                    )
+                };
+                if status != 0 {
+                    return Err(std::io::Error::last_os_error().into());
+                }
             }
         }
         // Never report a post-rename sync failure as a failed edit: undo
@@ -8266,6 +8427,153 @@ mod undo_version_tests {
         )
         .is_err());
         assert_eq!(fs::read(&path).unwrap(), b"edited");
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+// 3A: an external change that lands after the final conflict checks and just
+// before publication must not be lost. On Linux the RENAME_EXCHANGE publish
+// detects it and restores the external content; elsewhere these document the
+// remaining window and are not compiled.
+#[cfg(all(test, target_os = "linux"))]
+mod exchange_publish_tests {
+    use super::*;
+    use std::{env, fs};
+
+    fn setup(name: &str, content: &[u8]) -> (std::path::PathBuf, std::path::PathBuf, PathPolicy) {
+        let root = env::temp_dir().join(format!("wc-exchange-{name}-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("target.txt");
+        fs::write(&target, content).unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let resolved = policy.resolve_existing(target.to_str().unwrap()).unwrap();
+        (root, resolved, policy)
+    }
+
+    fn hook(path: &Path, f: impl FnOnce() + Send + 'static) {
+        pre_publish_hooks()
+            .lock()
+            .unwrap()
+            .insert(path.to_path_buf(), Box::new(f));
+    }
+
+    fn sha(bytes: &[u8]) -> String {
+        format!("{:x}", Sha256::digest(bytes))
+    }
+
+    fn leftovers(root: &Path) -> Vec<String> {
+        fs::read_dir(root)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n != "target.txt")
+            .collect()
+    }
+
+    #[test]
+    fn in_place_edit_after_final_check_is_not_lost() {
+        let (root, target, policy) = setup("inplace", b"original");
+        let t = target.clone();
+        hook(&target, move || {
+            // Same inode, new bytes: an editor writing through its own handle.
+            let mut f = fs::OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .open(&t)
+                .unwrap();
+            f.write_all(b"external").unwrap();
+        });
+        let error = write(
+            &policy,
+            target.to_str().unwrap(),
+            &STANDARD.encode(b"ours"),
+            false,
+            Some(&sha(b"original")),
+            false,
+        )
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("file_changed_since_read"),
+            "{error}"
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"external");
+        assert!(leftovers(&root).is_empty(), "{:?}", leftovers(&root));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rename_replacement_after_final_check_is_not_lost() {
+        let (root, target, policy) = setup("rename", b"original");
+        let t = target.clone();
+        let other = root.join("incoming.txt");
+        hook(&target, move || {
+            fs::write(&other, b"replacement").unwrap();
+            fs::rename(&other, &t).unwrap();
+        });
+        let error = write(
+            &policy,
+            target.to_str().unwrap(),
+            &STANDARD.encode(b"ours"),
+            false,
+            Some(&sha(b"original")),
+            false,
+        )
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("file_changed_since_read"),
+            "{error}"
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"replacement");
+        assert!(leftovers(&root).is_empty(), "{:?}", leftovers(&root));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn unguarded_write_also_keeps_a_last_instant_external_edit() {
+        let (root, target, policy) = setup("unguarded", b"original");
+        let t = target.clone();
+        hook(&target, move || {
+            let mut f = fs::OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .open(&t)
+                .unwrap();
+            f.write_all(b"external").unwrap();
+        });
+        let error = write(
+            &policy,
+            target.to_str().unwrap(),
+            &STANDARD.encode(b"ours"),
+            false,
+            None,
+            false,
+        )
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("file_changed_since_read"),
+            "{error}"
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"external");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn exchange_publish_succeeds_and_leaves_no_staging_files() {
+        let (root, target, policy) = setup("ok", b"original");
+        use std::os::unix::fs::MetadataExt;
+        let mode_before = fs::metadata(&target).unwrap().mode();
+        let result = write(
+            &policy,
+            target.to_str().unwrap(),
+            &STANDARD.encode(b"ours"),
+            false,
+            Some(&sha(b"original")),
+            false,
+        )
+        .unwrap();
+        assert_eq!(result["ok"], true);
+        assert_eq!(fs::read(&target).unwrap(), b"ours");
+        assert_eq!(fs::metadata(&target).unwrap().mode(), mode_before);
+        assert!(leftovers(&root).is_empty(), "{:?}", leftovers(&root));
         fs::remove_dir_all(root).unwrap();
     }
 }
