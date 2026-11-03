@@ -183,6 +183,27 @@ export async function migrate() {
       detail text not null,
       created_at timestamptz not null default now()
     );
+    create table if not exists coolify_change_requests (
+      id uuid primary key default gen_random_uuid(),
+      application_uuid text not null check (application_uuid ~ '^[a-z0-9]{16,40}$'),
+      requested_by_user uuid references users(id) on delete set null,
+      requested_by_actor text not null,
+      before_values jsonb not null,
+      after_values jsonb not null,
+      digest text not null check (digest ~ '^[0-9a-f]{64}$'),
+      reason text not null,
+      status text not null default 'pending'
+        check (status in ('pending','approved','denied','applying','applied','verification_failed','conflict','failed','expired')),
+      expires_at timestamptz not null,
+      decided_by uuid references users(id) on delete set null,
+      decided_at timestamptz,
+      consumed_at timestamptz,
+      applied_at timestamptz,
+      verification jsonb,
+      created_at timestamptz not null default now()
+    );
+    create index if not exists coolify_change_requests_status_idx
+      on coolify_change_requests(status,created_at desc);
 
     create table if not exists browser_sessions (
       id uuid primary key default gen_random_uuid(),

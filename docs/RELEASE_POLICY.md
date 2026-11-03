@@ -179,6 +179,10 @@ can deploy a known SHA from the Coolify UI. Afterwards, record the incident and
 re-align `production` through a normal release. `production-guard` reports any
 untagged head until then.
 
+The WECOMMANDER Coolify proxy (docs/COOLIFY_OPERATIONS.md) never deploys or
+rolls back; its token has no `deploy` ability, so break-glass stays a manual
+owner action in the Coolify UI.
+
 ## Rules for development agents
 
 - Never push to `main` or `production`; never create `production-release/*`

@@ -282,6 +282,8 @@ jobs:
         run: npm run integration
       - name: Run OAuth 2.1 PKCE / ChatGPT MCP acceptance
         run: node test/oauth-integration.mjs
+      - name: Run scoped Coolify operations proxy acceptance
+        run: node test/coolify-ops.mjs
       - name: Verify backup restore in disposable CI database
         working-directory: .
         run: bash scripts/ci-postgres-restore.sh

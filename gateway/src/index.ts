@@ -1,3 +1,4 @@
+import { coolifySettingsFromEnv, decideChangeRequest, listChangeRequests } from "./coolify.js";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
@@ -2014,6 +2015,32 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           await client.query("commit");
         }catch(error){await client.query("rollback");throw error}finally{client.release()}
         return void json(res,200,{ok:true});
+      }
+      if (req.method === "GET" && url.pathname === "/api/console/coolify/change-requests") {
+        const status=z.enum(["pending","approved","denied","applying","applied","verification_failed","conflict","failed","expired"])
+          .safeParse(url.searchParams.get("status")||"pending");
+        if(!status.success)return void json(res,400,{error:"invalid_status"});
+        return void json(res,200,{
+          configured:coolifySettingsFromEnv()!==null,
+          items:await listChangeRequests(status.data,queryLimit(url,50,100)),
+        });
+      }
+      const coolifyDecision=url.pathname.match(/^\/api\/console\/coolify\/change-requests\/([0-9a-f-]{36})\/(approve|deny)$/i);
+      if (req.method === "POST" && coolifyDecision) {
+        const payload=z.object({
+          digest:z.string().regex(/^[0-9a-f]{64}$/),
+          currentPassword:z.string().min(12).max(256),
+        }).parse(await readJson(req));
+        const operator=await db.query<{password_hash:string}>(
+          "select password_hash from users where id=$1 and disabled_at is null",[principal.userId]);
+        if(!operator.rows[0]||!(await verifyPassword(payload.currentPassword,operator.rows[0].password_hash)))
+          return void json(res,403,{error:"reauthentication_failed"});
+        const decision=coolifyDecision[2]!.toLowerCase() as "approve"|"deny";
+        const item=await decideChangeRequest(coolifyDecision[1]!,decision,payload.digest,principal.userId);
+        if(!item)return void json(res,409,{error:"change_request_not_pending_or_digest_mismatch"});
+        await db.query("insert into platform_admin_audit(actor_user_id,action,detail) values($1,$2,$3)",
+          [principal.userId,"coolify.change_request."+decision,JSON.stringify({id:item.id,applicationUuid:item.application_uuid,digest:item.digest,after:item.after_values})]);
+        return void json(res,200,{ok:true,item});
       }
       if (req.method === "GET" && url.pathname === "/api/console/incidents") {
         return void json(res,200,{items:await activePlatformIncidents()});

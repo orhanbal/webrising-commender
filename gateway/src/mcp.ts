@@ -6,6 +6,7 @@ import { actionRisk, type AgentAction } from "./protocol.js";
 import type { DeviceRouter } from "./device-router.js";
 import { issueApproval, redact } from "./security.js";
 import { startSearch, searchPage, listSearches, stopSearch, controlSearch } from "./search-sessions.js";
+import { coolifyToolDefinitions, handleCoolifyTool, isCoolifyTool, isPlatformAdministrator } from "./coolify.js";
 
 type JsonRpcRequest = { jsonrpc?: string; id?: string | number | null; method?: string; params?: any };
 
@@ -281,11 +282,18 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
   }
   if (request.method === "notifications/initialized") return null;
   if (request.method === "ping") return ok(request.id, {});
-  if (request.method === "tools/list") return ok(request.id, { tools });
+  if (request.method === "tools/list") {
+    // Coolify operations tools are listed only to active platform administrators.
+    return ok(request.id, { tools: (await isPlatformAdministrator(principal)) ? [...tools, ...coolifyToolDefinitions()] : tools });
+  }
   if (request.method !== "tools/call") return fail(request.id, -32601, "Method not found");
 
   const name = String(request.params?.name || "");
   const args = request.params?.arguments || {};
+  if (isCoolifyTool(name)) {
+    const outcome = await handleCoolifyTool(name, args, principal);
+    return ok(request.id, toolResult(outcome.data, Boolean(outcome.isError)));
+  }
   // Reject unknown MCP tools before attempting device/tenant database access.
   // This also avoids reporting a misleading missing-device error for typos.
   if (!tools.some((entry) => entry.name === name)) {

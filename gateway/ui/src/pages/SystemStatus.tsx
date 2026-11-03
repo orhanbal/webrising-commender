@@ -3,6 +3,7 @@ import {useLocale} from "../i18n";
 import {useEffect,useState} from "react";
 import {api} from "../api";
 import {consoleText} from "../console-text";
+import {CoolifyChangeRequests} from "./CoolifyChangeRequests";
 
 type SystemData={
   mailConfigured?:boolean;
@@ -113,6 +114,7 @@ export function SystemStatus({data}:{data:Record<string,unknown>|null}){
    </div>}
    {incidentError&&<p role="alert" className="text-sm text-[var(--danger)] mt-4">{incidentError}</p>}
   </section>
+  <CoolifyChangeRequests/>
   <section className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-6">
    <h3 className="text-lg font-bold mb-4">{ui("Operational notices")}</h3>
    {notices.length?notices.map(note=><p key={note} className="flex items-start gap-3 py-3 text-sm border-b border-[var(--stroke)]"><AlertTriangle size={17} className="shrink-0 mt-0.5 text-[var(--accent)]"/>{ui(note)}</p>):
