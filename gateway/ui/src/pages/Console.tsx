@@ -100,6 +100,21 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
  const [memberRole,setMemberRole]=useState<"viewer"|"operator"|"admin">("viewer");
  const [memberPassword,setMemberPassword]=useState("");
  const [roleBusy,setRoleBusy]=useState(false);
+ const [recoveryTarget,setRecoveryTarget]=useState<{user_id:string;email:string;role:string}|null>(null);
+ const [recoveryReason,setRecoveryReason]=useState("");
+ const [recoveryPassword,setRecoveryPassword]=useState("");
+ const [recoveryBusy,setRecoveryBusy]=useState(false);
+ const applyOwnerRecovery=async()=>{
+   if(!recoveryTarget||!memberWorkspace)return;
+   setRecoveryBusy(true);setMemberError("");
+   try{
+     await api("/api/console/organizations/owner-recovery",{method:"POST",body:JSON.stringify({
+       organizationId:memberWorkspace.id,userId:recoveryTarget.user_id,reason:recoveryReason.trim(),currentPassword:recoveryPassword,
+     })});
+     await refreshMembers(memberWorkspace.id);
+     setRecoveryTarget(null);setRecoveryReason("");setRecoveryPassword("");
+   }catch(e){setMemberError(String(e))}finally{setRecoveryBusy(false)}
+ };
  const refreshMembers=async(organizationId:string)=>{
    const result=await api<{items:typeof memberRows}>("/api/console/organizations/members?organizationId="+encodeURIComponent(organizationId));
    setMemberRows(result.items);
@@ -326,14 +341,22 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
      <div className="w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-6">
        <div className="flex items-center justify-between gap-4 mb-4">
          <div><h2 className="text-xl font-bold">{memberWorkspace.name} — Members</h2><p className="muted text-sm mt-1">{ui("Workspace owner roles and platform administrators cannot be changed here.")}</p></div>
-         <button type="button" onClick={()=>{setMemberWorkspace(null);setMemberTarget(null);setMemberPassword("")}} className="rounded-xl border border-[var(--stroke)] px-4 py-2">{ui("Close")}</button>
+         <button type="button" onClick={()=>{setMemberWorkspace(null);setMemberTarget(null);setMemberPassword("");setRecoveryTarget(null);setRecoveryPassword("")}} className="rounded-xl border border-[var(--stroke)] px-4 py-2">{ui("Close")}</button>
        </div>
        {memberBusy?<p className="muted">{ui("Loading members…")}</p>:null}
        {memberError&&<p role="alert" className="text-[var(--danger)] mb-4">{memberError}</p>}
        <div className="grid gap-2">{memberRows.map(person=><div key={person.user_id} className="rounded-xl border border-[var(--stroke)] p-4 flex items-center gap-4 justify-between flex-wrap">
          <div className="min-w-0"><div className="font-medium text-sm break-all">{person.email}</div><div className="muted text-xs mt-1">Role: {person.role}{person.disabled?" · Disabled":""}</div></div>
          <button type="button" disabled={person.role==="owner"||person.user_id===admin.userId} className="rounded-xl border border-[var(--stroke)] px-4 py-2 disabled:opacity-40" onClick={()=>{setMemberTarget(person);setMemberRole(person.role==="viewer"||person.role==="operator"||person.role==="admin"?person.role:"viewer");setMemberPassword("");setMemberError("")}}>{ui("Edit role")}</button>
+         <button type="button" disabled={person.role==="owner"||person.disabled||person.user_id===admin.userId} className="rounded-xl border border-[var(--stroke)] px-4 py-2 disabled:opacity-40" onClick={()=>{setRecoveryTarget(person);setMemberTarget(null);setRecoveryReason("");setRecoveryPassword("");setMemberError("")}}>{ui("Recover as owner")}</button>
        </div>)}</div>
+       {recoveryTarget&&<div className="border-t border-[var(--stroke)] mt-6 pt-5" aria-label="Owner recovery">
+         <h3 className="font-semibold">{ui("Owner recovery")}: {recoveryTarget.email}</h3>
+         <p className="muted text-sm mt-1">{ui("Adds the owner role to this verified member. Existing owners keep their role. You cannot recover yourself or another platform administrator.")}</p>
+         <label className="block mt-4 text-sm">{ui("Reason (ticket or support reference, at least 10 characters)")}<input type="text" maxLength={500} className="block w-full mt-2 rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-3" value={recoveryReason} onChange={e=>setRecoveryReason(e.target.value)}/></label>
+         <label className="block mt-4 text-sm">{ui("Your current password")}<input type="password" autoComplete="current-password" className="block w-full mt-2 rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-3" value={recoveryPassword} onChange={e=>setRecoveryPassword(e.target.value)}/></label>
+         <div className="flex gap-3 justify-end mt-5"><button className="rounded-xl border border-[var(--stroke)] px-4 py-2" onClick={()=>{setRecoveryTarget(null);setRecoveryPassword("")}}>{ui("Cancel")}</button><button disabled={recoveryBusy||recoveryPassword.length<12||recoveryReason.trim().length<10} className="rounded-xl bg-[var(--accent)] text-[var(--accent-ink)] px-5 py-2 disabled:opacity-40" onClick={()=>void applyOwnerRecovery()}>{ui("Grant owner role")}</button></div>
+       </div>}
        {memberTarget&&<div className="border-t border-[var(--stroke)] mt-6 pt-5">
          <h3 className="font-semibold">Change role: {memberTarget.email}</h3>
          <label className="block mt-4 text-sm">{ui("New role")}<select className="block w-full mt-2 rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-3" value={memberRole} onChange={e=>setMemberRole(e.target.value as "viewer"|"operator"|"admin")}><option value="viewer">{ui("Viewer")}</option><option value="operator">{ui("Operator")}</option><option value="admin">{ui("Admin (workspace only)")}</option></select></label>

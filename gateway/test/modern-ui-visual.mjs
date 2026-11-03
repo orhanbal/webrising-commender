@@ -211,6 +211,17 @@ try{
  await evalJs("([...document.querySelectorAll('button')].find(x=>x.textContent.trim()==='Members'))?.click()");
  await sleep(120);
  assert.ok(await evalJs("document.querySelector('[role=dialog]')?.textContent.includes('member@example.test')"),"Workspace member inspector must show server-backed members");
+ await evalJs("([...document.querySelectorAll('[role=dialog] button')].find(x=>x.textContent.trim()==='Recover as owner'))?.click()");
+ await sleep(80);
+ assert.ok(await evalJs("!!document.querySelector('[aria-label=\"Owner recovery\"]')"),"Owner recovery form must open from the member list");
+ const grant="([...document.querySelectorAll('[role=dialog] button')].find(x=>x.textContent.trim()==='Grant owner role'))";
+ assert.equal(await evalJs(grant+"?.disabled"),true,"Owner recovery stays disabled without reason and password");
+ await evalJs("(()=>{const set=(el,v)=>{const p=Object.getPrototypeOf(el);Object.getOwnPropertyDescriptor(p,'value').set.call(el,v);el.dispatchEvent(new Event('input',{bubbles:true}))};const f=document.querySelector('[aria-label=\"Owner recovery\"]');set(f.querySelector('input[type=text]'),'short');set(f.querySelector('input[type=password]'),'correct-horse-battery-staple')})()");
+ await sleep(60);
+ assert.equal(await evalJs(grant+"?.disabled"),true,"A reason shorter than 10 characters keeps recovery disabled");
+ await evalJs("(()=>{const el=document.querySelector('[aria-label=\"Owner recovery\"] input[type=text]');Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),'value').set.call(el,'Ticket SUP-4711 owner lost access');el.dispatchEvent(new Event('input',{bubbles:true}))})()");
+ await sleep(60);
+ assert.equal(await evalJs(grant+"?.disabled"),false,"Reason and password enable owner recovery");
  await evalJs("([...document.querySelectorAll('[role=dialog] button')].find(x=>x.textContent.trim()==='Close'))?.click()");
  await evalJs("([...document.querySelectorAll('button')].find(x=>x.textContent.trim()==='Edit quotas'))?.click()");
  await sleep(100);
