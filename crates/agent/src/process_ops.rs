@@ -46,6 +46,89 @@ impl Drop for ProcessGroupGuard {
     }
 }
 
+/// macOS has no child subreaper, so a descendant that leaves the process group
+/// (POSIX setsid, double fork) and is orphaned to launchd would survive the
+/// group kill. While the command runs, this tracker samples the process table
+/// every 50 ms and records every process whose ancestry reaches the command
+/// (or an already recorded process), with its start time. At completion,
+/// timeout or abort every recorded process that still has the same start time
+/// is SIGKILLed, so a recycled PID is never signalled. Best effort: a process
+/// that is created and escapes between two samples is not seen.
+#[cfg(target_os = "macos")]
+struct DescendantTracker {
+    seen: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<u32, u64>>>,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+#[cfg(target_os = "macos")]
+impl DescendantTracker {
+    fn start(root: u32) -> Self {
+        use std::sync::atomic::Ordering;
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (seen_bg, stop_bg) = (seen.clone(), stop.clone());
+        std::thread::spawn(move || {
+            let mut system = System::new();
+            while !stop_bg.load(Ordering::SeqCst) {
+                system.refresh_processes(ProcessesToUpdate::All, true);
+                let mut known = seen_bg.lock().unwrap();
+                let mut changed = true;
+                while changed {
+                    changed = false;
+                    for (pid, process) in system.processes() {
+                        let pid = pid.as_u32();
+                        if known.contains_key(&pid) || pid == root {
+                            continue;
+                        }
+                        if let Some(parent) = process.parent().map(|p| p.as_u32()) {
+                            if parent == root || known.contains_key(&parent) {
+                                known.insert(pid, process.start_time());
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+                drop(known);
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        });
+        Self { seen, stop }
+    }
+
+    fn kill_all(&self) {
+        use std::sync::atomic::Ordering;
+        self.stop.store(true, Ordering::SeqCst);
+        let tracked: Vec<(u32, u64)> = self
+            .seen
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(p, s)| (*p, *s))
+            .collect();
+        if tracked.is_empty() {
+            return;
+        }
+        let mut system = System::new();
+        system.refresh_processes(ProcessesToUpdate::All, true);
+        for (pid, start) in tracked {
+            if let Some(process) = system.process(Pid::from_u32(pid)) {
+                if process.start_time() == start {
+                    unsafe {
+                        libc::kill(pid as i32, libc::SIGKILL);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for DescendantTracker {
+    fn drop(&mut self) {
+        self.kill_all();
+    }
+}
+
 pub async fn exec(
     policy: &PathPolicy,
     command: &str,
@@ -117,6 +200,12 @@ async fn exec_with_timeout_bounds(
         .stderr(Stdio::piped());
 
     let mut child = process.spawn().context("failed to start command")?;
+    #[cfg(target_os = "macos")]
+    let tracker = DescendantTracker::start(
+        child
+            .id()
+            .ok_or_else(|| anyhow!("spawned process has no pid"))?,
+    );
     #[cfg(unix)]
     let group = ProcessGroupGuard::new(
         child
@@ -149,6 +238,8 @@ async fn exec_with_timeout_bounds(
                 tokio::time::sleep(Duration::from_millis(250)).await;
                 group.signal(libc::SIGKILL);
             }
+            #[cfg(target_os = "macos")]
+            tracker.kill_all();
             let _ = child.kill().await;
             stdout_task.abort();
             stderr_task.abort();
@@ -158,6 +249,8 @@ async fn exec_with_timeout_bounds(
 
     // A successful shell can still have background children holding its pipes.
     // Reap those descendants before joining stdout/stderr readers.
+    #[cfg(target_os = "macos")]
+    tracker.kill_all();
     #[cfg(unix)]
     group.signal(libc::SIGKILL);
 
@@ -610,5 +703,67 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(1200)).await;
         assert!(!marker.exists(), "canceled descendant survived");
         std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+// 2C (macOS): a descendant that calls setsid() must still be killed after the
+// command finishes or times out (best-effort tracker; no subreaper on macOS).
+#[cfg(all(test, target_os = "macos"))]
+mod macos_descendant_tests {
+    use super::*;
+    use sysinfo::{ProcessRefreshKind, UpdateKind};
+
+    fn alive(marker: &str) -> bool {
+        let mut system = System::new();
+        system.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always),
+        );
+        system
+            .processes()
+            .values()
+            .any(|p| p.cmd().iter().any(|a| a.to_string_lossy() == marker))
+    }
+
+    async fn assert_gone(marker: &str) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while alive(marker) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "setsid descendant {marker} survived"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
+    fn policy() -> PathPolicy {
+        let root = std::env::temp_dir().join(format!("wc-mac-exec-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        PathPolicy::new(std::slice::from_ref(&root)).unwrap()
+    }
+
+    fn detached(marker: &str) -> String {
+        format!("perl -MPOSIX -e 'POSIX::setsid(); sleep 40' {marker} >/dev/null 2>&1 &")
+    }
+
+    #[tokio::test]
+    async fn macos_setsid_descendant_killed_after_success() {
+        let marker = "wc-macos-after-success";
+        let command = format!("{} sleep 1; echo done", detached(marker));
+        let result = exec(&policy(), &command, None, Some(20_000)).await.unwrap();
+        assert_eq!(result["exitCode"], 0, "{result}");
+        assert_gone(marker).await;
+    }
+
+    #[tokio::test]
+    async fn macos_setsid_descendant_killed_on_timeout() {
+        let marker = "wc-macos-after-timeout";
+        let command = format!("{} sleep 30", detached(marker));
+        let error = exec(&policy(), &command, None, Some(1_500))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("timed out"), "{error}");
+        assert_gone(marker).await;
     }
 }
