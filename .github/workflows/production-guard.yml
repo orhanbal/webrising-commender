@@ -6,6 +6,12 @@ name: production-guard
 # green main CI and platform-distribution. Runs on every production/tag update
 # (when the pushed commit contains this file) and daily from main, so removing
 # this file in a rogue production commit does not silence it.
+#
+# On the daily schedule and on manual dispatch it also probes the public site
+# from GitHub's network as an independent external client: HTTPS health, HSTS,
+# landing, console, public config, unauthenticated WebSocket upgrade refused,
+# and /health build.commit == the current production head. It is skipped on
+# push events, where the deployment is still starting.
 
 on:
   push:
@@ -40,3 +46,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_MODE: audit
         run: node scripts/release-gate.mjs
+      - name: Public acceptance probe (HTTPS, HSTS, WSS refusal, served build = production head)
+        if: ${{ github.event_name != 'push' }}
+        env:
+          COMMANDER_BASE_URL: ${{ vars.PRODUCTION_BASE_URL || 'https://wecommander.webrising.tr' }}
+        run: |
+          COMMANDER_EXPECTED_COMMIT="$(git ls-remote origin refs/heads/production | cut -f1)"
+          test -n "$COMMANDER_EXPECTED_COMMIT"
+          export COMMANDER_EXPECTED_COMMIT
+          node scripts/accept-production.mjs
