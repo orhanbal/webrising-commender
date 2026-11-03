@@ -1,53 +1,50 @@
 name: bootstrap-locks
 
+# Verifies that lockfiles and Rust formatting are already normalized.
+# This workflow previously committed and pushed fixes directly to `main`,
+# which made a bot an unreviewed writer of the (then) production-tracked ref.
+# It is now read-only (Issue #30): fix drift on your branch with the commands
+# printed below and push the result for review.
+
 on:
-  push:
-    branches: [main]
+  pull_request:
     paths:
       - "gateway/package.json"
+      - "gateway/package-lock.json"
       - "Cargo.toml"
+      - "Cargo.lock"
       - "crates/**/Cargo.toml"
       - ".github/workflows/bootstrap-locks.yml"
   workflow_dispatch:
 
-concurrency:
-  group: bootstrap-locks-main
-  cancel-in-progress: true
-
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  normalize:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-      - name: Rebase onto current main
-        run: git pull --rebase origin main
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - name: Generate Node lockfile
+      - name: Node lockfile matches package.json
         working-directory: gateway
-        run: npm install --package-lock-only --ignore-scripts
-      - name: Generate Cargo lockfile
-        run: cargo generate-lockfile
-      - name: Format Rust
-        run: cargo fmt --all
-      - name: Commit normalized files
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Cargo lockfile matches manifests
+        run: cargo metadata --locked --format-version 1 > /dev/null
+      - name: Rust formatting
+        run: cargo fmt --all -- --check
+      - name: Fail on drift
         shell: bash
         run: |
-          if git diff --quiet; then
-            echo "No normalization changes"
-            exit 0
+          if ! git diff --quiet; then
+            git --no-pager diff --stat
+            echo "::error::Lockfile drift. Run 'cd gateway && npm install --package-lock-only --ignore-scripts' and commit the result on your branch."
+            exit 1
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Cargo.lock gateway/package-lock.json crates
-          git commit -m "chore: normalize lockfiles and rust formatting"
-          git push origin HEAD:main

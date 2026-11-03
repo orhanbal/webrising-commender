@@ -1,0 +1,130 @@
+name: promote-production
+
+# The only sanctioned writer of the `production` branch (Issue #30), including
+# its one-time creation (mode=bootstrap), so no local checkout is ever needed. Coolify tracks `production`, never `main`, so
+# pushes to main, PR merges, docs-only commits and green CI deploy nothing.
+#
+# Fail-closed chain (see docs/RELEASE_POLICY.md):
+#   * runs only when dispatched on `main`;
+#   * the job references the `production` environment, so it waits for the
+#     required reviewer; the release App key is an environment secret and is
+#     not released to the job before approval;
+#   * scripts/release-gate.mjs (from main) must pass;
+#   * only the release GitHub App may update `production` and
+#     `production-release/*` (rulesets); GITHUB_TOKEN cannot;
+#   * the job succeeds only when public /health reports build.commit == sha.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Full 40-character main commit SHA to release"
+        required: true
+        type: string
+      confirm_sha:
+        description: "Type the same SHA again"
+        required: true
+        type: string
+      mode:
+        description: "promote = fast-forward only; rollback = return to a previously released SHA; bootstrap = one-time creation of production (no deploy)"
+        required: true
+        default: promote
+        type: choice
+        options: [promote, rollback, bootstrap]
+      reason:
+        description: "Change/approval reference (ticket, PR, incident)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 45
+    steps:
+      - name: Refuse dispatch from any ref other than main
+        if: ${{ github.ref != 'refs/heads/main' }}
+        run: |
+          echo "::error::promote-production must be dispatched on main (got $GITHUB_REF)"
+          exit 1
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Release gate (exact-SHA main CI, distribution, ancestry, release ledger)
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ inputs.sha }}
+          RELEASE_CONFIRM_SHA: ${{ inputs.confirm_sha }}
+          RELEASE_MODE: ${{ inputs.mode }}
+        run: node scripts/release-gate.mjs
+      - name: Mint release App token (environment secrets, available only after approval)
+        id: app
+        env:
+          RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
+          RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+        run: node scripts/github-app-token.mjs
+      - name: Move production ref and record release tag
+        env:
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+          RELEASE_SHA: ${{ inputs.sha }}
+          RELEASE_MODE: ${{ inputs.mode }}
+          RELEASE_REASON: ${{ inputs.reason }}
+          PREVIOUS: ${{ steps.gate.outputs.previous_production }}
+          CI_RUN_ID: ${{ steps.gate.outputs.ci_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::invalid sha"; exit 1; }
+          if [[ "$RELEASE_MODE" == "bootstrap" ]]; then
+            # The gate verified production does not exist; the empty lease makes the push fail if it appeared since.
+            [[ -z "$PREVIOUS" ]] || { echo "::error::bootstrap with an existing production head"; exit 1; }
+          else
+            [[ "$PREVIOUS" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::gate outputs missing"; exit 1; }
+          fi
+          git config user.name "wecommander-release"
+          git config user.email "wecommander-release@users.noreply.github.com"
+          tag="production-release/$(date -u +%Y%m%dT%H%M%SZ)-${RELEASE_SHA:0:12}"
+          printf 'mode: %s\nsha: %s\nprevious: %s\nci_run: %s\napproved_run: %s/%s/actions/runs/%s\nactor: %s\nreason: %s\n' \
+            "$RELEASE_MODE" "$RELEASE_SHA" "${PREVIOUS:-none}" "$CI_RUN_ID" \
+            "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_ACTOR" "$RELEASE_REASON" > "$RUNNER_TEMP/release-note"
+          git tag -a "$tag" "$RELEASE_SHA" -F "$RUNNER_TEMP/release-note"
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$APP_TOKEN" | base64 -w0)"
+          echo "::add-mask::$(printf 'x-access-token:%s' "$APP_TOKEN" | base64 -w0)"
+          # The lease pins the head the gate approved (empty = must not exist);
+          # promote is a verified fast-forward.
+          # Defense in depth: git skips the lease for a ref it does not change,
+          # so first require the remote head to be exactly what the gate saw.
+          current="$(git -c "http.https://github.com/.extraheader=$auth" ls-remote origin refs/heads/production | cut -f1)"
+          [[ "$current" == "$PREVIOUS" ]] || { echo "::error::production is '${current:-absent}', gate saw '${PREVIOUS:-absent}'"; exit 1; }
+          [[ "$current" != "$RELEASE_SHA" ]] || { echo "::error::production already at ${RELEASE_SHA}"; exit 1; }
+          git -c "http.https://github.com/.extraheader=$auth" push --atomic \
+            "--force-with-lease=refs/heads/production:${PREVIOUS}" \
+            origin "${RELEASE_SHA}:refs/heads/production" "refs/tags/${tag}"
+          {
+            echo "### Production ref moved"
+            echo "- production: \`${PREVIOUS:-none}\` → \`${RELEASE_SHA}\`"
+            echo "- tag: \`${tag}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Bootstrap deploys nothing
+        if: ${{ inputs.mode == 'bootstrap' }}
+        run: echo "production created; Coolify must not track it yet, so no deployment is expected or verified." >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify the deployed build identity
+        if: ${{ inputs.mode != 'bootstrap' }}
+        env:
+          PRODUCTION_BASE_URL: ${{ vars.PRODUCTION_BASE_URL }}
+          RELEASE_SHA: ${{ inputs.sha }}
+          RELEASE_VERIFY_TIMEOUT_MS: "1800000"
+        run: node scripts/verify-release.mjs

@@ -83,6 +83,8 @@ if (!["TLSv1.2", "TLSv1.3"].includes(tlsMinVersionRaw)) {
   throw new Error("TLS_MIN_VERSION must be TLSv1.2 or TLSv1.3");
 }
 const nativeTlsEnabled = Boolean(tlsCertFile && tlsKeyFile);
+// Exact source commit baked in at image build time (Issue #30 release audit).
+const buildCommit = /^[0-9a-f]{40}$/.test(process.env.WECOMMANDER_BUILD_COMMIT || "") ? process.env.WECOMMANDER_BUILD_COMMIT! : "unknown";
 if (nativeTlsEnabled && parsedPublicBaseUrl.protocol !== "https:") {
   throw new Error("PUBLIC_BASE_URL must use https:// when native TLS is enabled");
 }
@@ -508,6 +510,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         status: databaseReady ? "ok" : "error",
         database: databaseReady ? "ok" : "error",
         transport: nativeTlsEnabled ? "https" : "http",
+        build: { commit: buildCommit },
       });
     }
 

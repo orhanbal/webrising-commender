@@ -21,6 +21,9 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY public ./public
 COPY --from=ui-build /ui/dist ./public/modern
+# Last layer so a new commit does not invalidate dependency caches.
+ARG SOURCE_COMMIT=unknown
+ENV WECOMMANDER_BUILD_COMMIT=${SOURCE_COMMIT}
 USER node
 EXPOSE 8787
 CMD ["node", "dist/index.js"]

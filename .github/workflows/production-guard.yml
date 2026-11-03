@@ -1,0 +1,42 @@
+name: production-guard
+
+# Detects production updates that did not go through promote-production
+# (Issue #30). Re-runs the release gate in audit mode: the production head must
+# carry a valid annotated production-release/* tag and still have exact-SHA
+# green main CI and platform-distribution. Runs on every production/tag update
+# (when the pushed commit contains this file) and daily from main, so removing
+# this file in a rogue production commit does not silence it.
+
+on:
+  push:
+    branches: [production]
+    tags: ["production-release/**"]
+  schedule:
+    - cron: "37 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: production-guard
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Audit production head against the release ledger
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_MODE: audit
+        run: node scripts/release-gate.mjs

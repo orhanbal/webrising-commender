@@ -1,4 +1,8 @@
 name: platform-distribution
+# The release gate (scripts/release-gate.mjs) links this run to the exact ci
+# run by this suffix; GitHub lists workflow_run runs under the default-branch
+# head at trigger time, not under the commit they build. Keep the format.
+run-name: "platform-distribution for ${{ github.event.workflow_run.head_sha }} (ci ${{ github.event.workflow_run.id }}/${{ github.event.workflow_run.run_attempt }})"
 
 on:
   workflow_run:

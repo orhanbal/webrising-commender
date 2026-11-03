@@ -17,6 +17,10 @@ services:
   gateway:
     build:
       context: ./gateway
+      # Do not interpolate SOURCE_COMMIT here: Coolify turns every compose
+      # variable reference into a stored user variable, which then overrides the
+      # commit it injects. Coolify passes --build-arg SOURCE_COMMIT=<sha> itself
+      # when "Include Source Commit in Build" is enabled (docs/RELEASE_POLICY.md).
     restart: unless-stopped
     init: true
     read_only: true

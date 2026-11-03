@@ -157,6 +157,7 @@ async function assignSubscription(organizationId, planKey = "ci-standard", statu
 
 const health = await jsonFetch("/health");
 assert.equal(health.status, "ok");
+assert.match(health.build?.commit ?? "", /^(unknown|[0-9a-f]{40})$/);
 
 const publicConfig = await jsonFetch("/api/public/config");
 assert.equal(publicConfig.deploymentMode, "saas");
