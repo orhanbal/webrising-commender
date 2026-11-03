@@ -97,6 +97,12 @@ jobs:
         run: cargo test -p webrising-commender-agent windows_config_stage_inplace_tamper_cannot_publish_credentials -- --nocapture
       - name: Native unguarded digest growth and truncation race
         run: cargo test -p webrising-commender-agent atomic_digest_race_tests -- --nocapture
+      - name: Windows process_exec suspended Job Object containment (2C)
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_exec_job_tests -- --nocapture
+      - name: macOS setsid descendant tracking for process_exec (2C)
+        if: runner.os == 'macOS'
+        run: cargo test -p webrising-commender-agent macos_descendant_tests -- --nocapture
       - name: Windows process tree termination confirmation (2C)
         if: runner.os == 'Windows'
         run: cargo test -p webrising-commender-agent process_ops::tests::windows_process_kill_confirms_snapshot_exit -- --nocapture
@@ -170,7 +176,7 @@ jobs:
       - name: Install and build shadcn React web
         run: |
           cd ui
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
           npm run build
       - name: Verify dashboard in desktop and mobile Chrome
         run: node test/dashboard-visual.mjs
@@ -248,7 +254,7 @@ jobs:
       - name: Build shadcn React application
         run: |
           cd ui
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
           npm run build
           mkdir -p ../public/modern
           cp -R dist/. ../public/modern/
@@ -282,6 +288,8 @@ jobs:
         run: npm run integration
       - name: Run OAuth 2.1 PKCE / ChatGPT MCP acceptance
         run: node test/oauth-integration.mjs
+      - name: RBAC matrix over MCP (viewer vs operator, audited denials)
+        run: node test/rbac-matrix-e2e.mjs
       - name: Verify backup restore in disposable CI database
         working-directory: .
         run: bash scripts/ci-postgres-restore.sh
@@ -357,6 +365,27 @@ jobs:
         run: node gateway/test/native-restart-e2e.mjs content
       - name: Reject changed saved content during real Agent restart recovery
         run: node gateway/test/native-restart-e2e.mjs content-tampered
+      - name: Device-local capabilities (read-only / no-commands) with a real Agent
+        run: node gateway/test/device-capabilities-e2e.mjs
+      - name: Restart gateway with MCP OAuth enabled
+        working-directory: gateway
+        env:
+          MCP_OAUTH_ENABLED: "true"
+        run: |
+          kill "$(cat /tmp/commender-gateway.pid)" 2>/dev/null || true
+          pkill -f "node dist/index.js" || true
+          for i in {1..20}; do curl -fsS http://127.0.0.1:8787/health/live >/dev/null 2>&1 || break; sleep 0.5; done
+          node dist/index.js > /tmp/commender-gateway.log 2>&1 &
+          echo $! > /tmp/commender-gateway.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8787/health >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/commender-gateway.log
+          exit 1
+      - name: MCP client acceptance (OAuth operator AI, admin approver, real Rust Agent)
+        working-directory: gateway
+        run: node test/mcp-client-acceptance.mjs
       - name: Print gateway log on failure
         if: failure()
         run: cat /tmp/commender-gateway.log || true

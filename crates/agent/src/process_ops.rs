@@ -18,16 +18,24 @@ const OUTPUT_LIMIT: usize = 1024 * 1024;
 #[cfg(unix)]
 struct ProcessGroupGuard {
     pgid: i32,
+    /// The group leader is the Linux reaper, which cleans up the whole
+    /// descendant tree (including members that left the group) on SIGTERM.
+    reaper: bool,
+    done: bool,
 }
 
 #[cfg(unix)]
 impl ProcessGroupGuard {
-    fn new(pid: u32) -> Result<Self> {
+    fn new(pid: u32, reaper: bool) -> Result<Self> {
         let pgid = i32::try_from(pid).context("invalid child process id")?;
         if pgid <= 0 {
             return Err(anyhow!("invalid child process group"));
         }
-        Ok(Self { pgid })
+        Ok(Self {
+            pgid,
+            reaper,
+            done: false,
+        })
     }
 
     fn signal(&self, signal: i32) {
@@ -37,12 +45,135 @@ impl ProcessGroupGuard {
             libc::kill(-self.pgid, signal);
         }
     }
+
+    /// Final SIGKILL of the group once the command has been waited for.
+    fn finish(&mut self) {
+        self.signal(libc::SIGKILL);
+        self.done = true;
+    }
 }
 
 #[cfg(unix)]
 impl Drop for ProcessGroupGuard {
     fn drop(&mut self) {
-        self.signal(libc::SIGKILL);
+        if self.done {
+            return;
+        }
+        if !self.reaper {
+            self.signal(libc::SIGKILL);
+            return;
+        }
+        // Aborted (task cancel, connection teardown): let the reaper kill the
+        // descendants that left the group, then SIGKILL the group as backstop.
+        self.signal(libc::SIGTERM);
+        let pgid = self.pgid;
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(2_500));
+            unsafe {
+                libc::kill(-pgid, libc::SIGKILL);
+            }
+        });
+    }
+}
+
+/// First argument that starts the Agent binary in reaper mode (see reaper.rs).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub const REAPER_ARG: &str = "__wecommander-reaper";
+
+/// The Agent binary itself, used as the Linux reaper. Never in unit tests: the
+/// test harness binary would treat the reaper arguments as a test filter.
+#[cfg(not(windows))]
+fn reaper_executable() -> Option<std::path::PathBuf> {
+    #[cfg(all(target_os = "linux", not(test)))]
+    {
+        std::env::current_exe().ok()
+    }
+    #[cfg(not(all(target_os = "linux", not(test))))]
+    {
+        None
+    }
+}
+
+/// macOS has no child subreaper, so a descendant that leaves the process group
+/// (POSIX setsid, double fork) and is orphaned to launchd would survive the
+/// group kill. While the command runs, this tracker samples the process table
+/// every 50 ms and records every process whose ancestry reaches the command
+/// (or an already recorded process), with its start time. At completion,
+/// timeout or abort every recorded process that still has the same start time
+/// is SIGKILLed, so a recycled PID is never signalled. Best effort: a process
+/// that is created and escapes between two samples is not seen.
+#[cfg(target_os = "macos")]
+struct DescendantTracker {
+    seen: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<u32, u64>>>,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+#[cfg(target_os = "macos")]
+impl DescendantTracker {
+    fn start(root: u32) -> Self {
+        use std::sync::atomic::Ordering;
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (seen_bg, stop_bg) = (seen.clone(), stop.clone());
+        std::thread::spawn(move || {
+            let mut system = System::new();
+            while !stop_bg.load(Ordering::SeqCst) {
+                system.refresh_processes(ProcessesToUpdate::All, true);
+                let mut known = seen_bg.lock().unwrap();
+                let mut changed = true;
+                while changed {
+                    changed = false;
+                    for (pid, process) in system.processes() {
+                        let pid = pid.as_u32();
+                        if known.contains_key(&pid) || pid == root {
+                            continue;
+                        }
+                        if let Some(parent) = process.parent().map(|p| p.as_u32()) {
+                            if parent == root || known.contains_key(&parent) {
+                                known.insert(pid, process.start_time());
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+                drop(known);
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        });
+        Self { seen, stop }
+    }
+
+    fn kill_all(&self) {
+        use std::sync::atomic::Ordering;
+        self.stop.store(true, Ordering::SeqCst);
+        let tracked: Vec<(u32, u64)> = self
+            .seen
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(p, s)| (*p, *s))
+            .collect();
+        if tracked.is_empty() {
+            return;
+        }
+        let mut system = System::new();
+        system.refresh_processes(ProcessesToUpdate::All, true);
+        for (pid, start) in tracked {
+            if let Some(process) = system.process(Pid::from_u32(pid)) {
+                if process.start_time() == start {
+                    unsafe {
+                        libc::kill(pid as i32, libc::SIGKILL);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for DescendantTracker {
+    fn drop(&mut self) {
+        self.kill_all();
     }
 }
 
@@ -100,8 +231,23 @@ async fn exec_with_timeout_bounds(
     };
 
     #[cfg(not(windows))]
+    let reaper = reaper_executable();
+    #[cfg(not(windows))]
+    let uses_reaper = reaper.is_some();
+    #[cfg(windows)]
+    let uses_reaper = false;
+    #[cfg(not(windows))]
     let mut process = {
-        let mut cmd = Command::new("/bin/sh");
+        let mut cmd = match reaper {
+            // Linux: run under the Agent's own subreaper so descendants that
+            // leave the process group (setsid, double fork) are still killed.
+            Some(exe) => {
+                let mut cmd = Command::new(exe);
+                cmd.arg(REAPER_ARG).arg("--").arg("/bin/sh");
+                cmd
+            }
+            None => Command::new("/bin/sh"),
+        };
         cmd.arg("-lc").arg(command);
         cmd
     };
@@ -112,16 +258,41 @@ async fn exec_with_timeout_bounds(
     #[cfg(unix)]
     process.as_std_mut().process_group(0);
     process
-        .kill_on_drop(true)
+        // With the reaper, SIGKILL on drop would kill it before it can clean
+        // up detached descendants; ProcessGroupGuard handles teardown instead.
+        .kill_on_drop(!uses_reaper)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
+    // Windows: create the command suspended so it can be placed in a
+    // kill-on-close Job Object before any of its code runs (2C). Every
+    // descendant then inherits the job and dies with it.
+    #[cfg(windows)]
+    process.creation_flags(windows_sys::Win32::System::Threading::CREATE_SUSPENDED);
+
     let mut child = process.spawn().context("failed to start command")?;
-    #[cfg(unix)]
-    let group = ProcessGroupGuard::new(
+    #[cfg(target_os = "macos")]
+    let tracker = DescendantTracker::start(
         child
             .id()
             .ok_or_else(|| anyhow!("spawned process has no pid"))?,
+    );
+    #[cfg(windows)]
+    let job = {
+        let handle = child
+            .raw_handle()
+            .ok_or_else(|| anyhow!("spawned process has no handle"))?;
+        let pid = child
+            .id()
+            .ok_or_else(|| anyhow!("spawned process has no pid"))?;
+        crate::windows_job::contain_suspended(handle as _, pid)?
+    };
+    #[cfg(unix)]
+    let mut group = ProcessGroupGuard::new(
+        child
+            .id()
+            .ok_or_else(|| anyhow!("spawned process has no pid"))?,
+        uses_reaper,
     )?;
     let stdout = child
         .stdout
@@ -146,9 +317,16 @@ async fn exec_with_timeout_bounds(
             #[cfg(unix)]
             {
                 group.signal(libc::SIGTERM);
-                tokio::time::sleep(Duration::from_millis(250)).await;
-                group.signal(libc::SIGKILL);
+                // The Linux reaper SIGKILLs its whole descendant tree on
+                // SIGTERM; give it time to finish before killing the group.
+                let grace = if uses_reaper { 2_000 } else { 250 };
+                let _ = tokio::time::timeout(Duration::from_millis(grace), child.wait()).await;
+                group.finish();
             }
+            #[cfg(target_os = "macos")]
+            tracker.kill_all();
+            #[cfg(windows)]
+            let _ = job.terminate();
             let _ = child.kill().await;
             stdout_task.abort();
             stderr_task.abort();
@@ -158,8 +336,16 @@ async fn exec_with_timeout_bounds(
 
     // A successful shell can still have background children holding its pipes.
     // Reap those descendants before joining stdout/stderr readers.
+    #[cfg(target_os = "macos")]
+    tracker.kill_all();
     #[cfg(unix)]
-    group.signal(libc::SIGKILL);
+    group.finish();
+
+    // A finished command must not leave background descendants behind.
+    // Closing the kill-on-close job ends them without waiting and releases
+    // pipes they may still hold before the readers are joined.
+    #[cfg(windows)]
+    drop(job);
 
     let stdout = stdout_task
         .await
@@ -276,6 +462,26 @@ pub fn kill(pid: u32) -> Result<Value> {
         return Err(anyhow!("process changed before termination"));
     }
 
+    // Unix: freeze the whole identified tree before signalling. Signalling a
+    // child first lets its still-running parent react to the child's death
+    // (a shell continues with its next command) before the parent's own
+    // signal arrives. With every member stopped, TERM/KILL are delivered to
+    // all of them before any of them runs again.
+    #[cfg(unix)]
+    let signal_tree = |signal: i32, current: &System| {
+        for (id, start_time) in &snapshot {
+            if let Some(process) = current.process(*id) {
+                if process.start_time() == *start_time {
+                    unsafe {
+                        libc::kill(id.as_u32() as i32, signal);
+                    }
+                }
+            }
+        }
+    };
+    #[cfg(unix)]
+    signal_tree(libc::SIGSTOP, &current);
+
     let mut terminated_descendants = 0usize;
     for (id, start_time) in &snapshot {
         let Some(process) = current.process(*id) else {
@@ -298,7 +504,11 @@ pub fn kill(pid: u32) -> Result<Value> {
             // bounded PID/start-time exit verification below instead of
             // treating an already-exited root as a failed tree termination.
             #[cfg(not(windows))]
-            return Err(anyhow!("process could not be terminated"));
+            {
+                // Never leave the frozen tree stopped on failure.
+                signal_tree(libc::SIGCONT, &current);
+                return Err(anyhow!("process could not be terminated"));
+            }
         }
         if *id != target && killed {
             terminated_descendants += 1;
@@ -313,8 +523,13 @@ pub fn kill(pid: u32) -> Result<Value> {
     let mut escalated_processes = 0usize;
     #[cfg(unix)]
     {
+        // Let every member handle its pending TERM at once.
+        signal_tree(libc::SIGCONT, &current);
         std::thread::sleep(Duration::from_millis(250));
         current.refresh_processes(ProcessesToUpdate::All, true);
+        // Freeze survivors again so the KILL escalation is not observable
+        // by any member before it applies to all of them.
+        signal_tree(libc::SIGSTOP, &current);
         for (id, start_time) in &snapshot {
             let Some(process) = current.process(*id) else {
                 continue;
@@ -610,5 +825,189 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(1200)).await;
         assert!(!marker.exists(), "canceled descendant survived");
         std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+// 2C (Windows): process_exec runs inside a kill-on-close Job Object assigned
+// while the command is still suspended, so background descendants started
+// with `start /b` cannot outlive a finished or timed-out command.
+#[cfg(all(test, windows))]
+mod windows_exec_job_tests {
+    use super::*;
+    use sysinfo::{ProcessRefreshKind, UpdateKind};
+
+    fn ping_with_marker_alive(marker: &str) -> bool {
+        let mut system = System::new();
+        system.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always),
+        );
+        system
+            .processes()
+            .values()
+            .any(|p| p.cmd().iter().any(|arg| arg.to_string_lossy() == marker))
+    }
+
+    fn policy() -> PathPolicy {
+        let root = std::env::temp_dir().join(format!("wc-win-exec-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        PathPolicy::new(std::slice::from_ref(&root)).unwrap()
+    }
+
+    async fn assert_gone(marker: &str) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while ping_with_marker_alive(marker) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "background descendant {marker} survived"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn windows_exec_job_kills_start_b_descendant_after_success() {
+        let policy = policy();
+        let marker = "127.0.0.37";
+        let command = format!("start /b ping -n 40 {marker} > NUL & echo done");
+        let result = exec(&policy, &command, None, Some(20_000)).await.unwrap();
+        assert_eq!(result["exitCode"], 0, "{result}");
+        assert!(result["stdout"].as_str().unwrap().contains("done"));
+        assert_gone(marker).await;
+    }
+
+    #[tokio::test]
+    async fn windows_exec_job_kills_start_b_descendant_on_timeout() {
+        let policy = policy();
+        let marker = "127.0.0.39";
+        let command = format!("start /b ping -n 40 {marker} > NUL & ping -n 30 127.0.0.1 > NUL");
+        let error = exec(&policy, &command, None, Some(1_500))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("timed out"), "{error}");
+        assert_gone(marker).await;
+    }
+
+    #[tokio::test]
+    async fn windows_exec_job_keeps_output_and_exit_code() {
+        let policy = policy();
+        let result = exec(&policy, "echo hello& exit /b 3", None, Some(20_000))
+            .await
+            .unwrap();
+        assert_eq!(result["exitCode"], 3, "{result}");
+        assert!(result["stdout"].as_str().unwrap().contains("hello"));
+    }
+}
+
+// 2C (macOS): a descendant that calls setsid() must still be killed after the
+// command finishes or times out (best-effort tracker; no subreaper on macOS).
+#[cfg(all(test, target_os = "macos"))]
+mod macos_descendant_tests {
+    use super::*;
+    use sysinfo::{ProcessRefreshKind, UpdateKind};
+
+    fn alive(marker: &str) -> bool {
+        let mut system = System::new();
+        system.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always),
+        );
+        system
+            .processes()
+            .values()
+            .any(|p| p.cmd().iter().any(|a| a.to_string_lossy() == marker))
+    }
+
+    async fn assert_gone(marker: &str) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while alive(marker) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "setsid descendant {marker} survived"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
+    fn policy() -> PathPolicy {
+        let root = std::env::temp_dir().join(format!("wc-mac-exec-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        PathPolicy::new(std::slice::from_ref(&root)).unwrap()
+    }
+
+    fn detached(marker: &str) -> String {
+        format!("perl -MPOSIX -e 'POSIX::setsid(); sleep 40' {marker} >/dev/null 2>&1 &")
+    }
+
+    #[tokio::test]
+    async fn macos_setsid_descendant_killed_after_success() {
+        let marker = "wc-macos-after-success";
+        let command = format!("{} sleep 1; echo done", detached(marker));
+        let result = exec(&policy(), &command, None, Some(20_000)).await.unwrap();
+        assert_eq!(result["exitCode"], 0, "{result}");
+        assert_gone(marker).await;
+    }
+
+    #[tokio::test]
+    async fn macos_setsid_descendant_killed_on_timeout() {
+        let marker = "wc-macos-after-timeout";
+        let command = format!("{} sleep 30", detached(marker));
+        let error = exec(&policy(), &command, None, Some(1_500))
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("timed out"), "{error}");
+        assert_gone(marker).await;
+    }
+}
+
+// 2C: process_kill must not let a parent run its next command after its
+// child was killed but before its own signal arrives (children-first race).
+// The race window is microseconds, so this test is probabilistic: it repeats
+// the scenario several times. The pre-fix code failed it intermittently
+// (also seen in CI as process_kill_escalates_term_ignoring_descendants).
+#[cfg(all(test, unix))]
+mod kill_freeze_tests {
+    use super::*;
+
+    fn round(index: usize) {
+        let root =
+            std::env::temp_dir().join(format!("wc-kill-freeze-{index}-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let ready = root.join("ready");
+        let marker = root.join("next-command-ran");
+        let command = format!(
+            "trap '' TERM; i=0; while [ $i -lt 200 ]; do sleep 30 & i=$((i+1)); done; printf ready > '{}'; sleep 30; printf ran > '{}'",
+            ready.display(),
+            marker.display()
+        );
+        let mut child = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(command)
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !ready.exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(ready.exists(), "shell did not start its children");
+        std::thread::sleep(Duration::from_millis(200));
+        let result = kill(child.id()).unwrap();
+        assert_eq!(result["terminationConfirmed"], true, "{result}");
+        let _ = child.wait();
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(
+            !marker.exists(),
+            "round {index}: the shell ran its next command after its child was killed"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn killed_shell_does_not_run_its_next_command() {
+        for index in 0..5 {
+            round(index);
+        }
     }
 }

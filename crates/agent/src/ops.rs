@@ -1,5 +1,7 @@
 use crate::{
-    approval, docx_ops, fs_ops, image_ops,
+    approval,
+    config::DeviceCapabilities,
+    docx_ops, fs_ops, image_ops,
     policy::PathPolicy,
     process_ops,
     protocol::{AgentAction, Risk, UndoScope},
@@ -23,6 +25,42 @@ pub struct ExecutionContext<'a> {
     pub cancelled: Arc<AtomicBool>,
     pub paused: Arc<AtomicBool>,
     pub search_progress: Option<mpsc::Sender<Value>>,
+    pub capabilities: DeviceCapabilities,
+}
+
+/// Device-local capability check. Runs before approval verification so a
+/// disabled capability is refused even with a valid human approval.
+pub fn enforce_capabilities(capabilities: DeviceCapabilities, action: &AgentAction) -> Result<()> {
+    let needs_commands = matches!(
+        action,
+        AgentAction::ProcessExec { .. }
+            | AgentAction::ProcessKill { .. }
+            | AgentAction::TaskStart { .. }
+            | AgentAction::TerminalStart { .. }
+            | AgentAction::TerminalInput { .. }
+    );
+    let needs_writes = matches!(
+        action,
+        AgentAction::FsWrite { .. }
+            | AgentAction::FsAppend { .. }
+            | AgentAction::FsMkdir { .. }
+            | AgentAction::FsDelete { .. }
+            | AgentAction::FsMove { .. }
+            | AgentAction::FsReplace { .. }
+            | AgentAction::FsUndo { .. }
+            | AgentAction::XlsxWriteCells { .. }
+    );
+    if needs_commands && !capabilities.commands {
+        return Err(anyhow!(
+            "device_policy_denied: command execution is disabled on this device"
+        ));
+    }
+    if needs_writes && !capabilities.file_writes {
+        return Err(anyhow!(
+            "device_policy_denied: file writes are disabled on this device"
+        ));
+    }
+    Ok(())
 }
 
 pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Result<Value> {
@@ -37,7 +75,9 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
         cancelled,
         paused,
         search_progress,
+        capabilities,
     } = context;
+    enforce_capabilities(capabilities, &action)?;
     if action.risk() == Risk::High {
         let token = approval_token
             .ok_or_else(|| anyhow!("approval token required for high-risk action"))?;
@@ -61,7 +101,9 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
         AgentAction::SystemInfo => system_ops::info(),
         AgentAction::PolicyInfo => Ok(serde_json::json!({
             "allowedRoots": policy.roots().iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>(),
-            "agentMode": "restricted",
+            "agentMode": if !capabilities.commands && !capabilities.file_writes { "read_only" } else { "restricted" },
+            "commandExecution": if capabilities.commands { "enabled" } else { "disabled" },
+            "fileWrites": if capabilities.file_writes { "enabled" } else { "disabled" },
             "maximumSingleReadBytes": 4 * 1024 * 1024,
             "maximumSingleWriteBytes": 8 * 1024 * 1024,
             "maximumTerminalBufferedBytes": 1024 * 1024
@@ -240,9 +282,14 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
         AgentAction::FsMkdir { path, recursive } => {
             fs_ops::mkdir(policy, &path, recursive.unwrap_or(false))
         }
-        AgentAction::FsDelete { path, recursive } => {
-            fs_ops::delete(policy, &path, recursive.unwrap_or(false))
-        }
+        AgentAction::FsDelete {
+            path,
+            recursive,
+            expected_sha256,
+        } => match expected_sha256 {
+            Some(expected) => fs_ops::delete_if_unchanged(policy, &path, &expected),
+            None => fs_ops::delete(policy, &path, recursive.unwrap_or(false)),
+        },
         AgentAction::FsMove {
             source,
             destination,
@@ -429,5 +476,121 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
             terminals.stop(&session_id, require_undo_key()?)
         }
         AgentAction::TerminalList => terminals.list(require_undo_key()?),
+    }
+}
+
+#[cfg(test)]
+mod capability_tests {
+    use super::*;
+    use crate::config::DeviceCapabilities;
+
+    fn action(value: Value) -> AgentAction {
+        serde_json::from_value(value).unwrap()
+    }
+
+    fn commands() -> Vec<AgentAction> {
+        vec![
+            action(json!({"kind": "process_exec", "command": "id"})),
+            action(json!({"kind": "process_kill", "pid": 1})),
+            action(json!({"kind": "task_start", "command": "sleep 1"})),
+            action(json!({"kind": "terminal_start"})),
+            action(json!({"kind": "terminal_input", "sessionId": "s", "dataBase64": "aWQK"})),
+        ]
+    }
+
+    fn writes() -> Vec<AgentAction> {
+        vec![
+            action(json!({"kind": "fs_write", "path": "/x", "contentBase64": ""})),
+            action(json!({"kind": "fs_append", "path": "/x", "contentBase64": ""})),
+            action(json!({"kind": "fs_mkdir", "path": "/x"})),
+            action(json!({"kind": "fs_delete", "path": "/x"})),
+            action(json!({"kind": "fs_move", "source": "/x", "destination": "/y"})),
+            action(json!({"kind": "fs_replace", "path": "/x", "search": "a", "replace": "b"})),
+            action(json!({"kind": "fs_undo", "path": "/x", "undoId": "u", "expectedSha256": "0"})),
+            action(
+                json!({"kind": "xlsx_write_cells", "path": "/x.xlsx", "outputPath": "/y.xlsx", "sheet": "S", "updates": []}),
+            ),
+        ]
+    }
+
+    fn reads() -> Vec<AgentAction> {
+        vec![
+            action(json!({"kind": "system_info"})),
+            action(json!({"kind": "policy_info"})),
+            action(json!({"kind": "fs_read", "path": "/x"})),
+            action(json!({"kind": "fs_list", "path": "/x"})),
+            action(json!({"kind": "task_status", "taskId": "t"})),
+            action(json!({"kind": "task_cancel", "taskId": "t"})),
+            action(json!({"kind": "terminal_stop", "sessionId": "s"})),
+            action(json!({"kind": "process_list"})),
+        ]
+    }
+
+    #[test]
+    fn default_capabilities_allow_everything() {
+        let all = DeviceCapabilities::default();
+        for a in commands()
+            .iter()
+            .chain(writes().iter())
+            .chain(reads().iter())
+        {
+            enforce_capabilities(all, a).unwrap();
+        }
+    }
+
+    #[test]
+    fn disabled_commands_refuse_every_execution_path_only() {
+        let caps = DeviceCapabilities {
+            commands: false,
+            file_writes: true,
+        };
+        for a in commands() {
+            let error = enforce_capabilities(caps, &a).unwrap_err().to_string();
+            assert!(
+                error.contains("command execution is disabled"),
+                "{}: {error}",
+                a.kind_name()
+            );
+        }
+        for a in writes().iter().chain(reads().iter()) {
+            enforce_capabilities(caps, a).unwrap();
+        }
+    }
+
+    #[test]
+    fn read_only_refuses_every_write_path_only() {
+        let caps = DeviceCapabilities {
+            commands: true,
+            file_writes: false,
+        };
+        for a in writes() {
+            let error = enforce_capabilities(caps, &a).unwrap_err().to_string();
+            assert!(
+                error.contains("file writes are disabled"),
+                "{}: {error}",
+                a.kind_name()
+            );
+        }
+        for a in commands().iter().chain(reads().iter()) {
+            enforce_capabilities(caps, a).unwrap();
+        }
+    }
+
+    #[test]
+    fn every_medium_or_high_risk_mutation_is_classified() {
+        // Any new mutating action must be added to a capability class.
+        let caps = DeviceCapabilities {
+            commands: false,
+            file_writes: false,
+        };
+        let allowed_anyway = ["task_cancel", "terminal_stop", "terminal_resize"];
+        for a in commands().iter().chain(writes().iter()) {
+            assert!(enforce_capabilities(caps, a).is_err());
+        }
+        for a in reads() {
+            if a.risk() != Risk::Low {
+                assert!(allowed_anyway.contains(&a.kind_name()), "{}", a.kind_name());
+            }
+        }
     }
 }

@@ -701,6 +701,53 @@ const escalateToOwner=await fetch(base+"/api/console/organizations/members/role"
   method:"POST",headers:{Cookie:browserCookies,"Content-Type":"application/json","X-CSRF-Token":browserLogin.csrfToken},
   body:JSON.stringify({organizationId:membershipOrg,userId:memberId,role:"owner",currentPassword:"correct-horse-battery-staple"})});
 assert.equal(escalateToOwner.status,400,"A platform editor cannot silently assign organization ownership");
+// Owner recovery: step-up, CSRF, eligibility, self/platform-admin protection, audit.
+// A dedicated platform administrator keeps these calls out of the main
+// account's console mutation budget used by later tests.
+const recoveryAdminSeed=await acceptanceDb.query(
+  `insert into users(email,password_hash,email_verified_at)
+   select 'console-recovery-admin@example.test',password_hash,now() from users where id=$1 returning id`,[browserMe.userId]);
+const recoveryAdminId=recoveryAdminSeed.rows[0].id;
+await acceptanceDb.query("insert into organization_members(organization_id,user_id,role) values($1,$2,'viewer')",[membershipOrg,recoveryAdminId]);
+await acceptanceDb.query("insert into platform_administrators(user_id,granted_by) values($1,'ci-owner-recovery-admin')",[recoveryAdminId]);
+const recoveryLogin=await fetch(base+"/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},
+  body:JSON.stringify({email:"console-recovery-admin@example.test",password:"correct-horse-battery-staple"})});
+assert.equal(recoveryLogin.status,200);
+const recoveryCookies=recoveryLogin.headers.getSetCookie().map(value=>value.split(";")[0]).join("; ");
+const recoveryCsrf=(await recoveryLogin.json()).csrfToken;
+const recoveryHeaders={Cookie:recoveryCookies,"Content-Type":"application/json","X-CSRF-Token":recoveryCsrf};
+const recovery=(body,headers=recoveryHeaders)=>fetch(base+"/api/console/organizations/owner-recovery",{method:"POST",headers,body:JSON.stringify(body)});
+const recoveryBody={organizationId:membershipOrg,userId:memberId,reason:"Owner lost access; ticket CI-1234",currentPassword:"correct-horse-battery-staple"};
+assert.equal((await recovery(recoveryBody,{Cookie:recoveryCookies,"Content-Type":"application/json"})).status,403,"owner recovery enforces CSRF");
+assert.equal((await recovery({...recoveryBody,currentPassword:"incorrect-password-value"})).status,403,"owner recovery requires step-up");
+assert.equal((await recovery({...recoveryBody,reason:"short"})).status,400,"owner recovery requires a reason");
+assert.equal((await recovery({...recoveryBody,unexpected:true})).status,400,"owner recovery rejects unknown fields");
+const selfRecovery=await recovery({...recoveryBody,userId:recoveryAdminId});
+assert.equal(selfRecovery.status,403);
+assert.equal((await selfRecovery.json()).error,"cannot_modify_self");
+await acceptanceDb.query("update users set email_verified_at=null where id=$1",[memberId]);
+const unverifiedRecovery=await recovery(recoveryBody);
+assert.equal(unverifiedRecovery.status,409);
+assert.equal((await unverifiedRecovery.json()).error,"target_account_not_eligible");
+await acceptanceDb.query("update users set email_verified_at=now() where id=$1",[memberId]);
+await acceptanceDb.query("insert into platform_administrators(user_id,granted_by) values($1,'ci-owner-recovery-test')",[memberId]);
+const adminTargetRecovery=await recovery(recoveryBody);
+assert.equal(adminTargetRecovery.status,403,"recovery must not target a platform administrator");
+await acceptanceDb.query("delete from platform_administrators where user_id=$1",[memberId]);
+assert.equal((await recovery({...recoveryBody,organizationId:"00000000-0000-4000-8000-000000000000"})).status,404);
+assert.equal((await fetch(base+"/api/console/organizations/owner-recovery",{method:"POST",headers:{"Authorization":"Bearer ci-control-key-0123456789-0123456789","Content-Type":"application/json"},body:JSON.stringify(recoveryBody)})).status,403,"control token is not a platform session");
+const recovered=await recovery(recoveryBody);
+assert.equal(recovered.status,200);
+assert.deepEqual(await recovered.json(),{ok:true,organizationId:membershipOrg,userId:memberId,from:"operator",to:"owner"});
+assert.equal((await acceptanceDb.query("select role from organization_members where organization_id=$1 and user_id=$2",[membershipOrg,memberId])).rows[0].role,"owner");
+assert.equal((await acceptanceDb.query("select role from organization_members where organization_id=$1 and user_id=$2",[membershipOrg,browserMe.userId])).rows[0].role,"owner","existing owners are not demoted");
+const recoveryAudit=await acceptanceDb.query("select detail from platform_admin_audit where action='organization.owner_recovery' and actor_user_id=$1 order by created_at desc limit 1",[recoveryAdminId]);
+assert.match(recoveryAudit.rows[0]?.detail||"",/CI-1234/);
+assert.ok(!/correct-horse/.test(recoveryAudit.rows[0].detail),"audit never contains the password");
+assert.equal((await recovery(recoveryBody)).status,409,"already owner");
+await acceptanceDb.query("update organization_members set role='operator' where organization_id=$1 and user_id=$2",[membershipOrg,memberId]);
+await acceptanceDb.query("update platform_administrators set revoked_at=now() where user_id=$1",[recoveryAdminId]);
+await acceptanceDb.query("delete from organization_members where organization_id=$1 and user_id=$2",[membershipOrg,recoveryAdminId]);
 const workerLogin=await fetch(base+"/api/auth/login",{
   method:"POST",headers:{"Content-Type":"application/json"},
   body:JSON.stringify({email:"console-role-fixture@example.test",password:"correct-horse-battery-staple"}),

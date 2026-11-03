@@ -13,6 +13,7 @@ BINARY=""
 EXPECTED_SHA256=""
 ALLOWED_ROOT=""
 SKIP_ENROLL=0
+CAPABILITY_ARGS=()
 
 usage() {
   cat <<'EOF'
@@ -20,6 +21,8 @@ Usage: sudo bash scripts/setup-ubuntu.sh --binary /path/to/webrising-commender -
 Options: --control-url https://wecommander.webrising.tr
          --allowed-root /path/to/specific/directory
          --skip-enroll (existing enrollment only)
+         --read-only    (device refuses all file writes)
+         --no-commands  (device refuses command execution, tasks and terminals)
 The agent uses an unprivileged Linux system account. Device approval
 happens in your ordinary browser, not on the Ubuntu server.
 EOF
@@ -31,6 +34,8 @@ while (($#)); do
     --control-url) CONTROL_URL="${2:-}"; shift 2 ;;
     --allowed-root) ALLOWED_ROOT="${2:-}"; shift 2 ;;
     --skip-enroll) SKIP_ENROLL=1; shift ;;
+    --read-only) CAPABILITY_ARGS+=(--read-only); shift ;;
+    --no-commands) CAPABILITY_ARGS+=(--no-commands); shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -113,8 +118,20 @@ else
   [[ "${#pairing_code}" -ge 20 ]] || { echo "Timed out without approval." >&2; exit 1; }
   echo "Approved. Enrolling as unprivileged service user..."
   runuser -u "$SERVICE_USER" -- "$STAGED_BINARY" --config "$CONFIG" enroll \
-    --control-url "$CONTROL_URL" --pairing-code "$pairing_code" --allowed-root "$ALLOWED_ROOT"
+    --control-url "$CONTROL_URL" --pairing-code "$pairing_code" --allowed-root "$ALLOWED_ROOT" \
+    "${CAPABILITY_ARGS[@]}"
   unset pairing_code
+fi
+if ((${#CAPABILITY_ARGS[@]})) && [[ -f "$CONFIG" ]]; then
+  # Apply to a preserved enrollment too; never silently keep broader rights.
+  cap_set=()
+  for flag in "${CAPABILITY_ARGS[@]}"; do
+    case "$flag" in
+      --read-only) cap_set+=(--file-writes off) ;;
+      --no-commands) cap_set+=(--commands off) ;;
+    esac
+  done
+  runuser -u "$SERVICE_USER" -- "$STAGED_BINARY" --config "$CONFIG" capabilities "${cap_set[@]}"
 fi
 runuser -u "$SERVICE_USER" -- "$STAGED_BINARY" --config "$CONFIG" doctor >/dev/null
 bash "$SCRIPT_DIR/install-linux.sh" "$BINARY" "$CONFIG" "$SERVICE_USER"

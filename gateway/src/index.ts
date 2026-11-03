@@ -437,6 +437,15 @@ async function serveConsole(res: ServerResponse) {
   return servePublicHtml(res, "app.html", "console-not-found");
 }
 
+// Versions a client may send in MCP-Protocol-Version after initialize. Without
+// the header the 2025-03-26 behaviour is assumed, which this server also serves.
+const SUPPORTED_MCP_PROTOCOL_VERSIONS = new Set(["2025-06-18", "2025-03-26"]);
+
+function wantsEventStream(req: IncomingMessage) {
+  const accept = String(req.headers.accept || "").toLowerCase();
+  return accept.includes("text/event-stream") && !accept.includes("text/html");
+}
+
 const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
   try {
     const url = new URL(req.url || "/", publicBaseUrl);
@@ -455,7 +464,9 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       if (await serveModernFile(res,url.pathname.slice("/modern/".length))) return;
       return void json(res,404,{error:"asset_not_found"});
     }
-    if (req.method === "GET" && modernPages.has(url.pathname)) {
+    // Browser navigation to /mcp (Accept: text/html) serves the dashboard page;
+    // every other /mcp request is MCP transport and is authenticated below.
+    if (req.method === "GET" && modernPages.has(url.pathname) && !(url.pathname === "/mcp" && wantsEventStream(req))) {
       let seo:{title:string;description:string}|undefined;
       if(url.pathname==="/") {
         seo={
@@ -1806,6 +1817,50 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           await client.query("commit");
         }catch(error){await client.query("rollback");throw error}finally{client.release()}
         return void json(res,200,{ok:true});
+      }
+      // Owner recovery for a workspace whose owners lost access. Adds the
+      // owner role to an existing, verified, enabled member; never demotes
+      // current owners, never targets the acting administrator or another
+      // platform administrator (support must not grant itself device access).
+      if (req.method === "POST" && url.pathname === "/api/console/organizations/owner-recovery") {
+        const payload=z.object({
+          organizationId:z.string().uuid(),userId:z.string().uuid(),
+          reason:z.string().trim().min(10).max(500),
+          currentPassword:z.string().min(12).max(256),
+        }).strict().parse(await readJson(req));
+        if(payload.userId===principal.userId)return void json(res,403,{error:"cannot_modify_self"});
+        const operator=await db.query<{password_hash:string}>(
+          "select password_hash from users where id=$1 and disabled_at is null",[principal.userId]);
+        if(!operator.rows[0]||!(await verifyPassword(payload.currentPassword,operator.rows[0].password_hash)))
+          return void json(res,403,{error:"reauthentication_failed"});
+        const client=await db.connect();
+        let previousRole: Role | null = null;
+        try{
+          await client.query("begin");
+          const organization=await client.query("select id from organizations where id=$1 for update",[payload.organizationId]);
+          if(!organization.rowCount){await client.query("rollback");return void json(res,404,{error:"organization_not_found"});}
+          const member=await client.query<{role:Role;verified:boolean;disabled:boolean}>(
+            `select m.role,u.email_verified_at is not null as verified,u.disabled_at is not null as disabled
+               from organization_members m join users u on u.id=m.user_id
+              where m.organization_id=$1 and m.user_id=$2 for update of m`,
+            [payload.organizationId,payload.userId]);
+          const target=member.rows[0];
+          if(!target){await client.query("rollback");return void json(res,404,{error:"membership_not_found"});}
+          if(target.role==="owner"){await client.query("rollback");return void json(res,409,{error:"already_owner"});}
+          if(!target.verified||target.disabled){await client.query("rollback");return void json(res,409,{error:"target_account_not_eligible"});}
+          const platform=await client.query(
+            "select 1 from platform_administrators where user_id=$1 and revoked_at is null",[payload.userId]);
+          if(platform.rowCount){await client.query("rollback");return void json(res,403,{error:"platform_admin_protected"});}
+          previousRole=target.role;
+          await client.query(
+            "update organization_members set role='owner' where organization_id=$1 and user_id=$2",
+            [payload.organizationId,payload.userId]);
+          await client.query(
+            "insert into platform_admin_audit(actor_user_id,action,detail) values($1,'organization.owner_recovery',$2)",
+            [principal.userId,JSON.stringify({organizationId:payload.organizationId,userId:payload.userId,from:previousRole,reason:payload.reason})]);
+          await client.query("commit");
+        }catch(error){await client.query("rollback");throw error}finally{client.release()}
+        return void json(res,200,{ok:true,organizationId:payload.organizationId,userId:payload.userId,from:previousRole,to:"owner"});
       }
       if (req.method === "GET" && url.pathname === "/api/console/organizations") {
         const search=(url.searchParams.get("q")||"").trim().slice(0,160);
@@ -3703,7 +3758,20 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       return void json(res, 200, { items: result.rows });
     }
 
+    if (url.pathname === "/mcp" && req.method !== "POST") {
+      // MCP Streamable HTTP (2025-06-18): no server-initiated SSE stream and no
+      // session to terminate, so GET/DELETE (and any other method) get 405.
+      // Reached only after authentication, so unauthenticated clients still
+      // receive the 401 + WWW-Authenticate resource-metadata challenge first.
+      res.writeHead(405, { allow: "POST", ...securityHeaders() });
+      res.end();
+      return;
+    }
     if (req.method === "POST" && url.pathname === "/mcp") {
+      const protocolHeader = req.headers["mcp-protocol-version"];
+      if (protocolHeader !== undefined && !SUPPORTED_MCP_PROTOCOL_VERSIONS.has(String(protocolHeader))) {
+        return void json(res, 400, { error: "unsupported_mcp_protocol_version" });
+      }
       const payload = await readJson(req);
       if (Array.isArray(payload)) {
         const results = (await Promise.all(payload.map((item) => handleMcp(item, deviceRouter, principal!)))).filter(Boolean);
