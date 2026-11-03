@@ -25,3 +25,15 @@ test("accessible names are translatable", () => {
   const raw = [...console.matchAll(/aria-label="([A-Z][^"]*)"/g)].map(m => m[1]);
   assert.deepEqual(raw, []);
 });
+
+test("tenant pages do not hard-code accessible names or titles", () => {
+  const pages = ["Account","Auth","Billing","Dashboard","Devices","Install","Landing","Plans","Usage","Workspace"];
+  const productNames = new Set(["ChatGPT", "Claude", "WECOMMANDER"]);
+  const raw: string[] = [];
+  for (const page of pages) {
+    const source = readFileSync(new URL(`../ui/src/pages/${page}.tsx`, import.meta.url), "utf8");
+    for (const m of source.matchAll(/(?:aria-label|title)="([A-Za-zÇĞİÖŞÜçğıöşü][^"]*)"/g))
+      if (!productNames.has(m[1]!)) raw.push(`${page}: ${m[1]}`);
+  }
+  assert.deepEqual(raw, []);
+});
