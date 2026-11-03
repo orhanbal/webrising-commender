@@ -10,10 +10,11 @@ every server-side command in their own SSH session.
    verified release that contains PR #34 (MCP transport fixes) is live at
    `https://wecommander.webrising.tr`. Before that release, the 405 and
    protocol-version behaviour described here is not in production.
-2. The Agent package: release `ubuntu-preview-1530` contains
-   `wecommander-agent_0.1.1530_amd64.deb` and `SHA256SUMS.txt`. It was built
-   by ci run 1530 for `9bdcf23c`. PR #33 and PR #34 do not change the Rust
-   Agent, so it matches the code under test. Install it with the pinned
+2. The Agent package: release `ubuntu-preview-1569` contains
+   `wecommander-agent_0.1.1569_amd64.deb` (SHA-256
+   `b2d06f4ea33749a0a4b59dc30e0e9e78949bfffc293be28d3e0de94ca6d33cbb`, equal
+   to GitHub's asset digest) and `SHA256SUMS.txt`. It was built from `main`
+   `d895eb59`, which contains PR #34 and PR #39. Install it with the pinned
    checksum below, not with "latest".
 3. Two WECOMMANDER accounts in the same organization:
    - an **operator**: the identity Claude connects as;
@@ -28,10 +29,10 @@ service. No inbound port is opened. The Agent connects outbound to the
 gateway only.
 
 ```bash
-curl -fsSLO https://github.com/orhanbal/webrising-commender/releases/download/ubuntu-preview-1530/wecommander-agent_0.1.1530_amd64.deb
-curl -fsSLO https://github.com/orhanbal/webrising-commender/releases/download/ubuntu-preview-1530/SHA256SUMS.txt
-grep ' wecommander-agent_0.1.1530_amd64.deb$' SHA256SUMS.txt | sha256sum -c -
-sudo apt-get install -y ./wecommander-agent_0.1.1530_amd64.deb
+curl -fsSLO https://github.com/orhanbal/webrising-commender/releases/download/ubuntu-preview-1569/wecommander-agent_0.1.1569_amd64.deb
+curl -fsSLO https://github.com/orhanbal/webrising-commender/releases/download/ubuntu-preview-1569/SHA256SUMS.txt
+echo 'b2d06f4ea33749a0a4b59dc30e0e9e78949bfffc293be28d3e0de94ca6d33cbb  wecommander-agent_0.1.1569_amd64.deb' | sha256sum -c -
+sudo apt-get install -y ./wecommander-agent_0.1.1569_amd64.deb
 ```
 
 The acceptance root is **read-only at the OS level** for the Agent. Even an
@@ -47,10 +48,9 @@ sudo wecommander-setup --allowed-root /srv/wecommander-acceptance --read-only --
 
 `--read-only --no-commands` (PR #39) makes the first, read-only phase
 enforced by the Agent on the device itself: even an approved command or
-write is refused, and only the owner can lift it, locally. These flags
-require an Agent package that contains PR #39. The pinned
-`ubuntu-preview-1530` package does not; with it, omit both flags and rely on
-the OS-level read-only directory and per-operation approvals. Before items
+write is refused, and only the owner can lift it, locally. The pinned
+`ubuntu-preview-1569` package contains PR #39, so both flags are available.
+Before items
 11 and 13 the owner enables commands locally:
 `sudo -u wecommander /opt/wecommander/bin/webrising-commender --config /var/lib/webrising-commender/agent.json capabilities --commands on`
 followed by `sudo systemctl restart webrising-commender` (part of approval B).
