@@ -18,16 +18,24 @@ const OUTPUT_LIMIT: usize = 1024 * 1024;
 #[cfg(unix)]
 struct ProcessGroupGuard {
     pgid: i32,
+    /// The group leader is the Linux reaper, which cleans up the whole
+    /// descendant tree (including members that left the group) on SIGTERM.
+    reaper: bool,
+    done: bool,
 }
 
 #[cfg(unix)]
 impl ProcessGroupGuard {
-    fn new(pid: u32) -> Result<Self> {
+    fn new(pid: u32, reaper: bool) -> Result<Self> {
         let pgid = i32::try_from(pid).context("invalid child process id")?;
         if pgid <= 0 {
             return Err(anyhow!("invalid child process group"));
         }
-        Ok(Self { pgid })
+        Ok(Self {
+            pgid,
+            reaper,
+            done: false,
+        })
     }
 
     fn signal(&self, signal: i32) {
@@ -37,12 +45,52 @@ impl ProcessGroupGuard {
             libc::kill(-self.pgid, signal);
         }
     }
+
+    /// Final SIGKILL of the group once the command has been waited for.
+    fn finish(&mut self) {
+        self.signal(libc::SIGKILL);
+        self.done = true;
+    }
 }
 
 #[cfg(unix)]
 impl Drop for ProcessGroupGuard {
     fn drop(&mut self) {
-        self.signal(libc::SIGKILL);
+        if self.done {
+            return;
+        }
+        if !self.reaper {
+            self.signal(libc::SIGKILL);
+            return;
+        }
+        // Aborted (task cancel, connection teardown): let the reaper kill the
+        // descendants that left the group, then SIGKILL the group as backstop.
+        self.signal(libc::SIGTERM);
+        let pgid = self.pgid;
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(2_500));
+            unsafe {
+                libc::kill(-pgid, libc::SIGKILL);
+            }
+        });
+    }
+}
+
+/// First argument that starts the Agent binary in reaper mode (see reaper.rs).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub const REAPER_ARG: &str = "__wecommander-reaper";
+
+/// The Agent binary itself, used as the Linux reaper. Never in unit tests: the
+/// test harness binary would treat the reaper arguments as a test filter.
+#[cfg(not(windows))]
+fn reaper_executable() -> Option<std::path::PathBuf> {
+    #[cfg(all(target_os = "linux", not(test)))]
+    {
+        std::env::current_exe().ok()
+    }
+    #[cfg(not(all(target_os = "linux", not(test))))]
+    {
+        None
     }
 }
 
@@ -100,8 +148,23 @@ async fn exec_with_timeout_bounds(
     };
 
     #[cfg(not(windows))]
+    let reaper = reaper_executable();
+    #[cfg(not(windows))]
+    let uses_reaper = reaper.is_some();
+    #[cfg(windows)]
+    let uses_reaper = false;
+    #[cfg(not(windows))]
     let mut process = {
-        let mut cmd = Command::new("/bin/sh");
+        let mut cmd = match reaper {
+            // Linux: run under the Agent's own subreaper so descendants that
+            // leave the process group (setsid, double fork) are still killed.
+            Some(exe) => {
+                let mut cmd = Command::new(exe);
+                cmd.arg(REAPER_ARG).arg("--").arg("/bin/sh");
+                cmd
+            }
+            None => Command::new("/bin/sh"),
+        };
         cmd.arg("-lc").arg(command);
         cmd
     };
@@ -112,16 +175,19 @@ async fn exec_with_timeout_bounds(
     #[cfg(unix)]
     process.as_std_mut().process_group(0);
     process
-        .kill_on_drop(true)
+        // With the reaper, SIGKILL on drop would kill it before it can clean
+        // up detached descendants; ProcessGroupGuard handles teardown instead.
+        .kill_on_drop(!uses_reaper)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
     let mut child = process.spawn().context("failed to start command")?;
     #[cfg(unix)]
-    let group = ProcessGroupGuard::new(
+    let mut group = ProcessGroupGuard::new(
         child
             .id()
             .ok_or_else(|| anyhow!("spawned process has no pid"))?,
+        uses_reaper,
     )?;
     let stdout = child
         .stdout
@@ -146,8 +212,11 @@ async fn exec_with_timeout_bounds(
             #[cfg(unix)]
             {
                 group.signal(libc::SIGTERM);
-                tokio::time::sleep(Duration::from_millis(250)).await;
-                group.signal(libc::SIGKILL);
+                // The Linux reaper SIGKILLs its whole descendant tree on
+                // SIGTERM; give it time to finish before killing the group.
+                let grace = if uses_reaper { 2_000 } else { 250 };
+                let _ = tokio::time::timeout(Duration::from_millis(grace), child.wait()).await;
+                group.finish();
             }
             let _ = child.kill().await;
             stdout_task.abort();
@@ -159,7 +228,7 @@ async fn exec_with_timeout_bounds(
     // A successful shell can still have background children holding its pipes.
     // Reap those descendants before joining stdout/stderr readers.
     #[cfg(unix)]
-    group.signal(libc::SIGKILL);
+    group.finish();
 
     let stdout = stdout_task
         .await
