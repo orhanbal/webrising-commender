@@ -100,6 +100,9 @@ jobs:
       - name: Windows process_exec suspended Job Object containment (2C)
         if: runner.os == 'Windows'
         run: cargo test -p webrising-commender-agent windows_exec_job_tests -- --nocapture
+      - name: macOS setsid descendant tracking for process_exec (2C)
+        if: runner.os == 'macOS'
+        run: cargo test -p webrising-commender-agent macos_descendant_tests -- --nocapture
       - name: Windows process tree termination confirmation (2C)
         if: runner.os == 'Windows'
         run: cargo test -p webrising-commender-agent process_ops::tests::windows_process_kill_confirms_snapshot_exit -- --nocapture
