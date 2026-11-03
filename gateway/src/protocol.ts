@@ -22,7 +22,7 @@ export type AgentAction =
   | { kind: "fs_write"; path: string; contentBase64: string; createParents?: boolean; expectedSha256?: string; withUndo?: boolean }
   | { kind: "fs_append"; path: string; contentBase64: string; expectedSha256?: string; withUndo?: boolean }
   | { kind: "fs_mkdir"; path: string; recursive?: boolean }
-  | { kind: "fs_delete"; path: string; recursive?: boolean }
+  | { kind: "fs_delete"; path: string; recursive?: boolean; expectedSha256?: string }
   | { kind: "fs_move"; source: string; destination: string }
   | { kind: "fs_tree"; path: string; maxDepth?: number; maxEntries?: number }
   | { kind: "fs_search"; path: string; query: string; caseSensitive?: boolean; maxResults?: number; resumeCheckpoint?: unknown }
@@ -145,6 +145,7 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     kind: z.literal("fs_delete"),
     path: pathSchema,
     recursive: z.boolean().optional(),
+    expectedSha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
   }).strict(),
   z.object({
     kind: z.literal("fs_move"),

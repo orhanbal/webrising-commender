@@ -131,6 +131,8 @@ pub enum AgentAction {
     FsDelete {
         path: String,
         recursive: Option<bool>,
+        /// Delete a regular file only if its content still has this SHA-256.
+        expected_sha256: Option<String>,
     },
     FsMove {
         source: String,

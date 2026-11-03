@@ -62,8 +62,8 @@ const tools = [
   tool("fs_mkdir", "Create a directory.", { path: str(), recursive: bool() }, ["path"]),
   tool(
     "fs_delete",
-    "Delete a file or directory. HIGH risk. Omit approval_token to create a human approval request, then retry after approval.",
-    { path: str(), recursive: bool(), approval_token: str() },
+    "Delete a file or directory. HIGH risk. Optional expected_sha256 deletes a regular file only if its content is unchanged (atomic on Linux/macOS). Omit approval_token to create a human approval request, then retry after approval.",
+    { path: str(), recursive: bool(), expected_sha256: str(), approval_token: str() },
     ["path"],
   ),
   tool(
@@ -231,7 +231,7 @@ function actionFromTool(name: string, a: any): AgentAction {
     case "fs_write": return { kind: "fs_write", path: String(a.path), contentBase64: String(a.content_base64), createParents: Boolean(a.create_parents), ...(a.expected_sha256 !== undefined ? { expectedSha256: String(a.expected_sha256) } : {}), ...(a.with_undo !== undefined ? { withUndo: Boolean(a.with_undo) } : {}) };
     case "fs_append": return { kind: "fs_append", path: String(a.path), contentBase64: String(a.content_base64), ...(a.expected_sha256 !== undefined ? { expectedSha256: String(a.expected_sha256) } : {}), ...(a.with_undo !== undefined ? { withUndo: Boolean(a.with_undo) } : {}) };
     case "fs_mkdir": return { kind: "fs_mkdir", path: String(a.path), recursive: Boolean(a.recursive) };
-    case "fs_delete": return { kind: "fs_delete", path: String(a.path), recursive: Boolean(a.recursive) };
+    case "fs_delete": return { kind: "fs_delete", path: String(a.path), recursive: Boolean(a.recursive), ...(a.expected_sha256 !== undefined ? { expectedSha256: String(a.expected_sha256) } : {}) };
     case "fs_move": return { kind: "fs_move", source: String(a.source), destination: String(a.destination) };
     case "fs_tree": return { kind: "fs_tree", path: String(a.path), ...(a.max_depth !== undefined ? { maxDepth: Number(a.max_depth) } : {}), ...(a.max_entries !== undefined ? { maxEntries: Number(a.max_entries) } : {}) };
     case "fs_search": return { kind: "fs_search", path: String(a.path), query: String(a.query), ...(a.case_sensitive !== undefined ? { caseSensitive: Boolean(a.case_sensitive) } : {}), ...(a.max_results !== undefined ? { maxResults: Number(a.max_results) } : {}) };

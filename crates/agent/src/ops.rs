@@ -240,9 +240,14 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
         AgentAction::FsMkdir { path, recursive } => {
             fs_ops::mkdir(policy, &path, recursive.unwrap_or(false))
         }
-        AgentAction::FsDelete { path, recursive } => {
-            fs_ops::delete(policy, &path, recursive.unwrap_or(false))
-        }
+        AgentAction::FsDelete {
+            path,
+            recursive,
+            expected_sha256,
+        } => match expected_sha256 {
+            Some(expected) => fs_ops::delete_if_unchanged(policy, &path, &expected),
+            None => fs_ops::delete(policy, &path, recursive.unwrap_or(false)),
+        },
         AgentAction::FsMove {
             source,
             destination,

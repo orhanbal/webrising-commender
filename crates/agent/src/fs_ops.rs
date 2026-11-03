@@ -7053,6 +7053,137 @@ pub fn delete(policy: &PathPolicy, raw: &str, recursive: bool) -> Result<Value> 
     Ok(json!({ "ok": true, "path": path.to_string_lossy() }))
 }
 
+/// 3B compare-and-delete: remove a regular file only if it still has the
+/// expected SHA-256. On Linux/macOS the file is first renamed to a private
+/// quarantine name in the same directory (atomic), then the quarantined inode
+/// is verified to be the one that was checked and to still hold the expected
+/// bytes; only then is it unlinked. On mismatch it is put back with a
+/// no-replace rename, so a concurrent edit or replacement is never deleted
+/// and a file created meanwhile at the path is never overwritten.
+pub fn delete_if_unchanged(policy: &PathPolicy, raw: &str, expected: &str) -> Result<Value> {
+    if !(expected.len() == 64 && expected.bytes().all(|b| b.is_ascii_hexdigit())) {
+        return Err(anyhow!("expected_sha256 must be 64 hex characters"));
+    }
+    let path = policy.resolve_existing(raw)?;
+    if policy.roots().iter().any(|root| root == &path) {
+        return Err(anyhow!("refusing to delete an allowed root"));
+    }
+    let lock = mutation_lock(&path)?;
+    let _guard = lock
+        .lock()
+        .map_err(|_| anyhow!("file mutation lock poisoned"))?;
+    #[cfg(unix)]
+    {
+        delete_if_unchanged_unix(&path, expected)?;
+    }
+    #[cfg(not(unix))]
+    {
+        // Windows: verify then delete; not atomic against a writer acting in
+        // between (documented limitation).
+        let file = open_regular_read(&path)?;
+        let digest = atomic_unconditional_original_digest(&file)?
+            .ok_or_else(|| anyhow!("file_changed_since_read"))?;
+        if !digest.eq_ignore_ascii_case(expected) {
+            return Err(anyhow!("file_changed_since_read"));
+        }
+        drop(file);
+        fs::remove_file(&path)?;
+    }
+    Ok(
+        json!({ "ok": true, "path": path.to_string_lossy(), "deletedSha256": expected.to_ascii_lowercase() }),
+    )
+}
+
+#[cfg(test)]
+type PreDeleteHook = Box<dyn FnOnce() + Send>;
+
+#[cfg(test)]
+fn pre_delete_hooks(
+) -> &'static std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, PreDeleteHook>> {
+    static HOOKS: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, PreDeleteHook>>,
+    > = std::sync::OnceLock::new();
+    HOOKS.get_or_init(Default::default)
+}
+
+/// Test-only: one-shot hook after the digest check, before the quarantine
+/// rename, for this exact path.
+#[cfg(test)]
+fn run_pre_delete_test_hook(path: &Path) {
+    let hook = pre_delete_hooks().lock().unwrap().remove(path);
+    if let Some(hook) = hook {
+        hook();
+    }
+}
+
+#[cfg(unix)]
+fn delete_if_unchanged_unix(path: &Path, expected: &str) -> Result<()> {
+    use std::ffi::CString;
+    use std::os::fd::{AsRawFd, FromRawFd};
+    use std::os::unix::fs::MetadataExt;
+    let (parent, target) = rename_parent_handle(path)?;
+    let open_at = |name: &std::ffi::CStr| -> Option<fs::File> {
+        let fd = unsafe {
+            libc::openat(
+                parent.as_raw_fd(),
+                name.as_ptr(),
+                libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        };
+        (fd >= 0).then(|| unsafe { fs::File::from_raw_fd(fd) })
+    };
+    let digest_matches = |file: &fs::File| -> Result<bool> {
+        Ok(atomic_unconditional_original_digest(file)?
+            .is_some_and(|d| d.eq_ignore_ascii_case(expected)))
+    };
+    let original = open_at(&target).ok_or_else(|| anyhow!("file_changed_since_read"))?;
+    let before = original.metadata()?;
+    if !before.is_file() {
+        return Err(anyhow!("expected_sha256 requires a regular file"));
+    }
+    if !digest_matches(&original)? {
+        return Err(anyhow!("file_changed_since_read"));
+    }
+    #[cfg(test)]
+    run_pre_delete_test_hook(path);
+    let quarantine = CString::new(format!(".wecommander-delete-{}.tmp", Uuid::new_v4()))?;
+    if unsafe {
+        libc::renameat(
+            parent.as_raw_fd(),
+            target.as_ptr(),
+            parent.as_raw_fd(),
+            quarantine.as_ptr(),
+        )
+    } != 0
+    {
+        return Err(anyhow!("file_changed_since_read"));
+    }
+    let moved = open_at(&quarantine);
+    let verified = match &moved {
+        Some(file) => {
+            let after = file.metadata()?;
+            after.is_file()
+                && after.dev() == before.dev()
+                && after.ino() == before.ino()
+                && digest_matches(file)?
+        }
+        None => false,
+    };
+    if verified {
+        unsafe { libc::unlinkat(parent.as_raw_fd(), quarantine.as_ptr(), 0) };
+        let _ = parent.sync_all();
+        return Ok(());
+    }
+    // Something else was (or became) the file: put it back without clobbering.
+    match publish_atomic_create_noreplace(&parent, &quarantine, &target) {
+        Ok(()) => Err(anyhow!("file_changed_since_read")),
+        Err(_) => Err(anyhow!(
+            "atomic_delete_conflict: the changed file was kept as {}",
+            quarantine.to_string_lossy()
+        )),
+    }
+}
+
 #[cfg(all(test, unix))]
 mod delete_parent_tests {
     use super::*;
@@ -8203,6 +8334,108 @@ mod undo_version_tests {
         )
         .is_err());
         assert_eq!(fs::read(&path).unwrap(), b"edited");
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+// 3B: compare-and-delete must never delete a file that changed after the
+// caller read it, nor overwrite a file created at the path meanwhile.
+#[cfg(all(test, unix))]
+mod compare_delete_tests {
+    use super::*;
+    use std::{env, fs};
+
+    fn setup(name: &str) -> (std::path::PathBuf, std::path::PathBuf, PathPolicy) {
+        let root = env::temp_dir().join(format!("wc-cdel-{name}-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("target.txt");
+        fs::write(&target, b"original").unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let resolved = policy.resolve_existing(target.to_str().unwrap()).unwrap();
+        (root, resolved, policy)
+    }
+    fn sha(bytes: &[u8]) -> String {
+        format!("{:x}", Sha256::digest(bytes))
+    }
+    fn hook(path: &Path, f: impl FnOnce() + Send + 'static) {
+        pre_delete_hooks()
+            .lock()
+            .unwrap()
+            .insert(path.to_path_buf(), Box::new(f));
+    }
+    fn others(root: &Path) -> Vec<String> {
+        fs::read_dir(root)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n != "target.txt")
+            .collect()
+    }
+
+    #[test]
+    fn unchanged_file_is_deleted() {
+        let (root, target, policy) = setup("ok");
+        let r = delete_if_unchanged(&policy, target.to_str().unwrap(), &sha(b"original")).unwrap();
+        assert_eq!(r["ok"], true);
+        assert!(!target.exists());
+        assert!(others(&root).is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn stale_expected_sha_is_refused_up_front() {
+        let (root, target, policy) = setup("stale");
+        let e = delete_if_unchanged(&policy, target.to_str().unwrap(), &sha(b"other")).unwrap_err();
+        assert!(e.to_string().contains("file_changed_since_read"));
+        assert_eq!(fs::read(&target).unwrap(), b"original");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn in_place_edit_after_check_is_restored_not_deleted() {
+        let (root, target, policy) = setup("inplace");
+        let t = target.clone();
+        hook(&target, move || {
+            let mut f = fs::OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .open(&t)
+                .unwrap();
+            f.write_all(b"edited").unwrap();
+        });
+        let e =
+            delete_if_unchanged(&policy, target.to_str().unwrap(), &sha(b"original")).unwrap_err();
+        assert!(e.to_string().contains("file_changed_since_read"), "{e}");
+        assert_eq!(fs::read(&target).unwrap(), b"edited");
+        assert!(others(&root).is_empty(), "{:?}", others(&root));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn replacement_after_check_is_restored_not_deleted() {
+        let (root, target, policy) = setup("replace");
+        let t = target.clone();
+        let incoming = root.join("incoming");
+        hook(&target, move || {
+            fs::write(&incoming, b"replacement").unwrap();
+            fs::rename(&incoming, &t).unwrap();
+        });
+        let e =
+            delete_if_unchanged(&policy, target.to_str().unwrap(), &sha(b"original")).unwrap_err();
+        assert!(e.to_string().contains("file_changed_since_read"), "{e}");
+        assert_eq!(fs::read(&target).unwrap(), b"replacement");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn directories_and_bad_hashes_are_refused() {
+        let (root, _target, policy) = setup("dir");
+        let dir = root.join("sub");
+        fs::create_dir(&dir).unwrap();
+        assert!(delete_if_unchanged(&policy, dir.to_str().unwrap(), &sha(b"x")).is_err());
+        assert!(dir.exists());
+        assert!(
+            delete_if_unchanged(&policy, root.join("target.txt").to_str().unwrap(), "zz").is_err()
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }
