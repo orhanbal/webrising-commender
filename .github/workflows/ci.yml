@@ -170,7 +170,7 @@ jobs:
       - name: Install and build shadcn React web
         run: |
           cd ui
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
           npm run build
       - name: Verify dashboard in desktop and mobile Chrome
         run: node test/dashboard-visual.mjs
@@ -248,7 +248,7 @@ jobs:
       - name: Build shadcn React application
         run: |
           cd ui
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
           npm run build
           mkdir -p ../public/modern
           cp -R dist/. ../public/modern/
