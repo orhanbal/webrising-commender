@@ -107,7 +107,17 @@ async function checkPublicConfig() {
 
 async function checkMcp() {
   if (!apiKey) {
-    record("MCP initialize/ping", false, "CONTROL_API_KEY is required");
+    // Public probe (no credentials): MCP must refuse unauthenticated calls.
+    const denied = await fetch(new URL("/mcp", base), {
+      method: "POST",
+      redirect: "manual",
+      headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    });
+    await denied.text();
+    assert.equal(denied.status, 401, "unauthenticated MCP call must be refused");
+    const challenge = denied.headers.get("www-authenticate") || "";
+    record("MCP refuses unauthenticated calls", true, `HTTP 401${challenge ? `, ${challenge.split(" ")[0]} challenge` : ""}`);
     return;
   }
   const headers = {
