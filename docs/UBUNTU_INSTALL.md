@@ -7,7 +7,7 @@ Status: automated Linux CI must pass, followed by **real Ubuntu server acceptanc
 - Keeps WECOMMANDER Gateway separate from the remote device. The server acts only as an outbound agent; **no inbound SSH or HTTP port** is added by WECOMMANDER.
 - Verifies the pre-built Linux executable against a supplied SHA-256 value before installation.
 - Creates an unprivileged `wecommander` Linux system identity and a dedicated accessible directory `/var/lib/webrising-commender/workspace`; does not grant `sudo`, Docker group membership or root access.
-- Starts device linking with `/api/device-link/start`. Prints the URL `https://wecommander.webrising.tr/connect-device?requestId=...` to paste into **your own computer's browser**, signs in with the regular WECOMMANDER account, selects the workspace, and confirms.
+- Starts device linking with `/api/device-link/start`. Prints the URL `https://wecommander.app/connect-device?requestId=...` to paste into **your own computer's browser**, signs in with the regular WECOMMANDER account, selects the workspace, and confirms.
 - Redeems that approval using a secret kept only in the terminal process; the service config `/var/lib/webrising-commender/agent.json` is written as `wecommander` with user-only read/write permissions.
 - Enables `webrising-commender.service` for boot, with `User=wecommander`, `NoNewPrivileges=yes`, no capabilities, and `ProtectSystem=full`.
 - If already enrolled, **reuses the existing device identity**, avoiding a second cloud device entry.

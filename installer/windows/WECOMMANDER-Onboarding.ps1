@@ -11,7 +11,7 @@ $form.Width = 560; $form.Height = 440
 $form.StartPosition = 'CenterScreen'; $form.FormBorderStyle = 'FixedDialog'
 $form.MaximizeBox = $false
 $fields = @(
-  @('Sunucu adresi', 'https://wecommander.webrising.tr'),
+  @('Sunucu adresi', 'https://wecommander.app'),
   @('Manuel eslestirme kodu (istege bagli)', ''),
   @('Izin verilen klasor', [Environment]::GetFolderPath('UserProfile'))
 )

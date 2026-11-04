@@ -11,9 +11,9 @@ type ReleaseInfo={available:boolean;releaseUrl:string;tagName:string|null;assets
 const project="https://github.com/orhanbal/webrising-commender";
 const endpoint=()=>location.origin+"/mcp";
 const snippets:Record<Platform,string>={
- windows:"cargo build --release -p webrising-commender-agent\n.\\target\\release\\webrising-commender.exe enroll --control-url https://wecommander.webrising.tr --pairing-code \"<KOD>\" --allowed-root \"C:\\Users\\Kullanici\"",
- macos:"cargo build --release -p webrising-commender-agent\n./target/release/webrising-commender enroll --control-url https://wecommander.webrising.tr --pairing-code '<KOD>' --allowed-root \"$HOME\"",
- linux:"cargo build --release -p webrising-commender-agent\n./target/release/webrising-commender enroll --control-url https://wecommander.webrising.tr --pairing-code '<KOD>' --allowed-root \"$HOME\"",
+ windows:"cargo build --release -p webrising-commender-agent\n.\\target\\release\\webrising-commender.exe enroll --control-url https://wecommander.app --pairing-code \"<KOD>\" --allowed-root \"C:\\Users\\Kullanici\"",
+ macos:"cargo build --release -p webrising-commender-agent\n./target/release/webrising-commender enroll --control-url https://wecommander.app --pairing-code '<KOD>' --allowed-root \"$HOME\"",
+ linux:"cargo build --release -p webrising-commender-agent\n./target/release/webrising-commender enroll --control-url https://wecommander.app --pairing-code '<KOD>' --allowed-root \"$HOME\"",
 };
 const docs:Record<Client,{name:string;url:string;steps:string[];caution:string}>={
  chatgpt:{

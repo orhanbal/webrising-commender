@@ -593,6 +593,99 @@ pub fn default_allowed_root() -> Result<PathBuf> {
     dirs::home_dir().ok_or_else(|| anyhow!("cannot determine home directory"))
 }
 
+/// Moves an enrolled device to a new gateway origin (for example after a
+/// domain change) without re-enrolling. `control_url` becomes the new
+/// origin; `gateway_ws_url` keeps its path and query and is rewritten only
+/// when it pointed at the old control host. A relay on another host is left
+/// alone. Only https (or http on loopback) is accepted.
+pub fn retarget_gateway(
+    control_url: &str,
+    gateway_ws_url: &str,
+    new_origin: &str,
+) -> Result<(String, String)> {
+    let new = reqwest::Url::parse(new_origin.trim()).context("invalid control URL")?;
+    let loopback = matches!(new.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
+    if !(new.scheme() == "https" || (new.scheme() == "http" && loopback)) {
+        return Err(anyhow!("control URL must use https://"));
+    }
+    if !new.username().is_empty()
+        || new.password().is_some()
+        || new.query().is_some()
+        || new.fragment().is_some()
+        || !matches!(new.path(), "" | "/")
+        || new.host_str().is_none()
+    {
+        return Err(anyhow!(
+            "control URL must be an origin such as https://wecommander.app"
+        ));
+    }
+    let origin = new.as_str().trim_end_matches('/').to_owned();
+    let old = reqwest::Url::parse(control_url).context("existing control URL is invalid")?;
+    let mut ws = reqwest::Url::parse(gateway_ws_url).context("existing gateway URL is invalid")?;
+    if ws.host_str() == old.host_str() && ws.port_or_known_default() == old.port_or_known_default()
+    {
+        let scheme = if new.scheme() == "https" { "wss" } else { "ws" };
+        ws.set_scheme(scheme)
+            .map_err(|_| anyhow!("cannot set gateway scheme"))?;
+        ws.set_host(new.host_str())
+            .map_err(|_| anyhow!("cannot set gateway host"))?;
+        ws.set_port(new.port())
+            .map_err(|_| anyhow!("cannot set gateway port"))?;
+    }
+    Ok((origin, ws.to_string()))
+}
+
+#[cfg(test)]
+mod retarget_tests {
+    use super::retarget_gateway;
+
+    #[test]
+    fn moves_control_and_same_host_gateway() {
+        let (control, ws) = retarget_gateway(
+            "https://wecommander.webrising.tr",
+            "wss://wecommander.webrising.tr/agent",
+            "https://wecommander.app/",
+        )
+        .unwrap();
+        assert_eq!(control, "https://wecommander.app");
+        assert_eq!(ws, "wss://wecommander.app/agent");
+    }
+
+    #[test]
+    fn keeps_a_relay_on_another_host() {
+        let (_, ws) = retarget_gateway(
+            "https://wecommander.webrising.tr",
+            "wss://relay-eu.example.net/agent?region=eu",
+            "https://wecommander.app",
+        )
+        .unwrap();
+        assert_eq!(ws, "wss://relay-eu.example.net/agent?region=eu");
+    }
+
+    #[test]
+    fn refuses_unsafe_targets() {
+        for bad in [
+            "http://wecommander.app",
+            "https://user:pw@wecommander.app",
+            "https://wecommander.app/path",
+            "https://wecommander.app/?x=1",
+            "ftp://wecommander.app",
+            "not a url",
+        ] {
+            assert!(
+                retarget_gateway("https://a.example", "wss://a.example/agent", bad).is_err(),
+                "{bad}"
+            );
+        }
+        assert!(retarget_gateway(
+            "http://127.0.0.1:8787",
+            "ws://127.0.0.1:8787/agent",
+            "http://127.0.0.1:9000"
+        )
+        .is_ok());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
