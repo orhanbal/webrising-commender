@@ -85,6 +85,40 @@ try {
   await new Promise((r) => setTimeout(r, 500));
   assert.equal(await mails(), beforeMails + 1, "no second mail for the same pending request");
   assert.equal(await viewerMails(), 0, "viewers are not notified");
+  // Trust levels: only an admin browser session; "full" needs the password,
+  // mails admins, and skips per-call approval until it expires.
+  const trust = (headers, body) => fetch(base + `/api/devices/${device}/trust`, { method: "PUT", headers, body: JSON.stringify(body) });
+  assert.equal((await trust(viewer, { level: "full", currentPassword: password })).status, 403, "viewer");
+  assert.equal((await trust({ authorization: "Bearer " + apiToken, "content-type": "application/json" }, { level: "full" })).status, 403, "API token");
+  assert.equal((await trust(owner, { level: "full" })).status, 403, "full needs the password");
+  assert.equal((await trust(owner, { level: "full", currentPassword: "wrong-password-0000" })).status, 403);
+  assert.equal((await trust(owner, { level: "bogus" })).status, 400);
+  const mailsBeforeTrust = await mails();
+  const fullRes = await trust(owner, { level: "full", minutes: 60, currentPassword: password });
+  assert.equal(fullRes.status, 200);
+  const full = (await fullRes.json()).item;
+  assert.equal(full.trust_level, "full");
+  assert.ok(new Date(full.trust_full_until) > new Date());
+  for (let i = 0; i < 40 && (await mails()) === mailsBeforeTrust; i++) await new Promise((r) => setTimeout(r, 100));
+  assert.equal(await mails(), mailsBeforeTrust + 1, "owner is e-mailed when full trust is enabled");
+  const callExec = async (command) => JSON.parse((await (await fetch(base + "/mcp", {
+    method: "POST", headers: { authorization: "Bearer " + apiToken, "content-type": "application/json", accept: "application/json, text/event-stream" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "process_exec", arguments: { device_id: device, command } } }),
+  })).json()).result.content[0].text);
+  const trusted = await callExec("id -u");
+  assert.notEqual(trusted.error, "approval_required", "full trust skips per-call approval (device is offline here)");
+  const trustedAudit = await db.query("select count(*)::int as n from audit_logs where device_id=$1 and outcome='trusted_full'", [device]);
+  assert.equal(trustedAudit.rows[0].n, 1);
+  await db.query("update devices set trust_full_until=now()-interval '1 second' where id=$1", [device]);
+  assert.equal((await callExec("id -g")).error, "approval_required", "expired full trust falls back to standard");
+  const listedDevices = await (await fetch(base + "/api/devices", { headers: owner })).json();
+  assert.equal(listedDevices.items.find((d) => d.id === device).trust_level, "standard");
+  // strict ignores the allowlist
+  assert.equal((await add(owner, "uname -s")).status, 201);
+  assert.equal((await trust(owner, { level: "strict" })).status, 200);
+  assert.equal((await callExec("uname -s")).error, "approval_required", "strict ignores the allowlist");
+  const trustAudit = await db.query("select count(*)::int as n from audit_logs where device_id=$1 and tool='device.trust_level'", [device]);
+  assert.equal(trustAudit.rows[0].n, 2);
   console.log("command allowlist API + approval notification acceptance passed");
 } finally {
   await db.end();

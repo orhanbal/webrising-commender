@@ -1973,6 +1973,14 @@ try {
         "select count(*)::int as n from audit_logs where device_id=$1 and tool='process_exec' and outcome='allowlisted'", [deviceId],
       );
       assert.equal(audited.rows[0].n, 2);
+      // Trust level "strict" ignores the allowlist; "full" runs any command without approval.
+      await allowDb.query("update devices set trust_level='strict' where id=$1", [deviceId]);
+      assert.equal((await tool(9510, "process_exec", { device_id: deviceId, command: "uname -s", cwd: tempRoot })).error, "approval_required");
+      await allowDb.query("update devices set trust_level='full' where id=$1", [deviceId]);
+      const fullRun = await tool(9511, "process_exec", { device_id: deviceId, command: "printf trusted-full-ok", cwd: tempRoot });
+      assert.equal(fullRun.success, true, JSON.stringify(fullRun));
+      assert.match(fullRun.stdout, /trusted-full-ok/);
+      await allowDb.query("update devices set trust_level='standard', trust_full_until=null where id=$1", [deviceId]);
       await allowDb.query("delete from device_command_allowlist where device_id=$1", [deviceId]);
       const removed = await tool(9509, "process_exec", { device_id: deviceId, command: "uname -s", cwd: tempRoot });
       assert.equal(removed.error, "approval_required", "removal takes effect immediately");

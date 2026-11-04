@@ -1,3 +1,4 @@
+import { notifyTrustChange } from "./approval-notify.js";
 import { MAX_ALLOWLIST_ENTRIES, normalizePattern } from "./command-allowlist.js";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
@@ -3527,7 +3528,10 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       const result = await db.query(
         `select id,name,hostname,platform,agent_version,capabilities,last_seen_at,
                 assigned_relay_id,connected_relay_id,relay_last_seen_at,
-                created_at,revoked_at
+                created_at,revoked_at,
+                case when trust_level='full' and trust_full_until is not null and trust_full_until<=now()
+                     then 'standard' else trust_level end as trust_level,
+                trust_full_until
            from devices
           where organization_id=$1
           order by created_at desc`,
@@ -3540,6 +3544,45 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           online: online.has(row.id),
         })),
       });
+    }
+
+    // Per-device trust level. Only an admin browser session may change it;
+    // "full" (no per-call approval) also needs the current password, can be
+    // time-limited and e-mails every admin/owner.
+    const trustMatch = url.pathname.match(/^\/api\/devices\/([0-9a-f-]{36})\/trust$/i);
+    if (req.method === "PUT" && trustMatch) {
+      if (!requireRole(principal!, "admin", res)) return;
+      if (principal!.authKind !== "session" || !principal!.userId) {
+        return void json(res, 403, { error: "browser_session_required" });
+      }
+      const body = z.object({
+        level: z.enum(["strict", "standard", "full"]),
+        minutes: z.number().int().min(5).max(7 * 24 * 60).optional(),
+        currentPassword: z.string().min(1).max(256).optional(),
+      }).parse(await readJson(req));
+      if (body.level === "full") {
+        const me = await db.query<{ password_hash: string }>(
+          "select password_hash from users where id=$1 and disabled_at is null", [principal!.userId]);
+        if (!body.currentPassword || !me.rows[0] || !(await verifyPassword(body.currentPassword, me.rows[0].password_hash))) {
+          return void json(res, 403, { error: "reauthentication_failed" });
+        }
+      }
+      const updated = await db.query<{ name: string; trust_level: string; trust_full_until: Date | null }>(
+        `update devices set trust_level=$3,
+                trust_full_until=case when $3='full' and $4::int is not null then now()+($4::int*interval '1 minute') else null end
+          where id=$1 and organization_id=$2 and revoked_at is null
+          returning name,trust_level,trust_full_until`,
+        [trustMatch[1], principal!.organizationId, body.level, body.minutes ?? null],
+      );
+      if (!updated.rowCount) return void json(res, 404, { error: "device_not_found" });
+      const item = updated.rows[0]!;
+      await auditControl(principal!, trustMatch[1]!, "device.trust_level", "high", "success",
+        JSON.stringify({ level: item.trust_level, until: item.trust_full_until }));
+      if (item.trust_level === "full") {
+        notifyTrustChange(principal!.organizationId, item.name, principal!.email || principal!.actor, item.trust_full_until)
+          .catch(() => undefined);
+      }
+      return void json(res, 200, { item });
     }
 
     const disconnectMatch = url.pathname.match(/^\/api\/devices\/([0-9a-f-]{36})\/disconnect$/i);
