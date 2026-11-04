@@ -131,7 +131,9 @@ try{
  await visit("/install","Use it where you","modern-install-desktop");
  assert.equal(await evalJs("document.querySelectorAll('.install-platform').length"),3,"Install offers three operating systems");
  await evalJs("document.querySelector('.install-platforms button:nth-child(2)').click()");
- assert.ok(await evalJs("document.querySelector('.install-code-wrap pre')?.textContent.includes('target/release/webrising-commender')"),"macOS guide must show build command");
+ assert.ok(await evalJs("document.querySelector('.install-code-wrap pre')?.textContent===`curl -fsSL ${location.origin}/install.sh | sh`"),"macOS guide must show the one-line install command");
+ await evalJs("document.querySelector('.install-platforms button:nth-child(1)').click()");
+ assert.ok(await evalJs("document.querySelector('.install-code-wrap pre')?.textContent.includes(location.origin+'/install.ps1')"),"Windows guide must show the PowerShell one-line command");
  await evalJs("document.querySelector('.install-option-head').click()");
  assert.ok(await evalJs("document.querySelector('.install-copy-field')?.textContent.includes('/mcp')"),"Remote MCP endpoint must be copyable");
  await evalJs("document.querySelector('.theme-button').click()");
