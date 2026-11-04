@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Domain: defaults move to `https://wecommander.app` (old domain keeps serving during the transition); new agent command `set-control-url` moves an enrolled device to a new gateway origin without re-enrolling. See `docs/DOMAIN_MIGRATION.md`.
 - CI: macOS checks moved from `ci` to a separate `macos` workflow; the production release gate now requires the 14 Linux/Windows `ci` jobs, so GitHub macOS runner capacity cannot block a Linux release. The macOS PKG is published separately (`macos-preview-*`) by `macos-distribution` only after `macos` passes.
 - Command allowlist: owner/admin-managed per-device list of routine `process_exec` commands that run without per-call approval (token-prefix match, shell metacharacters always refused, interpreters/privilege/destructive tools never allowed, browser-session-only management, audited). New approval requests e-mail admins/owners with a link to the Approvals view. See `docs/SECURITY.md`.
 - Production release boundary (Issue #30): `production` branch moved only by the owner-approved `promote-production` workflow through a dedicated release GitHub App; exact-SHA 17-job CI/distribution gate, annotated `production-release/*` ledger, unauthorized-update detection (`production-guard`), one-time `mode=bootstrap` in the same workflow, newest-run-only CI/distribution evaluation, `/health` `build.commit` verified after each release, read-only `bootstrap-locks`. See `docs/RELEASE_POLICY.md`.

@@ -3,7 +3,7 @@
 set -euo pipefail
 set +x
 umask 077
-CONTROL_URL="https://wecommander.webrising.tr"
+CONTROL_URL="https://wecommander.app"
 ALLOWED_ROOT="$HOME/Documents/WECOMMANDER"
 while (($#)); do
   case "$1" in

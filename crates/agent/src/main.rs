@@ -96,6 +96,12 @@ enum Command {
         #[arg(long, value_parser = parse_on_off)]
         file_writes: Option<bool>,
     },
+    /// Point an enrolled device at a new gateway origin (domain change)
+    /// without re-enrolling. Restart the service to apply.
+    SetControlUrl {
+        #[arg(long)]
+        url: String,
+    },
     Run,
     #[cfg(windows)]
     Service,
@@ -165,6 +171,19 @@ async fn agent_main() -> Result<()> {
                 println!("Saved. Restart the agent service to apply.");
             }
             print_capabilities(&config.capabilities);
+            Ok(())
+        }
+        Command::SetControlUrl { url } => {
+            let mut config = AgentConfig::load(&config_path)?;
+            let (control, ws) =
+                config::retarget_gateway(&config.control_url, &config.gateway_ws_url, &url)?;
+            config.control_url = control;
+            config.gateway_ws_url = ws;
+            config.save(&config_path)?;
+            AgentConfig::load(&config_path)?;
+            println!("Saved. Restart the agent service to apply.");
+            println!("control: {}", config.control_url);
+            println!("gateway: {}", config.gateway_ws_url);
             Ok(())
         }
         Command::Run => {

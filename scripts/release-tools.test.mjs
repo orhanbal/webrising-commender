@@ -35,9 +35,9 @@ test("health classification never accepts unknown or a different commit", () => 
   assert.equal(classifyHealth(200, null, SHA).match, false);
 });
 test("production URL must be https (http only for loopback tests)", () => {
-  assert.throws(() => parseBaseUrl("http://wecommander.webrising.tr"), /https/);
+  assert.throws(() => parseBaseUrl("http://wecommander.app"), /https/);
   assert.throws(() => parseBaseUrl(""), /valid URL/);
-  assert.equal(parseBaseUrl("https://wecommander.webrising.tr").host, "wecommander.webrising.tr");
+  assert.equal(parseBaseUrl("https://wecommander.app").host, "wecommander.app");
   assert.equal(parseBaseUrl("http://127.0.0.1:1").hostname, "127.0.0.1");
 });
 

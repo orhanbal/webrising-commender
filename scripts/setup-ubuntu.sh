@@ -8,7 +8,7 @@ SERVICE_USER="wecommander"
 DATA_DIR="/var/lib/webrising-commender"
 CONFIG="$DATA_DIR/agent.json"
 WORKSPACE="$DATA_DIR/workspace"
-CONTROL_URL="https://wecommander.webrising.tr"
+CONTROL_URL="https://wecommander.app"
 BINARY=""
 EXPECTED_SHA256=""
 ALLOWED_ROOT=""
@@ -18,7 +18,7 @@ CAPABILITY_ARGS=()
 usage() {
   cat <<'EOF'
 Usage: sudo bash scripts/setup-ubuntu.sh --binary /path/to/webrising-commender --sha256 64_HEX
-Options: --control-url https://wecommander.webrising.tr
+Options: --control-url https://wecommander.app
          --allowed-root /path/to/specific/directory
          --skip-enroll (existing enrollment only)
          --read-only    (device refuses all file writes)

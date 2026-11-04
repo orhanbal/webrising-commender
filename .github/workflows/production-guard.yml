@@ -49,7 +49,7 @@ jobs:
       - name: Public acceptance probe (HTTPS, HSTS, WSS refusal, served build = production head)
         if: ${{ github.event_name != 'push' }}
         env:
-          COMMANDER_BASE_URL: ${{ vars.PRODUCTION_BASE_URL || 'https://wecommander.webrising.tr' }}
+          COMMANDER_BASE_URL: ${{ vars.PRODUCTION_BASE_URL || 'https://wecommander.app' }}
           COMMANDER_EXPECT_MCP_OAUTH: "true"
         run: |
           COMMANDER_EXPECTED_COMMIT="$(git ls-remote origin refs/heads/production | cut -f1)"
