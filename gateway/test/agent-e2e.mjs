@@ -1935,6 +1935,54 @@ try {
   assert.equal(executed.success, true);
   assert.match(executed.stdout, /agent-process-ok/);
 
+  // Owner command allowlist: an allowlisted routine command runs without a
+  // per-call approval through the real Agent; chained/expanded variants and
+  // non-allowlisted commands still need approval; only a browser session may
+  // change the list (a control/API token is refused).
+  {
+    const { default: pg } = await import("pg");
+    const allowDb = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await allowDb.connect();
+    try {
+      const orgRow = await allowDb.query("select organization_id from devices where id=$1", [deviceId]);
+      const orgId = orgRow.rows[0].organization_id;
+      const tokenAdd = await fetch(base + `/api/devices/${deviceId}/command-allowlist`, {
+        method: "POST", headers: authHeaders, body: JSON.stringify({ pattern: "uname -s" }),
+      });
+      assert.equal(tokenAdd.status, 403, "only a browser session may widen the allowlist");
+      assert.equal((await tokenAdd.json()).error, "browser_session_required");
+      const listed = await jsonFetch(`/api/devices/${deviceId}/command-allowlist`, { headers: authHeaders });
+      assert.deepEqual(listed.items, []);
+
+      const before = await tool(9501, "process_exec", { device_id: deviceId, command: "uname -s", cwd: tempRoot });
+      assert.equal(before.error, "approval_required", "not allowlisted yet");
+      await allowDb.query(
+        "insert into device_command_allowlist(organization_id,device_id,pattern,created_by) values($1,$2,'uname -s','agent-e2e')",
+        [orgId, deviceId],
+      );
+      const allowed = await tool(9502, "process_exec", { device_id: deviceId, command: "uname -s", cwd: tempRoot });
+      assert.equal(allowed.success, true, JSON.stringify(allowed));
+      assert.match(allowed.stdout, /Linux/);
+      const again = await tool(9503, "process_exec", { device_id: deviceId, command: "uname -s", cwd: tempRoot });
+      assert.equal(again.success, true, "allowlisted commands do not consume a one-time approval");
+      for (const [id, command] of [[9504, "uname -s; id"], [9505, "uname -s && id"], [9506, "uname -s $(id)"], [9507, "uname -sr"], [9508, "id"]]) {
+        const refused = await tool(id, "process_exec", { device_id: deviceId, command, cwd: tempRoot });
+        assert.equal(refused.error, "approval_required", command);
+      }
+      const audited = await allowDb.query(
+        "select count(*)::int as n from audit_logs where device_id=$1 and tool='process_exec' and outcome='allowlisted'", [deviceId],
+      );
+      assert.equal(audited.rows[0].n, 2);
+      await allowDb.query("delete from device_command_allowlist where device_id=$1", [deviceId]);
+      const removed = await tool(9509, "process_exec", { device_id: deviceId, command: "uname -s", cwd: tempRoot });
+      assert.equal(removed.error, "approval_required", "removal takes effect immediately");
+      await allowDb.query("delete from approval_requests where device_id=$1 and status='pending'", [deviceId]);
+    } finally {
+      await allowDb.end();
+    }
+    console.log("agent-e2e: command allowlist runs only exact-prefix safe commands without approval");
+  }
+
   // 2D real authenticated MCP negative: a non-existent cwd must fail
   // before an empty terminal-history archive or scoped directory is created.
   // This checks the actual Gateway -> Rust Agent startup path, not a mock.

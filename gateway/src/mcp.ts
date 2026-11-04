@@ -1,4 +1,6 @@
 import { consumeApprovedRequest, ensureApprovalRequest } from "./approval-requests.js";
+import { allowlistMatch } from "./command-allowlist.js";
+import { notifyApprovers } from "./approval-notify.js";
 import { consumeApproval } from "./approvals.js";
 import { roleAtLeast, type Principal } from "./auth.js";
 import { db } from "./db.js";
@@ -431,6 +433,7 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
   }
 
   let approvalToken = typeof args.approval_token === "string" ? args.approval_token : undefined;
+  let allowlisted: { id: string; pattern: string } | null = null;
   if (risk === "high") {
     if (approvalToken) {
       if (!(await consumeApproval(approvalToken, deviceId, action))) {
@@ -445,6 +448,13 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
         );
         return ok(request.id, toolResult({ error: "approval_required", action: action.kind }, true));
       }
+    } else if (action.kind === "process_exec" &&
+               (allowlisted = await allowlistMatch(orgId, deviceId, action.command))) {
+      // Owner-allowlisted routine command: the gateway issues the one-use
+      // device approval itself and records which pattern allowed it.
+      approvalToken = issueApproval(deviceId, action, 60).token;
+      await audit(orgId, principal.actor, deviceId, name, risk, "allowlisted",
+        JSON.stringify({ allowlistId: allowlisted.id, pattern: allowlisted.pattern }));
     } else {
       const approvedRequestId = await consumeApprovedRequest(
         orgId,
@@ -471,6 +481,10 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
           deviceId,
           action,
         );
+        if (pending.created) {
+          // Best effort: a mail failure must not change the MCP result.
+          notifyApprovers(orgId, deviceId, action, pending.id, pending.expires_at).catch(() => undefined);
+        }
         await audit(
           orgId,
           principal.actor,
