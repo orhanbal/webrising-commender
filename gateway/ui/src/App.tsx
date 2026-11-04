@@ -1,20 +1,20 @@
-import {useEffect,useState} from "react";
+import {lazy,Suspense,useEffect,useState} from "react";
 import type {ReactNode} from "react";
 import {ArrowUpRight,Command,Menu,Moon,Sun,X} from "lucide-react";
-import {Button} from "./components/ui";
+import {Button,Spinner} from "./components/ui";
 import {getMe,api,type Account,type Pricing} from "./api";
 import {Landing} from "./pages/Landing";
-import {AuthPage} from "./pages/Auth";
-import {PlansPage} from "./pages/Plans";
-import {DashboardPage} from "./pages/Dashboard";
-import {BillingPage} from "./pages/Billing";
-import {DevicesPage} from "./pages/Devices";
-import {WorkspacePage} from "./pages/Workspace";
-import {UsagePage} from "./pages/Usage";
-import {AccountPage} from "./pages/Account";
-import {InstallPage} from "./pages/Install";
-import {ConsolePage} from "./pages/Console";
-import {LegalPage} from "./pages/Legal";
+const AuthPage=lazy(()=>import("./pages/Auth").then(m=>({default:m.AuthPage})));
+const PlansPage=lazy(()=>import("./pages/Plans").then(m=>({default:m.PlansPage})));
+const DashboardPage=lazy(()=>import("./pages/Dashboard").then(m=>({default:m.DashboardPage})));
+const BillingPage=lazy(()=>import("./pages/Billing").then(m=>({default:m.BillingPage})));
+const DevicesPage=lazy(()=>import("./pages/Devices").then(m=>({default:m.DevicesPage})));
+const WorkspacePage=lazy(()=>import("./pages/Workspace").then(m=>({default:m.WorkspacePage})));
+const UsagePage=lazy(()=>import("./pages/Usage").then(m=>({default:m.UsagePage})));
+const AccountPage=lazy(()=>import("./pages/Account").then(m=>({default:m.AccountPage})));
+const InstallPage=lazy(()=>import("./pages/Install").then(m=>({default:m.InstallPage})));
+const ConsolePage=lazy(()=>import("./pages/Console").then(m=>({default:m.ConsolePage})));
+const LegalPage=lazy(()=>import("./pages/Legal").then(m=>({default:m.LegalPage})));
 import { LanguageSwitcher,useLocale,t as translate } from "./i18n";
 
 export type Nav=(path:string)=>void;
@@ -51,32 +51,8 @@ export default function App(){
  const toggle=()=>{setTheme(old=>{const next=old==="dark"?"light":"dark";localStorage.setItem("wecommander-theme",next);return next})};
  const logout=async()=>{try{await api("/api/auth/logout",{method:"POST"})}catch{}setAccount(null);navigate("/login")};
  useEffect(()=>{document.documentElement.lang=chosenLocale},[chosenLocale]);
- const globalHeader=!path.startsWith("/console")&&!["/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage"].includes(path);
- return <div className="app-shell">
-  {globalHeader&&<header className="site-header"><div className="container-w">
-  <Brand onClick={()=>navigate("/")}/>
-  <nav className="site-nav" aria-label="Ana gezinme">
-   <NavLink to="/features" nav={navigate} className="hide-sm">{translate("Özellikler")}</NavLink>
-   <NavLink to="/how-it-works" nav={navigate} className="hide-sm">{translate("Nasıl çalışır?")}</NavLink>
-   <NavLink to="/pricing" nav={navigate}>{translate("Fiyatlandırma")}</NavLink>
-  </nav>
-  <div className="nav-actions">
-   <ThemeToggle theme={theme} onToggle={toggle}/>
-   <LanguageSwitcher/>
-   <Button size="sm" variant="ghost" className="hide-sm" onClick={()=>navigate(account?"/dashboard":"/login")}>{account?translate("Panelim"):translate("Giriş Yap")}</Button>
-   <Button size="sm" className="wc-nav-install" onClick={()=>navigate("/install")}><Command className="size-4" aria-hidden="true"/> Install <ArrowUpRight className="size-4" aria-hidden="true"/></Button>
-   <button type="button" aria-label={translate("Menü")} aria-expanded={mobile} className="mobile-menu" onClick={()=>setMobile(x=>!x)}>{mobile?<X/>:<Menu/>}</button>
-  </div></div>
-  {mobile&&<nav className="wc-mobile-nav" aria-label="Mobil gezinme">
-   <NavLink to="/features" nav={navigate}>{translate("Özellikler")}</NavLink>
-   <NavLink to="/how-it-works" nav={navigate}>{translate("Nasıl çalışır?")}</NavLink>
-   <NavLink to="/pricing" nav={navigate}>{translate("Fiyatlandırma")}</NavLink>
-   <NavLink to={account?"/dashboard":"/login"} nav={navigate}>{account?translate("Panelim"):translate("Giriş Yap")}</NavLink>
-   <NavLink to="/install" nav={navigate}>Install <ArrowUpRight size={15}/></NavLink>
-   <LanguageSwitcher compact/>
-  </nav>}
- </header>}
-   {["/","/features","/how-it-works"].includes(path)&&<Landing nav={navigate} pricing={pricing} signupEnabled={signupEnabled}/>}
+ const content=<>
+ {["/","/features","/how-it-works"].includes(path)&&<Landing nav={navigate} pricing={pricing} signupEnabled={signupEnabled}/>}
   {["/login","/register","/forgot-password","/reset-password","/verify"].includes(path)&&<AuthPage path={path} nav={navigate} refresh={refresh} pricing={pricing} signupEnabled={signupEnabled}/>}
   {path==="/install"&&<InstallPage nav={navigate}/>}
   {path==="/pricing"&&<PlansPage nav={navigate} pricing={pricing} account={account} signupEnabled={signupEnabled}/>}
@@ -90,5 +66,32 @@ export default function App(){
   {path==="/usage"&&<UsagePage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
 
   {(path==="/privacy"||path==="/terms")&&<LegalPage page={path==="/privacy"?"privacy":"terms"}/>}
+ </>;
+ const globalHeader=!path.startsWith("/console")&&!["/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage"].includes(path);
+ return <div className="app-shell">
+  {globalHeader&&<header className="site-header"><div className="container-w">
+  <Brand onClick={()=>navigate("/")}/>
+  <nav className="site-nav" aria-label={translate("Ana gezinme")}>
+   <NavLink to="/features" nav={navigate} className="hide-sm">{translate("Özellikler")}</NavLink>
+   <NavLink to="/how-it-works" nav={navigate} className="hide-sm">{translate("Nasıl çalışır?")}</NavLink>
+   <NavLink to="/pricing" nav={navigate}>{translate("Fiyatlandırma")}</NavLink>
+  </nav>
+  <div className="nav-actions">
+   <ThemeToggle theme={theme} onToggle={toggle}/>
+   <LanguageSwitcher/>
+   <Button size="sm" variant="ghost" className="hide-sm" onClick={()=>navigate(account?"/dashboard":"/login")}>{account?translate("Panelim"):translate("Giriş Yap")}</Button>
+   <Button size="sm" className="wc-nav-install" onClick={()=>navigate("/install")}><Command className="size-4" aria-hidden="true"/> {translate("Kurulum")} <ArrowUpRight className="size-4" aria-hidden="true"/></Button>
+   <button type="button" aria-label={translate("Menü")} aria-expanded={mobile} className="mobile-menu" onClick={()=>setMobile(x=>!x)}>{mobile?<X/>:<Menu/>}</button>
+  </div></div>
+  {mobile&&<nav className="wc-mobile-nav" aria-label={translate("Mobil gezinme")}>
+   <NavLink to="/features" nav={navigate}>{translate("Özellikler")}</NavLink>
+   <NavLink to="/how-it-works" nav={navigate}>{translate("Nasıl çalışır?")}</NavLink>
+   <NavLink to="/pricing" nav={navigate}>{translate("Fiyatlandırma")}</NavLink>
+   <NavLink to={account?"/dashboard":"/login"} nav={navigate}>{account?translate("Panelim"):translate("Giriş Yap")}</NavLink>
+   <NavLink to="/install" nav={navigate}>{translate("Kurulum")} <ArrowUpRight size={15}/></NavLink>
+   <LanguageSwitcher compact/>
+  </nav>}
+ </header>}
+   <Suspense fallback={<div className="grid min-h-[50vh] place-items-center"><Spinner/></div>}>{globalHeader?<main id="main-content" tabIndex={-1} className="outline-none">{content}</main>:content}</Suspense>
  </div>;
 }

@@ -67,7 +67,7 @@ export function LanguageSwitcher({compact=false}:{compact?:boolean}){
       onClick={()=>setOpen(value=>!value)}
       onKeyDown={event=>{if(event.key==="ArrowDown"||event.key==="ArrowUp"){event.preventDefault();setOpen(true);requestAnimationFrame(()=>focusOption(event.key==="ArrowDown"?0:options.length-1))}}}>
       <Globe2 size={17} aria-hidden="true"/>
-      <span>{current==="en"?"English (EN)":"Türkçe (TR)"}</span>
+      <span className="locale-label-long">{current==="en"?"English (EN)":"Türkçe (TR)"}</span><span className="locale-label-short" aria-hidden="true">{current==="en"?"EN":"TR"}</span>
       <ChevronDown size={15} className={"locale-chevron"+(open?" locale-chevron-open":"")} aria-hidden="true"/>
     </button>
     {open&&<div className="locale-menu" role="menu" aria-label={current==="en"?"Language":"Dil"}>

@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState} from "react";import type{ReactNode}from"react";
+import {useEffect,useRef,useState} from "react";import type React from "react";import type{ReactNode}from"react";
 import { t as translate,useLocale,locale,LanguageSwitcher } from "../i18n";
 import {Activity,ArrowRight,ArrowUpRight,Bell,ChevronDown,Clock3,Command,CreditCard,FileText,HardDrive,LayoutDashboard,LockKeyhole,LogOut,Menu,Monitor,Plus,Search,Server,Settings2,ShieldCheck,TerminalSquare,Users,Workflow,Zap}from"lucide-react";
 import{Button,Card,CardContent,CardDescription,CardHeader,CardTitle,Badge}from"../components/ui";
@@ -26,17 +26,21 @@ export function DashboardShell({nav,path,account,theme,toggle,logout,children}:{
  const [pendingApprovals,setPendingApprovals]=useState(0);
  useEffect(()=>{let active=true;const load=()=>api<{items:unknown[]}>("/api/approval-requests?status=pending&limit=20").then(r=>{if(active)setPendingApprovals(Array.isArray(r.items)?r.items.length:0)}).catch(()=>{if(active)setPendingApprovals(0)});load();const timer=setInterval(load,30000);return()=>{active=false;clearInterval(timer)}},[]);
  useEffect(()=>{if(!profileOpen)return;const close=(event:PointerEvent)=>{if(profileRef.current&&!profileRef.current.contains(event.target as Node))setProfileOpen(false)};const escape=(event:KeyboardEvent)=>{if(event.key==="Escape")setProfileOpen(false)};document.addEventListener("pointerdown",close);document.addEventListener("keydown",escape);return()=>{document.removeEventListener("pointerdown",close);document.removeEventListener("keydown",escape)}},[profileOpen]);
+ useEffect(()=>{if(!mobile)return;const escape=(event:KeyboardEvent)=>{if(event.key==="Escape")setMobile(false)};document.addEventListener("keydown",escape);return()=>document.removeEventListener("keydown",escape)},[mobile]);
  const navTo=(url:string)=>{setMobile(false);setProfileOpen(false);nav(url)};
+ const current=pages.find(p=>p.href===path)?.title??(path==="/account"?"Hesabım":"Genel Bakış");
+ const follow=(event:React.MouseEvent<HTMLAnchorElement>,url:string)=>{if(event.button===0&&!event.metaKey&&!event.ctrlKey&&!event.shiftKey&&!event.altKey){event.preventDefault();navTo(url)}};
  return <div className="dashboard-layout">
-  {mobile&&<div className="fixed inset-0 bg-black/60 z-[92] md:hidden" onClick={()=>setMobile(false)}/>}
+  <a href="#main-content" className="skip-link">{translate("İçeriğe geç")}</a>
+  {mobile&&<button type="button" aria-label={translate("Menüyü kapat")} className="fixed inset-0 bg-[var(--overlay)] z-[92] md:hidden" onClick={()=>setMobile(false)}/>}
   <aside className={"dashboard-sidebar "+(mobile?"open":"")} aria-label={translate("Uygulama menüsü")}>
    <div className="px-3 pt-2"><Brand subtitle onClick={()=>navTo("/")}/></div>
-   <nav className="dash-nav">{pages.map(p=><button key={p.title} onClick={()=>navTo(p.href)} className={"dash-link text-left "+(p.href===path?"active":"")}><p.icon/>{translate(p.title)}{p.href===path&&<span className="ml-auto w-1.5 h-1.5 rounded-full bg-[var(--accent)]"/>}</button>)}</nav>
+   <nav className="dash-nav" aria-label={translate("Uygulama menüsü")}>{pages.map(p=><a key={p.title} href={p.href} onClick={e=>follow(e,p.href)} aria-current={p.href===path?"page":undefined} className={"dash-link text-left "+(p.href===path?"active":"")}><p.icon aria-hidden="true"/>{translate(p.title)}{p.href===path&&<span aria-hidden="true" className="ml-auto w-1.5 h-1.5 rounded-full bg-[var(--accent)]"/>}</a>)}</nav>
    <div className="dash-sidebar-bottom"><Badge><ShieldCheck size={13}/> {translate("Güvenli çalışma alanı")}</Badge><p className="text-sm font-semibold mt-3">WECOMMANDER</p><p className="muted text-xs mt-1">{translate("Yetkilendirilmiş erişim ve iş akışları.")}</p><Button className="w-full mt-4" variant="outline" size="sm" onClick={()=>navTo("/pricing")}>{translate("Paketleri Gör")} <ArrowUpRight className="size-3.5"/></Button></div>
   </aside>
   <div className="dash-main">
    <div className="dash-topbar">
-    <div className="flex items-center gap-3 flex-1 min-w-0"><button className="mobile-dash-open size-9 place-items-center rounded-lg border border-[var(--stroke)]" onClick={()=>setMobile(true)} aria-label={translate("Menüyü aç")}><Menu size={18}/></button><div className="text-sm muted hidden sm:block">{translate("Çalışma Alanım")} <span className="mx-2">/</span> <span className="text-[var(--text)]">{path==="/dashboard"?translate("Genel Bakış"):path==="/billing"?translate("Faturalama"):translate("Hesabım")}</span></div></div>
+    <div className="flex items-center gap-3 flex-1 min-w-0"><button type="button" aria-expanded={mobile} className="mobile-dash-open size-9 place-items-center rounded-lg border border-[var(--stroke)]" onClick={()=>setMobile(true)} aria-label={translate("Menüyü aç")}><Menu size={18}/></button><div className="text-sm muted hidden sm:block">{translate("Çalışma Alanım")} <span className="mx-2">/</span> <span className="text-[var(--text)]" aria-current="page">{translate(current)}</span></div></div>
     <div className="dash-toolbar"><div className="relative hidden lg:block"><Search size={16} className="absolute left-3 top-2.5 text-[var(--muted)]"/><input value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&search.trim())navTo("/devices?search="+encodeURIComponent(search))}} placeholder={translate("Cihazları ve araçları ara…")} className="h-10 w-[270px] rounded-xl border border-[var(--stroke)] bg-[var(--surface)] pl-10 pr-3 text-sm outline-none focus-visible:border-[var(--accent)]"/></div><ThemeToggle theme={theme} onToggle={toggle}/><LanguageSwitcher compact/><Button size="icon" variant="outline" className="relative" title={pendingApprovals?pendingApprovals+" "+translate("bekleyen onay"):translate("Son aktiviteler")} aria-label={pendingApprovals?pendingApprovals+" "+translate("bekleyen onay"):translate("Son aktiviteler")} onClick={()=>pendingApprovals?window.location.assign("/advanced?view=approvals"):navTo("/devices")}><Bell size={18}/>{pendingApprovals>0&&<span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-[var(--danger)] text-white text-[11px] font-bold grid place-items-center">{pendingApprovals}</span>}</Button><div ref={profileRef} className="relative">
      <button type="button" onClick={()=>setProfileOpen(value=>!value)} aria-label={translate("Hesap menüsü")} aria-haspopup="menu" aria-expanded={profileOpen} className="flex items-center gap-2 rounded-xl p-1 pr-3 border border-[var(--stroke)] hover:bg-[var(--hover)]"><span className="size-9 rounded-lg bg-[var(--subtle-surface)] text-[var(--accent)] grid place-items-center font-bold">{(account?.email||"WC").slice(0,2).toUpperCase()}</span><span className="hidden sm:block text-sm max-w-[125px] truncate">{account?.email?.split("@")[0]||translate("Misafir")}</span><ChevronDown className={"size-3.5 muted transition-transform "+(profileOpen?"rotate-180":"")}/></button>
      {profileOpen&&<div role="menu" aria-label={translate("Hesap menüsü")} className="absolute right-0 top-[calc(100%+9px)] z-[120] w-[265px] rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-2 shadow-2xl">
@@ -48,7 +52,7 @@ export function DashboardShell({nav,path,account,theme,toggle,logout,children}:{
      </div>}
     </div></div>
    </div>
-   <main className="dash-content">{children}</main>
+   <main id="main-content" tabIndex={-1} className="dash-content outline-none">{children}</main>
    <div className="border-t border-[var(--stroke)] mt-12 pt-5 pb-5 flex justify-between items-center gap-5 flex-wrap text-xs muted"><span>{translate("WECOMMANDER · Güvenli MCP Platformu")}</span><div className="flex gap-4"><button onClick={()=>navTo("/pricing")}>{translate("Planlar")}</button><button onClick={logout} className="inline-flex items-center gap-1"><LogOut size={12}/> {translate("Çıkış")}</button></div></div>
   </div>
  </div>
