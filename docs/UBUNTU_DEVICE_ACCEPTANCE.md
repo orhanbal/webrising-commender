@@ -1,6 +1,7 @@
 # Real Ubuntu device acceptance: Claude Code Web → WECOMMANDER → `148.135.181.148`
 
-Status: **PENDING owner approval.** Nothing on this server has been touched.
+Status: **items 1–12 PASSED on 2026-11-04** (results below); items 13–15
+pending.
 Claude has no SSH access and must never receive root keys. The owner runs
 every server-side command in their own SSH session.
 
@@ -83,6 +84,34 @@ OAuth browser consent must be verified in the client itself. If it does not,
 record **BLOCKED_EXTERNAL** for item 3. Testing another client (for example the
 Claude Code CLI, as in `docs/MCP_CLIENT_ACCEPTANCE.md`) is useful, but it does
 not replace this item.
+
+## Results (2026-11-04, production `ede66013`, Agent `ubuntu-preview-1569`)
+
+The client was a Claude.ai custom connector (`https://wecommander.webrising.tr/mcp`),
+signed in as the owner. Device `794911a6-08a2-45c9-86a5-3029e1a04620`.
+
+| # | Result | Evidence |
+|---|---|---|
+| 1 | PASS | production-guard probe: HTTPS 200, HSTS `max-age=31536000`, `build.commit` = released SHA, MCP OAuth discovery |
+| 2 | PASS | consent → Claude callback (after PR #53); REST with OAuth token → 401 is covered by `oauth-integration.mjs` |
+| 3 | PASS | Claude.ai connector connected, WECOMMANDER tools listed in the Claude session |
+| 4–5 | PASS | `devices_list`: `794911a6…` `148-135-181-148`, online; same id printed by `wecommander-setup` |
+| 6 | PASS | Ubuntu 24.04, kernel 6.8.0-146-generic, 12 CPU, 16 GiB |
+| 7–8 | PASS | `readme.txt` (27 bytes) listed and read: `hello from 148.135.181.148` |
+| 9 | PASS | `/etc/passwd` → `path is outside configured allowed roots`; `…/../../etc/shadow` → `parent traversal components are not allowed` |
+| 10 | PASS | `process_exec id` → `approval_required`; with `--no-commands` `policy_info` showed `commandExecution: disabled`; a forged `approval_token` → `approval_required`; `fs_write` → `device_policy_denied: file writes are disabled on this device` |
+| 11 | PASS | after the owner enabled commands locally and approved the exact command: `uid=999(wecommander) gid=987(wecommander)`, exit 0 |
+| 12 | PASS | the same command again → new `approval_required` (single use) |
+| 13–15 | PENDING | — |
+
+Defects found and fixed during this run: device-link rate-limit 429 on setup
+(PR #52); Claude dynamic client registration and proxy-blind OAuth limits
+(PR #52); consent page CSP `form-action` blocking the redirect back to Claude
+(PR #53); `MCP_OAUTH_ENABLED` was `false` in production (set to `true`).
+
+Note: with command execution enabled, an approved shell command runs with the
+`wecommander` user's permissions and is not limited to the file tools'
+allowed roots. Each command needs its own approval.
 
 ## Acceptance items (record the result and evidence for each)
 

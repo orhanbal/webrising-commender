@@ -384,6 +384,7 @@ body{background:#071524;color:var(--wc-text)}
 .wc-dashboard-top .wc-top-right{margin-left:auto!important;gap:13px!important}
 .wc-icon-button{width:40px;height:42px;display:grid;place-items:center;flex:none;background:transparent!important;border:0!important;border-radius:8px!important;color:#bbd9f8!important;font-size:24px!important;padding:0!important}
 .wc-icon-button:hover{background:#16314a!important}
+.wc-approval-alert{display:grid;gap:3px;width:100%;text-align:left;margin-bottom:8px;padding:10px 12px;border-radius:10px;border:1px solid #fa4c6d;background:rgba(250,76,109,.12);color:inherit;cursor:pointer}.wc-approval-alert span{font-size:12px;opacity:.85}
 .wc-notify-button{position:relative}.wc-notify-button i{position:absolute;top:5px;right:5px;width:9px;height:9px;background:#fa4c6d;border-radius:50%}
 .wc-account-anchor{padding-left:15px;border-left:1px solid #254059}
 .wc-profile-button{background:transparent!important;border:0!important;display:flex;align-items:center;gap:11px;padding:2px 4px!important;min-width:145px;text-align:left}
@@ -1818,7 +1819,7 @@ function syncAccountUi(){
 }
 
 function showPage(page){
-  const subTabs={terminal:"terminal",files:"files",tasks:"tasks",mcp:"access"};
+  const subTabs={terminal:"terminal",files:"files",tasks:"tasks",mcp:"access",approvals:"approvals"};
   const requested=["dashboard","devices","usage","billing","settings"].includes(page)||subTabs[page]?page:"dashboard";
   const target=subTabs[requested]?"devices":requested;
   document.querySelectorAll(".page-view").forEach(x=>x.classList.remove("active"));
@@ -1946,7 +1947,7 @@ function wcRelativeDate(iso){
 }
 function wcFullDate(iso){return wcDate(iso)?.toLocaleString("tr-TR")||"Tarih yok"}
 function wcSignedIn(){return !!currentIdentity||!!$("key").value.trim()}
-let wcDashboardDevices=[],wcDashboardActivities=[],wcDashboardRequest=0,wcSearchTargets=[];
+let wcDashboardDevices=[],wcDashboardActivities=[],wcDashboardRequest=0,wcSearchTargets=[],wcPendingApprovals=[];
 const wcTopLinks=[
   ["dashboard","Ana Sayfa"],["devices","Cihazlar"],["terminal","Terminal"],["files","Dosyalar"],
   ["tasks","Görevler"],["mcp","MCP"],["usage","Kullanım"],["billing","Paket & Faturalama"],["settings","Ayarlar"]
@@ -2142,10 +2143,13 @@ async function wcLoadDashboard(){
  wcUpdateIdentity();
  if(!wcSignedIn()){wcRenderSignedOut();return}
  const results=await Promise.allSettled([
-   api("/api/devices"),api("/api/usage"),api("/api/activity?limit=8"),api("/api/billing")
+   api("/api/devices"),api("/api/usage"),api("/api/activity?limit=8"),api("/api/billing"),
+   // Admins/owners approve HIGH-risk AI operations; others get 403 and see none.
+   api("/api/approval-requests?status=pending&limit=20")
  ]);
  if(request!==wcDashboardRequest)return;
- const [devices,usage,activity,billing]=results.map(x=>x.status==="fulfilled"?x.value:null);
+ const [devices,usage,activity,billing,approvals]=results.map(x=>x.status==="fulfilled"?x.value:null);
+ wcPendingApprovals=approvals&&Array.isArray(approvals.items)?approvals.items:[];
  if(devices)wcRenderDevices(devices);
  else{$("wcDeviceCount").textContent="—";$("wcDeviceStatus").textContent="Cihaz verisi alınamadı";$("wcDashDevices").innerHTML='<div class="wc-empty-state">Cihazlar yüklenemedi. Bağlantını kontrol edip yeniden dene.</div>'}
  if(usage){
@@ -2167,11 +2171,15 @@ async function wcLoadDashboard(){
 function wcNotificationsRefresh(){
  const recent=wcDashboardActivities.slice(0,6);
  const errors=recent.filter(x=>/error|fail|denied|blocked/.test(String(x.outcome||"").toLowerCase()));
- $("wcNotifyIndicator").hidden=errors.length===0;
- $("wcNotificationsMenu").innerHTML='<div class="wc-popover-line">Son Aktiviteler</div>'+
+ const pending=wcPendingApprovals.length;
+ $("wcNotifyIndicator").hidden=errors.length===0&&pending===0;
+ $("wcNotificationsButton").setAttribute("aria-label",pending?pending+" bekleyen onay, son bildirimler":"Son bildirimler");
+ $("wcNotificationsMenu").innerHTML=(pending?'<button id="wcOpenApprovals" type="button" class="wc-approval-alert"><b>'+pending+' bekleyen yapay zekâ onayı</b><span>'+wcEscape(wcPendingApprovals.slice(0,3).map(x=>x.action_kind).join(", "))+' · İncele →</span></button>':'')+
+  '<div class="wc-popover-line">Son Aktiviteler</div>'+
   (recent.length?recent.map(x=>'<div class="wc-popover-line">'+wcEscape(wcToolLabel(x.tool,x.outcome))+' · '+wcEscape(wcRelativeDate(x.created_at))+'</div>').join(""):'<div class="wc-popover-line">Yeni aktivite yok</div>')+
   '<button id="wcAllActivity" type="button">Tüm aktiviteler →</button>';
  $("wcAllActivity").onclick=()=>{wcCloseTopMenus();wcShowAllActivities()};
+ if(pending)$("wcOpenApprovals").onclick=()=>{wcCloseTopMenus();showPage("approvals")};
 }
 async function wcShowAllActivities(){
  if(!wcSignedIn()){wcOpenLogin();return}
