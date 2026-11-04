@@ -41,6 +41,10 @@ test("aliases map to native tools", () => {
     { name: "fs_write", args: { path: "/a", content_base64: Buffer.from("hé").toString("base64"), create_parents: true } });
   assert.equal(translateAlias("write_file", { path: "/a", content: "x", mode: "append" })!.name, "fs_append");
   assert.deepEqual(translateAlias("create_directory", { path: "/d" }), { name: "fs_mkdir", args: { path: "/d", recursive: true } });
+  assert.deepEqual(translateAlias("read_file", { path: "/r/A.PDF", offset: 0, length: 3 }),
+    { name: "pdf_read", args: { path: "/r/A.PDF", start_page: 1, page_count: 3 } });
+  assert.deepEqual(translateAlias("read_file", { path: "/r/a.pdf", offset: -2 }),
+    { name: "pdf_read", args: { path: "/r/a.pdf", start_page: -2 } });
   assert.equal(translateAlias("edit_block", {}), null);
 });
 

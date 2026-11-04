@@ -210,6 +210,50 @@ try {
     fs.rmSync(outsideImageDir, { recursive: true, force: true });
   }
 
+  // PDF text extraction: page ranges, negative start, the read_file alias,
+  // and refusal of broken or out-of-root files, through the real native Agent.
+  const minimalPdf = (pages) => {
+    const objects = ["<< /Type /Catalog /Pages 2 0 R >>",
+      `<< /Type /Pages /Kids [${pages.map((_, i) => `${4 + i * 2} 0 R`).join(" ")}] /Count ${pages.length} /MediaBox [0 0 595 842] >>`,
+      "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"];
+    for (const [i, text] of pages.entries()) {
+      objects.push(`<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + i * 2} 0 R >>`);
+      const stream = `BT /F1 12 Tf 72 720 Td (${text}) Tj ET`;
+      objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+    }
+    let out = "%PDF-1.4\n"; const offsets = [];
+    objects.forEach((body, i) => { offsets.push(out.length); out += `${i + 1} 0 obj\n${body}\nendobj\n`; });
+    const xref = out.length;
+    out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n` + offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("");
+    return out + `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  };
+  const pdfPath = path.join(tempRoot, "report.pdf");
+  fs.writeFileSync(pdfPath, minimalPdf(["First page", "Second page", "Third page"]));
+  const pdfFirst = await tool(1240, "pdf_read", { device_id: deviceId, path: pdfPath, page_count: 2 });
+  assert.equal(pdfFirst.totalPages, 3, JSON.stringify(pdfFirst));
+  assert.deepEqual(pdfFirst.pages.map((p) => p.page), [1, 2]);
+  assert.match(pdfFirst.pages[1].text, /Second page/);
+  assert.equal(pdfFirst.nextPage, 3);
+  assert.equal(pdfFirst.readOnly, true);
+  const pdfLast = await tool(1241, "pdf_read", { device_id: deviceId, path: pdfPath, start_page: -1 });
+  assert.equal(pdfLast.startPage, 3);
+  assert.match(pdfLast.pages[0].text, /Third page/);
+  assert.equal(pdfLast.hasMore, false);
+  const pdfAlias = await tool(1242, "read_file", { device_id: deviceId, path: pdfPath, offset: 1, length: 1 });
+  assert.deepEqual(pdfAlias.pages.map((p) => p.page), [2], "read_file on a .pdf reads pages");
+  assert.equal(typeof (await tool(1243, "pdf_read", { device_id: deviceId, path: pdfPath, page_count: 21 })).error, "string");
+  const pdfBroken = path.join(tempRoot, "broken.pdf");
+  fs.writeFileSync(pdfBroken, "%PDF-1.4 not a document");
+  assert.equal(typeof (await tool(1244, "pdf_read", { device_id: deviceId, path: pdfBroken })).error, "string");
+  const pdfOutsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "commander-outside-pdf-"));
+  try {
+    const pdfOutside = path.join(pdfOutsideDir, "outside.pdf");
+    fs.copyFileSync(pdfPath, pdfOutside);
+    assert.match((await tool(1245, "pdf_read", { device_id: deviceId, path: pdfOutside })).error, /outside configured allowed roots/i);
+  } finally {
+    fs.rmSync(pdfOutsideDir, { recursive: true, force: true });
+  }
+
   // Read-only DOCX tools must preserve Unicode, decode XML entities, and enforce
   // root, archive, and pagination boundaries through the real native Agent.
   const documentPath = path.join(tempRoot, "sample.docx");

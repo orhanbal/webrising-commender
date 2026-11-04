@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `pdf_read`: native, read-only PDF text extraction in the Rust agent (pure Rust `lopdf`, no external renderer): up to 20 pages per call, negative start counts from the end, 32 MiB file / 32 MiB decompressed / 256 KiB response bounds, password-protected PDFs refused. `read_file` on a `.pdf` path reads pages (Desktop Commander behaviour). Needs agent package with this change.
 - Desktop Commander-compatible tools: `read_file`, `read_multiple_files`, `write_file`, `list_directory`, `create_directory`, `move_file`, `get_file_info` (aliases with optional `device_id`), `edit_block` (exact, then unique whitespace-tolerant match; SHA-256-guarded write with undo snapshot; closest-line hint on no match) and `url_fetch` (gateway-side, SSRF-guarded, 1 MiB / 15 s).
 - Per-device trust level (Strict / Standard / Full): owner-chosen in the console (admin browser session; Full needs the password, can be time-limited, e-mails all admins/owners, audited as `trusted_full`). Strict ignores the command allowlist; Full runs HIGH-risk operations without per-call approval while device-local capabilities still apply.
 - Domain: defaults move to `https://wecommander.app` (old domain keeps serving during the transition); new agent command `set-control-url` moves an enrolled device to a new gateway origin without re-enrolling. See `docs/DOMAIN_MIGRATION.md`.

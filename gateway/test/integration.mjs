@@ -1399,7 +1399,7 @@ for (const name of [
   "fs_read_lines", "fs_read_multiple", "start_search", "get_more_search_results",
   "stop_search", "terminal_read_page", "get_recent_tool_calls", "get_usage_stats",
   "xlsx_inspect", "xlsx_read_range", "xlsx_find", "xlsx_write_cells",
-  "docx_inspect", "docx_read_paragraphs", "docx_read_table", "image_inspect",
+  "docx_inspect", "docx_read_paragraphs", "docx_read_table", "image_inspect", "pdf_read",
   "read_file", "write_file", "edit_block", "list_directory", "url_fetch",
 ]) {
   assert.ok(advertisedNames.includes(name), `Missing advertised parity tool: ${name}`);
