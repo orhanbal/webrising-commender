@@ -7,7 +7,7 @@ Paddle webhook can provision or update entitlements.
 ## Production preconditions
 
 1. Deploy the application and confirm the public HTTPS origin has a valid certificate.
-   Configure `PUBLIC_BASE_URL=https://wecommander.webrising.tr` if that is the
+   Configure `PUBLIC_BASE_URL=https://wecommander.app` if that is the
    intended production origin.
 2. Decide whether this installation is the **Cloud SaaS** or the unlimited
    **self-hosted** edition. Self-hosted mode deliberately disables paid checkout.
@@ -27,7 +27,7 @@ Paddle webhook can provision or update entitlements.
      Only then set this flag to `true` on the server; setting Paddle API
      keys alone will **not** enable live payment collection.
 4. Create a Paddle notification destination at
-   `https://wecommander.webrising.tr/webhooks/paddle`. Subscribe to
+   `https://wecommander.app/webhooks/paddle`. Subscribe to
    `subscription.created`, `subscription.activated`, `subscription.updated`,
    `subscription.trialing`, `subscription.past_due`, `subscription.paused`,
    `subscription.resumed` and `subscription.canceled`. Set the destination

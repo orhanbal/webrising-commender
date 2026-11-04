@@ -101,7 +101,7 @@ Steps 0–2 change nothing in production. Steps 3–7 form one change window.
        - Then delete the downloaded `.pem` file. It is never needed again; a
          new key can be generated if required.
      - Environment variable: `PRODUCTION_BASE_URL` =
-       `https://wecommander.webrising.tr`.
+       `https://wecommander.app`.
    - **Rules → Rulesets → New branch ruleset**:
      - Target `production`, enforcement **Active**.
      - Restrict creations, restrict updates, restrict deletions, block force

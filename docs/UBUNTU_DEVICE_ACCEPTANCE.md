@@ -9,7 +9,7 @@ every server-side command in their own SSH session.
 
 1. The production cut-over in `docs/RELEASE_POLICY.md` is complete, and a
    verified release that contains PR #34 (MCP transport fixes) is live at
-   `https://wecommander.webrising.tr`. Before that release, the 405 and
+   `https://wecommander.app`. Before that release, the 405 and
    protocol-version behaviour described here is not in production.
 2. The Agent package: release `ubuntu-preview-1569` contains
    `wecommander-agent_0.1.1569_amd64.deb` (SHA-256
@@ -77,7 +77,7 @@ Then revoke the device in WECOMMANDER → Devices.
 
 ## Step B — connect Claude Code Web (operator)
 
-Add `https://wecommander.webrising.tr/mcp` as a remote MCP server or connector
+Add `https://wecommander.app/mcp` as a remote MCP server or connector
 in the Claude client and complete the OAuth consent as the **operator**.
 Whether Claude Code on the web supports a custom remote MCP server with an
 OAuth browser consent must be verified in the client itself. If it does not,
@@ -87,7 +87,7 @@ not replace this item.
 
 ## Results (2026-11-04, production `ede66013`, Agent `ubuntu-preview-1569`)
 
-The client was a Claude.ai custom connector (`https://wecommander.webrising.tr/mcp`),
+The client was a Claude.ai custom connector (`https://wecommander.app/mcp`),
 signed in as the owner. Device `794911a6-08a2-45c9-86a5-3029e1a04620`.
 
 | # | Result | Evidence |
@@ -143,7 +143,7 @@ seconds. It does not touch SSH. The undo is scheduled **before** the block is
 applied.
 
 ```bash
-GW=$(getent ahostsv4 wecommander.webrising.tr | awk 'NR==1{print $1}')
+GW=$(getent ahostsv4 wecommander.app | awk 'NR==1{print $1}')
 sudo systemd-run --on-active=90 --unit=wec-unblock iptables -D OUTPUT -d "$GW" -p tcp --dport 443 -m owner --uid-owner wecommander -j REJECT
 sudo iptables -I OUTPUT -d "$GW" -p tcp --dport 443 -m owner --uid-owner wecommander -j REJECT
 ```
