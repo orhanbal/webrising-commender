@@ -107,6 +107,11 @@ const tlsOptions = await nativeTlsOptions();
 const hub = new AgentHub(currentNodeId());
 const relayCancellation = new RelayCancellationRegistry();
 const deviceRouter = new DeviceRouter(hub);
+// Separate buckets: a waiting installer polls /api/device-link/poll every 3 s
+// (up to 200 calls in its 600 s TTL). Sharing one bucket with start/enroll made
+// enrollment fail with 429 after about a minute of waiting for approval.
+const deviceLinkStartRateLimit = new FixedWindowRateLimiter();
+const deviceLinkPollRateLimit = new FixedWindowRateLimiter();
 const enrollRateLimit = new FixedWindowRateLimiter();
 const agentRouteRateLimit = new FixedWindowRateLimiter();
 const pairingRateLimit = new FixedWindowRateLimiter();
@@ -1488,13 +1493,19 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     }
 
     if (req.method === "POST" && url.pathname === "/api/device-link/start") {
-      const limit = enrollRateLimit.hit(remoteKey(req), 12, 10 * 60_000);
-      if (!limit.allowed) return void json(res, 429, { error: "rate_limited" });
+      const limit = deviceLinkStartRateLimit.hit(remoteKey(req), 12, 10 * 60_000);
+      if (!limit.allowed) {
+        res.setHeader("Retry-After", String(limit.retryAfterSeconds));
+        return void json(res, 429, { error: "rate_limited" });
+      }
       return void json(res, 201, await createDeviceLink());
     }
     if (req.method === "POST" && url.pathname === "/api/device-link/poll") {
-      const limit = enrollRateLimit.hit(remoteKey(req), 180, 10 * 60_000);
-      if (!limit.allowed) return void json(res, 429, { error: "rate_limited" });
+      const limit = deviceLinkPollRateLimit.hit(remoteKey(req), 600, 10 * 60_000);
+      if (!limit.allowed) {
+        res.setHeader("Retry-After", String(limit.retryAfterSeconds));
+        return void json(res, 429, { error: "rate_limited" });
+      }
       const body = z.object({
         requestId: z.string().uuid(),
         requestSecret: z.string().min(20).max(200),

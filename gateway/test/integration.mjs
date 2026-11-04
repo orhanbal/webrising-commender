@@ -826,6 +826,20 @@ const firstPoll = await jsonFetch("/api/device-link/poll", {
 });
 assert.equal(firstPoll.status, "pending");
 assert.equal(firstPoll.pairingCode, undefined, "Unapproved device must not receive pairing credentials");
+// Regression: an installer polls every 3 s while the owner approves. Two
+// minutes of polling must not exhaust the start or enroll limits.
+for (let i = 0; i < 40; i++) {
+  const waiting = await fetch(base + "/api/device-link/poll", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: pollBody,
+  });
+  assert.equal(waiting.status, 200, `poll ${i} must not be rate limited`);
+  await waiting.text();
+}
+const restartAfterPolling = await fetch(base + "/api/device-link/start", {
+  method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+});
+assert.equal(restartAfterPolling.status, 201, "polling must not consume the device-link start budget");
+await restartAfterPolling.text();
 const incorrectSecret = await jsonFetch("/api/device-link/poll", {
   method: "POST", headers: { "Content-Type": "application/json" },
   body: JSON.stringify({requestId:linkStart.requestId,requestSecret:"incorrect-but-long-secret-12345"}),
