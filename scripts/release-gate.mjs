@@ -22,7 +22,10 @@ export const DIST_ARTIFACT_PREFIX = "WECOMMANDER-multiplatform-preview-";
 // run-name of ubuntu-distribution.yml ends with "(ci <workflow_run.id>/<run_attempt>)".
 export const DIST_MARKER_RE = /\(ci (\d+)\/(\d+)\)$/;
 
-// Every job of .github/workflows/ci.yml, matrix legs expanded. No job in ci.yml
+// Every job of .github/workflows/ci.yml, matrix legs expanded. macOS checks
+// live in macos.yml and are deliberately not part of the production gate:
+// GitHub's macOS runner capacity must not block a Linux release, and the
+// macOS installer is only published after macos.yml passes. No job in ci.yml
 // is conditional, so each must be present and `success`; a skipped, cancelled,
 // missing or extra job refuses the release. release-gate.test.mjs keeps this
 // list in sync with ci.yml.
@@ -30,7 +33,6 @@ export const REQUIRED_CI_JOBS = Object.freeze([
   "windows-powershell-preflight",
   "rust",
   "rust-platforms (windows-latest)",
-  "rust-platforms (macos-latest)",
   "gateway",
   "integration",
   "agent-e2e",
@@ -39,9 +41,7 @@ export const REQUIRED_CI_JOBS = Object.freeze([
   "compose-smoke",
   "installer-syntax (ubuntu-latest)",
   "installer-syntax (windows-latest)",
-  "installer-syntax (macos-latest)",
   "linux-acceptance-artifact",
-  "macos-acceptance-artifact",
   "windows-acceptance-artifact",
   "windows-service-smoke",
 ]);

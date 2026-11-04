@@ -18,7 +18,7 @@ local checkout. Every step is done in the GitHub or Coolify web UI.
 
 | Control | Where | Fails closed when |
 |---|---|---|
-| Release gate | `scripts/release-gate.mjs` (61 unit tests with `release-tools.test.mjs`) | SHA not full 40-hex or confirmation differs; SHA not on `main`; the **newest** `ci` push-on-main run for the SHA (latest attempt) is missing, queued, running, failed, cancelled or timed out — an older success never counts; any of the 17 required jobs (`REQUIRED_CI_JOBS`, kept equal to `ci.yml` by a test) missing, duplicated, extra, not `success`, or from another run/attempt; the **newest** `platform-distribution` run linked to that exact ci run is not `success`, belongs to an earlier attempt or predates it; `production` absent (promote/rollback) or present (bootstrap); `production` head has no valid release tag (unauthorized update); promote not a fast-forward; rollback target never released |
+| Release gate | `scripts/release-gate.mjs` (61 unit tests with `release-tools.test.mjs`) | SHA not full 40-hex or confirmation differs; SHA not on `main`; the **newest** `ci` push-on-main run for the SHA (latest attempt) is missing, queued, running, failed, cancelled or timed out — an older success never counts; any of the 14 required jobs (`REQUIRED_CI_JOBS`, kept equal to `ci.yml` by a test; macOS checks run in `macos.yml` and are not part of this gate) missing, duplicated, extra, not `success`, or from another run/attempt; the **newest** `platform-distribution` run linked to that exact ci run is not `success`, belongs to an earlier attempt or predates it; `production` absent (promote/rollback) or present (bootstrap); `production` head has no valid release tag (unauthorized update); promote not a fast-forward; rollback target never released |
 | Distribution linkage | `ubuntu-distribution.yml` `run-name` "(ci `<run id>`/`<attempt>`)"; older runs: artifact `WECOMMANDER-multiplatform-preview-<ci run number>` | GitHub lists `workflow_run` runs under the default-branch head at trigger time, not under the commit they built, so `head_sha` is never used for this link (live example: skipped run 41520734100, triggered by a PR's CI on 2 Nov, is listed under `9bdcf23c`; the real build of `9bdcf23c` is run 41114449603, linked by artifact `…-1530`) |
 | Release ledger | annotated `production-release/<UTC>-<sha12>` tags | lightweight tag, or tag whose `sha:` line differs from its target → ignored |
 | Approval | `production` environment, required reviewer | job waits; the App key secret is not given to the job before approval |
@@ -171,6 +171,16 @@ Record each with its Coolify deployment ID or workflow run link:
   red;
 - after a second verified release, a `rollback` to the previous release:
   exactly one deployment, verified.
+
+### macOS checks and installer
+
+macOS jobs run in `.github/workflows/macos.yml`, not in `ci`. The production
+gate requires only the Linux/Windows `ci` jobs and `platform-distribution`, so
+GitHub's macOS runner capacity cannot block a Linux release. macOS is still
+tested on every push and PR. The macOS installer is published only by
+`macos-distribution.yml`, as a `macos-preview-*` prerelease, after `macos`
+succeeds for a `main` push. `platform-distribution` no longer ships a
+`.pkg`.
 
 ### Emergency (break-glass)
 

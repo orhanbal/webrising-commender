@@ -46,7 +46,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -666,7 +666,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -736,38 +736,6 @@ jobs:
           path: dist/*
           retention-days: 14
 
-  macos-acceptance-artifact:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-apple-darwin,aarch64-apple-darwin
-      - name: Build universal release agent
-        run: |
-          cargo build --release -p webrising-commender-agent --target x86_64-apple-darwin
-          cargo build --release -p webrising-commender-agent --target aarch64-apple-darwin
-          mkdir -p dist
-          lipo -create \
-            target/x86_64-apple-darwin/release/webrising-commender \
-            target/aarch64-apple-darwin/release/webrising-commender \
-            -output dist/webrising-commender
-          lipo -info dist/webrising-commender
-          bash scripts/build-macos-pkg.sh dist/webrising-commender "0.1.${GITHUB_RUN_NUMBER}" dist
-          pkgutil --payload-files "dist/WECOMMANDER-macos-universal.pkg" | grep -q 'wecommander-setup'
-          bash scripts/setup-macos.sh --help >/dev/null
-      - name: Package macOS acceptance bundle
-        run: |
-          cp scripts/install-macos.sh dist/
-          cp scripts/uninstall-macos.sh dist/
-          cp docs/QUICKSTART.md dist/
-          cd dist
-          shasum -a 256 webrising-commender WECOMMANDER-macos-universal.pkg > SHA256SUMS.txt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: WECOMMANDER-macos-universal-acceptance
-          path: dist/*
-          retention-days: 14
 
   windows-acceptance-artifact:
     runs-on: windows-latest
