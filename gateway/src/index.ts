@@ -1,3 +1,4 @@
+import { MAX_ALLOWLIST_ENTRIES, normalizePattern } from "./command-allowlist.js";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
@@ -3583,6 +3584,64 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       await deviceRouter.disconnect(deviceId);
       await auditControl(principal!, deviceId, "device.revoke", "high", "success");
       return void json(res, 200, { ok: true, item: revoked.rows[0] });
+    }
+
+    // Per-device allowlist of routine commands that skip per-call approval.
+    // Reading needs admin; changing it needs an admin *browser session*, so an
+    // AI client or automation token can never widen its own permissions.
+    const allowlistMatchRoute = url.pathname.match(
+      /^\/api\/devices\/([0-9a-f-]{36})\/command-allowlist(?:\/([0-9a-f-]{36}))?$/i,
+    );
+    if (allowlistMatchRoute) {
+      if (!requireRole(principal!, "admin", res)) return;
+      const deviceId = allowlistMatchRoute[1]!;
+      const entryId = allowlistMatchRoute[2];
+      const device = await db.query(
+        "select 1 from devices where id=$1 and organization_id=$2 and revoked_at is null",
+        [deviceId, principal!.organizationId],
+      );
+      if (!device.rowCount) return void json(res, 404, { error: "device_not_found" });
+      if (req.method === "GET" && !entryId) {
+        const rows = await db.query(
+          "select id,pattern,created_by,created_at from device_command_allowlist where organization_id=$1 and device_id=$2 order by created_at",
+          [principal!.organizationId, deviceId],
+        );
+        return void json(res, 200, { items: rows.rows });
+      }
+      if (principal!.authKind !== "session") {
+        return void json(res, 403, { error: "browser_session_required" });
+      }
+      if (req.method === "POST" && !entryId) {
+        const body = z.object({ pattern: z.string().max(512) }).parse(await readJson(req));
+        const pattern = normalizePattern(body.pattern);
+        if (!pattern) return void json(res, 400, { error: "pattern_not_allowed" });
+        const count = await db.query<{ n: number }>(
+          "select count(*)::int as n from device_command_allowlist where device_id=$1", [deviceId],
+        );
+        if ((count.rows[0]?.n ?? 0) >= MAX_ALLOWLIST_ENTRIES) {
+          return void json(res, 409, { error: "allowlist_full" });
+        }
+        const inserted = await db.query(
+          `insert into device_command_allowlist(organization_id,device_id,pattern,created_by)
+           values($1,$2,$3,$4) on conflict(device_id,pattern) do nothing
+           returning id,pattern,created_by,created_at`,
+          [principal!.organizationId, deviceId, pattern, principal!.actor],
+        );
+        if (!inserted.rowCount) return void json(res, 409, { error: "pattern_exists" });
+        await auditControl(principal!, deviceId, "command_allowlist.add", "high", "success", JSON.stringify({ pattern }));
+        return void json(res, 201, { item: inserted.rows[0] });
+      }
+      if (req.method === "DELETE" && entryId) {
+        const removed = await db.query(
+          "delete from device_command_allowlist where id=$1 and device_id=$2 and organization_id=$3 returning pattern",
+          [entryId, deviceId, principal!.organizationId],
+        );
+        if (!removed.rowCount) return void json(res, 404, { error: "allowlist_entry_not_found" });
+        await auditControl(principal!, deviceId, "command_allowlist.remove", "high", "success",
+          JSON.stringify({ pattern: removed.rows[0].pattern }));
+        return void json(res, 200, { ok: true });
+      }
+      return void json(res, 405, { error: "method_not_allowed" });
     }
 
     if (req.method === "GET" && url.pathname === "/api/approval-requests") {

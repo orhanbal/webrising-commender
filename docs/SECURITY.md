@@ -27,6 +27,35 @@ The gateway derives a unique per-device approval verification key from `APPROVAL
 
 For HIGH-risk actions, the gateway validates and atomically consumes the one-time approval before dispatch. The native agent independently verifies the HMAC signature, device id, action, exact parameters and expiry before executing the operation. Changing a command, path, PID, PTY session id or any other approved parameter invalidates the approval. A compromised relay path therefore cannot turn an arbitrary string into local approval.
 
+## Command allowlist (routine commands without per-call approval)
+
+Owners and admins can allowlist routine shell commands per device (console →
+Devices → Approvals → "Onaysız çalışabilen komutlar"). Rules, all fail-closed:
+
+- Only `process_exec` is ever allowlisted. Tasks, terminals, deletes and kills
+  always need approval.
+- A command containing a semicolon, `&`, `|`, `$`, a backtick, `<`, `>`,
+  parentheses, braces, brackets, a backslash, `*`, `?`, `!`, `#`, `~`, quotes,
+  tabs or newlines is never allowlisted, even if a pattern matches. This means
+  `df -h; rm -rf /` and `docker ps $(evil)` cannot use `df -h` or `docker ps`.
+- A pattern matches when its tokens are an exact prefix of the command's
+  tokens: `systemctl status` matches `systemctl status nginx`, but not
+  `systemctl stop nginx` or `systemctl statusx`.
+- Patterns cannot start with shells, `sudo`/`su`/`env`/`xargs`, interpreters,
+  network or remote-copy tools, database clients, or destructive/ownership
+  tools. Multi-purpose tools (`docker`, `systemctl`, `git`, `apt`, …) need a
+  subcommand. Stored patterns are re-validated on every match.
+- Only an admin **browser session** with CSRF can add or remove entries. API
+  tokens and MCP/OAuth clients get `403 browser_session_required`, so an AI
+  client cannot widen its own permissions.
+- Every allowlisted run is audited with outcome `allowlisted` and the pattern
+  id. The gateway issues the one-use device approval itself. Device-local
+  capabilities (`--no-commands`) still apply.
+
+When a new approval request is created, admins and owners receive one e-mail
+with a link to Devices → Approvals. Approving still requires their browser
+session, so the e-mail itself grants nothing.
+
 ## Logging
 
 Never intentionally log:
