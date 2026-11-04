@@ -6,7 +6,7 @@ import {Badge,Button,Card,CardContent,CardHeader,CardTitle,Dialog,DialogContent,
 import {DashboardShell} from "./Dashboard";
 import type {Nav,Theme} from "../App";
 
-type ManagedDevice=Device&{revoked_at?:string|null;agent_version?:string|null;capabilities?:string[]|null};
+type ManagedDevice=Device&{revoked_at?:string|null;trust_level?:"strict"|"standard"|"full";agent_version?:string|null;capabilities?:string[]|null};
 export function DevicesPage({nav,account,checking,theme,toggle,logout}:{nav:Nav;account:Account|null;checking:boolean;theme:Theme;toggle:()=>void;logout:()=>void}){
  useLocale();
  const [devices,setDevices]=useState<ManagedDevice[]>([]);
@@ -82,6 +82,7 @@ export function DevicesPage({nav,account,checking,theme,toggle,logout}:{nav:Nav;
     <div className="size-11 flex-none grid place-items-center rounded-xl bg-[var(--subtle-surface)] text-[var(--accent)]"><Monitor size={21}/></div>
     <div className="flex-1 min-w-[145px]"><strong className="text-sm">{d.name}</strong><small className="muted block text-xs mt-1 truncate">{d.platform||"Sistem"} · {d.hostname||d.id.slice(0,8)} · {d.agent_version||translate("Agent sürümü bilinmiyor")}</small></div>
     <Badge className={d.revoked_at?"text-[var(--danger)]":d.online?"text-[var(--success)]":""}>{d.revoked_at?translate("● İptal edildi"):d.online?translate("● Çevrimiçi"):translate("● Çevrimdışı")}</Badge>
+    {!d.revoked_at&&d.trust_level&&<button type="button" onClick={()=>nav("/approvals")} title={translate("Güven seviyesi")} className={"rounded-full border px-3 py-1 text-xs font-semibold "+(d.trust_level==="full"?"border-[var(--warning)] bg-[var(--warning-soft)] text-[var(--warning)]":d.trust_level==="strict"?"border-[var(--stroke)] bg-[var(--subtle-surface)]":"border-[var(--stroke)] bg-[var(--accent-soft)] text-[var(--accent)]")}>{translate("Güven")}: {translate(d.trust_level==="full"?"Tam":d.trust_level==="strict"?"Sıkı":"Standart")}</button>}
     <div className="flex gap-2 sm:ml-auto"><Button size="sm" variant="outline" onClick={()=>nav("/terminal?device="+encodeURIComponent(d.id))} disabled={!!d.revoked_at}>{translate("Yönet")} <ArrowRight size={15}/></Button>
      {canAdmin&&!d.revoked_at&&<Button size="sm" variant="ghost" onClick={()=>{setSelected(d);setName(d.name)}} aria-label={d.name+" düzenle"}><MoreHorizontal size={17}/></Button>}
     </div>

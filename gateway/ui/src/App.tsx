@@ -10,6 +10,7 @@ const DashboardPage=lazy(()=>import("./pages/Dashboard").then(m=>({default:m.Das
 const BillingPage=lazy(()=>import("./pages/Billing").then(m=>({default:m.BillingPage})));
 const DevicesPage=lazy(()=>import("./pages/Devices").then(m=>({default:m.DevicesPage})));
 const WorkspacePage=lazy(()=>import("./pages/Workspace").then(m=>({default:m.WorkspacePage})));
+const ApprovalsPage=lazy(()=>import("./pages/Approvals").then(m=>({default:m.ApprovalsPage})));
 const UsagePage=lazy(()=>import("./pages/Usage").then(m=>({default:m.UsagePage})));
 const AccountPage=lazy(()=>import("./pages/Account").then(m=>({default:m.AccountPage})));
 const InstallPage=lazy(()=>import("./pages/Install").then(m=>({default:m.InstallPage})));
@@ -19,7 +20,7 @@ import { LanguageSwitcher,useLocale,t as translate } from "./i18n";
 
 export type Nav=(path:string)=>void;
 export type Theme="light"|"dark";
-const routes=new Set(["/console","/console/users","/console/organizations","/console/devices","/console/operations","/console/landing","/console/billing","/console/system","/console/brand","/console/legal","/","/features","/how-it-works","/login","/register","/forgot-password","/reset-password","/verify","/pricing","/checkout","/install","/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage","/privacy","/terms"]);
+const routes=new Set(["/console","/console/users","/console/organizations","/console/devices","/console/operations","/console/landing","/console/billing","/console/system","/console/brand","/console/legal","/","/features","/how-it-works","/login","/register","/forgot-password","/reset-password","/verify","/pricing","/checkout","/install","/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage","/approvals","/privacy","/terms"]);
 export function Brand({onClick,subtitle=false}:{onClick?:()=>void;subtitle?:boolean}){return <a href="/" onClick={e=>{if(onClick){e.preventDefault();onClick()}}} aria-label={translate("WECOMMANDER ana sayfa")} className="inline-flex flex-col gap-1 items-start"><img className="logo-light" src="/api/public/brand/logo_light" alt="WECOMMANDER"/><img className="logo-dark" src="/api/public/brand/logo_dark" alt="" aria-hidden="true"/>{subtitle&&<span className="text-[11px] tracking-wide text-[var(--muted)]">Remote MCP · AI Workspace</span>}</a>}
 export function NavLink({to,nav,children,className}:{to:string;nav:Nav;children:ReactNode;className?:string}){return <a href={to} className={className} onClick={e=>{if(e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey){e.preventDefault();nav(to)}}}>{children}</a>}
 export function ThemeToggle({theme,onToggle}:{theme:Theme;onToggle:()=>void}){return <button type="button" className="theme-button" onClick={onToggle} aria-label={theme==="dark"?translate("Açık temaya geç"):translate("Koyu temaya geç")} title={theme==="dark"?translate("Windows açık tema"):translate("Windows koyu tema")}>{theme==="dark"?<Sun className="size-[19px]"/>:<Moon className="size-[19px]"/>}</button>}
@@ -63,11 +64,12 @@ export default function App(){
   {path==="/account"&&<AccountPage nav={navigate} account={account} checking={checking} refresh={refresh} logout={logout} theme={theme} toggle={toggle}/>} 
   {path==="/devices"&&<DevicesPage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
   {["/terminal","/files","/tasks","/mcp"].includes(path)&&<WorkspacePage nav={navigate} path={path.slice(1) as "terminal"|"files"|"tasks"|"mcp"} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
-  {path==="/usage"&&<UsagePage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
+  {path==="/approvals"&&<ApprovalsPage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
+ {path==="/usage"&&<UsagePage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
 
   {(path==="/privacy"||path==="/terms")&&<LegalPage page={path==="/privacy"?"privacy":"terms"}/>}
  </>;
- const globalHeader=!path.startsWith("/console")&&!["/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage"].includes(path);
+ const globalHeader=!path.startsWith("/console")&&!["/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage","/approvals"].includes(path);
  return <div className="app-shell">
   {globalHeader&&<header className="site-header"><div className="container-w">
   <Brand onClick={()=>navigate("/")}/>
