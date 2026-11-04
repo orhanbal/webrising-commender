@@ -415,7 +415,11 @@ async function serveModernFile(res: ServerResponse, fileName:string, isIndex=fal
           '<meta property="og:type" content="website">'+
           '<meta property="og:title" content="'+safeTitle+'">'+
           '<meta property="og:description" content="'+safeDescription+'">'+
-          '<meta property="og:url" content="'+canonical+'"></head>');
+          '<meta property="og:url" content="'+canonical+'">'+
+          '<meta property="og:site_name" content="WECOMMANDER">'+
+          '<meta name="twitter:card" content="summary">'+
+          '<meta name="twitter:title" content="'+safeTitle+'">'+
+          '<meta name="twitter:description" content="'+safeDescription+'"></head>');
         body=Buffer.from(html);
       }
       res.writeHead(200,{
@@ -478,8 +482,8 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       let seo:{title:string;description:string}|undefined;
       if(url.pathname==="/") {
         seo={
-          title:"WECOMMANDER · AI Remote Workspace",
-          description:"WECOMMANDER — securely connect devices and manage files, terminals and workflows with your AI tools.",
+          title:"WECOMMANDER · Your AI, on every machine",
+          description:"Connect Claude, ChatGPT or any MCP client to the terminals and files of your Windows, macOS and Linux machines through one MCP URL, with server-side approvals, a non-root agent and a full audit trail.",
         };
         try{
           const result=await db.query<{seo_title:string;seo_description:string}>(

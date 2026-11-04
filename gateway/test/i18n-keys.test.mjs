@@ -38,7 +38,7 @@ test("every translated literal has an English entry", () => {
   const missing = [];
   for (const file of sources()) {
     const text = fs.readFileSync(file, "utf8");
-    for (const m of text.matchAll(/\b(?:translate|t)\(\s*("(?:[^"\\]|\\.)*")\s*\)/g)) {
+    for (const m of text.matchAll(/\b(?:translate|t|copy)\(\s*("(?:[^"\\]|\\.)*")\s*\)/g)) {
       const key = JSON.parse(m[1]);
       if (!english.has(key) && !sameInBoth.has(key)) missing.push(`${path.relative(src, file)}: ${key}`);
     }
@@ -48,4 +48,14 @@ test("every translated literal has an English entry", () => {
 
 test("English entries are not left empty", () => {
   for (const [key, value] of table()) assert.ok(value.trim(), `empty English text for "${key}"`);
+});
+
+test("landing CMS catalog matches Landing.tsx and is fully translated", () => {
+  const english = table();
+  const catalog = fs.readFileSync(path.join(src, "landing-copy-sections.ts"), "utf8");
+  const keys = new Set([...catalog.matchAll(/^\s*("(?:[^"\\]|\\.)*"),?\s*$/gm)].map((m) => JSON.parse(m[1])));
+  const landing = fs.readFileSync(path.join(src, "pages/Landing.tsx"), "utf8");
+  const used = [...landing.matchAll(/\bcopy\(\s*("(?:[^"\\]|\\.)*")\s*\)/g)].map((m) => JSON.parse(m[1]));
+  assert.deepEqual(used.filter((k) => !keys.has(k)), [], "copy() keys missing from landing-copy-sections.ts");
+  assert.deepEqual([...keys].filter((k) => !english.has(k) && !sameInBoth.has(k)), [], "catalog keys without English text");
 });
