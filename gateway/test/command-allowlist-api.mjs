@@ -119,6 +119,15 @@ try {
   assert.equal((await callExec("uname -s")).error, "approval_required", "strict ignores the allowlist");
   const trustAudit = await db.query("select count(*)::int as n from audit_logs where device_id=$1 and tool='device.trust_level'", [device]);
   assert.equal(trustAudit.rows[0].n, 2);
+  // Device deletion: only revoked devices, only from an admin browser session; audit kept.
+  const delRoute = base + `/api/devices/${device}`;
+  assert.equal((await fetch(delRoute, { method: "DELETE", headers: owner })).status, 409, "revoke before delete");
+  assert.equal((await fetch(delRoute, { method: "DELETE", headers: { authorization: "Bearer " + apiToken } })).status, 403);
+  assert.equal((await fetch(base + `/api/devices/${device}/revoke`, { method: "POST", headers: owner, body: "{}" })).status, 200);
+  assert.equal((await fetch(delRoute, { method: "DELETE", headers: viewer })).status, 403, "viewer");
+  assert.equal((await fetch(delRoute, { method: "DELETE", headers: owner })).status, 200);
+  assert.equal((await db.query("select 1 from devices where id=$1", [device])).rowCount, 0);
+  assert.ok((await db.query("select count(*)::int n from audit_logs where device_id=$1", [device])).rows[0].n > 0, "audit history kept");
   console.log("command allowlist API + approval notification acceptance passed");
 } finally {
   await db.end();
