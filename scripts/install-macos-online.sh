@@ -7,8 +7,16 @@ umask 077
 case "$(uname -m)" in arm64|x86_64) ;; *) echo "Unsupported Mac architecture." >&2; exit 1 ;; esac
 (( EUID != 0 )) || { echo "Run in your Mac user session without sudo; installation will request it." >&2; exit 1; }
 INSTALL_ONLY=0
-if [[ "${1:-}" == '--install-only' ]]; then INSTALL_ONLY=1; shift; fi
-(($# == 0)) || { echo "Usage: bash install-macos-online.sh [--install-only]" >&2; exit 2; }
+SETUP_ARGS=()
+while (($#)); do
+  case "$1" in
+    --install-only) INSTALL_ONLY=1; shift ;;
+    --control-url)
+      [[ "${2:-}" =~ ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$ ]] || { echo "--control-url needs an HTTPS origin." >&2; exit 2; }
+      SETUP_ARGS=(--control-url "${2%/}"); shift 2 ;;
+    *) echo "Usage: bash install-macos-online.sh [--install-only] [--control-url https://HOST]" >&2; exit 2 ;;
+  esac
+done
 TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
 REPO="orhanbal/webrising-commender"
@@ -58,7 +66,7 @@ echo "Checksum verified. macOS may request your administrator password to instal
 sudo /usr/sbin/installer -pkg "$TMP/$PACKAGE" -target /
 echo "WECOMMANDER package installed."
 if ((INSTALL_ONLY)); then
-  echo "To pair later: /usr/local/bin/wecommander-setup"
+  echo "To pair later: /usr/local/bin/wecommander-setup ${SETUP_ARGS[*]:-}"
 else
-  /usr/local/bin/wecommander-setup
+  /usr/local/bin/wecommander-setup ${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}
 fi

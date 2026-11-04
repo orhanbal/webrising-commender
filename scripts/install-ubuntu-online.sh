@@ -7,8 +7,16 @@ umask 077
 REPO="orhanbal/webrising-commender"
 API="https://api.github.com/repos/$REPO/releases?per_page=30"
 PACKAGE_ONLY=0
-if [[ "${1:-}" == --package-only ]]; then PACKAGE_ONLY=1; shift; fi
-(($# == 0)) || { echo "Usage: sudo bash install-ubuntu-online.sh [--package-only]" >&2; exit 2; }
+SETUP_ARGS=()
+while (($#)); do
+  case "$1" in
+    --package-only) PACKAGE_ONLY=1; shift ;;
+    --control-url)
+      [[ "${2:-}" =~ ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$ ]] || { echo "--control-url needs an HTTPS origin." >&2; exit 2; }
+      SETUP_ARGS=(--control-url "${2%/}"); shift 2 ;;
+    *) echo "Usage: sudo bash install-ubuntu-online.sh [--package-only] [--control-url https://HOST]" >&2; exit 2 ;;
+  esac
+done
 [[ $EUID == 0 ]] || { echo "Run with sudo." >&2; exit 1; }
 [[ "$(dpkg --print-architecture)" == amd64 ]] || { echo "This installer supports Ubuntu amd64 (x86_64) only." >&2; exit 1; }
 for command in curl python3 dpkg-deb sha256sum apt-get; do
@@ -64,8 +72,8 @@ printf '%s  %s\n' "$EXPECTED" "$TMP/$PACKAGE_NAME" | sha256sum --check --status 
 echo "Checksum verified. Installing Debian package..."
 DEBIAN_FRONTEND=noninteractive apt-get install -y "$TMP/$PACKAGE_NAME"
 if ((PACKAGE_ONLY)); then
-  echo "Package installed. To connect later: sudo wecommander-setup"
+  echo "Package installed. To connect later: sudo wecommander-setup ${SETUP_ARGS[*]:-}"
 else
   echo "Starting account-approved Ubuntu enrollment..."
-  exec /usr/bin/wecommander-setup
+  exec /usr/bin/wecommander-setup ${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}
 fi
