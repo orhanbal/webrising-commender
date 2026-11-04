@@ -62,3 +62,29 @@ export async function notifyApprovers(
   }
   return recipients.rows.length;
 }
+
+/** Security notice: a device was switched to full trust (no per-call approval). */
+export async function notifyTrustChange(organizationId: string, deviceName: string, changedBy: string, until: Date | null) {
+  if (!mailConfigured()) return 0;
+  const base = (process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
+  const recipients = await db.query<{ email: string }>(
+    `select u.email from organization_members m join users u on u.id=m.user_id
+      where m.organization_id=$1 and m.role in ('admin','owner')
+        and u.disabled_at is null and u.email_verified_at is not null
+      order by m.role desc, u.email limit $2`,
+    [organizationId, MAX_RECIPIENTS],
+  );
+  const untilText = until ? new Date(until).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "süresiz";
+  for (const { email } of recipients.rows) {
+    await enqueueMail({
+      to: email,
+      subject: `WECOMMANDER güvenlik bildirimi: ${deviceName} tam yetki moduna alındı`.slice(0, 160),
+      text:
+        `"${deviceName}" cihazı tam yetki moduna alındı. Yapay zekâ istemcileri bu cihazda yüksek riskli ` +
+        `işlemleri onay beklemeden çalıştırabilir.\n\nDeğiştiren: ${changedBy}\nBitiş: ${untilText}\n\n` +
+        `Bunu siz yapmadıysanız hemen Standart veya Sıkı seviyeye alın: ${base}/advanced?view=approvals\n` +
+        `Tüm işlemler audit kaydında "trusted_full" olarak görünür.`,
+    });
+  }
+  return recipients.rows.length;
+}

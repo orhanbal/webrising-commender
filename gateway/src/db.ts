@@ -281,6 +281,16 @@ export async function migrate() {
     alter table devices add column if not exists assigned_relay_id text;
     alter table devices add column if not exists connected_relay_id text;
     alter table devices add column if not exists relay_last_seen_at timestamptz;
+    -- Per-device trust level for HIGH-risk AI operations (owner-chosen):
+    -- strict = always approve, standard = allowlist + approve, full = no
+    -- per-call approval (optionally until trust_full_until).
+    alter table devices add column if not exists trust_level text not null default 'standard';
+    alter table devices add column if not exists trust_full_until timestamptz;
+    do $$ begin
+      if not exists (select 1 from pg_constraint where conname='devices_trust_level_check') then
+        alter table devices add constraint devices_trust_level_check check (trust_level in ('strict','standard','full'));
+      end if;
+    end $$;
 
     create index if not exists devices_assigned_relay_idx
       on devices(assigned_relay_id)

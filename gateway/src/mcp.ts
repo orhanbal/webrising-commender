@@ -310,8 +310,10 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
   const deviceId = String(args.device_id || "");
   if (!deviceId) return ok(request.id, toolResult({ error: "device_id_required" }, true));
 
-  const device = await db.query(
-    "select 1 from devices where id=$1 and organization_id=$2 and revoked_at is null",
+  const device = await db.query<{ trust: "strict" | "standard" | "full" }>(
+    `select case when trust_level='full' and trust_full_until is not null and trust_full_until<=now()
+                 then 'standard' else trust_level end as trust
+       from devices where id=$1 and organization_id=$2 and revoked_at is null`,
     [deviceId, orgId],
   );
   if (!device.rowCount) {
@@ -448,7 +450,12 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
         );
         return ok(request.id, toolResult({ error: "approval_required", action: action.kind }, true));
       }
-    } else if (action.kind === "process_exec" &&
+    } else if (device.rows[0]!.trust === "full") {
+      // Owner chose Desktop Commander-style trust for this device: no
+      // per-call approval. Device-local capabilities still apply on the Agent.
+      approvalToken = issueApproval(deviceId, action, 60).token;
+      await audit(orgId, principal.actor, deviceId, name, risk, "trusted_full", action.kind);
+    } else if (action.kind === "process_exec" && device.rows[0]!.trust === "standard" &&
                (allowlisted = await allowlistMatch(orgId, deviceId, action.command))) {
       // Owner-allowlisted routine command: the gateway issues the one-use
       // device approval itself and records which pattern allowed it.
