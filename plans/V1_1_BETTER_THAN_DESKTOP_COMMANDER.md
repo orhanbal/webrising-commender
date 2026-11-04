@@ -69,10 +69,61 @@ gateway.
 Acceptance: Claude Desktop with `wecommander --mcp-stdio` passes the same tool
 suite as the remote path.
 
+### 5. Professional UI overhaul: landing, user dashboard, console · 4–6 days
+Owner request (2026-11-04): touch every screen and make it professional.
+**Keep the existing logo assets unchanged** (`gateway/public/assets/
+wecommander-white.svg`, `wecommander-black.svg`, `wecommander-favicon.svg`
+and the in-app `Brand` component).
+
+Scope, every file:
+- **Landing** (`/`, `ui/src/pages/Landing.tsx`, `landing-copy-sections.ts`,
+  `Plans.tsx`, `Legal.tsx`, `Install.tsx`). Clear positioning ("Desktop
+  Commander, but for all your machines and every AI client"), real product
+  screenshots instead of the sample card, a feature comparison, security
+  and trust section, pricing, FAQ and footer. SEO metadata and Open Graph
+  for `wecommander.app`.
+- **User dashboard** (`/app`: `Dashboard.tsx`, `Devices.tsx`, `Workspace.tsx`,
+  `Usage.tsx`, `Billing.tsx`, `Account.tsx`, `Auth.tsx`). Devices with trust
+  level and capabilities at a glance; an approvals inbox with exact
+  operation preview; allowlist and trust editing; terminal and files views;
+  onboarding that ends with the ready MCP URL and "add to Claude/ChatGPT"
+  steps; empty, error and loading states everywhere.
+- **Console** (platform admin: `Console.tsx`, `ConsoleUserDetail.tsx`,
+  `SystemStatus.tsx`, `MediaLibrary.tsx`, `LegalEditor.tsx`). One
+  consistent layout, data tables with search and paging, clear dangerous-
+  action confirmations.
+- **Legacy console** (`/advanced`, `gateway/public/app.html`, about 2,250
+  lines of inline HTML/JS). Move every remaining function (approvals,
+  allowlist, trust, device revoke/delete, audit, access, terminal) into
+  the React app, then retire `/advanced` behind a redirect. This also
+  removes the mixed English/Turkish labels found during acceptance.
+
+Design system and quality bar:
+- One token set (colour, spacing, type scale, radius, shadow) for light and
+  dark, built on the existing Tailwind/shadcn setup. Inter-style UI font
+  and one display face. Consistent icons (lucide).
+- Turkish and English complete in every screen (no hard-coded strings);
+  a test fails on missing keys.
+- Accessibility: keyboard paths, focus rings, contrast AA, ARIA on dialogs
+  and menus.
+- Responsive down to 360 px; console tables collapse to cards.
+- Performance: route-level code splitting, under 200 KB JS for the landing
+  first load; Lighthouse ≥ 90 for performance, accessibility and SEO.
+- Visual regression: extend `test/dashboard-visual.mjs` and
+  `modern-ui-visual.mjs` (Playwright) to every screen in light/dark and
+  desktop/mobile; screenshots are attached to each PR for owner review.
+
+Delivery in reviewable steps: (a) design tokens and layout shell, (b)
+landing, (c) user dashboard and approvals inbox, (d) console, (e) migrate
+and retire `/advanced`. Each step is its own PR with screenshots, and each
+goes live through `promote-production`.
+
 ## Order and timing
 
 v1.1 development starts right away, in parallel with the remaining v1.0
-acceptance, which now mostly waits on hardware and owner actions. Every
+acceptance, which now mostly waits on hardware and owner actions.
+Status 2026-11-04: item 1 is live; item 3 is in PR #62 (PDF reading still
+to do). Next: item 2, then item 5 (UI overhaul), then item 4. Every
 item ships through its own PR, CI and `promote-production`. Items 1 → 2 → 3
 need about 3 days, plus 2–3 days for 4.
 
