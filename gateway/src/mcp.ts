@@ -1,5 +1,7 @@
 import { consumeApprovedRequest, ensureApprovalRequest } from "./approval-requests.js";
 import { allowlistMatch } from "./command-allowlist.js";
+import { DC_ALIAS_NAMES, DC_TOOLS, fetchUrl, planEdit, translateAlias } from "./dc-compat.js";
+import { createHash } from "node:crypto";
 import { notifyApprovers } from "./approval-notify.js";
 import { consumeApproval } from "./approvals.js";
 import { roleAtLeast, type Principal } from "./auth.js";
@@ -283,11 +285,41 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
   }
   if (request.method === "notifications/initialized") return null;
   if (request.method === "ping") return ok(request.id, {});
-  if (request.method === "tools/list") return ok(request.id, { tools });
+  if (request.method === "tools/list") return ok(request.id, { tools: [...tools, ...DC_TOOLS] });
   if (request.method !== "tools/call") return fail(request.id, -32601, "Method not found");
 
-  const name = String(request.params?.name || "");
-  const args = request.params?.arguments || {};
+  let name = String(request.params?.name || "");
+  let args = request.params?.arguments || {};
+  const orgIdEarly = principal.organizationId;
+
+  // Desktop Commander-compatible surface: url_fetch runs on the gateway,
+  // edit_block is a guarded read+write, the rest are pure aliases.
+  if (name === "url_fetch") {
+    if (!roleAtLeast(principal, "viewer")) return ok(request.id, toolResult({ error: "forbidden" }, true));
+    try {
+      const data = await fetchUrl(String(args.url || ""));
+      await audit(orgIdEarly, principal.actor, null, name, "low", "success", JSON.stringify({ host: new URL(data.url).host, status: data.status }));
+      return ok(request.id, toolResult(data));
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "fetch_failed";
+      await audit(orgIdEarly, principal.actor, null, name, "low", "error", code.slice(0, 200));
+      return ok(request.id, toolResult({ error: code }, true));
+    }
+  }
+  if (DC_ALIAS_NAMES.has(name) && !args.device_id) {
+    const devices = await db.query("select id from devices where organization_id=$1 and revoked_at is null", [orgIdEarly]);
+    const online = await router.onlineStatuses(devices.rows.map((row) => row.id));
+    const onlineIds = devices.rows.map((row) => row.id).filter((id) => online.has(id));
+    if (onlineIds.length !== 1) {
+      return ok(request.id, toolResult({ error: "device_id_required", online_devices: onlineIds.length }, true));
+    }
+    args = { ...args, device_id: onlineIds[0] };
+  }
+  if (name === "edit_block") {
+    return ok(request.id, await editBlock(args, router, principal));
+  }
+  const alias = DC_ALIAS_NAMES.has(name) ? translateAlias(name, args) : null;
+  if (alias) { name = alias.name; args = alias.args; }
   // Reject unknown MCP tools before attempting device/tenant database access.
   // This also avoids reporting a misleading missing-device error for typos.
   if (!tools.some((entry) => entry.name === name)) {
@@ -530,10 +562,43 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
   }
 }
 
+async function editBlock(args: any, router: DeviceRouter, principal: Principal) {
+  const orgId = principal.organizationId;
+  const deviceId = String(args.device_id || "");
+  if (!roleAtLeast(principal, "operator")) return toolResult({ error: "forbidden", required_role: "operator" }, true);
+  const device = await db.query("select 1 from devices where id=$1 and organization_id=$2 and revoked_at is null", [deviceId, orgId]);
+  if (!device.rowCount) return toolResult({ error: "device_not_found" }, true);
+  const path = String(args.file_path || "");
+  try {
+    const read = await router.request(deviceId, { kind: "fs_read", path }, undefined,
+      undefined, undefined, undefined, undefined, { organizationId: orgId, actor: principal.actor }) as { content?: string; encoding?: string };
+    if (read.encoding !== "utf8" || typeof read.content !== "string") return toolResult({ error: "not_a_text_file" }, true);
+    const plan = planEdit(read.content, String(args.old_string ?? ""), String(args.new_string ?? ""),
+      args.expected_replacements === undefined ? 1 : Number(args.expected_replacements));
+    if (!plan.ok) {
+      await audit(orgId, principal.actor, deviceId, "edit_block", "medium", "denied", plan.error);
+      return toolResult(plan, true);
+    }
+    const original = Buffer.from(read.content, "utf8");
+    const expectedSha256 = createHash("sha256").update(original).digest("hex");
+    await router.request(deviceId, {
+      kind: "fs_write", path, contentBase64: Buffer.from(plan.content, "utf8").toString("base64"),
+      createParents: false, expectedSha256, withUndo: true,
+    }, undefined, undefined, undefined, undefined, undefined, { organizationId: orgId, actor: principal.actor });
+    await audit(orgId, principal.actor, deviceId, "edit_block", "medium", "success",
+      JSON.stringify({ replacements: plan.replacements, mode: plan.mode }));
+    return toolResult({ ok: true, replacements: plan.replacements, match: plan.mode, undo: "fs_versions/fs_undo can restore the previous content" });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "edit_failed";
+    await audit(orgId, principal.actor, deviceId, "edit_block", "medium", "error", redact(message));
+    return toolResult({ error: message }, true);
+  }
+}
+
 async function audit(
   orgId: string,
   actor: string,
-  deviceId: string,
+  deviceId: string | null,
   toolName: string,
   risk: string,
   outcome: string,
