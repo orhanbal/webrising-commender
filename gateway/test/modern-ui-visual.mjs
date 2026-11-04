@@ -12,7 +12,9 @@ assert.ok(existsSync(join(root,"index.html")),"Frontend must be built before bro
 const fixtures={
  "/api/auth/me":{email:"test@example.com",actor:"test-user",role:"owner",authKind:"session",global:false,organizationId:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"},
  "/api/public/plans":{mode:"saas",paddle:{clientToken:null,checkoutEnabled:false,environment:"sandbox"},plans:[{key:"pro",name:"Pro",description:"Example test plan",featured:true,priceLabel:"$12 / month",priceId:null,features:["5 devices"],maxDevices:5,maxMembers:2,maxApiTokens:4}]},
- "/api/devices":{items:[{id:"11111111-1111-4111-8111-111111111111",name:"Test Windows Device",platform:"windows",online:true,last_seen_at:new Date().toISOString()}]},
+ "/api/devices":{items:[{id:"11111111-1111-4111-8111-111111111111",name:"Test Windows Device",platform:"windows",online:true,last_seen_at:new Date().toISOString(),trust_level:"standard",trust_full_until:null}]},
+ "/api/approval-requests":{items:[{id:"22222222-2222-4222-8222-222222222222",device_id:"11111111-1111-4111-8111-111111111111",requested_by:"oauth:claude",action_kind:"process_exec",action:{kind:"process_exec",command:"systemctl restart nginx",timeoutMs:30000},status:"pending",expires_at:new Date(Date.now()+9*60000).toISOString(),created_at:new Date().toISOString()}]},
+ "/api/devices/11111111-1111-4111-8111-111111111111/command-allowlist":{items:[{id:"33333333-3333-4333-8333-333333333333",pattern:"df -h",created_at:new Date().toISOString()}]},
  "/api/usage":{monthCalls:42,limit:100,dailyAverage:6,resetAt:"2026-11-01T00:00:00Z",daily:[1,2,3,4,5,6,7].map((n)=>({day:"2026-10-"+String(10+n),calls:n*2})),months:[],topTools:[]},
  "/api/activity":{items:[{tool:"direct.command",outcome:"success",created_at:new Date().toISOString()}]},
  "/api/billing":{mode:"saas",entitled:true,plan:{key:"pro",name:"Pro"},subscription:{status:"active",provider:"paddle",currentPeriodEnd:new Date().toISOString()},usage:{devices:1}},
@@ -294,6 +296,27 @@ try{
  await visit("/how-it-works","Ready in two minutes.","modern-how-it-works");
  assert.equal(await evalJs("document.querySelectorAll('.steps-grid .step').length"),3,"Landing content cards must be present");
  assert.ok(await evalJs("([...document.querySelectorAll('.steps-grid .step')].every(el=>{const css=getComputedStyle(el);return css.opacity==='1'&&css.display!=='none'&&css.visibility!=='hidden'}))"),"Landing cards must never be hidden by reveal effects");
+ // Approvals inbox and device policy (v1.1 item 5c).
+ await visit("/approvals","Pending approvals","modern-approvals");
+ assert.equal(await evalJs("document.querySelectorAll('.approval-item').length"),1,"Pending approval must be listed");
+ assert.ok(await evalJs("document.querySelector('.approval-item .approval-op')?.textContent==='systemctl restart nginx'"),"Exact operation must be shown before deciding");
+ assert.ok(await evalJs("document.querySelector('.approval-item')?.textContent.includes('Test Windows Device')"),"Device name must replace the device id");
+ assert.equal(await evalJs("document.querySelector('.dash-nav a[href=\"/approvals\"]')?.getAttribute('aria-current')"),"page","Approvals nav item must be current");
+ await evalJs("[...document.querySelectorAll('.approval-item button')].find(b=>b.textContent.includes('Approve')).click()");
+ await sleep(150);
+ assert.ok(await evalJs("document.querySelector('[role=dialog]')?.textContent.includes('systemctl restart nginx')"),"Approve dialog must repeat the exact operation");
+ await evalJs("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
+ await evalJs("document.querySelector('[role=dialog] button[aria-label=Close]')?.click()");
+ await sleep(150);
+ assert.equal(await evalJs("document.querySelectorAll('.trust-option').length"),3,"Three trust levels must be offered");
+ assert.ok(await evalJs("document.querySelector('.trust-option.active')?.textContent.includes('Standard')"),"Current trust level must be preselected");
+ await evalJs("document.querySelector('.trust-option input[value=full]').click()");
+ await sleep(80);
+ assert.ok(await evalJs("!!document.querySelector('input[autocomplete=current-password]')"),"Full trust must ask for the password");
+ assert.ok(await evalJs("[...document.querySelectorAll('code')].some(c=>c.textContent==='df -h')"),"Allowed commands must be listed");
+ const approvalsShot=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
+ writeFileSync(join(artifacts,"modern-approvals-full-trust.png"),Buffer.from(approvalsShot.data,"base64"));
+
  await call("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:1,mobile:true});
  await visit("/","on every machine.","modern-landing-mobile");
  await visit("/dashboard","Welcome back","modern-dashboard-mobile");
@@ -307,11 +330,11 @@ try{
  // Smallest supported width (v1.1 item 5): no horizontal overflow on any shell.
  await call("Emulation.setDeviceMetricsOverride",{width:360,height:740,deviceScaleFactor:1,mobile:true});
  const clipped=()=>evalJs("(()=>{document.querySelectorAll('[data-reveal]').forEach(e=>e.classList.add('visible'));return [...document.querySelectorAll('.site-header *, .dash-topbar *, .hero-copy, .hero-copy *, .session-preview, .compare-wrap, .dash-content > *')].filter(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.right>innerWidth+1}).map(e=>e.tagName+'.'+String(e.className).slice(0,30)).slice(0,5)})()");
- for(const [page,keyword,shot] of [["/","on every machine.","modern-landing-360"],["/install","Use it where you","modern-install-360"],["/dashboard","Welcome back","modern-dashboard-360"],["/devices","Connected machines","modern-devices-360"],["/billing","Plans & billing","modern-billing-360"]]){await visit(page,keyword,shot);assert.deepEqual(await clipped(),[],page+" has elements wider than 360 px");}
+ for(const [page,keyword,shot] of [["/","on every machine.","modern-landing-360"],["/install","Use it where you","modern-install-360"],["/dashboard","Welcome back","modern-dashboard-360"],["/devices","Connected machines","modern-devices-360"],["/billing","Plans & billing","modern-billing-360"],["/approvals","Pending approvals","modern-approvals-360"]]){await visit(page,keyword,shot);assert.deepEqual(await clipped(),[],page+" has elements wider than 360 px");}
  // Shell accessibility: a skip link to one main landmark, current page marked, drawer closes on Escape.
  assert.equal(await evalJs("document.querySelectorAll('main#main-content').length"),1,"Dashboard needs exactly one main landmark");
  assert.equal(await evalJs("document.querySelector('.skip-link')?.getAttribute('href')"),"#main-content","Skip link must target main content");
- assert.equal(await evalJs("document.querySelector('.dash-nav [aria-current=page]')?.getAttribute('href')"),"/billing","Active nav item must carry aria-current");
+ assert.equal(await evalJs("document.querySelector('.dash-nav [aria-current=page]')?.getAttribute('href')"),"/approvals","Active nav item must carry aria-current");
  await evalJs("document.querySelector('.mobile-dash-open').click()");
  await sleep(120);
  assert.equal(await evalJs("document.querySelector('.dashboard-sidebar').classList.contains('open')"),true,"Mobile drawer must open");
