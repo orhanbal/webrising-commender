@@ -1306,7 +1306,7 @@ body .wc-chart-plot>.wc-empty-state{
   <div class="grid">
     <aside class="sidebar">
       <section class="card">
-        <div class="row" style="justify-content:space-between"><h2>Your devices</h2><button id="refreshDevices" class="secondary">Refresh</button></div>
+        <div class="row" style="justify-content:space-between"><h2>Your devices</h2><div class="row"><label class="hint" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="showRevoked"> İptal edilenleri göster</label><button id="refreshDevices" class="secondary">Refresh</button></div></div>
         <button id="pair" style="width:100%;margin-bottom:10px">Create pairing code</button>
         <div id="pairing" class="hint"></div>
         <div id="devices"><p class="hint">Enter your API key.</p></div>
@@ -1586,15 +1586,19 @@ async function health(){try{const r=await fetch("/health");$("health").textConte
 async function loadPublicConfig(){try{const r=await fetch("/api/public/config");const j=await r.json();$("signupOpen").classList.toggle("hidden",!j.signupEnabled);$("resetOpen").classList.toggle("hidden",!j.passwordResetEnabled)}catch{$("signupOpen").classList.add("hidden");$("resetOpen").classList.add("hidden")}}
 
 async function loadDevices(){try{clearError();const j=await api("/api/devices");if(selected){selected=j.items.find(x=>x.id===selected.id)||null}renderDevices(j.items);syncSelection()}catch(e){showError(e)}}
-function renderDevices(items){
+let lastDeviceItems=[];
+function renderDevices(allItems){
+  lastDeviceItems=allItems;
+  const hiddenRevoked=allItems.filter(d=>d.revoked_at).length;
+  const items=$("showRevoked")?.checked?allItems:allItems.filter(d=>!d.revoked_at||selected?.id===d.id);
   $("devices").innerHTML=items.length?items.map(d=>{
     const state=d.revoked_at?"revoked":d.online?"online":"offline";
     const last=d.last_seen_at?("Last seen "+new Date(d.last_seen_at).toLocaleString()):"Never seen";
-    return '<div class="device '+(selected?.id===d.id?'selected':'')+'" data-id="'+escapeHtml(d.id)+'"><div class="device-row"><div class="device-main"><span class="status '+(d.revoked_at?'revoked':d.online?'online':'')+'"></span><div class="device-copy"><b>'+escapeHtml(d.name)+'</b><small>'+escapeHtml(last)+'</small></div></div><div class="device-actions"><span class="state-badge '+(d.online?'online':'')+'">'+escapeHtml(state)+'</span><button class="row-action reconnect" data-reconnect="'+escapeHtml(d.id)+'">Reconnect</button><button class="row-action remove" data-remove="'+escapeHtml(d.id)+'">Remove</button></div></div></div>'
-  }).join(""):'<p class="hint" style="padding:22px 27px">No devices enrolled.</p>';
+    return '<div class="device '+(selected?.id===d.id?'selected':'')+'" data-id="'+escapeHtml(d.id)+'"><div class="device-row"><div class="device-main"><span class="status '+(d.revoked_at?'revoked':d.online?'online':'')+'"></span><div class="device-copy"><b>'+escapeHtml(d.name)+'</b><small>'+escapeHtml(last)+'</small></div></div><div class="device-actions"><span class="state-badge '+(d.online?'online':'')+'">'+escapeHtml(state)+'</span><button class="row-action reconnect" data-reconnect="'+escapeHtml(d.id)+'">Reconnect</button><button class="row-action remove" data-remove="'+escapeHtml(d.id)+'" data-revoked="'+(d.revoked_at?'1':'')+'">'+(d.revoked_at?'Delete':'Revoke')+'</button></div></div></div>'
+  }).join("")+(hiddenRevoked&&!$("showRevoked")?.checked?'<p class="hint" style="padding:10px 27px">'+hiddenRevoked+' iptal edilmiş cihaz gizli.</p>':''):'<p class="hint" style="padding:22px 27px">'+(hiddenRevoked?hiddenRevoked+' iptal edilmiş cihaz gizli. Görmek için "İptal edilenleri göster".':'No devices enrolled.')+'</p>';
   document.querySelectorAll(".device").forEach(el=>el.onclick=()=>{selected=items.find(x=>x.id===el.dataset.id)||null;renderDevices(items);syncSelection()});
   document.querySelectorAll("[data-reconnect]").forEach(button=>button.onclick=async e=>{e.stopPropagation();try{const d=items.find(x=>x.id===button.dataset.reconnect);if(!d)return;selected=d;syncSelection();await api("/api/devices/"+d.id+"/disconnect",{method:"POST",body:"{}"});setTimeout(loadDevices,1000)}catch(err){showError(err)}});
-  document.querySelectorAll("[data-remove]").forEach(button=>button.onclick=async e=>{e.stopPropagation();try{const d=items.find(x=>x.id===button.dataset.remove);if(!d)return;if(!confirm("Remove "+d.name+"? The agent must be re-enrolled to connect again."))return;await api("/api/devices/"+d.id+"/revoke",{method:"POST",body:"{}"});if(selected?.id===d.id)selected=null;await loadDevices();if(currentIdentity?.role==="admin"||currentIdentity?.role==="owner")await loadAudit()}catch(err){showError(err)}})
+  document.querySelectorAll("[data-remove]").forEach(button=>button.onclick=async e=>{e.stopPropagation();try{const d=items.find(x=>x.id===button.dataset.remove);if(!d)return;if(d.revoked_at){if(!confirm(d.name+" kalıcı olarak silinsin mi? Audit kayıtları korunur; bu işlem geri alınamaz."))return;await api("/api/devices/"+d.id,{method:"DELETE"})}else{if(!confirm(d.name+" iptal edilsin mi (revoke)? Agent yeniden eşleştirilmeden bağlanamaz."))return;await api("/api/devices/"+d.id+"/revoke",{method:"POST",body:"{}"})}if(selected?.id===d.id)selected=null;await loadDevices();if(currentIdentity?.role==="admin"||currentIdentity?.role==="owner")await loadAudit()}catch(err){showError(err)}})
 }
 function syncSelection(){if($("pane-approvals")?.classList.contains("active"))setTimeout(loadAllowlist,0);
   $("selection").textContent=selected?(selected.name+" · "+(selected.revoked_at?"revoked":selected.online?"online":"offline")):"no device selected";
@@ -1667,6 +1671,7 @@ $("refreshDevices").onclick=loadDevices;
 $("pair").onclick=async()=>{try{const j=await api("/api/pairing",{method:"POST",body:"{}"});$("pairing").innerHTML='Pairing code (10 min):<br><code>'+escapeHtml(j.pairingCode)+'</code>'}catch(e){showError(e)}}
 $("rename").onclick=async()=>{try{const d=needDevice(false);await api("/api/devices/"+d.id,{method:"PATCH",body:JSON.stringify({name:$("deviceName").value})});await loadDevices()}catch(e){showError(e)}}
 $("disconnect").onclick=async()=>{try{const d=needDevice();await api("/api/devices/"+d.id+"/disconnect",{method:"POST",body:"{}"});setTimeout(loadDevices,1200)}catch(e){showError(e)}}
+$("showRevoked").onchange=()=>renderDevices(lastDeviceItems);
 $("revoke").onclick=async()=>{try{const d=needDevice(false);if(!confirm("Revoke "+d.name+"? The agent must be re-enrolled to reconnect."))return;await api("/api/devices/"+d.id+"/revoke",{method:"POST",body:"{}"});await loadDevices();await loadAudit()}catch(e){showError(e)}}
 
 document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b));document.querySelectorAll(".pane").forEach(p=>p.classList.remove("active"));$("pane-"+b.dataset.tab).classList.add("active");if(b.dataset.tab==="audit")loadAudit();if(b.dataset.tab==="approvals"){loadApprovals();loadAllowlist()}if(b.dataset.tab==="access")loadAccess()});

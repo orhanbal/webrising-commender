@@ -3614,6 +3614,26 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       return void json(res, 200, { item: updated.rows[0] });
     }
 
+    // Permanently delete an already revoked device (admin browser session).
+    // Audit history is kept; approvals and allowlist entries cascade.
+    const deleteMatch = url.pathname.match(/^\/api\/devices\/([0-9a-f-]{36})$/i);
+    if (req.method === "DELETE" && deleteMatch) {
+      if (!requireRole(principal!, "admin", res)) return;
+      if (principal!.authKind !== "session") return void json(res, 403, { error: "browser_session_required" });
+      const removed = await db.query(
+        "delete from devices where id=$1 and organization_id=$2 and revoked_at is not null returning name",
+        [deleteMatch[1], principal!.organizationId],
+      );
+      if (!removed.rowCount) {
+        const exists = await db.query("select revoked_at from devices where id=$1 and organization_id=$2",
+          [deleteMatch[1], principal!.organizationId]);
+        return void json(res, exists.rowCount ? 409 : 404, { error: exists.rowCount ? "revoke_before_delete" : "device_not_found" });
+      }
+      await auditControl(principal!, null, "device.delete", "high", "success",
+        JSON.stringify({ deviceId: deleteMatch[1], name: removed.rows[0].name }));
+      return void json(res, 200, { ok: true });
+    }
+
     const revokeMatch = url.pathname.match(/^\/api\/devices\/([0-9a-f-]{36})\/revoke$/i);
     if (req.method === "POST" && revokeMatch) {
       if (!requireRole(principal!, "admin", res)) return;
