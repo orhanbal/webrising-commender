@@ -38,13 +38,18 @@ function htmlEscape(value: string) {
   })[c] || c);
 }
 
-function html(res: ServerResponse, body: string) {
+// formTarget: the registered redirect URI the consent form's POST answers with
+// a 302 to. Browsers apply CSP form-action to redirects after a submission,
+// so 'self' alone silently blocks the hand-back to the MCP client.
+function html(res: ServerResponse, body: string, formTarget?: string) {
+  let formAction = "'self'";
+  if (formTarget) formAction += " " + new URL(formTarget).origin;
   res.writeHead(200, {
     "Content-Type": "text/html; charset=utf-8",
     "Cache-Control": "no-store",
     "Referrer-Policy": "no-referrer",
     "X-Frame-Options": "DENY",
-    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action " + formAction + "; frame-ancestors 'none'; base-uri 'none'",
   });
   res.end(
     '<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
@@ -258,7 +263,7 @@ export async function handleOAuthHttp(
           csrf_token: getCookie(req, csrfCookieName),
         }).map(([name, val]) => hidden(name, val)).join("") +
         '<button type="submit" name="decision" value="allow">Erişime izin ver</button>' +
-        '<button type="submit" name="decision" value="deny">Reddet</button></form>');
+        '<button type="submit" name="decision" value="deny">Reddet</button></form>', redirectUri);
       return true;
     }
     if (!verifyBrowserCsrf(principal, p.csrf_token)) {

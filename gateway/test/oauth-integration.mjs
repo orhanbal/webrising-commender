@@ -94,6 +94,10 @@ try {
   const consent = await fetch(base + "/oauth/authorize?" + query, { headers: { Cookie: cookie } });
   assert.equal(consent.status, 200);
   assert.match(await consent.text(), /Erişime izin ver/);
+  // The consent POST answers with a 302 to the client; browsers enforce CSP
+  // form-action on that redirect, so the client's origin must be allowed.
+  assert.match(consent.headers.get("content-security-policy") || "",
+    /form-action 'self' https:\/\/chatgpt\.com;/);
   const duplicateQuery = await fetch(base + "/oauth/authorize?" + query + "&client_id=" +
     encodeURIComponent(params.client_id), { headers: { Cookie: cookie } });
   assert.equal(duplicateQuery.status, 400, "duplicated GET authorization parameter must fail closed");
