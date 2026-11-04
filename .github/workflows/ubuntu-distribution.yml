@@ -29,23 +29,20 @@ jobs:
         run: |
           VERSION="0.1.${{ github.event.workflow_run.run_number }}"
           bash scripts/build-ubuntu-deb.sh target/release/webrising-commender "$VERSION" dist
-      - name: Retrieve passed Windows and macOS CI installers
+      - name: Retrieve passed Windows CI installer
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
-          mkdir -p dist/ci-windows dist/ci-macos
+          mkdir -p dist/ci-windows
           gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" -n WECOMMANDER-windows-x64-acceptance -D dist/ci-windows
-          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" -n WECOMMANDER-macos-universal-acceptance -D dist/ci-macos
           test -s dist/ci-windows/WECOMMANDER-Setup-windows-x64.exe
-          test -s dist/ci-macos/WECOMMANDER-macos-universal.pkg
           cp dist/ci-windows/WECOMMANDER-Setup-windows-x64.exe dist/
-          cp dist/ci-macos/WECOMMANDER-macos-universal.pkg dist/
-          rm -rf dist/ci-windows dist/ci-macos
+          rm -rf dist/ci-windows
       - name: Create shared integrity manifest
         run: |
           cd dist
-          sha256sum -- *.deb *.exe *.pkg > SHA256SUMS.txt
+          sha256sum -- *.deb *.exe > SHA256SUMS.txt
       - name: Preserve verified installers and checksums as an Actions artifact
         uses: actions/upload-artifact@v4
         with:
@@ -53,7 +50,6 @@ jobs:
           path: |
             dist/*.deb
             dist/*.exe
-            dist/*.pkg
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
@@ -67,11 +63,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="ubuntu-preview-${{ github.event.workflow_run.run_number }}"
-          gh release create "$TAG" dist/*.deb dist/*.exe dist/*.pkg dist/SHA256SUMS.txt \
+          gh release create "$TAG" dist/*.deb dist/*.exe dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "${{ github.event.workflow_run.head_sha }}" \
             --title "WECOMMANDER platform preview #${{ github.event.workflow_run.run_number }}" \
-            --prerelease --notes "Preview installers: Ubuntu AMD64 Debian, Windows x64 Setup, macOS universal PKG. Checksums available. Must pass physical-device acceptance before production approval."
+            --prerelease --notes "Preview installers: Ubuntu AMD64 Debian, Windows x64 Setup. The macOS PKG is published separately (macos-preview-*) only after the macOS workflow passes. Checksums available. Must pass physical-device acceptance before production approval."
 
       - name: Report preview publication status
         if: ${{ always() }}
@@ -82,7 +78,7 @@ jobs:
             echo "### PASSED — GitHub preview release published" >> "$GITHUB_STEP_SUMMARY"
           elif [[ "$PUBLISH_OUTCOME" == "failure" ]]; then
             echo "### BLOCKED_EXTERNAL — GitHub Release permissions" >> "$GITHUB_STEP_SUMMARY"
-            echo "CI-built Linux/Windows/macOS installers and SHA256SUMS.txt were preserved as an Actions artifact. Release creation was denied or unavailable. No production deployment or signing was attempted." >> "$GITHUB_STEP_SUMMARY"
+            echo "CI-built Linux/Windows installers and SHA256SUMS.txt were preserved as an Actions artifact. Release creation was denied or unavailable. No production deployment or signing was attempted." >> "$GITHUB_STEP_SUMMARY"
             echo "::warning::GitHub Release publish unavailable; archive artifact remains available (BLOCKED_EXTERNAL)"
           else
             echo "### PENDING — Preview release step was not executed" >> "$GITHUB_STEP_SUMMARY"

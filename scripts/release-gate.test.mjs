@@ -92,7 +92,7 @@ for (const conclusion of ["cancelled", "skipped", "failure", "neutral", null]) {
   });
 }
 test("a missing required job is refused", () => {
-  refused(evaluateReleaseGate(base({ ciJobs: jobs().filter(j => j.name !== "macos-acceptance-artifact") })), /"macos-acceptance-artifact" is missing/);
+  refused(evaluateReleaseGate(base({ ciJobs: jobs().filter(j => j.name !== "windows-acceptance-artifact") })), /"windows-acceptance-artifact" is missing/);
 });
 test("unexpected or duplicated jobs are refused", () => {
   refused(evaluateReleaseGate(base({ ciJobs: [...jobs(), { name: "new-job", status: "completed", conclusion: "success" }] })), /unexpected ci job "new-job"/);

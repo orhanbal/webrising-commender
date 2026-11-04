@@ -1,0 +1,192 @@
+name: macos
+
+# macOS checks run in their own workflow so that GitHub's macOS runner capacity
+# never blocks the Linux/Windows `ci` gate or a Linux production release
+# (scripts/release-gate.mjs requires only `ci`). The macOS installer is
+# published only by macos-distribution.yml, after this workflow succeeds.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: macos-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  rust-platforms:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo check -p webrising-commender-agent
+      - name: Native PTY master reader/writer pre-spawn acquisition
+        run: cargo test -p webrising-commender-agent terminal::tests::pty_master_handles_are_available_before_child_spawn -- --nocapture
+      - name: Native post-acquisition undo quota lock inode and hardlink race
+        run: cargo test -p webrising-commender-agent undo_lock_rejects_post_acquire_ -- --nocapture
+      - name: Native terminal history lock inode and hardlink race
+        run: cargo test -p webrising-commender-agent terminal_history::tests::lock_rejects_post_acquire_ -- --nocapture
+      - name: Native terminal snapshot inode and hardlink race (Unix FIFO safety)
+        run: cargo test -p webrising-commender-agent terminal_history::tests::snapshot_open_rejects_ -- --nocapture
+      - name: macOS terminal history symlinked parent and live directory swap
+        if: runner.os == 'macOS'
+        run: cargo test -p webrising-commender-agent terminal_history::tests::unix_ -- --nocapture
+      - name: Native undo snapshot publication collision and recovery
+        run: cargo test -p webrising-commender-agent undo_publication_tests -- --nocapture
+      - name: Native atomic create no-overwrite race
+        if: runner.os == 'macOS'
+        run: cargo test -p webrising-commender-agent atomic_create_ -- --nocapture
+      - name: Windows atomic create no-overwrite race
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_atomic_create_ -- --nocapture
+      - name: Native unconditional replace identity race
+        if: runner.os == 'macOS'
+        run: cargo test -p webrising-commender-agent atomic_replace_no_sha_ -- --nocapture
+      - name: Windows unconditional replace identity race
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_atomic_replace_no_sha_ -- --nocapture
+      - name: Native atomic staging leaf substitution and safe cleanup
+        if: runner.os == 'macOS'
+        run: cargo test -p webrising-commender-agent atomic_staging_ -- --nocapture
+      - name: Windows atomic staging leaf substitution and safe cleanup
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_atomic_staging_ -- --nocapture
+      - name: macOS credential staging leaf replacement rejection
+        if: runner.os == 'macOS'
+        run: cargo test -p webrising-commender-agent config_stage_leaf_replacement_cannot_publish_or_delete_untrusted_file -- --nocapture
+      - name: macOS credential staging same-inode tamper rejection
+        if: runner.os == 'macOS'
+        run: cargo test -p webrising-commender-agent config_stage_inplace_tamper_cannot_publish_credentials -- --nocapture
+      - name: Windows credential staging leaf replacement rejection
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_config_stage_leaf_replacement_cannot_publish_or_delete_untrusted_file -- --nocapture
+      - name: Windows credential staging same-inode tamper rejection
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_config_stage_inplace_tamper_cannot_publish_credentials -- --nocapture
+      - name: Native unguarded digest growth and truncation race
+        run: cargo test -p webrising-commender-agent atomic_digest_race_tests -- --nocapture
+      - name: Windows process_exec suspended Job Object containment (2C)
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_exec_job_tests -- --nocapture
+      - name: macOS setsid descendant tracking for process_exec (2C)
+        if: runner.os == 'macOS'
+        run: cargo test -p webrising-commender-agent macos_descendant_tests -- --nocapture
+      - name: Windows process tree termination confirmation (2C)
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent process_ops::tests::windows_process_kill_confirms_snapshot_exit -- --nocapture
+      - name: Windows PTY Job Object owned descendant cleanup (2C)
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_job::tests -- --nocapture
+      - name: Windows real PTY stop kills owned child (2C)
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent terminal::tests::windows_terminal_stop_kills_owned_ping_descendant -- --nocapture
+      - name: Native cross-process PTY slot contention and crash recovery
+        run: cargo test -p webrising-commender-agent live_slot_quota_survives_parallel_subprocesses_and_crash -- --nocapture
+      - name: Windows live PTY quota ordinary-directory swap and recovery
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_live_slot_rejects_regular_directory_swap_and_recovers -- --nocapture
+      - name: Windows terminal history junction rejection
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_junction_ -- --nocapture
+      - name: Windows undo snapshot junction rejection
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_undo_junction_ -- --nocapture
+      - name: Windows undo hardlink isolation
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent undo_hardlink -- --nocapture
+      - name: Windows undo quota file identity ABA rejection
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_quota_rejects_same_content_file_identity_swap -- --nocapture
+      - name: Native undo retention pruning identity and age
+        run: cargo test -p webrising-commender-agent retention_prune_ -- --nocapture
+      - name: Native undo snapshot consumption identity guard
+        run: cargo test -p webrising-commender-agent undo_consumption_ -- --nocapture
+      - name: Native undo snapshot bounded-read identity and byte integrity
+        run: cargo test -p webrising-commender-agent undo_read_ -- --nocapture
+      - name: Windows undo handle-based unlink and hostile leaf-swap acceptance
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_undo_handle_unlink_ -- --nocapture
+      - name: Unix undo quota intermediate ABA identity guard
+        if: runner.os != 'Windows'
+        run: cargo test -p webrising-commender-agent quota_rejects_intermediate_aba_even_when_path_metadata_matches -- --nocapture
+      - name: Unix undo unlink pinned parent rejection
+        if: runner.os != 'Windows'
+        run: cargo test -p webrising-commender-agent undo_unlink_rejects_symlinked_parent_without_touching_outside_file -- --nocapture
+      - name: Unix undo final leaf pinned-parent identity and digest
+        if: runner.os != 'Windows'
+        run: cargo test -p webrising-commender-agent unix_undo_unlink_ -- --nocapture
+      - name: Windows config credential junction rejection
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_config_junction_ -- --nocapture
+      - name: Windows config credential hardlink rejection
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_config_hardlink_ -- --nocapture
+      - name: Windows direct file handle reparse rejection
+        if: runner.os == 'Windows'
+        run: cargo test -p webrising-commender-agent windows_file_reparse_tests -- --nocapture
+
+  installer-syntax:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bash syntax
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          bash -n scripts/install-linux.sh
+          bash -n scripts/setup-ubuntu.sh
+          bash -n scripts/build-ubuntu-deb.sh
+          bash -n scripts/wecommander-setup-wrapper.sh
+          bash -n scripts/install-ubuntu-online.sh
+          bash -n scripts/setup-macos.sh
+          bash -n scripts/build-macos-pkg.sh
+          bash -n scripts/install-macos-online.sh
+          bash scripts/setup-ubuntu.sh --help >/dev/null
+          bash -n scripts/uninstall-linux.sh
+          bash -n scripts/install-macos.sh
+          bash -n scripts/uninstall-macos.sh
+
+  macos-acceptance-artifact:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+      - name: Build universal release agent
+        run: |
+          cargo build --release -p webrising-commender-agent --target x86_64-apple-darwin
+          cargo build --release -p webrising-commender-agent --target aarch64-apple-darwin
+          mkdir -p dist
+          lipo -create \
+            target/x86_64-apple-darwin/release/webrising-commender \
+            target/aarch64-apple-darwin/release/webrising-commender \
+            -output dist/webrising-commender
+          lipo -info dist/webrising-commender
+          bash scripts/build-macos-pkg.sh dist/webrising-commender "0.1.${GITHUB_RUN_NUMBER}" dist
+          pkgutil --payload-files "dist/WECOMMANDER-macos-universal.pkg" | grep -q 'wecommander-setup'
+          bash scripts/setup-macos.sh --help >/dev/null
+      - name: Package macOS acceptance bundle
+        run: |
+          cp scripts/install-macos.sh dist/
+          cp scripts/uninstall-macos.sh dist/
+          cp docs/QUICKSTART.md dist/
+          cd dist
+          shasum -a 256 webrising-commender WECOMMANDER-macos-universal.pkg > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WECOMMANDER-macos-universal-acceptance
+          path: dist/*
+          retention-days: 14

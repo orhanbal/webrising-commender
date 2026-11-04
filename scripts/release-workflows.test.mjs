@@ -33,7 +33,18 @@ test("promote-production is dispatch-only", () => {
 test("no workflow uses pull_request_target or workflow_run with write tokens except distribution", () => {
   for (const [name, yml] of Object.entries(all)) assert.ok(!/pull_request_target/.test(yml), `${name} uses pull_request_target`);
   for (const [name, yml] of Object.entries(all))
-    if (/^\s+workflow_run:/m.test(yml)) assert.equal(name, "ubuntu-distribution.yml", `${name} uses workflow_run`);
+    if (/^\s+workflow_run:/m.test(yml)) assert.ok(["ubuntu-distribution.yml", "macos-distribution.yml"].includes(name), `${name} uses workflow_run`);
+});
+
+test("macOS is outside the production gate but still gates the macOS installer", () => {
+  const ci = all["ci.yml"], macos = all["macos.yml"], macDist = all["macos-distribution.yml"], dist = all["ubuntu-distribution.yml"];
+  assert.ok(!/macos-latest|macos-acceptance-artifact:/.test(ci), "ci.yml has no macOS runner jobs");
+  for (const job of ["rust-platforms:", "installer-syntax:", "macos-acceptance-artifact:"]) assert.ok(macos.includes("\n  " + job), job);
+  assert.match(macos, /os: \[macos-latest\]/);
+  assert.ok(!/\.pkg/.test(dist), "platform-distribution does not publish the macOS PKG");
+  assert.match(macDist, /workflows: \["macos"\]/);
+  assert.match(macDist, /workflow_run\.conclusion == 'success' && github\.event\.workflow_run\.event == 'push' && github\.event\.workflow_run\.head_branch == 'main'/);
+  assert.ok(!/secrets\./.test(macDist), "no secrets in macOS distribution");
 });
 
 test("release and guard workflows have read-only GITHUB_TOKEN", () => {

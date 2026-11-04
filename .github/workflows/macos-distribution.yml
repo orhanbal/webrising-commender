@@ -1,0 +1,42 @@
+name: macos-distribution
+# Publishes the macOS installer only after the macOS workflow passed for a
+# main push. Separate from platform-distribution so GitHub's macOS runner
+# capacity never delays Linux/Windows previews or production releases.
+run-name: "macos-distribution for ${{ github.event.workflow_run.head_sha }} (macos ${{ github.event.workflow_run.id }}/${{ github.event.workflow_run.run_attempt }})"
+
+on:
+  workflow_run:
+    workflows: ["macos"]
+    types: [completed]
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish-macos-preview:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Retrieve the macOS installer built and tested by the macos workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          mkdir -p dist/ci-macos
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" -n WECOMMANDER-macos-universal-acceptance -D dist/ci-macos
+          test -s dist/ci-macos/WECOMMANDER-macos-universal.pkg
+          cp dist/ci-macos/WECOMMANDER-macos-universal.pkg dist/
+          rm -rf dist/ci-macos
+          cd dist
+          sha256sum -- *.pkg > SHA256SUMS.txt
+      - name: Publish macOS preview release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="macos-preview-${{ github.event.workflow_run.run_number }}"
+          gh release create "$TAG" dist/*.pkg dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "${{ github.event.workflow_run.head_sha }}" \
+            --title "WECOMMANDER macOS preview #${{ github.event.workflow_run.run_number }}" \
+            --prerelease --notes "macOS universal PKG built and tested by the macos workflow (run ${{ github.event.workflow_run.id }}) for ${{ github.event.workflow_run.head_sha }}. Must pass physical-device acceptance before production approval."
