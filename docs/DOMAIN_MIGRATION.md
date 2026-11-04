@@ -26,7 +26,22 @@ e-mail links and as the browser cookie host.
 6. **AI clients (owner):** remove the old connector and add
    `https://wecommander.app/mcp`. Tokens issued for the old resource no longer
    work, by design.
-7. **Agents:** on each device, as root:
+7. **Agents:** `set-control-url` exists from agent package `0.1.1587`
+   (`main` `fcf982d`) onward. An older agent answers
+   `unrecognized subcommand`; upgrade it first. The package upgrade keeps
+   the enrollment. Re-running `wecommander-setup` without capability flags
+   keeps the device identity and the current capabilities, and moves the
+   service to the new binary:
+
+   ```bash
+   sudo apt-get install -y ./wecommander-agent_<version>_amd64.deb
+   ```
+
+   ```bash
+   sudo wecommander-setup --allowed-root <the device's allowed root>
+   ```
+
+   Then, on each device, as root:
 
    ```bash
    sudo -u wecommander /opt/wecommander/bin/webrising-commender --config /var/lib/webrising-commender/agent.json set-control-url --url https://wecommander.app
@@ -40,6 +55,15 @@ e-mail links and as the browser cookie host.
    on another host (a regional relay) is left unchanged.
 8. **After at least 3 months:** redirect the old domain to the new one, and
    remove it once no device reports in through it.
+
+## Done on 2026-11-04
+
+- `wecommander.app` and `www.wecommander.app` added in Coolify next to the
+  old domains; `PUBLIC_BASE_URL=https://wecommander.app`; released
+  `3f7436a9` (promote run 41886598010, deployment `k6mardak`, verified).
+- Claude.ai connector re-added at `https://wecommander.app/mcp`.
+- Ubuntu device `794911a6` upgraded to `0.1.1589`, moved with
+  `set-control-url`, online again with the same identity and capabilities.
 
 ## Rollback
 
