@@ -23,7 +23,7 @@ export function LegalPage({page}:{page:LegalPageName}){
  const placeholder=locale==="tr"?
    "Bu sayfanın tam hukuki metni henüz yayımlanmamıştır. Hesap oturumları HttpOnly çerezleri kullanır; kart ödemeleri Paddle tarafından işlenir. Hizmete ilişkin koşullar ve veri işleme taahhütleri için yayımlanacak resmi metin esas alınacaktır.":
    "The full legal policy has not yet been published. Account sessions use HttpOnly cookies and card payments are processed by Paddle. Refer to the published official policy for binding service and data-processing terms.";
- return <main className="container-w section-modern max-w-4xl mx-auto">
+ return <article className="container-w section-modern max-w-4xl mx-auto">
   <div className="flex items-center gap-3 text-[var(--accent)]">
    {privacy?<ShieldCheck size={26}/>:<FileText size={26}/>}
    <span className="text-xs tracking-widest font-bold uppercase">WECOMMANDER / {privacy?"Privacy":"Terms"}</span>
@@ -38,5 +38,5 @@ export function LegalPage({page}:{page:LegalPageName}){
     <p className="muted leading-8">{placeholder}</p>
     <p className="text-sm muted mt-5">{locale==="tr"?"Resmi metin henüz yayınlanmadı.":"The official legal text is not published yet."}</p>
    </section>}
- </main>;
+ </article>;
 }

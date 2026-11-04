@@ -1,0 +1,80 @@
+/* WECOMMANDER design tokens (v1.1 item 5a).
+ * One source for colour, type, spacing, radius, elevation, motion and layers,
+ * in dark (default) and light (`:root.light`). Existing short names (--bg,
+ * --surface, --stroke, --accent …) are kept as the colour API so every screen
+ * migrates without a big-bang rename; new code should prefer the Tailwind
+ * colour utilities mapped in `@theme` below (bg-surface, text-muted,
+ * border-stroke, bg-danger-soft …). Scale tokens use a --wc- prefix so they
+ * never override Tailwind's own --radius-*, --text-*, --shadow-* defaults. Logo assets are not part of the token set.
+ */
+:root{
+  color-scheme:dark;
+  /* Colour: neutrals */
+  --bg:#202020;--surface:#2c2c2c;--surface-2:#333;--surface-raised:#383838;--hover:#3d3d3d;--subtle-surface:#343434;
+  --input:#292929;--stroke:#454545;--stroke-strong:#5c5c5c;--sidebar:#1c1c1c;--blur:rgba(32,32,32,.76);--overlay:rgba(0,0,0,.6);
+  --text:#f5f5f5;--muted:#c7c7c7;--faint:#989898;
+  /* Colour: brand and status (each with a tinted surface for badges/alerts) */
+  --accent:#60cdff;--accent-hover:#8bdcff;--accent-ink:#00364e;--accent-soft:color-mix(in srgb,var(--accent) 14%,transparent);
+  --success:#6ccb5f;--success-soft:color-mix(in srgb,var(--success) 14%,transparent);
+  --warning:#fce100;--warning-soft:color-mix(in srgb,var(--warning) 14%,transparent);
+  --danger:#ff99a4;--danger-strong:#c42b1c;--danger-ink:#fff;--danger-soft:color-mix(in srgb,var(--danger) 14%,transparent);
+  --info:var(--accent);--info-soft:var(--accent-soft);
+  --focus-ring:var(--accent);
+  /* Typography */
+  --wc-font-ui:"Segoe UI Variable","Segoe UI",Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;
+  --wc-font-display:"Segoe UI Variable Display","Segoe UI Variable","Segoe UI",Inter,ui-sans-serif,system-ui,sans-serif;
+  --wc-font-mono:"Cascadia Code","Cascadia Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --wc-text-xs:12px;--wc-text-sm:13px;--wc-text-base:15px;--wc-text-md:16px;--wc-text-lg:18px;--wc-text-xl:22px;--wc-text-2xl:28px;
+  --wc-text-3xl:clamp(28px,3vw,39px);--wc-text-display:clamp(40px,5.7vw,76px);
+  --wc-leading-tight:1.15;--wc-leading-normal:1.5;--wc-leading-relaxed:1.7;
+  --wc-weight-regular:400;--wc-weight-medium:500;--wc-weight-semibold:600;--wc-weight-bold:700;--wc-weight-heavy:780;
+  /* Spacing (4 px grid) */
+  --wc-space-0:0;--wc-space-1:4px;--wc-space-2:8px;--wc-space-3:12px;--wc-space-4:16px;--wc-space-5:20px;--wc-space-6:24px;--wc-space-8:32px;--wc-space-10:40px;--wc-space-12:48px;--wc-space-16:64px;--wc-space-20:80px;
+  /* Radius */
+  --wc-radius-xs:6px;--wc-radius-sm:8px;--wc-radius-md:12px;--wc-radius-lg:16px;--wc-radius-xl:20px;--wc-radius-full:999px;
+  /* Elevation */
+  --shadow:rgba(0,0,0,.24);
+  --wc-shadow-sm:0 1px 2px rgba(0,0,0,.28);
+  --wc-shadow-md:0 8px 28px var(--shadow);
+  --wc-shadow-lg:0 24px 60px rgba(0,0,0,.42);
+  /* Motion */
+  --wc-ease-standard:cubic-bezier(.2,0,0,1);--wc-duration-fast:120ms;--wc-duration-base:200ms;--wc-duration-slow:320ms;
+  /* Layers */
+  --wc-z-header:55;--wc-z-drawer:95;--wc-z-overlay:92;--wc-z-menu:120;--wc-z-dialog:121;--wc-z-toast:130;
+  /* Layout */
+  --sidebar-width:264px;--content-max:1220px;--gutter:clamp(16px,3vw,55px);
+}
+:root.light{
+  color-scheme:light;
+  --bg:#f3f3f3;--surface:#fff;--surface-2:#f9f9f9;--surface-raised:#fff;--hover:#e8e8e8;--subtle-surface:#eeeeee;
+  --input:#fff;--stroke:#d1d1d1;--stroke-strong:#a8a8a8;--sidebar:#f9f9f9;--blur:rgba(249,249,249,.84);--overlay:rgba(0,0,0,.4);
+  --text:#1a1a1a;--muted:#555;--faint:#737373;
+  --accent:#0067c0;--accent-hover:#005ba8;--accent-ink:#fff;
+  --success:#0f7b0f;--warning:#9d5d00;--danger:#c42b1c;--danger-strong:#c42b1c;
+  --shadow:rgba(0,0,0,.08);
+  --wc-shadow-sm:0 1px 2px rgba(0,0,0,.08);
+  --wc-shadow-lg:0 24px 60px rgba(0,0,0,.16);
+}
+@theme inline{
+  --color-background:var(--bg);--color-foreground:var(--text);
+  --color-surface:var(--surface);--color-surface-2:var(--surface-2);--color-surface-raised:var(--surface-raised);
+  --color-hover:var(--hover);--color-subtle:var(--subtle-surface);--color-input:var(--input);
+  --color-stroke:var(--stroke);--color-stroke-strong:var(--stroke-strong);
+  --color-text:var(--text);--color-muted:var(--muted);--color-faint:var(--faint);
+  --color-primary:var(--accent);--color-accent:var(--accent);--color-accent-ink:var(--accent-ink);--color-accent-soft:var(--accent-soft);
+  --color-card:var(--surface);
+  --color-success:var(--success);--color-success-soft:var(--success-soft);
+  --color-warning:var(--warning);--color-warning-soft:var(--warning-soft);
+  --color-danger:var(--danger);--color-danger-strong:var(--danger-strong);--color-danger-soft:var(--danger-soft);
+  --color-info:var(--info);--color-info-soft:var(--info-soft);
+  --font-sans:var(--wc-font-ui);--font-mono:var(--wc-font-mono);
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+}
+/* Shell utilities shared by every layout */
+.skip-link{position:fixed;left:var(--wc-space-4);top:var(--wc-space-3);z-index:var(--wc-z-toast);padding:var(--wc-space-2) var(--wc-space-4);border-radius:var(--wc-radius-sm);background:var(--accent);color:var(--accent-ink);font-weight:var(--wc-weight-semibold);transform:translateY(-200%);transition:transform var(--wc-duration-fast) var(--wc-ease-standard)}
+.skip-link:focus{transform:none}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@keyframes wc-shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+.wc-skeleton{border-radius:var(--wc-radius-sm);background:linear-gradient(90deg,var(--subtle-surface) 25%,var(--hover) 50%,var(--subtle-surface) 75%);background-size:200% 100%;animation:wc-shimmer 1.4s linear infinite}

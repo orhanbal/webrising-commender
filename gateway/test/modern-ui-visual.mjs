@@ -172,7 +172,7 @@ try{
  assert.equal(await evalJs("document.documentElement.lang"),"en");
 
  await visit("/billing","Plans & billing","modern-billing");
- assert.ok(await evalJs("document.body.textContent.includes('Cancellation')||document.body.textContent.includes('Abonelik talepleri')"),"Owner billing view must expose cancellation/refund request form");
+ assert.ok(await evalJs("document.body.textContent.includes('Subscription requests')&&document.body.textContent.includes('Refund request')"),"Owner billing view must expose cancellation/refund request form");
  await visit("/devices","Connected machines","modern-devices");
  await visit("/terminal","Workspace","modern-terminal");
  await visit("/files","List files","modern-files");
@@ -297,6 +297,22 @@ try{
  await visit("/account","Change password","modern-account-mobile");
  await visit("/console","Platform Overview","modern-console-mobile");
  assert.ok(await evalJs("document.querySelector('.mobile-dash-open')!==null"),"Mobile console navigation toggle must exist");
+
+ // Smallest supported width (v1.1 item 5): no horizontal overflow on any shell.
+ await call("Emulation.setDeviceMetricsOverride",{width:360,height:740,deviceScaleFactor:1,mobile:true});
+ for(const [page,keyword,shot] of [["/","All your devices.","modern-landing-360"],["/install","Use it where you","modern-install-360"],["/dashboard","Welcome back","modern-dashboard-360"],["/devices","Connected machines","modern-devices-360"],["/billing","Plans & billing","modern-billing-360"]])await visit(page,keyword,shot);
+ // Shell accessibility: a skip link to one main landmark, current page marked, drawer closes on Escape.
+ assert.equal(await evalJs("document.querySelectorAll('main#main-content').length"),1,"Dashboard needs exactly one main landmark");
+ assert.equal(await evalJs("document.querySelector('.skip-link')?.getAttribute('href')"),"#main-content","Skip link must target main content");
+ assert.equal(await evalJs("document.querySelector('.dash-nav [aria-current=page]')?.getAttribute('href')"),"/billing","Active nav item must carry aria-current");
+ await evalJs("document.querySelector('.mobile-dash-open').click()");
+ await sleep(120);
+ assert.equal(await evalJs("document.querySelector('.dashboard-sidebar').classList.contains('open')"),true,"Mobile drawer must open");
+ await evalJs("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))");
+ await sleep(120);
+ assert.equal(await evalJs("document.querySelector('.dashboard-sidebar').classList.contains('open')"),false,"Escape must close the mobile drawer");
+ await visit("/","All your devices.","modern-landing-360-skip");
+ assert.equal(await evalJs("document.querySelectorAll('main#main-content').length"),1,"Public pages need exactly one main landmark");
 
  console.log("PASS modern shadcn landing, account, device/workbench, usage, pricing, checkout and billing desktop/mobile");
 }finally{ws?.close();proc.kill("SIGTERM");server.close();try{rmSync(profile,{recursive:true,force:true})}catch{}}

@@ -123,7 +123,7 @@ goes live through `promote-production`.
 v1.1 development starts right away, in parallel with the remaining v1.0
 acceptance, which now mostly waits on hardware and owner actions.
 Status 2026-11-04: item 1 is live; item 3 is live (`edit_block`, `url_fetch`,
-aliases) and PDF reading (`pdf_read`) is in review; item 2 (one-line install) follows it. Next: item 5 (UI overhaul), then item 4. Every
+aliases) and PDF reading (`pdf_read`) and item 2 (one-line install) are live (`5f2928f`). Item 5 step (a), design tokens and shell, is in review. Next: item 5 steps (b)–(e) (UI overhaul), then item 4. Every
 item ships through its own PR, CI and `promote-production`. Items 1 → 2 → 3
 need about 3 days, plus 2–3 days for 4.
 
