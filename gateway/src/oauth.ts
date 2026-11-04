@@ -96,7 +96,16 @@ function baseEnabled(origin: string) {
     (origin.startsWith("https://") || origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:"));
 }
 
+// Behind a reverse proxy (Coolify/Traefik) the socket address is the proxy's,
+// so without this every client would share one registration bucket.
+const trustProxyHeaders = /^(1|true|yes)$/i.test(String(process.env.TRUST_PROXY_HEADERS || ""));
 function clientIp(req: IncomingMessage) {
+  if (trustProxyHeaders) {
+    const forwarded = req.headers["x-forwarded-for"];
+    const value = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+    const client = value?.split(",")[0]?.trim();
+    if (client) return client;
+  }
   return req.socket.remoteAddress || "unknown";
 }
 
@@ -163,7 +172,11 @@ export async function handleOAuthHttp(
           body.redirect_uris.length < 1 || body.redirect_uris.length > 8 ||
           body.redirect_uris.some((u) => typeof u !== "string" || !redirectAllowed(u)) ||
           new Set(body.redirect_uris).size !== body.redirect_uris.length ||
-          (body.token_endpoint_auth_method !== undefined && body.token_endpoint_auth_method !== "none") ||
+          // RFC 7591 §3.2.1: the server may replace requested metadata. Clients
+          // that ask for a secret method are registered as public PKCE clients
+          // ("none"), which the response states; unknown methods are rejected.
+          (body.token_endpoint_auth_method !== undefined &&
+            !["none", "client_secret_post", "client_secret_basic"].includes(String(body.token_endpoint_auth_method))) ||
           !validClientGrants(body.grant_types) ||
           !validClientResponses(body.response_types)) {
         failure(res, 400, "invalid_client_metadata"); return true;
@@ -201,7 +214,8 @@ export async function handleOAuthHttp(
     const clientId = p.client_id || "";
     const redirectUri = p.redirect_uri || "";
     const challenge = p.code_challenge || "";
-    const resource = p.resource || "";
+    // RFC 8707 resource indicator; clients that omit it get the MCP resource.
+    const resource = p.resource || origin + "/mcp";
     const scope = p.scope || oauthScope;
     const state = p.state || "";
     if (p.response_type !== "code" || p.code_challenge_method !== "S256" ||
@@ -278,9 +292,18 @@ export async function handleOAuthHttp(
     let p: Record<string, string>;
     try { p = form(req, await bodyText(req)); }
     catch { failure(res, 400, "invalid_request"); return true; }
-    const clientId = p.client_id || "";
+    // Public clients identify themselves by client_id in the body; accept it
+    // from an HTTP Basic header too (client_secret_basic clients, empty secret).
+    let clientId = p.client_id || "";
+    const basic = String(req.headers.authorization || "");
+    if (!clientId && /^Basic\s+/i.test(basic)) {
+      try {
+        const decoded = Buffer.from(basic.replace(/^Basic\s+/i, ""), "base64").toString("utf8");
+        clientId = decodeURIComponent(decoded.split(":")[0] || "");
+      } catch { clientId = ""; }
+    }
     const clients = await db.query("select 1 from oauth_clients where client_id=$1", [clientId]);
-    if (!clients.rowCount || !validResource(p.resource || "", origin)) {
+    if (!clients.rowCount || (p.resource !== undefined && !validResource(p.resource, origin))) {
       failure(res, 400, "invalid_client"); return true;
     }
     if (p.grant_type === "authorization_code") {
@@ -306,7 +329,7 @@ export async function handleOAuthHttp(
         );
         const row = rows.rows[0];
         if (!row || row.code_challenge !== expected || row.redirect_uri !== p.redirect_uri ||
-            row.resource !== p.resource || row.scope !== oauthScope) {
+            (p.resource !== undefined && row.resource !== p.resource) || row.scope !== oauthScope) {
           await client.query("rollback"); failure(res, 400, "invalid_grant"); return true;
         }
         await client.query("delete from oauth_codes where code_hash=$1", [sha256(p.code || "")]);
@@ -333,10 +356,10 @@ export async function handleOAuthHttp(
       const refresh = "wrcr_" + randomToken(40);
       const updated = await db.query(
         "update oauth_sessions s set access_hash=$1,refresh_hash=$2,access_expires_at=now()+interval '1 hour' " +
-        "where s.refresh_hash=$3 and s.client_id=$4 and s.resource=$5 and s.refresh_expires_at>now() and s.revoked_at is null " +
+        "where s.refresh_hash=$3 and s.client_id=$4 and ($5::text is null or s.resource=$5) and s.refresh_expires_at>now() and s.revoked_at is null " +
         "and exists(select 1 from users u join organization_members m on m.user_id=u.id and m.organization_id=s.organization_id " +
         "where u.id=s.user_id and u.disabled_at is null) returning s.id",
-        [sha256(access), sha256(refresh), sha256(p.refresh_token || ""), clientId, p.resource],
+        [sha256(access), sha256(refresh), sha256(p.refresh_token || ""), clientId, p.resource ?? null],
       );
       if (!updated.rowCount) { failure(res, 400, "invalid_grant"); return true; }
       json(res, 200, { access_token: access, token_type: "Bearer", expires_in: 3600, refresh_token: refresh, scope: oauthScope });

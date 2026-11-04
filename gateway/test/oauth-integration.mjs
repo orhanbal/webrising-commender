@@ -145,6 +145,66 @@ try {
   });
   assert.equal(replay.status, 400);
 
+  // Claude-style client: asks for client_secret_post, omits the RFC 8707
+  // resource parameter and authenticates at the token endpoint with HTTP
+  // Basic. It is registered as a public PKCE client bound to the MCP resource.
+  {
+    const claudeRedirect = "https://claude.ai/api/mcp/auth_callback";
+    const rejectedMethod = await postJson("/oauth/register", {
+      client_name: "jwt client", redirect_uris: [claudeRedirect], token_endpoint_auth_method: "private_key_jwt",
+    });
+    assert.equal(rejectedMethod.status, 400, "unsupported client auth methods stay rejected");
+    const claudeRegistration = await postJson("/oauth/register", {
+      client_name: "Claude", redirect_uris: [claudeRedirect],
+      grant_types: ["authorization_code", "refresh_token"], response_types: ["code"],
+      token_endpoint_auth_method: "client_secret_post", scope: "mcp:tools",
+    });
+    assert.equal(claudeRegistration.status, 201);
+    const claudeClient = await claudeRegistration.json();
+    assert.equal(claudeClient.token_endpoint_auth_method, "none");
+    assert.equal(claudeClient.client_secret, undefined);
+    const claudeVerifier = crypto.randomBytes(48).toString("base64url");
+    const claudeParams = {
+      response_type: "code", client_id: claudeClient.client_id, redirect_uri: claudeRedirect,
+      code_challenge: crypto.createHash("sha256").update(claudeVerifier).digest("base64url"),
+      code_challenge_method: "S256", scope: "mcp:tools", state: "claude-state",
+    };
+    const claudeGrant = await fetch(base + "/oauth/authorize", {
+      method: "POST",
+      headers: { Cookie: cookie, "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ ...claudeParams, csrf_token: loggedIn.csrfToken, decision: "allow" }),
+      redirect: "manual",
+    });
+    assert.equal(claudeGrant.status, 302);
+    const claudeCode = new URL(claudeGrant.headers.get("location")).searchParams.get("code");
+    const basic = "Basic " + Buffer.from(encodeURIComponent(claudeClient.client_id) + ":").toString("base64");
+    const claudeToken = await fetch(base + "/oauth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: basic },
+      body: new URLSearchParams({ grant_type: "authorization_code", code: claudeCode, redirect_uri: claudeRedirect, code_verifier: claudeVerifier }),
+    });
+    assert.equal(claudeToken.status, 200, await claudeToken.clone().text());
+    const claudeTokens = await claudeToken.json();
+    const claudeList = await fetch(resource, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + claudeTokens.access_token, "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+    });
+    assert.equal(claudeList.status, 200, "token without explicit resource is bound to the MCP resource");
+    const otherResource = await fetch(base + "/oauth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: basic },
+      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: claudeTokens.refresh_token, resource: base + "/admin" }),
+    });
+    assert.equal(otherResource.status, 400, "a refresh for another resource is still refused");
+    const claudeRefresh = await fetch(base + "/oauth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: basic },
+      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: claudeTokens.refresh_token }),
+    });
+    assert.equal(claudeRefresh.status, 200);
+  }
+
   async function mcp(accessToken) {
     return fetch(resource, {
       method: "POST",
