@@ -253,6 +253,7 @@ export const commonEnglish:Record<string,string> = {
   "Cihaz seçilmedi": "No device selected",
   "Uygulama menüsü": "App menu",
   "Son aktiviteler": "Recent activity",
+  "bekleyen onay": "pending approvals",
   "Onaylıyor musunuz?": "Do you approve?",
   "E-posta adresi": "Email address",
   "WECOMMANDER örnek arayüzü": "WECOMMANDER interface preview"
