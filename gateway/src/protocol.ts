@@ -15,6 +15,7 @@ export type AgentAction =
   | { kind: "docx_inspect"; path: string }
   | { kind: "docx_read_paragraphs"; path: string; offset?: number; limit?: number }
   | { kind: "docx_read_table"; path: string; tableIndex: number; offsetRows?: number; limitRows?: number }
+  | { kind: "pdf_read"; path: string; startPage?: number; pageCount?: number }
   | { kind: "xlsx_inspect"; path: string }
   | { kind: "xlsx_read_range"; path: string; sheet: string; startRow: number; startColumn: number; rowCount: number; columnCount: number }
   | { kind: "xlsx_write_cells"; path: string; outputPath: string; sheet: string; updates: Array<{ cell: string; value: string | number | boolean }>; expectedSha256?: string }
@@ -91,6 +92,12 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     tableIndex: z.number().int().min(0).max(10_000),
     offsetRows: z.number().int().min(0).max(1_000_000).optional(),
     limitRows: z.number().int().min(1).max(50).optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("pdf_read"),
+    path: pathSchema,
+    startPage: z.number().int().min(-1_000_000).max(1_000_000).refine((v) => v !== 0, "startPage is 1-based or negative").optional(),
+    pageCount: z.number().int().min(1).max(20).optional(),
   }).strict(),
   z.object({ kind: z.literal("xlsx_inspect"), path: pathSchema }).strict(),
   z.object({
@@ -300,6 +307,7 @@ export function actionRisk(kind: AgentAction["kind"] | string): Risk {
     case "docx_inspect":
     case "docx_read_paragraphs":
     case "docx_read_table":
+    case "pdf_read":
     case "xlsx_inspect":
     case "xlsx_read_range":
     case "xlsx_find":

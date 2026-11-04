@@ -1,7 +1,7 @@
 use crate::{
     approval,
     config::DeviceCapabilities,
-    docx_ops, fs_ops, image_ops,
+    docx_ops, fs_ops, image_ops, pdf_ops,
     policy::PathPolicy,
     process_ops,
     protocol::{AgentAction, Risk, UndoScope},
@@ -154,6 +154,22 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
                     table_index,
                     offset_rows.unwrap_or(0),
                     limit_rows.unwrap_or(20),
+                )
+            })
+            .await?
+        }
+        AgentAction::PdfRead {
+            path,
+            start_page,
+            page_count,
+        } => {
+            let policy = policy.clone();
+            tokio::task::spawn_blocking(move || {
+                pdf_ops::read(
+                    &policy,
+                    &path,
+                    start_page.unwrap_or(1),
+                    page_count.unwrap_or(5),
                 )
             })
             .await?

@@ -86,6 +86,11 @@ pub enum AgentAction {
         offset_rows: Option<usize>,
         limit_rows: Option<usize>,
     },
+    PdfRead {
+        path: String,
+        start_page: Option<i64>,
+        page_count: Option<u32>,
+    },
     XlsxInspect {
         path: String,
     },
@@ -289,6 +294,7 @@ impl AgentAction {
             Self::DocxInspect { .. } => "docx_inspect",
             Self::DocxReadParagraphs { .. } => "docx_read_paragraphs",
             Self::DocxReadTable { .. } => "docx_read_table",
+            Self::PdfRead { .. } => "pdf_read",
             Self::XlsxInspect { .. } => "xlsx_inspect",
             Self::XlsxReadRange { .. } => "xlsx_read_range",
             Self::XlsxWriteCells { .. } => "xlsx_write_cells",
@@ -335,6 +341,7 @@ impl AgentAction {
             | Self::DocxInspect { .. }
             | Self::DocxReadParagraphs { .. }
             | Self::DocxReadTable { .. }
+            | Self::PdfRead { .. }
             | Self::XlsxInspect { .. }
             | Self::XlsxReadRange { .. }
             | Self::XlsxFind { .. }

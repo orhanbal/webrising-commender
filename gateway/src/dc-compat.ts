@@ -20,7 +20,7 @@ function def(name: string, description: string, properties: Record<string, unkno
 }
 
 export const DC_TOOLS = [
-  def("read_file", "Desktop Commander compatible: read a text file. With offset/length, reads a line range (zero-based offset; negative counts from the end).", { path: str(), offset: int(), length: int() }, ["path"]),
+  def("read_file", "Desktop Commander compatible: read a text file. With offset/length, reads a line range (zero-based offset; negative counts from the end). For .pdf files, offset/length are pages (max 20).", { path: str(), offset: int(), length: int() }, ["path"]),
   def("read_multiple_files", "Desktop Commander compatible: read up to ten files.", { paths: { type: "array", items: str(), minItems: 1, maxItems: 10 } }, ["paths"]),
   def("write_file", "Desktop Commander compatible: write UTF-8 text. mode 'rewrite' (default) replaces the file, 'append' appends.", { path: str(), content: str(), mode: { type: "string", enum: ["rewrite", "append"] } }, ["path", "content"]),
   def("list_directory", "Desktop Commander compatible: list a directory.", { path: str() }, ["path"]),
@@ -39,6 +39,11 @@ export function translateAlias(name: string, a: Record<string, unknown>): { name
   const b64 = (text: unknown) => Buffer.from(String(text ?? ""), "utf8").toString("base64");
   switch (name) {
     case "read_file":
+      // Desktop Commander reads PDFs through read_file; offset/length are pages here.
+      if (/\.pdf$/i.test(String(a.path ?? ""))) {
+        const offset = a.offset === undefined ? undefined : Number(a.offset);
+        return { name: "pdf_read", args: { ...device, path: a.path, ...(offset !== undefined ? { start_page: offset < 0 ? offset : offset + 1 } : {}), ...(a.length !== undefined ? { page_count: a.length } : {}) } };
+      }
       return a.offset !== undefined || a.length !== undefined
         ? { name: "fs_read_lines", args: { ...device, path: a.path, ...(a.offset !== undefined ? { offset_lines: a.offset } : {}), ...(a.length !== undefined ? { limit_lines: a.length } : {}) } }
         : { name: "fs_read", args: { ...device, path: a.path } };

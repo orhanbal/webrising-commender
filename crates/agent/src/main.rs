@@ -4,6 +4,7 @@ mod docx_ops;
 mod fs_ops;
 mod image_ops;
 mod ops;
+mod pdf_ops;
 mod policy;
 mod process_ops;
 mod protocol;
