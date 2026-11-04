@@ -118,6 +118,15 @@ async function checkMcp() {
     assert.equal(denied.status, 401, "unauthenticated MCP call must be refused");
     const challenge = denied.headers.get("www-authenticate") || "";
     record("MCP refuses unauthenticated calls", true, `HTTP 401${challenge ? `, ${challenge.split(" ")[0]} challenge` : ""}`);
+    if (process.env.COMMANDER_EXPECT_MCP_OAUTH === "true") {
+      // Claude/ChatGPT connectors discover OAuth from this challenge and the
+      // authorization-server metadata; without them registration fails.
+      assert.match(challenge, /resource_metadata=/, "MCP OAuth challenge missing (MCP_OAUTH_ENABLED is not true)");
+      const { response, body } = await fetchJson("/.well-known/oauth-authorization-server");
+      assert.equal(response.status, 200);
+      assert.equal(body.registration_endpoint, new URL("/oauth/register", base).href);
+      record("MCP OAuth discovery", true, "challenge + authorization-server metadata with registration endpoint");
+    }
     return;
   }
   const headers = {
