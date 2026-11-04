@@ -1991,6 +1991,35 @@ try {
     console.log("agent-e2e: command allowlist runs only exact-prefix safe commands without approval");
   }
 
+  // Desktop Commander-compatible surface against the real Agent.
+  {
+    const dcFile = path.join(tempRoot, "dc-compat.js");
+    const original = "function f() {\n    if (a)   {\n        return 1;\n    }\n}\n";
+    const written = await tool(9601, "write_file", { device_id: deviceId, path: dcFile, content: original });
+    assert.equal(typeof written.error, "undefined", JSON.stringify(written));
+    const readBack = await tool(9602, "read_file", { device_id: deviceId, path: dcFile });
+    assert.equal(readBack.content, original);
+    const lines = await tool(9603, "read_file", { device_id: deviceId, path: dcFile, offset: 1, length: 1 });
+    assert.match(JSON.stringify(lines), /if \(a\)/);
+    const listed = await tool(9604, "list_directory", { device_id: deviceId, path: tempRoot });
+    assert.ok(JSON.stringify(listed).includes("dc-compat.js"));
+    const exact = await tool(9605, "edit_block", { device_id: deviceId, file_path: dcFile, old_string: "return 1;", new_string: "return 2;" });
+    assert.equal(exact.ok, true, JSON.stringify(exact));
+    assert.equal(exact.match, "exact");
+    const fuzzy = await tool(9606, "edit_block", { device_id: deviceId, file_path: dcFile, old_string: "if (a) {\n  return 2;\n}", new_string: "if (a) {\n  return 3;\n}" });
+    assert.equal(fuzzy.ok, true, JSON.stringify(fuzzy));
+    assert.equal(fuzzy.match, "whitespace");
+    assert.match(fs.readFileSync(dcFile, "utf8"), /return 3;/);
+    const missing = await tool(9607, "edit_block", { device_id: deviceId, file_path: dcFile, old_string: "retrun 3;", new_string: "x" });
+    assert.equal(missing.error, "no_match");
+    assert.match(fs.readFileSync(dcFile, "utf8"), /return 3;/, "no-match edit changes nothing");
+    await tool(9608, "write_file", { device_id: deviceId, path: dcFile, content: "\n// appended", mode: "append" });
+    assert.match(fs.readFileSync(dcFile, "utf8"), /\/\/ appended$/);
+    const internal = await tool(9609, "url_fetch", { url: "http://127.0.0.1:8787/health" });
+    assert.equal(internal.error, "private_address_refused", "the gateway never fetches its own network");
+    console.log("agent-e2e: Desktop Commander-compatible aliases, edit_block (exact/whitespace/no-match) and url_fetch SSRF guard");
+  }
+
   // 2D real authenticated MCP negative: a non-existent cwd must fail
   // before an empty terminal-history archive or scoped directory is created.
   // This checks the actual Gateway -> Rust Agent startup path, not a mock.

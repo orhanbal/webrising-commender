@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Desktop Commander-compatible tools: `read_file`, `read_multiple_files`, `write_file`, `list_directory`, `create_directory`, `move_file`, `get_file_info` (aliases with optional `device_id`), `edit_block` (exact, then unique whitespace-tolerant match; SHA-256-guarded write with undo snapshot; closest-line hint on no match) and `url_fetch` (gateway-side, SSRF-guarded, 1 MiB / 15 s).
 - Per-device trust level (Strict / Standard / Full): owner-chosen in the console (admin browser session; Full needs the password, can be time-limited, e-mails all admins/owners, audited as `trusted_full`). Strict ignores the command allowlist; Full runs HIGH-risk operations without per-call approval while device-local capabilities still apply.
 - Domain: defaults move to `https://wecommander.app` (old domain keeps serving during the transition); new agent command `set-control-url` moves an enrolled device to a new gateway origin without re-enrolling. See `docs/DOMAIN_MIGRATION.md`.
 - CI: macOS checks moved from `ci` to a separate `macos` workflow; the production release gate now requires the 14 Linux/Windows `ci` jobs, so GitHub macOS runner capacity cannot block a Linux release. The macOS PKG is published separately (`macos-preview-*`) by `macos-distribution` only after `macos` passes.

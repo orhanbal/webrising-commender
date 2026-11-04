@@ -1383,7 +1383,14 @@ for (const advertised of advertisedTools) {
   for (const key of required) {
     assert.ok(Object.hasOwn(schema.properties, key), `Missing schema property ${advertised.name}.${key}`);
   }
-  if (advertised.name !== "devices_list") {
+  // Desktop Commander-compatible tools take an optional device_id (the single
+  // online device is used when omitted); every other device tool requires it.
+  const dcCompatible = ["read_file", "read_multiple_files", "write_file", "list_directory",
+    "create_directory", "move_file", "get_file_info", "edit_block", "url_fetch"];
+  if (dcCompatible.includes(advertised.name)) {
+    assert.ok(!required.includes("device_id"), advertised.name);
+    assert.equal(schema.properties.device_id.type, "string", advertised.name);
+  } else if (advertised.name !== "devices_list") {
     assert.ok(required.includes("device_id"), `Device routing not required: ${advertised.name}`);
     assert.equal(schema.properties.device_id.type, "string", advertised.name);
   }
@@ -1393,6 +1400,7 @@ for (const name of [
   "stop_search", "terminal_read_page", "get_recent_tool_calls", "get_usage_stats",
   "xlsx_inspect", "xlsx_read_range", "xlsx_find", "xlsx_write_cells",
   "docx_inspect", "docx_read_paragraphs", "docx_read_table", "image_inspect",
+  "read_file", "write_file", "edit_block", "list_directory", "url_fetch",
 ]) {
   assert.ok(advertisedNames.includes(name), `Missing advertised parity tool: ${name}`);
 }
