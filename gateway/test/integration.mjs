@@ -159,6 +159,22 @@ const health = await jsonFetch("/health");
 assert.equal(health.status, "ok");
 assert.match(health.build?.commit ?? "", /^(unknown|[0-9a-f]{40})$/);
 
+// One-line install: dispatcher bound to PUBLIC_BASE_URL, platform scripts served as text.
+{
+  const installer = await fetch(base + "/install.sh");
+  assert.equal(installer.status, 200);
+  assert.match(installer.headers.get("content-type"), /^text\/plain/);
+  assert.equal(installer.headers.get("x-content-type-options"), "nosniff");
+  const body = await installer.text();
+  assert.match(body, /^#!\/bin\/sh/);
+  assert.ok(body.includes(`BASE='${new URL(process.env.PUBLIC_BASE_URL || base).origin}'`), "dispatcher uses the gateway origin");
+  for (const route of ["/install/ubuntu.sh", "/install/macos.sh", "/install.ps1"]) {
+    const r = await fetch(base + route);
+    assert.equal(r.status, 200, route);
+    assert.ok((await r.text()).length > 500, route);
+  }
+}
+
 const publicConfig = await jsonFetch("/api/public/config");
 assert.equal(publicConfig.deploymentMode, "saas");
 assert.equal(publicConfig.signupEnabled, true);

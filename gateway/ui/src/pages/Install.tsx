@@ -10,31 +10,29 @@ type Platform="windows"|"macos"|"linux";
 type ReleaseInfo={available:boolean;releaseUrl:string;tagName:string|null;assets:Array<{name:string;size:number;url:string;platform:Platform}>};
 const project="https://github.com/orhanbal/webrising-commender";
 const endpoint=()=>location.origin+"/mcp";
-const snippets:Record<Platform,string>={
- windows:"cargo build --release -p webrising-commender-agent\n.\\target\\release\\webrising-commender.exe enroll --control-url https://wecommander.app --pairing-code \"<KOD>\" --allowed-root \"C:\\Users\\Kullanici\"",
- macos:"cargo build --release -p webrising-commender-agent\n./target/release/webrising-commender enroll --control-url https://wecommander.app --pairing-code '<KOD>' --allowed-root \"$HOME\"",
- linux:"cargo build --release -p webrising-commender-agent\n./target/release/webrising-commender enroll --control-url https://wecommander.app --pairing-code '<KOD>' --allowed-root \"$HOME\"",
-};
+const oneLine=(p:Platform)=>p==="windows"
+ ?`powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm ${location.origin}/install.ps1)))"`
+ :`curl -fsSL ${location.origin}/install.sh | sh`;
 const docs:Record<Client,{name:string;url:string;steps:string[];caution:string}>={
  chatgpt:{
   name:"ChatGPT",url:"https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt",
   steps:[
-   "WECOMMANDER hesabınızda oturum açın, MCP Araçları bölümünden en az gerekli yetkiye sahip bir erişim anahtarı oluşturun.",
-   "ChatGPT'nin desteklenen çalışma alanlarında Eklentiler (Plugins) bölümünden özel MCP sunucusu ekleme akışını açın.",
-   "Sunucu adresi olarak aşağıdaki HTTPS MCP uç noktasını kullanın. ChatGPT'nin sunduğu kimlik doğrulama seçeneklerini kontrol edin.",
-   "İzinleri ve keşfedilen araçları gözden geçirip bağlantıyı test edin. Tam MCP yetkileri ChatGPT planına ve çalışma alanı politikasına bağlıdır."
+   "Önce cihazını kur: aşağıdaki tek satırlık komutu çalıştır ve tarayıcıda açılan isteği onayla.",
+   "ChatGPT'de Settings → Connectors bölümünde özel bir MCP bağlayıcısı oluştur (planına göre Developer mode gerekebilir).",
+   "Sunucu adresi olarak aşağıdaki MCP URL'sini gir ve kimlik doğrulama olarak OAuth seç.",
+   "Bağlan, WECOMMANDER hesabınla giriş yap ve izin ver. Araçlar sohbette görünür."
   ],
-  caution:"WECOMMANDER şu anda bearer token ile kimlik doğrular. ChatGPT'deki özel MCP bağlantılarının hesap türüne ve kimlik doğrulama desteğine bağlı olarak ek uyarlama/OAuth gerektirebileceğini unutmayın. Bu düğme tek tıkla kurulum yapmaz."
+  caution:"Özel MCP bağlayıcıları ChatGPT planına ve çalışma alanı politikasına bağlıdır. WECOMMANDER erişimi OAuth ile verilir ve istediğin an Cihazlar ya da Hesap sayfasından geri alınabilir."
  },
  claude:{
   name:"Claude",url:"https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp",
   steps:[
-   "WECOMMANDER'da oturum açın. MCP Araçları bölümünden bağlantıya özel, sınırlı yetkili API anahtarı oluşturun.",
-   "Claude'da Customize → Connectors → Add custom connector yolunu açın (kurum planlarında önce yönetici kurulumu gerekebilir).",
-   "WECOMMANDER adını ve aşağıdaki HTTPS MCP URL'sini girin; kimlik doğrulama ekranında gerekiyorsa Authorization: Bearer <ANAHTAR> üst bilgisini yapılandırın.",
-   "Connector'ı ekleyip sohbetinizde etkinleştirin. Yüksek riskli işlemlerde WECOMMANDER onay adımlarını kullanın."
+   "Önce cihazını kur: aşağıdaki tek satırlık komutu çalıştır ve tarayıcıda açılan isteği onayla.",
+   "Claude'da Settings → Connectors → Add custom connector yolunu aç (kurum planlarında önce yöneticinin izin vermesi gerekebilir).",
+   "Ad olarak WECOMMANDER, URL olarak aşağıdaki MCP adresini gir ve Connect'e bas.",
+   "WECOMMANDER hesabınla giriş yapıp izin ver. Yüksek riskli işlemler, cihazın güven seviyesine göre onay ister."
   ],
-  caution:"Claude'a bağlantı kurabilmek için sunucunun internetten erişilebilir olması ve hesabınızın özel connector izinlerinin açık olması gerekir. Anahtarınızı yalnızca güvenilir istemcilere verin."
+  caution:"Bağlayıcı OAuth ile çalışır; API anahtarı yapıştırman gerekmez. Erişimi istediğin an Claude'dan ya da WECOMMANDER Hesap sayfasından kaldırabilirsin."
  }
 };
 function CopyField({value,label,onCopy}:{value:string;label:string;onCopy:(v:string)=>void}){
@@ -96,7 +94,7 @@ export function InstallPage({nav}:{nav:Nav}){
     {platformAsset?<a className="install-primary-link" href={platformAsset.url} target="_blank" rel="noopener noreferrer"><Download size={18}/> {platforms.find(p=>p.key===platform)?.name} {translate("Agent indir")} <ArrowUpRight size={16}/></a>
      :<a className="install-primary-link" href={downloads?.releaseUrl||project+"/releases"} target="_blank" rel="noopener noreferrer"><Download size={18}/> {translate("Sürümleri kontrol et")} <ArrowUpRight size={16}/></a>}
     <a className="install-secondary-link" href={project+"/blob/main/docs/QUICKSTART.md"} target="_blank" rel="noopener noreferrer"><FolderOpen size={17}/> {translate("Kurulum rehberi")}</a>
-   </div></div><div className="install-code-wrap"><div className="install-code-top"><span><Code2 size={15}/> {translate("Kaynak koddan derleme")}</span><button type="button" className="install-code-copy" onClick={()=>copy(snippets[platform])}><Copy size={14}/> {translate("Kopyala")}</button></div><pre className="install-code">{snippets[platform]}</pre><p className="install-code-note">{translate("Rust toolchain gereklidir. Eşleştirme kodunu panelden oluştur;")} <code>&lt;KOD&gt;</code> {translate("alanını onunla değiştir.")}</p></div></div></Card>
+   </div></div><div className="install-code-wrap"><div className="install-code-top"><span><Code2 size={15}/> {translate("Tek satırda kur")}</span><button type="button" className="install-code-copy" onClick={()=>copy(oneLine(platform))}><Copy size={14}/> {translate("Kopyala")}</button></div><pre className="install-code">{oneLine(platform)}</pre><p className="install-code-note">{translate("Komut, paketi GitHub yayınından indirir, SHA-256 özetini doğrular ve cihazı bu hesaba bağlamak için tarayıcı onay bağlantısı verir. Agent root olmayan bir servis kullanıcısıyla çalışır.")}</p></div></div></Card>
    <div className="install-steps"><span><Check size={15}/> {translate("Agent'ı hazırla")}</span><ChevronRight size={16}/><span><Check size={15}/> <button type="button" onClick={()=>nav("/devices")}>{translate("Panelden cihaz eşleştir")}</button></span><ChevronRight size={16}/><span><Check size={15}/> {translate("AI istemcinle bağlan")}</span></div>
   </div></section>
   <section className="install-end container-w"><div className="install-end-banner"><div><span className="eyebrow">{translate("BAŞLAMAYA HAZIR MISIN?")}</span><h2>{translate("Tek panel. Çoklu cihaz.")} <span className="text-gradient">{translate("Tam kontrol.")}</span></h2><p>{translate("Kurulum adımlarını tamamladığında cihazlarını yönetmeye başlayabilirsin.")}</p></div><Button size="lg" onClick={()=>nav("/dashboard")}>{translate("Kullanıcı paneline git")} <ArrowRight size={17}/></Button></div></section>

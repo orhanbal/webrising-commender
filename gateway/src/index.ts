@@ -33,6 +33,7 @@ import {
 import { db, housekeeping, migrate, ready } from "./db.js";
 import { getPublicPlans, publicPaddleConfig, createPaddleCheckout, createPaddlePortal, consumePaddleWebhook } from "./paddle.js";
 import { getDownloads } from "./downloads.js";
+import { installRoute } from "./install-scripts.js";
 import { createDeviceLink, getDeviceLinkStatus, approveDeviceLink } from "./device-link.js";
 import { DeviceRouter } from "./device-router.js";
 import { reconcileRemoteSearchStops, recoverInterruptedSearches, setSearchPersistence } from "./search-sessions.js";
@@ -492,6 +493,20 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       if (await serveModernFile(res,"index.html",true,seo)) return;
       if (url.pathname === "/") return void (await serveLanding(res));
       return void json(res,503,{error:"modern_frontend_not_built"});
+    }
+    if ((req.method === "GET" || req.method === "HEAD") && (url.pathname === "/install.sh" || url.pathname === "/install.ps1" || url.pathname.startsWith("/install/"))) {
+      const body = await installRoute(url.pathname, publicBaseUrl);
+      if (body === "missing") return void json(res, 503, { error: "installer_missing" });
+      if (body) {
+        res.writeHead(200, {
+          "content-type": "text/plain; charset=utf-8",
+          "content-length": body.length,
+          ...securityHeaders(),
+          "cache-control": "public, max-age=300",
+          "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+        });
+        return void res.end(req.method === "HEAD" ? undefined : body);
+      }
     }
     if (req.method === "GET" && url.pathname === "/connect-device") {
       const here = path.dirname(fileURLToPath(import.meta.url));

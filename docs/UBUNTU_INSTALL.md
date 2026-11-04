@@ -18,13 +18,24 @@ Status: automated Linux CI must pass, followed by **real Ubuntu server acceptanc
 
 No manual GitHub artifact download, ZIP extraction, or SCP is required. After a successful CI run, the automatic **ubuntu-distribution** workflow publishes a signed-off-by-CI **preview** Debian package and a SHA-256 checksum to GitHub Releases. Verify that [Ubuntu preview Releases](https://github.com/orhanbal/webrising-commender/releases) contains an asset named `wecommander-agent_VERSION_amd64.deb` before attempting installation.
 
-On **Ubuntu 24.04 amd64**, run this single command in the SSH terminal:
+On **Ubuntu 24.04 amd64** or **macOS**, run this single command in the terminal (it asks for `sudo` itself where needed):
 
 ```bash
-curl -fsSLo /tmp/wecommander-install.sh https://raw.githubusercontent.com/orhanbal/webrising-commender/main/scripts/install-ubuntu-online.sh && sudo bash /tmp/wecommander-install.sh
+curl -fsSL https://wecommander.app/install.sh | sh
 ```
 
-You can inspect `/tmp/wecommander-install.sh` before running `sudo`, especially on a production server. The script fetches only a prerelease whose GitHub Actions CI passed on `main`, checks the exact `.deb` checksum against its release `SHA256SUMS.txt`, installs through `apt-get`, and starts device approval. It will fail closed if no release exists, the package is wrong, or the checksum does not match.
+A self-hosted gateway serves the same command at its own origin, and the device is then linked to that gateway. `/install.sh` is a short dispatcher; it downloads `/install/ubuntu.sh` or `/install/macos.sh` (identical to `scripts/install-*-online.sh`) and passes `--control-url` for the serving gateway. Add `sh -s -- --package-only` (Ubuntu) or `sh -s -- --install-only` (macOS) to install without linking.
+
+To inspect before running, especially on a production server:
+
+```bash
+curl -fsSLo /tmp/wecommander-install.sh https://wecommander.app/install/ubuntu.sh && less /tmp/wecommander-install.sh
+```
+
+```bash
+sudo bash /tmp/wecommander-install.sh --control-url https://wecommander.app
+```
+ The script fetches only a prerelease whose GitHub Actions CI passed on `main`, checks the exact `.deb` checksum against its release `SHA256SUMS.txt`, installs through `apt-get`, and starts device approval. It will fail closed if no release exists, the package is wrong, or the checksum does not match.
 
 After installation, the terminal shows a WECOMMANDER browser approval URL. Open it **on your own computer**, sign in to the workspace, select the destination workspace and approve the Ubuntu device. The new device runs as unprivileged `wecommander` using systemd, without requiring the desktop or user passwords on the server.
 
@@ -83,7 +94,7 @@ The same CI-approved prerelease also provides `WECOMMANDER-Setup-windows-x64.exe
 **Windows PowerShell (run as your normal user):**
 
 ```powershell
-Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/orhanbal/webrising-commender/main/scripts/install-windows-online.ps1 -OutFile "$env:TEMP\\wecommander-install.ps1"; powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\\wecommander-install.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm https://wecommander.app/install.ps1)))"
 ```
 
 The Windows Setup itself requests UAC if needed. The terminal installer downloads and checksums the Setup executable, installs it and opens browser-based account linking. It does not ask for the Windows service account password. Release previews are unsigned, and Windows SmartScreen might warn about the publisher.
