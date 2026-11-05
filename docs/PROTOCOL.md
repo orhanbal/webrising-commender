@@ -22,6 +22,7 @@ Transport: JSON messages over authenticated WebSocket.
 ## Action kinds
 
 - `system_info`
+- `health_snapshot` (`top` 1–20, default 5): CPU usage and load, memory and swap, disks, network counters, top processes by CPU and memory; carries `observedAt`, `source` and `limitations`. Low risk.
 - `fs_list`
 - `fs_stat`
 - `fs_read`

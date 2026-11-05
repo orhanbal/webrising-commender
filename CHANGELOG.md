@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `health_snapshot` (v1.2): one read-only call returns CPU usage and load, memory and swap, disks, network counters and the top processes by CPU and memory, with `observedAt`, `source` and `limitations`. Works remotely and in local mode.
+
 - Output redaction (v1.2): the agent masks secrets (private keys, Authorization values, URL credentials, common token formats, password/secret/token/API-key assignments) in command, task, terminal and process-list output before it leaves the device. On by default; `capabilities --redact-output off` or `mcp-stdio --no-redact` turns it off. `policy_info` reports `outputRedaction`.
 
 - Local mode (`mcp-stdio`) now accepts the Desktop Commander tool names (`read_file`, `list_directory`, `write_file`, `edit_block`, …); before, they returned `unknown_tool`.

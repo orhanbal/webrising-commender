@@ -25,6 +25,7 @@ export const tools = [
     ...(process.env.MCP_OAUTH_ENABLED === "true" ? { securitySchemes: [{ type: "oauth2", scopes: ["mcp:tools"] }] } : {}),
   },
   tool("system_info", "Read system information from a device.", {}),
+  tool("health_snapshot", "Read-only health snapshot of a device: CPU usage and load, memory and swap, disks, network counters, and the top processes by CPU and memory. Includes observedAt and limitations.", { top: { type: "integer", minimum: 1, maximum: 20, description: "Processes per list (default 5)." } }),
   tool("policy_info", "Read agent-enforced allowed directories and resource limits. Read-only.", {}),
   tool("get_recent_tool_calls", "Read paginated sanitized recent tool history for your actor and selected device.", { limit: integer(), offset: integer() }),
   tool("get_usage_stats", "Count this actor's tool executions by name over the past 30 days, scoped to the selected device.", {}),
@@ -220,6 +221,7 @@ function tool(name: string, description: string, properties: Record<string, unkn
 export function actionFromTool(name: string, a: any): AgentAction {
   switch (name) {
     case "system_info": return { kind: "system_info" };
+    case "health_snapshot": return { kind: "health_snapshot", ...(a.top !== undefined ? { top: Number(a.top) } : {}) };
     case "policy_info": return { kind: "policy_info" };
     case "fs_list": return { kind: "fs_list", path: String(a.path) };
     case "fs_stat": return { kind: "fs_stat", path: String(a.path) };

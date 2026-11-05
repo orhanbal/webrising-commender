@@ -49,6 +49,9 @@ pub struct SpreadsheetCellUpdate {
 )]
 pub enum AgentAction {
     SystemInfo,
+    HealthSnapshot {
+        top: Option<usize>,
+    },
     PolicyInfo,
     FsList {
         path: String,
@@ -284,6 +287,7 @@ impl AgentAction {
     pub fn kind_name(&self) -> &'static str {
         match self {
             Self::SystemInfo => "system_info",
+            Self::HealthSnapshot { .. } => "health_snapshot",
             Self::PolicyInfo => "policy_info",
             Self::FsList { .. } => "fs_list",
             Self::FsStat { .. } => "fs_stat",
@@ -330,6 +334,7 @@ impl AgentAction {
     pub fn risk(&self) -> Risk {
         match self {
             Self::SystemInfo
+            | Self::HealthSnapshot { .. }
             | Self::PolicyInfo
             | Self::FsList { .. }
             | Self::FsStat { .. }

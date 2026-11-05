@@ -147,6 +147,12 @@ try {
 
   const info = await tool(101, "system_info", { device_id: deviceId });
   assert.equal(typeof info.cpuCount, "number");
+  // v1.2 health snapshot: bounded, timestamped, with limitations.
+  const health = await tool(1011, "health_snapshot", { device_id: deviceId, top: 3 });
+  assert.match(health.observedAt, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+  assert.ok(health.memory.totalBytes > 0 && health.cpu.count >= 1, JSON.stringify(health).slice(0, 300));
+  assert.ok(health.topProcesses.byCpu.length <= 3 && health.topProcesses.byMemory.length <= 3);
+  assert.ok(Array.isArray(health.disks) && Array.isArray(health.limitations));
 
   // 9B: Run the availability harness against the actual isolated Gateway
   // and native Rust Agent. This short smoke is NOT a 24-hour soak acceptance.

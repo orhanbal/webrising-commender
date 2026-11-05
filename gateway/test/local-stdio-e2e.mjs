@@ -47,6 +47,8 @@ try {
   ro.notify("notifications/initialized");
   const listed = (await ro.rpc("tools/list", {})).result.tools.map((t) => t.name);
   assert.deepEqual(listed, expectedTools, "local tools equal the generated gateway set");
+  const health = await ro.call("health_snapshot", { top: 2 });
+  assert.equal(health.error, false, JSON.stringify(health.data)); assert.ok(health.data.memory.totalBytes > 0);
   const read = await ro.call("fs_read", { path: path.join(root, "notes.txt") });
   assert.equal(read.error, false); assert.equal(read.data.content, "secret content line\n");
   assert.equal((await ro.call("fs_list", { path: "/" })).error, true, "outside the allowed root");
