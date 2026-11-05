@@ -509,6 +509,13 @@ async fn connected_loop(
         }
     });
 
+    // Liveness: once the gateway has shown that it pings (every 20 s), a
+    // silence longer than GATEWAY_SILENCE means the path is dead even if the
+    // local TCP socket still looks open (for example behind a proxy), so the
+    // connection is dropped and the normal reconnect with backoff takes over.
+    // Older gateways that never ping are not affected.
+    const GATEWAY_SILENCE: Duration = Duration::from_secs(90);
+    let mut gateway_pings = false;
     loop {
         let message = tokio::select! {
             changed = shutdown.changed() => {
@@ -517,7 +524,14 @@ async fn connected_loop(
                 }
                 continue;
             }
-            message = reader.next() => message,
+            message = tokio::time::timeout(GATEWAY_SILENCE, reader.next()) => match message {
+                Ok(message) => message,
+                Err(_) if gateway_pings => {
+                    heartbeat.abort();
+                    return Err(anyhow!("gateway silent for {}s; reconnecting", GATEWAY_SILENCE.as_secs()));
+                }
+                Err(_) => continue,
+            },
         };
 
         let Some(message) = message else {
@@ -688,6 +702,7 @@ async fn connected_loop(
             }
             Message::Close(_) => break,
             Message::Ping(payload) => {
+                gateway_pings = true;
                 writer.lock().await.send(Message::Pong(payload)).await?;
             }
             _ => {}

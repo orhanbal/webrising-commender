@@ -4,6 +4,11 @@ import { isNativeContentCheckpoint, isNativeFilenameCheckpoint } from "./search-
 import { db } from "./db.js";
 import type { AgentAction, AgentMessage, GatewayMessage, SearchProgress, UndoScope } from "./protocol.js";
 
+// Agent liveness (ms). Overridable for tests; the stale window must exceed the
+// agent's 20 s heartbeat interval.
+const agentPingMs = () => Math.max(1000, Number(process.env.AGENT_PING_INTERVAL_MS) || 20_000);
+const agentStaleMs = () => Math.max(agentPingMs() * 2, Number(process.env.AGENT_STALE_MS) || 65_000);
+
 const MAX_PENDING_TOTAL = 1024;
 const MAX_PENDING_PER_DEVICE = 64;
 
@@ -83,7 +88,25 @@ export class AgentHub {
     this.sockets.set(deviceId, socket);
     this.ready.delete(deviceId);
 
+    // Liveness: a proxy in between (e.g. Cloudflare) can keep this side of a
+    // dead agent connection open indefinitely. Ping every interval and close
+    // the socket when nothing (message, heartbeat or pong) arrived within the
+    // stale window, so the device shows offline and calls fail fast.
+    let lastActivity = Date.now();
+    const touch = () => { lastActivity = Date.now(); };
+    const liveness = setInterval(() => {
+      if (Date.now() - lastActivity > agentStaleMs()) {
+        clearInterval(liveness);
+        socket.terminate();
+        return;
+      }
+      try { socket.ping(); } catch { /* closing */ }
+    }, agentPingMs());
+    liveness.unref?.();
+    socket.on("pong", touch);
+
     socket.on("message", (raw) => {
+      touch();
       let message: AgentMessage;
       try {
         message = JSON.parse(raw.toString()) as AgentMessage;
@@ -104,6 +127,7 @@ export class AgentHub {
     });
 
     socket.on("close", () => {
+      clearInterval(liveness);
       if (this.sockets.get(deviceId) !== socket) return;
       this.sockets.delete(deviceId);
       this.ready.delete(deviceId);

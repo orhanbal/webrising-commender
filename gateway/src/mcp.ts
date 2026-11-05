@@ -578,7 +578,8 @@ async function editBlock(args: any, router: DeviceRouter, principal: Principal) 
     const plan = planEdit(read.content, String(args.old_string ?? ""), String(args.new_string ?? ""),
       args.expected_replacements === undefined ? 1 : Number(args.expected_replacements));
     if (!plan.ok) {
-      await audit(orgId, principal.actor, deviceId, "edit_block", "medium", "denied", plan.error);
+      // No match / ambiguous match is a failed request, not a policy refusal.
+      await audit(orgId, principal.actor, deviceId, "edit_block", "medium", "error", plan.error);
       return toolResult(plan, true);
     }
     const original = Buffer.from(read.content, "utf8");
@@ -592,7 +593,8 @@ async function editBlock(args: any, router: DeviceRouter, principal: Principal) 
     return toolResult({ ok: true, replacements: plan.replacements, match: plan.mode, undo: "fs_versions/fs_undo can restore the previous content" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "edit_failed";
-    await audit(orgId, principal.actor, deviceId, "edit_block", "medium", "error", redact(message));
+    const refused = /^device_policy_denied|outside configured allowed roots/i.test(message);
+    await audit(orgId, principal.actor, deviceId, "edit_block", "medium", refused ? "denied" : "error", redact(message));
     return toolResult({ error: message }, true);
   }
 }

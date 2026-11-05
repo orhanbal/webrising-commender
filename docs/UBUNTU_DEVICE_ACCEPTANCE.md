@@ -102,7 +102,10 @@ signed in as the owner. Device `794911a6-08a2-45c9-86a5-3029e1a04620`.
 | 10 | PASS | `process_exec id` → `approval_required`; with `--no-commands` `policy_info` showed `commandExecution: disabled`; a forged `approval_token` → `approval_required`; `fs_write` → `device_policy_denied: file writes are disabled on this device` |
 | 11 | PASS | after the owner enabled commands locally and approved the exact command: `uid=999(wecommander) gid=987(wecommander)`, exit 0 |
 | 12 | PASS | the same command again → new `approval_required` (single use) |
-| 13–15 | PENDING | — |
+| 13 | PASS (2026-11-05, Agent `0.1.1609`) | `task_start` → `approval_required` → approved in `/approvals` → the same call ran once; `task_list` recovered the id; `task_status`: exit 0, three dates 5 s apart (06:36:18/23/28 UTC). Checked from separate MCP requests in the same Claude session |
+| 14 | PASS | audit: `task_start` approval_pending → `approval_request.approve` → approval_consumed → success, then `task_list`/`task_status`; risk and outcome only, no file contents. Found: `edit_block` no-match was audited as `denied` and a device-policy refusal as `error`; swapped in the liveness PR |
+| 15 | PASS with finding | first attempt blocked only one of the two Cloudflare addresses and had no effect (the Agent connects through Cloudflare, `172.67.160.142`). Second attempt blocked both (`104.21.14.207`, `172.67.160.142`) for 150 s: calls failed with `device-request-timeout`, then the device answered again without re-enrollment and `task_list` still listed the task; no leftover rule. **Finding:** during the block the device stayed "online" (only `last_seen_at` stopped) and neither side noticed, because the proxy kept the gateway side open and TCP resumed the old connection. Fixed by gateway ping/stale-close and an Agent silence timeout (liveness PR) |
+| — | PASS | DC-compatible tools on the real device: `list_directory`/`read_file` without `device_id`, `get_file_info`, `/etc/passwd` refused, `url_fetch` public OK and `169.254.169.254` refused, `edit_block` no-match and write refused by device policy, `pdf_read` and `read_file` on a PDF return the page text |
 
 Defects found and fixed during this run: device-link rate-limit 429 on setup
 (PR #52); Claude dynamic client registration and proxy-blind OAuth limits
@@ -142,10 +145,14 @@ This blocks only the Agent's outbound connection to the gateway, for 90
 seconds. It does not touch SSH. The undo is scheduled **before** the block is
 applied.
 
+`wecommander.app` is behind Cloudflare, which returns several addresses, so
+block all of them plus the address the Agent is connected to
+(`sudo ss -tnp | grep -i webrising`):
+
 ```bash
-GW=$(getent ahostsv4 wecommander.app | awk 'NR==1{print $1}')
-sudo systemd-run --on-active=90 --unit=wec-unblock iptables -D OUTPUT -d "$GW" -p tcp --dport 443 -m owner --uid-owner wecommander -j REJECT
-sudo iptables -I OUTPUT -d "$GW" -p tcp --dport 443 -m owner --uid-owner wecommander -j REJECT
+GWS=$( (getent ahostsv4 wecommander.app | awk '{print $1}'; sudo ss -tnp | awk '/webrising/{split($5,a,":");print a[1]}') | sort -u | tr '\n' ' ')
+sudo systemd-run --on-active=150 --unit=wec-unblock /bin/sh -c "for ip in $GWS; do iptables -D OUTPUT -d \$ip -p tcp --dport 443 -m owner --uid-owner wecommander -j REJECT; done"
+for ip in $GWS; do sudo iptables -I OUTPUT -d "$ip" -p tcp --dport 443 -m owner --uid-owner wecommander -j REJECT; done
 ```
 
 Watch WECOMMANDER → Devices go offline, then online again within about two
