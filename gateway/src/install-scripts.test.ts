@@ -44,7 +44,7 @@ test("the macOS installer finds the PKG where macos-distribution publishes it", 
   const body = fs.readFileSync(path.join(repo, "scripts/install-macos-online.sh"), "utf8");
   const literal = body.match(/!\/(\^[^/]+\$)\/\.test\(release\.tag_name\)/);
   assert.ok(literal, "tag filter regex not found");
-  const tagFilter = new RegExp(literal[1]);
+  const tagFilter = new RegExp(literal[1] ?? "^$");
   assert.ok(tagFilter.test("macos-preview-53"));
   assert.ok(!tagFilter.test("windows-preview-1"));
   const workflow = fs.readFileSync(path.join(repo, ".github/workflows/macos-distribution.yml"), "utf8");
