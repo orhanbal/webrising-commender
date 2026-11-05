@@ -59,3 +59,18 @@ test("landing CMS catalog matches Landing.tsx and is fully translated", () => {
   assert.deepEqual(used.filter((k) => !keys.has(k)), [], "copy() keys missing from landing-copy-sections.ts");
   assert.deepEqual([...keys].filter((k) => !english.has(k) && !sameInBoth.has(k)), [], "catalog keys without English text");
 });
+
+test("every console ui() literal has a Turkish entry", () => {
+  const console = fs.readFileSync(path.join(src, "console-text.ts"), "utf8");
+  const turkish = new Set([...console.matchAll(/^\s*("(?:[^"\\]|\\.)*")\s*:/gm)].map((m) => JSON.parse(m[1])));
+  const missing = [];
+  for (const file of sources()) {
+    const text = fs.readFileSync(file, "utf8");
+    if (!text.includes("consoleText")) continue;
+    for (const m of text.matchAll(/\bui\(\s*("(?:[^"\\]|\\.)*")\s*\)/g)) {
+      const key = JSON.parse(m[1]);
+      if (!turkish.has(key)) missing.push(`${path.relative(src, file)}: ${key}`);
+    }
+  }
+  assert.deepEqual([...new Set(missing)], [], "add these keys to ui/src/console-text.ts");
+});
