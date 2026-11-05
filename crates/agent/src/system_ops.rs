@@ -129,7 +129,16 @@ pub fn health_snapshot(top: Option<usize>) -> Result<Value> {
     let by_memory: Vec<Value> = processes.iter().take(top).map(row).collect();
 
     let total = system.total_memory();
-    let available = system.available_memory();
+    let mut available = system.available_memory();
+    if available == 0 && total > 0 {
+        // Seen on macOS 26: the platform reports no "available" figure, which
+        // would read as 100 % used. Fall back to total minus used and say so.
+        available = total.saturating_sub(system.used_memory());
+        limitations.push(
+            "available memory estimated as total minus used (the OS reported none); caches may count as used"
+                .into(),
+        );
+    }
     Ok(json!({
         "observedAt": rfc3339(observed),
         "source": "agent",

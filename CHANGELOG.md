@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `health_snapshot`: when the OS reports no available memory (seen on macOS 26, shown as 100 % used), estimate it as total minus used and say so in `limitations`.
+
 - macOS: the default allowed folder is now `~/WECOMMANDER`. In `~/Documents` macOS asked for permission on every command and held the command until answered. Commands now change directory inside the shell, so such a wait ends in a timeout that says what to do. The online installer takes the highest `macos-preview` build instead of the API order. Mac acceptance results in docs/MACOS_DEVICE_ACCEPTANCE.md.
 
 - macOS one-line install: the online installer looked for the PKG only in `ubuntu-preview-*` releases, but it is published as `macos-preview-*`, so `curl … | sh` on a Mac stopped with "No complete macOS installer release yet". It now accepts both, and takes `--allowed-root`. New docs/MACOS_DEVICE_ACCEPTANCE.md.
