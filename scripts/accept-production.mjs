@@ -82,10 +82,16 @@ async function checkConsole() {
   assert.match(text, /WECOMMANDER/i);
   if (text.includes('id="root"')) {
     assert.match(text, /\/modern\/assets\/index-[^"]+\.js/i, "Modern console requires a built React bundle");
+    // /advanced was the legacy console; since v1.1 it redirects to the React
+    // dashboard. Both are accepted while the release that retires it rolls out.
     const advanced = await fetch(new URL("/advanced", base), { redirect: "manual" });
-    assert.equal(advanced.status, 200);
-    assert.match(await advanced.text(), /Browser account/i, "Power console must remain available at /advanced");
-    record("Web console", true, "React dashboard at /app; legacy power console at /advanced");
+    if (advanced.status === 302) {
+      assert.equal(advanced.headers.get("location"), "/dashboard", "/advanced must redirect to the dashboard");
+    } else {
+      assert.equal(advanced.status, 200);
+      assert.match(await advanced.text(), /Browser account/i, "legacy console at /advanced");
+    }
+    record("Web console", true, advanced.status === 302 ? "React dashboard at /app; /advanced redirects to /dashboard" : "React dashboard at /app; legacy console at /advanced");
   } else {
     assert.match(text, /Browser account/i);
     record("Web console", true, "/app classic console HTML served");

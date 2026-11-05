@@ -20,12 +20,12 @@ const appHtml = await appResponse.text();
 assert.match(appHtml, /WECOMMANDER/);
 assert.ok(appHtml.includes('id="root"'),"Modern /app must deliver the React shell");
 assert.match(appHtml, /\/modern\/assets\/index-[^"]+\.js/);
-const advancedResponse=await fetch(base+"/advanced");
-assert.equal(advancedResponse.status,200);
-const advancedHtml=await advancedResponse.text();
-assert.match(advancedHtml, />Devices</);
-assert.match(advancedHtml, /Plan &amp; billing/);
-assert.match(advancedHtml, />Settings</);
+// The legacy /advanced console is retired; old links redirect to the React pages.
+for (const [path, target] of [["/advanced", "/dashboard"], ["/advanced?view=approvals", "/approvals"], ["/advanced?view=access", "/team"], ["/advanced?view=audit", "/audit"], ["/advanced?view=files", "/files"]]) {
+  const legacy = await fetch(base + path, { redirect: "manual" });
+  assert.equal(legacy.status, 302, path);
+  assert.equal(legacy.headers.get("location"), target, path);
+}
 
 for (const name of ["wecommander-white.svg","wecommander-black.svg","wecommander-favicon.svg"]) {
   const asset = await fetch(base + "/assets/" + name);

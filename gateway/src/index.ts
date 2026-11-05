@@ -538,7 +538,13 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       return void (await serveConsole(res));
     }
     if (req.method === "GET" && (url.pathname === "/advanced" || url.pathname === "/advanced/")) {
-      return void (await serveConsole(res));
+      // The legacy console is retired (v1.1 item 5e): every function lives in
+      // the React dashboard. Old links (e-mails, bookmarks) land on the page
+      // that replaced them.
+      const view = url.searchParams.get("view") || "";
+      const target = ({ approvals: "/approvals", devices: "/devices", audit: "/audit", access: "/team", members: "/team", billing: "/billing", usage: "/usage", tokens: "/mcp", mcp: "/mcp", terminal: "/terminal", files: "/files", tasks: "/tasks" } as Record<string, string>)[view] || "/dashboard";
+      res.writeHead(302, { location: target, ...securityHeaders() });
+      return void res.end();
     }
     if (req.method === "GET" && url.pathname === "/health/live") return void json(res, 200, { status: "ok", service: "commender-gateway" });
     if (req.method === "GET" && url.pathname === "/health") {
