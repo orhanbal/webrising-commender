@@ -261,3 +261,5 @@
  .console-table td[data-label]::before{content:attr(data-label);display:block;font-size:var(--wc-text-xs);font-weight:var(--wc-weight-bold);color:var(--faint);text-transform:uppercase;letter-spacing:.06em}
  .console-actions{white-space:normal}
 }
+.team-row{display:flex;flex-wrap:wrap;align-items:center;gap:var(--wc-space-3);padding:var(--wc-space-3) var(--wc-space-4);border:1px solid var(--stroke);border-radius:var(--wc-radius-md);background:var(--surface-2)}
+.team-row>div:first-child{flex:1 1 220px}

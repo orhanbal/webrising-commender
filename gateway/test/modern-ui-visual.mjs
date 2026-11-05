@@ -13,6 +13,11 @@ const fixtures={
  "/api/auth/me":{email:"test@example.com",actor:"test-user",role:"owner",authKind:"session",global:false,organizationId:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"},
  "/api/public/plans":{mode:"saas",paddle:{clientToken:null,checkoutEnabled:false,environment:"sandbox"},plans:[{key:"pro",name:"Pro",description:"Example test plan",featured:true,priceLabel:"$12 / month",priceId:null,features:["5 devices"],maxDevices:5,maxMembers:2,maxApiTokens:4}]},
  "/api/devices":{items:[{id:"11111111-1111-4111-8111-111111111111",name:"Test Windows Device",platform:"windows",online:true,last_seen_at:new Date().toISOString(),trust_level:"standard",trust_full_until:null}]},
+ "/api/members":{items:[{id:"55555555-5555-4555-8555-555555555555",email:"test@example.com",role:"owner",last_login_at:new Date().toISOString(),member_since:new Date().toISOString()},{id:"66666666-6666-4666-8666-666666666666",email:"ops@example.test",role:"operator",last_login_at:null,member_since:new Date().toISOString()}]},
+ "/api/invitations":{items:[{id:"77777777-7777-4777-8777-777777777777",email:"new@example.test",role:"viewer",status:"pending",expires_at:new Date(Date.now()+72*3600e3).toISOString(),created_at:new Date().toISOString()}]},
+ "/api/audit":{items:[{id:"1",actor:"oauth:claude",device_id:"11111111-1111-4111-8111-111111111111",tool:"task_start",risk:"high",outcome:"approval_pending",detail:null,created_at:new Date().toISOString()},{id:"2",actor:"user:test@example.com",device_id:"11111111-1111-4111-8111-111111111111",tool:"approval_request.approve",risk:"high",outcome:"success",detail:"{}",created_at:new Date().toISOString()}]},
+ "/api/organization":{item:{id:"org",name:"Test",relay_region:null}},
+ "/api/relay-regions":{enabled:true,items:[{region:"eu-central",nodes:2}]},
  "/api/approval-requests":{items:[{id:"22222222-2222-4222-8222-222222222222",device_id:"11111111-1111-4111-8111-111111111111",requested_by:"oauth:claude",action_kind:"process_exec",action:{kind:"process_exec",command:"systemctl restart nginx",timeoutMs:30000},status:"pending",expires_at:new Date(Date.now()+9*60000).toISOString(),created_at:new Date().toISOString()}]},
  "/api/devices/11111111-1111-4111-8111-111111111111/command-allowlist":{items:[{id:"33333333-3333-4333-8333-333333333333",pattern:"df -h",created_at:new Date().toISOString()}]},
  "/api/usage":{monthCalls:42,limit:100,dailyAverage:6,resetAt:"2026-11-01T00:00:00Z",daily:[1,2,3,4,5,6,7].map((n)=>({day:"2026-10-"+String(10+n),calls:n*2})),months:[],topTools:[]},
@@ -317,6 +322,18 @@ try{
  const approvalsShot=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
  writeFileSync(join(artifacts,"modern-approvals-full-trust.png"),Buffer.from(approvalsShot.data,"base64"));
 
+ // Team, audit and invitation pages (v1.1 item 5e).
+ await visit("/team","Manage members","modern-team");
+ assert.equal(await evalJs("document.querySelectorAll('.team-row').length"),3,"Two members and one invitation must be listed");
+ assert.ok(await evalJs("document.body.textContent.includes('ops@example.test')&&document.body.textContent.includes('new@example.test')"),"Members and invitations are shown");
+ assert.ok(await evalJs("!!document.querySelector('select[aria-label=Region]')"),"Owners can choose the relay region");
+ await visit("/audit","Audit log","modern-audit");
+ assert.equal(await evalJs("document.querySelectorAll('.console-table tbody tr').length"),2,"Audit entries are listed");
+ assert.ok(await evalJs("document.querySelector('.console-table tbody')?.textContent.includes('Test Windows Device')"),"Device names replace ids");
+ await call("Page.navigate",{url:"http://127.0.0.1:"+server.address().port+"/app#invite=wrci_legacy_link_token_value_0123456789abcdef"});
+ await sleep(900);
+ assert.equal(await evalJs("location.pathname"),"/app","legacy invitation links keep working");
+ assert.ok(await evalJs("document.body.textContent.includes('Accept invitation')"),"legacy /app#invite= links open the invitation page");
  await call("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:1,mobile:true});
  await visit("/","on every machine.","modern-landing-mobile");
  await visit("/dashboard","Welcome back","modern-dashboard-mobile");
@@ -330,7 +347,7 @@ try{
  // Smallest supported width (v1.1 item 5): no horizontal overflow on any shell.
  await call("Emulation.setDeviceMetricsOverride",{width:360,height:740,deviceScaleFactor:1,mobile:true});
  const clipped=()=>evalJs("(()=>{document.querySelectorAll('[data-reveal]').forEach(e=>e.classList.add('visible'));return [...document.querySelectorAll('.site-header *, .dash-topbar *, .hero-copy, .hero-copy *, .session-preview, .compare-wrap, .dash-content > *')].filter(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.right>innerWidth+1}).map(e=>e.tagName+'.'+String(e.className).slice(0,30)).slice(0,5)})()");
- for(const [page,keyword,shot] of [["/","on every machine.","modern-landing-360"],["/install","Use it where you","modern-install-360"],["/dashboard","Welcome back","modern-dashboard-360"],["/devices","Connected machines","modern-devices-360"],["/billing","Plans & billing","modern-billing-360"],["/approvals","Pending approvals","modern-approvals-360"],["/console/users","Search accounts","modern-console-users-360"]]){await visit(page,keyword,shot);assert.deepEqual(await clipped(),[],page+" has elements wider than 360 px");}
+ for(const [page,keyword,shot] of [["/","on every machine.","modern-landing-360"],["/install","Use it where you","modern-install-360"],["/dashboard","Welcome back","modern-dashboard-360"],["/devices","Connected machines","modern-devices-360"],["/billing","Plans & billing","modern-billing-360"],["/approvals","Pending approvals","modern-approvals-360"],["/console/users","Search accounts","modern-console-users-360"],["/team","Manage members","modern-team-360"],["/audit","Audit log","modern-audit-360"]]){await visit(page,keyword,shot);assert.deepEqual(await clipped(),[],page+" has elements wider than 360 px");}
  assert.equal(await evalJs("getComputedStyle(document.querySelector('.console-table thead')).display"),"none","Console tables collapse to cards on phones");
  assert.ok(await evalJs("[...document.querySelectorAll('.console-table td[data-label]')].length>0"),"Console card fields are labelled");
  await visit("/approvals","Pending approvals","modern-approvals-360-again");

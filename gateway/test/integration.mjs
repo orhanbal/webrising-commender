@@ -1659,7 +1659,7 @@ const memberInvitationResponse = await fetch(base + "/api/invitations", {
 assert.equal(memberInvitationResponse.status, 201);
 const memberInvitation = await memberInvitationResponse.json();
 assert.match(memberInvitation.inviteToken, /^wrci_/);
-assert.match(memberInvitation.inviteUrl, /#invite=wrci_/);
+assert.match(memberInvitation.inviteUrl, /\/invite#token=wrci_/);
 
 const invitationPreviewResponse = await fetch(base + "/api/invitations/preview", {
   method: "POST",

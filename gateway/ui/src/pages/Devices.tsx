@@ -1,6 +1,6 @@
 import {useEffect,useMemo,useState} from "react";
 import { t as translate,useLocale } from "../i18n";
-import {ArrowRight,Check,Clock3,Copy,Info,Monitor,MoreHorizontal,Plus,RefreshCw,Search,ShieldCheck,Wifi,WifiOff} from "lucide-react";
+import {ArrowRight,Check,Clock3,Copy,Info,Monitor,MoreHorizontal,Plus,RefreshCw,Search,ShieldCheck,Wifi,WifiOff,Trash2} from "lucide-react";
 import {api,type Account,type Device} from "../api";
 import {Badge,Button,Card,CardContent,CardHeader,CardTitle,Dialog,DialogContent,DialogDescription,DialogTitle,Input} from "../components/ui";
 import {DashboardShell} from "./Dashboard";
@@ -62,6 +62,13 @@ export function DevicesPage({nav,account,checking,theme,toggle,logout}:{nav:Nav;
   catch(e){setError(e instanceof Error?e.message:translate("Bağlantı kesilemedi."))}
   finally{setBusy(false)}
  }
+ async function remove(device:ManagedDevice){
+  if(!canAdmin||!device.revoked_at||!confirm(device.name+translate(" kalıcı olarak silinsin mi? Denetim kaydı korunur.")))return;
+  setBusy(true);setError("");
+  try{await api("/api/devices/"+encodeURIComponent(device.id),{method:"DELETE"});setInfo(translate("Cihaz silindi."));await load()}
+  catch(e){setError(e instanceof Error?e.message:translate("Silme işlemi başarısız."))}
+  finally{setBusy(false)}
+ }
  async function revoke(device:ManagedDevice){
   if(!canAdmin||!confirm(device.name+translate(" kaydı kalıcı olarak iptal edilsin mi? Agent bağlantısı durdurulur.")))return;
   setBusy(true);setError("");
@@ -85,6 +92,7 @@ export function DevicesPage({nav,account,checking,theme,toggle,logout}:{nav:Nav;
     {!d.revoked_at&&d.trust_level&&<button type="button" onClick={()=>nav("/approvals")} title={translate("Güven seviyesi")} className={"rounded-full border px-3 py-1 text-xs font-semibold "+(d.trust_level==="full"?"border-[var(--warning)] bg-[var(--warning-soft)] text-[var(--warning)]":d.trust_level==="strict"?"border-[var(--stroke)] bg-[var(--subtle-surface)]":"border-[var(--stroke)] bg-[var(--accent-soft)] text-[var(--accent)]")}>{translate("Güven")}: {translate(d.trust_level==="full"?"Tam":d.trust_level==="strict"?"Sıkı":"Standart")}</button>}
     <div className="flex gap-2 sm:ml-auto"><Button size="sm" variant="outline" onClick={()=>nav("/terminal?device="+encodeURIComponent(d.id))} disabled={!!d.revoked_at}>{translate("Yönet")} <ArrowRight size={15}/></Button>
      {canAdmin&&!d.revoked_at&&<Button size="sm" variant="ghost" onClick={()=>{setSelected(d);setName(d.name)}} aria-label={d.name+" düzenle"}><MoreHorizontal size={17}/></Button>}
+     {canAdmin&&d.revoked_at&&<Button size="sm" variant="ghost" disabled={busy} onClick={()=>void remove(d)} aria-label={translate("Sil")+": "+d.name}><Trash2 size={16}/>{translate("Sil")}</Button>}
     </div>
    </div>)}</div>}
   </CardContent></Card>

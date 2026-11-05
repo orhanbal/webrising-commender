@@ -381,7 +381,7 @@ async function serveBrandSvg(res: ServerResponse, fileName: string) {
 const modernPages = new Set([
   "/", "/features", "/how-it-works", "/login", "/register", "/forgot-password", "/verify",
   "/reset-password", "/pricing", "/checkout", "/install", "/console", "/console/users", "/console/organizations", "/console/devices", "/console/operations", "/console/landing", "/console/billing", "/console/system", "/console/brand", "/console/legal", "/dashboard", "/account", "/billing",
-  "/devices", "/terminal", "/files", "/tasks", "/mcp", "/usage", "/approvals",
+  "/devices", "/terminal", "/files", "/tasks", "/mcp", "/usage", "/approvals", "/team", "/audit", "/invite",
   "/privacy", "/terms",
 ]);
 const modernExtensions: Record<string,string> = {
@@ -3272,7 +3272,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         return void json(res, 201, {
           item: created.rows[0],
           inviteToken: token,
-          inviteUrl: `${publicBaseUrl}/app#invite=${encodeURIComponent(token)}`,
+          inviteUrl: `${publicBaseUrl}/invite#token=${encodeURIComponent(token)}`,
         });
       } catch (error) {
         await client.query("rollback");
