@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The agent reports its package version (`0.1.<CI run>`) to the console and in `--version` instead of the crate version `0.1.0`; release builds set `WECOMMANDER_VERSION`.
 - The legacy `/advanced` console is retired (v1.1 item 5e, part 3): `/advanced` redirects to `/dashboard`, and `?view=` links go to the page that replaced them (approvals, devices, audit, team, billing, usage, MCP tokens, terminal, files, tasks). Relay-node administration stays a control-API task (`/api/admin/relays`, see `docs/QUICKSTART.md`). The production acceptance probe accepts both behaviours while the release rolls out.
 - Workspace tools in the React dashboard (v1.1 item 5e, part 2): Files is a browser and editor (navigate, open, edit and save text files, new folder, move, delete with a single-use approval, file-name and content search); Tasks starts background tasks (approval), lists them with status, shows output and cancels; Terminal keeps the single command and adds an interactive shell session (open/close with approval, input, Ctrl+C, live output). The "Advanced console" button is gone; every call goes through the same role, device policy and audit as before.
 - Approval and trust-change e-mails link to the React `/approvals` page instead of the legacy `/advanced?view=approvals`.

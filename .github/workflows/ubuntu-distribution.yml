@@ -24,6 +24,8 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - name: Build verified Linux commit
+        env:
+          WECOMMANDER_VERSION: 0.1.${{ github.event.workflow_run.run_number }}
         run: cargo build --release -p webrising-commender-agent
       - name: Package Linux Debian installer
         run: |

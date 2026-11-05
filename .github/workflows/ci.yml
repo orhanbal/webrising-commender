@@ -714,6 +714,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Build release agent
+        env:
+          WECOMMANDER_VERSION: 0.1.${{ github.run_number }}
         run: cargo build --release -p webrising-commender-agent
       - name: Package Linux acceptance bundle
         run: |
@@ -745,6 +747,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Build release agent
+        env:
+          WECOMMANDER_VERSION: 0.1.${{ github.run_number }}
         run: cargo build --release -p webrising-commender-agent
       - name: Package Windows acceptance bundle
         shell: pwsh
