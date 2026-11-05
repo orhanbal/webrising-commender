@@ -73,6 +73,13 @@ AD1 Aşama 1. Hiçbiri hedefte değişiklik yapmaz; varsayılan güven seviyesin
 Kabul: büyük logda sınırlı çıktı, sahte sır içeren log ile redaksiyon, yetkisiz soket,
 desteklenmeyen platformda `unavailable`, yerel modda aynı araçlar.
 
+### v1.2 düzeltme listesi (Mac kabul testinden, 2026-11-05)
+- Sonuç dönmeyen isteklerde (cihaz bağlantısı kopması, zaman aşımı) tek kullanımlık
+  onay yanıyor ve istemci yalnız "Bad Gateway" ya da zaman aşımı görüyor: açık hata
+  metni ("komut çalışmamış olabilir, yeni onay gerekiyor") ve mümkünse onayın iadesi.
+- macOS paketini Apple Developer ID ile imzalamak/noterlemek (izinlerin kalıcı olması,
+  Gatekeeper uyarısı); sahibinin Apple Developer hesabı gerekir.
+
 ## v1.3 — Kontrollü değişiklik · ~3 hafta
 
 AD1 Aşama 2.

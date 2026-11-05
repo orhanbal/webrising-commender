@@ -36,6 +36,10 @@ function run(argv) {
  var body = ObjC.unwrap($.NSString.alloc.initWithDataEncoding(raw, $.NSUTF8StringEncoding));
  var releases = JSON.parse(body);
  var repo = argv[1], name = "WECOMMANDER-macos-universal.pkg";
+ // The API order is not reliably newest first. Prefer macos-preview-N (where
+ // the PKG is published now) over older ubuntu-preview-N, then the highest N.
+ function rank(r){ var m=/^(macos|ubuntu)-preview-([0-9]+)$/.exec(r.tag_name||""); return m ? [m[1]==="macos"?1:0, parseInt(m[2],10)] : [-1,0]; }
+ releases.sort(function(a,b){ var x=rank(a), y=rank(b); return (y[0]-x[0]) || (y[1]-x[1]); });
  for (var i=0;i<releases.length;i++) {
    var release=releases[i];
    if (release.draft || !release.prerelease || !/^(macos|ubuntu)-preview-[0-9]+$/.test(release.tag_name)) continue;

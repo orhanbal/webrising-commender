@@ -50,3 +50,15 @@ test("the macOS installer finds the PKG where macos-distribution publishes it", 
   const workflow = fs.readFileSync(path.join(repo, ".github/workflows/macos-distribution.yml"), "utf8");
   assert.match(workflow, /TAG="macos-preview-/, "macos-distribution publishes macos-preview-N");
 });
+
+test("the macOS installer prefers the newest macos-preview over API order and old ubuntu-preview builds", () => {
+  const body = fs.readFileSync(path.join(repo, "scripts/install-macos-online.sh"), "utf8");
+  const rank = body.match(/ function rank\(r\)\{.*\}\n/)?.[0];
+  const sort = body.match(/ releases\.sort\(.*\);\n/)?.[0];
+  assert.ok(rank && sort, "rank/sort not found in the installer");
+  const order = new Function("releases", `${rank}${sort}return releases.map(function(r){return r.tag_name;});`);
+  assert.deepEqual(
+    order([{ tag_name: "macos-preview-58" }, { tag_name: "ubuntu-preview-1636" }, { tag_name: "macos-preview-59" }]),
+    ["macos-preview-59", "macos-preview-58", "ubuntu-preview-1636"],
+  );
+});
