@@ -2068,6 +2068,19 @@ try {
     assert.match(fs.readFileSync(dcFile, "utf8"), /\/\/ appended$/);
     const internal = await tool(9609, "url_fetch", { url: "http://127.0.0.1:8787/health" });
     assert.equal(internal.error, "private_address_refused", "the gateway never fetches its own network");
+    // Dashboard REST path: device refusals come back as 422 with the agent's
+    // reason (not 502, which proxies such as Cloudflare replace), and
+    // policy_info gives the allowed roots the Files page starts in.
+    const direct = (action) => fetch(base + "/api/device/request", { method: "POST", headers: authHeaders, body: JSON.stringify({ deviceId, action }) });
+    const outside = await direct({ kind: "fs_list", path: "/" });
+    assert.equal(outside.status, 422);
+    assert.match((await outside.json()).error, /outside configured allowed roots/i);
+    const policy = await direct({ kind: "policy_info" });
+    assert.equal(policy.status, 200);
+    const roots = (await policy.json()).data.allowedRoots;
+    assert.ok(Array.isArray(roots) && roots.length > 0, "policy_info lists the allowed roots");
+    const inside = await direct({ kind: "fs_list", path: roots[0] });
+    assert.equal(inside.status, 200);
     console.log("agent-e2e: Desktop Commander-compatible aliases, edit_block (exact/whitespace/no-match) and url_fetch SSRF guard");
   }
 
