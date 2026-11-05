@@ -3887,7 +3887,11 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       } catch (error) {
         const detail = redact(error instanceof Error ? error.message : error);
         await auditControl(principal!, body.deviceId, `direct.${action.kind}`, risk, "error", detail);
-        return void json(res, 502, { ok: false, error: detail });
+        // 422, not 502: the device answered (or was unreachable) and the
+        // reason is in the body. Proxies such as Cloudflare replace 502/504
+        // bodies with their own page, which hid messages like "path is
+        // outside configured allowed roots" behind a bare "HTTP 502".
+        return void json(res, 422, { ok: false, error: detail });
       }
     }
 
