@@ -2057,7 +2057,8 @@ try {
     const missing = await tool(9607, "edit_block", { device_id: deviceId, file_path: dcFile, old_string: "retrun 3;", new_string: "x" });
     assert.equal(missing.error, "no_match");
     assert.match(fs.readFileSync(dcFile, "utf8"), /return 3;/, "no-match edit changes nothing");
-    const editAudit = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    const { default: auditPg } = await import("pg");
+    const editAudit = new auditPg.Client({ connectionString: process.env.DATABASE_URL });
     await editAudit.connect();
     try {
       const last = await editAudit.query("select outcome from audit_logs where device_id=$1 and tool='edit_block' order by id desc limit 1", [deviceId]);
