@@ -11,6 +11,7 @@ mod protocol;
 #[cfg(target_os = "linux")]
 mod reaper;
 mod spreadsheet_ops;
+mod stdio_mcp;
 mod system_ops;
 mod task_manager;
 mod terminal;
@@ -109,6 +110,23 @@ enum Command {
         url: String,
     },
     Run,
+    /// Local mode: serve MCP over stdio to a local AI client (Claude Desktop,
+    /// Cursor, …) with no gateway and no account. Configure the client to run
+    /// `webrising-commender mcp-stdio --allowed-root <folder>`.
+    McpStdio {
+        /// Folders the tools may use (repeatable). Required.
+        #[arg(long = "allowed-root", required = true)]
+        allowed_roots: Vec<PathBuf>,
+        /// Allow file writes (write, append, mkdir, move, replace, delete, undo).
+        #[arg(long)]
+        allow_writes: bool,
+        /// Allow commands, tasks and terminals.
+        #[arg(long)]
+        allow_commands: bool,
+        /// Append one JSON line per call (tool, risk, outcome; never contents).
+        #[arg(long)]
+        audit_log: Option<PathBuf>,
+    },
     #[cfg(windows)]
     Service,
     PrintConfig,
@@ -126,14 +144,17 @@ fn main() -> Result<()> {
 
 #[tokio::main]
 async fn agent_main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,webrising_commender=info".into()),
-        )
-        .init();
-
     let cli = Cli::parse();
+    // In local stdio mode stdout carries JSON-RPC only, so logs go to stderr.
+    let builder = tracing_subscriber::fmt().with_env_filter(
+        tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| "info,webrising_commender=info".into()),
+    );
+    if matches!(cli.command, Command::McpStdio { .. }) {
+        builder.with_writer(std::io::stderr).init();
+    } else {
+        builder.init();
+    }
     let config_path = match cli.config {
         Some(path) => path,
         None => AgentConfig::default_path()?,
@@ -195,6 +216,20 @@ async fn agent_main() -> Result<()> {
         Command::Run => {
             let config = AgentConfig::load(&config_path)?;
             run(config).await
+        }
+        Command::McpStdio {
+            allowed_roots,
+            allow_writes,
+            allow_commands,
+            audit_log,
+        } => {
+            stdio_mcp::serve(stdio_mcp::LocalOptions {
+                allowed_roots,
+                allow_writes,
+                allow_commands,
+                audit_log,
+            })
+            .await
         }
         #[cfg(windows)]
         Command::Service => windows_service_host::dispatch(config_path),

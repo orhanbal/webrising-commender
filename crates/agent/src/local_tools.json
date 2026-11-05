@@ -1,0 +1,844 @@
+[
+ {
+  "name": "system_info",
+  "description": "Read system information from a device.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "required": [],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "policy_info",
+  "description": "Read agent-enforced allowed directories and resource limits. Read-only.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "required": [],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "fs_list",
+  "description": "List a directory inside an agent allowlisted root.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "fs_stat",
+  "description": "Read file or directory metadata.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "fs_read",
+  "description": "Read a file as UTF-8 text or base64 payload.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "max_bytes": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "fs_read_lines",
+  "description": "Read a page of UTF-8 lines. offset_lines is zero-based; negative offsets count back from end of file. Maximum 1000 lines and 256 KiB of output.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "offset_lines": {
+     "type": "integer"
+    },
+    "limit_lines": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "image_inspect",
+  "description": "Read PNG/JPEG/GIF or extended WebP dimensions and file metadata from headers only. Does not decode pixels or generate a preview. 32 MiB file limit; 256 KiB header scan.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "docx_inspect",
+  "description": "Inspect DOCX paragraph/table counts without loading external resources or executing macros. Read-only, 16 MiB ZIP and 8 MiB document XML limits.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "docx_read_paragraphs",
+  "description": "Read up to 100 DOCX paragraphs as structured, bounded text. Offset is zero-based; content in tables is included.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "offset": {
+     "type": "integer"
+    },
+    "limit": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "docx_read_table",
+  "description": "Read up to 50 rows of a DOCX table, max 20 cells per row; table_index and offset_rows are zero-based.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "table_index": {
+     "type": "integer"
+    },
+    "offset_rows": {
+     "type": "integer"
+    },
+    "limit_rows": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "path",
+    "table_index"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "pdf_read",
+  "description": "Read the text layer of up to 20 PDF pages. start_page is 1-based (default 1); a negative value counts from the end (-1 is the last page). page_count defaults to 5. Scanned pages without a text layer return empty text.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "start_page": {
+     "type": "integer"
+    },
+    "page_count": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "xlsx_inspect",
+  "description": "List worksheets in an XLSX/XLSM workbook without running macros. Read-only; compressed limit 16 MiB, expanded ZIP limit 64 MiB.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "xlsx_read_range",
+  "description": "Read up to 50 rows by 20 columns from one worksheet, using 1-based coordinates. Does not evaluate formulas or execute macros.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "sheet": {
+     "type": "string"
+    },
+    "start_row": {
+     "type": "integer"
+    },
+    "start_column": {
+     "type": "integer"
+    },
+    "row_count": {
+     "type": "integer"
+    },
+    "column_count": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "path",
+    "sheet",
+    "start_row",
+    "start_column",
+    "row_count",
+    "column_count"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "xlsx_find",
+  "description": "Search cached cell values in XLSX/XLSM, without evaluating formulas. Bounded to 50,000 cells, 30 sheets, and 100 matches.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "sheet": {
+     "type": "string"
+    },
+    "query": {
+     "type": "string"
+    },
+    "case_sensitive": {
+     "type": "boolean"
+    },
+    "max_results": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "path",
+    "query"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "xlsx_write_cells",
+  "description": "Write up to 100 string/number/boolean cells to a NEW XLSX output file without overwriting the original. Existing XLSM files cannot be edited. Optional SHA-256 precondition prevents stale writes.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "output_path": {
+     "type": "string"
+    },
+    "sheet": {
+     "type": "string"
+    },
+    "updates": {
+     "type": "array",
+     "minItems": 1,
+     "maxItems": 100,
+     "items": {
+      "type": "object",
+      "properties": {
+       "cell": {
+        "type": "string"
+       },
+       "value": {
+        "oneOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "number"
+         },
+         {
+          "type": "boolean"
+         }
+        ]
+       }
+      },
+      "required": [
+       "cell",
+       "value"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "expected_sha256": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "path",
+    "output_path",
+    "sheet",
+    "updates"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "fs_write",
+  "description": "Write base64-encoded bytes to an allowlisted file. Optional expected_sha256 rejects stale content; with_undo snapshots an existing regular file (max 4 MiB) for guarded restoration.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "content_base64": {
+     "type": "string"
+    },
+    "create_parents": {
+     "type": "boolean"
+    },
+    "expected_sha256": {
+     "type": "string"
+    },
+    "with_undo": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "path",
+    "content_base64"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "fs_append",
+  "description": "Append base64-encoded bytes to an allowlisted file. Optional expected_sha256 guards stale appends; with_undo atomically appends to an existing regular file (max 4 MiB) and creates a guarded snapshot.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "content_base64": {
+     "type": "string"
+    },
+    "expected_sha256": {
+     "type": "string"
+    },
+    "with_undo": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "path",
+    "content_base64"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "fs_mkdir",
+  "description": "Create a directory.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "recursive": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "fs_delete",
+  "description": "Delete a file or directory. HIGH risk. Optional expected_sha256 deletes a regular file only if its content is unchanged (atomic on Linux/macOS). Omit approval_token to create a human approval request, then retry after approval.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "recursive": {
+     "type": "boolean"
+    },
+    "expected_sha256": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "fs_move",
+  "description": "Move or rename a file/directory inside the agent allowlisted roots. Destination must not already exist.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "source": {
+     "type": "string"
+    },
+    "destination": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "source",
+    "destination"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "fs_tree",
+  "description": "Recursively list a bounded directory tree without following symlinks.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "max_depth": {
+     "type": "integer"
+    },
+    "max_entries": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "fs_search",
+  "description": "Search file and directory names recursively inside an allowlisted root.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "query": {
+     "type": "string"
+    },
+    "case_sensitive": {
+     "type": "boolean"
+    },
+    "max_results": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "path",
+    "query"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "text_search",
+  "description": "Search literal text recursively in bounded UTF-8 files inside an allowlisted root.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "query": {
+     "type": "string"
+    },
+    "case_sensitive": {
+     "type": "boolean"
+    },
+    "max_results": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "path",
+    "query"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "fs_replace",
+  "description": "Perform a guarded UTF-8 search/replace edit. By default the search must match exactly once.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "search": {
+     "type": "string"
+    },
+    "replace": {
+     "type": "string"
+    },
+    "replace_all": {
+     "type": "boolean"
+    },
+    "expected_sha256": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "path",
+    "search",
+    "replace"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "fs_versions",
+  "description": "List at most eight persistent undo snapshots for an allowlisted file.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "fs_undo",
+  "description": "Restore a prior fs_replace snapshot only when the current SHA-256 matches. Consumes the snapshot on success.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "undo_id": {
+     "type": "string"
+    },
+    "expected_sha256": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "path",
+    "undo_id",
+    "expected_sha256"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "process_exec",
+  "description": "Execute a shell command. HIGH risk. Omit approval_token to create a human approval request, then retry after approval.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "command": {
+     "type": "string"
+    },
+    "cwd": {
+     "type": "string"
+    },
+    "timeout_ms": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "command"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "process_list",
+  "description": "List visible processes.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "required": [],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "process_kill",
+  "description": "Terminate a process. HIGH risk. Omit approval_token to create a human approval request, then retry after approval.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "pid": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "pid"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "task_start",
+  "description": "Start a persistent background command task. The task survives AI/gateway disconnects while the agent process remains alive. HIGH risk; omit approval_token to request human approval.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "command": {
+     "type": "string"
+    },
+    "cwd": {
+     "type": "string"
+    },
+    "timeout_ms": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "command"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "task_status",
+  "description": "Read status and retained output of a persistent background task.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "task_id": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "task_id"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "task_cancel",
+  "description": "Cancel a persistent background task. HIGH risk; omit approval_token to request human approval.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "task_id": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "task_id"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "task_list",
+  "description": "List retained persistent background tasks so a reconnected AI client can recover task ids.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "required": [],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "terminal_start",
+  "description": "Start a persistent PTY session. HIGH risk; omit approval_token to request human approval.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "shell": {
+     "type": "string"
+    },
+    "cwd": {
+     "type": "string"
+    },
+    "cols": {
+     "type": "integer"
+    },
+    "rows": {
+     "type": "integer"
+    }
+   },
+   "required": [],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "terminal_input",
+  "description": "Write at most 256 KiB of decoded bytes to an existing PTY session.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session_id": {
+     "type": "string"
+    },
+    "data_base64": {
+     "type": "string",
+     "maxLength": 349528
+    }
+   },
+   "required": [
+    "session_id",
+    "data_base64"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "terminal_read",
+  "description": "Read buffered PTY output.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session_id": {
+     "type": "string"
+    },
+    "max_bytes": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "session_id"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "terminal_read_page",
+  "description": "Read non-consuming retained PTY history independently of terminal_read. Positive offset_bytes is an absolute output byte cursor; negative reads from the end. Results report retainedStartBytes and truncatedBeforeOffset when the 1 MiB history cap evicts data.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session_id": {
+     "type": "string"
+    },
+    "offset_bytes": {
+     "type": "integer"
+    },
+    "max_bytes": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "session_id"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "terminal_resize",
+  "description": "Resize a PTY session.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session_id": {
+     "type": "string"
+    },
+    "cols": {
+     "type": "integer"
+    },
+    "rows": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "session_id",
+    "cols",
+    "rows"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "terminal_stop",
+  "description": "Stop a PTY session. HIGH risk; omit approval_token to request human approval.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "session_id": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "session_id"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "terminal_list",
+  "description": "List persistent PTY sessions, process ids and retained output sizes.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "required": [],
+   "additionalProperties": false
+  }
+ }
+]

@@ -363,6 +363,8 @@ jobs:
           exit 1
       - name: Run real-agent E2E
         run: node gateway/test/agent-e2e.mjs
+      - name: Local stdio MCP mode (no gateway)
+        run: node gateway/test/local-stdio-e2e.mjs
       - name: Verify real Rust Agent and Gateway SIGKILL/restart checkpoint handoff
         run: node gateway/test/native-restart-e2e.mjs
       - name: Verify real Rust Agent match-bearing content recovery after restart
