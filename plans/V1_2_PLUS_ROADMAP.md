@@ -56,6 +56,8 @@ AD1 Aşama 1. Hiçbiri hedefte değişiklik yapmaz; varsayılan güven seviyesin
    geldikçe onlara da uygulanacak.
 3. **`health_snapshot` (AD1-04).** CPU, RAM, disk, ağ, yük, en çok kaynak kullanan
    süreçler; sınırlı ve hafif. Gateway son N snapshot'ı saklar (varsayılan 24 saat).
+   **Durum 2026-11-05:** araç yapıldı (uzak ve yerel mod; `observedAt`, `source`,
+   `limitations` ile). Gateway'de 24 saatlik saklama ve panodaki sağlık kartı sonraki adım.
 4. **`log_query` (AD1-05).** Linux journal (`journalctl` JSON), dosya logları, Windows
    Event Log, macOS `log show`: zaman aralığı, seviye, birim, regex, sayfalama,
    tekrar kümeleme, bayt/satır sınırı, redaksiyon.

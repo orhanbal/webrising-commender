@@ -10,6 +10,23 @@
   }
  },
  {
+  "name": "health_snapshot",
+  "description": "Read-only health snapshot of a device: CPU usage and load, memory and swap, disks, network counters, and the top processes by CPU and memory. Includes observedAt and limitations.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "top": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 20,
+     "description": "Processes per list (default 5)."
+    }
+   },
+   "required": [],
+   "additionalProperties": false
+  }
+ },
+ {
   "name": "policy_info",
   "description": "Read agent-enforced allowed directories and resource limits. Read-only.",
   "inputSchema": {

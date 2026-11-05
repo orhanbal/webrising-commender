@@ -126,6 +126,9 @@ async fn execute_unredacted(context: ExecutionContext<'_>, action: AgentAction) 
 
     match action {
         AgentAction::SystemInfo => system_ops::info(),
+        AgentAction::HealthSnapshot { top } => {
+            tokio::task::spawn_blocking(move || system_ops::health_snapshot(top)).await?
+        }
         AgentAction::PolicyInfo => Ok(serde_json::json!({
             "allowedRoots": policy.roots().iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>(),
             "agentMode": if !capabilities.commands && !capabilities.file_writes { "read_only" } else { "restricted" },
