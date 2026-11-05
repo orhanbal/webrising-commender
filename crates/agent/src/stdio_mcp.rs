@@ -23,8 +23,12 @@ use crate::{
     terminal::TerminalManager,
 };
 use anyhow::{anyhow, Context, Result};
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use base64::{
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
+    Engine as _,
+};
 use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -36,6 +40,19 @@ const TOOLS: &str = include_str!("local_tools.json");
 // are kept per device id, which must be a UUID).
 const DEVICE_ID: &str = "00000000-0000-4000-8000-00000000000a";
 const PROTOCOL_VERSIONS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];
+/// Desktop Commander-compatible names, translated here to native tools the
+/// same way the gateway does (gateway/src/dc-compat.ts). url_fetch is
+/// gateway-only. Keep in sync with LOCAL_ALIASES in gateway/src/local-tools.ts.
+const ALIASES: &[&str] = &[
+    "read_file",
+    "read_multiple_files",
+    "write_file",
+    "list_directory",
+    "create_directory",
+    "move_file",
+    "get_file_info",
+    "edit_block",
+];
 
 pub struct LocalOptions {
     pub allowed_roots: Vec<PathBuf>,
@@ -105,9 +122,16 @@ impl Local {
     }
 
     async fn call(&mut self, name: &str, args: &Map<String, Value>) -> (Value, bool) {
+        if ALIASES.contains(&name) {
+            return self.alias_call(name, args).await;
+        }
         if !self.tool_names.iter().any(|tool| tool == name) {
             return (json!({ "error": "unknown_tool", "tool": name }), true);
         }
+        self.native(name, args).await
+    }
+
+    async fn native(&mut self, name: &str, args: &Map<String, Value>) -> (Value, bool) {
         let action = match action_from_call(name, args) {
             Ok(action) => action,
             Err(error) => {
@@ -115,6 +139,72 @@ impl Local {
                 return (json!({ "error": error.to_string() }), true);
             }
         };
+        self.run(name, action).await
+    }
+
+    async fn alias_call(&mut self, name: &str, args: &Map<String, Value>) -> (Value, bool) {
+        if name == "edit_block" {
+            return self.edit_block(args).await;
+        }
+        match translate_alias(name, args) {
+            Some((target, native_args)) => self.native(target, &native_args).await,
+            None => (json!({ "error": "unknown_tool", "tool": name }), true),
+        }
+    }
+
+    /// Exact match first, then a unique whitespace-tolerant match; the write
+    /// is guarded by the file's SHA-256 and keeps an undo snapshot.
+    async fn edit_block(&mut self, args: &Map<String, Value>) -> (Value, bool) {
+        let text = |key: &str| {
+            args.get(key)
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string()
+        };
+        let path = text("file_path");
+        let expected = args
+            .get("expected_replacements")
+            .map(|v| v.as_i64().unwrap_or(-1))
+            .unwrap_or(1);
+        let (read, failed) = self.native("fs_read", &obj(json!({ "path": path }))).await;
+        if failed {
+            return (read, true);
+        }
+        let Some(content) = read
+            .get("content")
+            .and_then(Value::as_str)
+            .filter(|_| read.get("encoding").and_then(Value::as_str) == Some("utf8"))
+        else {
+            return (json!({ "error": "not_a_text_file" }), true);
+        };
+        let (updated, replacements, mode) =
+            match plan_edit(content, &text("old_string"), &text("new_string"), expected) {
+                Ok(plan) => plan,
+                Err(plan) => {
+                    self.audit("edit_block", "medium", "error");
+                    return (plan, true);
+                }
+            };
+        let sha = format!("{:x}", Sha256::digest(content.as_bytes()));
+        let write = obj(json!({
+            "path": path,
+            "content_base64": STANDARD.encode(updated.as_bytes()),
+            "create_parents": false,
+            "expected_sha256": sha,
+            "with_undo": true,
+        }));
+        let (written, failed) = self.native("fs_write", &write).await;
+        if failed {
+            return (written, true);
+        }
+        self.audit("edit_block", "medium", "success");
+        (
+            json!({ "ok": true, "replacements": replacements, "match": mode, "undo": "fs_versions/fs_undo can restore the previous content" }),
+            false,
+        )
+    }
+
+    async fn run(&mut self, name: &str, action: AgentAction) -> (Value, bool) {
         let risk = action.risk();
         let risk_name = match risk {
             Risk::Low => "low",
@@ -164,6 +254,264 @@ impl Local {
                 (json!({ "error": message }), true)
             }
         }
+    }
+}
+
+fn obj(value: Value) -> Map<String, Value> {
+    match value {
+        Value::Object(map) => map,
+        _ => Map::new(),
+    }
+}
+
+/// Desktop Commander call -> native tool name and gateway-style arguments.
+/// Mirrors translateAlias in gateway/src/dc-compat.ts.
+fn translate_alias(
+    name: &str,
+    a: &Map<String, Value>,
+) -> Option<(&'static str, Map<String, Value>)> {
+    let get = |key: &str| a.get(key).cloned().unwrap_or(Value::Null);
+    let path = get("path");
+    let mut out = Map::new();
+    let target = match name {
+        "read_file" => {
+            out.insert("path".into(), path.clone());
+            let is_pdf = path
+                .as_str()
+                .is_some_and(|p| p.to_ascii_lowercase().ends_with(".pdf"));
+            if is_pdf {
+                if let Some(offset) = a.get("offset").and_then(Value::as_i64) {
+                    let page = if offset < 0 { offset } else { offset + 1 };
+                    out.insert("start_page".into(), json!(page));
+                }
+                if let Some(length) = a.get("length") {
+                    out.insert("page_count".into(), length.clone());
+                }
+                "pdf_read"
+            } else if a.contains_key("offset") || a.contains_key("length") {
+                if let Some(offset) = a.get("offset") {
+                    out.insert("offset_lines".into(), offset.clone());
+                }
+                if let Some(length) = a.get("length") {
+                    out.insert("limit_lines".into(), length.clone());
+                }
+                "fs_read_lines"
+            } else {
+                "fs_read"
+            }
+        }
+        "read_multiple_files" => {
+            out.insert("paths".into(), get("paths"));
+            out.insert("max_bytes".into(), json!(64 * 1024));
+            "fs_read_multiple"
+        }
+        "write_file" => {
+            out.insert("path".into(), path);
+            let content = a.get("content").and_then(Value::as_str).unwrap_or("");
+            out.insert(
+                "content_base64".into(),
+                json!(STANDARD.encode(content.as_bytes())),
+            );
+            if a.get("mode").and_then(Value::as_str) == Some("append") {
+                "fs_append"
+            } else {
+                out.insert("create_parents".into(), json!(true));
+                "fs_write"
+            }
+        }
+        "list_directory" => {
+            out.insert("path".into(), path);
+            "fs_list"
+        }
+        "create_directory" => {
+            out.insert("path".into(), path);
+            out.insert("recursive".into(), json!(true));
+            "fs_mkdir"
+        }
+        "move_file" => {
+            out.insert("source".into(), get("source"));
+            out.insert("destination".into(), get("destination"));
+            "fs_move"
+        }
+        "get_file_info" => {
+            out.insert("path".into(), path);
+            "fs_stat"
+        }
+        _ => return None,
+    };
+    Some((target, out))
+}
+
+enum Token<'a> {
+    Literal(&'a str),
+    Spaces,
+    Newlines(usize),
+}
+
+/// old_string split into literals and whitespace runs: a run of spaces/tabs
+/// matches any such run, a run with line breaks matches the same number of
+/// line breaks (\n or \r\n) with any surrounding spaces/tabs. Mirrors
+/// whitespaceTolerant in gateway/src/dc-compat.ts.
+fn tokens(old: &str) -> Vec<Token<'_>> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    let mut in_space = false;
+    let space_token = |seg: &str| match seg.matches('\n').count() {
+        0 => Token::Spaces,
+        lines => Token::Newlines(lines),
+    };
+    let text = old.trim();
+    for (i, ch) in text.char_indices() {
+        let space = matches!(ch, ' ' | '\t' | '\r' | '\n');
+        if i > start && space != in_space {
+            if in_space {
+                out.push(space_token(&text[start..i]));
+            } else {
+                out.push(Token::Literal(&text[start..i]));
+            }
+            start = i;
+        }
+        in_space = space;
+    }
+    if start < text.len() {
+        if in_space {
+            out.push(space_token(&text[start..]));
+        } else {
+            out.push(Token::Literal(&text[start..]));
+        }
+    }
+    out
+}
+
+fn match_at(content: &[u8], mut i: usize, tokens: &[Token<'_>]) -> Option<usize> {
+    let blank = |c: u8| c == b' ' || c == b'\t';
+    for token in tokens {
+        match token {
+            Token::Literal(lit) => {
+                if !content[i..].starts_with(lit.as_bytes()) {
+                    return None;
+                }
+                i += lit.len();
+            }
+            Token::Spaces => {
+                let begin = i;
+                while i < content.len() && blank(content[i]) {
+                    i += 1;
+                }
+                if i == begin {
+                    return None;
+                }
+            }
+            Token::Newlines(count) => {
+                for _ in 0..*count {
+                    while i < content.len() && blank(content[i]) {
+                        i += 1;
+                    }
+                    if content.get(i) == Some(&b'\r') {
+                        i += 1;
+                    }
+                    if content.get(i) != Some(&b'\n') {
+                        return None;
+                    }
+                    i += 1;
+                }
+                while i < content.len() && blank(content[i]) {
+                    i += 1;
+                }
+            }
+        }
+    }
+    Some(i)
+}
+
+fn trigrams(s: &str) -> std::collections::HashSet<Vec<char>> {
+    let chars: Vec<char> = s.chars().collect();
+    chars.windows(3).map(<[char]>::to_vec).collect()
+}
+
+/// Mirrors planEdit in gateway/src/dc-compat.ts: Ok((content, replacements,
+/// mode)) or Err(the error object returned to the caller).
+fn plan_edit(
+    content: &str,
+    old: &str,
+    new: &str,
+    expected: i64,
+) -> Result<(String, usize, &'static str), Value> {
+    if old.is_empty() {
+        return Err(json!({ "ok": false, "error": "old_string_empty" }));
+    }
+    if !(1..=1000).contains(&expected) {
+        return Err(json!({ "ok": false, "error": "invalid_expected_replacements" }));
+    }
+    let expected = expected as usize;
+    let exact = content.matches(old).count();
+    if exact > 0 {
+        if exact != expected {
+            return Err(json!({ "ok": false, "error": "match_count_mismatch", "matches": exact }));
+        }
+        return Ok((content.replace(old, new), exact, "exact"));
+    }
+    if !old.trim().is_empty() {
+        let toks = tokens(old);
+        let bytes = content.as_bytes();
+        let mut found = Vec::new();
+        let mut i = 0;
+        while i < bytes.len() {
+            if content.is_char_boundary(i) {
+                if let Some(end) = match_at(bytes, i, &toks) {
+                    found.push((i, end));
+                    i = end.max(i + 1);
+                    continue;
+                }
+            }
+            i += 1;
+        }
+        if found.len() == expected {
+            let mut out = String::with_capacity(content.len());
+            let mut last = 0;
+            for (start, end) in &found {
+                out.push_str(&content[last..*start]);
+                out.push_str(new.trim());
+                last = *end;
+            }
+            out.push_str(&content[last..]);
+            return Ok((out, found.len(), "whitespace"));
+        }
+        if !found.is_empty() {
+            return Err(
+                json!({ "ok": false, "error": "match_count_mismatch", "matches": found.len() }),
+            );
+        }
+    }
+    let first = old.trim().lines().next().unwrap_or("").trim();
+    let target = trigrams(first);
+    let mut best: Option<(usize, f64)> = None;
+    for (index, line) in content.split('\n').enumerate() {
+        let grams = trigrams(line.trim());
+        if grams.is_empty() || target.is_empty() {
+            continue;
+        }
+        let shared = grams.intersection(&target).count();
+        let score = (2 * shared) as f64 / (grams.len() + target.len()) as f64;
+        if best.is_none_or(|(_, b)| score > b) {
+            best = Some((index, score));
+        }
+    }
+    match best {
+        Some((index, score)) if score >= 0.5 => {
+            let line: String = content
+                .split('\n')
+                .nth(index)
+                .unwrap_or("")
+                .trim_end_matches('\r')
+                .chars()
+                .take(300)
+                .collect();
+            Err(
+                json!({ "ok": false, "error": "no_match", "closest_line": index + 1, "closest_text": line }),
+            )
+        }
+        _ => Err(json!({ "ok": false, "error": "no_match" })),
     }
 }
 
@@ -328,6 +676,96 @@ mod tests {
     }
 
     #[test]
+    fn plans_edits_like_the_gateway() {
+        let (out, n, mode) = plan_edit("a = 1\nb = 2\n", "b = 2", "b = 3", 1).unwrap();
+        assert_eq!((out.as_str(), n, mode), ("a = 1\nb = 3\n", 1, "exact"));
+        let (out, _, mode) = plan_edit(
+            "fn x() {\n    let a  =  1;\r\n}\n",
+            "let a = 1;\n}",
+            "let a = 2;\n}",
+            1,
+        )
+        .unwrap();
+        assert_eq!(mode, "whitespace");
+        assert_eq!(out, "fn x() {\n    let a = 2;\n}\n");
+        let err = plan_edit("x\nx\n", "x", "y", 1).unwrap_err();
+        assert_eq!(err["error"], "match_count_mismatch");
+        assert_eq!(err["matches"], 2);
+        let err = plan_edit("let total = 1;\n", "let totl = 1;", "", 1).unwrap_err();
+        assert_eq!(err["error"], "no_match");
+        assert_eq!(err["closest_line"], 1);
+        assert_eq!(
+            plan_edit("x", "", "y", 1).unwrap_err()["error"],
+            "old_string_empty"
+        );
+        assert_eq!(
+            plan_edit("x", "x", "y", 0).unwrap_err()["error"],
+            "invalid_expected_replacements"
+        );
+    }
+
+    #[test]
+    fn translates_desktop_commander_names() {
+        let args = |v: Value| obj(v);
+        let (t, a) = translate_alias("list_directory", &args(json!({"path":"/r"}))).unwrap();
+        assert_eq!((t, Value::Object(a)), ("fs_list", json!({"path":"/r"})));
+        let (t, a) = translate_alias(
+            "read_file",
+            &args(json!({"path":"/r/a.txt","offset":2,"length":3})),
+        )
+        .unwrap();
+        assert_eq!(
+            (t, Value::Object(a)),
+            (
+                "fs_read_lines",
+                json!({"path":"/r/a.txt","offset_lines":2,"limit_lines":3})
+            )
+        );
+        let (t, a) = translate_alias(
+            "read_file",
+            &args(json!({"path":"/r/a.PDF","offset":0,"length":2})),
+        )
+        .unwrap();
+        assert_eq!(
+            (t, Value::Object(a)),
+            (
+                "pdf_read",
+                json!({"path":"/r/a.PDF","start_page":1,"page_count":2})
+            )
+        );
+        let (t, a) = translate_alias(
+            "write_file",
+            &args(json!({"path":"/r/b","content":"hi","mode":"append"})),
+        )
+        .unwrap();
+        assert_eq!(
+            (t, Value::Object(a)),
+            ("fs_append", json!({"path":"/r/b","content_base64":"aGk="}))
+        );
+        let (t, _) =
+            translate_alias("write_file", &args(json!({"path":"/r/b","content":"hi"}))).unwrap();
+        assert_eq!(t, "fs_write");
+        for name in ALIASES.iter().filter(|n| **n != "edit_block") {
+            assert!(translate_alias(name, &Map::new()).is_some(), "{name}");
+        }
+        assert!(translate_alias("url_fetch", &Map::new()).is_none());
+    }
+
+    #[test]
+    fn embedded_tool_list_lists_every_alias() {
+        let tools = tool_list().unwrap();
+        let names: Vec<&str> = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|t| t["name"].as_str())
+            .collect();
+        for alias in ALIASES {
+            assert!(names.contains(alias), "{alias}");
+        }
+    }
+
+    #[test]
     fn embedded_tool_list_has_device_tools_without_gateway_fields() {
         let tools = tool_list().unwrap();
         let tools = tools.as_array().unwrap();
@@ -405,6 +843,25 @@ mod tests {
                 .unwrap()
                 .contains("local-ok"));
         }
+        let listed = handle(&mut local, json!({"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"list_directory","arguments":{"path": root}}})).await.unwrap();
+        assert_eq!(listed["result"]["isError"], false, "{listed}");
+        assert!(listed["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("a.txt"));
+        let edit = handle(&mut local, json!({"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"edit_block","arguments":{"file_path": root.join("a.txt"),"old_string":"hello","new_string":"hello world"}}})).await.unwrap();
+        assert_eq!(edit["result"]["isError"], false, "{edit}");
+        assert_eq!(
+            std::fs::read_to_string(root.join("a.txt")).unwrap(),
+            "hello world"
+        );
+        let read = handle(&mut local, json!({"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"read_file","arguments":{"path": root.join("a.txt")}}})).await.unwrap();
+        assert_eq!(
+            read["result"]["structuredContent"]["content"],
+            "hello world"
+        );
+        let many = handle(&mut local, json!({"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"read_multiple_files","arguments":{"paths": [root.join("a.txt"), root.join("b.txt")]}}})).await.unwrap();
+        assert_eq!(many["result"]["isError"], false, "{many}");
         let unknown = handle(&mut local, json!({"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"devices_list","arguments":{}}})).await.unwrap();
         assert_eq!(unknown["result"]["isError"], true);
         std::fs::remove_dir_all(&root).ok();

@@ -3,6 +3,7 @@
 // both modes offer the same names, descriptions and argument schemas.
 // crates/agent/src/local_tools.json is the generated copy; local-tools.test.ts
 // fails when it drifts. Regenerate with: npm run -s export-local-tools
+import { DC_TOOLS } from "./dc-compat.js";
 import { actionFromTool, tools } from "./mcp.js";
 
 type Schema = { type?: string; properties?: Record<string, any>; required?: string[]; items?: any; enum?: unknown[] };
@@ -39,16 +40,27 @@ function sampleArgs(tool: Tool) {
   return args;
 }
 
-/** Tools the agent can serve directly: their action kind equals the tool name. */
+/** Desktop Commander names the agent translates itself in local mode
+ *  (crates/agent/src/stdio_mcp.rs `alias_call`). url_fetch stays gateway-only. */
+export const LOCAL_ALIASES = ["read_file", "read_multiple_files", "write_file", "list_directory", "create_directory", "move_file", "get_file_info", "edit_block"];
+
+const withoutGatewayFields = (tool: Tool): Tool => {
+  const properties = { ...(tool.inputSchema.properties ?? {}) };
+  delete properties.device_id; delete properties.approval_token;
+  const required = (tool.inputSchema.required ?? []).filter((r) => r !== "device_id" && r !== "approval_token");
+  return { name: tool.name, description: tool.description, inputSchema: { type: "object", properties, required, additionalProperties: false } as Schema };
+};
+
+/** Tools the agent can serve directly (action kind equals the tool name),
+ *  followed by the Desktop Commander-compatible aliases. */
 export function localTools(): Tool[] {
-  return (tools as Tool[]).flatMap((tool) => {
+  const native = (tools as Tool[]).flatMap((tool) => {
     let action: { kind?: string };
     try { action = actionFromTool(tool.name, sampleArgs(tool)) as { kind?: string }; } catch { return []; }
     if (action?.kind !== tool.name) return [];
-    const properties = { ...(tool.inputSchema.properties ?? {}) };
-    delete properties.device_id; delete properties.approval_token;
-    const required = (tool.inputSchema.required ?? []).filter((r) => r !== "device_id" && r !== "approval_token");
-    return [{ name: tool.name, description: tool.description, inputSchema: { type: "object", properties, required, additionalProperties: false } as Schema }];
+    return [withoutGatewayFields(tool)];
   });
+  const aliases = (DC_TOOLS as Tool[]).filter((tool) => LOCAL_ALIASES.includes(tool.name)).map(withoutGatewayFields);
+  return [...native, ...aliases];
 }
 

@@ -52,6 +52,15 @@ try {
   assert.equal((await ro.call("fs_list", { path: "/" })).error, true, "outside the allowed root");
   assert.match((await ro.call("fs_write", { path: path.join(root, "x.txt"), content_base64: "aGk=" })).data.error, /device_policy_denied/);
   assert.match((await ro.call("process_exec", { command: "id" })).data.error, /device_policy_denied/);
+  // Desktop Commander names work locally too (the reported list_directory gap).
+  const dcList = await ro.call("list_directory", { path: root });
+  assert.equal(dcList.error, false, JSON.stringify(dcList.data)); assert.match(JSON.stringify(dcList.data), /notes\.txt/);
+  const dcRead = await ro.call("read_file", { path: path.join(root, "notes.txt"), offset: 0, length: 1 });
+  assert.equal(dcRead.error, false, JSON.stringify(dcRead.data)); assert.match(JSON.stringify(dcRead.data), /secret content line/);
+  assert.equal((await ro.call("get_file_info", { path: path.join(root, "notes.txt") })).error, false);
+  assert.match((await ro.call("write_file", { path: path.join(root, "x.txt"), content: "hi" })).data.error, /device_policy_denied/);
+  assert.equal((await ro.call("list_directory", { path: "/" })).error, true, "aliases keep the allowed root");
+  assert.equal((await ro.call("url_fetch", { url: "https://example.com" })).error, true, "url_fetch is gateway-only");
   assert.equal((await ro.call("devices_list", {})).error, true, "gateway-only tools are unknown locally");
   assert.equal((await ro.rpc("nope", {})).error.code, -32601);
 } finally { ro.stop(); }
@@ -70,6 +79,11 @@ try {
   const undone = await rw.call("fs_undo", { path: target, undo_id: replaced.data.undoId, expected_sha256: replaced.data.sha256 });
   assert.equal(undone.error, false, JSON.stringify(undone.data));
   assert.equal(fs.readFileSync(target, "utf8"), "secret content line\n", "undo restores the content");
+  const edited = await rw.call("edit_block", { file_path: target, old_string: "secret  content", new_string: "edited content" });
+  assert.equal(edited.error, false, JSON.stringify(edited.data)); assert.equal(edited.data.match, "whitespace");
+  assert.equal(fs.readFileSync(target, "utf8"), "edited content line\n");
+  const miss = await rw.call("edit_block", { file_path: target, old_string: "edited contnt line", new_string: "x" });
+  assert.equal(miss.error, true); assert.equal(miss.data.error, "no_match"); assert.equal(miss.data.closest_line, 1);
   if (process.platform !== "win32") {
     const exec = await rw.call("process_exec", { command: "echo local-mode-ok", cwd: root });
     assert.equal(exec.error, false, JSON.stringify(exec.data)); assert.match(JSON.stringify(exec.data), /local-mode-ok/);
@@ -81,6 +95,7 @@ const lines = fs.readFileSync(audit, "utf8").trim().split("\n").map((l) => JSON.
 assert.ok(lines.length >= 9, "every call is audited");
 assert.ok(lines.some((l) => l.tool === "process_exec" && l.outcome === "denied"));
 assert.ok(lines.some((l) => l.tool === "fs_replace" && l.outcome === "success"));
+assert.ok(lines.some((l) => l.tool === "edit_block" && l.outcome === "success"));
 assert.ok(!fs.readFileSync(audit, "utf8").includes("secret content"), "the audit log never contains file contents");
 fs.rmSync(root, { recursive: true, force: true });
 console.log("local stdio MCP acceptance passed");

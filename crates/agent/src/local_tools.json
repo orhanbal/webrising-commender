@@ -840,5 +840,170 @@
    "required": [],
    "additionalProperties": false
   }
+ },
+ {
+  "name": "read_file",
+  "description": "Desktop Commander compatible: read a text file. With offset/length, reads a line range (zero-based offset; negative counts from the end). For .pdf files, offset/length are pages (max 20).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "offset": {
+     "type": "integer"
+    },
+    "length": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "read_multiple_files",
+  "description": "Desktop Commander compatible: read up to ten files.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "paths": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "minItems": 1,
+     "maxItems": 10
+    }
+   },
+   "required": [
+    "paths"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "write_file",
+  "description": "Desktop Commander compatible: write UTF-8 text. mode 'rewrite' (default) replaces the file, 'append' appends.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "content": {
+     "type": "string"
+    },
+    "mode": {
+     "type": "string",
+     "enum": [
+      "rewrite",
+      "append"
+     ]
+    }
+   },
+   "required": [
+    "path",
+    "content"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "list_directory",
+  "description": "Desktop Commander compatible: list a directory.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "create_directory",
+  "description": "Desktop Commander compatible: create a directory (with parents).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "move_file",
+  "description": "Desktop Commander compatible: move or rename a file or directory.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "source": {
+     "type": "string"
+    },
+    "destination": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "source",
+    "destination"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "get_file_info",
+  "description": "Desktop Commander compatible: file or directory metadata.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "edit_block",
+  "description": "Desktop Commander compatible surgical edit: replace old_string with new_string. Exact match first; if absent, a whitespace-tolerant match is used only when it is unique. expected_replacements (default 1) must equal the number of matches. The write is guarded by the file's SHA-256, so a concurrent change is never overwritten.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "file_path": {
+     "type": "string"
+    },
+    "old_string": {
+     "type": "string"
+    },
+    "new_string": {
+     "type": "string"
+    },
+    "expected_replacements": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "file_path",
+    "old_string",
+    "new_string"
+   ],
+   "additionalProperties": false
+  }
  }
 ]
