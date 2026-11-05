@@ -48,8 +48,17 @@ and Windows folders. On macOS the binary is `/usr/local/bin/webrising-commender`
 | Machines | this computer | every enrolled device, one MCP URL |
 | High-risk approval | the flag you started it with | single-use approval per call in the browser, trust levels, allowlist |
 | Audit | local file (`--audit-log`) | central audit log in the dashboard |
-| Tools | the 40 device tools (generated from the gateway list) | the same, plus gateway tools (devices, url_fetch, edit_block, searches) |
+| Tools | the 40 device tools plus the Desktop Commander names `read_file`, `read_multiple_files`, `write_file`, `list_directory`, `create_directory`, `move_file`, `get_file_info`, `edit_block` (all generated from the gateway list) | the same, plus gateway tools (devices, `url_fetch`, searches) |
 
 The tool list is generated from the gateway's definitions
 (`crates/agent/src/local_tools.json`, `npm run -s export-local-tools` in
 `gateway/`), and a test fails if the two drift.
+
+## Trying it by hand
+
+The command waits silently for an MCP client on stdin; that is expected. To
+check it without a client, pipe two requests in:
+
+```bash
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_directory","arguments":{"path":"/srv/wecommander-acceptance"}}}' | sudo -u wecommander webrising-commender mcp-stdio --allowed-root /srv/wecommander-acceptance
+```

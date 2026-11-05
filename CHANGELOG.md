@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Local mode (`mcp-stdio`) now accepts the Desktop Commander tool names (`read_file`, `list_directory`, `write_file`, `edit_block`, …); before, they returned `unknown_tool`.
+
 - Local mode (v1.1 item 4): `webrising-commender mcp-stdio --allowed-root <folder> [--allow-writes] [--allow-commands] [--audit-log <file>]` serves MCP over stdio to local AI clients (Claude Desktop, Cursor) with no gateway or account. Allowed roots, read-only and no-commands defaults, undo snapshots and a local audit log (no contents) apply. The 40 tools are generated from the gateway definitions; a test keeps them and the argument mapping in sync. See `docs/LOCAL_MODE.md`.
 - Files page fix: the browser starts in the device's first allowed root (from `policy_info`) instead of `.`, which every device refused. Dashboard device calls (`POST /api/device/request`) now return 422 with the agent's reason instead of 502, because proxies such as Cloudflare replace 502 bodies and the page showed only "HTTP 502". Real-agent E2E covers the REST path (refusal reason, `policy_info`, allowed listing).
 - The agent reports its package version (`0.1.<CI run>`) to the console and in `--version` instead of the crate version `0.1.0`; release builds set `WECOMMANDER_VERSION`.
