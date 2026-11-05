@@ -135,6 +135,7 @@ allowed roots. Each command needs its own approval.
 | 13 | `task_start "for i in 1 2 3; do date; sleep 5; done"` (approval C), close the Claude session, new session → `task_status` | Claude | completed, three dates |
 | 14 | audit | WECOMMANDER → Audit as admin | AI calls by operator, approvals by admin, no file contents |
 | 15 | reconnect | owner on server (approval D), see below | device offline, then online without re-enrollment; `task_list` still answers |
+| 16 | local mode with Desktop Commander names: the `printf … list_directory … | mcp-stdio` command in docs/LOCAL_MODE.md | owner on server | **PASS 2026-11-05** on agent `0.1.1630`: handshake, then `ornek.pdf` and `readme.txt` listed (0.1.1626 had answered `unknown_tool`, fixed in PR #78) |
 
 Approvals B and C are HIGH-risk operations in WECOMMANDER. Each applies to
 exactly the command shown and is given in the admin's browser.

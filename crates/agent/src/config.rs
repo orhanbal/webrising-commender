@@ -117,6 +117,9 @@ pub struct DeviceCapabilities {
     /// fs_write/append/mkdir/delete/move/replace/undo, xlsx_write_cells.
     #[serde(default = "enabled")]
     pub file_writes: bool,
+    /// Mask secrets in command, task, terminal and process-list output.
+    #[serde(default = "enabled")]
+    pub redact_output: bool,
 }
 
 fn enabled() -> bool {
@@ -128,6 +131,7 @@ impl Default for DeviceCapabilities {
         Self {
             commands: true,
             file_writes: true,
+            redact_output: true,
         }
     }
 }

@@ -2633,6 +2633,7 @@ dependencies = [
  "libc",
  "lopdf",
  "portable-pty",
+ "regex",
  "reqwest",
  "roxmltree",
  "serde",

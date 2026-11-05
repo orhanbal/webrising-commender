@@ -87,9 +87,26 @@ try {
   if (process.platform !== "win32") {
     const exec = await rw.call("process_exec", { command: "echo local-mode-ok", cwd: root });
     assert.equal(exec.error, false, JSON.stringify(exec.data)); assert.match(JSON.stringify(exec.data), /local-mode-ok/);
+    // v1.2: secrets in command output are masked on the device by default.
+    const leak = await rw.call("process_exec", { command: "echo DB_PASSWORD=hunter2xyz", cwd: root });
+    assert.equal(leak.error, false, JSON.stringify(leak.data));
+    assert.match(leak.data.stdout, /DB_PASSWORD=\[REDACTED\]/); assert.doesNotMatch(JSON.stringify(leak.data), /hunter2xyz/);
+    assert.equal(leak.data.redactions, 1);
+    assert.equal((await rw.call("policy_info", {})).data.outputRedaction, "enabled");
   }
   assert.equal((await rw.call("fs_delete", { path: path.join(root, "..", "outside.txt") })).error, true, "root still enforced with all flags");
 } finally { rw.stop(); }
+
+// 3) --no-redact: the owner can turn masking off.
+if (process.platform !== "win32") {
+  const raw = start(["--allowed-root", root, "--allow-commands", "--no-redact"]);
+  try {
+    await raw.rpc("initialize", { protocolVersion: "2025-06-18" });
+    const out = await raw.call("process_exec", { command: "echo DB_PASSWORD=hunter2xyz", cwd: root });
+    assert.match(out.data.stdout, /hunter2xyz/); assert.equal(out.data.redactions, undefined);
+    assert.equal((await raw.call("policy_info", {})).data.outputRedaction, "disabled");
+  } finally { raw.stop(); }
+}
 
 const lines = fs.readFileSync(audit, "utf8").trim().split("\n").map((l) => JSON.parse(l));
 assert.ok(lines.length >= 9, "every call is audited");

@@ -49,6 +49,11 @@ AD1 Aşama 1. Hiçbiri hedefte değişiklik yapmaz; varsayılan güven seviyesin
    maskelenir; cihaz politikasında aç/kapa ve alan listesi; fail-closed; negatif
    sızıntı testleri. Önce yeni gözlem araçlarına, sonra `process_exec`/terminal çıktısına
    opsiyonel olarak.
+   **Durum 2026-11-05:** ilk dilim yapıldı: `process_exec`, `process_list`,
+   `task_status`, `terminal_read(_page)` çıktısı cihazda maskeleniyor; varsayılan
+   açık, `capabilities --redact-output off` / `mcp-stdio --no-redact` ile kapanır;
+   `policy_info.outputRedaction`. Dosya okumaları bilerek ham. Gözlem araçları
+   geldikçe onlara da uygulanacak.
 3. **`health_snapshot` (AD1-04).** CPU, RAM, disk, ağ, yük, en çok kaynak kullanan
    süreçler; sınırlı ve hafif. Gateway son N snapshot'ı saklar (varsayılan 24 saat).
 4. **`log_query` (AD1-05).** Linux journal (`journalctl` JSON), dosya logları, Windows

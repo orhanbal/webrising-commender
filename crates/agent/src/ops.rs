@@ -63,7 +63,34 @@ pub fn enforce_capabilities(capabilities: DeviceCapabilities, action: &AgentActi
     Ok(())
 }
 
+/// Actions whose output may carry secrets from the system (not file reads,
+/// whose exact content editing tools rely on).
+fn output_is_redacted(action: &AgentAction) -> bool {
+    matches!(
+        action,
+        AgentAction::ProcessExec { .. }
+            | AgentAction::ProcessList
+            | AgentAction::TaskStatus { .. }
+            | AgentAction::TerminalRead { .. }
+            | AgentAction::TerminalReadPage { .. }
+    )
+}
+
 pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Result<Value> {
+    let redact = context.capabilities.redact_output && output_is_redacted(&action);
+    let mut value = execute_unredacted(context, action).await?;
+    if redact {
+        let count = crate::redact::redact_value(&mut value);
+        if count > 0 {
+            if let Some(object) = value.as_object_mut() {
+                object.insert("redactions".into(), serde_json::json!(count));
+            }
+        }
+    }
+    Ok(value)
+}
+
+async fn execute_unredacted(context: ExecutionContext<'_>, action: AgentAction) -> Result<Value> {
     let ExecutionContext {
         policy,
         terminals,
@@ -104,6 +131,7 @@ pub async fn execute(context: ExecutionContext<'_>, action: AgentAction) -> Resu
             "agentMode": if !capabilities.commands && !capabilities.file_writes { "read_only" } else { "restricted" },
             "commandExecution": if capabilities.commands { "enabled" } else { "disabled" },
             "fileWrites": if capabilities.file_writes { "enabled" } else { "disabled" },
+            "outputRedaction": if capabilities.redact_output { "enabled" } else { "disabled" },
             "maximumSingleReadBytes": 4 * 1024 * 1024,
             "maximumSingleWriteBytes": 8 * 1024 * 1024,
             "maximumTerminalBufferedBytes": 1024 * 1024
@@ -559,6 +587,7 @@ mod capability_tests {
         let caps = DeviceCapabilities {
             commands: false,
             file_writes: true,
+            redact_output: true,
         };
         for a in commands() {
             let error = enforce_capabilities(caps, &a).unwrap_err().to_string();
@@ -578,6 +607,7 @@ mod capability_tests {
         let caps = DeviceCapabilities {
             commands: true,
             file_writes: false,
+            redact_output: true,
         };
         for a in writes() {
             let error = enforce_capabilities(caps, &a).unwrap_err().to_string();
@@ -598,6 +628,7 @@ mod capability_tests {
         let caps = DeviceCapabilities {
             commands: false,
             file_writes: false,
+            redact_output: true,
         };
         let allowed_anyway = ["task_cancel", "terminal_stop", "terminal_resize"];
         for a in commands().iter().chain(writes().iter()) {
