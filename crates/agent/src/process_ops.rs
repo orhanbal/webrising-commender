@@ -76,6 +76,12 @@ impl Drop for ProcessGroupGuard {
     }
 }
 
+/// macOS: `sh -c CD_THEN_RUN wecommander <dir> <command>` changes directory
+/// inside the shell (see exec_with_timeout_bounds), then runs the command in
+/// a login shell exactly as on Linux.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const CD_THEN_RUN: &str = r#"cd -- "$1" || exit 126; shift; exec /bin/sh -lc "$1""#;
+
 /// First argument that starts the Agent binary in reaper mode (see reaper.rs).
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub const REAPER_ARG: &str = "__wecommander-reaper";
@@ -252,6 +258,26 @@ async fn exec_with_timeout_bounds(
         cmd
     };
 
+    // macOS: a privacy-protected working directory (~/Documents, ~/Desktop,
+    // ~/Downloads, iCloud Drive) makes the kernel hold the child's chdir until
+    // the person answers a permission dialog. With current_dir() that happens
+    // inside spawn(), before the timeout below starts, so the request hangs.
+    // Change directory inside the shell instead, so the wait is covered by
+    // the timeout and reported.
+    #[cfg(target_os = "macos")]
+    let workdir = {
+        let mut workdir = workdir;
+        if let Some(dir) = workdir.take() {
+            let mut cmd = Command::new("/bin/sh");
+            cmd.arg("-c")
+                .arg(CD_THEN_RUN)
+                .arg("wecommander")
+                .arg(&dir)
+                .arg(command);
+            process = cmd;
+        }
+        workdir
+    };
     if let Some(dir) = workdir {
         process.current_dir(dir);
     }
@@ -330,6 +356,11 @@ async fn exec_with_timeout_bounds(
             let _ = child.kill().await;
             stdout_task.abort();
             stderr_task.abort();
+            #[cfg(target_os = "macos")]
+            return Err(anyhow!(
+                "process execution timed out (on macOS this also happens while a privacy permission dialog is waiting on the Mac's screen; allow it, or use an allowed folder outside Documents, Desktop and Downloads)"
+            ));
+            #[cfg(not(target_os = "macos"))]
             return Err(anyhow!("process execution timed out"));
         }
     };
@@ -645,6 +676,41 @@ where
 
 #[cfg(test)]
 mod tests {
+
+    #[cfg(unix)]
+    #[test]
+    fn macos_cd_wrapper_keeps_arguments_intact() {
+        let dir = std::env::temp_dir().join(format!("wc cd 'test' {}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(CD_THEN_RUN)
+            .arg("wecommander")
+            .arg(&dir)
+            .arg(r#"pwd; printf '%s|' "a b" '$HOME' "q\"uote""#)
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        let canonical = std::fs::canonicalize(&dir).unwrap();
+        assert!(
+            text.starts_with(&format!("{}\n", canonical.display()))
+                || text.starts_with(&format!("{}\n", dir.display())),
+            "{text}"
+        );
+        assert!(text.ends_with(r#"a b|$HOME|q"uote|"#), "{text}");
+        let missing = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(CD_THEN_RUN)
+            .arg("wecommander")
+            .arg(dir.join("missing"))
+            .arg("echo should-not-run")
+            .output()
+            .unwrap();
+        assert_eq!(missing.status.code(), Some(126));
+        assert!(!String::from_utf8_lossy(&missing.stdout).contains("should-not-run"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     use super::*;
     use tokio::io::AsyncWriteExt;
 

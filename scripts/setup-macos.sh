@@ -4,7 +4,9 @@ set -euo pipefail
 set +x
 umask 077
 CONTROL_URL="https://wecommander.app"
-ALLOWED_ROOT="$HOME/Documents/WECOMMANDER"
+# Not under ~/Documents, ~/Desktop or ~/Downloads: macOS privacy protection
+# (TCC) asks for permission on every command a background agent starts there.
+ALLOWED_ROOT="$HOME/WECOMMANDER"
 while (($#)); do
   case "$1" in
     --control-url) CONTROL_URL="${2:-}"; shift 2 ;;
