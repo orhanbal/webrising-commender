@@ -2057,6 +2057,13 @@ try {
     const missing = await tool(9607, "edit_block", { device_id: deviceId, file_path: dcFile, old_string: "retrun 3;", new_string: "x" });
     assert.equal(missing.error, "no_match");
     assert.match(fs.readFileSync(dcFile, "utf8"), /return 3;/, "no-match edit changes nothing");
+    const { default: auditPg } = await import("pg");
+    const editAudit = new auditPg.Client({ connectionString: process.env.DATABASE_URL });
+    await editAudit.connect();
+    try {
+      const last = await editAudit.query("select outcome from audit_logs where device_id=$1 and tool='edit_block' order by id desc limit 1", [deviceId]);
+      assert.equal(last.rows[0]?.outcome, "error", "a no-match edit is audited as an error, not a policy denial");
+    } finally { await editAudit.end(); }
     await tool(9608, "write_file", { device_id: deviceId, path: dcFile, content: "\n// appended", mode: "append" });
     assert.match(fs.readFileSync(dcFile, "utf8"), /\/\/ appended$/);
     const internal = await tool(9609, "url_fetch", { url: "http://127.0.0.1:8787/health" });
