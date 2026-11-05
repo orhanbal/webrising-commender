@@ -48,7 +48,12 @@ use tokio_tungstenite::{
 };
 use tracing::{error, info, warn};
 
-const VERSION: &str = env!("CARGO_PKG_VERSION");
+// Package version (0.1.<CI run>) when the release build sets WECOMMANDER_VERSION,
+// so the console shows the installed package; otherwise the crate version.
+const VERSION: &str = match option_env!("WECOMMANDER_VERSION") {
+    Some(version) => version,
+    None => env!("CARGO_PKG_VERSION"),
+};
 
 #[derive(Clone)]
 struct ActiveRequest {
@@ -61,7 +66,7 @@ struct ActiveRequest {
 #[derive(Parser)]
 #[command(
     name = "webrising-commender",
-    version,
+    version = VERSION,
     about = "WebRising Commender native agent"
 )]
 struct Cli {

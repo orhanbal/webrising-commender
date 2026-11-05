@@ -166,6 +166,8 @@ jobs:
         with:
           targets: x86_64-apple-darwin,aarch64-apple-darwin
       - name: Build universal release agent
+        env:
+          WECOMMANDER_VERSION: 0.1.${{ github.run_number }}
         run: |
           cargo build --release -p webrising-commender-agent --target x86_64-apple-darwin
           cargo build --release -p webrising-commender-agent --target aarch64-apple-darwin
