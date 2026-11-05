@@ -14,6 +14,8 @@ const pages=[
 {title:"Görevler",href:"/tasks",icon:Workflow},
 {title:"MCP Araçları",href:"/mcp",icon:Command},
 {title:"Onaylar",href:"/approvals",icon:ShieldCheck},
+{title:"Ekip",href:"/team",icon:Users},
+{title:"Denetim kaydı",href:"/audit",icon:FileText},
 {title:"Kullanım",href:"/usage",icon:Activity},
 {title:"Paket ve Ödemeler",href:"/billing",icon:CreditCard}
 ];
