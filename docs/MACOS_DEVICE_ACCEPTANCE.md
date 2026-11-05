@@ -58,12 +58,13 @@ then upgraded with the one-line installer to agent `0.1.58`.
 | 1–3 | PASS. Upgrade through `curl … \| sh` kept the enrollment ("Existing device enrollment found") |
 | 4 | PASS: `allowedRoots` = the folder only; `outputRedaction` and `systemLogs` enabled on 0.1.58 |
 | 5 | PASS: folder listed, `/etc` refused |
-| 6 | open (`health_snapshot` not yet called from a client that has the new tool list) |
+| 6 | PASS (from Claude): CPU, load, disks, network, top processes, `observedAt`, `limitations`. Finding: `availableBytes` 0 / 100 % used on macOS 26 although swap was 25 % used; fixed by a total-minus-used fallback with a limitation note |
 | 7 | PASS: write, `edit_block`, `fs_versions`, `fs_undo` restored the exact previous content |
 | 8 | PASS: `id` → `approval_required`; after approval `uid=501(orhanbalci)`; the next run asked again |
 | 9 | PASS: `echo API_KEY=abc123def` → `API_KEY=[REDACTED]`, `redactions: 1` |
 | 10 | PASS: log out/in and the 19:27 gateway release both reconnected without re-pairing |
-| 11, 12 | open |
+| 11 | PASS: `mcp-stdio` handshake (`wecommander-local 0.1.58`, writes and commands off) and `list_directory` of the folder |
+| 12 | skipped (the Mac stays enrolled) |
 
 **Findings**
 
