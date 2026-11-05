@@ -59,6 +59,7 @@ pub struct LocalOptions {
     pub allow_writes: bool,
     pub allow_commands: bool,
     pub audit_log: Option<PathBuf>,
+    pub redact_output: bool,
 }
 
 fn snake_to_camel(key: &str) -> String {
@@ -633,6 +634,7 @@ pub async fn serve(options: LocalOptions) -> Result<()> {
         capabilities: DeviceCapabilities {
             commands: options.allow_commands,
             file_writes: options.allow_writes,
+            redact_output: options.redact_output,
         },
         undo_scope: UndoScope {
             organization_id: "local".into(),
@@ -790,6 +792,7 @@ mod tests {
             capabilities: DeviceCapabilities {
                 commands: false,
                 file_writes: false,
+                redact_output: true,
             },
             undo_scope: UndoScope {
                 organization_id: "local".into(),
@@ -830,6 +833,7 @@ mod tests {
         local.capabilities = DeviceCapabilities {
             commands: true,
             file_writes: true,
+            redact_output: true,
         };
         let write = handle(&mut local, json!({"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"fs_write","arguments":{"path": root.join("b.txt"),"content_base64":"aGk="}}})).await.unwrap();
         assert_eq!(write["result"]["isError"], false, "{write}");

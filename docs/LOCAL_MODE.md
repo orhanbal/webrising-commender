@@ -17,6 +17,7 @@ webrising-commender mcp-stdio --allowed-root "$HOME/projects"
 | `--allow-writes` | off | File writes: write, append, mkdir, move, replace, delete, undo. |
 | `--allow-commands` | off | Commands, background tasks and terminals. |
 | `--audit-log <file>` | none | Appends one JSON line per call: time, tool, risk, outcome. File contents are never written. |
+| `--no-redact` | off | Turns off masking of secrets in command, task, terminal and process output (see docs/SECURITY.md, "Output redaction"). |
 
 Without `--allow-writes` and `--allow-commands`, the AI can read and search
 only. With both, it behaves like Desktop Commander inside the allowed folders,

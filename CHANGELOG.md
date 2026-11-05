@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Output redaction (v1.2): the agent masks secrets (private keys, Authorization values, URL credentials, common token formats, password/secret/token/API-key assignments) in command, task, terminal and process-list output before it leaves the device. On by default; `capabilities --redact-output off` or `mcp-stdio --no-redact` turns it off. `policy_info` reports `outputRedaction`.
+
 - Local mode (`mcp-stdio`) now accepts the Desktop Commander tool names (`read_file`, `list_directory`, `write_file`, `edit_block`, …); before, they returned `unknown_tool`.
 
 - Local mode (v1.1 item 4): `webrising-commender mcp-stdio --allowed-root <folder> [--allow-writes] [--allow-commands] [--audit-log <file>]` serves MCP over stdio to local AI clients (Claude Desktop, Cursor) with no gateway or account. Allowed roots, read-only and no-commands defaults, undo snapshots and a local audit log (no contents) apply. The 40 tools are generated from the gateway definitions; a test keeps them and the argument mapping in sync. See `docs/LOCAL_MODE.md`.

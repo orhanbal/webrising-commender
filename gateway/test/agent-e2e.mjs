@@ -178,6 +178,7 @@ try {
 
   const policyInfo = await tool(210, "policy_info", { device_id: deviceId });
   assert.equal(policyInfo.agentMode, "restricted");
+  assert.equal(policyInfo.outputRedaction, "enabled", "secrets in command output are masked by default");
   assert.ok(policyInfo.allowedRoots.includes(tempRoot));
 
   // Header-only image metadata travels through MCP/Gateway/native Agent and

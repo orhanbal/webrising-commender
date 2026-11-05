@@ -214,3 +214,24 @@ verification, so even a valid human approval cannot override them.
 - **Defaults:** configs written before this feature keep both enabled.
 - **Tests:** `gateway/test/device-capabilities-e2e.mjs`.
 
+### Output redaction (v1.2)
+
+The agent masks secrets in the output of `process_exec`, `process_list`,
+`task_status`, `terminal_read` and `terminal_read_page` before the result
+leaves the device (`crates/agent/src/redact.rs`). Masked: private key
+blocks, `Authorization` header values, credentials in URLs, well-known token
+formats (GitHub, GitLab, Slack, AWS access key ids, `sk-` keys, JWTs) and the
+values of `NAME=value` / `"name": "value"` pairs whose name mentions a
+password, secret, token, API key or credential. The name stays visible; the
+value becomes `[REDACTED]`, and the result carries `redactions: <count>`.
+
+- **Not masked:** file reads. Editing tools need the exact content, and the
+  person chose the file.
+- **Best effort:** it lowers the chance that a secret reaches the AI; it is
+  not a guarantee.
+- **Default:** on, including for configs written before this feature.
+- **Turn off:** `webrising-commender --config <path> capabilities --redact-output off`
+  and restart the service; in local mode, `mcp-stdio --no-redact`.
+- **Reporting:** `policy_info` reports `outputRedaction`.
+- **Tests:** unit tests in `redact.rs`, `gateway/test/local-stdio-e2e.mjs`.
+

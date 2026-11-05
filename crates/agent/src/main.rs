@@ -10,6 +10,7 @@ mod process_ops;
 mod protocol;
 #[cfg(target_os = "linux")]
 mod reaper;
+mod redact;
 mod spreadsheet_ops;
 mod stdio_mcp;
 mod system_ops;
@@ -102,6 +103,9 @@ enum Command {
         commands: Option<bool>,
         #[arg(long, value_parser = parse_on_off)]
         file_writes: Option<bool>,
+        /// Mask secrets in command, task, terminal and process-list output.
+        #[arg(long, value_parser = parse_on_off)]
+        redact_output: Option<bool>,
     },
     /// Point an enrolled device at a new gateway origin (domain change)
     /// without re-enrolling. Restart the service to apply.
@@ -126,6 +130,9 @@ enum Command {
         /// Append one JSON line per call (tool, risk, outcome; never contents).
         #[arg(long)]
         audit_log: Option<PathBuf>,
+        /// Do not mask secrets in command, task, terminal and process output.
+        #[arg(long)]
+        no_redact: bool,
     },
     #[cfg(windows)]
     Service,
@@ -178,6 +185,7 @@ async fn agent_main() -> Result<()> {
                 config::DeviceCapabilities {
                     commands: !no_commands,
                     file_writes: !read_only,
+                    redact_output: true,
                 },
             )
             .await
@@ -185,9 +193,13 @@ async fn agent_main() -> Result<()> {
         Command::Capabilities {
             commands,
             file_writes,
+            redact_output,
         } => {
             let mut config = AgentConfig::load(&config_path)?;
-            if commands.is_some() || file_writes.is_some() {
+            if commands.is_some() || file_writes.is_some() || redact_output.is_some() {
+                if let Some(value) = redact_output {
+                    config.capabilities.redact_output = value;
+                }
                 if let Some(value) = commands {
                     config.capabilities.commands = value;
                 }
@@ -222,12 +234,14 @@ async fn agent_main() -> Result<()> {
             allow_writes,
             allow_commands,
             audit_log,
+            no_redact,
         } => {
             stdio_mcp::serve(stdio_mcp::LocalOptions {
                 allowed_roots,
                 allow_writes,
                 allow_commands,
                 audit_log,
+                redact_output: !no_redact,
             })
             .await
         }
@@ -326,6 +340,7 @@ fn print_capabilities(capabilities: &config::DeviceCapabilities) {
     let state = |on: bool| if on { "enabled" } else { "disabled" };
     println!("command execution: {}", state(capabilities.commands));
     println!("file writes: {}", state(capabilities.file_writes));
+    println!("output redaction: {}", state(capabilities.redact_output));
 }
 
 async fn run(config: AgentConfig) -> Result<()> {
