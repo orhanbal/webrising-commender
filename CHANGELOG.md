@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- macOS one-line install: the online installer looked for the PKG only in `ubuntu-preview-*` releases, but it is published as `macos-preview-*`, so `curl … | sh` on a Mac stopped with "No complete macOS installer release yet". It now accepts both, and takes `--allowed-root`. New docs/MACOS_DEVICE_ACCEPTANCE.md.
+
 - `log_query` (v1.2): bounded, read-only log search, newest first: Linux journal (time window, unit, level) or a log file inside the allowed roots (tail), with level and regex filters, grouping of repeated messages and redaction. Journal access can be turned off with `capabilities --system-logs off`.
 
 - `health_snapshot` (v1.2): one read-only call returns CPU usage and load, memory and swap, disks, network counters and the top processes by CPU and memory, with `observedAt`, `source` and `limitations`. Works remotely and in local mode.
