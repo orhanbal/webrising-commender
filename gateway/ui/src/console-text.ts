@@ -238,6 +238,17 @@ export const consoleTurkish:Record<string,string> = {
   "Action": "İşlem",
   "Outcome": "Sonuç",
   "Risk": "Risk",
-  "Source": "Kaynak"
+  "Source": "Kaynak",
+  "Signed in as": "Oturum açan:",
+  "Search accounts, open details and sessions, and disable or enable access. Changes need your password and are audited.": "Hesapları ara, ayrıntılara ve oturumlara bak, erişimi kapat veya aç. Değişiklikler şifreni ister ve denetim kaydına yazılır.",
+  "Search workspaces, review members and set quota overrides. Changes need your password and are audited.": "Çalışma alanlarını ara, üyeleri incele ve kota ayarlarını değiştir. Değişiklikler şifreni ister ve denetim kaydına yazılır.",
+  "Every enrolled device across workspaces, with status and last contact.": "Tüm çalışma alanlarındaki kayıtlı cihazlar, durum ve son bağlantı zamanıyla.",
+  "Audit trail of workspace and platform activity, filterable by source and risk.": "Çalışma alanı ve platform etkinliklerinin denetim kaydı; kaynağa ve riske göre filtrelenebilir.",
+  "Edit the public landing copy, media and search metadata per language.": "Herkese açık landing metnini, görselleri ve arama bilgilerini dile göre düzenle.",
+  "Plans, prices and customer subscription requests.": "Paketler, fiyatlar ve müşteri abonelik talepleri.",
+  "Live operational counters and incident triage.": "Canlı operasyon sayaçları ve olay değerlendirme.",
+  "Logos and favicon served on every page.": "Her sayfada kullanılan logolar ve sekme simgesi.",
+  "Privacy policy and terms of use, per language.": "Dile göre gizlilik politikası ve kullanım koşulları.",
+  "Platform-wide counts from the production database.": "Üretim veritabanından platform genelindeki sayılar."
 };
 export function consoleText(source:string,locale:"en"|"tr"):string {return locale==="tr"?(consoleTurkish[source]??source):source;}

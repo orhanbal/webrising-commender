@@ -248,3 +248,16 @@
 @media (max-width:760px){.trust-options{grid-template-columns:1fr}}
 .approval-item>div:first-child{flex:1 1 280px}
 @media (max-width:640px){.approval-item>div:last-child{width:100%}.approval-item>div:last-child>button{flex:1}}
+/* Console (v1.1 item 5d): action buttons in one row; tables collapse to labelled cards on phones. */
+.console-actions{white-space:nowrap}
+.console-actions>button{margin:2px 4px 2px 0}
+@media (max-width:760px){
+ .console-table{min-width:0!important}
+ .console-table thead{display:none}
+ .console-table,.console-table tbody,.console-table tr,.console-table td{display:block;width:100%}
+ .console-table tr{padding:var(--wc-space-3) 0;border-bottom:1px solid var(--stroke)}
+ .console-table tr:last-child{border-bottom:0}
+ .console-table td{border:0!important;padding:var(--wc-space-1) var(--wc-space-4)!important;white-space:normal!important;word-break:break-word}
+ .console-table td[data-label]::before{content:attr(data-label);display:block;font-size:var(--wc-text-xs);font-weight:var(--wc-weight-bold);color:var(--faint);text-transform:uppercase;letter-spacing:.06em}
+ .console-actions{white-space:normal}
+}
