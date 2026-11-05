@@ -7,6 +7,8 @@ use serde_json::Value;
     rename_all = "snake_case",
     rename_all_fields = "camelCase"
 )]
+// One short-lived message per request; boxing the action buys nothing.
+#[allow(clippy::large_enum_variant)]
 pub enum GatewayMessage {
     Request {
         request_id: String,
@@ -51,6 +53,15 @@ pub enum AgentAction {
     SystemInfo,
     HealthSnapshot {
         top: Option<usize>,
+    },
+    LogQuery {
+        source: String,
+        path: Option<String>,
+        unit: Option<String>,
+        since_minutes: Option<u64>,
+        level: Option<String>,
+        pattern: Option<String>,
+        limit: Option<usize>,
     },
     PolicyInfo,
     FsList {
@@ -288,6 +299,7 @@ impl AgentAction {
         match self {
             Self::SystemInfo => "system_info",
             Self::HealthSnapshot { .. } => "health_snapshot",
+            Self::LogQuery { .. } => "log_query",
             Self::PolicyInfo => "policy_info",
             Self::FsList { .. } => "fs_list",
             Self::FsStat { .. } => "fs_stat",
@@ -335,6 +347,7 @@ impl AgentAction {
         match self {
             Self::SystemInfo
             | Self::HealthSnapshot { .. }
+            | Self::LogQuery { .. }
             | Self::PolicyInfo
             | Self::FsList { .. }
             | Self::FsStat { .. }

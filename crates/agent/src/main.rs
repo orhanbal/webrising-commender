@@ -3,6 +3,7 @@ mod config;
 mod docx_ops;
 mod fs_ops;
 mod image_ops;
+mod log_ops;
 mod ops;
 mod pdf_ops;
 mod policy;
@@ -106,6 +107,9 @@ enum Command {
         /// Mask secrets in command, task, terminal and process-list output.
         #[arg(long, value_parser = parse_on_off)]
         redact_output: Option<bool>,
+        /// Allow log_query on the system journal.
+        #[arg(long, value_parser = parse_on_off)]
+        system_logs: Option<bool>,
     },
     /// Point an enrolled device at a new gateway origin (domain change)
     /// without re-enrolling. Restart the service to apply.
@@ -186,6 +190,7 @@ async fn agent_main() -> Result<()> {
                     commands: !no_commands,
                     file_writes: !read_only,
                     redact_output: true,
+                    system_logs: true,
                 },
             )
             .await
@@ -194,9 +199,17 @@ async fn agent_main() -> Result<()> {
             commands,
             file_writes,
             redact_output,
+            system_logs,
         } => {
             let mut config = AgentConfig::load(&config_path)?;
-            if commands.is_some() || file_writes.is_some() || redact_output.is_some() {
+            if commands.is_some()
+                || file_writes.is_some()
+                || redact_output.is_some()
+                || system_logs.is_some()
+            {
+                if let Some(value) = system_logs {
+                    config.capabilities.system_logs = value;
+                }
                 if let Some(value) = redact_output {
                     config.capabilities.redact_output = value;
                 }
@@ -341,6 +354,7 @@ fn print_capabilities(capabilities: &config::DeviceCapabilities) {
     println!("command execution: {}", state(capabilities.commands));
     println!("file writes: {}", state(capabilities.file_writes));
     println!("output redaction: {}", state(capabilities.redact_output));
+    println!("system logs: {}", state(capabilities.system_logs));
 }
 
 async fn run(config: AgentConfig) -> Result<()> {

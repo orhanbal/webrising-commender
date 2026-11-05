@@ -235,3 +235,14 @@ value becomes `[REDACTED]`, and the result carries `redactions: <count>`.
 - **Reporting:** `policy_info` reports `outputRedaction`.
 - **Tests:** unit tests in `redact.rs`, `gateway/test/local-stdio-e2e.mjs`.
 
+### System logs (v1.2)
+
+`log_query` with `source: "journal"` reads the systemd journal, which lies
+outside the allowed roots. It is read-only, bounded (newest 20,000 entries,
+1,000 returned, 256 KiB) and redacted, and the account the agent runs as
+must be allowed to read the journal (`systemd-journal` group). Owners who do
+not want the AI to read system logs turn it off with
+`capabilities --system-logs off` (then restart the service); `policy_info`
+reports `systemLogs`. File logs (`source: "file"`) always follow the
+allowed roots.
+

@@ -49,6 +49,12 @@ try {
   assert.deepEqual(listed, expectedTools, "local tools equal the generated gateway set");
   const health = await ro.call("health_snapshot", { top: 2 });
   assert.equal(health.error, false, JSON.stringify(health.data)); assert.ok(health.data.memory.totalBytes > 0);
+  fs.writeFileSync(path.join(root, "app.log"), "start\nWARN slow\nERROR db timeout password=hunter2xyz\nERROR db timeout\n");
+  const logs = await ro.call("log_query", { source: "file", path: path.join(root, "app.log"), level: "error" });
+  assert.equal(logs.error, false, JSON.stringify(logs.data));
+  assert.equal(logs.data.matched, 2); assert.equal(logs.data.order, "newest_first");
+  assert.doesNotMatch(JSON.stringify(logs.data), /hunter2xyz/, "log output is redacted");
+  assert.equal((await ro.call("log_query", { source: "file", path: "/etc/hostname" })).error, true, "file logs keep the allowed root");
   const read = await ro.call("fs_read", { path: path.join(root, "notes.txt") });
   assert.equal(read.error, false); assert.equal(read.data.content, "secret content line\n");
   assert.equal((await ro.call("fs_list", { path: "/" })).error, true, "outside the allowed root");

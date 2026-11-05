@@ -27,6 +27,58 @@
   }
  },
  {
+  "name": "log_query",
+  "description": "Read-only, bounded log search on a device, newest first. source 'journal' (Linux systemd journal: since_minutes window, unit, level) or 'file' (tail of a log file inside the allowed roots). Filters: level (error|warning|info|debug, default info), pattern (case-insensitive regex), limit (1-1000, default 100). Repeated messages are grouped; secrets are masked.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "source": {
+     "type": "string",
+     "enum": [
+      "journal",
+      "file"
+     ]
+    },
+    "path": {
+     "type": "string",
+     "description": "Log file for source 'file'."
+    },
+    "unit": {
+     "type": "string",
+     "description": "systemd unit for source 'journal', e.g. ssh.service."
+    },
+    "since_minutes": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 10080,
+     "description": "Journal window (default 60)."
+    },
+    "level": {
+     "type": "string",
+     "enum": [
+      "error",
+      "warning",
+      "info",
+      "debug"
+     ]
+    },
+    "pattern": {
+     "type": "string",
+     "maxLength": 512
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 1000
+    }
+   },
+   "required": [
+    "source"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
   "name": "policy_info",
   "description": "Read agent-enforced allowed directories and resource limits. Read-only.",
   "inputSchema": {

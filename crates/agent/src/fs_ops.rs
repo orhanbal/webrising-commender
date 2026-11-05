@@ -556,7 +556,7 @@ fn open_regular_unix(path: &Path, append: bool) -> Result<fs::File> {
 /// Open only a regular file. Unix also pins every ancestor directory using
 /// openat(O_DIRECTORY | O_NOFOLLOW), closing parent-symlink substitution races
 /// for descriptor-based reads. Atomic rename operations remain a separate gate.
-fn open_regular_read(path: &Path) -> Result<fs::File> {
+pub(crate) fn open_regular_read(path: &Path) -> Result<fs::File> {
     #[cfg(unix)]
     {
         open_regular_unix(path, false)

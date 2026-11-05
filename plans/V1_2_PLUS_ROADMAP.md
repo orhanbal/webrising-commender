@@ -61,6 +61,9 @@ AD1 Aşama 1. Hiçbiri hedefte değişiklik yapmaz; varsayılan güven seviyesin
 4. **`log_query` (AD1-05).** Linux journal (`journalctl` JSON), dosya logları, Windows
    Event Log, macOS `log show`: zaman aralığı, seviye, birim, regex, sayfalama,
    tekrar kümeleme, bayt/satır sınırı, redaksiyon.
+   **Durum 2026-11-05:** ilk dilim yapıldı: Linux journal ve izinli kök içindeki
+   dosya logları; seviye, regex, sınır, tekrar gruplama, maskeleme; journal için
+   `systemLogs` yeteneği. Windows Event Log ve macOS `log show` sonraki dilim.
 5. **Servis ve container gözlemi (AD1-03 / AD1-02 salt-okunur).** `service_list`,
    `service_status` (systemd / Windows SCM / launchd); `container_list`,
    `container_inspect`, `container_logs` (Docker API, yalnız okuma uçları; soket erişimi

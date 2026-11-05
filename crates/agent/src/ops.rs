@@ -50,6 +50,13 @@ pub fn enforce_capabilities(capabilities: DeviceCapabilities, action: &AgentActi
             | AgentAction::FsUndo { .. }
             | AgentAction::XlsxWriteCells { .. }
     );
+    if matches!(action, AgentAction::LogQuery { source, .. } if source == "journal")
+        && !capabilities.system_logs
+    {
+        return Err(anyhow!(
+            "device_policy_denied: system log reading is disabled on this device"
+        ));
+    }
     if needs_commands && !capabilities.commands {
         return Err(anyhow!(
             "device_policy_denied: command execution is disabled on this device"
@@ -70,6 +77,7 @@ fn output_is_redacted(action: &AgentAction) -> bool {
         action,
         AgentAction::ProcessExec { .. }
             | AgentAction::ProcessList
+            | AgentAction::LogQuery { .. }
             | AgentAction::TaskStatus { .. }
             | AgentAction::TerminalRead { .. }
             | AgentAction::TerminalReadPage { .. }
@@ -126,6 +134,29 @@ async fn execute_unredacted(context: ExecutionContext<'_>, action: AgentAction) 
 
     match action {
         AgentAction::SystemInfo => system_ops::info(),
+        AgentAction::LogQuery {
+            source,
+            path,
+            unit,
+            since_minutes,
+            level,
+            pattern,
+            limit,
+        } => {
+            crate::log_ops::query(
+                policy,
+                crate::log_ops::Query {
+                    source,
+                    path,
+                    unit,
+                    since_minutes,
+                    level,
+                    pattern,
+                    limit,
+                },
+            )
+            .await
+        }
         AgentAction::HealthSnapshot { top } => {
             tokio::task::spawn_blocking(move || system_ops::health_snapshot(top)).await?
         }
@@ -135,6 +166,7 @@ async fn execute_unredacted(context: ExecutionContext<'_>, action: AgentAction) 
             "commandExecution": if capabilities.commands { "enabled" } else { "disabled" },
             "fileWrites": if capabilities.file_writes { "enabled" } else { "disabled" },
             "outputRedaction": if capabilities.redact_output { "enabled" } else { "disabled" },
+            "systemLogs": if capabilities.system_logs { "enabled" } else { "disabled" },
             "maximumSingleReadBytes": 4 * 1024 * 1024,
             "maximumSingleWriteBytes": 8 * 1024 * 1024,
             "maximumTerminalBufferedBytes": 1024 * 1024
@@ -591,6 +623,7 @@ mod capability_tests {
             commands: false,
             file_writes: true,
             redact_output: true,
+            system_logs: true,
         };
         for a in commands() {
             let error = enforce_capabilities(caps, &a).unwrap_err().to_string();
@@ -611,6 +644,7 @@ mod capability_tests {
             commands: true,
             file_writes: false,
             redact_output: true,
+            system_logs: true,
         };
         for a in writes() {
             let error = enforce_capabilities(caps, &a).unwrap_err().to_string();
@@ -632,6 +666,7 @@ mod capability_tests {
             commands: false,
             file_writes: false,
             redact_output: true,
+            system_logs: true,
         };
         let allowed_anyway = ["task_cancel", "terminal_stop", "terminal_resize"];
         for a in commands().iter().chain(writes().iter()) {

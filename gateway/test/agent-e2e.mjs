@@ -185,6 +185,11 @@ try {
   const policyInfo = await tool(210, "policy_info", { device_id: deviceId });
   assert.equal(policyInfo.agentMode, "restricted");
   assert.equal(policyInfo.outputRedaction, "enabled", "secrets in command output are masked by default");
+  assert.equal(policyInfo.systemLogs, "enabled");
+  fs.writeFileSync(path.join(tempRoot, "e2e.log"), "boot\nERROR disk full on /var\nWARN retry\n");
+  const logQuery = await tool(211, "log_query", { device_id: deviceId, source: "file", path: path.join(tempRoot, "e2e.log"), level: "warning" });
+  assert.equal(logQuery.matched, 2, JSON.stringify(logQuery));
+  assert.equal(logQuery.entries[0].message, "WARN retry");
   assert.ok(policyInfo.allowedRoots.includes(tempRoot));
 
   // Header-only image metadata travels through MCP/Gateway/native Agent and

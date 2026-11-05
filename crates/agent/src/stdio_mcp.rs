@@ -635,6 +635,7 @@ pub async fn serve(options: LocalOptions) -> Result<()> {
             commands: options.allow_commands,
             file_writes: options.allow_writes,
             redact_output: options.redact_output,
+            system_logs: true,
         },
         undo_scope: UndoScope {
             organization_id: "local".into(),
@@ -793,6 +794,7 @@ mod tests {
                 commands: false,
                 file_writes: false,
                 redact_output: true,
+                system_logs: true,
             },
             undo_scope: UndoScope {
                 organization_id: "local".into(),
@@ -834,6 +836,7 @@ mod tests {
             commands: true,
             file_writes: true,
             redact_output: true,
+            system_logs: true,
         };
         let write = handle(&mut local, json!({"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"fs_write","arguments":{"path": root.join("b.txt"),"content_base64":"aGk="}}})).await.unwrap();
         assert_eq!(write["result"]["isError"], false, "{write}");
