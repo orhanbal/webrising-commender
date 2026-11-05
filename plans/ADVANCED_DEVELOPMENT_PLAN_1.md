@@ -4,6 +4,7 @@
 **Durum:** ONAYLANMIŞ İLERİ GELİŞTİRME FİKİR HAVUZU / TASARIM TASLAĞI (v0.3) — önerilerin plana alınması onaylandı; uygulama başlangıcı, ayrıntılı gereksinimler, takvim ve gerçek kabul ayrıca kararlaştırılacaktır.
 **Oluşturulma tarihi:** 24 Ekim 2026
 **Kapsam:** WECOMMANDER'ın Desktop Commander işlevsel eşdeğerlik kabulünden *sonraki* farklılaştırıcı yetenekleri.
+**Sürümlere bağlanması:** [v1.2+ yol haritası](V1_2_PLUS_ROADMAP.md) (2026-11-05): AD1 maddeleri v1.2 / v1.3 / v1.4 / v2.x teslimlerine bölündü.
 **Kanonik mevcut öncelik:** [Desktop Commander Eşdeğerlik Planı](DESKTOP_COMMANDER_PARITY_PLAN.md). Bu belge, mevcut P0/P1/P2 işlerini veya saatlik görev kuyruğunu değiştirmez; yeni fikirler yalnız ileri geliştirme havuzuna dahil edilmiştir.
 
 ## 1. Ürün konumu — üzerinde anlaşılan temel ilke

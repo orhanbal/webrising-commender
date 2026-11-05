@@ -83,7 +83,11 @@ Steps 0–2 change nothing in production. Steps 3–7 form one change window.
    GitHub Apps → New GitHub App).
    - Name: `wecommander-release`. Homepage: the repository URL.
    - Webhook: **inactive**.
-   - Repository permissions: **Contents: Read and write**, nothing else.
+   - Repository permissions: **Contents: Read and write** and **Workflows:
+     Read and write**, nothing else. Workflows is needed because GitHub
+     refuses an App push that moves `production` onto commits that change
+     `.github/workflows/` (GH013). After adding a permission, accept it on
+     the installation (Settings → Applications → the App → Review request).
    - Installable: only on this account.
    - Then Install App → **Only select repositories** →
      `webrising-commender`.

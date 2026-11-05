@@ -127,8 +127,7 @@ aliases) and PDF reading (`pdf_read`) and item 2 (one-line install) are live (`5
 item ships through its own PR, CI and `promote-production`. Items 1 → 2 → 3
 need about 3 days, plus 2–3 days for 4.
 
-## Later (v1.2+), unchanged from the earlier proposal
-Fleet operations (groups, batch commands), change sets with one-click
-rollback, secret redaction in output, structured Docker/systemd tools,
-private AI via Ollama on the owner's GPU, runbooks, session recording,
-tamper-evident audit export.
+## Later (v1.2+)
+Moved to [the v1.2+ roadmap](V1_2_PLUS_ROADMAP.md), which ties Advanced
+Development Plan 1 (AD1-01…AD1-21) to v1.2 (observation and privacy), v1.3
+(controlled change), v1.4 (events and orchestration) and v2.x (adapters).
