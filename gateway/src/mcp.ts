@@ -26,6 +26,15 @@ export const tools = [
   },
   tool("system_info", "Read system information from a device.", {}),
   tool("health_snapshot", "Read-only health snapshot of a device: CPU usage and load, memory and swap, disks, network counters, and the top processes by CPU and memory. Includes observedAt and limitations.", { top: { type: "integer", minimum: 1, maximum: 20, description: "Processes per list (default 5)." } }),
+  tool("log_query", "Read-only, bounded log search on a device, newest first. source 'journal' (Linux systemd journal: since_minutes window, unit, level) or 'file' (tail of a log file inside the allowed roots). Filters: level (error|warning|info|debug, default info), pattern (case-insensitive regex), limit (1-1000, default 100). Repeated messages are grouped; secrets are masked.", {
+    source: { type: "string", enum: ["journal", "file"] },
+    path: { type: "string", description: "Log file for source 'file'." },
+    unit: { type: "string", description: "systemd unit for source 'journal', e.g. ssh.service." },
+    since_minutes: { type: "integer", minimum: 1, maximum: 10080, description: "Journal window (default 60)." },
+    level: { type: "string", enum: ["error", "warning", "info", "debug"] },
+    pattern: { type: "string", maxLength: 512 },
+    limit: { type: "integer", minimum: 1, maximum: 1000 },
+  }, ["source"]),
   tool("policy_info", "Read agent-enforced allowed directories and resource limits. Read-only.", {}),
   tool("get_recent_tool_calls", "Read paginated sanitized recent tool history for your actor and selected device.", { limit: integer(), offset: integer() }),
   tool("get_usage_stats", "Count this actor's tool executions by name over the past 30 days, scoped to the selected device.", {}),
@@ -221,6 +230,15 @@ function tool(name: string, description: string, properties: Record<string, unkn
 export function actionFromTool(name: string, a: any): AgentAction {
   switch (name) {
     case "system_info": return { kind: "system_info" };
+    case "log_query": return {
+      kind: "log_query", source: String(a.source) as "journal" | "file",
+      ...(a.path !== undefined ? { path: String(a.path) } : {}),
+      ...(a.unit !== undefined ? { unit: String(a.unit) } : {}),
+      ...(a.since_minutes !== undefined ? { sinceMinutes: Number(a.since_minutes) } : {}),
+      ...(a.level !== undefined ? { level: String(a.level) as "error" | "warning" | "info" | "debug" } : {}),
+      ...(a.pattern !== undefined ? { pattern: String(a.pattern) } : {}),
+      ...(a.limit !== undefined ? { limit: Number(a.limit) } : {}),
+    };
     case "health_snapshot": return { kind: "health_snapshot", ...(a.top !== undefined ? { top: Number(a.top) } : {}) };
     case "policy_info": return { kind: "policy_info" };
     case "fs_list": return { kind: "fs_list", path: String(a.path) };

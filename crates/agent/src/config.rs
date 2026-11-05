@@ -120,6 +120,9 @@ pub struct DeviceCapabilities {
     /// Mask secrets in command, task, terminal and process-list output.
     #[serde(default = "enabled")]
     pub redact_output: bool,
+    /// log_query on the system journal (file logs follow the allowed roots).
+    #[serde(default = "enabled")]
+    pub system_logs: bool,
 }
 
 fn enabled() -> bool {
@@ -132,6 +135,7 @@ impl Default for DeviceCapabilities {
             commands: true,
             file_writes: true,
             redact_output: true,
+            system_logs: true,
         }
     }
 }

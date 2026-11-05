@@ -22,6 +22,7 @@ Transport: JSON messages over authenticated WebSocket.
 ## Action kinds
 
 - `system_info`
+- `log_query` (`source` `journal`|`file`, `path`, `unit`, `sinceMinutes` 1–10080, `level` error|warning|info|debug, `pattern` case-insensitive regex ≤512, `limit` 1–1000): bounded log search, newest first, with `matched`/`returned`/`truncated`, `repeated` message groups and `limitations`; output is redacted. The journal source needs the `systemLogs` capability; file logs follow the allowed roots. Low risk.
 - `health_snapshot` (`top` 1–20, default 5): CPU usage and load, memory and swap, disks, network counters, top processes by CPU and memory; carries `observedAt`, `source` and `limitations`. Low risk.
 - `fs_list`
 - `fs_stat`

@@ -6,6 +6,7 @@ export type Risk = "low" | "medium" | "high";
 export type AgentAction =
   | { kind: "system_info" }
   | { kind: "health_snapshot"; top?: number }
+  | { kind: "log_query"; source: "journal" | "file"; path?: string; unit?: string; sinceMinutes?: number; level?: "error" | "warning" | "info" | "debug"; pattern?: string; limit?: number }
   | { kind: "policy_info" }
   | { kind: "fs_list"; path: string }
   | { kind: "fs_stat"; path: string }
@@ -61,6 +62,13 @@ const timeoutSchema = z.number().int().min(100).max(24 * 60 * 60 * 1000);
 export const agentActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("system_info") }).strict(),
   z.object({ kind: z.literal("health_snapshot"), top: z.number().int().min(1).max(20).optional() }).strict(),
+  z.object({
+    kind: z.literal("log_query"), source: z.enum(["journal", "file"]), path: pathSchema.optional(),
+    unit: z.string().min(1).max(256).regex(/^[A-Za-z0-9@._:\\-]+$/).optional(),
+    sinceMinutes: z.number().int().min(1).max(10080).optional(),
+    level: z.enum(["error", "warning", "info", "debug"]).optional(),
+    pattern: z.string().max(512).optional(), limit: z.number().int().min(1).max(1000).optional(),
+  }).strict(),
   z.object({ kind: z.literal("policy_info") }).strict(),
   z.object({ kind: z.literal("fs_list"), path: pathSchema }).strict(),
   z.object({ kind: z.literal("fs_stat"), path: pathSchema }).strict(),
@@ -299,6 +307,7 @@ export function actionRisk(kind: AgentAction["kind"] | string): Risk {
   switch (kind) {
     case "system_info":
     case "health_snapshot":
+    case "log_query":
     case "policy_info":
     case "fs_list":
     case "fs_stat":
