@@ -263,3 +263,10 @@
 }
 .team-row{display:flex;flex-wrap:wrap;align-items:center;gap:var(--wc-space-3);padding:var(--wc-space-3) var(--wc-space-4);border:1px solid var(--stroke);border-radius:var(--wc-radius-md);background:var(--surface-2)}
 .team-row>div:first-child{flex:1 1 220px}
+/* Workspace tools (v1.1 item 5e, part 2). */
+.file-list{display:grid;gap:2px;max-height:420px;overflow:auto;border:1px solid var(--stroke);border-radius:var(--wc-radius-md);padding:var(--wc-space-1);background:var(--surface-2)}
+.file-list button{display:flex;width:100%;align-items:center;gap:var(--wc-space-2);padding:var(--wc-space-2) var(--wc-space-3);border-radius:var(--wc-radius-sm);font-size:var(--wc-text-sm);text-align:left;min-width:0}
+.file-list button:hover{background:var(--hover)}
+.file-list button.active{background:var(--accent-soft);color:var(--text)}
+.file-editor{width:100%;min-height:420px;resize:vertical;padding:var(--wc-space-3);border:1px solid var(--stroke);border-radius:var(--wc-radius-md);background:var(--input);color:var(--text);font-family:var(--wc-font-mono);font-size:var(--wc-text-sm);line-height:1.55;tab-size:2}
+.terminal-output{margin:0;min-height:280px;max-height:520px;overflow:auto;padding:var(--wc-space-4);border-radius:var(--wc-radius-md);background:#0c0c0c;color:#ebebeb;font-family:var(--wc-font-mono);font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-all}

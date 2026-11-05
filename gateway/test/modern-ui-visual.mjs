@@ -18,6 +18,7 @@ const fixtures={
  "/api/audit":{items:[{id:"1",actor:"oauth:claude",device_id:"11111111-1111-4111-8111-111111111111",tool:"task_start",risk:"high",outcome:"approval_pending",detail:null,created_at:new Date().toISOString()},{id:"2",actor:"user:test@example.com",device_id:"11111111-1111-4111-8111-111111111111",tool:"approval_request.approve",risk:"high",outcome:"success",detail:"{}",created_at:new Date().toISOString()}]},
  "/api/organization":{item:{id:"org",name:"Test",relay_region:null}},
  "/api/relay-regions":{enabled:true,items:[{region:"eu-central",nodes:2}]},
+ "/api/device/request":{ok:true,data:{status:"ok",entries:["readme.txt","documents"],path:"/srv/work",encoding:"utf8",content:"hello\n",size:6,items:[{name:"notes.txt",path:"/srv/work/notes.txt",type:"file",size:6,taskId:"88888888-8888-4888-8888-888888888888",status:"completed",createdAtMs:"1793860578641"}]}},
  "/api/approval-requests":{items:[{id:"22222222-2222-4222-8222-222222222222",device_id:"11111111-1111-4111-8111-111111111111",requested_by:"oauth:claude",action_kind:"process_exec",action:{kind:"process_exec",command:"systemctl restart nginx",timeoutMs:30000},status:"pending",expires_at:new Date(Date.now()+9*60000).toISOString(),created_at:new Date().toISOString()}]},
  "/api/devices/11111111-1111-4111-8111-111111111111/command-allowlist":{items:[{id:"33333333-3333-4333-8333-333333333333",pattern:"df -h",created_at:new Date().toISOString()}]},
  "/api/usage":{monthCalls:42,limit:100,dailyAverage:6,resetAt:"2026-11-01T00:00:00Z",daily:[1,2,3,4,5,6,7].map((n)=>({day:"2026-10-"+String(10+n),calls:n*2})),months:[],topTools:[]},
@@ -43,7 +44,6 @@ const fixtures={
  "/api/auth/organizations":{items:[{id:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",name:"Test Workspace",role:"owner"}]},
  "/api/organization":{item:{id:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",name:"Test Workspace"}},
  "/api/tokens":{items:[{id:"22222222-2222-4222-8222-222222222222",name:"Test MCP",role:"operator",created_at:new Date().toISOString(),last_used_at:null,revoked_at:null}]},
- "/api/device/request":{ok:true,data:{status:"ok",entries:["readme.txt","documents"]}},
  "/api/pairing":{pairingCode:"wc-ci-pairing-code",expiresInSeconds:600},
  "/api/approvals":{approvalToken:"approved-ci-token"},
 
@@ -181,9 +181,16 @@ try{
  await visit("/billing","Plans & billing","modern-billing");
  assert.ok(await evalJs("document.body.textContent.includes('Subscription requests')&&document.body.textContent.includes('Refund request')"),"Owner billing view must expose cancellation/refund request form");
  await visit("/devices","Connected machines","modern-devices");
- await visit("/terminal","Workspace","modern-terminal");
- await visit("/files","List files","modern-files");
- await visit("/tasks","List active tasks","modern-tasks");
+ await visit("/terminal","Interactive terminal","modern-terminal");
+ assert.ok(await evalJs("[...document.querySelectorAll('button')].some(b=>b.textContent.includes('Open session'))"),"Terminal offers an interactive session");
+ assert.equal(await evalJs("[...document.querySelectorAll('button')].some(b=>b.textContent.includes('Advanced console'))"),false,"No link to the legacy console");
+ await visit("/files","notes.txt","modern-files");
+ assert.ok(await evalJs("document.querySelectorAll('.file-list button').length>=1"),"Files browser lists entries");
+ await evalJs("document.querySelector('.file-list button').click()");
+ await sleep(400);
+ assert.ok(await evalJs("!!document.querySelector('textarea.file-editor')"),"Opening a text file shows the editor");
+ await visit("/tasks","New task","modern-tasks");
+ assert.ok(await evalJs("document.body.textContent.includes('completed')"),"Tasks are listed with status");
  await visit("/mcp","API access tokens","modern-mcp");
  await visit("/usage","Usage & reports","modern-usage");
  await visit("/account","Change password","modern-account");

@@ -44,7 +44,7 @@ export async function notifyApprovers(
     ),
   ]);
   const deviceName = device.rows[0]?.name || deviceId;
-  const link = `${base}/advanced?view=approvals`;
+  const link = `${base}/approvals`;
   const detail = describe(action);
   const expires = new Date(expiresAt).toISOString().replace("T", " ").slice(0, 16) + " UTC";
   for (const { email } of recipients.rows) {
@@ -82,7 +82,7 @@ export async function notifyTrustChange(organizationId: string, deviceName: stri
       text:
         `"${deviceName}" cihazı tam yetki moduna alındı. Yapay zekâ istemcileri bu cihazda yüksek riskli ` +
         `işlemleri onay beklemeden çalıştırabilir.\n\nDeğiştiren: ${changedBy}\nBitiş: ${untilText}\n\n` +
-        `Bunu siz yapmadıysanız hemen Standart veya Sıkı seviyeye alın: ${base}/advanced?view=approvals\n` +
+        `Bunu siz yapmadıysanız hemen Standart veya Sıkı seviyeye alın: ${base}/approvals\n` +
         `Tüm işlemler audit kaydında "trusted_full" olarak görünür.`,
     });
   }

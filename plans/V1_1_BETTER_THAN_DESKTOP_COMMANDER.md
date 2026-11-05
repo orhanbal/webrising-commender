@@ -123,7 +123,7 @@ goes live through `promote-production`.
 v1.1 development starts right away, in parallel with the remaining v1.0
 acceptance, which now mostly waits on hardware and owner actions.
 Status 2026-11-04: item 1 is live; item 3 is live (`edit_block`, `url_fetch`,
-aliases) and PDF reading (`pdf_read`) and item 2 (one-line install) are live (`5f2928f`). Item 5 steps (a) tokens and shell and (b) landing are merged; step (c), approvals inbox and device policy, is merged and live; step (d), console, is in review. Next: item 5 step (e) (UI overhaul), then item 4. Every
+aliases) and PDF reading (`pdf_read`) and item 2 (one-line install) are live (`5f2928f`). Item 5 steps (a) tokens and shell and (b) landing are merged; step (c), approvals inbox and device policy, is merged and live; steps (d) console and (e1) team, audit log and invitation fix are merged. Remaining for (e): (e2) workspace tools in React is in review, then (e3) `/advanced` redirects; relay-node admin stays a control-API task (`/api/admin/relays`, documented in docs/QUICKSTART.md) (UI overhaul), then item 4. Every
 item ships through its own PR, CI and `promote-production`. Items 1 → 2 → 3
 need about 3 days, plus 2–3 days for 4.
 
