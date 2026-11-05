@@ -17,7 +17,7 @@ type JsonRpcRequest = { jsonrpc?: string; id?: string | number | null; method?: 
 // the corresponding padded base64 bound before relaying to a device.
 const MAX_TERMINAL_INPUT_BASE64_BYTES = Math.ceil((256 * 1024) / 3) * 4;
 
-const tools = [
+export const tools = [
   {
     name: "devices_list",
     description: "List enrolled WebRising Commender devices and online state.",
@@ -217,7 +217,7 @@ function tool(name: string, description: string, properties: Record<string, unkn
   };
 }
 
-function actionFromTool(name: string, a: any): AgentAction {
+export function actionFromTool(name: string, a: any): AgentAction {
   switch (name) {
     case "system_info": return { kind: "system_info" };
     case "policy_info": return { kind: "policy_info" };
