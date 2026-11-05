@@ -13,8 +13,11 @@ while (($#)); do
     --install-only) INSTALL_ONLY=1; shift ;;
     --control-url)
       [[ "${2:-}" =~ ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$ ]] || { echo "--control-url needs an HTTPS origin." >&2; exit 2; }
-      SETUP_ARGS=(--control-url "${2%/}"); shift 2 ;;
-    *) echo "Usage: bash install-macos-online.sh [--install-only] [--control-url https://HOST]" >&2; exit 2 ;;
+      SETUP_ARGS+=(--control-url "${2%/}"); shift 2 ;;
+    --allowed-root)
+      [[ -n "${2:-}" ]] || { echo "--allowed-root needs a folder." >&2; exit 2; }
+      SETUP_ARGS+=(--allowed-root "$2"); shift 2 ;;
+    *) echo "Usage: bash install-macos-online.sh [--install-only] [--control-url https://HOST] [--allowed-root FOLDER]" >&2; exit 2 ;;
   esac
 done
 TMP="$(mktemp -d)"
@@ -35,7 +38,7 @@ function run(argv) {
  var repo = argv[1], name = "WECOMMANDER-macos-universal.pkg";
  for (var i=0;i<releases.length;i++) {
    var release=releases[i];
-   if (release.draft || !release.prerelease || !/^ubuntu-preview-[0-9]+$/.test(release.tag_name)) continue;
+   if (release.draft || !release.prerelease || !/^(macos|ubuntu)-preview-[0-9]+$/.test(release.tag_name)) continue;
    var packageAsset=null, sums=null;
    for(var j=0;j<release.assets.length;j++) {
      var a=release.assets[j];

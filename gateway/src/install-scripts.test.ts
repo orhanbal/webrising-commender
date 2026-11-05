@@ -37,3 +37,16 @@ test("served platform installers are identical to scripts/", async () => {
   assert.equal(await installRoute("/install/other.sh", "https://wecommander.app"), null);
   assert.equal(await installRoute("/install", "https://wecommander.app"), null);
 });
+
+test("the macOS installer finds the PKG where macos-distribution publishes it", () => {
+  // The PKG is released under macos-preview-N (macos-distribution.yml), not
+  // under ubuntu-preview-N; the online installer must accept that tag.
+  const body = fs.readFileSync(path.join(repo, "scripts/install-macos-online.sh"), "utf8");
+  const literal = body.match(/!\/(\^[^/]+\$)\/\.test\(release\.tag_name\)/);
+  assert.ok(literal, "tag filter regex not found");
+  const tagFilter = new RegExp(literal[1]);
+  assert.ok(tagFilter.test("macos-preview-53"));
+  assert.ok(!tagFilter.test("windows-preview-1"));
+  const workflow = fs.readFileSync(path.join(repo, ".github/workflows/macos-distribution.yml"), "utf8");
+  assert.match(workflow, /TAG="macos-preview-/, "macos-distribution publishes macos-preview-N");
+});
