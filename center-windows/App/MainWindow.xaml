@@ -41,6 +41,12 @@
 
         <StackPanel Grid.Row="1" Spacing="6">
             <InfoBar x:Name="AutonomyBar" Severity="Warning" IsClosable="False" Title="Otonom mod açık" />
+            <InfoBar x:Name="NotificationBar" Severity="Warning" IsClosable="False"
+                     Title="Windows bildirimleri kapalı">
+                <InfoBar.ActionButton>
+                    <Button Content="Bildirimlere izin ver" Click="AllowNotifications_Click" />
+                </InfoBar.ActionButton>
+            </InfoBar>
             <InfoBar x:Name="ErrorBar" Severity="Error" IsClosable="True" />
         </StackPanel>
 

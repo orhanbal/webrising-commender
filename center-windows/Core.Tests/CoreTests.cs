@@ -24,6 +24,24 @@ public class CoreTests
         return (new GatewayClient(new HttpClient(handler), "https://wecommander.app/"), handler);
     }
 
+    [Theory]
+    [InlineData("DisabledForApplication", "WECOMMANDER Yönetim Merkezi")]
+    [InlineData("DisabledForUser", "Bildirimler anahtarını")]
+    [InlineData("DisabledByGroupPolicy", "yöneticine")]
+    [InlineData("DisabledByManifest", "yeniden kur")]
+    public void NotificationBlockedMessageExplainsEachCause(string setting, string expected)
+    {
+        Assert.Contains(expected, Texts.NotificationBlockedMessage(setting));
+    }
+
+    [Theory]
+    [InlineData("Enabled")]
+    [InlineData("Unsupported")]
+    public void NotificationBlockedMessageIsEmptyWhenNotBlocked(string setting)
+    {
+        Assert.Equal("", Texts.NotificationBlockedMessage(setting));
+    }
+
     [Fact]
     public void ServerUrlAcceptsHttpsOriginsOnly()
     {

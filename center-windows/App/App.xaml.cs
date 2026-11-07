@@ -27,7 +27,7 @@ public partial class App : Application
     private DispatcherQueue _ui = null!;
     private MainWindow? _window;
     private TaskbarIcon? _tray;
-    private MenuFlyoutItem? _pendingItem, _autonomyItem, _stopAutonomyItem, _accountItem;
+    private MenuFlyoutItem? _pendingItem, _autonomyItem, _stopAutonomyItem, _accountItem, _allowNotifyItem;
     private ToggleMenuFlyoutItem? _notifyItem;
     private DispatcherQueueTimer? _timer;
     private DateTime _lastSync = DateTime.MinValue;
@@ -45,6 +45,14 @@ public partial class App : Application
     public IReadOnlyList<AutonomyItem> Autonomy { get; private set; } = [];
     public string? Error { get; set; }
     public DateTime? LastSync => _lastSync == DateTime.MinValue ? null : _lastSync;
+
+    /// <summary>Windows' own notification setting for this app (Settings, System, Notifications).</summary>
+    public AppNotificationSetting NotificationSetting { get; private set; } = AppNotificationSetting.Enabled;
+
+    /// <summary>True when the owner wants notifications but Windows will not show them.</summary>
+    public bool NotificationsBlocked => Settings.Notifications && NotificationSetting is
+        AppNotificationSetting.DisabledForApplication or AppNotificationSetting.DisabledForUser or
+        AppNotificationSetting.DisabledByGroupPolicy or AppNotificationSetting.DisabledByManifest;
 
     /// <summary>Raised on the UI thread after every state change.</summary>
     public event Action? Changed;
@@ -76,6 +84,7 @@ public partial class App : Application
             _ui.TryEnqueue(() => HandleNotification(e.Arguments));
         var icon = Path.Combine(AppContext.BaseDirectory, "Assets", "icon.png");
         AppNotificationManager.Default.Register("WECOMMANDER Yönetim Merkezi", new Uri(icon));
+        RefreshNotificationSetting();
 
         // A second start is redirected here (see Program).
         AppInstance.GetCurrent().Activated += (_, e) => _ui.TryEnqueue(() => HandleActivation(e));
@@ -160,6 +169,9 @@ public partial class App : Application
         _syncing = true;
         try
         {
+            // The owner can turn notifications off (or back on) in Windows at
+            // any time; pick that up without a restart.
+            if (RefreshNotificationSetting()) Publish();
             if (_link is not null) await PollLinkAsync();
             else if (Token is not null && DateTime.UtcNow - _lastSync >= SyncEvery) await SyncAsync();
         }
@@ -201,8 +213,10 @@ public partial class App : Application
                         NotifyRequest(item, names.GetValueOrDefault(item.DeviceId, "bilinmeyen cihaz"));
                 }
                 // Owner request: the panel opens by itself on the Approvals tab
-                // when a request arrives (the notification comes as well).
-                if (Settings.OpenOnRequest)
+                // when a request arrives (the notification comes as well). If
+                // Windows blocks our notifications, the panel is the only way
+                // the owner sees the request, so it opens regardless.
+                if (Settings.OpenOnRequest || NotificationsBlocked)
                 {
                     _window?.ShowApprovals();
                 }
@@ -338,6 +352,20 @@ public partial class App : Application
 
     public void OpenDashboard() => OpenUrl(Settings.Server + "/approvals");
 
+    /// <summary>Opens Settings, System, Notifications, where the owner allows this app.</summary>
+    public static void OpenNotificationSettings() => OpenUrl("ms-settings:notifications");
+
+    /// <summary>Reads Windows' notification setting; returns true when it changed.</summary>
+    private bool RefreshNotificationSetting()
+    {
+        AppNotificationSetting current;
+        try { current = AppNotificationManager.Default.Setting; }
+        catch (Exception) { current = AppNotificationSetting.Unsupported; }
+        if (current == NotificationSetting) return false;
+        NotificationSetting = current;
+        return true;
+    }
+
     public void Publish()
     {
         UpdateTray();
@@ -378,6 +406,12 @@ public partial class App : Application
                 Publish();
             }),
         };
+        _allowNotifyItem = new MenuFlyoutItem
+        {
+            Text = "Windows bildirimlerine izin ver…",
+            Visibility = Visibility.Collapsed,
+            Command = new RelayCommand(OpenNotificationSettings),
+        };
         _accountItem = new MenuFlyoutItem
         {
             Text = "Oturum aç…",
@@ -397,6 +431,7 @@ public partial class App : Application
         menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(new MenuFlyoutItem { Text = "Paneli tarayıcıda aç", Command = new RelayCommand(OpenDashboard) });
         menu.Items.Add(_notifyItem);
+        menu.Items.Add(_allowNotifyItem);
         menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(_accountItem);
         menu.Items.Add(new MenuFlyoutItem { Text = "Çıkış", Command = new RelayCommand(Quit) });
@@ -435,6 +470,8 @@ public partial class App : Application
         _autonomyItem!.Text = autonomy > 0 ? $"Otonom mod açık: {autonomy} cihaz" : "Otonom mod kapalı";
         _stopAutonomyItem!.IsEnabled = signedIn && autonomy > 0;
         _notifyItem!.IsChecked = Settings.Notifications;
+        _allowNotifyItem!.Visibility = NotificationsBlocked ? Visibility.Visible : Visibility.Collapsed;
+        if (NotificationsBlocked) _tray.ToolTipText = tooltip + " · Windows bildirimleri kapalı";
         _accountItem!.Text = !signedIn ? "Oturum aç…" : Me?.Email is { } email ? $"Oturumu kapat ({email})" : "Oturumu kapat";
     }
 

@@ -16,6 +16,25 @@ public static class Texts
         _ => kind,
     };
 
+    /// <summary>
+    /// Why Windows does not show our notifications, from the Windows App SDK
+    /// AppNotificationSetting name, and where the owner turns them on.
+    /// </summary>
+    public static string NotificationBlockedMessage(string setting) => setting switch
+    {
+        "DisabledForApplication" =>
+            "Windows bu uygulamanın bildirimlerini kapatmış; onay istekleri ekranda görünmez. " +
+            "\"Bildirimlere izin ver\"e bas, listede WECOMMANDER Yönetim Merkezi'ni aç.",
+        "DisabledForUser" =>
+            "Windows'ta bildirimler tamamen kapalı; onay istekleri ekranda görünmez. " +
+            "\"Bildirimlere izin ver\"e bas ve en üstteki Bildirimler anahtarını aç.",
+        "DisabledByGroupPolicy" =>
+            "Bildirimler kuruluşunun ilkesiyle kapatılmış. Bilgisayar yöneticine başvur; o zamana kadar yeni istekte bu panel açılır.",
+        "DisabledByManifest" =>
+            "Bu kurulumda bildirimler kullanılamıyor. Uygulamayı yeniden kur; o zamana kadar yeni istekte bu panel açılır.",
+        _ => "",
+    };
+
     public static string ForErrorCode(string code, int status) => code switch
     {
         "reauthentication_failed" => "Şifre hatalı.",
