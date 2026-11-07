@@ -31,6 +31,16 @@ jobs:
             }
             Write-Host "Parsed $($script.Name)"
           }
+      - name: Windows PowerShell 5.1 picks a real Windows Setup release (dry run)
+        # A parse check missed that 5.1 returns the releases array as one
+        # object; run the selection on the built-in shell against GitHub.
+        shell: powershell
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $out = & powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-windows-online.ps1 -DryRun *>&1 | Out-String
+          Write-Host $out
+          if ($out -notmatch 'would install ubuntu-preview-[0-9]+ from https://github.com/orhanbal/webrising-commender/releases/download/ubuntu-preview-[0-9]+/WECOMMANDER-Setup-windows-x64.exe') { throw 'Windows installer did not select a release' }
   rust:
     runs-on: ubuntu-latest
     steps:
