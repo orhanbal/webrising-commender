@@ -272,3 +272,21 @@
 .terminal-output{margin:0;min-height:280px;max-height:520px;overflow:auto;padding:var(--wc-space-4);border-radius:var(--wc-radius-md);background:#0c0c0c;color:#ebebeb;font-family:var(--wc-font-mono);font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-all}
 .autonomy-banner{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--wc-space-3);margin-bottom:var(--wc-space-4);padding:var(--wc-space-3) var(--wc-space-4);border:1px solid var(--warning);border-radius:var(--wc-radius-md);background:var(--warning-soft);color:var(--warning);font-size:.875rem;font-weight:600}
 .autonomy-banner a{text-decoration:underline}
+
+/* Site header (2026-11-07): quieter, product-style navigation bar. */
+.site-header{height:64px;background:color-mix(in srgb,var(--bg) 84%,transparent);border-bottom:1px solid var(--stroke)}
+.site-header .container-w{gap:20px}
+.site-header .logo-light,.site-header .logo-dark{width:168px;max-height:26px}
+.site-header .site-nav{gap:2px;margin-right:auto;margin-left:28px}
+.site-header .site-nav>a{padding:7px 12px;border-radius:8px;font-size:14px;font-weight:500;color:var(--muted);transition:color .15s ease,background .15s ease}
+.site-header .site-nav>a:hover{color:var(--text);background:var(--hover)}
+.site-header .nav-actions{gap:4px}
+.site-header .theme-button{width:36px;height:36px;border-color:transparent;background:transparent;border-radius:8px;color:var(--muted)}
+.site-header .theme-button:hover{background:var(--hover);color:var(--text)}
+.site-header .locale-trigger{min-height:36px;padding:0 10px;border-color:transparent;background:transparent;border-radius:8px;color:var(--muted);font-weight:500}
+.site-header .locale-trigger:hover{background:var(--hover);color:var(--text)}
+.site-header .nav-sep{width:1px;height:20px;background:var(--stroke);margin:0 8px}
+.site-header .wc-nav-signin{height:36px;padding:0 12px;border-radius:8px;font-weight:500;font-size:14px}
+.site-header .wc-nav-install{height:36px;min-width:0;padding:0 14px;border-radius:8px;background:var(--text);color:var(--bg);border-color:transparent;box-shadow:none;font-size:14px;font-weight:600;letter-spacing:0}
+.site-header .wc-nav-install:hover{background:color-mix(in srgb,var(--text) 86%,var(--bg))}
+@media(max-width:740px){.site-header{height:60px}.site-header .site-nav{margin-left:0}.site-header .logo-light,.site-header .logo-dark{width:140px}}

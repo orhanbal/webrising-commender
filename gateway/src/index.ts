@@ -1,3 +1,4 @@
+import zlib from "node:zlib";
 import { notifyAutonomy, notifyTrustChange } from "./approval-notify.js";
 import { MAX_ALLOWLIST_ENTRIES, normalizePattern } from "./command-allowlist.js";
 import crypto from "node:crypto";
@@ -435,7 +436,21 @@ function htmlEscape(value:string) {
   return value.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
     .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 }
-async function serveModernFile(res: ServerResponse, fileName:string, isIndex=false, seo?:{title:string;description:string}) {
+// Compressed copies of the built app's files, made once per file and encoding.
+const compressedModern=new Map<string,Buffer>();
+function negotiateEncoding(acceptEncoding:string|string[]|undefined):"br"|"gzip"|null{
+  const value=Array.isArray(acceptEncoding)?acceptEncoding.join(","):acceptEncoding||"";
+  if(/\bbr\b/.test(value))return "br";
+  if(/\bgzip\b/.test(value))return "gzip";
+  return null;
+}
+function compressBody(body:Buffer,encoding:"br"|"gzip"){
+  return encoding==="br"
+    ? zlib.brotliCompressSync(body,{params:{[zlib.constants.BROTLI_PARAM_QUALITY]:9}})
+    : zlib.gzipSync(body,{level:9});
+}
+
+async function serveModernFile(res: ServerResponse, fileName:string, isIndex=false, seo?:{title:string;description:string}, acceptEncoding?:string|string[]) {
   const here=path.dirname(fileURLToPath(import.meta.url));
   for(const root of [path.resolve(here,"../public/modern"),path.resolve(here,"../../public/modern")]){
     const target=path.resolve(root,fileName);
@@ -443,7 +458,7 @@ async function serveModernFile(res: ServerResponse, fileName:string, isIndex=fal
     const type=isIndex?"text/html; charset=utf-8":modernExtensions[path.extname(target)];
     if(!type)break;
     try{
-      let body=await fs.readFile(target);
+      let body:Buffer=await fs.readFile(target);
       if(isIndex && seo && (seo.title || seo.description)) {
         let html=body.toString("utf8");
         if(seo.title)html=html.replace(/<title>[^<]*<\/title>/i,"<title>"+htmlEscape(seo.title)+"</title>");
@@ -463,11 +478,23 @@ async function serveModernFile(res: ServerResponse, fileName:string, isIndex=fal
           '<meta name="twitter:description" content="'+safeDescription+'"></head>');
         body=Buffer.from(html);
       }
+      // Built assets carry a content hash in their name: cache them for a year.
+      const hashed=!isIndex && /^assets\/[^/]+-[A-Za-z0-9_-]{8,}\.[a-z0-9]+$/.test(fileName);
+      const encoding=/^(text\/|application\/(javascript|json)|image\/svg)/.test(type)&&body.length>1024?negotiateEncoding(acceptEncoding):null;
+      if(encoding){
+        const key=target+"|"+encoding;
+        const cached=!isIndex?compressedModern.get(key):undefined;
+        const packed=cached??compressBody(body,encoding);
+        if(!isIndex&&!cached)compressedModern.set(key,packed);
+        body=packed;
+      }
       res.writeHead(200,{
         ...securityHeaders(),
         "content-type":type,
         "content-length":body.length,
-        "cache-control":isIndex?"no-store":"public, max-age=3600",
+        ...(encoding?{"content-encoding":encoding}:{}),
+        "vary":"Accept-Encoding",
+        "cache-control":isIndex?"no-store":hashed?"public, max-age=31536000, immutable":"public, max-age=3600",
         "content-security-policy":
           "default-src 'self'; script-src 'self' https://cdn.paddle.com; "+
           "style-src 'self' 'unsafe-inline' https://cdn.paddle.com; "+
@@ -514,7 +541,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       return;
     }
     if (req.method === "GET" && url.pathname.startsWith("/modern/assets/")) {
-      if (await serveModernFile(res,url.pathname.slice("/modern/".length))) return;
+      if (await serveModernFile(res,url.pathname.slice("/modern/".length),false,undefined,req.headers["accept-encoding"])) return;
       return void json(res,404,{error:"asset_not_found"});
     }
     // Browser navigation to /mcp (Accept: text/html) serves the dashboard page;
@@ -535,7 +562,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           };
         }catch { /* Public landing retains safe default metadata if the CMS is unavailable. */ }
       }
-      if (await serveModernFile(res,"index.html",true,seo)) return;
+      if (await serveModernFile(res,"index.html",true,seo,req.headers["accept-encoding"])) return;
       if (url.pathname === "/") return void (await serveLanding(res));
       return void json(res,503,{error:"modern_frontend_not_built"});
     }
@@ -576,7 +603,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     }
     if (req.method === "GET" && url.pathname === "/legacy") return void (await serveLanding(res));
     if (req.method === "GET" && (url.pathname === "/app" || url.pathname === "/app/")) {
-      if (await serveModernFile(res,"index.html",true)) return;
+      if (await serveModernFile(res,"index.html",true,undefined,req.headers["accept-encoding"])) return;
       return void (await serveConsole(res));
     }
     if (req.method === "GET" && (url.pathname === "/advanced" || url.pathname === "/advanced/")) {

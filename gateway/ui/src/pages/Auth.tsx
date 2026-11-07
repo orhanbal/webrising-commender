@@ -37,10 +37,13 @@ export function AuthPage({path,nav,refresh,pricing,signupEnabled}:{path:string;n
     const next=new URLSearchParams(window.location.search).get("next");
     const linkPrefix=["/connect-device?requestId=","/connect-center?requestId="].find(prefix=>next?.startsWith(prefix));
     const requestId=next&&linkPrefix?next.slice(linkPrefix.length):"";
+    // Back to the account page that sent the person here (same-origin path
+    // from a fixed list only).
+    const back=next&&/^\/(dashboard|account|billing|devices|terminal|files|tasks|mcp|usage|approvals|team|audit)(\?[^#]*)?$/.test(next)?next:null;
     if(next&&/^[0-9a-f-]{36}$/i.test(requestId)){
       window.location.assign(next);
     }else{
-      nav("/dashboard");
+      nav(back??"/dashboard");
     }
     return;
    }

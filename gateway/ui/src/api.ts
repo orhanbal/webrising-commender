@@ -13,6 +13,9 @@ export async function api<T>(path:string,options:RequestInit={}):Promise<T>{
  if(options.body&&typeof options.body==="string")headers.set("Content-Type","application/json");
  const res=await fetch(path,{...options,headers,credentials:"same-origin",cache:"no-store"});
  const body=await res.json().catch(()=>({}));
+ // The browser session ended (expired or revoked): let the app send the
+ // person to the login page instead of showing a broken panel.
+ if(res.status===401&&!path.startsWith("/api/auth/"))window.dispatchEvent(new Event("wc:unauthorized"));
  if(!res.ok)throw new Error(errorText(typeof body.error==="string"?body.error:"HTTP "+res.status));
  return body as T;
 }

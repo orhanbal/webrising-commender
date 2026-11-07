@@ -1,24 +1,43 @@
-import {lazy,Suspense,useEffect,useState} from "react";
+import {lazy,startTransition,Suspense,useEffect,useState} from "react";
 import type {ReactNode} from "react";
-import {ArrowUpRight,Command,Menu,Moon,Sun,X} from "lucide-react";
+import {ArrowUpRight,Menu,Moon,Sun,X} from "lucide-react";
 import {Button,Spinner} from "./components/ui";
 import {getMe,api,type Account,type Pricing} from "./api";
 import {Landing} from "./pages/Landing";
-const AuthPage=lazy(()=>import("./pages/Auth").then(m=>({default:m.AuthPage})));
-const PlansPage=lazy(()=>import("./pages/Plans").then(m=>({default:m.PlansPage})));
-const DashboardPage=lazy(()=>import("./pages/Dashboard").then(m=>({default:m.DashboardPage})));
-const BillingPage=lazy(()=>import("./pages/Billing").then(m=>({default:m.BillingPage})));
-const DevicesPage=lazy(()=>import("./pages/Devices").then(m=>({default:m.DevicesPage})));
-const WorkspacePage=lazy(()=>import("./pages/Workspace").then(m=>({default:m.WorkspacePage})));
-const ApprovalsPage=lazy(()=>import("./pages/Approvals").then(m=>({default:m.ApprovalsPage})));
-const TeamPage=lazy(()=>import("./pages/Team").then(m=>({default:m.TeamPage})));
-const AuditPage=lazy(()=>import("./pages/Audit").then(m=>({default:m.AuditPage})));
-const InvitePage=lazy(()=>import("./pages/Invite").then(m=>({default:m.InvitePage})));
-const UsagePage=lazy(()=>import("./pages/Usage").then(m=>({default:m.UsagePage})));
-const AccountPage=lazy(()=>import("./pages/Account").then(m=>({default:m.AccountPage})));
-const InstallPage=lazy(()=>import("./pages/Install").then(m=>({default:m.InstallPage})));
-const ConsolePage=lazy(()=>import("./pages/Console").then(m=>({default:m.ConsolePage})));
-const LegalPage=lazy(()=>import("./pages/Legal").then(m=>({default:m.LegalPage})));
+// Page chunks: loaded on demand, and prefetched in the background once the
+// app is idle so moving between pages never waits for a download.
+const pages={
+ Auth:()=>import("./pages/Auth"),
+ Plans:()=>import("./pages/Plans"),
+ Dashboard:()=>import("./pages/Dashboard"),
+ Billing:()=>import("./pages/Billing"),
+ Devices:()=>import("./pages/Devices"),
+ Workspace:()=>import("./pages/Workspace"),
+ Approvals:()=>import("./pages/Approvals"),
+ Team:()=>import("./pages/Team"),
+ Audit:()=>import("./pages/Audit"),
+ Invite:()=>import("./pages/Invite"),
+ Usage:()=>import("./pages/Usage"),
+ Account:()=>import("./pages/Account"),
+ Install:()=>import("./pages/Install"),
+ Console:()=>import("./pages/Console"),
+ Legal:()=>import("./pages/Legal"),
+};
+const AuthPage=lazy(()=>pages.Auth().then(m=>({default:m.AuthPage})));
+const PlansPage=lazy(()=>pages.Plans().then(m=>({default:m.PlansPage})));
+const DashboardPage=lazy(()=>pages.Dashboard().then(m=>({default:m.DashboardPage})));
+const BillingPage=lazy(()=>pages.Billing().then(m=>({default:m.BillingPage})));
+const DevicesPage=lazy(()=>pages.Devices().then(m=>({default:m.DevicesPage})));
+const WorkspacePage=lazy(()=>pages.Workspace().then(m=>({default:m.WorkspacePage})));
+const ApprovalsPage=lazy(()=>pages.Approvals().then(m=>({default:m.ApprovalsPage})));
+const TeamPage=lazy(()=>pages.Team().then(m=>({default:m.TeamPage})));
+const AuditPage=lazy(()=>pages.Audit().then(m=>({default:m.AuditPage})));
+const InvitePage=lazy(()=>pages.Invite().then(m=>({default:m.InvitePage})));
+const UsagePage=lazy(()=>pages.Usage().then(m=>({default:m.UsagePage})));
+const AccountPage=lazy(()=>pages.Account().then(m=>({default:m.AccountPage})));
+const InstallPage=lazy(()=>pages.Install().then(m=>({default:m.InstallPage})));
+const ConsolePage=lazy(()=>pages.Console().then(m=>({default:m.ConsolePage})));
+const LegalPage=lazy(()=>pages.Legal().then(m=>({default:m.LegalPage})));
 import { LanguageSwitcher,useLocale,t as translate } from "./i18n";
 
 export type Nav=(path:string)=>void;
@@ -27,6 +46,8 @@ const routes=new Set(["/console","/console/users","/console/organizations","/con
 export function Brand({onClick,subtitle=false}:{onClick?:()=>void;subtitle?:boolean}){return <a href="/" onClick={e=>{if(onClick){e.preventDefault();onClick()}}} aria-label={translate("WECOMMANDER ana sayfa")} className="inline-flex flex-col gap-1 items-start"><img className="logo-light" src="/api/public/brand/logo_light" alt="WECOMMANDER"/><img className="logo-dark" src="/api/public/brand/logo_dark" alt="" aria-hidden="true"/>{subtitle&&<span className="text-[11px] tracking-wide text-[var(--muted)]">Remote MCP · AI Workspace</span>}</a>}
 export function NavLink({to,nav,children,className}:{to:string;nav:Nav;children:ReactNode;className?:string}){return <a href={to} className={className} onClick={e=>{if(e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey){e.preventDefault();nav(to)}}}>{children}</a>}
 export function ThemeToggle({theme,onToggle}:{theme:Theme;onToggle:()=>void}){return <button type="button" className="theme-button" onClick={onToggle} aria-label={theme==="dark"?translate("Açık temaya geç"):translate("Koyu temaya geç")} title={theme==="dark"?translate("Windows açık tema"):translate("Windows koyu tema")}>{theme==="dark"?<Sun className="size-[19px]"/>:<Moon className="size-[19px]"/>}</button>}
+/** Pages that need a signed-in account; without one they go to the login page. */
+const accountRoutes=new Set(["/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage","/approvals","/team","/audit"]);
 function getPath(){const p=window.location.pathname;if(/^#(invite|token)=/.test(window.location.hash))return "/invite";if(p==="/app"||p==="/app/")return "/dashboard";return routes.has(p)?p:"/"}
 export default function App(){
  const chosenLocale=useLocale();
@@ -37,20 +58,33 @@ export default function App(){
  const [pricing,setPricing]=useState<Pricing|null>(null);
  const [signupEnabled,setSignupEnabled]=useState<boolean|null>(null);
  const [mobile,setMobile]=useState(false);
- useEffect(()=>{const fn=()=>{setPath(getPath());setMobile(false)};window.addEventListener("popstate",fn);return()=>window.removeEventListener("popstate",fn)},[]);
+ useEffect(()=>{const fn=()=>{startTransition(()=>setPath(getPath()));setMobile(false)};window.addEventListener("popstate",fn);return()=>window.removeEventListener("popstate",fn)},[]);
  useEffect(()=>{const mq=matchMedia("(prefers-color-scheme: dark)");const sync=()=>{if(!localStorage.getItem("wecommander-theme"))setTheme(mq.matches?"dark":"light")};mq.addEventListener("change",sync);return()=>mq.removeEventListener("change",sync)},[]);
  useEffect(()=>{document.documentElement.classList.toggle("light",theme==="light");document.documentElement.style.colorScheme=theme;document.querySelector('meta[name="theme-color"]')?.setAttribute("content",theme==="light"?"#f3f3f3":"#202020")},[theme]);
- useEffect(()=>{getMe().then(me=>{setAccount(me);setChecking(false)});api<Pricing>("/api/public/plans").then(setPricing).catch(()=>setPricing(null));api<{signupEnabled:boolean}>("/api/public/config").then(config=>setSignupEnabled(config.signupEnabled)).catch(()=>setSignupEnabled(null))},[]);
+ useEffect(()=>{getMe().then(me=>{setAccount(me);setChecking(false)});
+  const idle=(cb:()=>void)=>"requestIdleCallback" in window?(window as Window&{requestIdleCallback:(cb:()=>void)=>number}).requestIdleCallback(cb):setTimeout(cb,1200);
+  idle(()=>{for(const load of Object.values(pages))load().catch(()=>undefined)});api<Pricing>("/api/public/plans").then(setPricing).catch(()=>setPricing(null));api<{signupEnabled:boolean}>("/api/public/config").then(config=>setSignupEnabled(config.signupEnabled)).catch(()=>setSignupEnabled(null))},[]);
  const navigate:Nav=to=>{
   const u=new URL(to,location.origin);
   if(u.origin!==location.origin){location.assign(to);return}
   history.pushState(null,"",u.pathname+u.search+u.hash);
-  setPath(getPath());setMobile(false);
+  // Keep the current page on screen until the next one is ready (no blank
+  // spinner screen while a page chunk loads).
+  startTransition(()=>setPath(getPath()));setMobile(false);
   if(u.pathname==="/features"||u.pathname==="/how-it-works"){
     requestAnimationFrame(()=>document.getElementById(u.pathname.slice(1))?.scrollIntoView({behavior:"smooth",block:"start"}))
   }else window.scrollTo({top:0,behavior:"instant"});
  };
  useEffect(()=>{if(path==="/features"||path==="/how-it-works"){requestAnimationFrame(()=>document.getElementById(path.slice(1))?.scrollIntoView({behavior:"smooth",block:"start"}))}},[path]);
+ // Signed out (never signed in, logged out, or the session expired on the
+ // server): account pages go to the login page and come back afterwards.
+ useEffect(()=>{
+  if(checking||account||!accountRoutes.has(path))return;
+  const next=path+window.location.search;
+  history.replaceState(null,"","/login?next="+encodeURIComponent(next));
+  setPath("/login");
+ },[checking,account,path]);
+ useEffect(()=>{const expired=()=>setAccount(null);window.addEventListener("wc:unauthorized",expired);return()=>window.removeEventListener("wc:unauthorized",expired)},[]);
  const refresh=async()=>{const me=await getMe();setAccount(me);return me};
  const toggle=()=>{setTheme(old=>{const next=old==="dark"?"light":"dark";localStorage.setItem("wecommander-theme",next);return next})};
  const logout=async()=>{try{await api("/api/auth/logout",{method:"POST"})}catch{}setAccount(null);navigate("/login")};
@@ -85,10 +119,11 @@ export default function App(){
    <NavLink to="/pricing" nav={navigate}>{translate("Fiyatlandırma")}</NavLink>
   </nav>
   <div className="nav-actions">
+   <LanguageSwitcher compact/>
    <ThemeToggle theme={theme} onToggle={toggle}/>
-   <LanguageSwitcher/>
-   <Button size="sm" variant="ghost" className="hide-sm" onClick={()=>navigate(account?"/dashboard":"/login")}>{account?translate("Panelim"):translate("Giriş Yap")}</Button>
-   <Button size="sm" className="wc-nav-install" onClick={()=>navigate("/install")}><Command className="size-4" aria-hidden="true"/> {translate("Kurulum")} <ArrowUpRight className="size-4" aria-hidden="true"/></Button>
+   <span className="nav-sep hide-sm" aria-hidden="true"/>
+   <Button size="sm" variant="ghost" className="hide-sm wc-nav-signin" onClick={()=>navigate(account?"/dashboard":"/login")}>{account?translate("Panelim"):translate("Giriş Yap")}</Button>
+   <Button size="sm" className="wc-nav-install" onClick={()=>navigate("/install")}>{translate("Kurulum")} <ArrowUpRight className="size-4" aria-hidden="true"/></Button>
    <button type="button" aria-label={translate("Menü")} aria-expanded={mobile} className="mobile-menu" onClick={()=>setMobile(x=>!x)}>{mobile?<X/>:<Menu/>}</button>
   </div></div>
   {mobile&&<nav className="wc-mobile-nav" aria-label={translate("Mobil gezinme")}>
