@@ -290,3 +290,17 @@
 .site-header .wc-nav-install{height:36px;min-width:0;padding:0 14px;border-radius:8px;background:var(--text);color:var(--bg);border-color:transparent;box-shadow:none;font-size:14px;font-weight:600;letter-spacing:0}
 .site-header .wc-nav-install:hover{background:color-mix(in srgb,var(--text) 86%,var(--bg))}
 @media(max-width:740px){.site-header{height:60px}.site-header .site-nav{margin-left:0}.site-header .logo-light,.site-header .logo-dark{width:140px}}
+
+/* Language switcher (2026-11-07): neutral, compact, product-style. */
+.locale-trigger{gap:6px;border-radius:8px;font-weight:500}
+.locale-trigger>svg:first-child{color:currentColor;opacity:.8}
+.locale-trigger:hover,.locale-trigger[aria-expanded="true"]{border-color:var(--stroke)}
+.locale-code{font-size:12px;font-weight:600;letter-spacing:.06em}
+.locale-chevron{width:13px;height:13px}
+.locale-menu{min-width:176px;padding:4px;border-radius:10px;box-shadow:0 1px 2px var(--shadow),0 10px 28px var(--shadow)}
+.locale-menu-title{padding:7px 10px 5px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.locale-option{min-height:34px;padding:7px 10px;border-radius:6px;font-weight:500;font-size:13px}
+.locale-option-active,.locale-option-active:hover{background:var(--hover);color:var(--text);font-weight:600}
+.locale-option-code{display:inline-flex;align-items:center;font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--muted)}
+.locale-option-code svg{color:var(--text)}
+.site-header .locale-trigger{padding:0 8px}

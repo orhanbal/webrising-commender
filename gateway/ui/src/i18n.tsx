@@ -46,7 +46,8 @@ export function LanguageSwitcher({compact=false}:{compact?:boolean}){
   const root=useRef<HTMLDivElement>(null);
   const trigger=useRef<HTMLButtonElement>(null);
   const choices=useRef<Array<HTMLButtonElement|null>>([]);
-  const options:[Locale,string][]=[["en","English (EN)"],["tr","Türkçe (TR)"]];
+  // Each language in its own name, with its code.
+  const options:[Locale,string,string][]=[["en","English","EN"],["tr","Türkçe","TR"]];
   useEffect(()=>{
     if(!open)return;
     const onPointer=(event:PointerEvent)=>{
@@ -67,11 +68,14 @@ export function LanguageSwitcher({compact=false}:{compact?:boolean}){
       onClick={()=>setOpen(value=>!value)}
       onKeyDown={event=>{if(event.key==="ArrowDown"||event.key==="ArrowUp"){event.preventDefault();setOpen(true);requestAnimationFrame(()=>focusOption(event.key==="ArrowDown"?0:options.length-1))}}}>
       <Globe2 size={17} aria-hidden="true"/>
-      <span className="locale-label-long">{current==="en"?"English (EN)":"Türkçe (TR)"}</span><span className="locale-label-short" aria-hidden="true">{current==="en"?"EN":"TR"}</span>
+      {compact
+        ? <span className="locale-code">{current==="en"?"EN":"TR"}</span>
+        : <><span className="locale-label-long">{current==="en"?"English":"Türkçe"}</span><span className="locale-label-short" aria-hidden="true">{current==="en"?"EN":"TR"}</span></>}
       <ChevronDown size={15} className={"locale-chevron"+(open?" locale-chevron-open":"")} aria-hidden="true"/>
     </button>
     {open&&<div className="locale-menu" role="menu" aria-label={current==="en"?"Language":"Dil"}>
-      {options.map(([code,label],index)=><button key={code} type="button" role="menuitemradio"
+      <div className="locale-menu-title" aria-hidden="true">{current==="en"?"Language":"Dil"}</div>
+      {options.map(([code,label,short],index)=><button key={code} type="button" role="menuitemradio"
         aria-checked={current===code} ref={node=>{choices.current[index]=node}}
         className={"locale-option"+(current===code?" locale-option-active":"")}
         onClick={()=>choose(code)}
@@ -81,8 +85,8 @@ export function LanguageSwitcher({compact=false}:{compact?:boolean}){
           if(event.key==="End"){event.preventDefault();focusOption(options.length-1)}
           if(event.key==="Tab")setOpen(false);
         }}>
-        <span>{label}</span>
-        {current===code&&<Check size={16} aria-hidden="true"/>}
+        <span className="locale-option-name">{label}</span>
+        <span className="locale-option-code">{current===code?<Check size={15} aria-hidden="true"/>:short}</span>
       </button>)}
     </div>}
   </div>;
