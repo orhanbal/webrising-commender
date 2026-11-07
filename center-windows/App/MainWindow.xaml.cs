@@ -146,6 +146,8 @@ public sealed partial class MainWindow : Window
                 : "";
             ErrorBar.Message = Center.Error ?? "";
             ErrorBar.IsOpen = Center.Error is not null;
+            NotificationBar.IsOpen = phase == Phase.SignedIn && Center.NotificationsBlocked;
+            NotificationBar.Message = Texts.NotificationBlockedMessage(Center.NotificationSetting.ToString());
             AutonomyBar.IsOpen = phase == Phase.SignedIn && Center.Autonomy.Count > 0;
             AutonomyBar.Message = $"{Center.Autonomy.Count} cihazda onay istenmiyor.";
             if (phase == Phase.SignedIn)
@@ -425,4 +427,6 @@ public sealed partial class MainWindow : Window
     }
 
     private void Dashboard_Click(object sender, RoutedEventArgs e) => Center.OpenDashboard();
+
+    private void AllowNotifications_Click(object sender, RoutedEventArgs e) => App.OpenNotificationSettings();
 }

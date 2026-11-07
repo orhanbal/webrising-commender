@@ -24,6 +24,24 @@ public class CoreTests
         return (new GatewayClient(new HttpClient(handler), "https://wecommander.app/"), handler);
     }
 
+    [Theory]
+    [InlineData("DisabledForApplication", "WECOMMANDER Yönetim Merkezi")]
+    [InlineData("DisabledForUser", "Bildirimler anahtarını")]
+    [InlineData("DisabledByGroupPolicy", "yöneticine")]
+    [InlineData("DisabledByManifest", "yeniden kur")]
+    public void NotificationBlockedMessageExplainsEachCause(string setting, string expected)
+    {
+        Assert.Contains(expected, Texts.NotificationBlockedMessage(setting));
+    }
+
+    [Theory]
+    [InlineData("Enabled")]
+    [InlineData("Unsupported")]
+    public void NotificationBlockedMessageIsEmptyWhenNotBlocked(string setting)
+    {
+        Assert.Equal("", Texts.NotificationBlockedMessage(setting));
+    }
+
     [Fact]
     public void ServerUrlAcceptsHttpsOriginsOnly()
     {
@@ -47,6 +65,21 @@ public class CoreTests
         Assert.Equal("8 dk 12 sn", Texts.Remaining(now.AddSeconds(492), now));
         Assert.Equal("süresi doldu", Texts.Remaining(now.AddSeconds(-1), now));
         Assert.Equal("45 sn", Texts.Remaining(now.AddSeconds(45), now));
+    }
+
+    [Fact]
+    public void NotificationCountdown()
+    {
+        var now = new DateTimeOffset(2026, 11, 7, 12, 0, 0, TimeSpan.Zero);
+        Assert.Equal("4:07", Texts.Countdown(now.AddSeconds(247), now));
+        Assert.Equal("0:01", Texts.Countdown(now.AddMilliseconds(200), now));
+        Assert.Equal("1:02:05", Texts.Countdown(now.AddSeconds(3725), now));
+        Assert.Equal("0:00", Texts.Countdown(now.AddSeconds(-5), now));
+        var created = now.AddMinutes(-2);
+        Assert.Equal(0.8, Texts.RemainingFraction(created, now.AddMinutes(8), now), 3);
+        Assert.Equal(0, Texts.RemainingFraction(created, now.AddMinutes(-1), now));
+        Assert.Equal(1, Texts.RemainingFraction(now, now.AddMinutes(10), now.AddMinutes(-1)));
+        Assert.Equal(0, Texts.RemainingFraction(now, now, now));
     }
 
     [Fact]

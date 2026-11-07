@@ -27,12 +27,15 @@ public partial class App : Application
     private DispatcherQueue _ui = null!;
     private MainWindow? _window;
     private TaskbarIcon? _tray;
-    private MenuFlyoutItem? _pendingItem, _autonomyItem, _stopAutonomyItem, _accountItem;
+    private MenuFlyoutItem? _pendingItem, _autonomyItem, _stopAutonomyItem, _accountItem, _allowNotifyItem;
     private ToggleMenuFlyoutItem? _notifyItem;
     private DispatcherQueueTimer? _timer;
     private DateTime _lastSync = DateTime.MinValue;
     private bool _syncing;
     private readonly HashSet<string> _seen = [];
+    // Requests whose notification is on screen, for the live countdown.
+    private readonly Dictionary<string, (DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt, uint Sequence)> _shown = [];
+    private DispatcherQueueTimer? _countdownTimer;
     private (string Id, string Secret, string Url, DateTime Deadline)? _link;
 
     public Settings Settings { get; private set; } = new();
@@ -45,6 +48,14 @@ public partial class App : Application
     public IReadOnlyList<AutonomyItem> Autonomy { get; private set; } = [];
     public string? Error { get; set; }
     public DateTime? LastSync => _lastSync == DateTime.MinValue ? null : _lastSync;
+
+    /// <summary>Windows' own notification setting for this app (Settings, System, Notifications).</summary>
+    public AppNotificationSetting NotificationSetting { get; private set; } = AppNotificationSetting.Enabled;
+
+    /// <summary>True when the owner wants notifications but Windows will not show them.</summary>
+    public bool NotificationsBlocked => Settings.Notifications && NotificationSetting is
+        AppNotificationSetting.DisabledForApplication or AppNotificationSetting.DisabledForUser or
+        AppNotificationSetting.DisabledByGroupPolicy or AppNotificationSetting.DisabledByManifest;
 
     /// <summary>Raised on the UI thread after every state change.</summary>
     public event Action? Changed;
@@ -76,6 +87,7 @@ public partial class App : Application
             _ui.TryEnqueue(() => HandleNotification(e.Arguments));
         var icon = Path.Combine(AppContext.BaseDirectory, "Assets", "icon.png");
         AppNotificationManager.Default.Register("WECOMMANDER Yönetim Merkezi", new Uri(icon));
+        RefreshNotificationSetting();
 
         // A second start is redirected here (see Program).
         AppInstance.GetCurrent().Activated += (_, e) => _ui.TryEnqueue(() => HandleActivation(e));
@@ -145,13 +157,64 @@ public partial class App : Application
             // Urgent (Windows 11 22H2+) shows the banner even with Do not disturb
             // on; elsewhere Reminder keeps it on screen until answered.
             .SetScenario(AppNotificationBuilder.IsUrgentScenarioSupported() ? AppNotificationScenario.Urgent : AppNotificationScenario.Reminder)
+            // Time left counts down on the notification itself (updated every second).
+            .AddProgressBar(new AppNotificationProgressBar().BindTitle().BindValue().BindValueStringOverride().BindStatus())
             .AddButton(new AppNotificationButton("Onayla").AddArgument("action", "approve").AddArgument("id", item.Id).AddArgument("device", device))
             .AddButton(new AppNotificationButton("Reddet").AddArgument("action", "deny").AddArgument("id", item.Id).AddArgument("device", device));
         var notification = builder.BuildNotification();
         notification.Tag = item.Id;
         notification.Group = NotificationGroup;
         notification.Priority = AppNotificationPriority.High;
+        notification.Progress = CountdownData(item.CreatedAt, item.ExpiresAt, 1);
         AppNotificationManager.Default.Show(notification);
+        _shown[item.Id] = (item.CreatedAt, item.ExpiresAt, 1);
+        StartCountdown();
+    }
+
+    private static AppNotificationProgressData CountdownData(DateTimeOffset createdAt, DateTimeOffset expiresAt, uint sequence)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var expired = expiresAt <= now;
+        return new AppNotificationProgressData(sequence)
+        {
+            Title = expired ? "Süresi doldu" : "Kalan süre",
+            Value = Texts.RemainingFraction(createdAt, expiresAt, now),
+            ValueStringOverride = Texts.Countdown(expiresAt, now),
+            Status = expired ? "Bu istek artık onaylanamaz" : "Süre dolunca istek düşer",
+        };
+    }
+
+    private void StartCountdown()
+    {
+        if (_countdownTimer is null)
+        {
+            _countdownTimer = _ui.CreateTimer();
+            _countdownTimer.Interval = TimeSpan.FromSeconds(1);
+            _countdownTimer.Tick += async (_, _) => await UpdateCountdownsAsync();
+        }
+        if (!_countdownTimer.IsRunning) _countdownTimer.Start();
+    }
+
+    /// <summary>Moves every on-screen countdown one second on; drops dismissed and expired ones.</summary>
+    private async Task UpdateCountdownsAsync()
+    {
+        if (_shown.Count == 0) { _countdownTimer?.Stop(); return; }
+        foreach (var (id, (created, expires, sequence)) in _shown.ToList())
+        {
+            var next = sequence + 1;
+            _shown[id] = (created, expires, next);
+            AppNotificationProgressResult result;
+            try { result = await AppNotificationManager.Default.UpdateAsync(CountdownData(created, expires, next), id, NotificationGroup); }
+            catch (Exception) { result = AppNotificationProgressResult.AppNotificationNotFound; }
+            // Dismissed by the owner, or answered here: stop updating it.
+            if (result != AppNotificationProgressResult.Succeeded) { _shown.Remove(id); continue; }
+            if (expires <= DateTimeOffset.UtcNow.AddSeconds(-5))
+            {
+                // Leave "Süresi doldu" visible a moment, then take it away.
+                _shown.Remove(id);
+                _ = AppNotificationManager.Default.RemoveByTagAndGroupAsync(id, NotificationGroup);
+            }
+        }
     }
 
     private async Task TickAsync()
@@ -160,6 +223,9 @@ public partial class App : Application
         _syncing = true;
         try
         {
+            // The owner can turn notifications off (or back on) in Windows at
+            // any time; pick that up without a restart.
+            if (RefreshNotificationSetting()) Publish();
             if (_link is not null) await PollLinkAsync();
             else if (Token is not null && DateTime.UtcNow - _lastSync >= SyncEvery) await SyncAsync();
         }
@@ -189,7 +255,10 @@ public partial class App : Application
             // Requests decided elsewhere (panel, dashboard, another center) or
             // expired: take their notification away.
             foreach (var gone in previous.Except(Pending.Select(p => p.Id)))
+            {
+                _shown.Remove(gone);
                 _ = AppNotificationManager.Default.RemoveByTagAndGroupAsync(gone, NotificationGroup);
+            }
 
             var fresh = Pending.Where(p => _seen.Add(p.Id)).ToList();
             if (fresh.Count > 0)
@@ -201,8 +270,10 @@ public partial class App : Application
                         NotifyRequest(item, names.GetValueOrDefault(item.DeviceId, "bilinmeyen cihaz"));
                 }
                 // Owner request: the panel opens by itself on the Approvals tab
-                // when a request arrives (the notification comes as well).
-                if (Settings.OpenOnRequest)
+                // when a request arrives (the notification comes as well). If
+                // Windows blocks our notifications, the panel is the only way
+                // the owner sees the request, so it opens regardless.
+                if (Settings.OpenOnRequest || NotificationsBlocked)
                 {
                     _window?.ShowApprovals();
                 }
@@ -285,6 +356,7 @@ public partial class App : Application
         try
         {
             await Gateway.DecideAsync(token, id, approve);
+            _shown.Remove(id);
             _ = AppNotificationManager.Default.RemoveByTagAndGroupAsync(id, NotificationGroup);
         }
         finally
@@ -326,6 +398,7 @@ public partial class App : Application
         Devices = [];
         Autonomy = [];
         _seen.Clear();
+        _shown.Clear();
         Error = message;
         LocalStore.DeleteToken();
         _ = AppNotificationManager.Default.RemoveByGroupAsync(NotificationGroup);
@@ -337,6 +410,20 @@ public partial class App : Application
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
 
     public void OpenDashboard() => OpenUrl(Settings.Server + "/approvals");
+
+    /// <summary>Opens Settings, System, Notifications, where the owner allows this app.</summary>
+    public static void OpenNotificationSettings() => OpenUrl("ms-settings:notifications");
+
+    /// <summary>Reads Windows' notification setting; returns true when it changed.</summary>
+    private bool RefreshNotificationSetting()
+    {
+        AppNotificationSetting current;
+        try { current = AppNotificationManager.Default.Setting; }
+        catch (Exception) { current = AppNotificationSetting.Unsupported; }
+        if (current == NotificationSetting) return false;
+        NotificationSetting = current;
+        return true;
+    }
 
     public void Publish()
     {
@@ -378,6 +465,12 @@ public partial class App : Application
                 Publish();
             }),
         };
+        _allowNotifyItem = new MenuFlyoutItem
+        {
+            Text = "Windows bildirimlerine izin ver…",
+            Visibility = Visibility.Collapsed,
+            Command = new RelayCommand(OpenNotificationSettings),
+        };
         _accountItem = new MenuFlyoutItem
         {
             Text = "Oturum aç…",
@@ -397,6 +490,7 @@ public partial class App : Application
         menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(new MenuFlyoutItem { Text = "Paneli tarayıcıda aç", Command = new RelayCommand(OpenDashboard) });
         menu.Items.Add(_notifyItem);
+        menu.Items.Add(_allowNotifyItem);
         menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(_accountItem);
         menu.Items.Add(new MenuFlyoutItem { Text = "Çıkış", Command = new RelayCommand(Quit) });
@@ -435,6 +529,8 @@ public partial class App : Application
         _autonomyItem!.Text = autonomy > 0 ? $"Otonom mod açık: {autonomy} cihaz" : "Otonom mod kapalı";
         _stopAutonomyItem!.IsEnabled = signedIn && autonomy > 0;
         _notifyItem!.IsChecked = Settings.Notifications;
+        _allowNotifyItem!.Visibility = NotificationsBlocked ? Visibility.Visible : Visibility.Collapsed;
+        if (NotificationsBlocked) _tray.ToolTipText = tooltip + " · Windows bildirimleri kapalı";
         _accountItem!.Text = !signedIn ? "Oturum aç…" : Me?.Email is { } email ? $"Oturumu kapat ({email})" : "Oturumu kapat";
     }
 

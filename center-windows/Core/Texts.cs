@@ -16,6 +16,25 @@ public static class Texts
         _ => kind,
     };
 
+    /// <summary>
+    /// Why Windows does not show our notifications, from the Windows App SDK
+    /// AppNotificationSetting name, and where the owner turns them on.
+    /// </summary>
+    public static string NotificationBlockedMessage(string setting) => setting switch
+    {
+        "DisabledForApplication" =>
+            "Windows bu uygulamanın bildirimlerini kapatmış; onay istekleri ekranda görünmez. " +
+            "\"Bildirimlere izin ver\"e bas, listede WECOMMANDER Yönetim Merkezi'ni aç.",
+        "DisabledForUser" =>
+            "Windows'ta bildirimler tamamen kapalı; onay istekleri ekranda görünmez. " +
+            "\"Bildirimlere izin ver\"e bas ve en üstteki Bildirimler anahtarını aç.",
+        "DisabledByGroupPolicy" =>
+            "Bildirimler kuruluşunun ilkesiyle kapatılmış. Bilgisayar yöneticine başvur; o zamana kadar yeni istekte bu panel açılır.",
+        "DisabledByManifest" =>
+            "Bu kurulumda bildirimler kullanılamıyor. Uygulamayı yeniden kur; o zamana kadar yeni istekte bu panel açılır.",
+        _ => "",
+    };
+
     public static string ForErrorCode(string code, int status) => code switch
     {
         "reauthentication_failed" => "Şifre hatalı.",
@@ -39,6 +58,25 @@ public static class Texts
         if (left <= TimeSpan.Zero) return "süresi doldu";
         if (left.TotalMinutes >= 60) return $"{Math.Round(left.TotalHours)} sa";
         return left.TotalMinutes >= 1 ? $"{(int)left.TotalMinutes} dk {left.Seconds} sn" : $"{left.Seconds} sn";
+    }
+
+    /// <summary>Clock-style time left for a notification countdown: "4:07", "1:02:05"; "0:00" when past.</summary>
+    public static string Countdown(DateTimeOffset expiresAt, DateTimeOffset now)
+    {
+        var left = expiresAt - now;
+        if (left <= TimeSpan.Zero) return "0:00";
+        var total = (int)Math.Ceiling(left.TotalSeconds);
+        return total >= 3600
+            ? $"{total / 3600}:{total % 3600 / 60:00}:{total % 60:00}"
+            : $"{total / 60}:{total % 60:00}";
+    }
+
+    /// <summary>Share of the approval window still left, 1 at creation and 0 at expiry.</summary>
+    public static double RemainingFraction(DateTimeOffset createdAt, DateTimeOffset expiresAt, DateTimeOffset now)
+    {
+        var window = (expiresAt - createdAt).TotalSeconds;
+        if (window <= 0) return 0;
+        return Math.Clamp((expiresAt - now).TotalSeconds / window, 0, 1);
     }
 
     public static string Until(DateTimeOffset? until) => until is { } u
