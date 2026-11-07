@@ -68,6 +68,30 @@ public class CoreTests
     }
 
     [Fact]
+    public void ToastArgumentsRoundTripAndXmlIsEscaped()
+    {
+        var args = ToastContent.EncodeArgs([new("action", "approve"), new("id", "a&b=c"), new("device", "Ofis PC")]);
+        var back = ToastContent.DecodeArgs(args);
+        Assert.Equal("approve", back["action"]);
+        Assert.Equal("a&b=c", back["id"]);
+        Assert.Equal("Ofis PC", back["device"]);
+        var xml = ToastContent.Approval("id1", "<dev>", "rm -rf \"x\" & y", "Komut çalıştır", urgent: true);
+        var doc = System.Xml.Linq.XDocument.Parse(xml);
+        Assert.Equal("urgent", doc.Root!.Attribute("scenario")!.Value);
+        Assert.Contains("Onay bekliyor · <dev>", doc.Descendants("text").Select(t => t.Value));
+        Assert.Contains("rm -rf \"x\" & y", doc.Descendants("text").Select(t => t.Value));
+        var approve = doc.Descendants("action").First(a => a.Attribute("content")!.Value == "Onayla");
+        Assert.Equal("approve", ToastContent.DecodeArgs(approve.Attribute("arguments")!.Value)["action"]);
+        Assert.Equal("{progressValue}", doc.Descendants("progress").Single().Attribute("value")!.Value);
+        Assert.Equal("reminder", System.Xml.Linq.XDocument.Parse(ToastContent.Approval("i", "d", "w", "k", false)).Root!.Attribute("scenario")!.Value);
+        System.Xml.Linq.XDocument.Parse(ToastContent.Simple("A & B", "<x>"));
+        var now = new DateTimeOffset(2026, 11, 7, 12, 0, 0, TimeSpan.Zero);
+        var values = ToastContent.Countdown(now.AddMinutes(-2), now.AddMinutes(8), now);
+        Assert.Equal("0.8", values[ToastContent.ProgressValue]);
+        Assert.Equal("8:00", values[ToastContent.ProgressValueString]);
+    }
+
+    [Fact]
     public void NotificationCountdown()
     {
         var now = new DateTimeOffset(2026, 11, 7, 12, 0, 0, TimeSpan.Zero);
