@@ -210,8 +210,13 @@ $("setNotify").addEventListener("change", () => call("set_settings", { notificat
 $("setOpen").addEventListener("change", () => call("set_settings", { notifications: $("setNotify").checked, openOnRequest: $("setOpen").checked }));
 $("setAutostart").addEventListener("change", () => call("set_autostart", { enabled: $("setAutostart").checked }));
 $("openDashboard").addEventListener("click", () => invoke("open_dashboard", { page: null }));
-$("disconnect").addEventListener("click", () => {
-  if (window.confirm("Bu bilgisayarın Yönetim Merkezi bağlantısı kesilsin mi? Yeniden bağlanmak için tarayıcıda onay gerekir.")) call("disconnect");
+// Inline confirmation: a native dialog would take the focus and close the panel.
+$("disconnect").addEventListener("click", () => { $("disconnectConfirm").hidden = false; });
+$("disconnectNo").addEventListener("click", () => { $("disconnectConfirm").hidden = true; });
+$("disconnectYes").addEventListener("click", async () => { $("disconnectConfirm").hidden = true; await call("disconnect"); });
+$("closePanel").addEventListener("click", () => invoke("hide_panel"));
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") invoke("hide_panel");
 });
 
 // Countdown text updates without a round trip.

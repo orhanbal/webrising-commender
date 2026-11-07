@@ -8,8 +8,8 @@
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span class="logo" aria-hidden="true">W</span><div><strong>WECOMMANDER</strong><small>Yönetim Merkezi</small></div></div>
-  <div id="who" class="who"></div>
+  <div class="brand"><div><img class="wordmark on-light" src="logo-dark-text.svg" alt="WECOMMANDER"><img class="wordmark on-dark" src="logo-light-text.svg" alt="WECOMMANDER"><small>Yönetim Merkezi</small></div></div>
+  <div class="head-right"><div id="who" class="who"></div><button id="closePanel" class="icon" title="Kapat (Esc)" aria-label="Kapat">✕</button></div>
 </header>
 
 <div id="banner" class="banner" hidden></div>
@@ -82,11 +82,15 @@
 
   <div id="tab-settings" class="tab" hidden>
     <label class="switch"><input type="checkbox" id="setNotify"> Yeni onay isteğinde bildirim göster</label>
-    <label class="switch"><input type="checkbox" id="setOpen"> Yeni istekte bu pencereyi öne getir</label>
+    <label class="switch"><input type="checkbox" id="setOpen"> Bildirimler kapalıyken yeni istekte paneli aç</label>
     <label class="switch"><input type="checkbox" id="setAutostart"> Oturum açılışında başlat</label>
     <div class="row">
       <button id="openDashboard">Paneli tarayıcıda aç</button>
       <button id="disconnect" class="danger">Bağlantıyı kes</button>
+    </div>
+    <div id="disconnectConfirm" class="card warn" hidden>
+      <p class="small">Bu bilgisayarın Yönetim Merkezi bağlantısı kesilsin mi? Yeniden bağlanmak için tarayıcıda onay gerekir.</p>
+      <div class="row"><button id="disconnectYes" class="danger">Evet, bağlantıyı kes</button><button id="disconnectNo" class="ghost">Vazgeç</button></div>
     </div>
     <p id="about" class="muted small"></p>
   </div>

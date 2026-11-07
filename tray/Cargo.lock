@@ -4847,6 +4847,7 @@ dependencies = [
  "tauri-plugin-notification",
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
+ "tauri-winrt-notification",
  "tokio",
  "url",
  "winreg 0.55.0",

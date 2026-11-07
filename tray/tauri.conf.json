@@ -12,12 +12,23 @@
       {
         "label": "main",
         "title": "WECOMMANDER Yönetim Merkezi",
-        "width": 480,
-        "height": 680,
-        "minWidth": 380,
-        "minHeight": 480,
+        "width": 400,
+        "height": 720,
+        "minWidth": 320,
+        "minHeight": 420,
         "visible": false,
-        "center": true
+        "center": false,
+        "decorations": false,
+        "skipTaskbar": true,
+        "alwaysOnTop": true,
+        "resizable": false,
+        "shadow": true,
+        "transparent": true,
+        "windowEffects": {
+          "effects": [
+            "acrylic"
+          ]
+        }
       }
     ],
     "security": {
@@ -26,6 +37,11 @@
   },
   "bundle": {
     "active": false,
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.png", "icons/icon.ico"]
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.png",
+      "icons/icon.ico"
+    ]
   }
 }

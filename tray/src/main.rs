@@ -124,11 +124,61 @@ fn publish(app: &AppHandle) {
     let _ = app.emit("state", snapshot(app));
 }
 
+/// When the panel last lost focus; a tray click right after it is the same
+/// click that took the focus away, so it must not open the panel again.
+static LAST_HIDDEN: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// Place the window like the Windows notification center: a full-height
+/// panel on the right edge of the screen's work area (above the taskbar).
+fn place_panel(window: &tauri::WebviewWindow) {
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten());
+    let Some(monitor) = monitor else { return };
+    let scale = monitor.scale_factor();
+    let area = monitor.work_area();
+    let margin = (12.0 * scale).round() as i32;
+    let width =
+        ((400.0 * scale).round() as u32).min(area.size.width.saturating_sub(2 * margin as u32));
+    let height = area.size.height.saturating_sub(2 * margin as u32);
+    let x = area.position.x + area.size.width as i32 - width as i32 - margin;
+    let y = area.position.y + margin;
+    let _ = window.set_size(tauri::PhysicalSize::new(width, height));
+    let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+}
+
 fn show_main(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        place_panel(&window);
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
+    }
+}
+
+fn hide_main(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+    }
+}
+
+/// Tray click: open the panel, or close it when it is already open.
+fn toggle_main(app: &AppHandle) {
+    let recently_hidden = LAST_HIDDEN
+        .lock()
+        .unwrap()
+        .map(|t| t.elapsed() < Duration::from_millis(400))
+        .unwrap_or(false);
+    let visible = app
+        .get_webview_window("main")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false);
+    if visible {
+        hide_main(app);
+    } else if !recently_hidden {
+        show_main(app);
     }
 }
 
@@ -187,6 +237,103 @@ fn update_tray(app: &AppHandle) {
 
 fn notify(app: &AppHandle, title: &str, body: &str) {
     let _ = app.notification().builder().title(title).body(body).show();
+}
+
+/// Turkish name of an approval's operation kind.
+fn kind_label(kind: &str) -> &str {
+    match kind {
+        "process_exec" => "Komut çalıştır",
+        "process_kill" => "İşlemi sonlandır",
+        "task_start" => "Arka plan görevi başlat",
+        "task_cancel" => "Görevi iptal et",
+        "terminal_start" => "Terminal aç",
+        "terminal_stop" => "Terminali kapat",
+        "fs_delete" => "Dosya sil",
+        "fs_move" => "Dosya taşı",
+        other => other,
+    }
+}
+
+/// One approval request as a notification. On Windows it is the system's
+/// own notification with Approve / Deny buttons; it stays on screen until
+/// answered and keeps its buttons in the notification center.
+#[cfg(windows)]
+fn notify_request(app: &AppHandle, item: &ApprovalView) {
+    use tauri_winrt_notification::{IconCrop, Scenario, Toast};
+    let identifier = app.config().identifier.clone();
+    let what = if item.summary.is_empty() {
+        kind_label(&item.kind).to_owned()
+    } else {
+        item.summary.clone()
+    };
+    let icon = app.state::<AppState>().dir.join("icon.png");
+    let handle = app.clone();
+    let id = item.id.clone();
+    let device = item.device_name.clone();
+    let mut toast = Toast::new(&identifier)
+        .title(&format!("Onay bekliyor · {}", item.device_name))
+        .text1(&what)
+        .text2(&format!(
+            "{} · yalnız bu işlem, bir kez",
+            kind_label(&item.kind)
+        ))
+        .scenario(Scenario::Reminder)
+        .add_button("Onayla", &format!("approve:{id}"))
+        .add_button("Reddet", &format!("deny:{id}"))
+        .on_activated(move |action| {
+            let app = handle.clone();
+            let device = device.clone();
+            match action.as_deref().and_then(|a| a.split_once(':')) {
+                Some((verb @ ("approve" | "deny"), request)) => {
+                    let approve = verb == "approve";
+                    let request = request.to_owned();
+                    tauri::async_runtime::spawn(async move {
+                        let Ok((api, token)) = session(&app) else {
+                            return;
+                        };
+                        match api.decide(&token, &request, approve).await {
+                            Ok(()) => notify(
+                                &app,
+                                "WECOMMANDER",
+                                &format!(
+                                    "{} · {}",
+                                    device,
+                                    if approve {
+                                        "onaylandı, yapay zekâ bir kez çalıştırabilir"
+                                    } else {
+                                        "reddedildi"
+                                    }
+                                ),
+                            ),
+                            Err(e) => notify(&app, "WECOMMANDER", &e.message()),
+                        }
+                        sync(&app).await;
+                    });
+                }
+                _ => show_main(&app),
+            }
+            Ok(())
+        });
+    if icon.exists() {
+        toast = toast.icon(&icon, IconCrop::Square, "WECOMMANDER");
+    }
+    if toast.show().is_err() {
+        notify(app, &format!("Onay bekliyor · {}", item.device_name), &what);
+    }
+}
+
+#[cfg(not(windows))]
+fn notify_request(app: &AppHandle, item: &ApprovalView) {
+    let what = if item.summary.is_empty() {
+        kind_label(&item.kind).to_owned()
+    } else {
+        item.summary.clone()
+    };
+    notify(
+        app,
+        &format!("Onay bekliyor · {}", item.device_name),
+        &format!("{}: {}", kind_label(&item.kind), what),
+    );
 }
 
 fn session(app: &AppHandle) -> Result<(Api, String), String> {
@@ -297,8 +444,11 @@ async fn sync(app: &AppHandle) {
     };
 
     if !fresh.is_empty() {
+        // On Windows each request is a Windows notification with Approve and
+        // Deny buttons; the panel opens only when notifications are off.
+        let actionable = cfg!(windows) && notifications;
         if notifications {
-            if first {
+            if first && fresh.len() > 3 {
                 notify(
                     app,
                     "WECOMMANDER",
@@ -306,20 +456,11 @@ async fn sync(app: &AppHandle) {
                 );
             } else {
                 for item in fresh.iter().take(3) {
-                    let what = if item.summary.is_empty() {
-                        item.kind.clone()
-                    } else {
-                        item.summary.clone()
-                    };
-                    notify(
-                        app,
-                        &format!("Onay bekliyor · {}", item.device_name),
-                        &format!("{}: {}", item.kind, what),
-                    );
+                    notify_request(app, item);
                 }
             }
         }
-        if open_on_request {
+        if open_on_request && !actionable {
             show_main(app);
         }
     }
@@ -572,6 +713,11 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<Snapshot, String> {
 }
 
 #[tauri::command]
+fn hide_panel(app: AppHandle) {
+    hide_main(&app);
+}
+
+#[tauri::command]
 fn refresh(app: AppHandle) {
     wake(&app);
 }
@@ -707,7 +853,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                 ..
             } = event
             {
-                show_main(tray.app_handle());
+                toggle_main(tray.app_handle());
             }
         });
     if let Some(icon) = tray_image(false, false) {
@@ -768,12 +914,18 @@ fn main() {
             tauri::async_runtime::spawn(background(app.handle().clone()));
             Ok(())
         })
-        .on_window_event(|window, event| {
-            // Closing the window keeps the app in the tray; "Çıkış" quits.
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        .on_window_event(|window, event| match event {
+            // Closing the panel keeps the app in the tray; "Çıkış" quits.
+            tauri::WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
                 let _ = window.hide();
             }
+            // Like the notification center: clicking elsewhere closes it.
+            tauri::WindowEvent::Focused(false) if window.is_visible().unwrap_or(false) => {
+                *LAST_HIDDEN.lock().unwrap() = Some(Instant::now());
+                let _ = window.hide();
+            }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             get_state,
@@ -788,6 +940,7 @@ fn main() {
             set_settings,
             set_autostart,
             refresh,
+            hide_panel,
             default_name
         ])
         .run(tauri::generate_context!())
