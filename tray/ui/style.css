@@ -26,6 +26,9 @@ body { height: 100%; margin: 0; overflow-y: auto; padding: 0 16px 44px; color: v
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand strong { font: 600 14px/20px "Segoe UI Variable Display", "Segoe UI", sans-serif; }
 .brand small { display: block; color: var(--muted); font-size: 12px; line-height: 16px; }
+.wordmark { display: block; height: 15px; width: auto; margin-bottom: 3px; }
+.wordmark.on-dark { display: none; }
+@media (prefers-color-scheme: dark) { .wordmark.on-light { display: none; } .wordmark.on-dark { display: block; } }
 .logo { width: 28px; height: 28px; border-radius: 6px; background: var(--accent); color: var(--accent-text); display: grid; place-items: center; font-weight: 600; font-size: 13px; }
 .head-right { display: flex; align-items: center; gap: 4px; min-width: 0; max-width: 62%; }
 .who { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
