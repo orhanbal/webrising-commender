@@ -32,6 +32,8 @@ body { height: 100%; margin: 0; overflow-y: auto; padding: 0 16px 44px; color: v
 .logo { width: 28px; height: 28px; border-radius: 6px; background: var(--accent); color: var(--accent-text); display: grid; place-items: center; font-weight: 600; font-size: 13px; }
 .head-right { display: flex; align-items: center; gap: 4px; min-width: 0; max-width: 62%; }
 .who { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+button.link { height: auto; padding: 2px 4px; border: 0; background: transparent; color: var(--accent); font-size: 12px; white-space: nowrap; }
+button.link:hover { text-decoration: underline; background: transparent !important; }
 button.icon { width: 32px; height: 32px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--muted); font-size: 16px; }
 button.icon:hover { background: var(--code); color: var(--text); }
 

@@ -54,6 +54,7 @@ struct Menus {
     autonomy: MenuItem<Wry>,
     stop_autonomy: MenuItem<Wry>,
     notify: CheckMenuItem<Wry>,
+    account: MenuItem<Wry>,
 }
 
 struct AppState {
@@ -194,13 +195,14 @@ fn tray_image(pending: bool, autonomy: bool) -> Option<Image<'static>> {
 
 fn update_tray(app: &AppHandle) {
     let state = app.state::<AppState>();
-    let (signed_in, pending, autonomy, notifications) = {
+    let (signed_in, pending, autonomy, notifications, email) = {
         let inner = state.inner.lock().unwrap();
         (
             inner.token.is_some(),
             inner.pending.len(),
             inner.autonomy.len(),
             inner.settings.notifications,
+            inner.me.as_ref().and_then(|m| m.email.clone()),
         )
     };
     let tooltip = if !signed_in {
@@ -232,6 +234,11 @@ fn update_tray(app: &AppHandle) {
         });
         let _ = menus.stop_autonomy.set_enabled(signed_in && autonomy > 0);
         let _ = menus.notify.set_checked(notifications);
+        let _ = menus.account.set_text(match (signed_in, email) {
+            (false, _) => "Oturum aç…".to_owned(),
+            (true, Some(email)) => format!("Oturumu kapat ({email})"),
+            (true, None) => "Oturumu kapat".to_owned(),
+        });
     };
 }
 
@@ -794,6 +801,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         notifications,
         None::<&str>,
     )?;
+    let account = MenuItem::with_id(app, "account", "Oturum aç…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Çıkış", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
@@ -807,6 +815,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             &dashboard,
             &notify_item,
             &PredefinedMenuItem::separator(app)?,
+            &account,
             &quit,
         ],
     )?;
@@ -816,6 +825,30 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open" | "pending" | "autonomy" => show_main(app),
+            // Signed in: sign out (the token is revoked on the server and
+            // forgotten here). Signed out: open the panel to sign in.
+            "account" => {
+                let signed_in = app
+                    .state::<AppState>()
+                    .inner
+                    .lock()
+                    .unwrap()
+                    .token
+                    .is_some();
+                if signed_in {
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = disconnect(app.clone()).await;
+                        notify(
+                            &app,
+                            "WECOMMANDER",
+                            "Oturum kapatıldı. Yeniden açmak için tepsi simgesine tıkla.",
+                        );
+                    });
+                } else {
+                    show_main(app);
+                }
+            }
             "stop_autonomy" => {
                 let app = app.clone();
                 tauri::async_runtime::spawn(async move {
@@ -867,6 +900,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         autonomy,
         stop_autonomy,
         notify: notify_item,
+        account,
     });
     Ok(())
 }

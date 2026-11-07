@@ -9,20 +9,24 @@
 <body>
 <header class="top">
   <div class="brand"><div><img class="wordmark on-light" src="logo-dark-text.svg" alt="WECOMMANDER"><img class="wordmark on-dark" src="logo-light-text.svg" alt="WECOMMANDER"><small>Yönetim Merkezi</small></div></div>
-  <div class="head-right"><div id="who" class="who"></div><button id="closePanel" class="icon" title="Kapat (Esc)" aria-label="Kapat">✕</button></div>
+  <div class="head-right"><div id="who" class="who"></div><button id="signOutTop" class="link" hidden>Oturumu kapat</button><button id="closePanel" class="icon" title="Kapat (Esc)" aria-label="Kapat">✕</button></div>
 </header>
 
+<div id="signOutConfirm" class="card warn" hidden>
+  <p class="small">Oturum kapatılsın mı? Bu bilgisayar onay bildirimlerini almayı bırakır; yeniden açmak için tarayıcıda onay gerekir.</p>
+  <div class="row"><button id="signOutYes" class="danger">Oturumu kapat</button><button id="signOutNo" class="ghost">Vazgeç</button></div>
+</div>
 <div id="banner" class="banner" hidden></div>
 <div id="error" class="error" role="alert" hidden></div>
 
 <section id="signedOut" hidden>
-  <h1>Hesabına bağla</h1>
+  <h1>Oturum aç</h1>
   <p class="muted">Bu bilgisayar tüm cihazlarındaki onay isteklerini alır; buradan onaylar, reddeder ve otonom modu yönetirsin. Şifren bu uygulamada saklanmaz: girişi tarayıcıda yaparsın.</p>
   <label for="server">Sunucu adresi</label>
   <input id="server" type="url" autocomplete="off" spellcheck="false">
   <label for="centerName">Bu bilgisayarın adı</label>
   <input id="centerName" type="text" maxlength="80" autocomplete="off">
-  <button id="connect" class="primary">Tarayıcıyla bağlan</button>
+  <button id="connect" class="primary">Tarayıcıda oturum aç</button>
 </section>
 
 <section id="linking" hidden>
@@ -86,11 +90,11 @@
     <label class="switch"><input type="checkbox" id="setAutostart"> Oturum açılışında başlat</label>
     <div class="row">
       <button id="openDashboard">Paneli tarayıcıda aç</button>
-      <button id="disconnect" class="danger">Bağlantıyı kes</button>
+      <button id="disconnect" class="danger">Oturumu kapat</button>
     </div>
     <div id="disconnectConfirm" class="card warn" hidden>
-      <p class="small">Bu bilgisayarın Yönetim Merkezi bağlantısı kesilsin mi? Yeniden bağlanmak için tarayıcıda onay gerekir.</p>
-      <div class="row"><button id="disconnectYes" class="danger">Evet, bağlantıyı kes</button><button id="disconnectNo" class="ghost">Vazgeç</button></div>
+      <p class="small">Oturum kapatılsın mı? Bu bilgisayar onay bildirimlerini almayı bırakır; yeniden açmak için tarayıcıda onay gerekir.</p>
+      <div class="row"><button id="disconnectYes" class="danger">Evet, oturumu kapat</button><button id="disconnectNo" class="ghost">Vazgeç</button></div>
     </div>
     <p id="about" class="muted small"></p>
   </div>
