@@ -105,6 +105,16 @@ istemcidir. Tüm sunuculardaki onay istekleri buraya bildirim olarak gelir.
    böylece bir betik onaylayamaz. Gateway tarafı: kullanıcıya özel olay akışı
    (SSE/WebSocket) ve mevcut onay API'si; merkez çevrimdışıyken onaylar panelde ve
    e-postada kalır, merkez açılınca bekleyenleri listeler.
+4b. **Otonom mod (sahibin isteği, 2026-11-07):** kullanıcı onayları tamamen devreden
+   çıkarabilir; kontrol onda. Kapsam tüm cihazlar ya da seçilenler; süre 30 dk, 1 sa,
+   4 sa, yarın sabaha kadar ya da süresiz. Süre bitince onaylar kendiliğinden geri
+   döner ve bildirim gelir; "Hepsini durdur" her an tek tık. Altyapı: mevcut cihaz
+   güven seviyesi `full`, bitiş zamanıyla (`trust_until`). Güvenceler: cihazın kendi
+   sınırları (izinli klasörler, yazma/komut kapalı, sır maskeleme) yine geçerli; mod
+   açıkken tepsi simgesi renk değiştirir, panelde uyarı şeridi; her işlem denetimde
+   "otonom" etiketli, açan kişi/zaman/süre kaydedilir; açmak WebAuthn ister; mod yalnız
+   tepsi uygulamasından veya paneldeki tarayıcı oturumundan açılır, hiçbir MCP aracı
+   bunu yapamaz (yapay zekâ kendi onayını kapatamaz).
 5. **Tepsi menüsü:** bağlantı durumu, bekleyen onaylar, cihazlar ve çevrimiçi
    durumları, paneli aç, bildirimleri sustur, güncelleme, çıkış.
 6. **Teknoloji:** Tauri (Rust; ajanla aynı dil, küçük paket, tek kodla üç platform).
