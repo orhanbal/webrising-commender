@@ -1,5 +1,5 @@
 import {useCallback,useEffect,useMemo,useState} from "react";
-import {Check,Clock3,KeyRound,ListChecks,Plus,ShieldAlert,ShieldCheck,ShieldQuestion,Trash2,X,Zap} from "lucide-react";
+import {Check,Clock3,KeyRound,ListChecks,Monitor,Plus,ShieldAlert,ShieldCheck,ShieldQuestion,Trash2,X,Zap} from "lucide-react";
 import {t as translate,useLocale,localizedDate} from "../i18n";
 import {api,type Account,type Device} from "../api";
 import {Alert,Badge,Button,Card,CardContent,CardDescription,CardHeader,CardTitle,Dialog,DialogContent,DialogDescription,DialogTitle,EmptyState,Input,PageHeader,Skeleton,Spinner} from "../components/ui";
@@ -68,6 +68,7 @@ export function ApprovalsPage({nav,account,checking,theme,toggle,logout}:{nav:Na
      <div className="flex gap-2 shrink-0"><Button size="sm" disabled={new Date(item.expires_at).getTime()<=Date.now()} onClick={()=>setDecision({item,kind:"approve"})}><Check className="size-4"/>{translate("Onayla")}</Button><Button size="sm" variant="outline" onClick={()=>setDecision({item,kind:"deny"})}><X className="size-4"/>{translate("Reddet")}</Button></div></li>)}</ul>}
    </CardContent></Card>}
    {!forbidden&&<AutonomyCard devices={devices} onChanged={load} onError={setError}/>}
+   {!forbidden&&<CentersCard onError={setError}/>}
    {!forbidden&&<DevicePolicy devices={devices} onChanged={load} onError={setError}/>}
   </div>
   <Dialog open={!!decision} onOpenChange={open=>{if(!open&&!busy)setDecision(null)}}><DialogContent>{decision&&<>
@@ -160,4 +161,26 @@ function DevicePolicy({devices,onChanged,onError}:{devices:PolicyDevice[];onChan
    :<ul className="grid gap-2">{allow.map(entry=><li key={entry.id} className="flex items-center justify-between gap-3 rounded-xl border border-[var(--stroke)] px-4 py-2"><code className="font-mono text-sm">{entry.pattern}</code><Button size="sm" variant="ghost" aria-label={translate("Kaldır")+": "+entry.pattern} onClick={()=>removePattern(entry.id)}><Trash2 className="size-4"/></Button></li>)}</ul>}
   </section>
  </CardContent></Card>;
+}
+
+type Center={id:string;name:string;email:string;created_at:string;last_seen_at:string|null;revoked_at:string|null};
+
+/** Management Centers: tray apps signed in to this workspace, with revoke. */
+function CentersCard({onError}:{onError:(m:string)=>void}){
+ const [items,setItems]=useState<Center[]|null>(null);
+ const [copied,setCopied]=useState(false);
+ const command="irm "+window.location.origin+"/install/center.ps1 | iex";
+ const load=useCallback(async()=>{try{setItems((await api<{items:Center[]}>("/api/centers")).items)}catch(e){onError((e as Error).message);setItems([])}},[onError]);
+ useEffect(()=>{load()},[load]);
+ const revoke=async(id:string)=>{try{await api("/api/centers/"+id+"/revoke",{method:"POST",body:"{}"});await load()}catch(e){onError((e as Error).message)}};
+ const copy=async()=>{try{await navigator.clipboard.writeText(command);setCopied(true);setTimeout(()=>setCopied(false),2000)}catch{/* clipboard unavailable */}};
+ const active=(items||[]).filter(c=>!c.revoked_at);
+ return <Card><CardHeader><CardTitle className="flex items-center gap-2"><Monitor className="size-5 text-[var(--accent)]" aria-hidden="true"/>{translate("Yönetim merkezleri")}</CardTitle>
+  <CardDescription>{translate("Masaüstündeki tepsi uygulaması: tüm cihazlardan gelen onay isteklerini bildirir, onaylar/reddeder ve otonom modu yönetir. Yapay zekâ araçlarını çalıştıramaz.")}</CardDescription></CardHeader>
+  <CardContent className="grid gap-3">
+   <div><p className="text-sm font-semibold">{translate("Windows'a kur (PowerShell)")}</p><div className="flex flex-wrap items-center gap-2 mt-1"><code className="approval-op flex-1">{command}</code><Button size="sm" variant="outline" onClick={copy}>{copied?translate("Kopyalandı"):translate("Kopyala")}</Button></div></div>
+   {items===null?<Skeleton className="h-12"/>:active.length===0?<p className="text-sm muted">{translate("Bağlı yönetim merkezi yok.")}</p>
+   :<ul className="grid gap-2">{active.map(c=><li key={c.id} className="flex flex-wrap items-center justify-between gap-2 text-sm"><span><span className="font-semibold">{c.name}</span> <span className="muted">· {c.email} · {translate("son görülme")}: {c.last_seen_at?localizedDate(c.last_seen_at,{dateStyle:"short",timeStyle:"short"}):"—"}</span></span>
+    <Button size="sm" variant="outline" onClick={()=>revoke(c.id)}><X className="size-4"/>{translate("Bağlantıyı iptal et")}</Button></li>)}</ul>}
+  </CardContent></Card>;
 }

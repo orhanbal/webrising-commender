@@ -804,6 +804,55 @@ jobs:
           path: dist/*
           retention-days: 14
 
+  center-windows:
+    # Management Center (tray app). Separate cargo workspace in tray/.
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: tray
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Unit tests
+        run: cargo test --locked
+      - name: Build release tray app
+        run: cargo build --release --locked
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item "target\release\wecommander-center.exe" "dist\WECOMMANDER-Center-windows-x64.exe"
+          $size = (Get-Item "dist\WECOMMANDER-Center-windows-x64.exe").Length
+          if ($size -lt 1MB) { throw "tray app binary is unexpectedly small: $size bytes" }
+      - name: Center installer dry run on Windows PowerShell 5.1
+        shell: powershell
+        working-directory: .
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'scripts/install-center-windows-online.ps1'),[ref]$null,[ref]$errors)
+          if ($errors.Count -gt 0) { $errors | Format-List; exit 1 }
+          # Before the first release with the tray app there is nothing to pick;
+          # the script must say so cleanly instead of failing to parse releases.
+          # Its "not yet" error arrives on stderr; the step shell would stop on it.
+          $ErrorActionPreference = 'Continue'
+          $out = & powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-center-windows-online.ps1 -DryRun 2>&1 | Out-String
+          $ErrorActionPreference = 'Stop'
+          Write-Host $out
+          if ($out -notmatch 'would install ubuntu-preview-[0-9]+ from https://github.com/orhanbal/webrising-commender/releases/download/ubuntu-preview-[0-9]+/WECOMMANDER-Center-windows-x64.exe' -and
+              $out -notmatch 'No preview release with the Management Center yet') {
+            throw 'center installer dry run did not resolve a release'
+          }
+          # The "not yet" answer exits 1 by design; the match above is the check.
+          exit 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WECOMMANDER-Center-windows-x64
+          path: tray/dist/WECOMMANDER-Center-windows-x64.exe
+          if-no-files-found: error
+          retention-days: 14
+
   windows-service-smoke:
     runs-on: windows-latest
     steps:

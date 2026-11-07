@@ -4,7 +4,7 @@ import { db, defaultOrganizationId } from "./db.js";
 import { isControlAuthorized, randomToken, sha256 } from "./security.js";
 
 export type Role = "viewer" | "operator" | "admin" | "owner";
-export type AuthKind = "control" | "token" | "session" | "oauth";
+export type AuthKind = "control" | "token" | "session" | "oauth" | "center";
 
 export type Principal = {
   organizationId: string;
@@ -16,6 +16,9 @@ export type Principal = {
   email?: string;
   sessionId?: string;
   csrfHash?: string;
+  /** Management Center (tray app) the request came from. */
+  centerId?: string;
+  centerName?: string;
 };
 
 const roleRank: Record<Role, number> = {
@@ -44,6 +47,7 @@ export async function authenticateAuthorization(
 
   if (!authorization?.startsWith("Bearer ")) return null;
   const token = authorization.slice(7);
+  if (token.startsWith("wmc_")) return authenticateCenterToken(token);
   if (!token.startsWith("wrc_") || token.length < 40) return null;
 
   const result = await db.query<{
@@ -141,4 +145,41 @@ export function verifyBrowserCsrf(principal: Principal, supplied: string | undef
 
 export function newApiToken() {
   return "wrc_" + randomToken(36);
+}
+
+/**
+ * Management Center token: acts as the user who connected it, with that
+ * user's current role, while the user and the center are active.
+ */
+async function authenticateCenterToken(token: string): Promise<Principal | null> {
+  if (token.length < 40) return null;
+  const result = await db.query<{
+    id: string; name: string; organization_id: string; user_id: string; email: string; role: Role;
+  }>(
+    `select c.id,c.name,c.organization_id,c.user_id,u.email,m.role
+       from management_centers c
+       join users u on u.id=c.user_id and u.disabled_at is null
+       join organization_members m on m.user_id=c.user_id and m.organization_id=c.organization_id
+      where c.token_hash=$1 and c.revoked_at is null
+      limit 1`,
+    [sha256(token)],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  await db.query("update management_centers set last_seen_at=now() where id=$1", [row.id]);
+  return {
+    organizationId: row.organization_id,
+    actor: `user:${row.user_id}`,
+    role: row.role,
+    global: false,
+    authKind: "center",
+    userId: row.user_id,
+    email: row.email,
+    centerId: row.id,
+    centerName: row.name,
+  };
+}
+
+export function newCenterToken() {
+  return "wmc_" + randomToken(36);
 }
