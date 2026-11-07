@@ -3,8 +3,9 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Windows.AppLifecycle;
-using Microsoft.Windows.AppNotifications;
-using Microsoft.Windows.AppNotifications.Builder;
+using Microsoft.Win32;
+using Windows.Data.Xml.Dom;
+using Windows.UI.Notifications;
 using Wecommander.Center.Core;
 
 namespace Wecommander.Center;
@@ -50,12 +51,15 @@ public partial class App : Application
     public DateTime? LastSync => _lastSync == DateTime.MinValue ? null : _lastSync;
 
     /// <summary>Windows' own notification setting for this app (Settings, System, Notifications).</summary>
-    public AppNotificationSetting NotificationSetting { get; private set; } = AppNotificationSetting.Enabled;
+    public NotificationSetting NotificationSetting { get; private set; } = NotificationSetting.Enabled;
 
     /// <summary>True when the owner wants notifications but Windows will not show them.</summary>
     public bool NotificationsBlocked => Settings.Notifications && NotificationSetting is
-        AppNotificationSetting.DisabledForApplication or AppNotificationSetting.DisabledForUser or
-        AppNotificationSetting.DisabledByGroupPolicy or AppNotificationSetting.DisabledByManifest;
+        NotificationSetting.DisabledForApplication or NotificationSetting.DisabledForUser or
+        NotificationSetting.DisabledByGroupPolicy or NotificationSetting.DisabledByManifest;
+
+    private ToastNotifier? _notifier;
+    private ToastNotifier Notifier => _notifier ??= ToastNotificationManager.CreateToastNotifier(Program.AppUserModelId);
 
     /// <summary>Raised on the UI thread after every state change.</summary>
     public event Action? Changed;
@@ -81,12 +85,7 @@ public partial class App : Application
         }
         Token = LocalStore.LoadToken(Settings.Server);
 
-        // Notification buttons arrive here while the app runs. Must be set
-        // before Register().
-        AppNotificationManager.Default.NotificationInvoked += (_, e) =>
-            _ui.TryEnqueue(() => HandleNotification(e.Arguments));
-        var icon = Path.Combine(AppContext.BaseDirectory, "Assets", "icon.png");
-        AppNotificationManager.Default.Register("WECOMMANDER Yönetim Merkezi", new Uri(icon));
+        RegisterNotificationIdentity();
         RefreshNotificationSetting();
 
         // A second start is redirected here (see Program).
@@ -97,9 +96,7 @@ public partial class App : Application
 
         var activation = AppInstance.GetCurrent().GetActivatedEventArgs();
         var hidden = Environment.GetCommandLineArgs().Contains("--hidden");
-        if (activation.Kind == ExtendedActivationKind.AppNotification)
-            HandleNotification(((AppNotificationActivatedEventArgs)activation.Data).Arguments);
-        else if (!hidden || Token is null)
+        if (!hidden || Token is null)
             _window.ShowPanel();
 
         _timer = _ui.CreateTimer();
@@ -110,12 +107,49 @@ public partial class App : Application
         Publish();
     }
 
-    private void HandleActivation(AppActivationArguments e)
+    private void HandleActivation(AppActivationArguments e) => _window?.ShowPanel();
+
+    /// <summary>
+    /// Registers app.wecommander.center (name and icon shown on the
+    /// notification and in Settings) for the current user; no admin rights.
+    /// </summary>
+    private static void RegisterNotificationIdentity()
     {
-        if (e.Kind == ExtendedActivationKind.AppNotification)
-            HandleNotification(((AppNotificationActivatedEventArgs)e.Data).Arguments);
-        else
-            _window?.ShowPanel();
+        try
+        {
+            using var key = Registry.CurrentUser.CreateSubKey($@"Software\Classes\AppUserModelId\{Program.AppUserModelId}");
+            key.SetValue("DisplayName", "WECOMMANDER Yönetim Merkezi");
+            var icon = Path.Combine(AppContext.BaseDirectory, "Assets", "icon.png");
+            if (File.Exists(icon)) key.SetValue("IconUri", icon);
+        }
+        catch (Exception) { /* notifications still work, with a generic name */ }
+    }
+
+    /// <summary>Shows a toast; its body and buttons come back through Activated while the app runs.</summary>
+    private void ShowToast(string xml, string? tag = null, NotificationData? data = null, DateTimeOffset? expires = null)
+    {
+        var doc = new XmlDocument();
+        doc.LoadXml(xml);
+        var toast = new ToastNotification(doc);
+        if (tag is not null) { toast.Tag = tag; toast.Group = NotificationGroup; }
+        if (data is not null) toast.Data = data;
+        if (expires is { } e && e > DateTimeOffset.UtcNow) toast.ExpirationTime = e;
+        toast.Activated += (_, args) =>
+        {
+            if (args is ToastActivatedEventArgs a)
+            {
+                var parsed = ToastContent.DecodeArgs(a.Arguments);
+                _ui.TryEnqueue(() => HandleNotification(parsed));
+            }
+        };
+        try { Notifier.Show(toast); }
+        catch (Exception) { /* Windows refused (blocked or unavailable): the panel still has the request */ }
+    }
+
+    private void RemoveToast(string tag)
+    {
+        try { ToastNotificationManager.History.Remove(tag, NotificationGroup, Program.AppUserModelId); }
+        catch (Exception) { }
     }
 
     private async void HandleNotification(IDictionary<string, string> arguments)
@@ -142,16 +176,11 @@ public partial class App : Application
         }
     }
 
-    private static void Toast(string text) =>
-        AppNotificationManager.Default.Show(new AppNotificationBuilder().AddText("WECOMMANDER").AddText(text).BuildNotification());
+    private void Toast(string text) => ShowToast(ToastContent.Simple("WECOMMANDER", text));
 
     /// <summary>Shows a notification on demand so the owner can see where approvals will appear.</summary>
     public void SendTestNotification() =>
-        AppNotificationManager.Default.Show(new AppNotificationBuilder()
-            .AddArgument("action", "open")
-            .AddText(Texts.NotificationTestTitle)
-            .AddText(Texts.NotificationTestText)
-            .BuildNotification());
+        ShowToast(ToastContent.Simple(Texts.NotificationTestTitle, Texts.NotificationTestText));
 
     /// <summary>
     /// Once per install, right after sign-in: a first notification, so Windows
@@ -160,11 +189,7 @@ public partial class App : Application
     private void ShowNotificationIntroOnce()
     {
         if (Settings.NotificationIntroShown || !Settings.Notifications) return;
-        AppNotificationManager.Default.Show(new AppNotificationBuilder()
-            .AddArgument("action", "open")
-            .AddText(Texts.NotificationIntroTitle)
-            .AddText(Texts.NotificationIntroText)
-            .BuildNotification());
+        ShowToast(ToastContent.Simple(Texts.NotificationIntroTitle, Texts.NotificationIntroText));
         Settings.NotificationIntroShown = true;
         SaveSettings();
     }
@@ -173,39 +198,20 @@ public partial class App : Application
     private void NotifyRequest(ApprovalRequest item, string device)
     {
         var what = string.IsNullOrEmpty(item.Summary) ? Texts.KindLabel(item.ActionKind) : item.Summary;
-        var builder = new AppNotificationBuilder()
-            .AddArgument("action", "open")
-            .AddText($"Onay bekliyor · {device}")
-            .AddText(what)
-            .AddText($"{Texts.KindLabel(item.ActionKind)} · yalnız bu işlem, bir kez")
-            // Urgent (Windows 11 22H2+) shows the banner even with Do not disturb
-            // on; elsewhere Reminder keeps it on screen until answered.
-            .SetScenario(AppNotificationBuilder.IsUrgentScenarioSupported() ? AppNotificationScenario.Urgent : AppNotificationScenario.Reminder)
-            // Time left counts down on the notification itself (updated every second).
-            .AddProgressBar(new AppNotificationProgressBar().BindTitle().BindValue().BindValueStringOverride().BindStatus())
-            .AddButton(new AppNotificationButton("Onayla").AddArgument("action", "approve").AddArgument("id", item.Id).AddArgument("device", device))
-            .AddButton(new AppNotificationButton("Reddet").AddArgument("action", "deny").AddArgument("id", item.Id).AddArgument("device", device));
-        var notification = builder.BuildNotification();
-        notification.Tag = item.Id;
-        notification.Group = NotificationGroup;
-        notification.Priority = AppNotificationPriority.High;
-        notification.Progress = CountdownData(item.CreatedAt, item.ExpiresAt, 1);
-        AppNotificationManager.Default.Show(notification);
+        // Urgent (Windows 11 22H2, build 22621+) breaks through Do not disturb.
+        var urgent = Environment.OSVersion.Version.Build >= 22621;
+        ShowToast(ToastContent.Approval(item.Id, device, what, Texts.KindLabel(item.ActionKind), urgent),
+            item.Id, CountdownData(item.CreatedAt, item.ExpiresAt, 1), item.ExpiresAt.AddSeconds(30));
         _shown[item.Id] = (item.CreatedAt, item.ExpiresAt, 1);
         StartCountdown();
     }
 
-    private static AppNotificationProgressData CountdownData(DateTimeOffset createdAt, DateTimeOffset expiresAt, uint sequence)
+    private static NotificationData CountdownData(DateTimeOffset createdAt, DateTimeOffset expiresAt, uint sequence)
     {
-        var now = DateTimeOffset.UtcNow;
-        var expired = expiresAt <= now;
-        return new AppNotificationProgressData(sequence)
-        {
-            Title = expired ? "Süresi doldu" : "Kalan süre",
-            Value = Texts.RemainingFraction(createdAt, expiresAt, now),
-            ValueStringOverride = Texts.Countdown(expiresAt, now),
-            Status = expired ? "Bu istek artık onaylanamaz" : "Süre dolunca istek düşer",
-        };
+        var data = new NotificationData { SequenceNumber = sequence };
+        foreach (var (key, value) in ToastContent.Countdown(createdAt, expiresAt, DateTimeOffset.UtcNow))
+            data.Values[key] = value;
+        return data;
     }
 
     private void StartCountdown()
@@ -227,18 +233,19 @@ public partial class App : Application
         {
             var next = sequence + 1;
             _shown[id] = (created, expires, next);
-            AppNotificationProgressResult result;
-            try { result = await AppNotificationManager.Default.UpdateAsync(CountdownData(created, expires, next), id, NotificationGroup); }
-            catch (Exception) { result = AppNotificationProgressResult.AppNotificationNotFound; }
+            NotificationUpdateResult result;
+            try { result = Notifier.Update(CountdownData(created, expires, next), id, NotificationGroup); }
+            catch (Exception) { result = NotificationUpdateResult.NotificationNotFound; }
             // Dismissed by the owner, or answered here: stop updating it.
-            if (result != AppNotificationProgressResult.Succeeded) { _shown.Remove(id); continue; }
+            if (result != NotificationUpdateResult.Succeeded) { _shown.Remove(id); continue; }
             if (expires <= DateTimeOffset.UtcNow.AddSeconds(-5))
             {
                 // Leave "Süresi doldu" visible a moment, then take it away.
                 _shown.Remove(id);
-                _ = AppNotificationManager.Default.RemoveByTagAndGroupAsync(id, NotificationGroup);
+                RemoveToast(id);
             }
         }
+        await Task.CompletedTask;
     }
 
     private async Task TickAsync()
@@ -282,7 +289,7 @@ public partial class App : Application
             foreach (var gone in previous.Except(Pending.Select(p => p.Id)))
             {
                 _shown.Remove(gone);
-                _ = AppNotificationManager.Default.RemoveByTagAndGroupAsync(gone, NotificationGroup);
+                RemoveToast(gone);
             }
 
             var fresh = Pending.Where(p => _seen.Add(p.Id)).ToList();
@@ -382,7 +389,7 @@ public partial class App : Application
         {
             await Gateway.DecideAsync(token, id, approve);
             _shown.Remove(id);
-            _ = AppNotificationManager.Default.RemoveByTagAndGroupAsync(id, NotificationGroup);
+            RemoveToast(id);
         }
         finally
         {
@@ -426,7 +433,8 @@ public partial class App : Application
         _shown.Clear();
         Error = message;
         LocalStore.DeleteToken();
-        _ = AppNotificationManager.Default.RemoveByGroupAsync(NotificationGroup);
+        try { ToastNotificationManager.History.RemoveGroup(NotificationGroup, Program.AppUserModelId); }
+        catch (Exception) { }
     }
 
     public void SaveSettings() => _settingsStore.Save(Settings);
@@ -442,9 +450,9 @@ public partial class App : Application
     /// <summary>Reads Windows' notification setting; returns true when it changed.</summary>
     private bool RefreshNotificationSetting()
     {
-        AppNotificationSetting current;
-        try { current = AppNotificationManager.Default.Setting; }
-        catch (Exception) { current = AppNotificationSetting.Unsupported; }
+        NotificationSetting current;
+        try { current = Notifier.Setting; }
+        catch (Exception) { current = NotificationSetting.Enabled; }
         if (current == NotificationSetting) return false;
         NotificationSetting = current;
         return true;
@@ -562,7 +570,6 @@ public partial class App : Application
     private void Quit()
     {
         _timer?.Stop();
-        AppNotificationManager.Default.Unregister();
         _tray?.Dispose();
         _window?.Quit();
         Exit();
