@@ -45,6 +45,7 @@ export const REQUIRED_CI_JOBS = Object.freeze([
   "windows-acceptance-artifact",
   "windows-service-smoke",
   "center-windows",
+  "center-winui",
 ]);
 
 /**

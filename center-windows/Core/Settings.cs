@@ -1,0 +1,41 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace Wecommander.Center.Core;
+
+public sealed class Settings
+{
+    public const string DefaultServer = "https://wecommander.app";
+
+    [JsonPropertyName("server")] public string Server { get; set; } = DefaultServer;
+    /// <summary>Windows notification with Approve/Deny for each new request.</summary>
+    [JsonPropertyName("notifications")] public bool Notifications { get; set; } = true;
+    /// <summary>Open the panel for a new request when notifications are off.</summary>
+    [JsonPropertyName("openOnRequest")] public bool OpenOnRequest { get; set; } = true;
+}
+
+public sealed class SettingsStore(string directory)
+{
+    private string FilePath => Path.Combine(directory, "settings.json");
+
+    /// <summary>The settings, and whether they existed (first run enables autostart).</summary>
+    public (Settings Settings, bool Existed) Load()
+    {
+        try
+        {
+            var loaded = JsonSerializer.Deserialize<Settings>(File.ReadAllText(FilePath));
+            return (loaded ?? new Settings(), true);
+        }
+        catch (FileNotFoundException) { return (new Settings(), false); }
+        catch (DirectoryNotFoundException) { return (new Settings(), false); }
+        catch (JsonException) { return (new Settings(), true); }
+    }
+
+    public void Save(Settings settings)
+    {
+        Directory.CreateDirectory(directory);
+        var tmp = FilePath + ".tmp";
+        File.WriteAllText(tmp, JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
+        File.Move(tmp, FilePath, overwrite: true);
+    }
+}
