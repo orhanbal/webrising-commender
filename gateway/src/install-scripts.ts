@@ -15,6 +15,7 @@ const files: Record<string, string> = {
   "/install/macos.sh": "macos.sh",
   "/install.ps1": "windows.ps1",
   "/install/center.ps1": "center-windows.ps1",
+  "/install/center.sh": "center-macos.sh",
 };
 
 export function installCommands(origin: string) {
@@ -22,6 +23,7 @@ export function installCommands(origin: string) {
     unix: `curl -fsSL ${origin}/install.sh | sh`,
     windows: `powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm ${origin}/install.ps1)))"`,
     centerWindows: `irm ${origin}/install/center.ps1 | iex`,
+    centerMacos: `curl -fsSL ${origin}/install/center.sh | sh`,
   };
 }
 

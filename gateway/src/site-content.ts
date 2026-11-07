@@ -143,6 +143,8 @@ export const publicPages: PublicPage[] = [
       { code: "irm https://wecommander.app/install.ps1 | iex" },
       { h2: "Management Center for Windows (approvals on your desktop)" },
       { code: "irm https://wecommander.app/install/center.ps1 | iex" },
+      { h2: "Management Center for macOS (menu bar app, macOS 13 or newer)" },
+      { code: "curl -fsSL https://wecommander.app/install/center.sh | sh" },
     ],
     howTo: {
       name: "Connect an AI assistant to your machine with WECOMMANDER",

@@ -28,15 +28,19 @@ jobs:
           test -s dist/ci-macos/WECOMMANDER-macos-universal.pkg
           cp dist/ci-macos/WECOMMANDER-macos-universal.pkg dist/
           rm -rf dist/ci-macos
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" -n WECOMMANDER-Center-macos -D dist/ci-center
+          test -s dist/ci-center/WECOMMANDER-Center-macos.zip
+          cp dist/ci-center/WECOMMANDER-Center-macos.zip dist/
+          rm -rf dist/ci-center
           cd dist
-          sha256sum -- *.pkg > SHA256SUMS.txt
+          sha256sum -- *.pkg *.zip > SHA256SUMS.txt
       - name: Publish macOS preview release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="macos-preview-${{ github.event.workflow_run.run_number }}"
-          gh release create "$TAG" dist/*.pkg dist/SHA256SUMS.txt \
+          gh release create "$TAG" dist/*.pkg dist/*.zip dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "${{ github.event.workflow_run.head_sha }}" \
             --title "WECOMMANDER macOS preview #${{ github.event.workflow_run.run_number }}" \
-            --prerelease --notes "macOS universal PKG built and tested by the macos workflow (run ${{ github.event.workflow_run.id }}) for ${{ github.event.workflow_run.head_sha }}. Must pass physical-device acceptance before production approval."
+            --prerelease --notes "macOS universal agent PKG and the Management Center app (WECOMMANDER-Center-macos.zip) built and tested by the macos workflow (run ${{ github.event.workflow_run.id }}) for ${{ github.event.workflow_run.head_sha }}. Must pass physical-device acceptance before production approval."

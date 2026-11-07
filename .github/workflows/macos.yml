@@ -192,3 +192,29 @@ jobs:
           name: WECOMMANDER-macos-universal-acceptance
           path: dist/*
           retention-days: 14
+
+  center-macos:
+    # Management Center for macOS: native menu bar app (center-macos/, Swift).
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Core unit tests
+        run: swift test --package-path center-macos
+      - name: Build universal app bundle (ad-hoc signed) and zip
+        run: bash scripts/build-center-macos.sh "0.1.${{ github.run_number }}" center-macos/dist
+      - name: Installer syntax and release selection (dry run)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          sh -n scripts/install-center-macos-online.sh
+          cmp scripts/install-center-macos-online.sh gateway/public/install/center-macos.sh
+          # Before the first macOS preview with the Center there is nothing to pick.
+          out="$(sh scripts/install-center-macos-online.sh --dry-run 2>&1 || true)"
+          echo "$out"
+          echo "$out" | grep -E "would install macos-preview-[0-9]+|No preview release with the macOS Management Center yet"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WECOMMANDER-Center-macos
+          path: center-macos/dist/WECOMMANDER-Center-macos.zip
+          if-no-files-found: error
+          retention-days: 14
