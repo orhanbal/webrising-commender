@@ -835,7 +835,10 @@ jobs:
           if ($errors.Count -gt 0) { $errors | Format-List; exit 1 }
           # Before the first release with the tray app there is nothing to pick;
           # the script must say so cleanly instead of failing to parse releases.
-          $out = & powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-center-windows-online.ps1 -DryRun *>&1 | Out-String
+          # Its "not yet" error arrives on stderr; the step shell would stop on it.
+          $ErrorActionPreference = 'Continue'
+          $out = & powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-center-windows-online.ps1 -DryRun 2>&1 | Out-String
+          $ErrorActionPreference = 'Stop'
           Write-Host $out
           if ($out -notmatch 'would install ubuntu-preview-[0-9]+ from https://github.com/orhanbal/webrising-commender/releases/download/ubuntu-preview-[0-9]+/WECOMMANDER-Center-windows-x64.exe' -and
               $out -notmatch 'No preview release with the Management Center yet') {
