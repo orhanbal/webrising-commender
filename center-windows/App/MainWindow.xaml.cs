@@ -101,6 +101,13 @@ public sealed partial class MainWindow : Window
         Render();
     }
 
+    /// <summary>Open the panel on the Approvals tab (a new request arrived).</summary>
+    public void ShowApprovals()
+    {
+        Tabs.SelectedItem = ApprovalsTab;
+        ShowPanel();
+    }
+
     public void HidePanel()
     {
         _hiddenAt = DateTime.UtcNow;

@@ -197,9 +197,11 @@ public partial class App : Application
                     foreach (var item in fresh.Take(5))
                         NotifyRequest(item, names.GetValueOrDefault(item.DeviceId, "bilinmeyen cihaz"));
                 }
-                else if (Settings.OpenOnRequest)
+                // Owner request: the panel opens by itself on the Approvals tab
+                // when a request arrives (the notification comes as well).
+                if (Settings.OpenOnRequest)
                 {
-                    _window?.ShowPanel();
+                    _window?.ShowApprovals();
                 }
             }
         }

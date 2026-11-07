@@ -10,7 +10,7 @@ public sealed class Settings
     [JsonPropertyName("server")] public string Server { get; set; } = DefaultServer;
     /// <summary>Windows notification with Approve/Deny for each new request.</summary>
     [JsonPropertyName("notifications")] public bool Notifications { get; set; } = true;
-    /// <summary>Open the panel for a new request when notifications are off.</summary>
+    /// <summary>Open the panel on the Approvals tab when a new request arrives.</summary>
     [JsonPropertyName("openOnRequest")] public bool OpenOnRequest { get; set; } = true;
 }
 
