@@ -34,6 +34,8 @@ keyring = { version = "3", features = ["windows-native", "apple-native"] }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
+# Windows notifications with Approve / Deny buttons (already used by tauri-plugin-notification).
+tauri-winrt-notification = "0.8"
 
 [profile.release]
 strip = true
