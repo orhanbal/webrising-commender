@@ -104,6 +104,7 @@ public class CoreTests
         Assert.True(existedNow);
         Assert.False(loaded.Notifications);
         Assert.False(loaded.OpenOnRequest);
+        Assert.False(loaded.NotificationIntroShown);
         Directory.Delete(dir, true);
     }
 

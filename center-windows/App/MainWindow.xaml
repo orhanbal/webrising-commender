@@ -124,6 +124,13 @@
 
                         <StackPanel x:Name="SettingsPanel" Spacing="4" Visibility="Collapsed">
                             <ToggleSwitch x:Name="NotifySwitch" Header="Yeni onay isteğinde Windows bildirimi (Onayla / Reddet)" Toggled="Settings_Toggled" />
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
+                                <Button Content="Test bildirimi gönder" Click="TestNotification_Click" />
+                                <Button Content="Bildirim ayarlarını aç" Click="AllowNotifications_Click" />
+                            </StackPanel>
+                            <TextBlock TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Margin="0,0,0,8"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       Text="Test bildirimi sağ altta görünmüyorsa: Windows izin sorduysa 'İzin ver'e bas; Bildirim ayarlarında WECOMMANDER Yönetim Merkezi için 'Bildirim başlıklarını göster' açık olsun." />
                             <ToggleSwitch x:Name="OpenSwitch" Header="Yeni onay isteğinde paneli kendiliğinden aç" Toggled="Settings_Toggled" />
                             <ToggleSwitch x:Name="AutostartSwitch" Header="Windows oturum açılışında başlat" Toggled="Autostart_Toggled" />
                             <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">

@@ -11,6 +11,12 @@ public sealed class Settings
     /// <summary>Windows notification with Approve/Deny for each new request.</summary>
     [JsonPropertyName("notifications")] public bool Notifications { get; set; } = true;
     /// <summary>
+    /// The one-time "notifications are ready" message was shown. Windows 11
+    /// asks whether to allow an app's notifications on its first one; until
+    /// the owner answers, approvals would only reach the notification center.
+    /// </summary>
+    [JsonPropertyName("notificationIntroShown")] public bool NotificationIntroShown { get; set; }
+    /// <summary>
     /// Also open the full panel when a new request arrives. Off by default: the
     /// small Windows notification is enough (owner decision 2026-11-07). The
     /// JSON name changed from "openOnRequest" so earlier installs, where this
