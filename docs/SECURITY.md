@@ -214,6 +214,21 @@ verification, so even a valid human approval cannot override them.
 - **Defaults:** configs written before this feature keep both enabled.
 - **Tests:** `gateway/test/device-capabilities-e2e.mjs`.
 
+### Autonomous mode
+
+`POST /api/trust/autonomy` sets **full** trust (no per-call approval) for every
+device of the workspace, or the listed `deviceIds`, for `minutes` (5 min – 30
+days) or indefinitely (`minutes: null`); `enable: false` stops it for all of
+them. Rules: admin **browser session only** (API tokens, and so AI clients, get
+403, so an AI cannot switch its own approvals off); enabling needs the current
+password and e-mails every admin/owner; stopping needs no password. Every
+change is audited per device (`device.trust_level`, `autonomy: start|stop`). A
+sweep (`TRUST_EXPIRY_INTERVAL_MS`, default 60 s) returns expired devices to
+standard, audits `outcome=expired` (actor `system`) and e-mails the admins.
+Device-local limits (allowed roots, read-only, no-commands, redaction) still
+apply. The dashboard shows a banner on every page while it is on;
+`GET /api/trust/autonomy` lists the devices.
+
 ### Output redaction (v1.2)
 
 The agent masks secrets in the output of `process_exec`, `process_list`,

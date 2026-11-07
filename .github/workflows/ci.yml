@@ -242,6 +242,7 @@ jobs:
       MAIL_OUTBOX_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       MAIL_DELIVERY_INTERVAL_MS: 250
       MAIL_DELIVERY_BATCH: 20
+      TRUST_EXPIRY_INTERVAL_MS: 500
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

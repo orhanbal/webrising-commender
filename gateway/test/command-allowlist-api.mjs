@@ -117,8 +117,41 @@ try {
   assert.equal((await add(owner, "uname -s")).status, 201);
   assert.equal((await trust(owner, { level: "strict" })).status, 200);
   assert.equal((await callExec("uname -s")).error, "approval_required", "strict ignores the allowlist");
-  const trustAudit = await db.query("select count(*)::int as n from audit_logs where device_id=$1 and tool='device.trust_level'", [device]);
+  const trustAudit = await db.query("select count(*)::int as n from audit_logs where device_id=$1 and tool='device.trust_level' and outcome<>'expired'", [device]);
   assert.equal(trustAudit.rows[0].n, 2);
+  // Autonomous mode: all devices at once, admin browser session only,
+  // password to enable, one-click stop, automatic expiry with an audit row.
+  const autonomy = (headers, body) => fetch(base + "/api/trust/autonomy", { method: "POST", headers, body: JSON.stringify(body) });
+  const activeAutonomy = async () => (await (await fetch(base + "/api/trust/autonomy", { headers: owner })).json()).items.map((d) => d.id);
+  assert.equal((await autonomy(viewer, { enable: true, currentPassword: password })).status, 403, "viewer");
+  assert.equal((await autonomy({ authorization: "Bearer " + apiToken, "content-type": "application/json" }, { enable: false })).status, 403, "API tokens (AI clients) cannot change autonomy");
+  assert.equal((await autonomy(owner, { enable: true })).status, 403, "enabling needs the password");
+  const mailsBeforeAutonomy = await mails();
+  const started = await autonomy(owner, { enable: true, minutes: 30, currentPassword: password });
+  assert.equal(started.status, 200);
+  assert.ok((await started.json()).items.some((d) => d.id === device && d.trust_level === "full"));
+  assert.deepEqual(await activeAutonomy(), [device]);
+  for (let i = 0; i < 40 && (await mails()) === mailsBeforeAutonomy; i++) await new Promise((r) => setTimeout(r, 100));
+  assert.equal(await mails(), mailsBeforeAutonomy + 1, "admins are e-mailed when autonomous mode starts");
+  assert.notEqual((await callExec("uname -r")).error, "approval_required", "autonomous mode skips per-call approval");
+  const stopped = await autonomy(owner, { enable: false });
+  assert.equal(stopped.status, 200, "stopping needs no password");
+  assert.ok((await stopped.json()).items.some((d) => d.id === device && d.trust_level === "standard"));
+  assert.deepEqual(await activeAutonomy(), []);
+  assert.equal((await callExec("uname -m")).error, "approval_required", "after stop, approvals are back");
+  // Indefinite, then expiry by the sweep (TRUST_EXPIRY_INTERVAL_MS is short in CI).
+  assert.equal((await autonomy(owner, { enable: true, minutes: null, deviceIds: [device], currentPassword: password })).status, 200);
+  assert.equal((await db.query("select trust_full_until from devices where id=$1", [device])).rows[0].trust_full_until, null, "indefinite");
+  const expiredCount = async () => (await db.query("select count(*)::int n from audit_logs where device_id=$1 and tool='device.trust_level' and outcome='expired'", [device])).rows[0].n;
+  const expiredBefore = await expiredCount();
+  await db.query("update devices set trust_full_until=now()-interval '1 second' where id=$1", [device]);
+  let expiredRows = 0;
+  for (let i = 0; i < 50 && expiredRows === 0; i++) {
+    await new Promise((r) => setTimeout(r, 200));
+    expiredRows = (await expiredCount()) - expiredBefore;
+  }
+  assert.equal(expiredRows, 1, "expiry is recorded in the audit log");
+  assert.equal((await db.query("select trust_level from devices where id=$1", [device])).rows[0].trust_level, "standard");
   // Device deletion: only revoked devices, only from an admin browser session; audit kept.
   const delRoute = base + `/api/devices/${device}`;
   assert.equal((await fetch(delRoute, { method: "DELETE", headers: owner })).status, 409, "revoke before delete");

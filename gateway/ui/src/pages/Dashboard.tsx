@@ -27,6 +27,9 @@ export function DashboardShell({nav,path,account,theme,toggle,logout,children}:{
  const profileRef=useRef<HTMLDivElement>(null);
  // Pending HIGH-risk AI approvals (admins/owners only; others get 403 and see none).
  const [pendingApprovals,setPendingApprovals]=useState(0);
+ // Autonomous mode banner on every dashboard page (admins only; 403 → none).
+ const [autonomous,setAutonomous]=useState(0);
+ useEffect(()=>{let active=true;const load=()=>api<{items:unknown[]}>("/api/trust/autonomy").then(r=>{if(active)setAutonomous(Array.isArray(r.items)?r.items.length:0)}).catch(()=>{if(active)setAutonomous(0)});load();const timer=setInterval(load,30000);return()=>{active=false;clearInterval(timer)}},[]);
  useEffect(()=>{let active=true;const load=()=>api<{items:unknown[]}>("/api/approval-requests?status=pending&limit=20").then(r=>{if(active)setPendingApprovals(Array.isArray(r.items)?r.items.length:0)}).catch(()=>{if(active)setPendingApprovals(0)});load();const timer=setInterval(load,30000);return()=>{active=false;clearInterval(timer)}},[]);
  useEffect(()=>{if(!profileOpen)return;const close=(event:PointerEvent)=>{if(profileRef.current&&!profileRef.current.contains(event.target as Node))setProfileOpen(false)};const escape=(event:KeyboardEvent)=>{if(event.key==="Escape")setProfileOpen(false)};document.addEventListener("pointerdown",close);document.addEventListener("keydown",escape);return()=>{document.removeEventListener("pointerdown",close);document.removeEventListener("keydown",escape)}},[profileOpen]);
  useEffect(()=>{if(!mobile)return;const escape=(event:KeyboardEvent)=>{if(event.key==="Escape")setMobile(false)};document.addEventListener("keydown",escape);return()=>document.removeEventListener("keydown",escape)},[mobile]);
@@ -55,7 +58,7 @@ export function DashboardShell({nav,path,account,theme,toggle,logout,children}:{
      </div>}
     </div></div>
    </div>
-   <main id="main-content" tabIndex={-1} className="dash-content outline-none">{children}</main>
+   <main id="main-content" tabIndex={-1} className="dash-content outline-none">{autonomous>0&&path!=="/approvals"&&<div role="status" className="autonomy-banner"><span>{translate("Otonom mod açık")}: {autonomous} {translate("cihazda onay istenmiyor.")}</span><a href="/approvals" onClick={e=>follow(e,"/approvals")}>{translate("Yönet")}</a></div>}{children}</main>
    <div className="border-t border-[var(--stroke)] mt-12 pt-5 pb-5 flex justify-between items-center gap-5 flex-wrap text-xs muted"><span>{translate("WECOMMANDER · Güvenli MCP Platformu")}</span><div className="flex gap-4"><button onClick={()=>navTo("/pricing")}>{translate("Planlar")}</button><button onClick={logout} className="inline-flex items-center gap-1"><LogOut size={12}/> {translate("Çıkış")}</button></div></div>
   </div>
  </div>

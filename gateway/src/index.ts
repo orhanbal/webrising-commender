@@ -1,4 +1,4 @@
-import { notifyTrustChange } from "./approval-notify.js";
+import { notifyAutonomy, notifyTrustChange } from "./approval-notify.js";
 import { MAX_ALLOWLIST_ENTRIES, normalizePattern } from "./command-allowlist.js";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
@@ -166,6 +166,33 @@ const recoveryPollTimer = setInterval(() => {
 recoveryPollTimer.unref();
 await housekeeping();
 startMailWorker();
+
+// Autonomous mode / time-limited full trust: when it expires, record it,
+// return the device to standard and tell the admins (instead of only
+// treating it as standard at decision time).
+async function expireFullTrust() {
+  const expired = await db.query<{ id: string; organization_id: string; name: string }>(
+    `update devices set trust_level='standard', trust_full_until=null
+      where trust_level='full' and trust_full_until is not null and trust_full_until<=now()
+      returning id, organization_id, name`,
+  );
+  const byOrg = new Map<string, string[]>();
+  for (const row of expired.rows) {
+    await db.query(
+      "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,'system',$2,'device.trust_level','high','expired',$3)",
+      [row.organization_id, row.id, JSON.stringify({ level: "standard", reason: "full_trust_expired" })],
+    );
+    byOrg.set(row.organization_id, [...(byOrg.get(row.organization_id) ?? []), row.name]);
+  }
+  for (const [org, names] of byOrg) await notifyAutonomy(org, "expired", names, "system", null).catch(() => undefined);
+  return expired.rowCount ?? 0;
+}
+const trustExpiryTimer = setInterval(() => {
+  void expireFullTrust().catch((error) => {
+    process.stderr.write(`trust expiry failed: ${redact(error instanceof Error ? error.message : error)}\n`);
+  });
+}, Number(process.env.TRUST_EXPIRY_INTERVAL_MS || 60_000));
+trustExpiryTimer.unref();
 
 const housekeepingTimer = setInterval(() => {
   void housekeeping().catch((error) => {
@@ -3608,6 +3635,62 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           .catch(() => undefined);
       }
       return void json(res, 200, { item });
+    }
+
+    // Autonomous mode: full trust for all (or the listed) devices at once,
+    // for a time or indefinitely, and a one-click stop. Same rules as the
+    // per-device route: admin browser session only (never an API token, so
+    // no AI client can switch its own approvals off); enabling needs the
+    // current password and mails every admin/owner; stopping needs neither.
+    if (url.pathname === "/api/trust/autonomy" && (req.method === "GET" || req.method === "POST")) {
+      if (!requireRole(principal!, "admin", res)) return;
+      if (req.method === "GET") {
+        const active = await db.query(
+          `select id,name,trust_full_until from devices
+            where organization_id=$1 and revoked_at is null and trust_level='full'
+              and (trust_full_until is null or trust_full_until>now()) order by name`,
+          [principal!.organizationId]);
+        return void json(res, 200, { items: active.rows });
+      }
+      if (principal!.authKind !== "session" || !principal!.userId) {
+        return void json(res, 403, { error: "browser_session_required" });
+      }
+      const body = z.object({
+        enable: z.boolean(),
+        minutes: z.number().int().min(5).max(30 * 24 * 60).nullable().optional(),
+        deviceIds: z.array(z.string().uuid()).min(1).max(500).optional(),
+        currentPassword: z.string().min(1).max(256).optional(),
+      }).parse(await readJson(req));
+      if (body.enable) {
+        const me = await db.query<{ password_hash: string }>(
+          "select password_hash from users where id=$1 and disabled_at is null", [principal!.userId]);
+        if (!body.currentPassword || !me.rows[0] || !(await verifyPassword(body.currentPassword, me.rows[0].password_hash))) {
+          return void json(res, 403, { error: "reauthentication_failed" });
+        }
+      }
+      const changed = await db.query<{ id: string; name: string; trust_level: string; trust_full_until: Date | null }>(
+        body.enable
+          ? `update devices set trust_level='full',
+                    trust_full_until=case when $3::int is not null then now()+($3::int*interval '1 minute') else null end
+              where organization_id=$1 and revoked_at is null and ($2::uuid[] is null or id=any($2::uuid[]))
+              returning id,name,trust_level,trust_full_until`
+          : `update devices set trust_level='standard', trust_full_until=null
+              where organization_id=$1 and revoked_at is null and trust_level='full'
+                and ($2::uuid[] is null or id=any($2::uuid[]))
+              returning id,name,trust_level,trust_full_until`,
+        body.enable
+          ? [principal!.organizationId, body.deviceIds ?? null, body.minutes ?? null]
+          : [principal!.organizationId, body.deviceIds ?? null],
+      );
+      for (const item of changed.rows) {
+        await auditControl(principal!, item.id, "device.trust_level", "high", "success",
+          JSON.stringify({ level: item.trust_level, until: item.trust_full_until, autonomy: body.enable ? "start" : "stop" }));
+      }
+      if (body.enable && changed.rows.length) {
+        notifyAutonomy(principal!.organizationId, "started", changed.rows.map((r) => r.name),
+          principal!.email || principal!.actor, changed.rows[0]!.trust_full_until).catch(() => undefined);
+      }
+      return void json(res, 200, { items: changed.rows });
     }
 
     const disconnectMatch = url.pathname.match(/^\/api\/devices\/([0-9a-f-]{36})\/disconnect$/i);

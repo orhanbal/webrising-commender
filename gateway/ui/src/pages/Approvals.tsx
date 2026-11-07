@@ -1,5 +1,5 @@
 import {useCallback,useEffect,useMemo,useState} from "react";
-import {Check,Clock3,KeyRound,ListChecks,Plus,ShieldAlert,ShieldCheck,ShieldQuestion,Trash2,X} from "lucide-react";
+import {Check,Clock3,KeyRound,ListChecks,Plus,ShieldAlert,ShieldCheck,ShieldQuestion,Trash2,X,Zap} from "lucide-react";
 import {t as translate,useLocale,localizedDate} from "../i18n";
 import {api,type Account,type Device} from "../api";
 import {Alert,Badge,Button,Card,CardContent,CardDescription,CardHeader,CardTitle,Dialog,DialogContent,DialogDescription,DialogTitle,EmptyState,Input,PageHeader,Skeleton,Spinner} from "../components/ui";
@@ -67,6 +67,7 @@ export function ApprovalsPage({nav,account,checking,theme,toggle,logout}:{nav:Na
      <p className="text-xs muted mt-2">{localizedDate(item.created_at,{dateStyle:"short",timeStyle:"short"})} · {translate("Kalan süre")}: {remaining(item.expires_at)}</p></div>
      <div className="flex gap-2 shrink-0"><Button size="sm" onClick={()=>setDecision({item,kind:"approve"})}><Check className="size-4"/>{translate("Onayla")}</Button><Button size="sm" variant="outline" onClick={()=>setDecision({item,kind:"deny"})}><X className="size-4"/>{translate("Reddet")}</Button></div></li>)}</ul>}
    </CardContent></Card>}
+   {!forbidden&&<AutonomyCard devices={devices} onChanged={load} onError={setError}/>}
    {!forbidden&&<DevicePolicy devices={devices} onChanged={load} onError={setError}/>}
   </div>
   <Dialog open={!!decision} onOpenChange={open=>{if(!open&&!busy)setDecision(null)}}><DialogContent>{decision&&<>
@@ -76,6 +77,50 @@ export function ApprovalsPage({nav,account,checking,theme,toggle,logout}:{nav:Na
    <div className="flex justify-end gap-2 mt-6"><Button variant="outline" onClick={()=>setDecision(null)} disabled={busy}>{translate("Vazgeç")}</Button><Button variant={decision.kind==="approve"?"default":"danger"} onClick={decide} disabled={busy}>{busy?<Spinner label={translate("Gönderiliyor…")}/>:decision.kind==="approve"?translate("Onayla"):translate("Reddet")}</Button></div>
   </>}</DialogContent></Dialog>
  </DashboardShell>;
+}
+
+/** Minutes until tomorrow 09:00 local time. */
+function untilTomorrowMorning(){const t=new Date();t.setDate(t.getDate()+1);t.setHours(9,0,0,0);return Math.max(5,Math.round((t.getTime()-Date.now())/60000))}
+const autonomyPresets:{label:string;minutes:()=>number|null}[]=[
+ {label:"30 dk",minutes:()=>30},{label:"1 saat",minutes:()=>60},{label:"4 saat",minutes:()=>240},
+ {label:"Yarın 09:00'a kadar",minutes:untilTomorrowMorning},{label:"Süresiz",minutes:()=>null},
+];
+
+// Autonomous mode (owner request, 2026-11-07): switch per-call approvals off
+// for every device or the selected ones, for a time or indefinitely, and stop
+// it with one click. Only a browser session can do this; AI clients cannot.
+function AutonomyCard({devices,onChanged,onError}:{devices:PolicyDevice[];onChanged:()=>void;onError:(m:string)=>void}){
+ const [scope,setScope]=useState<"all"|"some">("all");
+ const [picked,setPicked]=useState<Set<string>>(new Set());
+ const [preset,setPreset]=useState(1);
+ const [password,setPassword]=useState("");
+ const [busy,setBusy]=useState(false);
+ const [done,setDone]=useState("");
+ const active=devices.filter(d=>d.trust_level==="full");
+ if(!devices.length)return null;
+ const send=async(enable:boolean)=>{
+  setBusy(true);setDone("");
+  try{
+   const deviceIds=scope==="some"?[...picked]:undefined;
+   const body=enable?{enable,minutes:autonomyPresets[preset]!.minutes(),deviceIds,currentPassword:password}:{enable};
+   const r=await api<{items:unknown[]}>("/api/trust/autonomy",{method:"POST",body:JSON.stringify(body)});
+   setPassword("");setDone(enable?translate("Otonom mod açıldı")+" ("+r.items.length+" "+translate("cihaz")+")":translate("Otonom mod durduruldu. Onaylar yeniden geçerli."));onChanged();
+  }catch(e){onError((e as Error).message)}finally{setBusy(false)}
+ };
+ return <Card><CardHeader><CardTitle className="flex items-center gap-2"><Zap className="size-5 text-[var(--warning)]" aria-hidden="true"/>{translate("Otonom mod")}{active.length>0&&<Badge className="ml-1">{active.length} {translate("açık")}</Badge>}</CardTitle><CardDescription>{translate("Onayları geçici ya da süresiz kapat; yapay zekâ yüksek riskli işlemleri beklemeden çalıştırır. Cihaz sınırları, sır maskeleme ve denetim kaydı yine geçerlidir. Bunu yalnızca sen açabilirsin; yapay zekâ istemcileri açamaz.")}</CardDescription></CardHeader><CardContent className="grid gap-5">
+  {active.length>0&&<Alert tone="warning" title={translate("Otonom mod açık")} action={<Button size="sm" variant="danger" onClick={()=>send(false)} disabled={busy}>{translate("Hepsini durdur")}</Button>}>{active.map(d=>d.name+(d.trust_full_until?" · "+translate("bitiş")+" "+localizedDate(d.trust_full_until,{dateStyle:"short",timeStyle:"short"}):" · "+translate("süresiz"))).join(", ")}</Alert>}
+  <fieldset className="grid gap-2"><legend className="text-sm font-semibold mb-1">{translate("Kapsam")}</legend>
+   <label className="flex items-center gap-2 text-sm"><input type="radio" name="autonomy-scope" checked={scope==="all"} onChange={()=>setScope("all")}/>{translate("Tüm cihazlar")} ({devices.length})</label>
+   <label className="flex items-center gap-2 text-sm"><input type="radio" name="autonomy-scope" checked={scope==="some"} onChange={()=>setScope("some")}/>{translate("Seçtiğim cihazlar")}</label>
+   {scope==="some"&&<div className="grid gap-1 pl-6">{devices.map(d=><label key={d.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={picked.has(d.id)} onChange={e=>{const next=new Set(picked);if(e.target.checked)next.add(d.id);else next.delete(d.id);setPicked(next)}}/>{d.name}</label>)}</div>}
+  </fieldset>
+  <fieldset className="grid gap-2"><legend className="text-sm font-semibold mb-1">{translate("Süre")}</legend>
+   <div className="flex flex-wrap gap-2">{autonomyPresets.map((p,i)=><Button key={p.label} type="button" size="sm" variant={preset===i?"default":"outline"} aria-pressed={preset===i} onClick={()=>setPreset(i)}>{translate(p.label)}</Button>)}</div>
+   {autonomyPresets[preset]!.minutes()===null&&<p className="text-xs text-[var(--warning)]">{translate("Süresiz otonom mod siz durdurana kadar açık kalır.")}</p>}
+  </fieldset>
+  <label className="grid gap-1 max-w-sm"><span className="text-sm font-semibold">{translate("Mevcut şifren")}</span><Input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)}/></label>
+  <div className="flex flex-wrap items-center gap-3"><Button onClick={()=>send(true)} disabled={busy||!password||(scope==="some"&&picked.size===0)}>{busy?<Spinner label={translate("Kaydediliyor…")}/>:translate("Otonom modu başlat")}</Button>{done&&<span role="status" className="text-sm text-[var(--success)]">{done}</span>}</div>
+ </CardContent></Card>;
 }
 
 function DevicePolicy({devices,onChanged,onError}:{devices:PolicyDevice[];onChanged:()=>void;onError:(m:string)=>void}){

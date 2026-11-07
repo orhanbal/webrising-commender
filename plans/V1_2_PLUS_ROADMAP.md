@@ -105,12 +105,41 @@ istemcidir. Tüm sunuculardaki onay istekleri buraya bildirim olarak gelir.
    böylece bir betik onaylayamaz. Gateway tarafı: kullanıcıya özel olay akışı
    (SSE/WebSocket) ve mevcut onay API'si; merkez çevrimdışıyken onaylar panelde ve
    e-postada kalır, merkez açılınca bekleyenleri listeler.
+4b. **Otonom mod (sahibin isteği, 2026-11-07):** kullanıcı onayları tamamen devreden
+   çıkarabilir; kontrol onda. Kapsam tüm cihazlar ya da seçilenler; süre 30 dk, 1 sa,
+   4 sa, yarın sabaha kadar ya da süresiz. Süre bitince onaylar kendiliğinden geri
+   döner ve bildirim gelir; "Hepsini durdur" her an tek tık. Altyapı: mevcut cihaz
+   güven seviyesi `full`, bitiş zamanıyla (`trust_until`). Güvenceler: cihazın kendi
+   sınırları (izinli klasörler, yazma/komut kapalı, sır maskeleme) yine geçerli; mod
+   açıkken tepsi simgesi renk değiştirir, panelde uyarı şeridi; her işlem denetimde
+   "otonom" etiketli, açan kişi/zaman/süre kaydedilir; açmak WebAuthn ister; mod yalnız
+   tepsi uygulamasından veya paneldeki tarayıcı oturumundan açılır, hiçbir MCP aracı
+   bunu yapamaz (yapay zekâ kendi onayını kapatamaz).
+   **Durum 2026-11-07:** panel ve gateway tarafı yapıldı (`/api/trust/autonomy`, bitiş
+   taraması, uyarı şeridi, Onaylar sayfasında kart); tepsi menüsü Yönetim Merkezi ile gelecek.
 5. **Tepsi menüsü:** bağlantı durumu, bekleyen onaylar, cihazlar ve çevrimiçi
    durumları, paneli aç, bildirimleri sustur, güncelleme, çıkış.
 6. **Teknoloji:** Tauri (Rust; ajanla aynı dil, küçük paket, tek kodla üç platform).
 7. **İmzalama (sahibin işi):** macOS için Apple Developer ID + noter, Windows için kod
    imzalama sertifikası. İmzasız da çalışır, ama kurulumda uyarı çıkar ve macOS
    bildirim/izin davranışı zayıflar.
+
+**Sahip kararı (2026-11-07): imzalama masrafları ertelendi.** Gelir belli olmadan Apple
+Developer (yıllık 99 $) ve Windows kod imzalama sertifikası alınmayacak; ilk ödeme yapan
+kullanıcılar gelince yeniden değerlendirilecek. **İlk sürüm yine tepsi uygulaması**
+(kullanıcı için en iyisi) ve **terminalden tek satırla kurulur**: `curl … | sh` ve
+PowerShell tek satırı indirme işareti koymadığından Gatekeeper/SmartScreen uyarısı
+çıkmaz, imza gerekmez.
+- Windows: kurulum Başlat menüsü kısayolunu AppUserModelID ile oluşturur; böylece
+  imzasız uygulamada da düğmeli bildirim (toast) çalışır.
+- Linux: tepsi ve bildirim (libnotify) imzasız çalışır.
+- macOS: tepsi/menü çalışır; düğmeli bildirim için kurulumda yerel (ad-hoc) imza
+  atılır, gerçek Mac'te doğrulanacak. Olmazsa tepsideki "Bekleyen onaylar" penceresi
+  ve sesli uyarı kullanılır.
+- Yüksek riskte Windows Hello / Touch ID yerine (imzasız uygulamada güvenilir
+  olmayabilir) gateway'in WebAuthn doğrulaması tepsi penceresinde açılır.
+- Yedek: wecommander.app'in yüklenebilir web uygulaması (PWA) + Web Push; telefonda ya
+  da tepsinin kurulamadığı yerde. Aynı gateway olay akışını ve onay API'sini kullanır.
 
 Dilimler: (a) giriş + tepsi + bekleyen onay listesi ve onay/ret; (b) masaüstü
 bildirimi + düğmeler + Touch ID/Windows Hello; (c) abonelik ayarları ve birden fazla

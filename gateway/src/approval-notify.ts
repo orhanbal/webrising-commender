@@ -64,6 +64,36 @@ export async function notifyApprovers(
 }
 
 /** Security notice: a device was switched to full trust (no per-call approval). */
+/** Autonomous mode started for several devices, or full trust expired. */
+export async function notifyAutonomy(organizationId: string, kind: "started" | "expired", deviceNames: string[], changedBy: string, until: Date | null) {
+  if (!mailConfigured() || deviceNames.length === 0) return 0;
+  const base = (process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
+  const recipients = await db.query<{ email: string }>(
+    `select u.email from organization_members m join users u on u.id=m.user_id
+      where m.organization_id=$1 and m.role in ('admin','owner')
+        and u.disabled_at is null and u.email_verified_at is not null
+      order by m.role desc, u.email limit $2`,
+    [organizationId, MAX_RECIPIENTS],
+  );
+  const names = deviceNames.slice(0, 20).join(", ") + (deviceNames.length > 20 ? ` (+${deviceNames.length - 20})` : "");
+  const untilText = until ? new Date(until).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "süresiz";
+  for (const { email } of recipients.rows) {
+    await enqueueMail(kind === "started" ? {
+      to: email,
+      subject: `WECOMMANDER güvenlik bildirimi: otonom mod açıldı (${deviceNames.length} cihaz)`.slice(0, 160),
+      text:
+        `Otonom mod açıldı: yapay zekâ istemcileri bu cihazlarda yüksek riskli işlemleri onay beklemeden ` +
+        `çalıştırabilir.\n\nCihazlar: ${names}\nAçan: ${changedBy}\nBitiş: ${untilText}\n\n` +
+        `Durdurmak için: ${base}/approvals (Hepsini durdur)\nTüm işlemler audit kaydında "trusted_full" olarak görünür.`,
+    } : {
+      to: email,
+      subject: `WECOMMANDER: otonom mod süresi doldu (${deviceNames.length} cihaz)`.slice(0, 160),
+      text: `Tam yetki süresi doldu; bu cihazlar Standart seviyeye döndü ve yüksek riskli işlemler yine onay ister.\n\nCihazlar: ${names}\n\n${base}/approvals`,
+    });
+  }
+  return recipients.rows.length;
+}
+
 export async function notifyTrustChange(organizationId: string, deviceName: string, changedBy: string, until: Date | null) {
   if (!mailConfigured()) return 0;
   const base = (process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Autonomous mode: switch approvals off for all or selected devices for 30 min / 1 h / 4 h / until 09:00 / indefinitely, with one-click "Stop all", a banner on every dashboard page, password to enable, admin e-mails, and automatic expiry that is audited. AI clients cannot turn it on.
+
 - `health_snapshot`: when the OS reports no available memory (seen on macOS 26, shown as 100 % used), estimate it as total minus used and say so in `limitations`.
 
 - macOS: the default allowed folder is now `~/WECOMMANDER`. In `~/Documents` macOS asked for permission on every command and held the command until answered. Commands now change directory inside the shell, so such a wait ends in a timeout that says what to do. The online installer takes the highest `macos-preview` build instead of the API order. Mac acceptance results in docs/MACOS_DEVICE_ACCEPTANCE.md.
