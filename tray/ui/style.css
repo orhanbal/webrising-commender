@@ -8,13 +8,18 @@
     --primary: #3b82f6; --warn-bg: #2b1a10; --code: #0f1522; color-scheme: dark; }
 }
 * { box-sizing: border-box; }
+html { height: 100%; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+body { height: 100%; overflow-y: auto; }
 html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif; }
 body { padding: 0 14px 40px; }
 .top { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand small { display: block; color: var(--muted); font-size: 12px; }
 .logo { width: 32px; height: 32px; border-radius: 8px; background: var(--primary); color: #fff; display: grid; place-items: center; font-weight: 700; }
-.who { color: var(--muted); font-size: 12px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%; }
+.head-right { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 60%; }
+button.icon { padding: 2px 9px; font-size: 18px; line-height: 1; border: 0; background: transparent; color: var(--muted); }
+button.icon:hover { background: var(--code); color: var(--text); }
+.who { color: var(--muted); font-size: 12px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 h1 { font-size: 20px; margin: 18px 0 8px; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }

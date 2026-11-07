@@ -124,11 +124,61 @@ fn publish(app: &AppHandle) {
     let _ = app.emit("state", snapshot(app));
 }
 
+/// When the panel last lost focus; a tray click right after it is the same
+/// click that took the focus away, so it must not open the panel again.
+static LAST_HIDDEN: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// Place the window like the Windows notification center: a full-height
+/// panel on the right edge of the screen's work area (above the taskbar).
+fn place_panel(window: &tauri::WebviewWindow) {
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten());
+    let Some(monitor) = monitor else { return };
+    let scale = monitor.scale_factor();
+    let area = monitor.work_area();
+    let margin = (12.0 * scale).round() as i32;
+    let width =
+        ((400.0 * scale).round() as u32).min(area.size.width.saturating_sub(2 * margin as u32));
+    let height = area.size.height.saturating_sub(2 * margin as u32);
+    let x = area.position.x + area.size.width as i32 - width as i32 - margin;
+    let y = area.position.y + margin;
+    let _ = window.set_size(tauri::PhysicalSize::new(width, height));
+    let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+}
+
 fn show_main(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        place_panel(&window);
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
+    }
+}
+
+fn hide_main(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+    }
+}
+
+/// Tray click: open the panel, or close it when it is already open.
+fn toggle_main(app: &AppHandle) {
+    let recently_hidden = LAST_HIDDEN
+        .lock()
+        .unwrap()
+        .map(|t| t.elapsed() < Duration::from_millis(400))
+        .unwrap_or(false);
+    let visible = app
+        .get_webview_window("main")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false);
+    if visible {
+        hide_main(app);
+    } else if !recently_hidden {
+        show_main(app);
     }
 }
 
@@ -572,6 +622,11 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<Snapshot, String> {
 }
 
 #[tauri::command]
+fn hide_panel(app: AppHandle) {
+    hide_main(&app);
+}
+
+#[tauri::command]
 fn refresh(app: AppHandle) {
     wake(&app);
 }
@@ -707,7 +762,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                 ..
             } = event
             {
-                show_main(tray.app_handle());
+                toggle_main(tray.app_handle());
             }
         });
     if let Some(icon) = tray_image(false, false) {
@@ -768,12 +823,18 @@ fn main() {
             tauri::async_runtime::spawn(background(app.handle().clone()));
             Ok(())
         })
-        .on_window_event(|window, event| {
-            // Closing the window keeps the app in the tray; "Çıkış" quits.
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        .on_window_event(|window, event| match event {
+            // Closing the panel keeps the app in the tray; "Çıkış" quits.
+            tauri::WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
                 let _ = window.hide();
             }
+            // Like the notification center: clicking elsewhere closes it.
+            tauri::WindowEvent::Focused(false) if window.is_visible().unwrap_or(false) => {
+                *LAST_HIDDEN.lock().unwrap() = Some(Instant::now());
+                let _ = window.hide();
+            }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             get_state,
@@ -788,6 +849,7 @@ fn main() {
             set_settings,
             set_autostart,
             refresh,
+            hide_panel,
             default_name
         ])
         .run(tauri::generate_context!())
