@@ -118,7 +118,7 @@
 
                         <StackPanel x:Name="SettingsPanel" Spacing="4" Visibility="Collapsed">
                             <ToggleSwitch x:Name="NotifySwitch" Header="Yeni onay isteğinde Windows bildirimi (Onayla / Reddet)" Toggled="Settings_Toggled" />
-                            <ToggleSwitch x:Name="OpenSwitch" Header="Bildirimler kapalıyken yeni istekte paneli aç" Toggled="Settings_Toggled" />
+                            <ToggleSwitch x:Name="OpenSwitch" Header="Yeni onay isteğinde paneli kendiliğinden aç" Toggled="Settings_Toggled" />
                             <ToggleSwitch x:Name="AutostartSwitch" Header="Windows oturum açılışında başlat" Toggled="Autostart_Toggled" />
                             <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
                                 <Button Content="Paneli tarayıcıda aç" Click="Dashboard_Click" />

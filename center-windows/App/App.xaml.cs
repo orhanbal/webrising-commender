@@ -142,12 +142,15 @@ public partial class App : Application
             .AddText($"Onay bekliyor · {device}")
             .AddText(what)
             .AddText($"{Texts.KindLabel(item.ActionKind)} · yalnız bu işlem, bir kez")
-            .SetScenario(AppNotificationScenario.Reminder)
+            // Urgent (Windows 11 22H2+) shows the banner even with Do not disturb
+            // on; elsewhere Reminder keeps it on screen until answered.
+            .SetScenario(AppNotificationBuilder.IsUrgentScenarioSupported() ? AppNotificationScenario.Urgent : AppNotificationScenario.Reminder)
             .AddButton(new AppNotificationButton("Onayla").AddArgument("action", "approve").AddArgument("id", item.Id).AddArgument("device", device))
             .AddButton(new AppNotificationButton("Reddet").AddArgument("action", "deny").AddArgument("id", item.Id).AddArgument("device", device));
         var notification = builder.BuildNotification();
         notification.Tag = item.Id;
         notification.Group = NotificationGroup;
+        notification.Priority = AppNotificationPriority.High;
         AppNotificationManager.Default.Show(notification);
     }
 
@@ -197,9 +200,11 @@ public partial class App : Application
                     foreach (var item in fresh.Take(5))
                         NotifyRequest(item, names.GetValueOrDefault(item.DeviceId, "bilinmeyen cihaz"));
                 }
-                else if (Settings.OpenOnRequest)
+                // Owner request: the panel opens by itself on the Approvals tab
+                // when a request arrives (the notification comes as well).
+                if (Settings.OpenOnRequest)
                 {
-                    _window?.ShowPanel();
+                    _window?.ShowApprovals();
                 }
             }
         }
