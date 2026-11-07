@@ -46,6 +46,7 @@ export const REQUIRED_CI_JOBS = Object.freeze([
   "windows-service-smoke",
   "center-windows",
   "center-winui",
+  "plan-tools",
 ]);
 
 /**
