@@ -22,7 +22,7 @@ public static class Program
             Task.Run(() => main.RedirectActivationToAsync(activation).AsTask()).Wait();
             return 0;
         }
-        Application.Start(_ =>
+        Application.Start(callback =>
         {
             SynchronizationContext.SetSynchronizationContext(
                 new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread()));
