@@ -304,3 +304,37 @@
 .locale-option-code{display:inline-flex;align-items:center;font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--muted)}
 .locale-option-code svg{color:var(--text)}
 .site-header .locale-trigger{padding:0 8px}
+
+/* Docs, FAQ, alternatives and guides (content pages). */
+.content-page{display:grid;grid-template-columns:minmax(0,1fr) 240px;gap:56px;padding:56px 0 96px;align-items:start}
+.content-article{max-width:760px}
+.content-kicker{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+.content-h1{font-size:40px;line-height:1.15;font-weight:700;letter-spacing:-.02em;margin:0 0 16px}
+.content-lead{font-size:18px;line-height:1.6;color:var(--muted);margin:0 0 28px}
+.content-h2{font-size:22px;font-weight:650;margin:36px 0 12px;letter-spacing:-.01em}
+.content-p{font-size:16px;line-height:1.7;margin:0 0 14px}
+.content-ul,.content-ol{margin:0 0 16px;padding-left:22px;line-height:1.7;font-size:16px}
+.content-ul li,.content-ol li{margin:6px 0}
+.content-code{margin:0 0 18px;padding:14px 16px;border:1px solid var(--stroke);border-radius:10px;background:var(--subtle-surface);overflow-x:auto;font:13px/1.6 var(--wc-font-mono,ui-monospace,monospace)}
+.content-table-wrap{overflow-x:auto;margin:8px 0 24px;border:1px solid var(--stroke);border-radius:12px}
+.content-table{width:100%;border-collapse:collapse;font-size:14px;min-width:720px}
+.content-table th,.content-table td{padding:12px 14px;text-align:left;vertical-align:top;border-bottom:1px solid var(--stroke)}
+.content-table thead th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:var(--subtle-surface)}
+.content-table tbody th{font-weight:600}
+.content-table tr:last-child th,.content-table tr:last-child td{border-bottom:0}
+.content-table .content-ours{font-weight:600;background:color-mix(in srgb,var(--accent) 7%,transparent)}
+.content-faq details{border-bottom:1px solid var(--stroke);padding:16px 0}
+.content-faq summary{cursor:pointer;font-weight:600;font-size:17px;list-style:none}
+.content-faq summary::-webkit-details-marker{display:none}
+.content-faq summary::after{content:"+";float:right;color:var(--muted);font-weight:400}
+.content-faq details[open] summary::after{content:"−"}
+.content-faq details p{margin:10px 0 0;line-height:1.7;color:var(--muted)}
+.content-cta{margin-top:40px}
+.content-cta-link{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-radius:8px;background:var(--text);color:var(--bg);font-weight:600;font-size:14px}
+.content-aside{position:sticky;top:88px;display:flex;flex-direction:column;gap:2px;font-size:14px}
+.content-aside strong{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px}
+.content-aside a{padding:6px 10px;border-radius:6px;color:var(--muted)}
+.content-aside a:hover{background:var(--hover);color:var(--text)}
+@media(max-width:900px){.content-page{grid-template-columns:1fr;gap:32px;padding:36px 0 72px}.content-aside{position:static}.content-h1{font-size:32px}}
+/* Pre-rendered text for crawlers, shown only until the app starts. */
+.prerender{max-width:760px;margin:40px auto;padding:0 16px;font:16px/1.6 system-ui,sans-serif}

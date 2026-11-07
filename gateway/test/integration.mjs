@@ -20,6 +20,35 @@ const appHtml = await appResponse.text();
 assert.match(appHtml, /WECOMMANDER/);
 assert.ok(appHtml.includes('id="root"'),"Modern /app must deliver the React shell");
 assert.match(appHtml, /\/modern\/assets\/index-[^"]+\.js/);
+// Discovery for search engines and AI assistants: robots, sitemap, llms.txt,
+// and public pages readable without JavaScript, with per-page metadata.
+const robots = await (await fetch(base + "/robots.txt")).text();
+assert.match(robots, /User-agent: GPTBot\nAllow: \//);
+assert.match(robots, /User-agent: ClaudeBot/);
+assert.match(robots, /Disallow: \/dashboard/);
+assert.match(robots, /Sitemap: http:\/\/127\.0\.0\.1:8787\/sitemap\.xml/);
+const sitemap = await fetch(base + "/sitemap.xml");
+assert.match(sitemap.headers.get("content-type"), /application\/xml/);
+const sitemapText = await sitemap.text();
+for (const pagePath of ["/", "/faq", "/alternatives", "/docs", "/guides/claude-server-terminal"]) {
+  assert.ok(sitemapText.includes(`<loc>http://127.0.0.1:8787${pagePath}</loc>`), `sitemap lists ${pagePath}`);
+}
+assert.ok(!sitemapText.includes("/dashboard"), "account pages are not in the sitemap");
+const llms = await (await fetch(base + "/llms.txt")).text();
+assert.match(llms, /^# WECOMMANDER\n\n> /);
+assert.match(llms, /\(http:\/\/127\.0\.0\.1:8787\/faq\)/);
+assert.match(await (await fetch(base + "/llms-full.txt")).text(), /## Frequently asked questions/);
+const faqHtml = await (await fetch(base + "/faq")).text();
+assert.match(faqHtml, /<title>FAQ · WECOMMANDER<\/title>/);
+assert.match(faqHtml, /<link rel="canonical" href="http:\/\/127\.0\.0\.1:8787\/faq">/);
+assert.match(faqHtml, /"@type":"FAQPage"/);
+assert.match(faqHtml, /<div id="root"><main class="prerender"><h1>Frequently asked questions<\/h1>/);
+const alternativesHtml = await (await fetch(base + "/alternatives")).text();
+assert.match(alternativesHtml, /<table>/);
+const dashboardHtml = await (await fetch(base + "/dashboard")).text();
+assert.match(dashboardHtml, /<meta name="robots" content="noindex,nofollow">/);
+assert.ok(dashboardHtml.includes('<div id="root"></div>'), "account pages carry no pre-rendered text");
+
 // Built assets: content-hashed names, cached for a year, sent compressed.
 const mainAsset = appHtml.match(/\/modern\/assets\/index-[^"]+\.js/)[0];
 const assetResponse = await fetch(base + mainAsset, { headers: { "Accept-Encoding": "br, gzip" } });

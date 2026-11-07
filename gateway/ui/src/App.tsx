@@ -22,6 +22,7 @@ const pages={
  Install:()=>import("./pages/Install"),
  Console:()=>import("./pages/Console"),
  Legal:()=>import("./pages/Legal"),
+ Content:()=>import("./pages/Content"),
 };
 const AuthPage=lazy(()=>pages.Auth().then(m=>({default:m.AuthPage})));
 const PlansPage=lazy(()=>pages.Plans().then(m=>({default:m.PlansPage})));
@@ -37,12 +38,15 @@ const UsagePage=lazy(()=>pages.Usage().then(m=>({default:m.UsagePage})));
 const AccountPage=lazy(()=>pages.Account().then(m=>({default:m.AccountPage})));
 const InstallPage=lazy(()=>pages.Install().then(m=>({default:m.InstallPage})));
 const ConsolePage=lazy(()=>pages.Console().then(m=>({default:m.ConsolePage})));
+const ContentPage=lazy(()=>pages.Content().then(m=>({default:m.ContentPage})));
 const LegalPage=lazy(()=>pages.Legal().then(m=>({default:m.LegalPage})));
 import { LanguageSwitcher,useLocale,t as translate } from "./i18n";
 
 export type Nav=(path:string)=>void;
 export type Theme="light"|"dark";
-const routes=new Set(["/console","/console/users","/console/organizations","/console/devices","/console/operations","/console/landing","/console/billing","/console/system","/console/brand","/console/legal","/","/features","/how-it-works","/login","/register","/forgot-password","/reset-password","/verify","/pricing","/checkout","/install","/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage","/approvals","/team","/audit","/invite","/privacy","/terms"]);
+/** Public docs and guides (text in gateway/src/site-content.ts). */
+const contentPaths=["/docs","/faq","/alternatives","/security","/guides/claude-server-terminal","/guides/remote-mcp-server","/guides/chatgpt-windows-files","/guides/ai-approvals"];
+const routes=new Set(["/console","/console/users","/console/organizations","/console/devices","/console/operations","/console/landing","/console/billing","/console/system","/console/brand","/console/legal","/","/features","/how-it-works","/login","/register","/forgot-password","/reset-password","/verify","/pricing","/checkout","/install","/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage","/approvals","/team","/audit","/invite","/privacy","/terms",...contentPaths]);
 export function Brand({onClick,subtitle=false}:{onClick?:()=>void;subtitle?:boolean}){return <a href="/" onClick={e=>{if(onClick){e.preventDefault();onClick()}}} aria-label={translate("WECOMMANDER ana sayfa")} className="inline-flex flex-col gap-1 items-start"><img className="logo-light" src="/api/public/brand/logo_light" alt="WECOMMANDER"/><img className="logo-dark" src="/api/public/brand/logo_dark" alt="" aria-hidden="true"/>{subtitle&&<span className="text-[11px] tracking-wide text-[var(--muted)]">Remote MCP · AI Workspace</span>}</a>}
 export function NavLink({to,nav,children,className}:{to:string;nav:Nav;children:ReactNode;className?:string}){return <a href={to} className={className} onClick={e=>{if(e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey){e.preventDefault();nav(to)}}}>{children}</a>}
 export function ThemeToggle({theme,onToggle}:{theme:Theme;onToggle:()=>void}){return <button type="button" className="theme-button" onClick={onToggle} aria-label={theme==="dark"?translate("Açık temaya geç"):translate("Koyu temaya geç")} title={theme==="dark"?translate("Windows açık tema"):translate("Windows koyu tema")}>{theme==="dark"?<Sun className="size-[19px]"/>:<Moon className="size-[19px]"/>}</button>}
@@ -107,6 +111,7 @@ export default function App(){
  {path==="/invite"&&<InvitePage nav={navigate} refresh={refresh}/>}
  {path==="/usage"&&<UsagePage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
 
+  {contentPaths.includes(path)&&<ContentPage path={path} nav={navigate}/>}
   {(path==="/privacy"||path==="/terms")&&<LegalPage page={path==="/privacy"?"privacy":"terms"}/>}
  </>;
  const globalHeader=!path.startsWith("/console")&&!["/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage","/approvals","/team","/audit"].includes(path);
@@ -117,6 +122,7 @@ export default function App(){
    <NavLink to="/features" nav={navigate} className="hide-sm">{translate("Özellikler")}</NavLink>
    <NavLink to="/how-it-works" nav={navigate} className="hide-sm">{translate("Nasıl çalışır?")}</NavLink>
    <NavLink to="/pricing" nav={navigate}>{translate("Fiyatlandırma")}</NavLink>
+   <NavLink to="/docs" nav={navigate} className="hide-sm">{translate("Dokümantasyon")}</NavLink>
   </nav>
   <div className="nav-actions">
    <LanguageSwitcher compact/>
@@ -130,6 +136,7 @@ export default function App(){
    <NavLink to="/features" nav={navigate}>{translate("Özellikler")}</NavLink>
    <NavLink to="/how-it-works" nav={navigate}>{translate("Nasıl çalışır?")}</NavLink>
    <NavLink to="/pricing" nav={navigate}>{translate("Fiyatlandırma")}</NavLink>
+   <NavLink to="/docs" nav={navigate}>{translate("Dokümantasyon")}</NavLink>
    <NavLink to={account?"/dashboard":"/login"} nav={navigate}>{account?translate("Panelim"):translate("Giriş Yap")}</NavLink>
    <NavLink to="/install" nav={navigate}>{translate("Kurulum")} <ArrowUpRight size={15}/></NavLink>
    <LanguageSwitcher compact/>
