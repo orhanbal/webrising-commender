@@ -219,8 +219,9 @@ verification, so even a valid human approval cannot override them.
 `POST /api/trust/autonomy` sets **full** trust (no per-call approval) for every
 device of the workspace, or the listed `deviceIds`, for `minutes` (5 min – 30
 days) or indefinitely (`minutes: null`); `enable: false` stops it for all of
-them. Rules: admin **browser session only** (API tokens, and so AI clients, get
-403, so an AI cannot switch its own approvals off); enabling needs the current
+them. Rules: admin **browser session or the admin's Management Center** only
+(API tokens, and so AI clients, get 403, so an AI cannot switch its own
+approvals off); enabling needs the current
 password and e-mails every admin/owner; stopping needs no password. Every
 change is audited per device (`device.trust_level`, `autonomy: start|stop`). A
 sweep (`TRUST_EXPIRY_INTERVAL_MS`, default 60 s) returns expired devices to
@@ -260,4 +261,21 @@ not want the AI to read system logs turn it off with
 `capabilities --system-logs off` (then restart the service); `policy_info`
 reports `systemLogs`. File logs (`source: "file"`) always follow the
 allowed roots.
+
+### Management Center (tray app)
+
+The tray app on the owner's computer (`tray/`) signs in like a device: it
+starts `POST /api/center-link/start`, the person approves
+`/connect-center?requestId=…` in a signed-in **browser session** as admin or
+owner, and the app, which alone holds the request secret, redeems it once with
+`POST /api/center-link/poll` for a `wmc_` token. No password reaches the app.
+The token acts as that user with the user's current role, and only for:
+pending approvals (list, approve, deny), the device list, autonomous mode
+(enabling still needs the password) and `/api/center/me|disconnect`. Anything
+else, `/mcp` included, answers 403 `center_scope`: the tray app manages
+approvals, it never runs device tools. Audit entries it causes carry
+`via: {center, centerId}`. The token is stored in Windows Credential Manager or
+the macOS Keychain (a 0600 file on Linux). Revoke a center from Approvals →
+Management Centers, or "Bağlantıyı kes" in the app; a disabled user's centers
+stop working at once.
 

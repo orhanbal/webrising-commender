@@ -44,6 +44,7 @@ export const REQUIRED_CI_JOBS = Object.freeze([
   "linux-acceptance-artifact",
   "windows-acceptance-artifact",
   "windows-service-smoke",
+  "center-windows",
 ]);
 
 /**

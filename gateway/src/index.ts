@@ -35,6 +35,7 @@ import { getPublicPlans, publicPaddleConfig, createPaddleCheckout, createPaddleP
 import { getDownloads } from "./downloads.js";
 import { installRoute } from "./install-scripts.js";
 import { createDeviceLink, getDeviceLinkStatus, approveDeviceLink } from "./device-link.js";
+import { createCenterLink, getCenterLinkStatus, approveCenterLink, centerLinkName, centerMayAccess } from "./center-link.js";
 import { DeviceRouter } from "./device-router.js";
 import { reconcileRemoteSearchStops, recoverInterruptedSearches, setSearchPersistence } from "./search-sessions.js";
 import { PgSearchPersistence } from "./search-persistence.js";
@@ -115,6 +116,8 @@ const deviceRouter = new DeviceRouter(hub);
 // enrollment fail with 429 after about a minute of waiting for approval.
 const deviceLinkStartRateLimit = new FixedWindowRateLimiter();
 const deviceLinkPollRateLimit = new FixedWindowRateLimiter();
+const centerLinkStartRateLimit = new FixedWindowRateLimiter();
+const centerLinkPollRateLimit = new FixedWindowRateLimiter();
 const enrollRateLimit = new FixedWindowRateLimiter();
 const agentRouteRateLimit = new FixedWindowRateLimiter();
 const pairingRateLimit = new FixedWindowRateLimiter();
@@ -295,6 +298,17 @@ async function auditForOrganization(
   outcome: string,
   detail = "",
 ) {
+  if (principal.authKind === "center" && principal.centerId) {
+    // Record which Management Center (tray app) made the change.
+    const via = { center: principal.centerName, centerId: principal.centerId };
+    try {
+      const parsed = detail ? JSON.parse(detail) : {};
+      detail = JSON.stringify(parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? { ...parsed, via } : { detail: parsed, via });
+    } catch {
+      detail = JSON.stringify({ detail, via });
+    }
+  }
   await db.query(
     "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,$2,$3,$4,$5,$6,$7)",
     [organizationId, principal.actor, deviceId, tool, risk, outcome, detail],
@@ -539,11 +553,12 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         return void res.end(req.method === "HEAD" ? undefined : body);
       }
     }
-    if (req.method === "GET" && url.pathname === "/connect-device") {
+    if (req.method === "GET" && (url.pathname === "/connect-device" || url.pathname === "/connect-center")) {
       const here = path.dirname(fileURLToPath(import.meta.url));
+      const page = url.pathname === "/connect-center" ? "connect-center.html" : "connect-device.html";
       const candidates = [
-        path.resolve(here, "../public/connect-device.html"),
-        path.resolve(here, "../../public/connect-device.html"),
+        path.resolve(here, "../public/" + page),
+        path.resolve(here, "../../public/" + page),
       ];
       for (const candidate of candidates) {
         try {
@@ -1567,6 +1582,35 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       return void json(res, 200, await getDeviceLinkStatus(body.requestId, body.requestSecret));
     }
 
+    // Management Center (tray app) sign-in: same shape as the device link.
+    if (req.method === "POST" && url.pathname === "/api/center-link/start") {
+      const limit = centerLinkStartRateLimit.hit(remoteKey(req), 12, 10 * 60_000);
+      if (!limit.allowed) {
+        res.setHeader("Retry-After", String(limit.retryAfterSeconds));
+        return void json(res, 429, { error: "rate_limited" });
+      }
+      const body = z.object({
+        name: z.string().trim().min(1).max(80).regex(/^[^\u0000-\u001f<>]+$/),
+      }).parse(await readJson(req));
+      const created = await createCenterLink(body.name);
+      return void json(res, 201, {
+        ...created,
+        approveUrl: `${publicBaseUrl}/connect-center?requestId=${created.requestId}`,
+      });
+    }
+    if (req.method === "POST" && url.pathname === "/api/center-link/poll") {
+      const limit = centerLinkPollRateLimit.hit(remoteKey(req), 600, 10 * 60_000);
+      if (!limit.allowed) {
+        res.setHeader("Retry-After", String(limit.retryAfterSeconds));
+        return void json(res, 429, { error: "rate_limited" });
+      }
+      const body = z.object({
+        requestId: z.string().uuid(),
+        requestSecret: z.string().min(20).max(200),
+      }).parse(await readJson(req));
+      return void json(res, 200, await getCenterLinkStatus(body.requestId, body.requestSecret));
+    }
+
     if (req.method === "POST" && url.pathname === "/api/agent/enroll") {
       const rate = enrollRateLimit.hit(remoteKey(req), 20, 10 * 60_000);
       if (!rate.allowed) {
@@ -1669,6 +1713,9 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         if (!verifyBrowserCsrf(principal, csrfHeader)) {
           return void json(res, 403, { error: "csrf_required" });
         }
+      }
+      if (principal.authKind === "center" && !centerMayAccess(method, url.pathname)) {
+        return void json(res, 403, { error: "center_scope" });
       }
     }
 
@@ -3544,6 +3591,60 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       return void json(res, 200, { ok: true, item: revoked.rows[0] });
     }
 
+    if (req.method === "GET" && url.pathname === "/api/center-link/info") {
+      if (principal!.authKind !== "session") return void json(res, 403, { error: "browser_session_required" });
+      const requestId = z.string().uuid().parse(url.searchParams.get("requestId"));
+      const name = await centerLinkName(requestId);
+      if (!name) return void json(res, 404, { error: "invalid_or_expired_request" });
+      return void json(res, 200, { name });
+    }
+    if (req.method === "POST" && url.pathname === "/api/center-link/approve") {
+      const limit = pairingRateLimit.hit(remoteKey(req), 15, 10 * 60_000);
+      if (!limit.allowed) return void json(res, 429, { error: "rate_limited" });
+      const body = z.object({
+        requestId: z.string().uuid(),
+        organizationId: z.string().uuid(),
+      }).parse(await readJson(req));
+      const result = await approveCenterLink(body.requestId, principal!, body.organizationId);
+      return void json(res, result.status, result);
+    }
+    if (req.method === "GET" && url.pathname === "/api/center/me") {
+      if (principal!.authKind !== "center") return void json(res, 403, { error: "center_token_required" });
+      const org = await db.query<{ name: string }>("select name from organizations where id=$1", [principal!.organizationId]);
+      return void json(res, 200, {
+        centerId: principal!.centerId, name: principal!.centerName, email: principal!.email,
+        role: principal!.role, organizationName: org.rows[0]?.name ?? null,
+      });
+    }
+    if (req.method === "POST" && url.pathname === "/api/center/disconnect") {
+      if (principal!.authKind !== "center") return void json(res, 403, { error: "center_token_required" });
+      await db.query("update management_centers set revoked_at=coalesce(revoked_at,now()) where id=$1", [principal!.centerId]);
+      await auditControl(principal!, null, "center.disconnect", "medium", "success", "{}");
+      return void json(res, 200, { ok: true });
+    }
+    if (req.method === "GET" && url.pathname === "/api/centers") {
+      if (!requireRole(principal!, "admin", res)) return;
+      const centers = await db.query(
+        `select c.id,c.name,u.email,c.created_at,c.last_seen_at,c.revoked_at
+           from management_centers c join users u on u.id=c.user_id
+          where c.organization_id=$1 order by c.revoked_at nulls first, c.created_at desc limit 100`,
+        [principal!.organizationId]);
+      return void json(res, 200, { items: centers.rows });
+    }
+    const centerRevokeMatch = url.pathname.match(/^\/api\/centers\/([0-9a-f-]{36})\/revoke$/i);
+    if (req.method === "POST" && centerRevokeMatch) {
+      if (!requireRole(principal!, "admin", res)) return;
+      if (principal!.authKind !== "session") return void json(res, 403, { error: "browser_session_required" });
+      const revoked = await db.query(
+        `update management_centers set revoked_at=coalesce(revoked_at,now())
+          where id=$1 and organization_id=$2 returning id,name`,
+        [centerRevokeMatch[1], principal!.organizationId]);
+      if (!revoked.rowCount) return void json(res, 404, { error: "center_not_found" });
+      await auditControl(principal!, null, "center.revoke", "high", "success",
+        JSON.stringify({ centerId: centerRevokeMatch[1], name: revoked.rows[0].name }));
+      return void json(res, 200, { ok: true });
+    }
+
     if (req.method === "POST" && url.pathname === "/api/device-link/approve") {
       const limit = pairingRateLimit.hit(remoteKey(req), 15, 10 * 60_000);
       if (!limit.allowed) return void json(res, 429, { error: "rate_limited" });
@@ -3652,7 +3753,8 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           [principal!.organizationId]);
         return void json(res, 200, { items: active.rows });
       }
-      if (principal!.authKind !== "session" || !principal!.userId) {
+      // Browser session or the user's Management Center; never an API token.
+      if ((principal!.authKind !== "session" && principal!.authKind !== "center") || !principal!.userId) {
         return void json(res, 403, { error: "browser_session_required" });
       }
       const body = z.object({

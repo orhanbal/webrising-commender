@@ -28,6 +28,7 @@ test("served platform installers are identical to scripts/", async () => {
     ["/install/ubuntu.sh", "scripts/install-ubuntu-online.sh"],
     ["/install/macos.sh", "scripts/install-macos-online.sh"],
     ["/install.ps1", "scripts/install-windows-online.ps1"],
+    ["/install/center.ps1", "scripts/install-center-windows-online.ps1"],
   ] as const) {
     const served = await installRoute(route, "https://wecommander.app");
     assert.ok(Buffer.isBuffer(served), route);

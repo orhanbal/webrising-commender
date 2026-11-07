@@ -41,6 +41,10 @@ jobs:
           test -s dist/ci-windows/WECOMMANDER-Setup-windows-x64.exe
           cp dist/ci-windows/WECOMMANDER-Setup-windows-x64.exe dist/
           rm -rf dist/ci-windows
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" -n WECOMMANDER-Center-windows-x64 -D dist/ci-center
+          test -s dist/ci-center/WECOMMANDER-Center-windows-x64.exe
+          cp dist/ci-center/WECOMMANDER-Center-windows-x64.exe dist/
+          rm -rf dist/ci-center
       - name: Create shared integrity manifest
         run: |
           cd dist
@@ -69,7 +73,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "${{ github.event.workflow_run.head_sha }}" \
             --title "WECOMMANDER platform preview #${{ github.event.workflow_run.run_number }}" \
-            --prerelease --notes "Preview installers: Ubuntu AMD64 Debian, Windows x64 Setup. The macOS PKG is published separately (macos-preview-*) only after the macOS workflow passes. Checksums available. Must pass physical-device acceptance before production approval."
+            --prerelease --notes "Preview installers: Ubuntu AMD64 Debian, Windows x64 Setup, Windows Management Center (tray app). The macOS PKG is published separately (macos-preview-*) only after the macOS workflow passes. Checksums available. Must pass physical-device acceptance before production approval."
 
       - name: Report preview publication status
         if: ${{ always() }}

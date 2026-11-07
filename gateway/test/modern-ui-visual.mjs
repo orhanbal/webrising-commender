@@ -47,6 +47,7 @@ const fixtures={
  "/api/pairing":{pairingCode:"wc-ci-pairing-code",expiresInSeconds:600},
  "/api/approvals":{approvalToken:"approved-ci-token"},
  "/api/trust/autonomy":{items:[{id:"11111111-1111-4111-8111-111111111111",name:"Test Windows Device",trust_full_until:null}]},
+ "/api/centers":{items:[{id:"33333333-3333-4333-8333-333333333333",name:"Ofis-PC",email:"owner@example.test",created_at:new Date().toISOString(),last_seen_at:new Date().toISOString(),revoked_at:null}]},
 
 };
 const contentType={".js":"text/javascript",".css":"text/css",".svg":"image/svg+xml",".png":"image/png",".woff2":"font/woff2"};
@@ -331,6 +332,8 @@ try{
  assert.ok(await evalJs("[...document.querySelectorAll('button')].some(b=>b.textContent.includes('Start autonomous mode')&&b.disabled)"),"Starting autonomous mode needs the password first");
  assert.equal(await evalJs("document.querySelector('.autonomy-banner')"),null,"The banner is not repeated on the approvals page");
  assert.ok(await evalJs("[...document.querySelectorAll('code')].some(c=>c.textContent==='df -h')"),"Allowed commands must be listed");
+ assert.ok(await evalJs("document.body.textContent.includes('Management Centers')&&document.body.textContent.includes('Ofis-PC')"),"Connected Management Centers are listed");
+ assert.ok(await evalJs("[...document.querySelectorAll('code')].some(c=>/^irm https?:\\/\\/[^ ]+\\/install\\/center\\.ps1 \\| iex$/.test(c.textContent))"),"The tray app install command is shown");
  const approvalsShot=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
  writeFileSync(join(artifacts,"modern-approvals-full-trust.png"),Buffer.from(approvalsShot.data,"base64"));
 

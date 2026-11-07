@@ -141,6 +141,15 @@ PowerShell tek satırı indirme işareti koymadığından Gatekeeper/SmartScreen
 - Yedek: wecommander.app'in yüklenebilir web uygulaması (PWA) + Web Push; telefonda ya
   da tepsinin kurulamadığı yerde. Aynı gateway olay akışını ve onay API'sini kullanır.
 
+**Durum 2026-11-07 (dilim a, Windows önce):** `tray/` (Tauri 2) — tarayıcıyla giriş
+(`/api/center-link/*`, `wmc_` anahtarı yalnız onaylar/otonom mod/cihazlar; `/mcp` 403),
+bekleyen onaylar + Onayla/Reddet + geri sayım, yeni istekte bildirim ve pencereyi öne
+getirme, otonom mod (kapsam, süreler, Hepsini durdur; tepsi menüsünden de), cihaz
+listesi, Windows açılışında başlama, otonom modda turuncu simge. Kurulum:
+`irm https://wecommander.app/install/center.ps1 | iex` (yönetici hakkı gerekmez). Panel:
+Onaylar → Yönetim merkezleri (liste + iptal). Kalan: macOS/Linux paketleri, bildirimde
+düğmeler, WebAuthn, olay akışı (şimdilik 4 sn'de bir sorgu), merkez başına abonelik.
+
 Dilimler: (a) giriş + tepsi + bekleyen onay listesi ve onay/ret; (b) masaüstü
 bildirimi + düğmeler + Touch ID/Windows Hello; (c) abonelik ayarları ve birden fazla
 merkez; (d) imzalı paketler ve otomatik güncelleme.

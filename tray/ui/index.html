@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WECOMMANDER Yönetim Merkezi</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo" aria-hidden="true">W</span><div><strong>WECOMMANDER</strong><small>Yönetim Merkezi</small></div></div>
+  <div id="who" class="who"></div>
+</header>
+
+<div id="banner" class="banner" hidden></div>
+<div id="error" class="error" role="alert" hidden></div>
+
+<section id="signedOut" hidden>
+  <h1>Hesabına bağla</h1>
+  <p class="muted">Bu bilgisayar tüm cihazlarındaki onay isteklerini alır; buradan onaylar, reddeder ve otonom modu yönetirsin. Şifren bu uygulamada saklanmaz: girişi tarayıcıda yaparsın.</p>
+  <label for="server">Sunucu adresi</label>
+  <input id="server" type="url" autocomplete="off" spellcheck="false">
+  <label for="centerName">Bu bilgisayarın adı</label>
+  <input id="centerName" type="text" maxlength="80" autocomplete="off">
+  <button id="connect" class="primary">Tarayıcıyla bağlan</button>
+</section>
+
+<section id="linking" hidden>
+  <h1>Tarayıcıda onayla</h1>
+  <p class="muted">Tarayıcında açılan sayfada hesabınla giriş yap ve <strong>Bu Yönetim Merkezini bağla</strong>'ya bas. Onaylayınca burası kendiliğinden açılır.</p>
+  <div class="row"><button id="openLink">Sayfayı yeniden aç</button><button id="cancelLink" class="ghost">Vazgeç</button></div>
+</section>
+
+<section id="signedIn" hidden>
+  <nav class="tabs" role="tablist">
+    <button data-tab="approvals" class="active" role="tab">Onaylar <span id="pendingCount" class="count" hidden></span></button>
+    <button data-tab="autonomy" role="tab">Otonom mod</button>
+    <button data-tab="devices" role="tab">Cihazlar</button>
+    <button data-tab="settings" role="tab">Ayarlar</button>
+  </nav>
+
+  <div id="tab-approvals" class="tab">
+    <ul id="pendingList" class="list"></ul>
+    <p id="pendingEmpty" class="empty" hidden>Bekleyen onay yok. Yapay zekâ yüksek riskli bir işlem istediğinde burada ve bildirimde görünür.</p>
+  </div>
+
+  <div id="tab-autonomy" class="tab" hidden>
+    <div id="autonomyActive" class="card warn" hidden>
+      <strong>Otonom mod açık</strong>
+      <ul id="autonomyList" class="plain"></ul>
+      <button id="stopAll" class="danger">Hepsini durdur</button>
+    </div>
+    <div class="card">
+      <strong>Onayları kapat</strong>
+      <p class="muted small">Seçilen cihazlarda yüksek riskli işlemler onay istemeden çalışır. Cihazın kendi sınırları (izinli klasörler, yazma/komut kapalı, sır gizleme) yine geçerlidir; her işlem denetim kaydına girer. Süre bitince onaylar kendiliğinden geri gelir.</p>
+      <fieldset>
+        <legend>Kapsam</legend>
+        <label class="inline"><input type="radio" name="scope" value="all" checked> Tüm cihazlar</label>
+        <label class="inline"><input type="radio" name="scope" value="some"> Seçtiğim cihazlar</label>
+        <div id="scopeDevices" class="checks" hidden></div>
+      </fieldset>
+      <fieldset>
+        <legend>Süre</legend>
+        <div class="chips" id="durations">
+          <button data-minutes="30" class="chip">30 dk</button>
+          <button data-minutes="60" class="chip active">1 saat</button>
+          <button data-minutes="240" class="chip">4 saat</button>
+          <button data-minutes="morning" class="chip">Yarın 09:00'a kadar</button>
+          <button data-minutes="" class="chip">Süresiz</button>
+        </div>
+      </fieldset>
+      <label for="password">Hesap şifren</label>
+      <input id="password" type="password" autocomplete="current-password">
+      <button id="startAutonomy" class="warnbtn" disabled>Otonom modu başlat</button>
+    </div>
+  </div>
+
+  <div id="tab-devices" class="tab" hidden>
+    <ul id="deviceList" class="list"></ul>
+    <p id="devicesEmpty" class="empty" hidden>Henüz cihaz yok.</p>
+  </div>
+
+  <div id="tab-settings" class="tab" hidden>
+    <label class="switch"><input type="checkbox" id="setNotify"> Yeni onay isteğinde bildirim göster</label>
+    <label class="switch"><input type="checkbox" id="setOpen"> Yeni istekte bu pencereyi öne getir</label>
+    <label class="switch"><input type="checkbox" id="setAutostart"> Oturum açılışında başlat</label>
+    <div class="row">
+      <button id="openDashboard">Paneli tarayıcıda aç</button>
+      <button id="disconnect" class="danger">Bağlantıyı kes</button>
+    </div>
+    <p id="about" class="muted small"></p>
+  </div>
+</section>
+
+<footer id="status" class="status"></footer>
+<script src="app.js"></script>
+</body>
+</html>

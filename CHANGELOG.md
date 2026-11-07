@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Management Center (tray app, `tray/`, Windows first): browser sign-in, every pending approval with Approve/Deny and a countdown, a desktop notification and the window to the front for each new request, autonomous mode (scope, 30 min … indefinite, Stop all, also from the tray menu), the device list, start with Windows, and a tray icon that turns orange while autonomous mode is on. Install: `irm https://wecommander.app/install/center.ps1 | iex` (current user, no administrator rights, SHA-256 checked). Gateway: center link flow, `wmc_` tokens limited to approvals/autonomy/devices, Management Centers list with revoke on the Approvals page.
+
+- Windows onboarding: the allowed folder defaults to `%USERPROFILE%\WECOMMANDER` (created if missing; the profile or a drive root is refused), and a pairing for another server is backed up instead of reused. Expired approval requests leave the pending list and answer `approval_request_expired`.
+
 - Autonomous mode: switch approvals off for all or selected devices for 30 min / 1 h / 4 h / until 09:00 / indefinitely, with one-click "Stop all", a banner on every dashboard page, password to enable, admin e-mails, and automatic expiry that is audited. AI clients cannot turn it on.
 
 - `health_snapshot`: when the OS reports no available memory (seen on macOS 26, shown as 100 % used), estimate it as total minus used and say so in `limitations`.

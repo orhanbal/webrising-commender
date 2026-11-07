@@ -892,6 +892,72 @@ const consumedLink = await jsonFetch("/api/device-link/poll", {
   method: "POST", headers: { "Content-Type": "application/json" }, body: pollBody,
 });
 assert.equal(consumedLink.status, "consumed", "Approved authorization can only be redeemed once");
+
+// Management Center (tray app): browser-approved sign-in, a token that only
+// reaches approvals, autonomous mode and devices, and self-disconnect.
+const centerStart = await jsonFetch("/api/center-link/start", {
+  method: "POST", headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ name: "Ofis-PC" }),
+});
+assert.match(centerStart.approveUrl, /\/connect-center\?requestId=[0-9a-f-]{36}$/);
+const centerPollBody = JSON.stringify({ requestId: centerStart.requestId, requestSecret: centerStart.requestSecret });
+assert.equal((await jsonFetch("/api/center-link/poll", {
+  method: "POST", headers: { "Content-Type": "application/json" }, body: centerPollBody,
+})).status, "pending");
+const browserCenterHeaders = { Cookie: browserCookies, "Content-Type": "application/json", "X-CSRF-Token": browserLogin.csrfToken };
+assert.equal((await jsonFetch("/api/center-link/info?requestId=" + centerStart.requestId, {
+  headers: browserCenterHeaders,
+})).name, "Ofis-PC");
+const controlCenterApprove = await fetch(base + "/api/center-link/approve", {
+  method: "POST", headers: authHeaders,
+  body: JSON.stringify({ requestId: centerStart.requestId, organizationId: browserMe.organizationId }),
+});
+assert.equal(controlCenterApprove.status, 403, "Only a browser session can connect a Management Center");
+const centerApprove = await fetch(base + "/api/center-link/approve", {
+  method: "POST", headers: browserCenterHeaders,
+  body: JSON.stringify({ requestId: centerStart.requestId, organizationId: browserMe.organizationId }),
+});
+assert.equal(centerApprove.status, 200);
+const centerRedeemed = await jsonFetch("/api/center-link/poll", {
+  method: "POST", headers: { "Content-Type": "application/json" }, body: centerPollBody,
+});
+assert.equal(centerRedeemed.status, "approved");
+assert.match(centerRedeemed.centerToken, /^wmc_/);
+assert.equal((await jsonFetch("/api/center-link/poll", {
+  method: "POST", headers: { "Content-Type": "application/json" }, body: centerPollBody,
+})).status, "consumed");
+const centerHeaders = { Authorization: `Bearer ${centerRedeemed.centerToken}`, "Content-Type": "application/json" };
+const centerMe = await jsonFetch("/api/center/me", { headers: centerHeaders });
+assert.equal(centerMe.name, "Ofis-PC");
+assert.equal(centerMe.email, browserMe.email);
+assert.ok(Array.isArray((await jsonFetch("/api/approval-requests?status=pending", { headers: centerHeaders })).items));
+assert.ok(Array.isArray((await jsonFetch("/api/devices", { headers: centerHeaders })).items));
+assert.ok(Array.isArray((await jsonFetch("/api/trust/autonomy", { headers: centerHeaders })).items));
+for (const [method, path] of [["GET", "/api/tokens"], ["POST", "/api/pairing"], ["GET", "/api/audit"]]) {
+  const denied = await fetch(base + path, { method, headers: centerHeaders, body: method === "POST" ? "{}" : undefined });
+  assert.equal(denied.status, 403, `center token must not reach ${method} ${path}`);
+  assert.equal((await denied.json()).error, "center_scope");
+}
+const centerMcp = await fetch(base + "/mcp", {
+  method: "POST", headers: centerHeaders,
+  body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+});
+assert.equal(centerMcp.status, 403, "a Management Center never reaches MCP tools");
+await centerMcp.text();
+const centerWrongPassword = await fetch(base + "/api/trust/autonomy", {
+  method: "POST", headers: centerHeaders,
+  body: JSON.stringify({ enable: true, minutes: 30, deviceIds: [linkStart.requestId], currentPassword: "wrong-password" }),
+});
+assert.equal(centerWrongPassword.status, 403, "enabling autonomy from the tray still needs the password");
+await centerWrongPassword.text();
+const centerList = await jsonFetch("/api/centers", { headers: browserCenterHeaders });
+assert.ok(centerList.items.some((item) => item.id === centerRedeemed.centerId && !item.revoked_at));
+const centerDisconnect = await fetch(base + "/api/center/disconnect", { method: "POST", headers: centerHeaders, body: "{}" });
+assert.equal(centerDisconnect.status, 200);
+await centerDisconnect.text();
+const centerAfterDisconnect = await fetch(base + "/api/center/me", { headers: centerHeaders });
+assert.equal(centerAfterDisconnect.status, 401, "a disconnected center token stops working");
+await centerAfterDisconnect.text();
 const linkedDevice = await jsonFetch("/api/agent/enroll", {
   method: "POST", headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
