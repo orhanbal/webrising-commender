@@ -142,12 +142,15 @@ public partial class App : Application
             .AddText($"Onay bekliyor · {device}")
             .AddText(what)
             .AddText($"{Texts.KindLabel(item.ActionKind)} · yalnız bu işlem, bir kez")
-            .SetScenario(AppNotificationScenario.Reminder)
+            // Urgent (Windows 11 22H2+) shows the banner even with Do not disturb
+            // on; elsewhere Reminder keeps it on screen until answered.
+            .SetScenario(AppNotificationBuilder.IsUrgentScenarioSupported() ? AppNotificationScenario.Urgent : AppNotificationScenario.Reminder)
             .AddButton(new AppNotificationButton("Onayla").AddArgument("action", "approve").AddArgument("id", item.Id).AddArgument("device", device))
             .AddButton(new AppNotificationButton("Reddet").AddArgument("action", "deny").AddArgument("id", item.Id).AddArgument("device", device));
         var notification = builder.BuildNotification();
         notification.Tag = item.Id;
         notification.Group = NotificationGroup;
+        notification.Priority = AppNotificationPriority.High;
         AppNotificationManager.Default.Show(notification);
     }
 
