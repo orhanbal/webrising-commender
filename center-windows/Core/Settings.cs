@@ -10,8 +10,15 @@ public sealed class Settings
     [JsonPropertyName("server")] public string Server { get; set; } = DefaultServer;
     /// <summary>Windows notification with Approve/Deny for each new request.</summary>
     [JsonPropertyName("notifications")] public bool Notifications { get; set; } = true;
-    /// <summary>Open the panel on the Approvals tab when a new request arrives.</summary>
-    [JsonPropertyName("openOnRequest")] public bool OpenOnRequest { get; set; } = true;
+    /// <summary>
+    /// Also open the full panel when a new request arrives. Off by default: the
+    /// small Windows notification is enough (owner decision 2026-11-07). The
+    /// JSON name changed from "openOnRequest" so earlier installs, where this
+    /// was on, start with it off. The panel still opens when Windows blocks
+    /// our notifications or the owner turned them off, since otherwise the
+    /// request would not be seen at all.
+    /// </summary>
+    [JsonPropertyName("openPanelOnRequest")] public bool OpenOnRequest { get; set; }
 }
 
 public sealed class SettingsStore(string directory)
