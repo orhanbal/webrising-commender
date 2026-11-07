@@ -841,6 +841,8 @@ jobs:
               $out -notmatch 'No preview release with the Management Center yet') {
             throw 'center installer dry run did not resolve a release'
           }
+          # The "not yet" answer exits 1 by design; the match above is the check.
+          exit 0
       - uses: actions/upload-artifact@v4
         with:
           name: WECOMMANDER-Center-windows-x64
