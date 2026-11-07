@@ -112,6 +112,17 @@ istemcidir. Tüm sunuculardaki onay istekleri buraya bildirim olarak gelir.
    imzalama sertifikası. İmzasız da çalışır, ama kurulumda uyarı çıkar ve macOS
    bildirim/izin davranışı zayıflar.
 
+**Sahip kararı (2026-11-07): imzalama masrafları ertelendi.** Gelir belli olmadan Apple
+Developer (yıllık 99 $) ve Windows kod imzalama sertifikası alınmayacak; ilk ödeme yapan
+kullanıcılar gelince yeniden değerlendirilecek. Bu yüzden ilk sürüm **ücretsiz yol**:
+wecommander.app'in yüklenebilir web uygulaması (PWA) + Web Push bildirimleri
+(Onayla/Reddet düğmeleri, sayfa kapalıyken de), merkez başına abonelik ayarı ve birden
+fazla merkez aynen; yüksek riskte tarayıcının parola/geçiş anahtarı (WebAuthn) doğrulaması.
+Yerel tepsi uygulaması (Tauri) aynı arka uç üzerine sonra eklenir. İmzasız dağıtımın
+bugünkü durumu: `curl … | sh` ve PowerShell tek satırı indirme işareti koymadığı için
+Gatekeeper/SmartScreen uyarısı genelde çıkmaz; macOS izin sorunu `~/WECOMMANDER`
+varsayılanıyla çözüldü.
+
 Dilimler: (a) giriş + tepsi + bekleyen onay listesi ve onay/ret; (b) masaüstü
 bildirimi + düğmeler + Touch ID/Windows Hello; (c) abonelik ayarları ve birden fazla
 merkez; (d) imzalı paketler ve otomatik güncelleme.
