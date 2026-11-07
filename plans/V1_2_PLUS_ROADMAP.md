@@ -80,6 +80,42 @@ desteklenmeyen platformda `unavailable`, yerel modda aynı araçlar.
 - macOS paketini Apple Developer ID ile imzalamak/noterlemek (izinlerin kalıcı olması,
   Gatekeeper uyarısı); sahibinin Apple Developer hesabı gerekir.
 
+## v1.3 başı — Yönetim Merkezi (masaüstü tepsi uygulaması) · ~2–3 hafta
+
+Sahibin önerisi (2026-11-07), Mac kabul testinden sonra: onaylar için tarayıcıda
+Onaylar sayfasını açıp yenilemek yavaş; istekler 10 dakikada düşüyor.
+
+**İki ayrı rol.** Sunucular ve cihazlarda yalnız ajan çalışır (tepsi, ekran, bildirim
+yok). **Yönetim Merkezi**, sahibin/yöneticinin masaüstüne (Windows, macOS, Linux)
+kurulan tepsi uygulamasıdır; ajan değil, gateway'e kullanıcı hesabıyla bağlanan bir
+istemcidir. Tüm sunuculardaki onay istekleri buraya bildirim olarak gelir.
+
+1. **Giriş:** tarayıcıyla cihaz bağlama akışı (bugünkü `connect-device` gibi); uygulama
+   iptal edilebilir bir oturum anahtarı alır, şifre saklanmaz, iki adımlı doğrulama
+   korunur. Panelde "Yönetim merkezleri" listesi, ad, son görülme, tek tıkla iptal.
+2. **Bildirim aboneliği (merkez başına ayar):**
+   - ☑ "Tüm sunucuların bildirimlerini bu uygulamadan al" (varsayılan açık);
+   - işaret kaldırılınca yalnız seçilen cihazlar/gruplar (AD1-01 grupları gelince);
+   - ☐ "Bu bilgisayarı da yönetilen cihaz yap" (isteğe bağlı; ajanı da kurar).
+3. **Birden fazla merkez:** bildirim hepsine gider; ilk onay/ret kazanır, diğerlerinde
+   bildirim kapanır ve "Ofis-PC'den onaylandı" görünür. Denetim kaydı merkezin adını
+   ve kullanıcıyı yazar.
+4. **Bildirim:** yerel masaüstü bildirimi; komut, cihaz, risk, kalan süre; **Onayla /
+   Reddet** düğmeleri. Yüksek riskte Touch ID / Windows Hello (ya da parola) doğrulaması,
+   böylece bir betik onaylayamaz. Gateway tarafı: kullanıcıya özel olay akışı
+   (SSE/WebSocket) ve mevcut onay API'si; merkez çevrimdışıyken onaylar panelde ve
+   e-postada kalır, merkez açılınca bekleyenleri listeler.
+5. **Tepsi menüsü:** bağlantı durumu, bekleyen onaylar, cihazlar ve çevrimiçi
+   durumları, paneli aç, bildirimleri sustur, güncelleme, çıkış.
+6. **Teknoloji:** Tauri (Rust; ajanla aynı dil, küçük paket, tek kodla üç platform).
+7. **İmzalama (sahibin işi):** macOS için Apple Developer ID + noter, Windows için kod
+   imzalama sertifikası. İmzasız da çalışır, ama kurulumda uyarı çıkar ve macOS
+   bildirim/izin davranışı zayıflar.
+
+Dilimler: (a) giriş + tepsi + bekleyen onay listesi ve onay/ret; (b) masaüstü
+bildirimi + düğmeler + Touch ID/Windows Hello; (c) abonelik ayarları ve birden fazla
+merkez; (d) imzalı paketler ve otomatik güncelleme.
+
 ## v1.3 — Kontrollü değişiklik · ~3 hafta
 
 AD1 Aşama 2.
