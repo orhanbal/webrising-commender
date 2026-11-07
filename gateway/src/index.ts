@@ -1,4 +1,5 @@
 import zlib from "node:zlib";
+import { contentPagePaths, llmsFullTxt, llmsTxt, pageByPath, pageJsonLd, renderPageHtml, robotsTxt, sitemapXml } from "./site-content.js";
 import { notifyAutonomy, notifyTrustChange } from "./approval-notify.js";
 import { MAX_ALLOWLIST_ENTRIES, normalizePattern } from "./command-allowlist.js";
 import crypto from "node:crypto";
@@ -425,7 +426,10 @@ const modernPages = new Set([
   "/reset-password", "/pricing", "/checkout", "/install", "/console", "/console/users", "/console/organizations", "/console/devices", "/console/operations", "/console/landing", "/console/billing", "/console/system", "/console/brand", "/console/legal", "/dashboard", "/account", "/billing",
   "/devices", "/terminal", "/files", "/tasks", "/mcp", "/usage", "/approvals", "/team", "/audit", "/invite",
   "/privacy", "/terms",
+  ...contentPagePaths,
 ]);
+/** Last-modified date for the sitemap: the day this gateway build started. */
+const buildDate = new Date().toISOString().slice(0, 10);
 const modernExtensions: Record<string,string> = {
   ".js":"text/javascript; charset=utf-8",
   ".css":"text/css; charset=utf-8",
@@ -450,7 +454,9 @@ function compressBody(body:Buffer,encoding:"br"|"gzip"){
     : zlib.gzipSync(body,{level:9});
 }
 
-async function serveModernFile(res: ServerResponse, fileName:string, isIndex=false, seo?:{title:string;description:string}, acceptEncoding?:string|string[]) {
+type PageMeta={title:string;description:string;path?:string;jsonLd?:string;bodyHtml?:string;noindex?:boolean};
+
+async function serveModernFile(res: ServerResponse, fileName:string, isIndex=false, seo?:PageMeta, acceptEncoding?:string|string[]) {
   const here=path.dirname(fileURLToPath(import.meta.url));
   for(const root of [path.resolve(here,"../public/modern"),path.resolve(here,"../../public/modern")]){
     const target=path.resolve(root,fileName);
@@ -464,7 +470,7 @@ async function serveModernFile(res: ServerResponse, fileName:string, isIndex=fal
         if(seo.title)html=html.replace(/<title>[^<]*<\/title>/i,"<title>"+htmlEscape(seo.title)+"</title>");
         if(seo.description)html=html.replace(/<meta name="description" content="[^"]*"\s*\/?\s*>/i,
           '<meta name="description" content="'+htmlEscape(seo.description)+'">');
-        const canonical=htmlEscape(publicBaseUrl.replace(/\/$/,"")+"/");
+        const canonical=htmlEscape(publicBaseUrl.replace(/\/$/,"")+(seo.path||"/"));
         const safeTitle=htmlEscape(seo.title||"WECOMMANDER");
         const safeDescription=htmlEscape(seo.description||"Remote MCP and AI workspace");
         html=html.replace("</head>",'<link rel="canonical" href="'+canonical+'">'+
@@ -475,7 +481,13 @@ async function serveModernFile(res: ServerResponse, fileName:string, isIndex=fal
           '<meta property="og:site_name" content="WECOMMANDER">'+
           '<meta name="twitter:card" content="summary">'+
           '<meta name="twitter:title" content="'+safeTitle+'">'+
-          '<meta name="twitter:description" content="'+safeDescription+'"></head>');
+          '<meta name="twitter:description" content="'+safeDescription+'">'+
+          (seo.noindex?'<meta name="robots" content="noindex,nofollow">':'')+
+          (seo.jsonLd?'<script type="application/ld+json">'+seo.jsonLd+'</script>':'')+
+          '<link rel="alternate" type="text/plain" title="LLM summary" href="/llms.txt"></head>');
+        // Readable without JavaScript (search engines, AI crawlers); React
+        // replaces it when the app starts.
+        if(seo.bodyHtml)html=html.replace('<div id="root"></div>','<div id="root">'+seo.bodyHtml+'</div>');
         body=Buffer.from(html);
       }
       // Built assets carry a content hash in their name: cache them for a year.
@@ -546,17 +558,45 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     }
     // Browser navigation to /mcp (Accept: text/html) serves the dashboard page;
     // every other /mcp request is MCP transport and is authenticated below.
+    // Public page text for the web app's content pages (same source as the
+    // pre-rendered HTML and llms.txt).
+    if (req.method === "GET" && url.pathname === "/api/public/pages") {
+      const page = pageByPath.get(url.searchParams.get("path") || "");
+      if (!page) return void json(res, 404, { error: "page_not_found" });
+      const related = contentPagePaths.filter((p) => p !== page.path)
+        .map((p) => ({ path: p, heading: pageByPath.get(p)!.heading }));
+      res.setHeader("cache-control", "public, max-age=300");
+      return void json(res, 200, { page, related });
+    }
+    // Discovery files for search engines and AI assistants.
+    if ((req.method === "GET" || req.method === "HEAD") &&
+        ["/robots.txt", "/sitemap.xml", "/llms.txt", "/llms-full.txt"].includes(url.pathname)) {
+      const origin = publicBaseUrl.replace(/\/$/, "");
+      const text = url.pathname === "/robots.txt" ? robotsTxt(origin)
+        : url.pathname === "/sitemap.xml" ? sitemapXml(origin, buildDate)
+        : url.pathname === "/llms.txt" ? llmsTxt(origin) : llmsFullTxt(origin);
+      const body = Buffer.from(text, "utf8");
+      res.writeHead(200, {
+        ...securityHeaders(),
+        "content-type": url.pathname === "/sitemap.xml" ? "application/xml; charset=utf-8" : "text/plain; charset=utf-8",
+        "content-length": body.length,
+        "cache-control": "public, max-age=3600",
+        "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+      });
+      return void res.end(req.method === "HEAD" ? undefined : body);
+    }
     if (req.method === "GET" && modernPages.has(url.pathname) && !(url.pathname === "/mcp" && wantsEventStream(req))) {
-      let seo:{title:string;description:string}|undefined;
+      const origin=publicBaseUrl.replace(/\/$/,"");
+      const publicPage=pageByPath.get(url.pathname);
+      let seo:PageMeta=publicPage
+        ? {title:publicPage.title,description:publicPage.description,path:publicPage.path,
+           jsonLd:pageJsonLd(publicPage,origin),bodyHtml:renderPageHtml(publicPage)}
+        : {title:"WECOMMANDER",description:"Remote MCP and AI workspace",path:url.pathname,noindex:true};
       if(url.pathname==="/") {
-        seo={
-          title:"WECOMMANDER · Your AI, on every machine",
-          description:"Connect Claude, ChatGPT or any MCP client to the terminals and files of your Windows, macOS and Linux machines through one MCP URL, with server-side approvals, a non-root agent and a full audit trail.",
-        };
         try{
           const result=await db.query<{seo_title:string;seo_description:string}>(
             "select seo_title,seo_description from site_content_revisions where locale='en' and state='published' limit 1");
-          if(result.rows[0])seo={
+          if(result.rows[0])seo={...seo,
             title:result.rows[0].seo_title||seo.title,
             description:result.rows[0].seo_description||seo.description,
           };
