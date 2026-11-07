@@ -1,7 +1,7 @@
 # WECOMMANDER direct Windows installer (PowerShell 5.1+).
 # Verifies the downloaded Setup.exe against SHA256SUMS.txt before elevation.
 [CmdletBinding()]
-param([switch]$InstallOnly)
+param([switch]$InstallOnly,[switch]$DryRun)
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -11,9 +11,16 @@ $temp=Join-Path ([IO.Path]::GetTempPath()) ('wecommander-'+[guid]::NewGuid().ToS
 New-Item -ItemType Directory -Path $temp -Force | Out-Null
 try {
   $headers=@{'Accept'='application/vnd.github+json';'User-Agent'='WECOMMANDER-Windows-Installer'}
-  $results=@(Invoke-RestMethod -Uri $releases -Headers $headers -TimeoutSec 30)
+  # CI only: an Actions token avoids the shared runner's anonymous API limit.
+  if($env:GITHUB_TOKEN){$headers['Authorization']='Bearer '+$env:GITHUB_TOKEN}
+  # Windows PowerShell 5.1 emits a JSON array from Invoke-RestMethod as ONE
+  # object, so @(Invoke-RestMethod ...) is a one-element array and the loop
+  # below never saw a release. Store it, then pipe it: piping a variable
+  # enumerates its elements on 5.1 and 7.
+  $raw=Invoke-RestMethod -Uri $releases -Headers $headers -TimeoutSec 30
+  $releaseItems=@($raw | ForEach-Object { $_ })
   # The API order is not reliably newest first: take the highest build number.
-  $results=@($results | Sort-Object -Descending -Property @{Expression={ if($_.tag_name -match '-([0-9]+)$'){[int64]$Matches[1]}else{[int64]0} }})
+  $results=@($releaseItems | Sort-Object -Descending -Property @{Expression={ if($_.tag_name -match '-([0-9]+)$'){[int64]$Matches[1]}else{[int64]0} }})
   $name='WECOMMANDER-Setup-windows-x64.exe'
   $candidate=$null
   foreach($r in $results){
@@ -28,6 +35,7 @@ try {
     break
   }
   if(-not $candidate){throw 'No complete Windows Setup preview release found. Check the latest successful GitHub CI and Releases.'}
+  if($DryRun){Write-Host "WECOMMANDER dry run: would install $($candidate.tag) from $($candidate.setup)"; return}
   $exe=Join-Path $temp $name
   $checksumFile=Join-Path $temp 'SHA256SUMS.txt'
   Write-Host "WECOMMANDER $($candidate.tag): Downloading checked installer..."
