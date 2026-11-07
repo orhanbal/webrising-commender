@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Web: faster page changes (the current page stays until the next is ready, page code is preloaded in the background, built assets are cached for a year and sent brotli/gzip compressed); account pages send a signed-out visitor, or an expired session, to the login page and back afterwards instead of showing a sign-in card inside the panel; quieter, product-style site header.
+
 - Management Center for Windows is now a native WinUI 3 app (`center-windows/`): Windows notifications with Onayla / Reddet that disappear when a request is decided elsewhere, an acrylic panel on the right edge, native controls and confirmation dialogs, tray icon and menu, sign in through the browser, token encrypted with DPAPI, start with Windows. The one-line installer installs it (a self-contained .zip, no runtime needed); `-Tauri` keeps the earlier tray app.
 
 - Management Center: sign in and out are visible: "Oturumu kapat" next to the account in the panel header (with confirmation) and "Oturum aç… / Oturumu kapat (e-posta)" in the tray menu. Signing out revokes the center token on the server.

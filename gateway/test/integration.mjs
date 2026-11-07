@@ -20,6 +20,16 @@ const appHtml = await appResponse.text();
 assert.match(appHtml, /WECOMMANDER/);
 assert.ok(appHtml.includes('id="root"'),"Modern /app must deliver the React shell");
 assert.match(appHtml, /\/modern\/assets\/index-[^"]+\.js/);
+// Built assets: content-hashed names, cached for a year, sent compressed.
+const mainAsset = appHtml.match(/\/modern\/assets\/index-[^"]+\.js/)[0];
+const assetResponse = await fetch(base + mainAsset, { headers: { "Accept-Encoding": "br, gzip" } });
+assert.equal(assetResponse.status, 200);
+assert.equal(assetResponse.headers.get("cache-control"), "public, max-age=31536000, immutable");
+assert.equal(assetResponse.headers.get("content-encoding"), "br");
+assert.ok((await assetResponse.text()).length > 1000, "compressed asset decodes to the bundle");
+const plainAsset = await fetch(base + mainAsset, { headers: { "Accept-Encoding": "identity" } });
+assert.equal(plainAsset.headers.get("content-encoding"), null);
+await plainAsset.arrayBuffer();
 // The legacy /advanced console is retired; old links redirect to the React pages.
 for (const [path, target] of [["/advanced", "/dashboard"], ["/advanced?view=approvals", "/approvals"], ["/advanced?view=access", "/team"], ["/advanced?view=audit", "/audit"], ["/advanced?view=files", "/files"]]) {
   const legacy = await fetch(base + path, { redirect: "manual" });
