@@ -1525,6 +1525,25 @@ const humanGrantConsumed = await rpcAs(operatorHeaders, 52, "tools/call", {
 assert.equal(humanGrantConsumed.result.isError, true);
 assert.equal(toolText(humanGrantConsumed).error, "approval_required");
 
+// An expired pending request disappears from the pending list and cannot be
+// approved; the answer says it expired (found on the Windows acceptance run).
+const expiringRequestId = toolText(humanGrantConsumed).approval_request_id;
+assert.match(expiringRequestId, /^[0-9a-f-]{36}$/i);
+await acceptanceDb.query(
+  "update approval_requests set expires_at=now()-interval '1 second' where id=$1",
+  [expiringRequestId],
+);
+const pendingAfterExpiry = await jsonFetch("/api/approval-requests?status=pending", {
+  headers: authHeaders,
+});
+assert.ok(!pendingAfterExpiry.items.some((item) => item.id === expiringRequestId));
+const approveExpired = await fetch(
+  `${base}/api/approval-requests/${expiringRequestId}/approve`,
+  { method: "POST", headers: authHeaders, body: "{}" },
+);
+assert.equal(approveExpired.status, 409);
+assert.equal((await approveExpired.json()).error, "approval_request_expired");
+
 const tamperApproval = await jsonFetch("/api/approvals", {
   method: "POST",
   headers: authHeaders,

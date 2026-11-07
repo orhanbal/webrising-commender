@@ -199,6 +199,8 @@ export const productEnglish:Record<string,string> = {
   "Onaylar": "Approvals",
   "Yapay zekânın istediği yüksek riskli işlemleri burada tam haliyle gör ve karar ver. Cihaz başına güven seviyesini ve izinli komutları da buradan yönet.": "See the exact high-risk operations your AI asks for and decide here. Manage each device's trust level and allowed commands too.",
   "İşlem tamamlanamadı": "Could not complete the action",
+  "Bu onay isteğinin süresi dolmuş. Yapay zekâ işlemi yeniden denediğinde yeni bir istek gelir.": "This approval request has expired. A new request arrives when the AI tries the operation again.",
+  "Bu istek için zaten karar verilmiş.": "This request has already been decided.",
   "Yönetici yetkisi gerekiyor": "Administrator access required",
   "Onay kararlarını ve cihaz politikalarını yalnızca çalışma alanı sahipleri ve yöneticileri görebilir.": "Only workspace owners and administrators can see approval decisions and device policies.",
   "Bekleyen onaylar": "Pending approvals",

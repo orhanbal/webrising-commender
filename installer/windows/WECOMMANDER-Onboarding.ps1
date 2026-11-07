@@ -13,7 +13,7 @@ $form.MaximizeBox = $false
 $fields = @(
   @('Sunucu adresi', 'https://wecommander.app'),
   @('Manuel eslestirme kodu (istege bagli)', ''),
-  @('Izin verilen klasor', [Environment]::GetFolderPath('UserProfile'))
+  @('Izin verilen klasor', (Join-Path ([Environment]::GetFolderPath('UserProfile')) 'WECOMMANDER'))
 )
 $inputs = @()
 for ($i=0; $i -lt $fields.Count; $i++) {
@@ -166,18 +166,39 @@ $button.Add_Click({
   if ($url -notmatch '^https://[^/]+$') {
     [System.Windows.Forms.MessageBox]::Show('Gecerli bir HTTPS sunucu adresi girin.'); return
   }
-  if (-not (Test-Path -LiteralPath $root -PathType Container)) {
-    [System.Windows.Forms.MessageBox]::Show('Izin verilen klasor mevcut olmali.'); return
+  if (-not $root -or -not [System.IO.Path]::IsPathRooted($root)) {
+    [System.Windows.Forms.MessageBox]::Show('Izin verilen klasor tam bir yol olmali (or. C:\Users\ad\WECOMMANDER).'); return
   }
+  $rootFull = [System.IO.Path]::GetFullPath($root).TrimEnd('\')
+  $profileFull = [System.IO.Path]::GetFullPath([Environment]::GetFolderPath('UserProfile')).TrimEnd('\')
+  if ($rootFull -eq $profileFull -or $rootFull -eq [System.IO.Path]::GetPathRoot($rootFull).TrimEnd('\')) {
+    [System.Windows.Forms.MessageBox]::Show('Tum kullanici klasoru veya bir surucunun tamami izin verilen klasor olamaz. Ayri bir klasor secin, or. ' + (Join-Path $profileFull 'WECOMMANDER')); return
+  }
+  if (-not (Test-Path -LiteralPath $rootFull -PathType Container)) {
+    try { New-Item -ItemType Directory -Path $rootFull -Force | Out-Null }
+    catch { [System.Windows.Forms.MessageBox]::Show('Izin verilen klasor olusturulamadi: ' + $_.Exception.Message); return }
+  }
+  $root = $rootFull
+  $inputs[2].Text = $rootFull
   $button.Enabled = $false
   try {
     # Reuse existing pairing after an upgrade or interrupted installation.
     # Never generate a second cloud device identity for the same local config.
     $existingConfig = Join-Path $env:APPDATA 'webrising-commender\agent.json'
     if (Test-Path -LiteralPath $existingConfig -PathType Leaf) {
-      $notice.Text = 'Mevcut cihaz eslestirmesi kullaniliyor. Arka plan agent baslatiliyor...'
-      Install-EnrolledAgent $existingConfig
-      return
+      $existingUrl = $null
+      try { $existingUrl = ([string](Get-Content -LiteralPath $existingConfig -Raw | ConvertFrom-Json).controlUrl).TrimEnd('/') } catch { }
+      if ($existingUrl -and $existingUrl -eq $url) {
+        $notice.Text = 'Mevcut cihaz eslestirmesi kullaniliyor. Arka plan agent baslatiliyor...'
+        Install-EnrolledAgent $existingConfig
+        return
+      }
+      # Pairing for another server (or unreadable): keep it as a backup and
+      # pair again, never start an agent that cannot reach the chosen server.
+      Get-ScheduledTask -TaskName 'WECOMMANDER-Agent-*' -ErrorAction SilentlyContinue | Stop-ScheduledTask -ErrorAction SilentlyContinue
+      $backup = $existingConfig + '.previous-' + (Get-Date -Format 'yyyyMMddHHmmss')
+      Move-Item -LiteralPath $existingConfig -Destination $backup
+      $notice.Text = 'Onceki eslestirme baska bir sunucuya aitti; yedeklendi. Yeni eslestirme baslatiliyor...'
     }
     $manualCode = $inputs[1].Text.Trim()
     if ($manualCode) {
