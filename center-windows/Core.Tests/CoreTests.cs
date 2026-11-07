@@ -103,7 +103,22 @@ public class CoreTests
         var (loaded, existedNow) = store.Load();
         Assert.True(existedNow);
         Assert.False(loaded.Notifications);
-        Assert.True(loaded.OpenOnRequest);
+        Assert.False(loaded.OpenOnRequest);
+        Assert.False(loaded.NotificationIntroShown);
+        Directory.Delete(dir, true);
+    }
+
+    [Fact]
+    public void EarlierOpenOnRequestSettingIsNotCarriedOver()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "wmc-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "settings.json"),
+            """{"server":"https://wecommander.app","notifications":true,"openOnRequest":true}""");
+        var (loaded, existed) = new SettingsStore(dir).Load();
+        Assert.True(existed);
+        Assert.True(loaded.Notifications);
+        Assert.False(loaded.OpenOnRequest);
         Directory.Delete(dir, true);
     }
 

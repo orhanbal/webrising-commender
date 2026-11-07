@@ -145,6 +145,30 @@ public partial class App : Application
     private static void Toast(string text) =>
         AppNotificationManager.Default.Show(new AppNotificationBuilder().AddText("WECOMMANDER").AddText(text).BuildNotification());
 
+    /// <summary>Shows a notification on demand so the owner can see where approvals will appear.</summary>
+    public void SendTestNotification() =>
+        AppNotificationManager.Default.Show(new AppNotificationBuilder()
+            .AddArgument("action", "open")
+            .AddText(Texts.NotificationTestTitle)
+            .AddText(Texts.NotificationTestText)
+            .BuildNotification());
+
+    /// <summary>
+    /// Once per install, right after sign-in: a first notification, so Windows
+    /// asks now whether to allow ours instead of on the first real request.
+    /// </summary>
+    private void ShowNotificationIntroOnce()
+    {
+        if (Settings.NotificationIntroShown || !Settings.Notifications) return;
+        AppNotificationManager.Default.Show(new AppNotificationBuilder()
+            .AddArgument("action", "open")
+            .AddText(Texts.NotificationIntroTitle)
+            .AddText(Texts.NotificationIntroText)
+            .BuildNotification());
+        Settings.NotificationIntroShown = true;
+        SaveSettings();
+    }
+
     /// <summary>One request as a Windows notification with Approve / Deny that stays until answered.</summary>
     private void NotifyRequest(ApprovalRequest item, string device)
     {
@@ -241,6 +265,7 @@ public partial class App : Application
         try
         {
             Me ??= await gateway.MeAsync(token);
+            ShowNotificationIntroOnce();
             var pending = gateway.PendingAsync(token);
             var devices = gateway.DevicesAsync(token);
             var autonomy = gateway.AutonomyAsync(token);
@@ -269,11 +294,11 @@ public partial class App : Application
                     foreach (var item in fresh.Take(5))
                         NotifyRequest(item, names.GetValueOrDefault(item.DeviceId, "bilinmeyen cihaz"));
                 }
-                // Owner request: the panel opens by itself on the Approvals tab
-                // when a request arrives (the notification comes as well). If
-                // Windows blocks our notifications, the panel is the only way
-                // the owner sees the request, so it opens regardless.
-                if (Settings.OpenOnRequest || NotificationsBlocked)
+                // By default only the small Windows notification appears. The
+                // panel opens by itself when the owner asked for it, or when no
+                // notification can be shown (blocked in Windows or turned off
+                // here), since otherwise the request would go unseen.
+                if (Settings.OpenOnRequest || NotificationsBlocked || !Settings.Notifications)
                 {
                     _window?.ShowApprovals();
                 }

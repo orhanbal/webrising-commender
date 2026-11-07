@@ -1,6 +1,7 @@
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.Windows.AppLifecycle;
+using System.Runtime.InteropServices;
 
 namespace Wecommander.Center;
 
@@ -11,9 +12,24 @@ namespace Wecommander.Center;
 /// </summary>
 public static class Program
 {
+    /// <summary>
+    /// The identity Windows files our notifications under. It is the one the
+    /// earlier tray app registered and the one shown in Settings, System,
+    /// Notifications as "WECOMMANDER Yönetim Merkezi", so the owner's choice
+    /// there (allow, banners) applies to this app. Without an explicit id the
+    /// Windows App SDK generated another one, whose notifications reached
+    /// neither the banner nor the notification center on the owner's machine.
+    /// </summary>
+    public const string AppUserModelId = "app.wecommander.center";
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = true)]
+    private static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
+
     [STAThread]
     private static int Main(string[] args)
     {
+        // Must run before any window or notification API is touched.
+        _ = SetCurrentProcessExplicitAppUserModelID(AppUserModelId);
         WinRT.ComWrappersSupport.InitializeComWrappers();
         var main = AppInstance.FindOrRegisterForKey("wecommander-center");
         if (!main.IsCurrent)

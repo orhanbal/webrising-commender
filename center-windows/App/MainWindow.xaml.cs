@@ -429,4 +429,6 @@ public sealed partial class MainWindow : Window
     private void Dashboard_Click(object sender, RoutedEventArgs e) => Center.OpenDashboard();
 
     private void AllowNotifications_Click(object sender, RoutedEventArgs e) => App.OpenNotificationSettings();
+
+    private void TestNotification_Click(object sender, RoutedEventArgs e) => Center.SendTestNotification();
 }

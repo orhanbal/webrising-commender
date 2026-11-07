@@ -16,6 +16,12 @@ public static class Texts
         _ => kind,
     };
 
+    public const string NotificationIntroTitle = "WECOMMANDER bildirimleri hazır";
+    public const string NotificationIntroText =
+        "Onay istekleri burada, sağ altta görünecek. Windows izin sorarsa \"İzin ver\"e bas.";
+    public const string NotificationTestTitle = "Test bildirimi";
+    public const string NotificationTestText = "Bunu sağ altta görüyorsan onay istekleri de burada görünecek.";
+
     /// <summary>
     /// Why Windows does not show our notifications, from the Windows App SDK
     /// AppNotificationSetting name, and where the owner turns them on.
