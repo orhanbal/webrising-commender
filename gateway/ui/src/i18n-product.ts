@@ -207,6 +207,7 @@ export const productEnglish:Record<string,string> = {
   "Yönetim merkezleri": "Management Centers",
   "Masaüstündeki tepsi uygulaması: tüm cihazlardan gelen onay isteklerini bildirir, onaylar/reddeder ve otonom modu yönetir. Yapay zekâ araçlarını çalıştıramaz.": "The desktop tray app: notifies you of approval requests from every device, approves or denies them and manages autonomous mode. It cannot run AI tools.",
   "Windows'a kur (PowerShell)": "Install on Windows (PowerShell)",
+  "macOS'a kur (Terminal)": "Install on macOS (Terminal)",
   "Bağlı yönetim merkezi yok.": "No Management Center connected.",
   "son görülme": "last seen",
   "Bağlantıyı iptal et": "Revoke",

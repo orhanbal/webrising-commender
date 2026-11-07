@@ -11,3 +11,7 @@ coverage/
 .gateway-data/
 agent-config.json
 backups/
+
+# Swift (center-macos)
+center-macos/.build/
+center-macos/dist/

@@ -21,6 +21,7 @@ test("dispatcher is bound to the gateway origin and is valid POSIX sh", () => {
   assert.throws(() => dispatcher("https://x.test/path"), /invalid_origin/);
   assert.throws(() => dispatcher("https://x.test';rm -rf /;'"), /invalid_origin/);
   assert.equal(installCommands("https://wecommander.app").unix, "curl -fsSL https://wecommander.app/install.sh | sh");
+  assert.equal(installCommands("https://wecommander.app").centerMacos, "curl -fsSL https://wecommander.app/install/center.sh | sh");
 });
 
 test("served platform installers are identical to scripts/", async () => {
@@ -29,6 +30,7 @@ test("served platform installers are identical to scripts/", async () => {
     ["/install/macos.sh", "scripts/install-macos-online.sh"],
     ["/install.ps1", "scripts/install-windows-online.ps1"],
     ["/install/center.ps1", "scripts/install-center-windows-online.ps1"],
+    ["/install/center.sh", "scripts/install-center-macos-online.sh"],
   ] as const) {
     const served = await installRoute(route, "https://wecommander.app");
     assert.ok(Buffer.isBuffer(served), route);
@@ -69,4 +71,13 @@ test("the Windows installer sorts releases by build number before picking one", 
   const sortAt = body.indexOf("Sort-Object -Descending");
   const loopAt = body.indexOf("foreach($r in $results)");
   assert.ok(sortAt > 0 && loopAt > sortAt, "releases are sorted before the selection loop");
+});
+
+test("the macOS Management Center installer verifies the zip and picks the newest preview", () => {
+  const body = fs.readFileSync(path.join(repo, "scripts/install-center-macos-online.sh"), "utf8");
+  execFileSync("sh", ["-n", path.join(repo, "scripts/install-center-macos-online.sh")]);
+  assert.match(body, /WECOMMANDER-Center-macos\.zip/);
+  assert.match(body, /shasum -a 256/);
+  assert.match(body, /sort -t- -k3,3nr/);
+  assert.match(body, /releases\/download\//);
 });
