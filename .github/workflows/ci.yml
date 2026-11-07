@@ -721,6 +721,16 @@ jobs:
           if ($errors.Count -gt 0) { $errors | Format-List; exit 1 }
 
 
+  plan-tools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: V2 plan schedule and document consistency
+        run: |
+          python3 plans/tools/wecommander_v2_scheduler.py validate
+          python3 plans/tools/wecommander_v2_scheduler.py check
+          python3 -m unittest discover -s plans/tools -p 'test_*.py' -v
+
   linux-acceptance-artifact:
     runs-on: ubuntu-latest
     steps:

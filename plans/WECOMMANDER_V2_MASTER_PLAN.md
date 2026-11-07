@@ -1,10 +1,12 @@
 # WECOMMANDER V2 — Master Geliştirme Planı (User Mode + Agent Mode)
 
-- **Sürüm:** v0.1 (planlama taslağı)
+- **Sürüm:** v0.2 (son revizyon; PR #97 incelemesi sonrası)
 - **Tarih:** 2026-11-07 · **Planlama başlangıcı:** 2026-11-09 (Pazartesi)
 - **Doğrulanan kod:** `main` = `production` = `3b6734a` ("Discoverability for search engines and AI assistants (#95)")
 - **Onaylanan mimari:** WECOMMANDER Desktop (Tauri 2 + Rust), iki bağımsız çalışma alanı. **User Mode** yerel öncelikli, Termius sınıfı SSH istemcisi; **Agent Mode** mevcut Rust Agent + Gateway + MCP sistemi. Mevcut web paneli korunur. Ana farklılaştırıcı: SSH ile bağlanılan sunucunun kontrollü biçimde Agent Mode'a yükseltilmesi.
-- **Eşlik eden belgeler:** [`WECOMMANDER_V2_DEVELOPMENT_CALENDAR.md`](./WECOMMANDER_V2_DEVELOPMENT_CALENDAR.md) · [`WECOMMANDER_V2_DEPENDENCY_MATRIX.md`](./WECOMMANDER_V2_DEPENDENCY_MATRIX.md) · [`WECOMMANDER_V2_RELEASE_CRITERIA.md`](./WECOMMANDER_V2_RELEASE_CRITERIA.md)
+- **Hesaplama sistemi:** veriler [`plans/data/wecommander_v2_work_packages.json`](./data/wecommander_v2_work_packages.json), hesaplama [`plans/tools/wecommander_v2_scheduler.py`](./tools/wecommander_v2_scheduler.py), testler `plans/tools/test_wecommander_v2_scheduler.py`. Bu belgedeki `GENERATED` bölümleri elle düzenlenmez; `python3 plans/tools/wecommander_v2_scheduler.py render --write` ile üretilir.
+- **Takvimin niteliği:** Bu takvim kesin teslimat taahhüdü değildir; **doğrulanacak başlangıç tahminidir.** M1 sonunda zorunlu revizyon (R1) yapılır (§3.3).
+- **Eşlik eden belgeler:** [`WECOMMANDER_V2_DEVELOPMENT_CALENDAR.md`](./WECOMMANDER_V2_DEVELOPMENT_CALENDAR.md) · [`WECOMMANDER_V2_DEPENDENCY_MATRIX.md`](./WECOMMANDER_V2_DEPENDENCY_MATRIX.md) · [`WECOMMANDER_V2_RELEASE_CRITERIA.md`](./WECOMMANDER_V2_RELEASE_CRITERIA.md) · [`WECOMMANDER_V2_SPRINT_01.md`](./WECOMMANDER_V2_SPRINT_01.md)
 
 ---
 
@@ -47,8 +49,8 @@ Bu belge **yeni bir plandır; mevcut planları silmez, değiştirmez, üzerine y
 | Madde | Durum | Paket |
 |---|---|---|
 | **AI `terminal_input` yetkilendirme boşluğu** | **Yeniden doğrulandı, açık.** `gateway/src/protocol.ts:343` `terminal_input` → `medium`; `mcp.ts:493` onay yalnız `high` için; ajan `ops.rs:115` yalnız `Risk::High` için token istiyor (`protocol.rs:346` aynı sınıflandırma). Terminal bir kez açıldıktan sonra AI istediğini yazabiliyor. | **B01** |
-| Başarısız teslimatta tek kullanımlık onayın yanması | V1_2 roadmap düzeltme listesi (2026-11-05), açık | B03 |
-| `health_snapshot` gürültüsü (bind-mount, veth, dockerd tekrarları) | Ubuntu'da gözlendi, açık | B03 |
+| Başarısız teslimatta tek kullanımlık onayın yanması ve çift yürütme riski | Açık. Gateway onayı göndermeden önce tüketiyor (`gateway/src/approvals.ts` `consumeApproval`, `consumed_at`); relay 30 sn sonra zaman aşımına düşüyor (`relay.ts:32`); ajan HMAC, cihaz, işlem ve süreyi doğruluyor ama **nonce'u kaydetmiyor** (`crates/agent/src/approval.rs` `verify`), yani süresi dolmamış bir token aynı ajana tekrar gelirse yeniden çalışır; ajanda kalıcı işlem kaydı yok | B03 |
+| `health_snapshot` gürültüsü (bind-mount, veth, dockerd tekrarları) | Ubuntu'da gözlendi, açık | B12 |
 | A4 canlı HTTPS/HSTS/TLS/WSS bağımsız doğrulama | Görev listesinde "in progress" | B02 |
 | Production verisiyle restore tatbikatı | Açık (`PHASE_STATUS.md` dış kabul) | B02 |
 | GitHub sıkılaştırması (etiket kuralı, `production` yalnız `main`), `v1.0` etiketi (A8) | Açık | B02 |
@@ -71,20 +73,114 @@ Bu belge **yeni bir plandır; mevcut planları silmez, değiştirmez, üzerine y
 6. Gerçek cihaz kabulleri sahibin donanımıyla yapılır: Windows PC, Ubuntu sunucu, Mac (mevcut). Mobil cihazlar M7 için gerekir.
 7. Production'a çıkış yalnız `promote-production.yml` + sahibin `production` onayı ile.
 8. Kullanıcının kendi AI sağlayıcısını kullanma kararı korunur; hiçbir paket zorunlu bir AI sağlayıcısı getirmez.
+9. Paket süresi = ⌈efor × hız katsayısı ÷ kapasite × koordinasyon⌉ hafta. Hız katsayısı başlangıçta 1,0'dır; gerçekleşen eforlar `plans/data/wecommander_v2_actuals.json` dosyasına işlendikçe hesaplanır.
+10. Bütün parametreler (kapasite, koordinasyon, stabilizasyon süreleri, tampon, işe alışma) veri dosyasındadır ve değiştirildiğinde takvim aynı araçla yeniden üretilir.
 
 ---
 
-## 3. Paket özeti
+## 3. Paket özeti, kilometre taşları ve doğrulama kapıları
 
-| Plan | Paket sayısı | Toplam efor (orta nokta) | Aralık |
+### 3.1 Efor özeti
+
+<!-- GENERATED:BEGIN effort -->
+| Plan | Paket | Düşük | Orta nokta (takvim) | Yüksek |
+|---|---|---|---|---|
+| A — User Mode | 30 | 87 MH | 104 MH | 121 MH |
+| B — Agent Mode | 13 | 32 MH | 37 MH | 42 MH |
+| **Toplam** | 43 | 119 MH | 141 MH | 163 MH |
+
+Önceki sürüm (v0.1) toplamı: 136,25 MH → bu sürüm: 141 MH (fark 4,75 MH). Hız katsayısı (actuals): 1.
+<!-- GENERATED:END effort -->
+
+### 3.2 Paket listesi (43 paket)
+
+<!-- GENERATED:BEGIN packages -->
+| Kod | Ad | Plan | Kilometre taşı | Öncelik | Efor (MH) | Ön koşullar |
+|---|---|---|---|---|---|---|
+| B01 | AI terminal_input yetkilendirme düzeltmesi | B | M0 | P0 | 1–1,5 | — |
+| B02 | Production kabul kapanışı (v1.0 / A4 / A7 / A8) | B | M0 | P0 | 1,5–2 | B01, B03 |
+| B03 | Onaylı işlem durum makinesi ve teslimat güvencesi | B | M0 | P0 | 3–4 | B01 |
+| B04 | MFA (TOTP + WebAuthn) ve yeniden doğrulama | B | M6 | P1 | 3–4 | B01 |
+| B05 | İnsan terminali akışı (gateway + ajan) | B | M6 | P1 | 2–3 | B04 |
+| B06 | Web panelinde gerçek terminal | B | M6 | P1 | 1,5–2 | B05, A03 |
+| B07 | Regresyon test paketi ve sürüm adayı kontrol listesi | B | M6 | P1 | 2 | B02 |
+| B08 | Masaüstü oturum açma ve SSH eşleştirme uçları | B | M4 | P1 | 1,5–2 | B04 |
+| B09 | Masaüstünde Agent çalışma alanı | B | M4 | P1 | 3–4 | B08, A01, A03 |
+| B10 | Uçtan uca şifreli senkronizasyon sunucusu | B | M5 | P2 | 2–3 | B04 |
+| B11 | Bastion SSH (Agent Mode) | B | M7 | P3 | 6–8 | A02, B05 |
+| B12 | v1.2 gözlem işleri ve health_snapshot gürültüsü | B | M6 | P2 | 2,5–3,5 | B03 |
+| B13 | OIDC SSO | B | M7 | P3 | 3 | B04 |
+| A01 | Desktop uygulama iskeleti ve depo yapısı (G1) | A | M1 | P0 | 2,5–3,5 | — |
+| A02 | SSH çekirdeği wc-ssh-core (G2) | A | M1 | P0 | 3,5–5,5 | — |
+| A03 | Terminal arayüz paketi (G3) | A | M1 | P0 | 2,5–3,5 | — |
+| A04 | Paketleme, dağıtım ve otomatik güncelleme | A | M2 | P0 | 2–3 | A01 |
+| A05 | Yerel kasa (wc-vault) ve anahtar yönetimi | A | M2 | P0 | 3–4 | A01 |
+| A06 | Host key doğrulaması ve known_hosts | A | M2 | P0 | 1,5–2 | A02, A05 |
+| A07 | Hosts, Groups, Tags, profiller, ssh_config | A | M2 | P0 | 2–3 | A05 |
+| A08 | Terminal sekmeleri ve oturum yönetimi | A | M2 | P0 | 2–3 | A01, A02, A03 |
+| A09 | SFTP dosya yöneticisi | A | M2 | P0 | 4–5 | A01, A02 |
+| A10 | Jump Host ve Local Port Forwarding | A | M2 | P0 | 2–3 | A02, A07 |
+| A11 | MVP güvenlik incelemesi, gerçek cihaz kabulü ve kullanıcı belgeleri | A | M2 | P0 | 2–3 | A04, A06, A07, A08, A09, A10 |
+| A12 | Split View ve güvenli Broadcast | A | M3 | P1 | 2–3 | A08 |
+| A13 | Workspaces ve oturum geri yükleme | A | M3 | P1 | 2 | A12, A07 |
+| A14 | Snippets, komut geçmişi, autocomplete | A | M3 | P1 | 2–3 | A08, A05 |
+| A15 | Remote Forward, SOCKS ve proxy | A | M3 | P1 | 2–3 | A10 |
+| A16 | Agent Forwarding ve SSH sertifikaları | A | M3 | P1 | 3–4 | A05, A10 |
+| A17 | FIDO2 / donanım anahtarı | A | M5 | P2 | 3–5 | A16 |
+| A18 | SCP | A | M5 | P2 | 1 | A09 |
+| A19 | Tema, font, kısayollar, terminal arama, ayarlar | A | U1 | P1 | 1,5–2 | A03 |
+| A20 | Uçtan uca şifreli kişisel senkronizasyon (istemci) | A | M5 | P1 | 4–5 | A05, B10 |
+| A21 | Bağımsız güvenlik ve kriptografi incelemesi | A | M5 | P1 | 1,5 | A20, A16, A15 |
+| A22 | Ekip özellikleri (kasa, hostlar, çalışma alanları, RBAC, denetim) | A | M5 | P1 | 6–8 | A20, A21 |
+| A23 | SSH'tan Agent Mode'a yükseltme | A | M4 | P1 | 2–3 | B08, A08 |
+| A24 | Kontrollü AI asistanı (kullanıcının kendi anahtarı) | A | M6 | P1 | 3–4 | A25, A08, B01 |
+| A25 | Komut risk değerlendirmesi | A | M6 | P1 | 2–3 | A12, A14 |
+| A26 | Gelişmiş operasyon araçları | A | M6 | P2 | 3–4 | A23 |
+| A27 | Ortak terminal oturumu (Multiplayer, tek yazar) | A | M7 | P2 | 4–6 | A22 |
+| A28 | Android | A | M7 | P2 | 8–10 | S-STABLE |
+| A29 | iOS | A | M7 | P2 | 6–10 | A28 |
+| A30 | Kurumsal politikalar | A | M7 | P3 | 4–5 | A22, B13 |
+<!-- GENERATED:END packages -->
+
+### 3.3 Kilometre taşları
+
+Yeni kilometre taşı **U1 — User Mode 1.0 Stable**, temel SSH uygulamasının kararlı sürümünü V2 Stable'dan (M6) ayırır. U1; ekip kasası, senkronizasyon, mobil ve AI özelliklerini beklemez. Tarihi gerçek bağımlılıklardan hesaplanır: MVP paketleri (A04–A11), A19 (temel terminal ayarları), MVP stabilizasyonu ve 4 haftalık genel beta/RC/kabul dönemi (`S-U1`).
+
+<!-- GENERATED:BEGIN milestones-default -->
+| Kilometre taşı | Plan tarihi (S2) | Hedef sürüm tarihi (S2, tampon dahil) | Kapsam |
 |---|---|---|---|
-| A — User Mode | 30 (A01–A30) | 102,0 MH | ~78–132 MH |
-| B — Agent Mode | 13 (B01–B13) | 34,25 MH | ~26–44 MH |
-| **Toplam** | **43** | **136,25 MH** | **~104–176 MH** |
+| **M0** Agent Mode güvenlik ve production kapanışı | 2027-01-15 | 2027-01-29 | B01, B02, B03 |
+| **M1** Çalışan User Mode SSH prototipi | 2027-03-12 | 2027-04-02 | A01, A02, A03 |
+| **M2** User Mode kullanılabilir MVP | 2027-08-06 | 2027-09-17 | A04, A05, A06, A07, A08, A09, A10, A11 + S-MVP |
+| **U1** User Mode 1.0 Stable | 2027-09-03 | 2027-10-22 | A19 + S-U1 |
+| **M3** Genişletilmiş özellik Beta'sı (User Mode 1.x, 3 işletim sistemi) | 2028-01-14 | 2028-03-24 | A12, A13, A14, A15, A16 + S-BETA |
+| **M4** Agent Mode entegrasyonu | 2028-03-17 | 2028-06-02 | B08, B09, A23 + S-INT |
+| **M5** Termius masaüstü özellik eşitliği | 2028-09-15 | 2028-12-29 | A17, A18, A20, A21, A22, B10 + S-PAR |
+| **M6** WECOMMANDER V2 Stable | 2028-10-13 | 2029-02-02 | A24, A25, A26, B04, B05, B06, B07, B12 + S-STABLE |
+| **M7** Mobil ve kurumsal genişleme | 2029-04-20 | 2029-09-07 | A27, A28, A29, A30, B11, B13 + S-M7 |
+<!-- GENERATED:END milestones-default -->
 
-Kilometre taşı eşlemesi: **M0** B01–B03 · **M1** A01–A03 · **M2** A04–A11 · **M3** A12–A16, A19 · **M4** B08, B09, A23 · **M5** A17, A18, A20–A22, B10 · **M6** A24–A26 + B04–B07, B12 · **M7** A27–A30, B11, B13.
+### 3.4 Teknik doğrulama kapıları ve zorunlu takvim revizyonu (R1)
 
----
+İlk takvim bir tahmindir. En büyük teknik belirsizlikler (russh uyumluluğu, `russh-sftp` olgunluğu, Windows OpenSSH ve macOS SSH uyumluluğu, WebKitGTK'de xterm.js performansı, Tauri paketleme ve güncelleme, işletim sistemleri arasında güvenli anahtar saklama) A01–A03 içinde ölçülür.
+
+<!-- GENERATED:BEGIN gates -->
+| Kapı | Ne zaman | Ad | Kontroller | Başarısızlıkta |
+|---|---|---|---|---|
+| G1 | A01 bitince (S2: 2026-12-18) | Tauri paketleme/güncelleme ve anahtar deposu doğrulaması | Windows, macOS ve Linux'ta imzalı güncelleme manifestiyle N → N+1 güncelleme turu<br>Windows DPAPI/Credential Manager, macOS Keychain, Linux Secret Service ile keyring duman testi; Secret Service olmayan Linux'ta ana parola yolunun çalışması<br>Kurulum boyutu ve ilk açılış süresi ölçümü | A04 ve A05 tahminleri yeniden hesaplanır; gerekirse Linux için ana parola zorunlu varsayılan olur |
+| G2 | A02 bitince (S2: 2027-02-05) | russh uyumluluk matrisi ve SFTP olgunluğu | Ubuntu OpenSSH 9.x, eski OpenSSH 7.x, Windows OpenSSH Server, macOS sshd ile parola, anahtar, keyboard-interactive ve harici ajan<br>Algoritma matrisi (kex, host key, şifre, MAC) ve Terrapin önlemleri<br>russh-sftp ile 1 GB yükleme/indirme, devam, 10.000 dosyalı dizin listeleme (2 günlük teknik deneme)<br>FIDO2 (sk-*) desteğinin russh'ta var olup olmadığının belirlenmesi | russh-sftp yetersizse A09'a +2 MH (SFTP v3 katmanı); FIDO2 yerleşik değilse A17 OpenSSH uyumluluk motoruyla başlar (tahmin değişmez) |
+| G3 | A03 bitince (S2: 2027-03-12) | xterm.js WebView performansı | WebView2, WKWebView ve WebKitGTK'de 10 MB çıktı akışında arayüzün donmaması<br>WebGL çizicinin kullanılamadığı yerde canvas/DOM'a düşme<br>vim, htop, Türkçe IME, kopyala/yapıştır | Linux için ek optimizasyon işi A08'e +1 MH; Linux U1 kapsamında 'beta' etiketiyle kalabilir |
+| R1 | M1 bitince (S2: 2027-03-12) | Zorunlu takvim revizyonu | A01–A03 gerçekleşen eforları actuals dosyasına işlenir<br>Hız katsayısı hesaplanır ve kalan paketlere uygulanır<br>G1–G3 sonuçlarına göre yeniden tahminler girilir<br>Takvim aynı araçla yeniden üretilir ve belgeler güncellenir (ayrı PR) | Hız katsayısı 1,3'ün üstündeyse sahip kapsam veya kaynak kararı verir |
+<!-- GENERATED:END gates -->
+
+**Revizyon prosedürü (R1, M1 bitince zorunlu):**
+1. A01, A02 ve A03'ün gerçekleşen eforu (mühendis-haftası, iş günlerinden hesaplanır) ve başlangıç/bitiş tarihleri `plans/data/wecommander_v2_actuals.json` dosyasındaki `completed` alanına işlenir.
+2. Araç hız katsayısını hesaplar: gerçekleşen toplam ÷ planlanan orta nokta toplamı.
+3. Katsayı yeniden tahmin girilmemiş kalan bütün paketlere uygulanır. G1–G3 sonuçlarına göre bilinen değişiklikler (ör. SFTP katmanı) `reestimates` alanına mühendis-haftası olarak yazılır; bunlara katsayı ayrıca uygulanmaz.
+4. `render --write` ile dört belge yeniden üretilir; `check` ve testler yeşil olmalıdır.
+5. Revizyon ayrı bir PR olarak açılır; PR'da eski ve yeni kilometre taşı tarihleri karşılaştırılır.
+6. Hız katsayısı 1,3'ün üstündeyse sahip kapsam (ör. M5 kapsamını bölmek) veya kaynak (S2 → S4) kararı verir. 0,8'in altındaysa kazanç tampon olarak tutulur, tarih öne çekilmez.
+7. Aynı prosedür M2 ve U1 sonunda da önerilir (zorunlu değil).
 
 ## 4. PLAN B — AGENT MODE
 
@@ -112,16 +208,65 @@ Kilometre taşı eşlemesi: **M0** B01–B03 · **M1** A01–A03 · **M2** A04�
 - **Kabul:** `PHASE_STATUS.md`'deki dış kabul listesinin tamamı kanıtlı; `v1.0` etiketi production SHA'sında.
 - **Tamamlanma kanıtı:** Restore raporu, TLS raporu, etiket, ayar ekran görüntüleri.
 
-### B03 · Onay tüketimi ve `health_snapshot` düzeltmeleri
-- **Teknik açıklama:** Sonuç dönmeyen isteklerde (cihaz kopması, zaman aşımı) onayın yanması: açık hata metni ("komut çalışmamış olabilir, yeni onay gerekiyor") ve ajan işlemi hiç almadıysa onayın iadesi. `health_snapshot`: bind-mount disk tekilleştirme, `veth*`/`br-*`/`docker0` gruplama, aynı adlı süreçlerin birleştirilmesi.
-- **Dosyalar:** `gateway/src/approvals.ts`, `relay.ts`, `relay-cancellation.ts`, `crates/agent/src/system_ops.rs`.
-- **Yeniden kullanılan:** Relay iptal altyapısı, `relay-cancellation.test.ts`.
-- **Ön koşul:** Yok. **Bağımlı:** B02, B12. **Paralel:** B01, A01–A03.
-- **Öncelik:** P0 · **Efor:** 1–1,5 MH
-- **Güvenlik:** Onay iadesi yalnız ajan işlemi hiç almadıysa yapılır (çift yürütme olmaz).
-- **Testler:** Ajan bağlantısı kesik iken onaylı istek → iade ve açık hata; ajan işlemi aldıktan sonra kopma → iade yok; sahte `sysinfo` girdileriyle gürültü testleri.
-- **Kabul:** Ubuntu Docker sunucusunda `health_snapshot` fiziksel diskleri bir kez gösterir; Windows'ta onaylı komut sırasında ağ kesilip geri gelince doğru mesaj.
-- **Tamamlanma kanıtı:** PR, CI, Ubuntu çıktı karşılaştırması.
+### B03 · Onaylı işlem durum makinesi ve teslimat güvencesi
+- **Teknik açıklama:** v0.1'deki "işlem ajana ulaşmadıysa onayı iade et" yaklaşımı **değiştirildi.** Dağıtık sistemde bağlantı koptuğunda işlemin çalışıp çalışmadığı gateway tarafından kesin bilinemez. **Temel kural:** bir komutun çalışmadığı kesin olarak kanıtlanamıyorsa otomatik yeniden yürütme ve otomatik onay iadesi yapılmaz.
+
+  Tasarım beş parçadan oluşur:
+  1. **İşlem kimliği ve kalıcı işlem tablosu (gateway):** Onaylı her yüksek riskli işlem için `operation_id` (UUIDv7) ve PostgreSQL'de `operations` tablosu: durum, cihaz, işlem özeti, onay nonce'u, istemci idempotency anahtarı, zaman damgaları. Gateway yeniden başlasa da durum kaybolmaz.
+  2. **Kalıcı işlem günlüğü (ajan):** Ajan, işlemi çalıştırmadan **önce** `operation_id` ve onay nonce'unu diske yazar (fsync). Aynı nonce veya aynı `operation_id` ikinci kez gelirse çalıştırmaz, kayıtlı durumu döndürür. Bu, bugün eksik olan ajan tarafı tekrar oynatma korumasını da kapatır.
+  3. **Teslimat doğrulaması:** Ajan, günlüğe yazdıktan sonra `accepted(operation_id)` gönderir; ardından sonuç gelir. Sonuç kaybolursa gateway sonucu günlükten yeniden ister.
+  4. **Durum sorgulama ve uzlaştırma:** Bağlantı koptuğunda ya da gateway yeniden başladığında, ajan yeniden bağlanınca gateway `operation_status(operation_id)` sorar. Ajan işlemi hiç görmediyse `operation_id` için **kalıcı bir red kaydı (tombstone)** yazar ve `never_seen` döner. Böylece işlemin hiçbir zaman çalışmayacağı kanıtlanmış olur; geç gelen bir kopya da reddedilir.
+  5. **İdempotency:** İstemci aynı isteği (aynı idempotency anahtarı veya aynı MCP çağrı kimliği + parametre özeti) tekrar gönderirse yeni işlem açılmaz; mevcut işlemin durumu döner.
+
+  **Onay iadesi** yalnız `NOT_EXECUTED_PROVEN` durumunda yapılır. Bu durumda bile yeniden yürütme otomatik değildir; istemci açıkça yeniden çağırmalıdır. `UNKNOWN` durumunda insana "çalışmış olabilir" uyarısı, kanıtlar (son bilinen durum, ajan günlüğü yanıtı) ve yeni onay gerektiren bir yeniden deneme seçeneği gösterilir.
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING_APPROVAL
+    PENDING_APPROVAL --> APPROVED: insan onayı / izin listesi / full güven
+    PENDING_APPROVAL --> DENIED: red veya süre doldu
+    APPROVED --> DISPATCHED: gateway gönderdi (operation_id, nonce)
+    APPROVED --> NOT_EXECUTED_PROVEN: gönderilmeden bağlantı yok
+    DISPATCHED --> ACCEPTED: ajan günlüğe yazdı (accepted)
+    DISPATCHED --> UNKNOWN: zaman aşımı / kopma, yanıt yok
+    UNKNOWN --> ACCEPTED: uzlaştırma - ajan işlemi gördü
+    UNKNOWN --> NOT_EXECUTED_PROVEN: uzlaştırma - never_seen + tombstone
+    UNKNOWN --> UNKNOWN: ajan ulaşılamaz (insana uyarı)
+    ACCEPTED --> RUNNING
+    RUNNING --> SUCCEEDED
+    RUNNING --> FAILED
+    RUNNING --> INTERRUPTED: ajan yeniden başladı (kısmi yürütme olabilir)
+    ACCEPTED --> SUCCEEDED: sonuç günlükten alındı
+    NOT_EXECUTED_PROVEN --> [*]: onay iadesi (yeniden çalıştırma yok)
+    SUCCEEDED --> [*]
+    FAILED --> [*]
+    INTERRUPTED --> [*]: yeni onay gerekir
+    DENIED --> [*]
+```
+
+- **Dosyalar:** `gateway/src/approvals.ts`, `approval-requests.ts`, `relay.ts`, `relay-cancellation.ts`, `mcp.ts`, `db.ts` (yeni `operations` tablosu), `crates/agent/src/approval.rs`, `ops.rs`, `protocol.rs` (`accepted`, `operation_status`), yeni `crates/agent/src/operation_journal.rs`, `task_manager.rs` (uzun görevler aynı günlüğü kullanır).
+- **Teknoloji:** PostgreSQL işlem tablosu; ajanda ekleme yapılan (append-only), sağlama toplamlı günlük dosyası (`terminal_history.rs` biçim deneyimi); UUIDv7.
+- **Yeniden kullanılan:** `consumeApproval`, `approval::verify`, relay iptal altyapısı, onay kuyruğu UI'ı.
+- **Ön koşul:** B01 (aynı onay yüzeyi; sırayla yapılır). **Bağımlı:** B02 (v1.0 bu düzeltme olmadan etiketlenmez), B12. **Paralel:** A01, A02, A03.
+- **Öncelik:** P0 · **Efor:** 3–4 MH (v0.1'de 1–1,5 MH; health_snapshot B12'ye taşındı)
+- **Güvenlik:** Nonce ajan tarafında da tek kullanımlık; günlükte komut metni maskelenmiş; günlük bozulursa ajan güvenli yönde başarısız olur (yeni yüksek riskli işlem kabul etmez, durum `UNKNOWN`); tombstone kalıcıdır.
+- **Test senaryoları (her biri ayrı otomatik test, gerçek ajanla):**
+
+| # | Senaryo | Beklenen davranış |
+|---|---|---|
+| 1 | İşlem gönderilmeden bağlantı kopar | `NOT_EXECUTED_PROVEN`; onay iadesi; komut çalışmaz; istemciye "çalışmadı, tekrar deneyebilirsiniz" |
+| 2 | İşlem ajana ulaştıktan sonra (günlüğe yazıldı) bağlantı kopar | Uzlaştırmada `ACCEPTED/RUNNING`; onay iadesi yok; sonuç yeniden bağlanınca alınır |
+| 3 | İşlem çalışırken bağlantı kopar | `RUNNING` korunur; görev sürer; sonuç sonra alınır; yeniden yürütme yok |
+| 4 | İşlem tamamlandıktan sonra yanıt kaybolur | Uzlaştırmada `SUCCEEDED` ve sonuç günlükten; ikinci yürütme yok |
+| 5 | Aynı istek yeniden gönderilir (aynı idempotency anahtarı) | Yeni işlem açılmaz; mevcut durum döner |
+| 6 | Gateway yeniden başlar (DISPATCHED/ACCEPTED işlemler varken) | `operations` tablosundan durum yüklenir; ajan bağlanınca uzlaştırma; çift yürütme yok |
+| 7 | Ajan yeniden başlar (RUNNING işlem varken) | Günlükte bitmemiş kayıt `INTERRUPTED`; "kısmen çalışmış olabilir" uyarısı; yeni onay gerekir |
+| 8 | Onay token'ı tekrar kullanılır (gateway'i atlayan doğrudan kopya dahil) | Gateway `consumed_at` ile, ajan günlükteki nonce ile reddeder |
+| ek | Ajan ulaşılamazken uzlaştırma | `UNKNOWN` kalır; otomatik iade yok; insana kanıtlı uyarı |
+| ek | Günlük dosyası bozulur | Yeni yüksek riskli işlem reddedilir; `policy_info` bozulmayı raporlar |
+
+- **Kabul:** Yukarıdaki testler CI'da (ağ kesintisi ve süreç sonlandırma ile hata enjeksiyonu); Windows ve Ubuntu'da gerçek ağ kesintisiyle elle kabul; `mcp-client-acceptance.mjs` geçer; hata metinleri MCP istemcisinde anlaşılır.
+- **Tamamlanma kanıtı:** Durum makinesi tasarım notu (`docs/OPERATION_STATE_MACHINE.md`), merge edilmiş PR'lar, CI run linki, kabul notu.
 
 ### B04 · MFA (TOTP + WebAuthn/passkey) ve kritik işlemlerde yeniden doğrulama
 - **Teknik açıklama:** Kullanıcı başına TOTP ve WebAuthn; hash'li kurtarma kodları; `browser_sessions.mfa_verified_at`; `requireRecentMfa(maxAge)` ara katmanı: terminal açma, onay verme (yapılandırılabilir), `full` güven, API token oluşturma, rol değişimi. Organizasyon politikası "MFA zorunlu". Yönetim Merkezi ve Desktop, yeniden doğrulamayı tarayıcıya yönlendirir.
@@ -206,11 +351,11 @@ Kilometre taşı eşlemesi: **M0** B01–B03 · **M1** A01–A03 · **M2** A04�
 - **Kabul:** Ubuntu bastion → ikinci VM; gateway DB'sinde anahtar yok.
 - **Tamamlanma kanıtı:** PR, CI, kabul notu.
 
-### B12 · v1.2 gözlem işlerinin tamamlanması
-- **Teknik açıklama:** `service_list/service_status` (systemd, SCM, launchd), `container_list/inspect/logs` (salt okuma), Windows Event Log ve macOS `log show`, gateway'de 24 saatlik sağlık geçmişi ve panoda sağlık kartı (V1_2 roadmap madde 3–6).
+### B12 · v1.2 gözlem işleri ve `health_snapshot` gürültüsü
+- **Teknik açıklama:** `health_snapshot`: bind-mount disk tekilleştirme, `veth*`/`br-*`/`docker0` gruplama, aynı adlı süreçlerin birleştirilmesi (v0.1'de B03'teydi). Ayrıca `service_list/service_status` (systemd, SCM, launchd), `container_list/inspect/logs` (salt okuma), Windows Event Log ve macOS `log show`, gateway'de 24 saatlik sağlık geçmişi ve panoda sağlık kartı (V1_2 roadmap madde 3–6).
 - **Dosyalar:** `crates/agent/src/system_ops.rs`, `log_ops.rs`, yeni `inventory.rs`, `gateway/src/mcp.ts`, `local-tools.ts`, UI `Devices.tsx`.
 - **Ön koşul:** B03. **Bağımlı:** A26. **Paralel:** A12–A16.
-- **Öncelik:** P2 · **Efor:** 2–3 MH
+- **Öncelik:** P2 · **Efor:** 2,5–3,5 MH
 - **Güvenlik:** Maskeleme; docker soketine yalnız okuma; yetki yoksa `unavailable`.
 - **Testler:** V1_2 roadmap'teki kabul listesi.
 - **Kabul:** Ubuntu (Coolify konteynerleri), Windows (hizmetler), macOS (launchd).
@@ -237,10 +382,11 @@ Kilometre taşı eşlemesi: **M0** B01–B03 · **M1** A01–A03 · **M2** A04�
 - **Teknoloji:** Tauri 2, React 19, Vite 7, Tailwind 4 (`gateway/ui` ile aynı sürümler).
 - **Yeniden kullanılan:** `tray/` (Tauri 2 eklentileri: tray-icon, notification, single-instance, autostart), `gateway/ui` tasarım token'ları ve i18n.
 - **Ön koşul:** Yok. **Bağımlı:** A04, A05, A08, B09. **Paralel:** A02, A03, B01–B03.
-- **Öncelik:** P0 · **Efor:** 2–3 MH
+- **Öncelik:** P0 · **Efor:** 2,5–3,5 MH (G1 doğrulamaları dahil)
 - **Güvenlik:** Tauri yetenek (capability) dosyasında asgari izin; uzak içerik yüklenmez; CSP.
 - **Testler:** Üç işletim sisteminde CI derlemesi; başlangıç duman testi.
 - **Kabul:** Windows, macOS, Linux'ta uygulama açılır, iki çalışma alanı arasında geçilir, tepside görünür.
+- **Doğrulama kapısı G1:** Üç işletim sisteminde imzalı güncelleme turu (N → N+1); Windows DPAPI/Credential Manager, macOS Keychain ve Linux Secret Service ile anahtar deposu duman testi; Secret Service olmayan Linux'ta ana parola yolu; gerçekleşen efor kaydı.
 - **Tamamlanma kanıtı:** PR, CI, üç işletim sisteminde ekran görüntüsü.
 
 #### A02 · SSH çekirdeği (`wc-ssh-core`)
@@ -249,10 +395,11 @@ Kilometre taşı eşlemesi: **M0** B01–B03 · **M1** A01–A03 · **M2** A04�
 - **Teknoloji:** `russh` (≥ 0.60.1), `ssh-key`, `tokio`.
 - **Yeniden kullanılan:** Ajandaki tokio ve hata işleme desenleri.
 - **Ön koşul:** Yok. **Bağımlı:** A06, A08, A09, A10, B11. **Paralel:** A01, A03.
-- **Öncelik:** P0 · **Efor:** 3–5 MH
+- **Öncelik:** P0 · **Efor:** 3,5–5,5 MH (G2 doğrulamaları dahil)
 - **Güvenlik:** Zayıf algoritmalar kapalı (Terrapin karşı önlemleri dahil sürüm); sırlar bellekte `zeroize`; loglarda kimlik bilgisi yok.
 - **Testler:** Algoritma matrisi; her kimlik doğrulama yöntemi; kopma ve yeniden bağlanma; host key uyuşmazlığında red; bellek ve log taraması.
 - **Kabul:** Ubuntu sunucusuna, bir Windows OpenSSH sunucusuna ve macOS'a bağlanılır.
+- **Doğrulama kapısı G2:** Ubuntu OpenSSH 9.x, OpenSSH 7.x, Windows OpenSSH Server ve macOS sshd ile kimlik doğrulama ve algoritma matrisi; `russh-sftp` ile 2 günlük teknik deneme (1 GB aktarım, devam, 10.000 dosyalı dizin); russh'ta FIDO2 desteğinin belirlenmesi; gerçekleşen efor kaydı.
 - **Tamamlanma kanıtı:** PR, CI (SSH sunucu konteyneriyle).
 
 #### A03 · Terminal arayüz paketi (`packages/terminal-ui`)
@@ -260,10 +407,11 @@ Kilometre taşı eşlemesi: **M0** B01–B03 · **M1** A01–A03 · **M2** A04�
 - **Dosyalar:** `packages/terminal-ui/`.
 - **Teknoloji:** `@xterm/xterm`, `@xterm/addon-webgl`, `@xterm/addon-fit`, `@xterm/addon-search` (MIT).
 - **Ön koşul:** Yok. **Bağımlı:** A08, A19, B06, B09. **Paralel:** A01, A02.
-- **Öncelik:** P0 · **Efor:** 2–3 MH
+- **Öncelik:** P0 · **Efor:** 2,5–3,5 MH (G3 doğrulamaları dahil)
 - **Güvenlik:** Link eklentisi varsayılan kapalı; OSC 52 (panoya yazma) kullanıcı onaylı.
 - **Testler:** WebView2, WKWebView, WebKitGTK üzerinde çizim ve performans (10 MB çıktı akışı); `vim`, `htop`.
 - **Kabul:** Linux WebKitGTK'de kabul edilebilir FPS veya otomatik düşme çalışır.
+- **Doğrulama kapısı G3:** WebView2, WKWebView ve WebKitGTK'de 10 MB çıktı akışı ölçümü; WebGL yoksa düşme; IME ve kopyala/yapıştır; gerçekleşen efor kaydı.
 - **Tamamlanma kanıtı:** PR, performans ölçüm notu.
 
 #### A04 · Paketleme, dağıtım ve otomatik güncelleme
@@ -343,11 +491,11 @@ Kilometre taşı eşlemesi: **M0** B01–B03 · **M1** A01–A03 · **M2** A04�
 - **Kabul:** Sahibin gerçek ağında jump host + forward.
 - **Tamamlanma kanıtı:** PR, CI.
 
-#### A11 · MVP güvenlik incelemesi ve gerçek cihaz kabulü
-- **Teknik açıklama:** İç güvenlik incelemesi (tehdit modeli kontrol listesi, bağımlılık denetimi, `cargo audit`, sır taraması); 3 işletim sisteminde kabul belgesi (`docs/DESKTOP_USER_MODE_ACCEPTANCE.md`); bilinen sınırlamalar listesi; MVP sürüm notları.
+#### A11 · MVP güvenlik incelemesi, gerçek cihaz kabulü ve kullanıcı belgeleri
+- **Teknik açıklama:** İç güvenlik incelemesi (tehdit modeli kontrol listesi, bağımlılık denetimi, `cargo audit`, sır taraması); 3 işletim sisteminde kabul belgesi (`docs/DESKTOP_USER_MODE_ACCEPTANCE.md`); bilinen sınırlamalar listesi; MVP sürüm notları; User Mode 1.0 için kullanıcı belgeleri (kurulum, bağlantı, kasa, SFTP, tüneller, güncelleme, sorun giderme).
 - **Ön koşul:** A04, A06–A10. **Bağımlı:** M2 stabilizasyonu. **Paralel:** B05, B12.
-- **Öncelik:** P0 · **Efor:** 1,5–2,5 MH
-- **Kabul:** `WECOMMANDER_V2_RELEASE_CRITERIA.md` M2 kriterleri.
+- **Öncelik:** P0 · **Efor:** 2–3 MH (kullanıcı belgeleri eklendi)
+- **Kabul:** `WECOMMANDER_V2_RELEASE_CRITERIA.md` M2 kriterleri; belgeler U1 için tamamlanmış.
 - **Tamamlanma kanıtı:** Kabul belgesi, inceleme raporu, etiket `desktop-v0.1.0-mvp`.
 
 ### Aşama 3 — Termius özellik eşitliği
@@ -405,7 +553,8 @@ Kilometre taşı eşlemesi: **M0** B01–B03 · **M1** A01–A03 · **M2** A04�
 
 #### A19 · Tema, font, kısayollar, terminal arama, ayarlar
 - **Teknik açıklama:** Tema galerisi, font ve ligatür, imleç, kısayol eşleme, terminal içi arama, ayarların dışa/içe aktarılması.
-- **Ön koşul:** A03. **Paralel:** her şey. **Öncelik:** P1 · **Efor:** 1,5–2 MH
+- **Kilometre taşı:** U1 (User Mode 1.0 Stable'ın "temel terminal ayarları" maddesi; v0.1'de M3'teydi).
+- **Ön koşul:** A03. **Bağımlı:** S-U1. **Paralel:** her şey. **Öncelik:** P1 · **Efor:** 1,5–2 MH
 - **Tamamlanma kanıtı:** PR.
 
 #### A20 · Uçtan uca şifreli kişisel senkronizasyon (istemci)
@@ -493,7 +642,8 @@ Kilometre taşı eşlemesi: **M0** B01–B03 · **M1** A01–A03 · **M2** A04�
 | Grup | Paketler |
 |---|---|
 | **MVP için zorunlu** | B01–B03 (Agent güvenliği önce), A01–A11 |
-| **Termius özellik eşitliği** | A12–A22 |
+| **User Mode 1.0 Stable için zorunlu** | MVP + A19 + 4 haftalık genel beta/RC/kabul (S-U1) |
+| **Termius özellik eşitliği** | A12–A18, A20–A22 |
 | **Rekabet avantajı** | A23, A24, A25, A26, B08, B09 |
 | **İleri aşama** | A27–A30, B11, B13 |
 | **Agent Mode sürekliliği** | B04–B07, B10, B12 |
@@ -520,7 +670,7 @@ Takvim **AI verimlilik kazancı varsaymaz.** Kazanç gerçekleşirse tampon olar
 
 | Kalem | Tahmin | Not |
 |---|---|---|
-| Geliştirme kapasitesi | 136 MH (aralık ~104–176) + koordinasyon | Kişi-ay ücretini sahip belirler |
+| Geliştirme kapasitesi | 141 MH orta nokta (aralık §3.1) + koordinasyon | Kişi-ay ücretini sahip belirler |
 | CI/CD | Mevcut GitHub Actions; macOS ve Windows runner dakikaları Linux'tan pahalıdır | Depo özelse ek dakika maliyeti olabilir; GitHub fiyatları doğrulanmalı |
 | Windows paketleme | İmzasız: 0. İmzalı: kod imzalama sertifikası veya bulut imzalama hizmeti, yıllık birkaç yüz USD aralığında olabilir | Doğrulanmadı; gelir öncesi imzasız kalabilir |
 | Apple imzalama ve notarization | Apple Developer Program, yıllık (Apple'ın yayımladığı fiyat genellikle 99 USD/yıl) | **Sahibin kararı gerekir** (V1_2 düzeltme listesinde de açık) |
@@ -534,7 +684,7 @@ Takvim **AI verimlilik kazancı varsaymaz.** Kazanç gerçekleşirse tampon olar
 
 ## 9. En kritik beş teknik risk
 
-1. **Termius eşitliğinin kapsam ve süre riski** — 1 geliştiriciyle V2 Stable 2029 sonuna kayar; asgari öneri 2 geliştirici.
+1. **Termius eşitliğinin kapsam ve süre riski** — 1 geliştiriciyle V2 Stable 2030'a kayar (Calendar §2); asgari öneri 2 geliştirici. U1 ayrımı, temel ürünün kararlı sürümünü bu riskten ayırır.
 2. **Linux WebKitGTK'de xterm.js performansı ve WebView farkları** — A03'te ölçülür; gerekirse çizici düşürme, son çare ayrı terminal çizim stratejisi.
 3. **russh kapsam boşlukları** (FIDO2, bazı sertifika ve sunucu uyumlulukları; `russh-sftp` olgunluğu) — OpenSSH uyumluluk motoru güvenlik ağı olarak planlandı.
 4. **Senkronizasyon ve ekip kasası kriptosu** — tasarım hatası geri dönüşü zor veri kaybı/sızıntı demektir; dış inceleme (A21) M5'in ön koşulu.
@@ -542,8 +692,17 @@ Takvim **AI verimlilik kazancı varsaymaz.** Kazanç gerçekleşirse tampon olar
 
 ---
 
-## 10. Değişiklik geçmişi
+## 10. v0.1 → v0.2 değişiklikleri
+
+1. Takvim hesaplama sistemi depoya eklendi (veri, araç, testler); belgelerdeki takvim bölümleri üretilir.
+2. Teknik doğrulama kapıları G1–G3 ve M1 sonrası zorunlu revizyon R1 eklendi; A01–A03 eforları +0,5 MH.
+3. B03 yeniden tasarlandı: otomatik onay iadesi yerine durum makinesi, ajan tarafı kalıcı işlem günlüğü ve uzlaştırma; efor 1,25 → 3,5 MH. `health_snapshot` B12'ye taşındı (B12 +0,5 MH).
+4. Yeni kilometre taşı U1 (User Mode 1.0 Stable); A19 U1'e taşındı; A11'e kullanıcı belgeleri eklendi (+0,5 MH). M3 artık "genişletilmiş özellik Beta'sı" (1.x).
+5. Toplam efor 136,25 → 141,0 MH. Eski/yeni tarih farkları Calendar'da üretilen tabloda.
+
+## 11. Değişiklik geçmişi
 
 | Tarih | Sürüm | Değişiklik |
 |---|---|---|
 | 2026-11-07 | v0.1 | İlk taslak: 43 iş paketi, üç kaynak senaryosu, M0–M7 |
+| 2026-11-07 | v0.2 | Hesaplama sistemi, doğrulama kapıları, B03 durum makinesi, User Mode 1.0 Stable (U1) |

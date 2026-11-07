@@ -11,3 +11,6 @@ coverage/
 .gateway-data/
 agent-config.json
 backups/
+
+# Python bytecode (plan tools)
+__pycache__/
