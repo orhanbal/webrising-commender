@@ -114,14 +114,20 @@ istemcidir. Tüm sunuculardaki onay istekleri buraya bildirim olarak gelir.
 
 **Sahip kararı (2026-11-07): imzalama masrafları ertelendi.** Gelir belli olmadan Apple
 Developer (yıllık 99 $) ve Windows kod imzalama sertifikası alınmayacak; ilk ödeme yapan
-kullanıcılar gelince yeniden değerlendirilecek. Bu yüzden ilk sürüm **ücretsiz yol**:
-wecommander.app'in yüklenebilir web uygulaması (PWA) + Web Push bildirimleri
-(Onayla/Reddet düğmeleri, sayfa kapalıyken de), merkez başına abonelik ayarı ve birden
-fazla merkez aynen; yüksek riskte tarayıcının parola/geçiş anahtarı (WebAuthn) doğrulaması.
-Yerel tepsi uygulaması (Tauri) aynı arka uç üzerine sonra eklenir. İmzasız dağıtımın
-bugünkü durumu: `curl … | sh` ve PowerShell tek satırı indirme işareti koymadığı için
-Gatekeeper/SmartScreen uyarısı genelde çıkmaz; macOS izin sorunu `~/WECOMMANDER`
-varsayılanıyla çözüldü.
+kullanıcılar gelince yeniden değerlendirilecek. **İlk sürüm yine tepsi uygulaması**
+(kullanıcı için en iyisi) ve **terminalden tek satırla kurulur**: `curl … | sh` ve
+PowerShell tek satırı indirme işareti koymadığından Gatekeeper/SmartScreen uyarısı
+çıkmaz, imza gerekmez.
+- Windows: kurulum Başlat menüsü kısayolunu AppUserModelID ile oluşturur; böylece
+  imzasız uygulamada da düğmeli bildirim (toast) çalışır.
+- Linux: tepsi ve bildirim (libnotify) imzasız çalışır.
+- macOS: tepsi/menü çalışır; düğmeli bildirim için kurulumda yerel (ad-hoc) imza
+  atılır, gerçek Mac'te doğrulanacak. Olmazsa tepsideki "Bekleyen onaylar" penceresi
+  ve sesli uyarı kullanılır.
+- Yüksek riskte Windows Hello / Touch ID yerine (imzasız uygulamada güvenilir
+  olmayabilir) gateway'in WebAuthn doğrulaması tepsi penceresinde açılır.
+- Yedek: wecommander.app'in yüklenebilir web uygulaması (PWA) + Web Push; telefonda ya
+  da tepsinin kurulamadığı yerde. Aynı gateway olay akışını ve onay API'sini kullanır.
 
 Dilimler: (a) giriş + tepsi + bekleyen onay listesi ve onay/ret; (b) masaüstü
 bildirimi + düğmeler + Touch ID/Windows Hello; (c) abonelik ayarları ve birden fazla
