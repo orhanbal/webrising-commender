@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Management Center for Windows is now a native WinUI 3 app (`center-windows/`): Windows notifications with Onayla / Reddet that disappear when a request is decided elsewhere, an acrylic panel on the right edge, native controls and confirmation dialogs, tray icon and menu, sign in through the browser, token encrypted with DPAPI, start with Windows. The one-line installer installs it (a self-contained .zip, no runtime needed); `-Tauri` keeps the earlier tray app.
+
 - Management Center: sign in and out are visible: "Oturumu kapat" next to the account in the panel header (with confirmation) and "Oturum aç… / Oturumu kapat (e-posta)" in the tray menu. Signing out revokes the center token on the server.
 
 - Management Center: the window is now a side panel like the Windows notification center: full height on the right edge above the taskbar, no title bar, not on the taskbar, closes when you click elsewhere, with Esc or ×; the tray icon opens and closes it. Windows 11 look (acrylic background, Fluent controls, system light/dark theme). On Windows each approval request is a Windows notification with **Onayla / Reddet** buttons that stays on screen until answered; the panel no longer jumps up for each request while notifications are on. Fixed: a red "0" badge when nothing waited. The original WECOMMANDER logo in the panel header and the favicon as the tray, app and notification icon (red dot: approvals waiting, orange dot: autonomous mode on).

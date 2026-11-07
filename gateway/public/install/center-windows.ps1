@@ -1,18 +1,19 @@
 # WECOMMANDER Management Center (tray app) installer for Windows (PowerShell 5.1+).
 # Usage: irm https://wecommander.app/install/center.ps1 | iex
 # Installs for the current user only (no administrator rights): downloads the
-# tray app from the newest GitHub preview release, verifies it against
-# SHA256SUMS.txt, copies it to %LOCALAPPDATA%\Programs\WECOMMANDER Center,
-# adds a Start menu shortcut and starts it. The app then signs in through the
-# browser and starts with Windows.
+# native WinUI 3 app (.zip) from the newest GitHub preview release, verifies it
+# against SHA256SUMS.txt, unpacks it to %LOCALAPPDATA%\Programs\WECOMMANDER
+# Center, adds a Start menu shortcut and starts it. The app then signs in
+# through the browser and starts with Windows.
+# -Tauri installs the earlier cross-platform tray app (.exe) instead.
 [CmdletBinding()]
-param([switch]$DryRun)
+param([switch]$DryRun,[switch]$Tauri)
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $repo='orhanbal/webrising-commender'
 $releases='https://api.github.com/repos/'+$repo+'/releases?per_page=30'
-$name='WECOMMANDER-Center-windows-x64.exe'
+$name=if($Tauri){'WECOMMANDER-Center-windows-x64.exe'}else{'WECOMMANDER-Center-windows-x64.zip'}
 $temp=Join-Path ([IO.Path]::GetTempPath()) ('wecommander-center-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temp -Force | Out-Null
 try {
@@ -37,15 +38,17 @@ try {
   if(-not $candidate){throw 'No preview release with the Management Center yet. Check the latest successful GitHub CI and Releases.'}
   if($DryRun){Write-Host "WECOMMANDER Center dry run: would install $($candidate.tag) from $($candidate.app)"; return}
 
-  # The window is a WebView2 page; Windows 10 (current) and 11 include it.
-  $wv='{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
-  $hasWebView=@(
-    "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$wv",
-    "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\$wv",
-    "HKCU:\Software\Microsoft\EdgeUpdate\Clients\$wv"
-  ) | Where-Object { Test-Path $_ }
-  if(-not $hasWebView){
-    Write-Warning 'Microsoft Edge WebView2 Runtime was not found. Install it from https://developer.microsoft.com/microsoft-edge/webview2/ if the window stays blank.'
+  if($Tauri){
+    # The Tauri window is a WebView2 page; Windows 10 (current) and 11 include it.
+    $wv='{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+    $hasWebView=@(
+      "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$wv",
+      "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\$wv",
+      "HKCU:\Software\Microsoft\EdgeUpdate\Clients\$wv"
+    ) | Where-Object { Test-Path $_ }
+    if(-not $hasWebView){
+      Write-Warning 'Microsoft Edge WebView2 Runtime was not found. Install it from https://developer.microsoft.com/microsoft-edge/webview2/ if the window stays blank.'
+    }
   }
 
   $download=Join-Path $temp $name
@@ -61,13 +64,20 @@ try {
   Write-Host 'SHA256 verified.'
 
   $dir=Join-Path $env:LOCALAPPDATA 'Programs\WECOMMANDER Center'
-  $exe=Join-Path $dir 'wecommander-center.exe'
+  $exe=Join-Path $dir $(if($Tauri){'wecommander-center.exe'}else{'WecommanderCenter.exe'})
+  # Replace a running copy of either version (upgrade or switch).
+  Get-Process -Name 'WecommanderCenter','wecommander-center' -ErrorAction SilentlyContinue |
+    Where-Object { $_.Path -and $_.Path.StartsWith($dir, [StringComparison]::OrdinalIgnoreCase) } |
+    Stop-Process -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Milliseconds 800
+  if(Test-Path -LiteralPath $dir){ Remove-Item -LiteralPath $dir -Recurse -Force }
   New-Item -ItemType Directory -Path $dir -Force | Out-Null
-  # Replace a running copy (upgrade).
-  Get-Process -Name 'wecommander-center' -ErrorAction SilentlyContinue |
-    Where-Object { $_.Path -eq $exe } | Stop-Process -Force -ErrorAction SilentlyContinue
-  Start-Sleep -Milliseconds 500
-  Copy-Item -LiteralPath $download -Destination $exe -Force
+  if($Tauri){
+    Copy-Item -LiteralPath $download -Destination $exe -Force
+  } else {
+    Expand-Archive -LiteralPath $download -DestinationPath $dir -Force
+    if(-not (Test-Path -LiteralPath $exe -PathType Leaf)){ throw 'The package does not contain WecommanderCenter.exe. Aborting.' }
+  }
 
   $menu=Join-Path ([Environment]::GetFolderPath('Programs')) 'WECOMMANDER Yonetim Merkezi.lnk'
   $shell=New-Object -ComObject WScript.Shell
@@ -78,7 +88,7 @@ try {
   $shortcut.Save()
 
   Start-Process -FilePath $exe -WorkingDirectory $dir
-  Write-Host 'WECOMMANDER Management Center installed and started. Look for the W icon in the notification area (system tray).'
+  Write-Host 'WECOMMANDER Management Center installed and started. Look for its icon in the notification area (system tray).'
   Write-Host 'To remove it: quit it from the tray menu, then delete' $dir 'and the Start menu shortcut.'
 } finally {
   Remove-Item -LiteralPath $temp -Force -Recurse -ErrorAction SilentlyContinue

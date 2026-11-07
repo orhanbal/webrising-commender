@@ -1,0 +1,138 @@
+<Window
+    x:Class="Wecommander.Center.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="WECOMMANDER Yönetim Merkezi">
+    <Window.SystemBackdrop>
+        <DesktopAcrylicBackdrop />
+    </Window.SystemBackdrop>
+
+    <Grid x:Name="Root" Padding="16,12,16,8" RowSpacing="8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Header: logo, account, sign out, close -->
+        <Grid ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center">
+                <Image x:Name="Wordmark" Height="16" HorizontalAlignment="Left" Stretch="Uniform" />
+                <TextBlock Text="Yönetim Merkezi" Style="{StaticResource CaptionTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <TextBlock x:Name="AccountText" Style="{StaticResource CaptionTextBlockStyle}" TextTrimming="CharacterEllipsis"
+                           HorizontalAlignment="Right" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <HyperlinkButton x:Name="SignOutLink" Content="Oturumu kapat" Padding="2,0" FontSize="12"
+                                 HorizontalAlignment="Right" Click="SignOut_Click" />
+            </StackPanel>
+            <Button Grid.Column="2" Click="Close_Click" Background="Transparent" BorderThickness="0"
+                    Width="32" Height="32" Padding="0" VerticalAlignment="Top" ToolTipService.ToolTip="Kapat (Esc)">
+                <FontIcon Glyph="&#xE711;" FontSize="12" />
+            </Button>
+        </Grid>
+
+        <StackPanel Grid.Row="1" Spacing="6">
+            <InfoBar x:Name="AutonomyBar" Severity="Warning" IsClosable="False" Title="Otonom mod açık" />
+            <InfoBar x:Name="ErrorBar" Severity="Error" IsClosable="True" />
+        </StackPanel>
+
+        <Grid Grid.Row="2">
+            <!-- Signed out -->
+            <StackPanel x:Name="SignedOutPanel" Spacing="12" Visibility="Collapsed">
+                <TextBlock Text="Oturum aç" Style="{StaticResource SubtitleTextBlockStyle}" />
+                <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           Text="Bu bilgisayar tüm cihazlarındaki onay isteklerini Windows bildirimi olarak alır; onaylar, reddeder ve otonom modu yönetirsin. Şifren bu uygulamaya girmez: oturumu tarayıcıda açarsın." />
+                <TextBox x:Name="ServerBox" Header="Sunucu adresi" />
+                <TextBox x:Name="NameBox" Header="Bu bilgisayarın adı" MaxLength="80" />
+                <Button Content="Tarayıcıda oturum aç" Style="{StaticResource AccentButtonStyle}"
+                        HorizontalAlignment="Stretch" Click="Connect_Click" />
+            </StackPanel>
+
+            <!-- Waiting for the browser -->
+            <StackPanel x:Name="LinkingPanel" Spacing="12" Visibility="Collapsed">
+                <TextBlock Text="Tarayıcıda onayla" Style="{StaticResource SubtitleTextBlockStyle}" />
+                <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           Text="Açılan sayfada hesabınla giriş yap ve 'Bu Yönetim Merkezini bağla'ya bas. Onaylayınca burası kendiliğinden açılır." />
+                <ProgressRing IsActive="True" HorizontalAlignment="Left" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="Sayfayı yeniden aç" Click="OpenLink_Click" />
+                    <Button Content="Vazgeç" Click="CancelLink_Click" />
+                </StackPanel>
+            </StackPanel>
+
+            <!-- Signed in -->
+            <Grid x:Name="SignedInPanel" Visibility="Collapsed" RowSpacing="8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <SelectorBar x:Name="Tabs" SelectionChanged="Tabs_SelectionChanged">
+                    <SelectorBarItem x:Name="ApprovalsTab" Text="Onaylar" IsSelected="True" />
+                    <SelectorBarItem x:Name="AutonomyTab" Text="Otonom mod" />
+                    <SelectorBarItem x:Name="DevicesTab" Text="Cihazlar" />
+                    <SelectorBarItem x:Name="SettingsTab" Text="Ayarlar" />
+                </SelectorBar>
+                <ScrollViewer Grid.Row="1">
+                    <Grid>
+                        <StackPanel x:Name="ApprovalsPanel" Spacing="8">
+                            <StackPanel x:Name="PendingList" Spacing="8" />
+                            <TextBlock x:Name="PendingEmpty" TextWrapping="Wrap" TextAlignment="Center" Margin="0,40,0,0"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       Text="Bekleyen onay yok. Yapay zekâ yüksek riskli bir işlem istediğinde Windows bildirimi gelir; oradan ya da buradan onaylarsın." />
+                        </StackPanel>
+
+                        <StackPanel x:Name="AutonomyPanel" Spacing="12" Visibility="Collapsed">
+                            <StackPanel x:Name="AutonomyActive" Spacing="6" Visibility="Collapsed">
+                                <TextBlock Text="Şu an açık" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                <StackPanel x:Name="AutonomyList" Spacing="2" />
+                                <Button Content="Hepsini durdur" Click="StopAll_Click" />
+                            </StackPanel>
+                            <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}"
+                                       Text="Seçilen cihazlarda yüksek riskli işlemler onay istemeden çalışır. Cihazın kendi sınırları (izinli klasörler, yazma/komut kapalı, sır gizleme) yine geçerlidir; her işlem denetim kaydına girer. Süre bitince onaylar kendiliğinden geri gelir." />
+                            <RadioButtons x:Name="ScopeRadios" Header="Kapsam" SelectedIndex="0" SelectionChanged="Scope_SelectionChanged">
+                                <x:String>Tüm cihazlar</x:String>
+                                <x:String>Seçtiğim cihazlar</x:String>
+                            </RadioButtons>
+                            <StackPanel x:Name="ScopeDevices" Visibility="Collapsed" />
+                            <RadioButtons x:Name="DurationRadios" Header="Süre" SelectedIndex="1" MaxColumns="2">
+                                <x:String>30 dakika</x:String>
+                                <x:String>1 saat</x:String>
+                                <x:String>4 saat</x:String>
+                                <x:String>Yarın 09:00'a kadar</x:String>
+                                <x:String>Süresiz</x:String>
+                            </RadioButtons>
+                            <PasswordBox x:Name="AutonomyPassword" Header="Hesap şifren" PasswordChanged="AutonomyInput_Changed" />
+                            <Button x:Name="StartAutonomyButton" Content="Otonom modu başlat" Style="{StaticResource AccentButtonStyle}"
+                                    HorizontalAlignment="Stretch" IsEnabled="False" Click="StartAutonomy_Click" />
+                        </StackPanel>
+
+                        <StackPanel x:Name="DevicesPanel" Spacing="6" Visibility="Collapsed" />
+
+                        <StackPanel x:Name="SettingsPanel" Spacing="4" Visibility="Collapsed">
+                            <ToggleSwitch x:Name="NotifySwitch" Header="Yeni onay isteğinde Windows bildirimi (Onayla / Reddet)" Toggled="Settings_Toggled" />
+                            <ToggleSwitch x:Name="OpenSwitch" Header="Bildirimler kapalıyken yeni istekte paneli aç" Toggled="Settings_Toggled" />
+                            <ToggleSwitch x:Name="AutostartSwitch" Header="Windows oturum açılışında başlat" Toggled="Autostart_Toggled" />
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                                <Button Content="Paneli tarayıcıda aç" Click="Dashboard_Click" />
+                                <Button Content="Oturumu kapat" Click="SignOut_Click" />
+                            </StackPanel>
+                            <TextBlock x:Name="AboutText" Margin="0,12,0,0" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+                    </Grid>
+                </ScrollViewer>
+            </Grid>
+        </Grid>
+
+        <TextBlock x:Name="StatusText" Grid.Row="3" Style="{StaticResource CaptionTextBlockStyle}"
+                   Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+    </Grid>
+</Window>

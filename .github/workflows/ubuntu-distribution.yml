@@ -45,10 +45,14 @@ jobs:
           test -s dist/ci-center/WECOMMANDER-Center-windows-x64.exe
           cp dist/ci-center/WECOMMANDER-Center-windows-x64.exe dist/
           rm -rf dist/ci-center
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" -n WECOMMANDER-Center-WinUI-windows-x64 -D dist/ci-winui
+          test -s dist/ci-winui/WECOMMANDER-Center-windows-x64.zip
+          cp dist/ci-winui/WECOMMANDER-Center-windows-x64.zip dist/
+          rm -rf dist/ci-winui
       - name: Create shared integrity manifest
         run: |
           cd dist
-          sha256sum -- *.deb *.exe > SHA256SUMS.txt
+          sha256sum -- *.deb *.exe *.zip > SHA256SUMS.txt
       - name: Preserve verified installers and checksums as an Actions artifact
         uses: actions/upload-artifact@v4
         with:
@@ -56,6 +60,7 @@ jobs:
           path: |
             dist/*.deb
             dist/*.exe
+            dist/*.zip
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
@@ -69,11 +74,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="ubuntu-preview-${{ github.event.workflow_run.run_number }}"
-          gh release create "$TAG" dist/*.deb dist/*.exe dist/SHA256SUMS.txt \
+          gh release create "$TAG" dist/*.deb dist/*.exe dist/*.zip dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "${{ github.event.workflow_run.head_sha }}" \
             --title "WECOMMANDER platform preview #${{ github.event.workflow_run.run_number }}" \
-            --prerelease --notes "Preview installers: Ubuntu AMD64 Debian, Windows x64 Setup, Windows Management Center (tray app). The macOS PKG is published separately (macos-preview-*) only after the macOS workflow passes. Checksums available. Must pass physical-device acceptance before production approval."
+            --prerelease --notes "Preview installers: Ubuntu AMD64 Debian, Windows x64 Setup, Windows Management Center (native WinUI 3 .zip; Tauri tray .exe kept as fallback). The macOS PKG is published separately (macos-preview-*) only after the macOS workflow passes. Checksums available. Must pass physical-device acceptance before production approval."
 
       - name: Report preview publication status
         if: ${{ always() }}

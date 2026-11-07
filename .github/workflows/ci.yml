@@ -837,7 +837,7 @@ jobs:
           # the script must say so cleanly instead of failing to parse releases.
           # Its "not yet" error arrives on stderr; the step shell would stop on it.
           $ErrorActionPreference = 'Continue'
-          $out = & powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-center-windows-online.ps1 -DryRun 2>&1 | Out-String
+          $out = & powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-center-windows-online.ps1 -DryRun -Tauri 2>&1 | Out-String
           $ErrorActionPreference = 'Stop'
           Write-Host $out
           if ($out -notmatch 'would install ubuntu-preview-[0-9]+ from https://github.com/orhanbal/webrising-commender/releases/download/ubuntu-preview-[0-9]+/WECOMMANDER-Center-windows-x64.exe' -and
@@ -850,6 +850,33 @@ jobs:
         with:
           name: WECOMMANDER-Center-windows-x64
           path: tray/dist/WECOMMANDER-Center-windows-x64.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  center-winui:
+    # Management Center for Windows: native WinUI 3 app (center-windows/).
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Core unit tests
+        run: dotnet test center-windows/Core.Tests/WecommanderCenter.Core.Tests.csproj
+      - name: Publish self-contained WinUI app
+        run: dotnet publish center-windows/App/WecommanderCenter.csproj -c Release -r win-x64 --self-contained true -p:Platform=x64 -o center-windows/publish
+      - name: Package
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "center-windows\publish\WecommanderCenter.exe")) { throw "WecommanderCenter.exe missing from publish output" }
+          foreach ($asset in @("icon.ico","icon.png","tray.ico","tray-pending.ico","tray-autonomy.ico","tray-autonomy-pending.ico","wordmark-dark-text.png","wordmark-light-text.png")) {
+            if (-not (Test-Path "center-windows\publish\Assets\$asset")) { throw "asset missing: $asset" }
+          }
+          Compress-Archive -Path "center-windows\publish\*" -DestinationPath "center-windows\WECOMMANDER-Center-windows-x64.zip"
+          $size = (Get-Item "center-windows\WECOMMANDER-Center-windows-x64.zip").Length
+          Write-Host "zip size: $([math]::Round($size / 1MB, 1)) MB"
+          if ($size -lt 10MB) { throw "WinUI package is unexpectedly small: $size bytes" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WECOMMANDER-Center-WinUI-windows-x64
+          path: center-windows/WECOMMANDER-Center-windows-x64.zip
           if-no-files-found: error
           retention-days: 14
 
