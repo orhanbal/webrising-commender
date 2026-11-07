@@ -558,6 +558,16 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     }
     // Browser navigation to /mcp (Accept: text/html) serves the dashboard page;
     // every other /mcp request is MCP transport and is authenticated below.
+    // Public page text for the web app's content pages (same source as the
+    // pre-rendered HTML and llms.txt).
+    if (req.method === "GET" && url.pathname === "/api/public/pages") {
+      const page = pageByPath.get(url.searchParams.get("path") || "");
+      if (!page) return void json(res, 404, { error: "page_not_found" });
+      const related = contentPagePaths.filter((p) => p !== page.path)
+        .map((p) => ({ path: p, heading: pageByPath.get(p)!.heading }));
+      res.setHeader("cache-control", "public, max-age=300");
+      return void json(res, 200, { page, related });
+    }
     // Discovery files for search engines and AI assistants.
     if ((req.method === "GET" || req.method === "HEAD") &&
         ["/robots.txt", "/sitemap.xml", "/llms.txt", "/llms-full.txt"].includes(url.pathname)) {

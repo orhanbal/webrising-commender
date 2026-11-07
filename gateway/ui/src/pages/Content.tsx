@@ -1,10 +1,15 @@
-import {useEffect} from "react";
+import {useEffect,useState} from "react";
 import {ArrowRight} from "lucide-react";
-import {publicPages,pageByPath,type Block} from "../../../src/site-content";
+import {api} from "../api";
 import {NavLink,type Nav} from "../App";
+import {Spinner} from "../components/ui";
 
-// Docs, FAQ, alternatives, security and guides. The same text is served as
-// plain HTML to crawlers (gateway/src/site-content.ts), so both stay identical.
+// Docs, FAQ, alternatives, security and guides. The text comes from the
+// gateway (gateway/src/site-content.ts), the same source as the pre-rendered
+// HTML that crawlers read and /llms.txt.
+type Block={h2:string}|{p:string}|{ul:string[]}|{code:string}|{table:{head:string[];rows:string[][]}};
+type Page={path:string;title:string;heading:string;intro:string;section:string;blocks:Block[];faq?:{q:string;a:string}[];howTo?:{name:string;steps:string[]}};
+type Response={page:Page;related:{path:string;heading:string}[]};
 const sectionLabel:Record<string,string>={Docs:"Documentation",Guides:"Guide",Product:"Product",Legal:"Legal"};
 
 function BlockView({block}:{block:Block}){
@@ -19,13 +24,21 @@ function BlockView({block}:{block:Block}){
 }
 
 export function ContentPage({path,nav}:{path:string;nav:Nav}){
- const page=pageByPath.get(path);
- useEffect(()=>{if(page)document.title=page.title},[page]);
- if(!page)return null;
- const related=publicPages.filter(p=>p.content&&p.path!==path);
+ const [data,setData]=useState<Response|null>(null);
+ const [failed,setFailed]=useState(false);
+ useEffect(()=>{
+  let active=true;setData(null);setFailed(false);
+  api<Response>("/api/public/pages?path="+encodeURIComponent(path))
+   .then(next=>{if(!active)return;setData(next);document.title=next.page.title})
+   .catch(()=>{if(active)setFailed(true)});
+  return()=>{active=false};
+ },[path]);
+ if(failed)return <div className="container-w content-page"><p className="content-lead">This page could not be loaded. Please try again.</p></div>;
+ if(!data)return <div className="grid min-h-[50vh] place-items-center"><Spinner/></div>;
+ const page=data.page;
  return <div className="container-w content-page">
   <article className="content-article">
-   <p className="content-kicker">{sectionLabel[page.section]}</p>
+   <p className="content-kicker">{sectionLabel[page.section]??page.section}</p>
    <h1 className="content-h1">{page.heading}</h1>
    <p className="content-lead">{page.intro}</p>
    {page.blocks.map((block,i)=><BlockView key={i} block={block}/>)}
@@ -35,7 +48,7 @@ export function ContentPage({path,nav}:{path:string;nav:Nav}){
   </article>
   <aside className="content-aside" aria-label="More">
    <strong>Docs and guides</strong>
-   {related.map(p=><NavLink key={p.path} to={p.path} nav={nav}>{p.heading}</NavLink>)}
+   {data.related.map(p=><NavLink key={p.path} to={p.path} nav={nav}>{p.heading}</NavLink>)}
   </aside>
  </div>;
 }
