@@ -33,6 +33,9 @@ public partial class App : Application
     private DateTime _lastSync = DateTime.MinValue;
     private bool _syncing;
     private readonly HashSet<string> _seen = [];
+    // Requests whose notification is on screen, for the live countdown.
+    private readonly Dictionary<string, (DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt, uint Sequence)> _shown = [];
+    private DispatcherQueueTimer? _countdownTimer;
     private (string Id, string Secret, string Url, DateTime Deadline)? _link;
 
     public Settings Settings { get; private set; } = new();
@@ -154,13 +157,64 @@ public partial class App : Application
             // Urgent (Windows 11 22H2+) shows the banner even with Do not disturb
             // on; elsewhere Reminder keeps it on screen until answered.
             .SetScenario(AppNotificationBuilder.IsUrgentScenarioSupported() ? AppNotificationScenario.Urgent : AppNotificationScenario.Reminder)
+            // Time left counts down on the notification itself (updated every second).
+            .AddProgressBar(new AppNotificationProgressBar().BindTitle().BindValue().BindValueStringOverride().BindStatus())
             .AddButton(new AppNotificationButton("Onayla").AddArgument("action", "approve").AddArgument("id", item.Id).AddArgument("device", device))
             .AddButton(new AppNotificationButton("Reddet").AddArgument("action", "deny").AddArgument("id", item.Id).AddArgument("device", device));
         var notification = builder.BuildNotification();
         notification.Tag = item.Id;
         notification.Group = NotificationGroup;
         notification.Priority = AppNotificationPriority.High;
+        notification.Progress = CountdownData(item.CreatedAt, item.ExpiresAt, 1);
         AppNotificationManager.Default.Show(notification);
+        _shown[item.Id] = (item.CreatedAt, item.ExpiresAt, 1);
+        StartCountdown();
+    }
+
+    private static AppNotificationProgressData CountdownData(DateTimeOffset createdAt, DateTimeOffset expiresAt, uint sequence)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var expired = expiresAt <= now;
+        return new AppNotificationProgressData(sequence)
+        {
+            Title = expired ? "Süresi doldu" : "Kalan süre",
+            Value = Texts.RemainingFraction(createdAt, expiresAt, now),
+            ValueStringOverride = Texts.Countdown(expiresAt, now),
+            Status = expired ? "Bu istek artık onaylanamaz" : "Süre dolunca istek düşer",
+        };
+    }
+
+    private void StartCountdown()
+    {
+        if (_countdownTimer is null)
+        {
+            _countdownTimer = _ui.CreateTimer();
+            _countdownTimer.Interval = TimeSpan.FromSeconds(1);
+            _countdownTimer.Tick += async (_, _) => await UpdateCountdownsAsync();
+        }
+        if (!_countdownTimer.IsRunning) _countdownTimer.Start();
+    }
+
+    /// <summary>Moves every on-screen countdown one second on; drops dismissed and expired ones.</summary>
+    private async Task UpdateCountdownsAsync()
+    {
+        if (_shown.Count == 0) { _countdownTimer?.Stop(); return; }
+        foreach (var (id, (created, expires, sequence)) in _shown.ToList())
+        {
+            var next = sequence + 1;
+            _shown[id] = (created, expires, next);
+            AppNotificationProgressResult result;
+            try { result = await AppNotificationManager.Default.UpdateAsync(CountdownData(created, expires, next), id, NotificationGroup); }
+            catch (Exception) { result = AppNotificationProgressResult.AppNotificationNotFound; }
+            // Dismissed by the owner, or answered here: stop updating it.
+            if (result != AppNotificationProgressResult.Succeeded) { _shown.Remove(id); continue; }
+            if (expires <= DateTimeOffset.UtcNow.AddSeconds(-5))
+            {
+                // Leave "Süresi doldu" visible a moment, then take it away.
+                _shown.Remove(id);
+                _ = AppNotificationManager.Default.RemoveByTagAndGroupAsync(id, NotificationGroup);
+            }
+        }
     }
 
     private async Task TickAsync()
@@ -201,7 +255,10 @@ public partial class App : Application
             // Requests decided elsewhere (panel, dashboard, another center) or
             // expired: take their notification away.
             foreach (var gone in previous.Except(Pending.Select(p => p.Id)))
+            {
+                _shown.Remove(gone);
                 _ = AppNotificationManager.Default.RemoveByTagAndGroupAsync(gone, NotificationGroup);
+            }
 
             var fresh = Pending.Where(p => _seen.Add(p.Id)).ToList();
             if (fresh.Count > 0)
@@ -299,6 +356,7 @@ public partial class App : Application
         try
         {
             await Gateway.DecideAsync(token, id, approve);
+            _shown.Remove(id);
             _ = AppNotificationManager.Default.RemoveByTagAndGroupAsync(id, NotificationGroup);
         }
         finally
@@ -340,6 +398,7 @@ public partial class App : Application
         Devices = [];
         Autonomy = [];
         _seen.Clear();
+        _shown.Clear();
         Error = message;
         LocalStore.DeleteToken();
         _ = AppNotificationManager.Default.RemoveByGroupAsync(NotificationGroup);

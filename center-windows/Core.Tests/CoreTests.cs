@@ -68,6 +68,21 @@ public class CoreTests
     }
 
     [Fact]
+    public void NotificationCountdown()
+    {
+        var now = new DateTimeOffset(2026, 11, 7, 12, 0, 0, TimeSpan.Zero);
+        Assert.Equal("4:07", Texts.Countdown(now.AddSeconds(247), now));
+        Assert.Equal("0:01", Texts.Countdown(now.AddMilliseconds(200), now));
+        Assert.Equal("1:02:05", Texts.Countdown(now.AddSeconds(3725), now));
+        Assert.Equal("0:00", Texts.Countdown(now.AddSeconds(-5), now));
+        var created = now.AddMinutes(-2);
+        Assert.Equal(0.8, Texts.RemainingFraction(created, now.AddMinutes(8), now), 3);
+        Assert.Equal(0, Texts.RemainingFraction(created, now.AddMinutes(-1), now));
+        Assert.Equal(1, Texts.RemainingFraction(now, now.AddMinutes(10), now.AddMinutes(-1)));
+        Assert.Equal(0, Texts.RemainingFraction(now, now, now));
+    }
+
+    [Fact]
     public void MinutesUntilNine()
     {
         Assert.Equal(60, Durations.MinutesUntilNine(new DateTime(2026, 11, 7, 8, 0, 0)));

@@ -60,6 +60,25 @@ public static class Texts
         return left.TotalMinutes >= 1 ? $"{(int)left.TotalMinutes} dk {left.Seconds} sn" : $"{left.Seconds} sn";
     }
 
+    /// <summary>Clock-style time left for a notification countdown: "4:07", "1:02:05"; "0:00" when past.</summary>
+    public static string Countdown(DateTimeOffset expiresAt, DateTimeOffset now)
+    {
+        var left = expiresAt - now;
+        if (left <= TimeSpan.Zero) return "0:00";
+        var total = (int)Math.Ceiling(left.TotalSeconds);
+        return total >= 3600
+            ? $"{total / 3600}:{total % 3600 / 60:00}:{total % 60:00}"
+            : $"{total / 60}:{total % 60:00}";
+    }
+
+    /// <summary>Share of the approval window still left, 1 at creation and 0 at expiry.</summary>
+    public static double RemainingFraction(DateTimeOffset createdAt, DateTimeOffset expiresAt, DateTimeOffset now)
+    {
+        var window = (expiresAt - createdAt).TotalSeconds;
+        if (window <= 0) return 0;
+        return Math.Clamp((expiresAt - now).TotalSeconds / window, 0, 1);
+    }
+
     public static string Until(DateTimeOffset? until) => until is { } u
         ? u.ToLocalTime().ToString("dd.MM HH:mm") + "'e kadar"
         : "süresiz";
