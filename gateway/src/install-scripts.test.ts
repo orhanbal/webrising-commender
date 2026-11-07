@@ -62,3 +62,10 @@ test("the macOS installer prefers the newest macos-preview over API order and ol
     ["macos-preview-59", "macos-preview-58", "ubuntu-preview-1636"],
   );
 });
+
+test("the Windows installer sorts releases by build number before picking one", () => {
+  const body = fs.readFileSync(path.join(repo, "scripts/install-windows-online.ps1"), "utf8");
+  const sortAt = body.indexOf("Sort-Object -Descending");
+  const loopAt = body.indexOf("foreach($r in $results)");
+  assert.ok(sortAt > 0 && loopAt > sortAt, "releases are sorted before the selection loop");
+});

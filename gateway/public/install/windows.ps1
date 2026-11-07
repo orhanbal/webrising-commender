@@ -12,6 +12,8 @@ New-Item -ItemType Directory -Path $temp -Force | Out-Null
 try {
   $headers=@{'Accept'='application/vnd.github+json';'User-Agent'='WECOMMANDER-Windows-Installer'}
   $results=@(Invoke-RestMethod -Uri $releases -Headers $headers -TimeoutSec 30)
+  # The API order is not reliably newest first: take the highest build number.
+  $results=@($results | Sort-Object -Descending -Property @{Expression={ if($_.tag_name -match '-([0-9]+)$'){[int64]$Matches[1]}else{[int64]0} }})
   $name='WECOMMANDER-Setup-windows-x64.exe'
   $candidate=$null
   foreach($r in $results){
