@@ -154,6 +154,27 @@ Dilimler: (a) giriş + tepsi + bekleyen onay listesi ve onay/ret; (b) masaüstü
 bildirimi + düğmeler + Touch ID/Windows Hello; (c) abonelik ayarları ve birden fazla
 merkez; (d) imzalı paketler ve otomatik güncelleme.
 
+### Yönetim Merkezinden insan terminali (sahibin isteği, 2026-11-07) · ~1–1,5 hafta
+
+Tepside cihaza tıklayınca "Terminale bağlan": Windows Terminal'de (yoksa PowerShell
+penceresinde) cihaz adlı bir sekme açılır, sunucunun kabuğuna (bash/zsh/PowerShell)
+bağlanır. SSH portu ve VPN gerekmez; ajanın giden bağlantısı kullanılır.
+
+1. **Akış:** gateway'de insan terminali için WebSocket akışı (`/api/terminal/stream`),
+   ajanda PTY çıktısını akıtma (bugünkü terminal_* araçları yoklamalı); boyut değişimi,
+   Ctrl+C, renkler.
+2. **İstemci:** WinUI uygulamasıyla gelen küçük konsol programı (VT girdi/çıktı),
+   `wt.exe` ile yeni sekme; macOS/Linux'ta Tauri tepsisi aynı programı Terminal'de açar.
+3. **Güvenlik (sahip kararı):**
+   - cihazda ayrı yetenek `humanTerminal`, varsayılan kapalı; yalnız cihazda açılır;
+   - yalnız admin/owner; Yönetim Merkezi anahtarı tek başına yetmez: Windows Hello
+     ya da hesap şifresiyle doğrulama **oturum başına bir kez, 8 saat geçerli**; her
+     bağlantı kısa ömürlü tek kullanımlık bir terminal bileti alır;
+   - denetim: kim, hangi cihaz, başlangıç/bitiş, süre; isteğe bağlı komut kaydı
+     (sır maskeleme ile);
+   - 30 dk işlem yoksa oturum kapanır; panelde açık terminaller listesi ve "kapat".
+4. **Sıra:** WinUI Yönetim Merkezi kabul testinden hemen sonra.
+
 ## v1.3 — Kontrollü değişiklik · ~3 hafta
 
 AD1 Aşama 2.
