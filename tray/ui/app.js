@@ -161,6 +161,8 @@ function render(next) {
   $("who").textContent = state.phase === "signedIn" && me
     ? `${me.email || ""}${me.organizationName ? " · " + me.organizationName : ""}`
     : "";
+  $("signOutTop").hidden = state.phase !== "signedIn";
+  if (state.phase !== "signedIn") $("signOutConfirm").hidden = true;
   if (state.phase === "signedIn") {
     renderPending();
     renderAutonomy();
@@ -214,6 +216,9 @@ $("openDashboard").addEventListener("click", () => invoke("open_dashboard", { pa
 $("disconnect").addEventListener("click", () => { $("disconnectConfirm").hidden = false; });
 $("disconnectNo").addEventListener("click", () => { $("disconnectConfirm").hidden = true; });
 $("disconnectYes").addEventListener("click", async () => { $("disconnectConfirm").hidden = true; await call("disconnect"); });
+$("signOutTop").addEventListener("click", () => { $("signOutConfirm").hidden = false; });
+$("signOutNo").addEventListener("click", () => { $("signOutConfirm").hidden = true; });
+$("signOutYes").addEventListener("click", async () => { $("signOutConfirm").hidden = true; await call("disconnect"); });
 $("closePanel").addEventListener("click", () => invoke("hide_panel"));
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") invoke("hide_panel");
