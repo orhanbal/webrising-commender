@@ -3829,6 +3829,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
                 decided_by,decided_at,consumed_at,created_at
            from approval_requests
           where organization_id=$1 and status=$2
+            and ($2<>'pending' or expires_at>now())
           order by created_at desc
           limit $3`,
         [principal!.organizationId, parsedStatus.data, limit],
@@ -3873,8 +3874,11 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         if (!exists.rowCount) {
           return void json(res, 404, { error: "approval_request_not_found" });
         }
+        const current = exists.rows[0] as { status: string; expires_at: Date | string };
+        const expired = current.status === "expired" ||
+          (current.status === "pending" && new Date(current.expires_at).getTime() <= Date.now());
         return void json(res, 409, {
-          error: "approval_request_not_pending",
+          error: expired ? "approval_request_expired" : "approval_request_not_pending",
           item: exists.rows[0],
         });
       }

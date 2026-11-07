@@ -49,7 +49,7 @@ export function ApprovalsPage({nav,account,checking,theme,toggle,logout}:{nav:Na
  const decide=async()=>{
   if(!decision)return;setBusy(true);
   try{await api("/api/approval-requests/"+decision.item.id+"/"+decision.kind,{method:"POST",body:"{}"});setNotice(decision.kind==="approve"?translate("İşlem onaylandı. Yapay zekâ aynı işlemi tekrar gönderdiğinde bir kez çalışır."):translate("İşlem reddedildi."));setDecision(null);await load()}
-  catch(e){setError((e as Error).message);setDecision(null)}
+  catch(e){setError((e as Error).message);setDecision(null);await load().catch(()=>undefined)}
   finally{setBusy(false)}
  };
  return <DashboardShell nav={nav} path="/approvals" account={account} theme={theme} toggle={toggle} logout={logout}>
@@ -65,7 +65,7 @@ export function ApprovalsPage({nav,account,checking,theme,toggle,logout}:{nav:Na
      {operationSummary(item)&&<code className="approval-op">{operationSummary(item)}</code>}
      <details className="mt-2"><summary className="text-xs muted">{translate("Tam işlem ayrıntısı")}</summary><pre className="approval-json">{JSON.stringify(item.action,null,2)}</pre></details>
      <p className="text-xs muted mt-2">{localizedDate(item.created_at,{dateStyle:"short",timeStyle:"short"})} · {translate("Kalan süre")}: {remaining(item.expires_at)}</p></div>
-     <div className="flex gap-2 shrink-0"><Button size="sm" onClick={()=>setDecision({item,kind:"approve"})}><Check className="size-4"/>{translate("Onayla")}</Button><Button size="sm" variant="outline" onClick={()=>setDecision({item,kind:"deny"})}><X className="size-4"/>{translate("Reddet")}</Button></div></li>)}</ul>}
+     <div className="flex gap-2 shrink-0"><Button size="sm" disabled={new Date(item.expires_at).getTime()<=Date.now()} onClick={()=>setDecision({item,kind:"approve"})}><Check className="size-4"/>{translate("Onayla")}</Button><Button size="sm" variant="outline" onClick={()=>setDecision({item,kind:"deny"})}><X className="size-4"/>{translate("Reddet")}</Button></div></li>)}</ul>}
    </CardContent></Card>}
    {!forbidden&&<AutonomyCard devices={devices} onChanged={load} onError={setError}/>}
    {!forbidden&&<DevicePolicy devices={devices} onChanged={load} onError={setError}/>}
