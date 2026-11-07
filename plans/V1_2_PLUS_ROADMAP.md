@@ -115,6 +115,8 @@ istemcidir. Tüm sunuculardaki onay istekleri buraya bildirim olarak gelir.
    "otonom" etiketli, açan kişi/zaman/süre kaydedilir; açmak WebAuthn ister; mod yalnız
    tepsi uygulamasından veya paneldeki tarayıcı oturumundan açılır, hiçbir MCP aracı
    bunu yapamaz (yapay zekâ kendi onayını kapatamaz).
+   **Durum 2026-11-07:** panel ve gateway tarafı yapıldı (`/api/trust/autonomy`, bitiş
+   taraması, uyarı şeridi, Onaylar sayfasında kart); tepsi menüsü Yönetim Merkezi ile gelecek.
 5. **Tepsi menüsü:** bağlantı durumu, bekleyen onaylar, cihazlar ve çevrimiçi
    durumları, paneli aç, bildirimleri sustur, güncelleme, çıkış.
 6. **Teknoloji:** Tauri (Rust; ajanla aynı dil, küçük paket, tek kodla üç platform).

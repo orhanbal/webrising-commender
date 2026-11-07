@@ -46,6 +46,7 @@ const fixtures={
  "/api/tokens":{items:[{id:"22222222-2222-4222-8222-222222222222",name:"Test MCP",role:"operator",created_at:new Date().toISOString(),last_used_at:null,revoked_at:null}]},
  "/api/pairing":{pairingCode:"wc-ci-pairing-code",expiresInSeconds:600},
  "/api/approvals":{approvalToken:"approved-ci-token"},
+ "/api/trust/autonomy":{items:[{id:"11111111-1111-4111-8111-111111111111",name:"Test Windows Device",trust_full_until:null}]},
 
 };
 const contentType={".js":"text/javascript",".css":"text/css",".svg":"image/svg+xml",".png":"image/png",".woff2":"font/woff2"};
@@ -166,6 +167,7 @@ try{
  await visit("/pricing","Self-hosted","modern-pricing");
  await visit("/checkout?plan=pro","Paddle","modern-checkout");
  await visit("/dashboard","Welcome back","modern-dashboard");
+ assert.ok(await evalJs("document.querySelector('.autonomy-banner')?.textContent.includes('Autonomous mode is on')"),"Dashboard pages show the autonomous-mode banner");
  const languagePicker=await evalJs("document.querySelector('.dash-toolbar .locale-trigger')!==null");
  assert.equal(languagePicker,true,"Dashboard needs its own language picker");
  await evalJs("document.querySelector('.dash-toolbar .locale-trigger').click()");
@@ -324,7 +326,10 @@ try{
  assert.ok(await evalJs("document.querySelector('.trust-option.active')?.textContent.includes('Standard')"),"Current trust level must be preselected");
  await evalJs("document.querySelector('.trust-option input[value=full]').click()");
  await sleep(80);
- assert.ok(await evalJs("!!document.querySelector('input[autocomplete=current-password]')"),"Full trust must ask for the password");
+ assert.equal(await evalJs("document.querySelectorAll('input[autocomplete=current-password]').length"),2,"Full trust asks for the password (the autonomous-mode card has its own field)");
+ assert.ok(await evalJs("document.body.textContent.includes('Autonomous mode')&&document.body.textContent.includes('Until 09:00 tomorrow')&&document.body.textContent.includes('Indefinite')"),"Autonomous mode card offers the duration presets");
+ assert.ok(await evalJs("[...document.querySelectorAll('button')].some(b=>b.textContent.includes('Start autonomous mode')&&b.disabled)"),"Starting autonomous mode needs the password first");
+ assert.equal(await evalJs("document.querySelector('.autonomy-banner')"),null,"The banner is not repeated on the approvals page");
  assert.ok(await evalJs("[...document.querySelectorAll('code')].some(c=>c.textContent==='df -h')"),"Allowed commands must be listed");
  const approvalsShot=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
  writeFileSync(join(artifacts,"modern-approvals-full-trust.png"),Buffer.from(approvalsShot.data,"base64"));
