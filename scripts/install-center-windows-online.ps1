@@ -9,25 +9,10 @@
 [CmdletBinding()]
 param([switch]$DryRun,[switch]$Tauri)
 $ErrorActionPreference='Stop'
-# Brand banner: the WECOMMANDER wordmark when the console is wide enough, else
-# the icon with the name. Block characters are built at run time so this
+# Brand banner: the WECOMMANDER icon with the name and what is being installed
+# (fits 80 columns). Block characters are built at run time so this
 # file stays ASCII (Windows PowerShell 5.1 reads files as ANSI).
 function Show-WecommanderBanner([string]$Subtitle){
-  $width=80
-  try { $width=[int]$Host.UI.RawUI.WindowSize.Width } catch { }
-  $wide=@(
-    ',,,    ,,,    ,,',
-    '^###   ###   ###                                                                  ,,',
-    ' ###  ####,  ###  ,,,,      ,,,,   ,,,                                            ##',
-    ' ###  #####  ##^ ,#####,   ##^##, #####, ,,,,, ,,,  ,,,,, ,,,   ,,,,  ,,,,,    ,,,##  ,,,   ,,,,',
-    '  ##, ##### ### ,##^^^##  ##     ####### ##^####^#, ###^###^##  #^^#, ###^##  ##^### ,#^^#, ###^',
-    '  ###### ##,### ###,,,##  #      ####### ##  ##  ## ##  ^#   #     ## ##   # ,#   ## ##  ## ##',
-    '  ###### #####^ ########  #      ###^### ##  ##  ## ##   #   #  ##^## ##   # ##   ## ##^^^^ ##',
-    '   ####  ^####  ###,  ,   #,     ## , ## ##  ##  ## ##   #   # ##  ## ##   #  #, ,## ##  ,  ##',
-    '   ####   ####   ######,  ^#,,,#,^ ### ^ ##  ##  ## ##   #   #  ##### ##   #  ^#####  ####  ##',
-    '   ^##^   ^##     ^###^    ^^##^  #####',
-    '                                 ^^^^^^^'
-  )
   $narrow=@(
     '       ,#######,',
     '     ,###########',
@@ -37,7 +22,7 @@ function Show-WecommanderBanner([string]$Subtitle){
     '        ,#####',
     '      ,########,'
   )
-  $lines = if($width -ge 100){ $wide + @('  ' + $Subtitle) } else { $narrow }
+  $lines = $narrow
   foreach($line in $lines){
     $text=$line.Replace('@TITLE@','W E C O M M A N D E R').Replace('@SUB@',$Subtitle)
     if($text -notmatch '[A-Za-z]'){ $text=$text.Replace('#',[string][char]0x2588).Replace('^',[string][char]0x2580).Replace(',',[string][char]0x2584) }

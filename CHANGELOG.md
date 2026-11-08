@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Installer banner: always the WECOMMANDER icon with the name and what is being installed; the wide block-letter wordmark is gone (it rendered too coarse).
+
 - Windows agent update: when this Windows user is already paired, the Setup's post-install step restarts the background agent with the new version and keeps the pairing without showing the "Cihaz Bağlantısı" dialog (one confirmation message instead). The Start menu "WECOMMANDER Cihaz Bağlantısı" shortcut still opens the dialog to pair again.
 
 - Management Center (Windows, macOS, Linux): the agent card shows the installed agent version and has an **Ajanı güncelle** (or **Ajanı kur**) button. It opens the official one-line agent installer for the center's server in a PowerShell window (Windows, asks for UAC) or Terminal (macOS / Linux, asks for the administrator password); the device keeps its enrollment.
