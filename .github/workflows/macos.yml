@@ -25,7 +25,7 @@ jobs:
         os: [macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo check -p webrising-commender-agent
       - name: Native PTY master reader/writer pre-spawn acquisition
@@ -140,7 +140,7 @@ jobs:
         os: [macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Bash syntax
         if: runner.os != 'Windows'
         shell: bash
@@ -161,7 +161,7 @@ jobs:
   macos-acceptance-artifact:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-apple-darwin,aarch64-apple-darwin
@@ -197,7 +197,7 @@ jobs:
     # Management Center for macOS: native menu bar app (center-macos/, Swift).
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Core unit tests
         run: swift test --package-path center-macos
       - name: Build universal app bundle (ad-hoc signed) and zip

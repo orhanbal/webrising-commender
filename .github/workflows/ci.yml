@@ -13,7 +13,7 @@ jobs:
   windows-powershell-preflight:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Parse every Windows installer and maintenance script
         shell: pwsh
         run: |
@@ -44,7 +44,7 @@ jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -59,7 +59,7 @@ jobs:
         os: [windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo check -p webrising-commender-agent
       - name: Native PTY master reader/writer pre-spawn acquisition
@@ -173,8 +173,8 @@ jobs:
       run:
         working-directory: gateway
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -254,8 +254,8 @@ jobs:
       MAIL_DELIVERY_BATCH: 20
       TRUST_EXPIRY_INTERVAL_MS: 500
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -346,8 +346,8 @@ jobs:
       HOST: 127.0.0.1
       PORT: 8787
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -436,8 +436,8 @@ jobs:
       PORT: 8787
       CLUSTER_NODE_ID: control-ci
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -544,8 +544,8 @@ jobs:
       CONTROL_API_KEY: ci-control-key-0123456789-0123456789
       APPROVAL_SIGNING_SECRET: ci-approval-secret-0123456789-012345
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -630,7 +630,7 @@ jobs:
       APPROVAL_SIGNING_SECRET: ci-compose-approval-secret-0123456789012345
       PUBLIC_BASE_URL: http://127.0.0.1:8787
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Validate compose models
         run: |
           docker compose config --quiet
@@ -684,7 +684,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Bash syntax
         if: runner.os != 'Windows'
         shell: bash
@@ -724,7 +724,7 @@ jobs:
   linux-acceptance-artifact:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - name: Build release agent
         env:
@@ -757,7 +757,7 @@ jobs:
   windows-acceptance-artifact:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - name: Build release agent
         env:
@@ -811,7 +811,7 @@ jobs:
       run:
         working-directory: tray
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - name: Unit tests
         run: cargo test --locked
@@ -858,7 +858,7 @@ jobs:
     # freedesktop notifications that carry Onayla / Reddet actions.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -909,7 +909,7 @@ jobs:
     # Management Center for Windows: native WinUI 3 app (center-windows/).
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Core unit tests
         run: dotnet test center-windows/Core.Tests/WecommanderCenter.Core.Tests.csproj
       - name: Publish self-contained WinUI app
@@ -935,7 +935,7 @@ jobs:
   windows-service-smoke:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - name: Build native agent
         run: cargo build -p webrising-commender-agent
