@@ -4,6 +4,39 @@
 set -euo pipefail
 set +x
 umask 077
+# Brand banner: the WECOMMANDER wordmark when the terminal is wide enough,
+# else the icon with the name. Only block characters; no colors.
+wecommander_banner() {
+  cols="$( { stty size </dev/tty; } 2>/dev/null | cut -d' ' -f2)"
+  case "$cols" in ""|*[!0-9]*) cols=80 ;; esac
+  if [ "$cols" -ge 100 ]; then
+    cat <<'WECOMMANDER_BANNER'
+▄▄▄    ▄▄▄    ▄▄
+▀███   ███   ███                                                                  ▄▄
+ ███  ████▄  ███  ▄▄▄▄      ▄▄▄▄   ▄▄▄                                            ██
+ ███  █████  ██▀ ▄█████▄   ██▀██▄ █████▄ ▄▄▄▄▄ ▄▄▄  ▄▄▄▄▄ ▄▄▄   ▄▄▄▄  ▄▄▄▄▄    ▄▄▄██  ▄▄▄   ▄▄▄▄
+  ██▄ █████ ███ ▄██▀▀▀██  ██     ███████ ██▀████▀█▄ ███▀███▀██  █▀▀█▄ ███▀██  ██▀███ ▄█▀▀█▄ ███▀
+  ██████ ██▄███ ███▄▄▄██  █      ███████ ██  ██  ██ ██  ▀█   █     ██ ██   █ ▄█   ██ ██  ██ ██
+  ██████ █████▀ ████████  █      ███▀███ ██  ██  ██ ██   █   █  ██▀██ ██   █ ██   ██ ██▀▀▀▀ ██
+   ████  ▀████  ███▄  ▄   █▄     ██ ▄ ██ ██  ██  ██ ██   █   █ ██  ██ ██   █  █▄ ▄██ ██  ▄  ██
+   ████   ████   ██████▄  ▀█▄▄▄█▄▀ ███ ▀ ██  ██  ██ ██   █   █  █████ ██   █  ▀█████  ████  ██
+   ▀██▀   ▀██     ▀███▀    ▀▀██▀  █████
+                                 ▀▀▀▀▀▀▀
+WECOMMANDER_BANNER
+    printf '  %s\n' "$1"
+  else
+    sed -e 's/@TITLE@/W E C O M M A N D E R/' -e "s/@SUB@/$1/" <<'WECOMMANDER_BANNER'
+       ▄███████▄
+     ▄███████████
+     █████████████       @TITLE@
+     █████▀ ▀█████
+     ▀██▀ ▄█▄ ▀██        @SUB@
+        ▄█████
+      ▄████████▄
+WECOMMANDER_BANNER
+  fi
+  echo
+}
 REPO="orhanbal/webrising-commender"
 API="https://api.github.com/repos/$REPO/releases?per_page=30"
 PACKAGE_ONLY=0
@@ -17,6 +50,7 @@ while (($#)); do
     *) echo "Usage: sudo bash install-ubuntu-online.sh [--package-only] [--control-url https://HOST]" >&2; exit 2 ;;
   esac
 done
+wecommander_banner "Agent installer for Ubuntu"
 [[ $EUID == 0 ]] || { echo "Run with sudo." >&2; exit 1; }
 [[ "$(dpkg --print-architecture)" == amd64 ]] || { echo "This installer supports Ubuntu amd64 (x86_64) only." >&2; exit 1; }
 for command in curl python3 dpkg-deb sha256sum apt-get; do
