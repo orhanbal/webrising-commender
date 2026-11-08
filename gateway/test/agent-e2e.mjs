@@ -60,8 +60,19 @@ function toolData(response) {
   return JSON.parse(text);
 }
 
+// B01: AI terminal input is HIGH risk. Tests about terminal behaviour attach
+// a one-time approval for the exact input, as a human approval would; the
+// approval rules themselves are tested separately below with raw calls.
+const MAX_APPROVABLE_INPUT_BASE64 = Math.ceil((256 * 1024) / 3) * 4;
+async function withInputApproval(name, args) {
+  if (name !== "terminal_input" || args.approval_token !== undefined) return args;
+  if (String(args.data_base64).length > MAX_APPROVABLE_INPUT_BASE64) return args;
+  const action = { kind: "terminal_input", sessionId: String(args.session_id), dataBase64: String(args.data_base64) };
+  return { ...args, approval_token: await approval(args.device_id, action) };
+}
+
 async function tool(id, name, args) {
-  return toolData(await rpc(id, "tools/call", { name, arguments: args }));
+  return toolData(await rpc(id, "tools/call", { name, arguments: await withInputApproval(name, args) }));
 }
 
 async function approval(deviceId, action) {
@@ -1363,7 +1374,7 @@ try {
       method: "POST", headers,
       body: JSON.stringify({
         jsonrpc: "2.0", id, method: "tools/call",
-        params: { name, arguments: args },
+        params: { name, arguments: await withInputApproval(name, args) },
       }),
     });
     return toolData(response);
@@ -2697,6 +2708,29 @@ try {
   }
   console.log("agent-e2e: two real actors denied foreign live terminal list/read/input");
 
+  // B01: without an approval for this exact input, or with an approval for
+  // other input, nothing is typed into the shell.
+  const unapprovedInput = Buffer.from("echo B01_UNAPPROVED_INPUT\n", "utf8").toString("base64");
+  const noApproval = toolData(await rpc(22040, "tools/call", {
+    name: "terminal_input",
+    arguments: { device_id: deviceId, session_id: started.sessionId, data_base64: unapprovedInput },
+  }));
+  assert.equal(noApproval.error, "approval_required");
+  assert.match(String(noApproval.approval_request_id), /^[0-9a-f-]{36}$/i);
+  const otherInputToken = await approval(deviceId, {
+    kind: "terminal_input", sessionId: started.sessionId,
+    dataBase64: Buffer.from("echo other\n", "utf8").toString("base64"),
+  });
+  const swappedInput = toolData(await rpc(22041, "tools/call", {
+    name: "terminal_input",
+    arguments: {
+      device_id: deviceId, session_id: started.sessionId,
+      data_base64: unapprovedInput, approval_token: otherInputToken,
+    },
+  }));
+  assert.equal(swappedInput.error, "approval_required");
+  console.log("agent-e2e: unapproved and mismatched AI terminal input refused");
+
   await tool(106, "terminal_input", {
     device_id: deviceId,
     session_id: started.sessionId,
@@ -2732,6 +2766,7 @@ try {
     max_bytes: 65536,
   });
   assert.match(historyAfterDrain.text, /PTY_AGENT_OK/);
+  assert.doesNotMatch(historyAfterDrain.text, /B01_UNAPPROVED_INPUT/, "unapproved input never reached the shell");
   assert.equal(typeof historyAfterDrain.totalOutputBytes, "number");
   assert.equal(typeof historyAfterDrain.retainedStartBytes, "number");
   assert.equal(historyAfterDrain.truncatedBeforeOffset, false);

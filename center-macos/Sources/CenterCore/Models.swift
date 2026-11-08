@@ -142,6 +142,7 @@ public struct LinkPoll: Decodable, Equatable {
 public enum ActionSummary {
     public static func from(_ action: JSONValue?) -> String {
         guard case .object(let fields)? = action else { return "" }
+        if case .string(let data)? = fields["dataBase64"] { return terminalInput(data) }
         for key in ["command", "path", "source", "name", "pid", "taskId", "sessionId"] {
             switch fields[key] {
             case .string(let s)? where !s.isEmpty: return s
@@ -152,6 +153,19 @@ public enum ActionSummary {
             }
         }
         return ""
+    }
+
+    /// What an AI wants to type into a terminal: printable, one line, bounded.
+    public static func terminalInput(_ base64: String) -> String {
+        guard let data = Data(base64Encoded: base64) else { return "" }
+        let text = String(decoding: data, as: UTF8.self)
+            .replacingOccurrences(of: "\r\n", with: "⏎")
+            .replacingOccurrences(of: "\n", with: "⏎")
+            .replacingOccurrences(of: "\r", with: "⏎")
+        let printable = String(String.UnicodeScalarView(text.unicodeScalars.map {
+            $0.value < 0x20 || $0.value == 0x7f ? "·" : $0
+        }))
+        return String(printable.prefix(300))
     }
 }
 

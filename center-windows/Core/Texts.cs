@@ -11,6 +11,7 @@ public static class Texts
         "task_cancel" => "Görevi iptal et",
         "terminal_start" => "Terminal aç",
         "terminal_stop" => "Terminali kapat",
+        "terminal_input" => "Terminale yaz",
         "fs_delete" => "Dosya sil",
         "fs_move" => "Dosya taşı",
         _ => kind,

@@ -1,4 +1,4 @@
-import { consumeApprovedRequest, ensureApprovalRequest } from "./approval-requests.js";
+import { consumeApprovedRequest, ensureApprovalRequest, restoreUndeliveredApproval, UNDELIVERED_ERRORS } from "./approval-requests.js";
 import { allowlistMatch } from "./command-allowlist.js";
 import { DC_ALIAS_NAMES, DC_TOOLS, fetchUrl, planEdit, translateAlias } from "./dc-compat.js";
 import { createHash } from "node:crypto";
@@ -177,7 +177,7 @@ export const tools = [
     { shell: str(), cwd: str(), cols: integer(), rows: integer(), approval_token: str() },
     [],
   ),
-  tool("terminal_input", "Write at most 256 KiB of decoded bytes to an existing PTY session.", { session_id: str(), data_base64: { type: "string", maxLength: MAX_TERMINAL_INPUT_BASE64_BYTES } }, ["session_id", "data_base64"]),
+  tool("terminal_input", "Write at most 256 KiB of decoded bytes to an existing PTY session. HIGH risk: the input runs in the shell, so each exact input needs human approval unless the device is in autonomous mode. Omit approval_token to create a human approval request, then retry after approval.", { session_id: str(), data_base64: { type: "string", maxLength: MAX_TERMINAL_INPUT_BASE64_BYTES }, approval_token: str() }, ["session_id", "data_base64"]),
   tool("terminal_read", "Read buffered PTY output.", { session_id: str(), max_bytes: integer() }, ["session_id"]),
   tool(
     "terminal_read_page",
@@ -490,6 +490,7 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
 
   let approvalToken = typeof args.approval_token === "string" ? args.approval_token : undefined;
   let allowlisted: { id: string; pattern: string } | null = null;
+  let consumedRequestId: string | null = null;
   if (risk === "high") {
     if (approvalToken) {
       if (!(await consumeApproval(approvalToken, deviceId, action))) {
@@ -525,6 +526,7 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
       );
 
       if (approvedRequestId) {
+        consumedRequestId = approvedRequestId;
         approvalToken = issueApproval(deviceId, action, 60).token;
         await audit(
           orgId,
@@ -580,7 +582,18 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
     return ok(request.id, toolResult(data));
   } catch (error) {
     await audit(orgId, principal.actor, deviceId, name, risk, "error", redact(error instanceof Error ? error.message : error));
-    return ok(request.id, toolResult({ error: error instanceof Error ? error.message : "request_failed" }, true));
+    const message = error instanceof Error ? error.message : "request_failed";
+    if (consumedRequestId && UNDELIVERED_ERRORS.has(message) &&
+        await restoreUndeliveredApproval(orgId, consumedRequestId, action)) {
+      await audit(orgId, principal.actor, deviceId, name, risk, "approval_restored",
+        JSON.stringify({ approvalRequestId: consumedRequestId, reason: message }));
+      return ok(request.id, toolResult({
+        error: message,
+        approval_request_id: consumedRequestId,
+        message: "The device did not receive the operation; the approval is kept, retry when the device is online.",
+      }, true));
+    }
+    return ok(request.id, toolResult({ error: message }, true));
   }
 }
 

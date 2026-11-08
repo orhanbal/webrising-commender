@@ -43,7 +43,7 @@ Transport: JSON messages over authenticated WebSocket.
 - `task_cancel`
 - `task_list`
 - `terminal_start`
-- `terminal_input`
+- `terminal_input` — HIGH risk: whatever is typed runs in the shell, so each exact input (session id and bytes) needs its own approval, or autonomous mode (`full` trust) on the device.
 - `terminal_read`
 - `terminal_resize`
 - `terminal_stop`
