@@ -12,18 +12,41 @@ if (-not (Test-Path $exe)) { throw 'WECOMMANDER agent binary is missing.' }
 # Upgrade: this Windows user is already paired, so restart the background
 # agent with the new binary and keep the device identity; no dialog, no
 # second "Hesabimla Baglan". Any failure falls through to the dialog.
-$pairedConfig = Join-Path $env:APPDATA 'webrising-commender\agent.json'
-if (-not $Reconnect -and (Test-Path -LiteralPath $pairedConfig -PathType Leaf)) {
+# Each step is written to %LOCALAPPDATA%\webrising-commender\onboarding.log
+# (no secrets) so a fall-through can be diagnosed afterwards.
+$logDir = Join-Path $env:LOCALAPPDATA 'webrising-commender'
+$script:logFile = Join-Path $logDir 'onboarding.log'
+function Write-OnboardingLog([string]$message) {
   try {
-    & (Join-Path $PSScriptRoot 'Install-User-Agent.ps1') -BinaryPath $exe -ConfigPath $pairedConfig
+    if (-not (Test-Path -LiteralPath $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+    Add-Content -LiteralPath $script:logFile -Value ((Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + ' ' + $message)
+  } catch { }
+}
+$pairedConfig = Join-Path $env:APPDATA 'webrising-commender\agent.json'
+$script:silentFailure = $null
+$script:silentDone = $false
+Write-OnboardingLog ("start reconnect=$Reconnect user=$([Security.Principal.WindowsIdentity]::GetCurrent().Name) config=$(Test-Path -LiteralPath $pairedConfig -PathType Leaf)")
+if (-not $Reconnect -and (Test-Path -LiteralPath $pairedConfig -PathType Leaf)) {
+  # Setup may still be closing the old agent: try twice before giving up.
+  for ($attempt = 1; $attempt -le 2 -and -not $script:silentDone; $attempt++) {
+    try {
+      & (Join-Path $PSScriptRoot 'Install-User-Agent.ps1') -BinaryPath $exe -ConfigPath $pairedConfig | Out-Null
+      $script:silentDone = $true
+      Write-OnboardingLog "silent reuse ok (attempt $attempt)"
+    } catch {
+      $script:silentFailure = $_.Exception.Message
+      Write-OnboardingLog "silent reuse failed (attempt $attempt): $($script:silentFailure)"
+      Start-Sleep -Seconds 5
+    }
+  }
+  if ($script:silentDone) {
     [System.Windows.Forms.MessageBox]::Show(
       'WECOMMANDER ajani guncellendi ve arka planda calisiyor. Cihaz eslestirmesi korundu; yeniden baglanmaniz gerekmiyor.',
       'WECOMMANDER'
     ) | Out-Null
     return
-  } catch {
-    # Show the dialog below so the reason and the manual path are visible.
   }
+  # Fall through to the dialog; its notice shows why (see below).
 }
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'WECOMMANDER | Cihaz Baglantisi'
@@ -47,8 +70,11 @@ for ($i=0; $i -lt $fields.Count; $i++) {
 }
 $notice = New-Object System.Windows.Forms.Label
 $notice.Text = 'Hesabinla giris yap. Cihaz onayindan sonra otomatik baslatilir; Windows parolasi sorulmaz.'
+if ($script:silentFailure) {
+  $notice.Text = 'Otomatik guncelleme tamamlanamadi: ' + $script:silentFailure + ' "Eslestir" mevcut eslestirmeyi kullanir.'
+}
 $notice.Location = New-Object System.Drawing.Point(20,232)
-$notice.Width = 510; $notice.Height = 34
+$notice.Width = 510; $notice.Height = 44
 $form.Controls.Add($notice)
 $button = New-Object System.Windows.Forms.Button
 $button.Text = 'Eslestir ve Hizmeti Kur'; $button.Location = New-Object System.Drawing.Point(285,337)
