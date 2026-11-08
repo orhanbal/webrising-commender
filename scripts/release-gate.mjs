@@ -47,6 +47,7 @@ export const REQUIRED_CI_JOBS = Object.freeze([
   "center-windows",
   "center-winui",
   "center-linux",
+  "plan-tools",
 ]);
 
 /**

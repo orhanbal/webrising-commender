@@ -1,0 +1,1314 @@
+{
+ "schema_version": 1,
+ "start_date": "2026-11-09",
+ "parameters": {
+  "capacity_mh_per_week": 0.8,
+  "buffer_ratio": 0.15,
+  "onboarding_weeks": 1,
+  "default_scenario": "S2",
+  "velocity_scenario": "S2",
+  "sprint_weeks": 4
+ },
+ "packages": [
+  {
+   "code": "B01",
+   "name": "AI terminal_input yetkilendirme düzeltmesi",
+   "plan": "B",
+   "milestone": "M0",
+   "priority": "P0",
+   "effort": {
+    "low": 1,
+    "high": 1.5
+   },
+   "deps": [],
+   "uncertainty": []
+  },
+  {
+   "code": "B02",
+   "name": "Production kabul kapanışı (v1.0 / A4 / A7 / A8)",
+   "plan": "B",
+   "milestone": "M0",
+   "priority": "P0",
+   "effort": {
+    "low": 1.5,
+    "high": 2
+   },
+   "deps": [
+    "B01",
+    "B03"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "B03",
+   "name": "Onaylı işlem durum makinesi ve teslimat güvencesi",
+   "plan": "B",
+   "milestone": "M0",
+   "priority": "P0",
+   "effort": {
+    "low": 3,
+    "high": 4
+   },
+   "deps": [
+    "B01"
+   ],
+   "uncertainty": [
+    "distributed-state"
+   ]
+  },
+  {
+   "code": "B04",
+   "name": "MFA (TOTP + WebAuthn) ve yeniden doğrulama",
+   "plan": "B",
+   "milestone": "M6",
+   "priority": "P1",
+   "effort": {
+    "low": 3,
+    "high": 4
+   },
+   "deps": [
+    "B01"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "B05",
+   "name": "İnsan terminali akışı (gateway + ajan)",
+   "plan": "B",
+   "milestone": "M6",
+   "priority": "P1",
+   "effort": {
+    "low": 2,
+    "high": 3
+   },
+   "deps": [
+    "B04"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "B06",
+   "name": "Web panelinde gerçek terminal",
+   "plan": "B",
+   "milestone": "M6",
+   "priority": "P1",
+   "effort": {
+    "low": 1.5,
+    "high": 2
+   },
+   "deps": [
+    "B05",
+    "A03"
+   ],
+   "uncertainty": [
+    "webview-xterm"
+   ]
+  },
+  {
+   "code": "B07",
+   "name": "Regresyon test paketi ve sürüm adayı kontrol listesi",
+   "plan": "B",
+   "milestone": "M6",
+   "priority": "P1",
+   "effort": {
+    "low": 2,
+    "high": 2
+   },
+   "deps": [
+    "B02"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "B08",
+   "name": "Masaüstü oturum açma ve SSH eşleştirme uçları",
+   "plan": "B",
+   "milestone": "M4",
+   "priority": "P1",
+   "effort": {
+    "low": 1.5,
+    "high": 2
+   },
+   "deps": [
+    "B04"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "B09",
+   "name": "Masaüstünde Agent çalışma alanı",
+   "plan": "B",
+   "milestone": "M4",
+   "priority": "P1",
+   "effort": {
+    "low": 3,
+    "high": 4
+   },
+   "deps": [
+    "B08",
+    "A01",
+    "A03"
+   ],
+   "uncertainty": [
+    "tauri-packaging"
+   ]
+  },
+  {
+   "code": "B10",
+   "name": "Uçtan uca şifreli senkronizasyon sunucusu",
+   "plan": "B",
+   "milestone": "M5",
+   "priority": "P2",
+   "effort": {
+    "low": 2,
+    "high": 3
+   },
+   "deps": [
+    "B04"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "B11",
+   "name": "Bastion SSH (Agent Mode)",
+   "plan": "B",
+   "milestone": "M7",
+   "priority": "P3",
+   "effort": {
+    "low": 6,
+    "high": 8
+   },
+   "deps": [
+    "A02",
+    "B05"
+   ],
+   "uncertainty": [
+    "russh-compat"
+   ]
+  },
+  {
+   "code": "B12",
+   "name": "v1.2 gözlem işleri ve health_snapshot gürültüsü",
+   "plan": "B",
+   "milestone": "M6",
+   "priority": "P2",
+   "effort": {
+    "low": 2.5,
+    "high": 3.5
+   },
+   "deps": [
+    "B03"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "B13",
+   "name": "OIDC SSO",
+   "plan": "B",
+   "milestone": "M7",
+   "priority": "P3",
+   "effort": {
+    "low": 3,
+    "high": 3
+   },
+   "deps": [
+    "B04"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "A01",
+   "name": "Desktop uygulama iskeleti ve depo yapısı (G1)",
+   "plan": "A",
+   "milestone": "M1",
+   "priority": "P0",
+   "effort": {
+    "low": 2.5,
+    "high": 3.5
+   },
+   "deps": [],
+   "uncertainty": [
+    "tauri-packaging",
+    "key-storage"
+   ]
+  },
+  {
+   "code": "A02",
+   "name": "SSH çekirdeği wc-ssh-core (G2)",
+   "plan": "A",
+   "milestone": "M1",
+   "priority": "P0",
+   "effort": {
+    "low": 3.5,
+    "high": 5.5
+   },
+   "deps": [],
+   "uncertainty": [
+    "russh-compat",
+    "russh-sftp",
+    "windows-openssh",
+    "macos-ssh"
+   ]
+  },
+  {
+   "code": "A03",
+   "name": "Terminal arayüz paketi (G3)",
+   "plan": "A",
+   "milestone": "M1",
+   "priority": "P0",
+   "effort": {
+    "low": 2.5,
+    "high": 3.5
+   },
+   "deps": [],
+   "uncertainty": [
+    "webview-xterm"
+   ]
+  },
+  {
+   "code": "A04",
+   "name": "Paketleme, dağıtım ve otomatik güncelleme",
+   "plan": "A",
+   "milestone": "M2",
+   "priority": "P0",
+   "effort": {
+    "low": 2,
+    "high": 3
+   },
+   "deps": [
+    "A01"
+   ],
+   "uncertainty": [
+    "tauri-packaging"
+   ]
+  },
+  {
+   "code": "A05",
+   "name": "Yerel kasa (wc-vault) ve anahtar yönetimi",
+   "plan": "A",
+   "milestone": "M2",
+   "priority": "P0",
+   "effort": {
+    "low": 3,
+    "high": 4
+   },
+   "deps": [
+    "A01"
+   ],
+   "uncertainty": [
+    "key-storage"
+   ]
+  },
+  {
+   "code": "A06",
+   "name": "Host key doğrulaması ve known_hosts",
+   "plan": "A",
+   "milestone": "M2",
+   "priority": "P0",
+   "effort": {
+    "low": 1.5,
+    "high": 2
+   },
+   "deps": [
+    "A02",
+    "A05"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "A07",
+   "name": "Hosts, Groups, Tags, profiller, ssh_config",
+   "plan": "A",
+   "milestone": "M2",
+   "priority": "P0",
+   "effort": {
+    "low": 2,
+    "high": 3
+   },
+   "deps": [
+    "A05"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "A08",
+   "name": "Terminal sekmeleri ve oturum yönetimi",
+   "plan": "A",
+   "milestone": "M2",
+   "priority": "P0",
+   "effort": {
+    "low": 2,
+    "high": 3
+   },
+   "deps": [
+    "A01",
+    "A02",
+    "A03"
+   ],
+   "uncertainty": [
+    "webview-xterm"
+   ]
+  },
+  {
+   "code": "A09",
+   "name": "SFTP dosya yöneticisi",
+   "plan": "A",
+   "milestone": "M2",
+   "priority": "P0",
+   "effort": {
+    "low": 4,
+    "high": 5
+   },
+   "deps": [
+    "A01",
+    "A02"
+   ],
+   "uncertainty": [
+    "russh-sftp",
+    "windows-openssh"
+   ]
+  },
+  {
+   "code": "A10",
+   "name": "Jump Host ve Local Port Forwarding",
+   "plan": "A",
+   "milestone": "M2",
+   "priority": "P0",
+   "effort": {
+    "low": 2,
+    "high": 3
+   },
+   "deps": [
+    "A02",
+    "A07"
+   ],
+   "uncertainty": [
+    "russh-compat"
+   ]
+  },
+  {
+   "code": "A11",
+   "name": "MVP güvenlik incelemesi, gerçek cihaz kabulü ve kullanıcı belgeleri",
+   "plan": "A",
+   "milestone": "M2",
+   "priority": "P0",
+   "effort": {
+    "low": 2,
+    "high": 3
+   },
+   "deps": [
+    "A04",
+    "A06",
+    "A07",
+    "A08",
+    "A09",
+    "A10"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "A12",
+   "name": "Split View ve güvenli Broadcast",
+   "plan": "A",
+   "milestone": "M3",
+   "priority": "P1",
+   "effort": {
+    "low": 2,
+    "high": 3
+   },
+   "deps": [
+    "A08"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "A13",
+   "name": "Workspaces ve oturum geri yükleme",
+   "plan": "A",
+   "milestone": "M3",
+   "priority": "P1",
+   "effort": {
+    "low": 2,
+    "high": 2
+   },
+   "deps": [
+    "A12",
+    "A07"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "A14",
+   "name": "Snippets, komut geçmişi, autocomplete",
+   "plan": "A",
+   "milestone": "M3",
+   "priority": "P1",
+   "effort": {
+    "low": 2,
+    "high": 3
+   },
+   "deps": [
+    "A08",
+    "A05"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "A15",
+   "name": "Remote Forward, SOCKS ve proxy",
+   "plan": "A",
+   "milestone": "M3",
+   "priority": "P1",
+   "effort": {
+    "low": 2,
+    "high": 3
+   },
+   "deps": [
+    "A10"
+   ],
+   "uncertainty": [
+    "russh-compat"
+   ]
+  },
+  {
+   "code": "A16",
+   "name": "Agent Forwarding ve SSH sertifikaları",
+   "plan": "A",
+   "milestone": "M3",
+   "priority": "P1",
+   "effort": {
+    "low": 3,
+    "high": 4
+   },
+   "deps": [
+    "A05",
+    "A10"
+   ],
+   "uncertainty": [
+    "russh-compat"
+   ]
+  },
+  {
+   "code": "A17",
+   "name": "FIDO2 / donanım anahtarı",
+   "plan": "A",
+   "milestone": "M5",
+   "priority": "P2",
+   "effort": {
+    "low": 3,
+    "high": 5
+   },
+   "deps": [
+    "A16"
+   ],
+   "uncertainty": [
+    "russh-compat"
+   ]
+  },
+  {
+   "code": "A18",
+   "name": "SCP",
+   "plan": "A",
+   "milestone": "M5",
+   "priority": "P2",
+   "effort": {
+    "low": 1,
+    "high": 1
+   },
+   "deps": [
+    "A09"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "A19",
+   "name": "Tema, font, kısayollar, terminal arama, ayarlar",
+   "plan": "A",
+   "milestone": "U1",
+   "priority": "P1",
+   "effort": {
+    "low": 1.5,
+    "high": 2
+   },
+   "deps": [
+    "A03"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "A20",
+   "name": "Uçtan uca şifreli kişisel senkronizasyon (istemci)",
+   "plan": "A",
+   "milestone": "M5",
+   "priority": "P1",
+   "effort": {
+    "low": 4,
+    "high": 5
+   },
+   "deps": [
+    "A05",
+    "B10"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "A21",
+   "name": "Bağımsız güvenlik ve kriptografi incelemesi",
+   "plan": "A",
+   "milestone": "M5",
+   "priority": "P1",
+   "effort": {
+    "low": 1.5,
+    "high": 1.5
+   },
+   "deps": [
+    "A20",
+    "A16",
+    "A15"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "A22",
+   "name": "Ekip özellikleri (kasa, hostlar, çalışma alanları, RBAC, denetim)",
+   "plan": "A",
+   "milestone": "M5",
+   "priority": "P1",
+   "effort": {
+    "low": 6,
+    "high": 8
+   },
+   "deps": [
+    "A20",
+    "A21"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "A23",
+   "name": "SSH'tan Agent Mode'a yükseltme",
+   "plan": "A",
+   "milestone": "M4",
+   "priority": "P1",
+   "effort": {
+    "low": 2,
+    "high": 3
+   },
+   "deps": [
+    "B08",
+    "A08"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "A24",
+   "name": "Kontrollü AI asistanı (kullanıcının kendi anahtarı)",
+   "plan": "A",
+   "milestone": "M6",
+   "priority": "P1",
+   "effort": {
+    "low": 3,
+    "high": 4
+   },
+   "deps": [
+    "A25",
+    "A08",
+    "B01"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "A25",
+   "name": "Komut risk değerlendirmesi",
+   "plan": "A",
+   "milestone": "M6",
+   "priority": "P1",
+   "effort": {
+    "low": 2,
+    "high": 3
+   },
+   "deps": [
+    "A12",
+    "A14"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "A26",
+   "name": "Gelişmiş operasyon araçları",
+   "plan": "A",
+   "milestone": "M6",
+   "priority": "P2",
+   "effort": {
+    "low": 3,
+    "high": 4
+   },
+   "deps": [
+    "A23"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "A27",
+   "name": "Ortak terminal oturumu (Multiplayer, tek yazar)",
+   "plan": "A",
+   "milestone": "M7",
+   "priority": "P2",
+   "effort": {
+    "low": 4,
+    "high": 6
+   },
+   "deps": [
+    "A22"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "A28",
+   "name": "Android",
+   "plan": "A",
+   "milestone": "M7",
+   "priority": "P2",
+   "effort": {
+    "low": 8,
+    "high": 10
+   },
+   "deps": [
+    "S-STABLE"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "A29",
+   "name": "iOS",
+   "plan": "A",
+   "milestone": "M7",
+   "priority": "P2",
+   "effort": {
+    "low": 6,
+    "high": 10
+   },
+   "deps": [
+    "A28"
+   ],
+   "uncertainty": []
+  },
+  {
+   "code": "A30",
+   "name": "Kurumsal politikalar",
+   "plan": "A",
+   "milestone": "M7",
+   "priority": "P3",
+   "effort": {
+    "low": 4,
+    "high": 5
+   },
+   "deps": [
+    "A22",
+    "B13"
+   ],
+   "uncertainty": []
+  }
+ ],
+ "stabilizations": [
+  {
+   "code": "S-MVP",
+   "name": "MVP stabilizasyonu",
+   "milestone": "M2",
+   "weeks": 2,
+   "deps": [
+    "A11"
+   ]
+  },
+  {
+   "code": "S-U1",
+   "name": "User Mode 1.0 genel beta, RC ve kabul",
+   "milestone": "U1",
+   "weeks": 4,
+   "deps": [
+    "S-MVP",
+    "A19",
+    "A04"
+   ]
+  },
+  {
+   "code": "S-BETA",
+   "name": "Genişletilmiş özellik Beta stabilizasyonu",
+   "milestone": "M3",
+   "weeks": 3,
+   "deps": [
+    "S-U1",
+    "A12",
+    "A13",
+    "A14",
+    "A15",
+    "A16"
+   ]
+  },
+  {
+   "code": "S-INT",
+   "name": "Agent Mode entegrasyon stabilizasyonu",
+   "milestone": "M4",
+   "weeks": 1,
+   "deps": [
+    "B09",
+    "A23",
+    "S-BETA"
+   ]
+  },
+  {
+   "code": "S-PAR",
+   "name": "Termius eşitliği stabilizasyonu",
+   "milestone": "M5",
+   "weeks": 2,
+   "deps": [
+    "A17",
+    "A18",
+    "A22",
+    "S-BETA"
+   ]
+  },
+  {
+   "code": "S-STABLE",
+   "name": "V2 Stable stabilizasyonu",
+   "milestone": "M6",
+   "weeks": 4,
+   "deps": [
+    "S-PAR",
+    "S-INT",
+    "A24",
+    "A25",
+    "A26",
+    "B06",
+    "B07",
+    "B12"
+   ]
+  },
+  {
+   "code": "S-M7",
+   "name": "M7 stabilizasyonu",
+   "milestone": "M7",
+   "weeks": 2,
+   "deps": [
+    "A27",
+    "A28",
+    "A29",
+    "A30",
+    "B11"
+   ]
+  }
+ ],
+ "milestones": [
+  {
+   "id": "M0",
+   "name": "Agent Mode güvenlik ve production kapanışı",
+   "stabilization": null,
+   "scope": [
+    "B01",
+    "B02",
+    "B03"
+   ]
+  },
+  {
+   "id": "M1",
+   "name": "Çalışan User Mode SSH prototipi",
+   "stabilization": null,
+   "scope": [
+    "A01",
+    "A02",
+    "A03"
+   ]
+  },
+  {
+   "id": "M2",
+   "name": "User Mode kullanılabilir MVP",
+   "stabilization": "S-MVP",
+   "scope": [
+    "A04",
+    "A05",
+    "A06",
+    "A07",
+    "A08",
+    "A09",
+    "A10",
+    "A11"
+   ]
+  },
+  {
+   "id": "U1",
+   "name": "User Mode 1.0 Stable",
+   "stabilization": "S-U1",
+   "scope": [
+    "A19"
+   ]
+  },
+  {
+   "id": "M3",
+   "name": "Genişletilmiş özellik Beta'sı (User Mode 1.x, 3 işletim sistemi)",
+   "stabilization": "S-BETA",
+   "scope": [
+    "A12",
+    "A13",
+    "A14",
+    "A15",
+    "A16"
+   ]
+  },
+  {
+   "id": "M4",
+   "name": "Agent Mode entegrasyonu",
+   "stabilization": "S-INT",
+   "scope": [
+    "B08",
+    "B09",
+    "A23"
+   ]
+  },
+  {
+   "id": "M5",
+   "name": "Termius masaüstü özellik eşitliği",
+   "stabilization": "S-PAR",
+   "scope": [
+    "A17",
+    "A18",
+    "A20",
+    "A21",
+    "A22",
+    "B10"
+   ]
+  },
+  {
+   "id": "M6",
+   "name": "WECOMMANDER V2 Stable",
+   "stabilization": "S-STABLE",
+   "scope": [
+    "A24",
+    "A25",
+    "A26",
+    "B04",
+    "B05",
+    "B06",
+    "B07",
+    "B12"
+   ]
+  },
+  {
+   "id": "M7",
+   "name": "Mobil ve kurumsal genişleme",
+   "stabilization": "S-M7",
+   "scope": [
+    "A27",
+    "A28",
+    "A29",
+    "A30",
+    "B11",
+    "B13"
+   ]
+  }
+ ],
+ "phases": [
+  {
+   "id": "M0",
+   "name": "Agent Mode güvenlik ve production kapanışı",
+   "members": [
+    "B01",
+    "B02",
+    "B03"
+   ]
+  },
+  {
+   "id": "B-SEC",
+   "name": "Agent Mode güvenlik, terminal ve gözlem",
+   "members": [
+    "B04",
+    "B05",
+    "B06",
+    "B07",
+    "B12"
+   ]
+  },
+  {
+   "id": "P1",
+   "name": "Aşama 1 — Masaüstü temel altyapısı (M1: A01–A03)",
+   "members": [
+    "A01",
+    "A02",
+    "A03",
+    "A04"
+   ]
+  },
+  {
+   "id": "P2",
+   "name": "Aşama 2 — SSH MVP (M2)",
+   "members": [
+    "A05",
+    "A06",
+    "A07",
+    "A08",
+    "A09",
+    "A10",
+    "A11",
+    "S-MVP"
+   ]
+  },
+  {
+   "id": "U1",
+   "name": "User Mode 1.0 Stable (U1)",
+   "members": [
+    "A19",
+    "S-U1"
+   ]
+  },
+  {
+   "id": "P3a",
+   "name": "Aşama 3a — Genişletilmiş özellik Beta'sı (M3)",
+   "members": [
+    "A12",
+    "A13",
+    "A14",
+    "A15",
+    "A16",
+    "S-BETA"
+   ]
+  },
+  {
+   "id": "M4",
+   "name": "Agent Mode entegrasyonu (M4)",
+   "members": [
+    "B08",
+    "B09",
+    "A23",
+    "S-INT"
+   ]
+  },
+  {
+   "id": "P3b",
+   "name": "Aşama 3b — Termius eşitliği (M5)",
+   "members": [
+    "A17",
+    "A18",
+    "B10",
+    "A20",
+    "A21",
+    "A22",
+    "S-PAR"
+   ]
+  },
+  {
+   "id": "P4",
+   "name": "Aşama 4 — Farklılaştırıcılar ve V2 Stable (M6)",
+   "members": [
+    "A25",
+    "A24",
+    "A26",
+    "S-STABLE"
+   ]
+  },
+  {
+   "id": "P5",
+   "name": "Aşama 5 — Mobil ve kurumsal (M7)",
+   "members": [
+    "B13",
+    "A27",
+    "A30",
+    "B11",
+    "A28",
+    "A29",
+    "S-M7"
+   ]
+  }
+ ],
+ "scenarios": {
+  "S1": {
+   "label": "1 geliştirici",
+   "coordination_factor": 1.0,
+   "lane_labels": {
+    "D1": "Tek geliştirici"
+   },
+   "lanes": {
+    "D1": [
+     "B01",
+     "B03",
+     "B02",
+     "B04",
+     "A01",
+     "A02",
+     "A03",
+     "A04",
+     "A05",
+     "A06",
+     "A07",
+     "A08",
+     "A09",
+     "A10",
+     "A19",
+     "A11",
+     "S-MVP",
+     "S-U1",
+     "B05",
+     "B06",
+     "B07",
+     "B12",
+     "A12",
+     "A13",
+     "A14",
+     "A15",
+     "A16",
+     "S-BETA",
+     "B08",
+     "B09",
+     "A23",
+     "S-INT",
+     "B10",
+     "A20",
+     "A17",
+     "A18",
+     "A21",
+     "A22",
+     "S-PAR",
+     "A25",
+     "A24",
+     "A26",
+     "S-STABLE",
+     "B13",
+     "A27",
+     "A30",
+     "B11",
+     "A28",
+     "A29",
+     "S-M7"
+    ]
+   }
+  },
+  "S2": {
+   "label": "2 geliştirici",
+   "coordination_factor": 1.1,
+   "lane_labels": {
+    "D1": "Agent Mode + Rust çekirdek/kasa/tüneller + sürüm sorumlusu",
+    "D2": "Masaüstü, arayüz, SFTP, entegrasyon"
+   },
+   "lanes": {
+    "D1": [
+     "B01",
+     "B03",
+     "B02",
+     "B04",
+     "A05",
+     "A07",
+     "A06",
+     "A10",
+     "A11",
+     "S-MVP",
+     "S-U1",
+     "B05",
+     "B06",
+     "A15",
+     "A16",
+     "S-BETA",
+     "B08",
+     "A23",
+     "S-INT",
+     "B10",
+     "A20",
+     "A21",
+     "A22",
+     "S-PAR",
+     "S-STABLE",
+     "B13",
+     "A30",
+     "B11",
+     "S-M7"
+    ],
+    "D2": [
+     "A01",
+     "A02",
+     "A03",
+     "A08",
+     "A04",
+     "A09",
+     "A19",
+     "B07",
+     "B12",
+     "A12",
+     "A13",
+     "A14",
+     "A17",
+     "B09",
+     "A18",
+     "A26",
+     "A25",
+     "A24",
+     "A27",
+     "A28",
+     "A29"
+    ]
+   }
+  },
+  "S4": {
+   "label": "4 geliştirici",
+   "coordination_factor": 1.25,
+   "lane_labels": {
+    "D1": "Agent Mode / gateway",
+    "D2": "Rust SSH çekirdeği ve ağ",
+    "D3": "Masaüstü ve arayüz",
+    "D4": "Kasa, dosya, entegrasyon, ekip, sürüm sorumlusu"
+   },
+   "lanes": {
+    "D1": [
+     "B01",
+     "B03",
+     "B02",
+     "B04",
+     "B05",
+     "B06",
+     "B07",
+     "B08",
+     "B10",
+     "B12",
+     "B13",
+     "A30",
+     "B11"
+    ],
+    "D2": [
+     "A02",
+     "A09",
+     "A10",
+     "A15",
+     "A16",
+     "A17",
+     "A21",
+     "A25"
+    ],
+    "D3": [
+     "A01",
+     "A03",
+     "A08",
+     "A19",
+     "A12",
+     "A13",
+     "A14",
+     "A20",
+     "A18",
+     "A24",
+     "A26",
+     "A28"
+    ],
+    "D4": [
+     "A05",
+     "A07",
+     "A06",
+     "A04",
+     "A11",
+     "S-MVP",
+     "S-U1",
+     "S-BETA",
+     "B09",
+     "A23",
+     "S-INT",
+     "A22",
+     "S-PAR",
+     "S-STABLE",
+     "A27",
+     "A29",
+     "S-M7"
+    ]
+   }
+  }
+ },
+ "gates": [
+  {
+   "id": "G1",
+   "after": "A01",
+   "name": "Tauri paketleme/güncelleme ve anahtar deposu doğrulaması",
+   "uncertainty": [
+    "tauri-packaging",
+    "key-storage"
+   ],
+   "checks": [
+    "Windows, macOS ve Linux'ta imzalı güncelleme manifestiyle N → N+1 güncelleme turu",
+    "Windows DPAPI/Credential Manager, macOS Keychain, Linux Secret Service ile keyring duman testi; Secret Service olmayan Linux'ta ana parola yolunun çalışması",
+    "Kurulum boyutu ve ilk açılış süresi ölçümü"
+   ],
+   "on_fail": "A04 ve A05 tahminleri yeniden hesaplanır; gerekirse Linux için ana parola zorunlu varsayılan olur"
+  },
+  {
+   "id": "G2",
+   "after": "A02",
+   "name": "russh uyumluluk matrisi ve SFTP olgunluğu",
+   "uncertainty": [
+    "russh-compat",
+    "russh-sftp",
+    "windows-openssh",
+    "macos-ssh"
+   ],
+   "checks": [
+    "Ubuntu OpenSSH 9.x, eski OpenSSH 7.x, Windows OpenSSH Server, macOS sshd ile parola, anahtar, keyboard-interactive ve harici ajan",
+    "Algoritma matrisi (kex, host key, şifre, MAC) ve Terrapin önlemleri",
+    "russh-sftp ile 1 GB yükleme/indirme, devam, 10.000 dosyalı dizin listeleme (2 günlük teknik deneme)",
+    "FIDO2 (sk-*) desteğinin russh'ta var olup olmadığının belirlenmesi"
+   ],
+   "on_fail": "russh-sftp yetersizse A09'a +2 MH (SFTP v3 katmanı); FIDO2 yerleşik değilse A17 OpenSSH uyumluluk motoruyla başlar (tahmin değişmez)"
+  },
+  {
+   "id": "G3",
+   "after": "A03",
+   "name": "xterm.js WebView performansı",
+   "uncertainty": [
+    "webview-xterm"
+   ],
+   "checks": [
+    "WebView2, WKWebView ve WebKitGTK'de 10 MB çıktı akışında arayüzün donmaması",
+    "WebGL çizicinin kullanılamadığı yerde canvas/DOM'a düşme",
+    "vim, htop, Türkçe IME, kopyala/yapıştır"
+   ],
+   "on_fail": "Linux için ek optimizasyon işi A08'e +1 MH; Linux U1 kapsamında 'beta' etiketiyle kalabilir"
+  },
+  {
+   "id": "R1",
+   "after": "M1",
+   "name": "Zorunlu takvim revizyonu",
+   "uncertainty": [],
+   "checks": [
+    "A01–A03 gerçekleşen eforları actuals dosyasına işlenir",
+    "Hız katsayısı hesaplanır ve kalan paketlere uygulanır",
+    "G1–G3 sonuçlarına göre yeniden tahminler girilir",
+    "Takvim aynı araçla yeniden üretilir ve belgeler güncellenir (ayrı PR)"
+   ],
+   "on_fail": "Hız katsayısı 1,3'ün üstündeyse sahip kapsam veya kaynak kararı verir"
+  }
+ ],
+ "baseline_v0_1": {
+  "note": "PR #97 ilk sürümündeki (v0.1) kilometre taşı plan tarihleri",
+  "S1": {
+   "M0": "2026-12-25",
+   "M1": "2027-04-30",
+   "M2": "2027-12-31",
+   "M3": "2028-10-06",
+   "M4": "2029-01-05",
+   "M5": "2029-08-03",
+   "M6": "2029-12-07",
+   "M7": "2030-11-22"
+  },
+  "S2": {
+   "M0": "2026-12-25",
+   "M1": "2027-02-19",
+   "M2": "2027-07-09",
+   "M3": "2027-11-19",
+   "M4": "2028-01-21",
+   "M5": "2028-07-21",
+   "M6": "2028-08-18",
+   "M7": "2029-02-23"
+  },
+  "S4": {
+   "M0": "2026-12-25",
+   "M1": "2027-01-08",
+   "M2": "2027-05-21",
+   "M3": "2027-06-25",
+   "M4": "2027-09-10",
+   "M5": "2027-12-10",
+   "M6": "2028-01-14",
+   "M7": "2028-08-11"
+  },
+  "total_mh": 136.25
+ }
+}
