@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Security (B03, first part): the Agent keeps a journal of used approval nonces on disk (`webrising-commender/approval-nonces/` in the local data directory, expired entries dropped at start). An approval runs one operation also on the Agent side: a replayed token is refused ("approval token was already used"), even after an Agent restart. Nonces must be 16–128 URL-safe characters.
+
 - Security (B01): an AI typing into a live terminal (`terminal_input`) now needs human approval for that exact input, like `process_exec`. Before, once a terminal was open, the AI could type any command without approval. The Agent enforces it too, so a request that skips the gateway is refused. Autonomous mode (`full` trust) still allows it without asking. Approval screens (web panel, Management Center for Windows and macOS, e-mail) show the text that would be typed, as one line (⏎ for Enter).
 
 - Management Center (Windows and macOS): when a request shown on several computers is decided on one of them, the others drop its notification and show a short one saying where it was decided ("macOS'tan onaylandı · cihaz", "Windows'tan reddedildi", "Web panelinden onaylandı"). Gateway: `GET /api/approval-requests/{id}` (also for center tokens) returns the outcome and `decided_via`; decisions record the deciding center; centers report their platform (`macos`/`windows`) when they link and on `/api/center/me`.
