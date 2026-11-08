@@ -33,7 +33,7 @@ Source: "Run-User-Agent.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Uninstall-User-Agent.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Migrate-Legacy-Service.ps1"; DestDir: "{app}"; Flags: ignoreversion
 [Icons]
-Name: "{group}\WECOMMANDER Cihaz Bağlantısı"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\WECOMMANDER-Onboarding.ps1"""; WorkingDir: "{app}"
+Name: "{group}\WECOMMANDER Cihaz Bağlantısı"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\WECOMMANDER-Onboarding.ps1"" -Reconnect"; WorkingDir: "{app}"
 Name: "{group}\WECOMMANDER Panel"; Filename: "https://wecommander.app/dashboard"
 [Run]
 ; One-time elevated migration. Stops/deletes only the known legacy service,
