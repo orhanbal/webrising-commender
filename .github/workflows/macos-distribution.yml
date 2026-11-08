@@ -44,3 +44,24 @@ jobs:
             --target "${{ github.event.workflow_run.head_sha }}" \
             --title "WECOMMANDER macOS preview #${{ github.event.workflow_run.run_number }}" \
             --prerelease --notes "macOS universal agent PKG and the Management Center app (WECOMMANDER-Center-macos.zip) built and tested by the macos workflow (run ${{ github.event.workflow_run.id }}) for ${{ github.event.workflow_run.head_sha }}. Must pass physical-device acceptance before production approval."
+      - name: Refresh the fixed macos-center-latest release used by the one-line installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A fixed tag lets "curl -fsSL https://wecommander.app/install/center.sh | sh"
+          # download straight from GitHub's release CDN, without the releases API.
+          TAG="macos-center-latest"
+          mkdir -p latest
+          cp dist/WECOMMANDER-Center-macos.zip latest/
+          (cd latest && sha256sum -- WECOMMANDER-Center-macos.zip > SHA256SUMS.txt)
+          NOTES="Newest WECOMMANDER Center for macOS (from macos-preview-${{ github.event.workflow_run.run_number }}, ${{ github.event.workflow_run.head_sha }}). Replaced on every macOS preview; used by the one-line installer."
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" latest/WECOMMANDER-Center-macos.zip latest/SHA256SUMS.txt --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes "$NOTES"
+          else
+            gh release create "$TAG" latest/WECOMMANDER-Center-macos.zip latest/SHA256SUMS.txt \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "${{ github.event.workflow_run.head_sha }}" \
+              --title "WECOMMANDER Center for macOS (latest preview)" \
+              --prerelease --notes "$NOTES"
+          fi

@@ -81,3 +81,12 @@ test("the macOS Management Center installer verifies the zip and picks the newes
   assert.match(body, /sort -t- -k3,3nr/);
   assert.match(body, /releases\/download\//);
 });
+
+test("the one-line macOS Center install downloads from the fixed tag the workflow refreshes", () => {
+  const body = fs.readFileSync(path.join(repo, "scripts/install-center-macos-online.sh"), "utf8");
+  const workflow = fs.readFileSync(path.join(repo, ".github/workflows/macos-distribution.yml"), "utf8");
+  assert.match(body, /tag="macos-center-latest"/);
+  assert.ok(body.indexOf('tag="macos-center-latest"') < body.indexOf("api.github.com"), "fixed tag is tried before the API");
+  assert.match(workflow, /TAG="macos-center-latest"/);
+  assert.match(workflow, /--clobber/);
+});
