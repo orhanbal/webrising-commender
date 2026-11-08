@@ -53,3 +53,14 @@ The existing `scripts/restore-compose.sh` is destructive: it stops the gateway, 
 ### 30 October 2026 — CI relational recovery acceptance
 
 The disposable CI drill now seeds an inert organization, user and membership, removes those rows from its source after the dump, restores into a separate scratch database and verifies the relationship survived. A modified copy of the archive must fail the SHA-256 checksum check before restore. [Code CI #41045386900](https://github.com/orhanbal/webrising-commender/actions/runs/41045386900) passed the integration drill. The SHA-256 manifest detects accidental corruption but is **not** an authenticated signature. This does **not** establish production backup freshness, off-host retention, recovery point/time objectives, or real operator restore acceptance; all remain PENDING.
+
+### 8 November 2026 — production scratch restore drill: PASSED
+
+Run by the owner on the production host (`148-135-181-148`, Coolify `localhost`) as root, against the live Compose PostgreSQL container `postgres-u5mlu98kqroo7w68zoa0syac-20261108T175612` (application `webrising-commender`, UUID `u5mlu98kqroo7w68zoa0syac`). Commands used, all inside the container, never touching the live database:
+
+1. `pg_dump -U commender -d commender -Fc -f /tmp/drill.dump` → 134296 bytes, SHA-256 `cfe5badda0c9c9ccc338fbfc036d99eef824f3d9a2451d2fde887e22a3eddf3d`.
+2. `createdb restore_drill_20261108T180540Z` and `pg_restore --no-owner` into it → completed without errors.
+3. Row counts, live vs. restored copy (users, organizations, devices, audit_logs): `1 | 2 | 4 | 1080` and `1 | 2 | 4 | 1080` — identical.
+4. `dropdb` of the scratch database and removal of the dump file.
+
+Result: a full logical backup of production restores into a separate database with identical contents (recovery point = the moment of the dump). **Still open:** a scheduled, monitored backup written off-host (encrypted) and a restore from that off-host copy; this drill kept the dump inside the container and deleted it.
