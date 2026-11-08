@@ -3,7 +3,8 @@
 # Usage: curl -fsSL https://wecommander.app/install/center.sh | sh
 #        curl -fsSL https://wecommander.app/install/center.sh | sh -s -- --dry-run
 # Installs for the current user only (no administrator password): downloads
-# the newest macOS preview release's WECOMMANDER-Center-macos.zip from GitHub,
+# the newest WECOMMANDER-Center-macos.zip from GitHub (fixed tag
+# macos-center-latest, else the newest macos-preview-N release),
 # verifies it against that release's SHA256SUMS.txt, puts "WECOMMANDER
 # Center.app" in ~/Applications (replacing an earlier copy) and opens it. The
 # app then signs in through the browser and starts at login.
@@ -50,36 +51,49 @@ download() {
     -H "User-Agent: WECOMMANDER-Center-Installer" "$1" -o "$2"
 }
 
-echo "Looking up the newest WECOMMANDER Center release on GitHub..."
-: > "$tmp/releases.json"
-page=1
-while [ "$page" -le 5 ]; do
-  if ! fetch "https://api.github.com/repos/$REPO/releases?per_page=30&page=$page" "$tmp/page.json"; then
-    echo "Could not reach the GitHub releases API (page $page). Try again in a minute." >&2
-    exit 1
-  fi
-  cat "$tmp/page.json" >> "$tmp/releases.json"
-  grep -q "/macos-preview-[0-9]*/$ASSET\"" "$tmp/page.json" && break
-  page=$((page + 1))
-done
-
-# Newest macos-preview-N release (highest N, published by macos-distribution.yml)
-# that has both the app and the checksums. Only URLs under this repository's release downloads are used.
 prefix="https://github.com/$REPO/releases/download/"
-tag=""
-for candidate in $(grep -o "\"browser_download_url\": *\"${prefix}macos-preview-[0-9]*/$ASSET\"" "$tmp/releases.json" \
-    | sed -E 's#.*/download/(macos-preview-[0-9]+)/.*#\1#' | sort -t- -k3,3nr -u); do
-  if grep -q "\"browser_download_url\": *\"${prefix}${candidate}/SHA256SUMS.txt\"" "$tmp/releases.json"; then
-    tag="$candidate"
-    break
-  fi
-done
-if [ -z "$tag" ]; then
-  echo "No preview release with the macOS Management Center yet. Check the latest successful GitHub CI and Releases." >&2
-  exit 1
-fi
+
+# Fast path: macos-distribution.yml keeps the newest app under the fixed tag
+# macos-center-latest, so no GitHub API call is needed (the API can time out).
+tag="macos-center-latest"
 app_url="${prefix}${tag}/${ASSET}"
 sums_url="${prefix}${tag}/SHA256SUMS.txt"
+echo "Checking the newest WECOMMANDER Center download..."
+if ! download "$sums_url" "$tmp/SHA256SUMS.txt" 2>/dev/null; then
+  tag=""
+fi
+
+if [ -z "$tag" ]; then
+  echo "Looking up the newest WECOMMANDER Center release on GitHub..."
+  : > "$tmp/releases.json"
+  page=1
+  while [ "$page" -le 5 ]; do
+    if ! fetch "https://api.github.com/repos/$REPO/releases?per_page=30&page=$page" "$tmp/page.json"; then
+      echo "Could not reach the GitHub releases API (page $page). Try again in a minute." >&2
+      exit 1
+    fi
+    cat "$tmp/page.json" >> "$tmp/releases.json"
+    grep -q "/macos-preview-[0-9]*/$ASSET\"" "$tmp/page.json" && break
+    page=$((page + 1))
+  done
+
+  # Newest macos-preview-N release (highest N, published by macos-distribution.yml)
+  # that has both the app and the checksums. Only URLs under this repository's release downloads are used.
+  tag=""
+  for candidate in $(grep -o "\"browser_download_url\": *\"${prefix}macos-preview-[0-9]*/$ASSET\"" "$tmp/releases.json" \
+      | sed -E 's#.*/download/(macos-preview-[0-9]+)/.*#\1#' | sort -t- -k3,3nr -u); do
+    if grep -q "\"browser_download_url\": *\"${prefix}${candidate}/SHA256SUMS.txt\"" "$tmp/releases.json"; then
+      tag="$candidate"
+      break
+    fi
+  done
+  if [ -z "$tag" ]; then
+    echo "No preview release with the macOS Management Center yet. Check the latest successful GitHub CI and Releases." >&2
+    exit 1
+  fi
+  app_url="${prefix}${tag}/${ASSET}"
+  sums_url="${prefix}${tag}/SHA256SUMS.txt"
+fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "WECOMMANDER Center dry run: would install $tag from $app_url"
@@ -88,7 +102,7 @@ fi
 
 echo "Downloading WECOMMANDER Center ($tag)..."
 download "$app_url" "$tmp/$ASSET"
-download "$sums_url" "$tmp/SHA256SUMS.txt"
+[ -s "$tmp/SHA256SUMS.txt" ] || download "$sums_url" "$tmp/SHA256SUMS.txt"
 echo "Verifying the SHA-256 checksum..."
 expected="$(awk -v f="$ASSET" '$2 == f || $2 == "*"f { print $1 }' "$tmp/SHA256SUMS.txt" | head -n 1)"
 actual="$(shasum -a 256 "$tmp/$ASSET" | awk '{print $1}')"
