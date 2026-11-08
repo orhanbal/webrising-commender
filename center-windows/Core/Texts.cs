@@ -41,6 +41,26 @@ public static class Texts
         return $"{place} {verb}";
     }
 
+    public const string AgentNotInstalled =
+        "Bu bilgisayarda WECOMMANDER ajanı kurulu değil. Kurmak için wecommander.app panelindeki Cihazlar sayfasındaki Windows komutunu kullan.";
+
+    /// <summary>One line for the agent card and the tray menu.</summary>
+    public static string AgentStateLabel(AgentStatus? status) => status switch
+    {
+        null => "Ajan durumu okunuyor…",
+        { State: AgentRunState.Running } => "Ajan çalışıyor",
+        { State: AgentRunState.NotInstalled } => "Ajan kurulu değil",
+        { Enabled: false } => "Ajan kapalı",
+        _ => "Ajan durdu",
+    };
+
+    public const string AgentRestartedText = "Bu bilgisayardaki ajan durmuştu; yeniden başlatıldı.";
+    public const string AgentGaveUpText =
+        "Bu bilgisayardaki ajan durdu ve yeniden başlatılamadı. Yapay zekâ bu bilgisayara erişemez. Paneli açıp \"Ajan çalışsın\"ı yeniden dene.";
+    public const string AgentServiceStoppedText =
+        "Bu bilgisayardaki ajan (Windows hizmeti) durdu. Başlatmak için paneldeki \"Ajan çalışsın\"ı aç; Windows yönetici onayı isteyecek.";
+    public const string AgentOffWarning = "Ajan kapalıyken yapay zekâ bu bilgisayara erişemez.";
+
     public const string NotificationIntroTitle = "WECOMMANDER bildirimleri hazır";
     public const string NotificationIntroText =
         "Onay istekleri burada, sağ altta görünecek. Windows izin sorarsa \"İzin ver\"e bas.";

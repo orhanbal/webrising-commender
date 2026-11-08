@@ -44,6 +44,23 @@ public enum Texts {
         return "\(place) \(verb)"
     }
 
+    public static let agentNotInstalled =
+        "Bu Mac'te WECOMMANDER ajanı kurulu değil. Kurmak için wecommander.app panelindeki Cihazlar sayfasındaki macOS komutunu kullan."
+    public static let agentRestarted = "Bu Mac'teki ajan durmuştu; yeniden başlatıldı."
+    public static let agentGaveUp =
+        "Bu Mac'teki ajan durdu ve yeniden başlatılamadı. Yapay zekâ bu Mac'e erişemez. Menü çubuğundaki simgeden \"Ajan çalışsın\"ı yeniden dene."
+    public static let agentOffWarning = "Ajan kapalıyken yapay zekâ bu Mac'e erişemez."
+
+    /// One line for the agent card and the menu.
+    public static func agentStateLabel(_ status: AgentStatus?) -> String {
+        guard let status else { return "Ajan durumu okunuyor…" }
+        switch status.state {
+        case .running: return "Ajan çalışıyor"
+        case .notInstalled: return "Ajan kurulu değil"
+        case .stopped: return status.enabled ? "Ajan durdu" : "Ajan kapalı"
+        }
+    }
+
     public static let notificationIntroTitle = "WECOMMANDER bildirimleri hazır"
     public static let notificationIntroText =
         "Onay istekleri sağ üstte bildirim olarak görünecek. macOS izin sorarsa \"İzin Ver\"e bas."

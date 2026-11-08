@@ -24,6 +24,13 @@ final class AppModel: ObservableObject {
     @Published private(set) var notificationState = "authorized"
     @Published private(set) var busy = false
     @Published var now = Date()
+    /// The WECOMMANDER agent on this Mac (nil until first read).
+    @Published private(set) var agent: AgentStatus?
+    @Published private(set) var agentBusy = false
+
+    private let agentControl = AgentControl(uid: getuid(), home: NSHomeDirectory(), runner: ProcessRunner())
+    private var watchdog = AgentWatchdog()
+    private var lastAgentCheck = Date.distantPast
 
     let notifier = Notifier()
     var onChange: (() -> Void)?
@@ -79,6 +86,7 @@ final class AppModel: ObservableObject {
     private func tick() async {
         now = Date()
         publish()
+        if Date().timeIntervalSince(lastAgentCheck) >= 10 { await checkAgent() }
         guard !syncing else { return }
         syncing = true
         defer { syncing = false }
@@ -292,6 +300,57 @@ final class AppModel: ObservableObject {
         guard let token else { return }
         try await gateway.setAutonomy(token: token, enable: false, minutes: nil, deviceIds: nil, password: nil)
         requestSync()
+    }
+
+    // MARK: the agent on this Mac
+
+    /// Reads the agent's state and, while "Ajan çalışsın" is on, starts it
+    /// again when it stopped; says so in a notification.
+    private func checkAgent() async {
+        guard !agentBusy else { return }
+        lastAgentCheck = Date()
+        let status = await agentControl.status()
+        let changed = status != agent
+        agent = status
+        switch watchdog.next(keepRunning: settings.agentKeepRunning && status.enabled, status: status, now: Date()) {
+        case .start:
+            do {
+                try await agentControl.setEnabled(true)
+                agent = await agentControl.status()
+                if agent?.running == true { notifier.showPlain("WECOMMANDER", Texts.agentRestarted) }
+            } catch {}
+            publish()
+        case .giveUp:
+            notifier.showPlain("WECOMMANDER", Texts.agentGaveUp)
+        case .none:
+            if changed { publish() }
+        }
+    }
+
+    /// "Ajan çalışsın" in the panel and the menu.
+    func setAgentEnabled(_ on: Bool) async {
+        guard !agentBusy else { return }
+        agentBusy = true
+        publish()
+        defer {
+            agentBusy = false
+            lastAgentCheck = Date()
+            publish()
+        }
+        do {
+            try await agentControl.setEnabled(on)
+            settings.agentKeepRunning = on
+            saveSettings()
+            watchdog.reset()
+            for _ in 0..<10 {
+                agent = await agentControl.status()
+                if agent?.running == on { break }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     // MARK: settings and helpers

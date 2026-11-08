@@ -5,6 +5,7 @@
 // the one typed to start autonomous mode, which goes straight to the gateway.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod agent;
 mod api;
 mod store;
 
@@ -60,6 +61,9 @@ struct Inner {
     /// replaced when the request is decided elsewhere.
     notifications: HashMap<String, u32>,
     link: Option<Link>,
+    /// The agent on this computer (Linux: systemd service).
+    agent: Option<agent::AgentView>,
+    agent_busy: bool,
 }
 
 struct Menus {
@@ -67,6 +71,7 @@ struct Menus {
     autonomy: MenuItem<Wry>,
     stop_autonomy: MenuItem<Wry>,
     notify: CheckMenuItem<Wry>,
+    agent: CheckMenuItem<Wry>,
     account: MenuItem<Wry>,
 }
 
@@ -105,6 +110,8 @@ struct Snapshot {
     settings: Settings,
     autostart: bool,
     version: &'static str,
+    agent: Option<agent::AgentView>,
+    agent_busy: bool,
 }
 
 fn snapshot(app: &AppHandle) -> Snapshot {
@@ -130,6 +137,8 @@ fn snapshot(app: &AppHandle) -> Snapshot {
         settings: inner.settings.clone(),
         autostart: app.autolaunch().is_enabled().unwrap_or(false),
         version: VERSION,
+        agent: inner.agent.clone(),
+        agent_busy: inner.agent_busy,
     }
 }
 
@@ -208,7 +217,7 @@ fn tray_image(pending: bool, autonomy: bool) -> Option<Image<'static>> {
 
 fn update_tray(app: &AppHandle) {
     let state = app.state::<AppState>();
-    let (signed_in, pending, autonomy, notifications, email) = {
+    let (signed_in, pending, autonomy, notifications, email, agent_view, agent_busy) = {
         let inner = state.inner.lock().unwrap();
         (
             inner.token.is_some(),
@@ -216,6 +225,8 @@ fn update_tray(app: &AppHandle) {
             inner.autonomy.len(),
             inner.settings.notifications,
             inner.me.as_ref().and_then(|m| m.email.clone()),
+            inner.agent.clone(),
+            inner.agent_busy,
         )
     };
     let tooltip = if !signed_in {
@@ -247,6 +258,19 @@ fn update_tray(app: &AppHandle) {
         });
         let _ = menus.stop_autonomy.set_enabled(signed_in && autonomy > 0);
         let _ = menus.notify.set_checked(notifications);
+        let _ = menus.agent.set_text(match &agent_view {
+            Some(a) => format!("Ajan çalışsın — {}", a.label.to_lowercase()),
+            None => "Ajan çalışsın".to_owned(),
+        });
+        let _ = menus
+            .agent
+            .set_checked(agent_view.as_ref().is_some_and(|a| a.running()));
+        let _ = menus.agent.set_enabled(
+            !agent_busy
+                && agent_view
+                    .as_ref()
+                    .is_some_and(|a| a.state != "notInstalled"),
+        );
         let _ = menus.account.set_text(match (signed_in, email) {
             (false, _) => "Oturum aç…".to_owned(),
             (true, Some(email)) => format!("Oturumu kapat ({email})"),
@@ -725,8 +749,74 @@ async fn poll_link(app: &AppHandle) {
     }
 }
 
+/// Reads the agent's state; a stop of an agent that should run is reported
+/// once (systemd restarts crashes itself, and starting it needs a password).
+async fn check_agent(app: &AppHandle) {
+    if app.state::<AppState>().inner.lock().unwrap().agent_busy {
+        return;
+    }
+    let Ok(Some(view)) = tauri::async_runtime::spawn_blocking(agent::status).await else {
+        return;
+    };
+    let (changed, stopped_now, notifications) = {
+        let state = app.state::<AppState>();
+        let mut inner = state.inner.lock().unwrap();
+        let before = inner.agent.replace(view.clone());
+        let stopped_now =
+            before.as_ref().is_some_and(|b| b.running()) && !view.running() && view.enabled;
+        (
+            before.as_ref() != Some(&view),
+            stopped_now,
+            inner.settings.notifications,
+        )
+    };
+    if stopped_now && notifications {
+        notify(app, "WECOMMANDER", agent::STOPPED_NOTICE);
+    }
+    if changed {
+        publish(app);
+    }
+}
+
+/// "Ajan çalışsın" in the panel and the tray menu.
+#[tauri::command]
+async fn set_agent(app: AppHandle, enabled: bool) -> Result<Snapshot, String> {
+    {
+        let state = app.state::<AppState>();
+        let mut inner = state.inner.lock().unwrap();
+        if inner.agent_busy {
+            return Ok(snapshot(&app));
+        }
+        inner.agent_busy = true;
+    }
+    publish(&app);
+    let result = tauri::async_runtime::spawn_blocking(move || agent::set_enabled(enabled))
+        .await
+        .map_err(|e| e.to_string())
+        .and_then(|r| r);
+    let view = tauri::async_runtime::spawn_blocking(agent::status)
+        .await
+        .ok()
+        .flatten();
+    {
+        let state = app.state::<AppState>();
+        let mut inner = state.inner.lock().unwrap();
+        inner.agent_busy = false;
+        if view.is_some() {
+            inner.agent = view;
+        }
+        if let Err(e) = &result {
+            inner.error = Some(e.clone());
+        }
+    }
+    publish(&app);
+    result?;
+    Ok(snapshot(&app))
+}
+
 async fn background(app: AppHandle) {
     let mut last = Instant::now() - SYNC_EVERY;
+    let mut last_agent = Instant::now() - Duration::from_secs(60);
     loop {
         let state = app.state::<AppState>();
         tokio::select! {
@@ -742,6 +832,10 @@ async fn background(app: AppHandle) {
         } else if signed_in && last.elapsed() >= SYNC_EVERY {
             last = Instant::now();
             sync(&app).await;
+        }
+        if last_agent.elapsed() >= Duration::from_secs(10) {
+            last_agent = Instant::now();
+            check_agent(&app).await;
         }
     }
 }
@@ -1058,6 +1152,8 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         notifications,
         None::<&str>,
     )?;
+    let agent_item =
+        CheckMenuItem::with_id(app, "agent", "Ajan çalışsın", false, false, None::<&str>)?;
     let account = MenuItem::with_id(app, "account", "Oturum aç…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Çıkış", true, None::<&str>)?;
     let menu = Menu::with_items(
@@ -1071,6 +1167,8 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             &PredefinedMenuItem::separator(app)?,
             &dashboard,
             &notify_item,
+            &PredefinedMenuItem::separator(app)?,
+            &agent_item,
             &PredefinedMenuItem::separator(app)?,
             &account,
             &quit,
@@ -1133,6 +1231,25 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                 drop(inner);
                 publish(app);
             }
+            "agent" => {
+                let running = app
+                    .state::<AppState>()
+                    .inner
+                    .lock()
+                    .unwrap()
+                    .agent
+                    .as_ref()
+                    .is_some_and(|a| a.running());
+                if running {
+                    // Switching off is confirmed in the panel.
+                    show_main(app);
+                } else {
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = set_agent(app, true).await;
+                    });
+                }
+            }
             "quit" => app.exit(0),
             _ => {}
         })
@@ -1157,6 +1274,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         autonomy,
         stop_autonomy,
         notify: notify_item,
+        agent: agent_item,
         account,
     });
     Ok(())
@@ -1235,6 +1353,7 @@ fn main() {
             open_dashboard,
             set_settings,
             set_autostart,
+            set_agent,
             refresh,
             hide_panel,
             default_name

@@ -80,6 +80,16 @@
   </div>
 
   <div id="tab-devices" class="tab" hidden>
+    <div id="agentCard" class="card" hidden>
+      <strong>Bu bilgisayardaki ajan</strong>
+      <label class="switch"><input type="checkbox" id="agentSwitch"> <span id="agentState">Ajan durumu okunuyor…</span></label>
+      <p id="agentHelp" class="small muted"></p>
+      <div id="agentConfirm" class="confirm" hidden>
+        <p class="small">Ajan kapalıyken yapay zekâ bu bilgisayara erişemez. Yeniden açana kadar bilgisayar açılışında da başlamaz.</p>
+        <button id="agentOffYes" class="warnbtn">Ajanı kapat</button>
+        <button id="agentOffNo">Vazgeç</button>
+      </div>
+    </div>
     <ul id="deviceList" class="list"></ul>
     <p id="devicesEmpty" class="empty" hidden>Henüz cihaz yok.</p>
   </div>

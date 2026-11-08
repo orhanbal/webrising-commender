@@ -47,6 +47,11 @@
                     <Button Content="Bildirimlere izin ver" Click="AllowNotifications_Click" />
                 </InfoBar.ActionButton>
             </InfoBar>
+            <InfoBar x:Name="AgentBar" Severity="Error" IsClosable="False" Title="Bu bilgisayardaki ajan çalışmıyor">
+                <InfoBar.ActionButton>
+                    <Button x:Name="AgentBarButton" Content="Ajanı başlat" Click="StartAgent_Click" />
+                </InfoBar.ActionButton>
+            </InfoBar>
             <InfoBar x:Name="ErrorBar" Severity="Error" IsClosable="True" />
         </StackPanel>
 
@@ -120,7 +125,24 @@
                                     HorizontalAlignment="Stretch" IsEnabled="False" Click="StartAutonomy_Click" />
                         </StackPanel>
 
-                        <StackPanel x:Name="DevicesPanel" Spacing="6" Visibility="Collapsed" />
+                        <StackPanel x:Name="DevicesTabPanel" Spacing="12" Visibility="Collapsed">
+                            <Border Padding="12" CornerRadius="8" BorderThickness="1"
+                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Bu bilgisayardaki ajan" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Ellipse x:Name="AgentDot" Width="10" Height="10" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="AgentStateText" VerticalAlignment="Center" />
+                                        <ProgressRing x:Name="AgentProgress" Width="14" Height="14" IsActive="False" />
+                                    </StackPanel>
+                                    <ToggleSwitch x:Name="AgentSwitch" Header="Ajan çalışsın" OnContent="Açık" OffContent="Kapalı" Toggled="AgentSwitch_Toggled" />
+                                    <TextBlock x:Name="AgentHelpText" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                </StackPanel>
+                            </Border>
+                            <StackPanel x:Name="DevicesPanel" Spacing="6" />
+                        </StackPanel>
 
                         <StackPanel x:Name="SettingsPanel" Spacing="4" Visibility="Collapsed">
                             <ToggleSwitch x:Name="NotifySwitch" Header="Yeni onay isteğinde Windows bildirimi (Onayla / Reddet)" Toggled="Settings_Toggled" />
