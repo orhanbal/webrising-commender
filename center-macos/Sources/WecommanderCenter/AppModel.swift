@@ -31,6 +31,9 @@ final class AppModel: ObservableObject {
 
     private let store = SettingsStore(directory: SettingsStore.defaultDirectory)
     private var seen = Set<String>()
+    /// Requests this app approved or denied, so they are not announced as
+    /// "decided elsewhere" when they leave the pending list.
+    private var decidedHere = Set<String>()
     private var syncing = false
     private var timer: Timer?
     private var linkStartedName = ""
@@ -96,15 +99,20 @@ final class AppModel: ObservableObject {
             async let d = gateway.devices(token: token)
             async let a = gateway.autonomy(token: token)
             let (newPending, newDevices, newAutonomy) = try await (p, d, a)
-            let previous = Set(pending.map(\.id))
+            let previousItems = Dictionary(pending.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            let previous = Set(previousItems.keys)
             pending = newPending.sorted { $0.createdAt < $1.createdAt }
             devices = newDevices
             autonomy = newAutonomy
             error = nil
             lastSync = Date()
 
-            // Decided elsewhere (panel, dashboard, another center) or expired.
-            notifier.remove(Array(previous.subtracting(newPending.map(\.id))))
+            // Decided elsewhere (panel, dashboard, another center) or expired:
+            // the request notification goes, and a short one says where it
+            // was decided ("macOS'tan onaylandı").
+            let vanished = previous.subtracting(newPending.map(\.id))
+            notifier.remove(Array(vanished))
+            announceDecidedElsewhere(vanished.compactMap { previousItems[$0] }, token: token)
 
             let fresh = newPending.filter { seen.insert($0.id).inserted }
             if !fresh.isEmpty {
@@ -128,6 +136,21 @@ final class AppModel: ObservableObject {
             self.error = error.localizedDescription
         }
         publish()
+    }
+
+    private func announceDecidedElsewhere(_ items: [ApprovalRequest], token: String) {
+        let others = items.filter { decidedHere.remove($0.id) == nil }
+        guard settings.notifications, !others.isEmpty else { return }
+        let gateway = self.gateway
+        for item in others.prefix(5) {
+            let device = deviceName(item.deviceId)
+            let what = item.summary.isEmpty ? Texts.kindLabel(item.actionKind) : item.summary
+            Task { [weak self] in
+                guard let outcome = try? await gateway.outcome(token: token, id: item.id),
+                      let text = Texts.decidedElsewhere(outcome) else { return }
+                self?.notifier.showPlain("\(text) · \(device)", what)
+            }
+        }
     }
 
     private func showIntroOnce() {
@@ -225,6 +248,7 @@ final class AppModel: ObservableObject {
         devices = []
         autonomy = []
         seen.removeAll()
+        decidedHere.removeAll()
         error = message
         notifier.removeAllApprovals()
         publish()
@@ -234,10 +258,12 @@ final class AppModel: ObservableObject {
 
     func decide(id: String, approve: Bool) async throws {
         guard let token else { throw GatewayError(.unauthorized, 401, "", "Önce oturum aç.") }
+        decidedHere.insert(id)
         do {
             try await gateway.decide(token: token, id: id, approve: approve)
             notifier.remove([id])
         } catch {
+            decidedHere.remove(id)
             requestSync()
             throw error
         }

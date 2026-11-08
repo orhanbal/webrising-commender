@@ -44,6 +44,24 @@ public sealed class CenterMe
     [JsonPropertyName("organizationName")] public string? OrganizationName { get; set; }
 }
 
+/// <summary>Where a request was decided: a Management Center (its name and
+/// kind of computer) or the web panel. <c>Self</c> is this center.</summary>
+public sealed class DecidedVia
+{
+    [JsonPropertyName("kind")] public string Kind { get; set; } = "";
+    [JsonPropertyName("name")] public string? Name { get; set; }
+    [JsonPropertyName("platform")] public string? Platform { get; set; }
+    [JsonPropertyName("self")] public bool Self { get; set; }
+}
+
+/// <summary>The outcome of one approval request (GET /api/approval-requests/{id}).</summary>
+public sealed class ApprovalOutcome
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = "";
+    [JsonPropertyName("status")] public string Status { get; set; } = "";
+    [JsonPropertyName("decided_via")] public DecidedVia? DecidedVia { get; set; }
+}
+
 public sealed class LinkStart
 {
     [JsonPropertyName("requestId")] public string RequestId { get; set; } = "";

@@ -218,4 +218,33 @@ public class CoreTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
             throw new HttpRequestException("down");
     }
+
+    [Fact]
+    public async Task OutcomeSaysWhereARequestWasDecided()
+    {
+        var (client, handler) = Client((req, body) => req.RequestUri!.AbsolutePath switch
+        {
+            "/api/approval-requests/99413e59-492a-4b60-b53a-9c36d5433112" => (HttpStatusCode.OK,
+                """{"item":{"id":"99413e59-492a-4b60-b53a-9c36d5433112","status":"consumed","decided_via":{"kind":"center","name":"Mac","platform":"macos","self":false}}}"""),
+            "/api/center-link/start" => (HttpStatusCode.OK, """{"requestId":"r","requestSecret":"s","approveUrl":"u","expiresInSeconds":600}"""),
+            "/api/center/me" => (HttpStatusCode.OK, """{"centerId":"c","name":"Ofis-PC","role":"owner"}"""),
+            _ => (HttpStatusCode.NotFound, "{}"),
+        });
+        var outcome = await client.OutcomeAsync("t", "99413E59-492A-4B60-B53A-9C36D5433112");
+        Assert.Equal("macOS'tan onaylandı", Texts.DecidedElsewhere(outcome));
+        await Assert.ThrowsAsync<GatewayException>(() => client.OutcomeAsync("t", "../x"));
+        await client.LinkStartAsync("pc");
+        using (var doc = JsonDocument.Parse(handler.Calls.Last().Body!))
+            Assert.Equal("windows", doc.RootElement.GetProperty("platform").GetString());
+        await client.MeAsync("t");
+        Assert.EndsWith("/api/center/me?platform=windows", handler.Calls.Last().Url);
+
+        static string? Text(string status, DecidedVia? via) =>
+            Texts.DecidedElsewhere(new ApprovalOutcome { Id = "x", Status = status, DecidedVia = via });
+        Assert.Equal("Windows'tan reddedildi", Text("denied", new DecidedVia { Kind = "center", Platform = "windows" }));
+        Assert.Equal("Web panelinden onaylandı", Text("approved", new DecidedVia { Kind = "panel" }));
+        Assert.Equal("Ev üzerinden onaylandı", Text("approved", new DecidedVia { Kind = "center", Name = "Ev" }));
+        Assert.Null(Text("approved", new DecidedVia { Kind = "center", Platform = "macos", Self = true }));
+        Assert.Null(Text("expired", null));
+    }
 }

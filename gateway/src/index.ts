@@ -1658,8 +1658,9 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const body = z.object({
         name: z.string().trim().min(1).max(80).regex(/^[^\u0000-\u001f<>]+$/),
+        platform: z.enum(["macos", "windows", "linux"]).optional(),
       }).parse(await readJson(req));
-      const created = await createCenterLink(body.name);
+      const created = await createCenterLink(body.name, body.platform ?? null);
       return void json(res, 201, {
         ...created,
         approveUrl: `${publicBaseUrl}/connect-center?requestId=${created.requestId}`,
@@ -3677,6 +3678,14 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     }
     if (req.method === "GET" && url.pathname === "/api/center/me") {
       if (principal!.authKind !== "center") return void json(res, 403, { error: "center_token_required" });
+      // Centers linked before platforms were recorded report theirs here.
+      const platform = z.enum(["macos", "windows", "linux"]).safeParse(url.searchParams.get("platform"));
+      if (platform.success) {
+        await db.query(
+          "update management_centers set platform=$2 where id=$1 and platform is distinct from $2",
+          [principal!.centerId, platform.data],
+        );
+      }
       const org = await db.query<{ name: string }>("select name from organizations where id=$1", [principal!.organizationId]);
       return void json(res, 200, {
         centerId: principal!.centerId, name: principal!.centerName, email: principal!.email,
@@ -4006,6 +4015,47 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       return void json(res, 200, { items: result.rows });
     }
 
+    // One request's outcome, so a Management Center can tell its user that a
+    // request it showed was decided elsewhere (another center or the panel).
+    const approvalItemMatch = url.pathname.match(/^\/api\/approval-requests\/([0-9a-f-]{36})$/i);
+    if (req.method === "GET" && approvalItemMatch) {
+      if (!requireRole(principal!, "admin", res)) return;
+      const found = await db.query<{
+        id: string; device_id: string; action_kind: string; status: string; expires_at: Date;
+        decided_at: Date | null; decided_by: string | null; decided_center_id: string | null;
+        center_name: string | null; center_platform: string | null;
+      }>(
+        `select r.id,r.device_id,r.action_kind,r.status,r.expires_at,r.decided_at,r.decided_by,
+                r.decided_center_id,c.name as center_name,c.platform as center_platform
+           from approval_requests r
+           left join management_centers c on c.id=r.decided_center_id
+          where r.id=$1 and r.organization_id=$2`,
+        [approvalItemMatch[1], principal!.organizationId],
+      );
+      const row = found.rows[0];
+      if (!row) return void json(res, 404, { error: "approval_request_not_found" });
+      const expired = row.status === "expired" ||
+        (row.status === "pending" && new Date(row.expires_at).getTime() <= Date.now());
+      const decidedVia = !row.decided_by ? null : row.decided_center_id
+        ? {
+            kind: "center",
+            name: row.center_name,
+            platform: row.center_platform,
+            self: principal!.authKind === "center" && principal!.centerId === row.decided_center_id,
+          }
+        : { kind: "panel", name: null, platform: null, self: false };
+      return void json(res, 200, {
+        item: {
+          id: row.id,
+          device_id: row.device_id,
+          action_kind: row.action_kind,
+          status: expired ? "expired" : row.status,
+          decided_at: row.decided_at,
+          decided_via: decidedVia,
+        },
+      });
+    }
+
     const approvalDecisionMatch = url.pathname.match(
       /^\/api\/approval-requests\/([0-9a-f-]{36})\/(approve|deny)$/i,
     );
@@ -4020,6 +4070,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
             set status=$3,
                 decided_by=$4,
                 decided_at=now(),
+                decided_center_id=$5,
                 action=case
                   when $3='denied'
                     then jsonb_build_object('kind',action_kind,'redacted',true)
@@ -4031,7 +4082,8 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
             and expires_at>now()
           returning id,device_id,requested_by,action_kind,action,status,expires_at,
                     decided_by,decided_at,created_at`,
-        [requestId, principal!.organizationId, nextStatus, principal!.actor],
+        [requestId, principal!.organizationId, nextStatus, principal!.actor,
+         principal!.authKind === "center" ? principal!.centerId ?? null : null],
       );
 
       const item = updated.rows[0];

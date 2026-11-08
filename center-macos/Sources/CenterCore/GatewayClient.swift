@@ -100,7 +100,8 @@ public struct GatewayClient: Sendable {
     }
 
     public func linkStart(name: String) async throws -> LinkStart {
-        try decode(LinkStart.self, try await send("POST", "/api/center-link/start", token: nil, body: ["name": name]))
+        try decode(LinkStart.self, try await send("POST", "/api/center-link/start", token: nil,
+                                                    body: ["name": name, "platform": "macos"]))
     }
 
     public func linkPoll(id: String, secret: String) async throws -> LinkPoll {
@@ -109,7 +110,19 @@ public struct GatewayClient: Sendable {
     }
 
     public func me(token: String) async throws -> CenterMe {
-        try decode(CenterMe.self, try await send("GET", "/api/center/me", token: token, body: nil))
+        try decode(CenterMe.self, try await send("GET", "/api/center/me?platform=macos", token: token, body: nil))
+    }
+
+    /// Where and how a request ended, once it left the pending list.
+    public func outcome(token: String, id: String) async throws -> ApprovalOutcome {
+        guard let uuid = UUID(uuidString: id) else {
+            throw GatewayError(.http, 400, "invalid_request", Texts.forErrorCode("invalid_request", status: 400))
+        }
+        let json = try await send("GET", "/api/approval-requests/\(uuid.uuidString.lowercased())", token: token, body: nil)
+        guard let item = (json as? [String: Any])?["item"] else {
+            throw GatewayError(.network, 0, "bad_response", "Sunucudan beklenmeyen yanıt.")
+        }
+        return try decode(ApprovalOutcome.self, item)
     }
 
     public func pending(token: String) async throws -> [ApprovalRequest] {

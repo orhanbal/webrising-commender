@@ -10,13 +10,15 @@ import { randomToken, sha256 } from "./security.js";
 
 const centerLinkTtlMinutes = 10;
 
-export async function createCenterLink(name: string) {
+export type CenterPlatform = "macos" | "windows" | "linux";
+
+export async function createCenterLink(name: string, platform: CenterPlatform | null = null) {
   const secret = randomToken(32);
   const id = crypto.randomUUID();
   await db.query(
-    `insert into center_link_requests(id,secret_hash,name,expires_at)
-       values($1,$2,$3,now()+interval '10 minutes')`,
-    [id, sha256(secret), name],
+    `insert into center_link_requests(id,secret_hash,name,platform,expires_at)
+       values($1,$2,$3,$4,now()+interval '10 minutes')`,
+    [id, sha256(secret), name, platform],
   );
   return { requestId: id, requestSecret: secret, expiresInSeconds: centerLinkTtlMinutes * 60 };
 }
@@ -26,10 +28,10 @@ export async function getCenterLinkStatus(id: string, secret: string) {
   try {
     await client.query("begin");
     const result = await client.query<{
-      name: string; approved_at: Date | null; approved_by: string | null; consumed_at: Date | null;
-      expires_at: Date; organization_id: string | null;
+      name: string; platform: string | null; approved_at: Date | null; approved_by: string | null;
+      consumed_at: Date | null; expires_at: Date; organization_id: string | null;
     }>(
-      `select name,approved_at,approved_by,consumed_at,expires_at,organization_id
+      `select name,platform,approved_at,approved_by,consumed_at,expires_at,organization_id
          from center_link_requests where id=$1 and secret_hash=$2 for update`,
       [id, sha256(secret)],
     );
@@ -48,9 +50,9 @@ export async function getCenterLinkStatus(id: string, secret: string) {
     }
     const token = newCenterToken();
     const center = await client.query<{ id: string }>(
-      `insert into management_centers(organization_id,user_id,name,token_hash)
-       values($1,$2,$3,$4) returning id`,
-      [item.organization_id, item.approved_by, item.name, sha256(token)],
+      `insert into management_centers(organization_id,user_id,name,platform,token_hash)
+       values($1,$2,$3,$4,$5) returning id`,
+      [item.organization_id, item.approved_by, item.name, item.platform, sha256(token)],
     );
     await client.query("update center_link_requests set consumed_at=now() where id=$1", [id]);
     await client.query(
@@ -108,6 +110,7 @@ export async function centerLinkName(id: string) {
 export function centerMayAccess(method: string, pathname: string) {
   if (method === "GET" && (pathname === "/api/center/me" || pathname === "/api/devices" ||
       pathname === "/api/approval-requests" || pathname === "/api/trust/autonomy")) return true;
+  if (method === "GET" && /^\/api\/approval-requests\/[0-9a-f-]{36}$/i.test(pathname)) return true;
   if (method === "POST" && (pathname === "/api/trust/autonomy" || pathname === "/api/center/disconnect")) return true;
   if (method === "POST" && /^\/api\/approval-requests\/[0-9a-f-]{36}\/(approve|deny)$/i.test(pathname)) return true;
   return false;
