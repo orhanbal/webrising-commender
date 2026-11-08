@@ -32,14 +32,36 @@ fi
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-api="https://api.github.com/repos/$REPO/releases?per_page=100"
-if [ -n "${GITHUB_TOKEN:-}" ]; then
-  curl -fsSL -H "Accept: application/vnd.github+json" -H "User-Agent: WECOMMANDER-Center-Installer" \
-    -H "Authorization: Bearer $GITHUB_TOKEN" "$api" -o "$tmp/releases.json"
-else
-  curl -fsSL -H "Accept: application/vnd.github+json" -H "User-Agent: WECOMMANDER-Center-Installer" \
-    "$api" -o "$tmp/releases.json"
-fi
+# Retries ride out short GitHub or CDN hiccups (504/502); each step says what
+# it fetches, so a failure points at the right request.
+fetch() {
+  if [ -n "${GITHUB_TOKEN:-}" ]; then
+    curl -fsSL --retry 4 --retry-delay 2 --retry-all-errors --connect-timeout 15 \
+      -H "Accept: application/vnd.github+json" -H "User-Agent: WECOMMANDER-Center-Installer" \
+      -H "Authorization: Bearer $GITHUB_TOKEN" "$1" -o "$2"
+  else
+    curl -fsSL --retry 4 --retry-delay 2 --retry-all-errors --connect-timeout 15 \
+      -H "Accept: application/vnd.github+json" -H "User-Agent: WECOMMANDER-Center-Installer" "$1" -o "$2"
+  fi
+}
+
+download() {
+  curl -fsSL --retry 4 --retry-delay 2 --retry-all-errors --connect-timeout 15 \
+    -H "User-Agent: WECOMMANDER-Center-Installer" "$1" -o "$2"
+}
+
+echo "Looking up the newest WECOMMANDER Center release on GitHub..."
+: > "$tmp/releases.json"
+page=1
+while [ "$page" -le 5 ]; do
+  if ! fetch "https://api.github.com/repos/$REPO/releases?per_page=30&page=$page" "$tmp/page.json"; then
+    echo "Could not reach the GitHub releases API (page $page). Try again in a minute." >&2
+    exit 1
+  fi
+  cat "$tmp/page.json" >> "$tmp/releases.json"
+  grep -q "/macos-preview-[0-9]*/$ASSET\"" "$tmp/page.json" && break
+  page=$((page + 1))
+done
 
 # Newest macos-preview-N release (highest N, published by macos-distribution.yml)
 # that has both the app and the checksums. Only URLs under this repository's release downloads are used.
@@ -65,8 +87,9 @@ if [ "$DRY_RUN" -eq 1 ]; then
 fi
 
 echo "Downloading WECOMMANDER Center ($tag)..."
-curl -fsSL "$app_url" -o "$tmp/$ASSET"
-curl -fsSL "$sums_url" -o "$tmp/SHA256SUMS.txt"
+download "$app_url" "$tmp/$ASSET"
+download "$sums_url" "$tmp/SHA256SUMS.txt"
+echo "Verifying the SHA-256 checksum..."
 expected="$(awk -v f="$ASSET" '$2 == f || $2 == "*"f { print $1 }' "$tmp/SHA256SUMS.txt" | head -n 1)"
 actual="$(shasum -a 256 "$tmp/$ASSET" | awk '{print $1}')"
 if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
