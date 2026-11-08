@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Approvals (B03, second part): when an approved operation cannot be delivered because the device is offline (or the gateway is overloaded), the approval is no longer used up. The request goes back to approved with its operation, the AI client gets the request id and "retry when the device is online", and the audit log records `approval_restored`. A timeout after sending still counts as used, since the operation may have run.
+
 - Security (B03, first part): the Agent keeps a journal of used approval nonces on disk (`webrising-commender/approval-nonces/` in the local data directory, expired entries dropped at start). An approval runs one operation also on the Agent side: a replayed token is refused ("approval token was already used"), even after an Agent restart. Nonces must be 16–128 URL-safe characters.
 
 - Security (B01): an AI typing into a live terminal (`terminal_input`) now needs human approval for that exact input, like `process_exec`. Before, once a terminal was open, the AI could type any command without approval. The Agent enforces it too, so a request that skips the gateway is refused. Autonomous mode (`full` trust) still allows it without asking. Approval screens (web panel, Management Center for Windows and macOS, e-mail) show the text that would be typed, as one line (⏎ for Enter).

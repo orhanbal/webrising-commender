@@ -1696,6 +1696,33 @@ const expiredItem = await jsonFetch(`/api/approval-requests/${expiringRequestId}
 assert.equal(expiredItem.item.status, "expired");
 assert.equal(expiredItem.item.decided_via, null);
 
+// B03: an approval consumed for a device that is offline never reached it, so
+// it is given back (approved again, with its operation) instead of burnt.
+const offlinePairing = await jsonFetch("/api/pairing", { method: "POST", headers: authHeaders, body: "{}" });
+const offlineDevice = await jsonFetch("/api/agent/enroll", {
+  method: "POST", headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ pairingCode: offlinePairing.pairingCode, name: "offline", hostname: "offline-host", platform: "linux" }),
+});
+const offlineArgs = { device_id: offlineDevice.deviceId, command: "echo kept-approval" };
+const offlinePending = toolText(await rpcAs(operatorHeaders, 60, "tools/call", { name: "process_exec", arguments: offlineArgs }));
+assert.equal(offlinePending.error, "approval_required");
+await jsonFetch(`/api/approval-requests/${offlinePending.approval_request_id}/approve`, {
+  method: "POST", headers: authHeaders, body: "{}",
+});
+const offlineRun = toolText(await rpcAs(operatorHeaders, 61, "tools/call", { name: "process_exec", arguments: offlineArgs }));
+assert.equal(offlineRun.error, "device-offline");
+assert.equal(offlineRun.approval_request_id, offlinePending.approval_request_id);
+const kept = await acceptanceDb.query(
+  "select status,consumed_at,action from approval_requests where id=$1", [offlinePending.approval_request_id],
+);
+assert.equal(kept.rows[0].status, "approved");
+assert.equal(kept.rows[0].consumed_at, null);
+assert.equal(kept.rows[0].action.command, "echo kept-approval");
+const restoredAudit = await acceptanceDb.query(
+  "select 1 from audit_logs where device_id=$1 and outcome='approval_restored'", [offlineDevice.deviceId],
+);
+assert.equal(restoredAudit.rowCount, 1);
+
 const tamperApproval = await jsonFetch("/api/approvals", {
   method: "POST",
   headers: authHeaders,

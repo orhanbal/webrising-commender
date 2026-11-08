@@ -77,3 +77,30 @@ export async function consumeApprovedRequest(
 
   return result.rows[0]?.id ?? null;
 }
+
+/**
+ * An approval consumed for a delivery that never reached the device (offline,
+ * overloaded, cancelled before sending) is given back: the request is
+ * approved again with its original operation, so the AI client's retry runs
+ * it without asking the human twice. Only for errors raised before anything
+ * was sent; a timeout after sending keeps it consumed (it may have run).
+ */
+export const UNDELIVERED_ERRORS = new Set([
+  "device-offline",
+  "gateway-overloaded",
+  "device-request-limit",
+]);
+
+export async function restoreUndeliveredApproval(
+  organizationId: string,
+  requestId: string,
+  action: AgentAction,
+) {
+  const result = await db.query(
+    `update approval_requests
+        set status='approved', consumed_at=null, action=$3::jsonb
+      where id=$1 and organization_id=$2 and status='consumed' and expires_at>now()`,
+    [requestId, organizationId, JSON.stringify(action)],
+  );
+  return (result.rowCount ?? 0) > 0;
+}
