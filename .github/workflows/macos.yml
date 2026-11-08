@@ -211,7 +211,7 @@ jobs:
           # Before the first macOS preview with the Center there is nothing to pick.
           out="$(sh scripts/install-center-macos-online.sh --dry-run 2>&1 || true)"
           echo "$out"
-          echo "$out" | grep -E "would install (macos-center-latest|macos-preview-[0-9]+)|No preview release with the macOS Management Center yet"
+          echo "$out" | grep -E "would install (macos-center-latest|macos-preview-[0-9]+)|No preview release with the Management Center for this system yet"
       - uses: actions/upload-artifact@v4
         with:
           name: WECOMMANDER-Center-macos

@@ -853,6 +853,58 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  center-linux:
+    # Management Center for Linux desktops: the Tauri tray app (tray/) with
+    # freedesktop notifications that carry Onayla / Reddet actions.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Install WebKitGTK and tray libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Format, lint and unit tests
+        working-directory: tray
+        run: |
+          cargo fmt -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+      - name: Build release tray app
+        working-directory: tray
+        env:
+          WECOMMANDER_VERSION: 0.1.${{ github.run_number }}
+        run: cargo build --release --locked
+      - name: Package
+        run: bash scripts/build-center-linux.sh "0.1.${{ github.run_number }}" tray/dist
+      - name: Install and start from the package (headless desktop session)
+        run: |
+          sudo apt-get install -y xvfb dbus-x11
+          sh -n scripts/install-center-macos-online.sh
+          cmp scripts/install-center-macos-online.sh gateway/public/install/center-macos.sh
+          mkdir -p /tmp/center-home && tar -xzf tray/dist/WECOMMANDER-Center-linux-x86_64.tar.gz -C /tmp/center-home
+          test -x /tmp/center-home/wecommander-center/wecommander-center
+          grep -q '^Exec=wecommander-center$' /tmp/center-home/wecommander-center/wecommander-center.desktop
+          # The app must start and keep running under a real X display and
+          # session bus (tray, webview, notification plugin) for a few seconds.
+          export HOME=/tmp/center-home
+          dbus-run-session -- xvfb-run -a sh -c '/tmp/center-home/wecommander-center/wecommander-center --hidden & pid=$!; sleep 8; kill -0 $pid; kill $pid'
+      - name: Center installer dry run on Linux
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          out="$(sh scripts/install-center-macos-online.sh --dry-run 2>&1 || true)"
+          echo "$out"
+          echo "$out" | grep -E "would install (center-linux-latest|ubuntu-preview-[0-9]+)|No preview release with the Management Center for this system yet"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WECOMMANDER-Center-linux-x86_64
+          path: tray/dist/WECOMMANDER-Center-linux-x86_64.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
   center-winui:
     # Management Center for Windows: native WinUI 3 app (center-windows/).
     runs-on: windows-latest

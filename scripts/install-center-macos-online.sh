@@ -1,17 +1,20 @@
 #!/bin/sh
-# WECOMMANDER Management Center installer for macOS 13 or newer.
+# WECOMMANDER Management Center installer for macOS 13 or newer and Linux
+# desktops (x86_64, WebKitGTK 4.1).
 # Usage: curl -fsSL https://wecommander.app/install/center.sh | sh
 #        curl -fsSL https://wecommander.app/install/center.sh | sh -s -- --dry-run
-# Installs for the current user only (no administrator password): downloads
-# the newest WECOMMANDER-Center-macos.zip from GitHub (fixed tag
-# macos-center-latest, else the newest macos-preview-N release),
-# verifies it against that release's SHA256SUMS.txt, puts "WECOMMANDER
-# Center.app" in ~/Applications (replacing an earlier copy) and opens it. The
-# app then signs in through the browser and starts at login.
+# Installs for the current user only (no administrator password).
+#   macOS: downloads WECOMMANDER-Center-macos.zip (fixed tag macos-center-latest,
+#          else the newest macos-preview-N release), puts "WECOMMANDER
+#          Center.app" in ~/Applications and opens it.
+#   Linux: downloads WECOMMANDER-Center-linux-x86_64.tar.gz (fixed tag
+#          center-linux-latest, else the newest ubuntu-preview-N release), puts
+#          it in ~/.local/share/wecommander-center with a menu entry and starts it.
+# Each download is verified against its release's SHA256SUMS.txt. The app then
+# signs in through the browser and starts at login.
 set -eu
 
 REPO="orhanbal/webrising-commender"
-ASSET="WECOMMANDER-Center-macos.zip"
 DRY_RUN=0
 for arg in "$@"; do
   case "$arg" in
@@ -20,15 +23,32 @@ for arg in "$@"; do
   esac
 done
 
-if [ "$(uname -s)" != "Darwin" ]; then
-  echo "This installer is for macOS. On Windows use: irm https://wecommander.app/install/center.ps1 | iex" >&2
-  exit 1
-fi
-major="$(sw_vers -productVersion | cut -d. -f1)"
-if [ "$major" -lt 13 ]; then
-  echo "WECOMMANDER Center needs macOS 13 (Ventura) or newer." >&2
-  exit 1
-fi
+OS="$(uname -s)"
+case "$OS" in
+  Darwin)
+    major="$(sw_vers -productVersion | cut -d. -f1)"
+    if [ "$major" -lt 13 ]; then
+      echo "WECOMMANDER Center needs macOS 13 (Ventura) or newer." >&2
+      exit 1
+    fi
+    ASSET="WECOMMANDER-Center-macos.zip"
+    FIXED_TAG="macos-center-latest"
+    PREVIEW="macos-preview"
+    ;;
+  Linux)
+    if [ "$(uname -m)" != "x86_64" ]; then
+      echo "WECOMMANDER Center for Linux is built for x86_64 only for now." >&2
+      exit 1
+    fi
+    ASSET="WECOMMANDER-Center-linux-x86_64.tar.gz"
+    FIXED_TAG="center-linux-latest"
+    PREVIEW="ubuntu-preview"
+    ;;
+  *)
+    echo "This installer is for macOS and Linux. On Windows use: irm https://wecommander.app/install/center.ps1 | iex" >&2
+    exit 1
+    ;;
+esac
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -51,11 +71,16 @@ download() {
     -H "User-Agent: WECOMMANDER-Center-Installer" "$1" -o "$2"
 }
 
+sha256() {
+  if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'
+  else sha256sum "$1" | awk '{print $1}'; fi
+}
+
 prefix="https://github.com/$REPO/releases/download/"
 
-# Fast path: macos-distribution.yml keeps the newest app under the fixed tag
-# macos-center-latest, so no GitHub API call is needed (the API can time out).
-tag="macos-center-latest"
+# Fast path: the distribution workflows keep the newest app under a fixed tag,
+# so no GitHub API call is needed (the API can time out).
+tag="$FIXED_TAG"
 app_url="${prefix}${tag}/${ASSET}"
 sums_url="${prefix}${tag}/SHA256SUMS.txt"
 echo "Checking the newest WECOMMANDER Center download..."
@@ -73,22 +98,22 @@ if [ -z "$tag" ]; then
       exit 1
     fi
     cat "$tmp/page.json" >> "$tmp/releases.json"
-    grep -q "/macos-preview-[0-9]*/$ASSET\"" "$tmp/page.json" && break
+    grep -q "/$PREVIEW-[0-9]*/$ASSET\"" "$tmp/page.json" && break
     page=$((page + 1))
   done
 
-  # Newest macos-preview-N release (highest N, published by macos-distribution.yml)
-  # that has both the app and the checksums. Only URLs under this repository's release downloads are used.
+  # Newest preview release (highest N) that has both the app and the
+  # checksums. Only URLs under this repository's release downloads are used.
   tag=""
-  for candidate in $(grep -o "\"browser_download_url\": *\"${prefix}macos-preview-[0-9]*/$ASSET\"" "$tmp/releases.json" \
-      | sed -E 's#.*/download/(macos-preview-[0-9]+)/.*#\1#' | sort -t- -k3,3nr -u); do
+  for candidate in $(grep -o "\"browser_download_url\": *\"${prefix}$PREVIEW-[0-9]*/$ASSET\"" "$tmp/releases.json" \
+      | sed -E "s#.*/download/($PREVIEW-[0-9]+)/.*#\\1#" | sort -t- -k3,3nr -u); do
     if grep -q "\"browser_download_url\": *\"${prefix}${candidate}/SHA256SUMS.txt\"" "$tmp/releases.json"; then
       tag="$candidate"
       break
     fi
   done
   if [ -z "$tag" ]; then
-    echo "No preview release with the macOS Management Center yet. Check the latest successful GitHub CI and Releases." >&2
+    echo "No preview release with the Management Center for this system yet. Check the latest successful GitHub CI and Releases." >&2
     exit 1
   fi
   app_url="${prefix}${tag}/${ASSET}"
@@ -100,32 +125,70 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
+if [ "$OS" = "Linux" ] && ! ldconfig -p 2>/dev/null | grep -q 'libwebkit2gtk-4\.1\.so\.0'; then
+  echo "WECOMMANDER Center needs WebKitGTK 4.1. On Ubuntu or Debian install it with:" >&2
+  echo "  sudo apt install libwebkit2gtk-4.1-0 libayatana-appindicator3-1" >&2
+  echo "then run this installer again." >&2
+  exit 1
+fi
+
 echo "Downloading WECOMMANDER Center ($tag)..."
 download "$app_url" "$tmp/$ASSET"
 [ -s "$tmp/SHA256SUMS.txt" ] || download "$sums_url" "$tmp/SHA256SUMS.txt"
 echo "Verifying the SHA-256 checksum..."
 expected="$(awk -v f="$ASSET" '$2 == f || $2 == "*"f { print $1 }' "$tmp/SHA256SUMS.txt" | head -n 1)"
-actual="$(shasum -a 256 "$tmp/$ASSET" | awk '{print $1}')"
+actual="$(sha256 "$tmp/$ASSET")"
 if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
   echo "Checksum mismatch for $ASSET; nothing was installed." >&2
   exit 1
 fi
 
-ditto -x -k "$tmp/$ASSET" "$tmp/app"
-src="$tmp/app/WECOMMANDER Center.app"
-test -d "$src"
+if [ "$OS" = "Darwin" ]; then
+  ditto -x -k "$tmp/$ASSET" "$tmp/app"
+  src="$tmp/app/WECOMMANDER Center.app"
+  test -d "$src"
 
-dest_dir="$HOME/Applications"
-dest="$dest_dir/WECOMMANDER Center.app"
-mkdir -p "$dest_dir"
-# Quit a running copy before replacing it.
-osascript -e 'tell application id "app.wecommander.center" to quit' >/dev/null 2>&1 || true
-pkill -x WecommanderCenter >/dev/null 2>&1 || true
+  dest_dir="$HOME/Applications"
+  dest="$dest_dir/WECOMMANDER Center.app"
+  mkdir -p "$dest_dir"
+  # Quit a running copy before replacing it.
+  osascript -e 'tell application id "app.wecommander.center" to quit' >/dev/null 2>&1 || true
+  pkill -x WecommanderCenter >/dev/null 2>&1 || true
+  sleep 1
+  rm -rf "$dest"
+  ditto "$src" "$dest"
+  xattr -dr com.apple.quarantine "$dest" >/dev/null 2>&1 || true
+
+  open "$dest"
+  echo "WECOMMANDER Center installed in $dest and started."
+  echo "Click the WECOMMANDER icon in the menu bar to sign in. When macOS asks to allow notifications, choose Allow."
+  exit 0
+fi
+
+# Linux: a per-user install under ~/.local (XDG), no root needed.
+mkdir -p "$tmp/app"
+tar -xzf "$tmp/$ASSET" -C "$tmp/app"
+src="$tmp/app/wecommander-center"
+test -x "$src/wecommander-center"
+
+data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
+dest="$data_home/wecommander-center"
+pkill -x wecommander-center >/dev/null 2>&1 || true
 sleep 1
 rm -rf "$dest"
-ditto "$src" "$dest"
-xattr -dr com.apple.quarantine "$dest" >/dev/null 2>&1 || true
+mkdir -p "$dest" "$HOME/.local/bin" "$data_home/applications" "$data_home/icons/hicolor/256x256/apps"
+cp -R "$src/." "$dest/"
+ln -sf "$dest/wecommander-center" "$HOME/.local/bin/wecommander-center"
+cp "$dest/wecommander-center.png" "$data_home/icons/hicolor/256x256/apps/wecommander-center.png"
+sed "s#^Exec=.*#Exec=$dest/wecommander-center#" "$dest/wecommander-center.desktop" \
+  > "$data_home/applications/wecommander-center.desktop"
+command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$data_home/applications" >/dev/null 2>&1 || true
 
-open "$dest"
-echo "WECOMMANDER Center installed in $dest and started."
-echo "Click the WECOMMANDER icon in the menu bar to sign in. When macOS asks to allow notifications, choose Allow."
+if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+  nohup "$dest/wecommander-center" >/dev/null 2>&1 &
+  echo "WECOMMANDER Center installed in $dest and started."
+  echo "Click the WECOMMANDER icon in the system tray (or open it from the app menu) to sign in."
+else
+  echo "WECOMMANDER Center installed in $dest."
+  echo "No desktop session found here; open \"WECOMMANDER Center\" from the app menu after you log in to the desktop."
+fi

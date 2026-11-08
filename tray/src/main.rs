@@ -10,7 +10,7 @@ mod store;
 
 use api::{Api, ApiError, AutonomyItem, Device, Me};
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -22,6 +22,13 @@ use tauri::{AppHandle, Emitter, Manager, Wry};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
+
+/// Release builds stamp the CI version (WECOMMANDER_VERSION); local builds
+/// show the crate version.
+const VERSION: &str = match option_env!("WECOMMANDER_VERSION") {
+    Some(v) => v,
+    None => env!("CARGO_PKG_VERSION"),
+};
 
 const SYNC_EVERY: Duration = Duration::from_secs(4);
 const TICK: Duration = Duration::from_secs(2);
@@ -46,6 +53,12 @@ struct Inner {
     last_sync: Option<Instant>,
     synced_once: bool,
     seen: HashSet<String>,
+    /// Requests this app approved or denied: not announced as "decided
+    /// elsewhere" when they leave the pending list.
+    decided_here: HashSet<String>,
+    /// Linux: the desktop notification shown for each request, so it can be
+    /// replaced when the request is decided elsewhere.
+    notifications: HashMap<String, u32>,
     link: Option<Link>,
 }
 
@@ -116,7 +129,7 @@ fn snapshot(app: &AppHandle) -> Snapshot {
         synced_seconds_ago: inner.last_sync.map(|t| t.elapsed().as_secs()),
         settings: inner.settings.clone(),
         autostart: app.autolaunch().is_enabled().unwrap_or(false),
-        version: env!("CARGO_PKG_VERSION"),
+        version: VERSION,
     }
 }
 
@@ -255,6 +268,7 @@ fn kind_label(kind: &str) -> &str {
         "task_cancel" => "Görevi iptal et",
         "terminal_start" => "Terminal aç",
         "terminal_stop" => "Terminali kapat",
+        "terminal_input" => "Terminale yaz",
         "fs_delete" => "Dosya sil",
         "fs_move" => "Dosya taşı",
         other => other,
@@ -329,7 +343,152 @@ fn notify_request(app: &AppHandle, item: &ApprovalView) {
     }
 }
 
-#[cfg(not(windows))]
+/// Linux: a freedesktop notification with Onayla / Reddet actions (GNOME,
+/// KDE and most desktops show them as buttons). It stays until answered or
+/// until the request expires; when the request is decided elsewhere it is
+/// replaced in place by a short notice.
+#[cfg(target_os = "linux")]
+fn notify_request(app: &AppHandle, item: &ApprovalView) {
+    let what = if item.summary.is_empty() {
+        kind_label(&item.kind).to_owned()
+    } else {
+        item.summary.clone()
+    };
+    let title = format!("Onay bekliyor · {}", item.device_name);
+    let body = format!(
+        "{what}\n{} · yalnız bu işlem, bir kez{}",
+        kind_label(&item.kind),
+        deadline_text(&item.expires_at)
+    );
+    let shown = notify_rust::Notification::new()
+        .appname("WECOMMANDER")
+        .summary(&title)
+        .body(&body)
+        .icon("wecommander-center")
+        .action("approve", "Onayla")
+        .action("deny", "Reddet")
+        .action("default", "Aç")
+        .hint(notify_rust::Hint::Category("im.received".into()))
+        .urgency(notify_rust::Urgency::Critical)
+        .timeout(notify_rust::Timeout::Never)
+        .show();
+    let Ok(handle) = shown else {
+        notify(app, &title, &what);
+        return;
+    };
+    app.state::<AppState>()
+        .inner
+        .lock()
+        .unwrap()
+        .notifications
+        .insert(item.id.clone(), handle.id());
+    let app = app.clone();
+    let id = item.id.clone();
+    let device = item.device_name.clone();
+    // wait_for_action blocks until a click or the notification closes.
+    std::thread::spawn(move || {
+        handle.wait_for_action(|action| match action {
+            "approve" | "deny" => {
+                let approve = action == "approve";
+                let app = app.clone();
+                let id = id.clone();
+                let device = device.clone();
+                tauri::async_runtime::spawn(async move {
+                    decide_from_notification(&app, &id, &device, approve).await;
+                });
+            }
+            "default" => show_main(&app),
+            _ => {}
+        });
+    });
+}
+
+/// " · 15:28'e kadar" from an RFC 3339 deadline, in local time when known.
+#[cfg(target_os = "linux")]
+fn deadline_text(expires_at: &str) -> String {
+    let Some(time) = expires_at.get(11..16) else {
+        return String::new();
+    };
+    let local = std::process::Command::new("date")
+        .args(["-d", expires_at, "+%H:%M"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|t| t.trim().to_owned())
+        .filter(|t| t.len() == 5)
+        .unwrap_or_else(|| format!("{time} UTC"));
+    format!("\nSüre: {local}'e kadar")
+}
+
+/// Replace (Linux) or follow up (elsewhere) the request notification with a
+/// short notice: "macOS'tan onaylandı · cihaz".
+fn notify_decided_elsewhere(app: &AppHandle, id: &str, title: &str, body: &str) {
+    #[cfg(target_os = "linux")]
+    {
+        let existing = app
+            .state::<AppState>()
+            .inner
+            .lock()
+            .unwrap()
+            .notifications
+            .remove(id);
+        if let Some(existing) = existing {
+            let replaced = notify_rust::Notification::new()
+                .appname("WECOMMANDER")
+                .id(existing)
+                .summary(title)
+                .body(body)
+                .icon("wecommander-center")
+                .timeout(notify_rust::Timeout::Milliseconds(8000))
+                .show();
+            if replaced.is_ok() {
+                return;
+            }
+        }
+    }
+    let _ = id;
+    notify(app, title, body);
+}
+
+async fn decide_from_notification(app: &AppHandle, id: &str, device: &str, approve: bool) {
+    let Ok((api, token)) = session(app) else {
+        return;
+    };
+    app.state::<AppState>()
+        .inner
+        .lock()
+        .unwrap()
+        .decided_here
+        .insert(id.to_owned());
+    match api.decide(&token, id, approve).await {
+        Ok(()) => notify_decided_elsewhere(
+            app,
+            id,
+            "WECOMMANDER",
+            &format!(
+                "{device} · {}",
+                if approve {
+                    "onaylandı, yapay zekâ bir kez çalıştırabilir"
+                } else {
+                    "reddedildi"
+                }
+            ),
+        ),
+        Err(e) => {
+            app.state::<AppState>()
+                .inner
+                .lock()
+                .unwrap()
+                .decided_here
+                .remove(id);
+            notify(app, "WECOMMANDER", &e.message());
+        }
+    }
+    sync(app).await;
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 fn notify_request(app: &AppHandle, item: &ApprovalView) {
     let what = if item.summary.is_empty() {
         kind_label(&item.kind).to_owned()
@@ -381,6 +540,7 @@ async fn sync(app: &AppHandle) {
         api.devices(&token),
         api.autonomy(&token)
     );
+    let pending_ok = pending.is_ok();
     let first_error = [
         me.as_ref().and_then(|r| r.as_ref().err()),
         pending.as_ref().err(),
@@ -398,8 +558,9 @@ async fn sync(app: &AppHandle) {
     }
 
     let state = app.state::<AppState>();
-    let (fresh, open_on_request, notifications, first) = {
+    let (fresh, open_on_request, notifications, first, vanished) = {
         let mut inner = state.inner.lock().unwrap();
+        let previous: Vec<ApprovalView> = inner.pending.clone();
         if let Some(Ok(me)) = me {
             inner.me = Some(me);
         }
@@ -438,6 +599,18 @@ async fn sync(app: &AppHandle) {
                 }
             }
         }
+        // Gone from the pending list: decided here, elsewhere, or expired.
+        let mut vanished = Vec::new();
+        if pending_ok {
+            let current: HashSet<String> = inner.pending.iter().map(|p| p.id.clone()).collect();
+            for item in previous {
+                if !current.contains(&item.id) && !inner.decided_here.remove(&item.id) {
+                    vanished.push(item);
+                } else if !current.contains(&item.id) {
+                    inner.notifications.remove(&item.id);
+                }
+            }
+        }
         inner.error = first_error.map(|(_, message)| message);
         inner.last_sync = Some(Instant::now());
         let first = !inner.synced_once;
@@ -447,13 +620,46 @@ async fn sync(app: &AppHandle) {
             inner.settings.open_on_request,
             inner.settings.notifications,
             first,
+            vanished,
         )
     };
+
+    // Say where a request this center showed was decided ("Windows'tan
+    // onaylandı"); an expired one only loses its notification.
+    if notifications {
+        for item in vanished.into_iter().take(5) {
+            let app = app.clone();
+            let api = api.clone();
+            let token = token.clone();
+            tauri::async_runtime::spawn(async move {
+                let what = if item.summary.is_empty() {
+                    kind_label(&item.kind).to_owned()
+                } else {
+                    item.summary.clone()
+                };
+                match api.outcome(&token, &item.id).await {
+                    Ok(outcome) => {
+                        if let Some(text) = api::decided_elsewhere(&outcome) {
+                            notify_decided_elsewhere(
+                                &app,
+                                &item.id,
+                                &format!("{text} · {}", item.device_name),
+                                &what,
+                            );
+                        } else {
+                            close_request_notification(&app, &item.id, "Onay isteği kapandı.");
+                        }
+                    }
+                    Err(_) => close_request_notification(&app, &item.id, "Onay isteği kapandı."),
+                }
+            });
+        }
+    }
 
     if !fresh.is_empty() {
         // On Windows each request is a Windows notification with Approve and
         // Deny buttons; the panel opens only when notifications are off.
-        let actionable = cfg!(windows) && notifications;
+        let actionable = (cfg!(windows) || cfg!(target_os = "linux")) && notifications;
         if notifications {
             if first && fresh.len() > 3 {
                 notify(
@@ -614,10 +820,61 @@ fn open_link(app: AppHandle) -> Result<(), String> {
     }
 }
 
+/// Linux: replace a request's notification with a short notice that goes
+/// away by itself (expired, or answered in the panel).
+fn close_request_notification(app: &AppHandle, id: &str, notice: &str) {
+    #[cfg(target_os = "linux")]
+    {
+        let existing = app
+            .state::<AppState>()
+            .inner
+            .lock()
+            .unwrap()
+            .notifications
+            .remove(id);
+        if let Some(existing) = existing {
+            // Replacing with an immediately expiring notice closes it on
+            // every server without needing the original handle.
+            let _ = notify_rust::Notification::new()
+                .appname("WECOMMANDER")
+                .id(existing)
+                .summary("WECOMMANDER")
+                .body(notice)
+                .timeout(notify_rust::Timeout::Milliseconds(4000))
+                .show();
+        }
+    }
+    let _ = (app, id, notice);
+}
+
 #[tauri::command]
 async fn decide(app: AppHandle, id: String, approve: bool) -> Result<Snapshot, String> {
     let (api, token) = session(&app)?;
+    app.state::<AppState>()
+        .inner
+        .lock()
+        .unwrap()
+        .decided_here
+        .insert(id.clone());
     let result = api.decide(&token, &id, approve).await;
+    if result.is_err() {
+        app.state::<AppState>()
+            .inner
+            .lock()
+            .unwrap()
+            .decided_here
+            .remove(&id);
+    } else {
+        close_request_notification(
+            &app,
+            &id,
+            if approve {
+                "Onaylandı."
+            } else {
+                "Reddedildi."
+            },
+        );
+    }
     sync(&app).await;
     result.map_err(|e| e.message())?;
     Ok(snapshot(&app))
@@ -906,6 +1163,11 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 }
 
 fn main() {
+    // `--version` prints and exits without a display: the package smoke test.
+    if std::env::args().any(|a| a == "--version") {
+        println!("WECOMMANDER Center {VERSION}");
+        return;
+    }
     let hidden = std::env::args().any(|a| a == "--hidden");
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {

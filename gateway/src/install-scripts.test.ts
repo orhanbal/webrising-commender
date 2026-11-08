@@ -85,8 +85,9 @@ test("the macOS Management Center installer verifies the zip and picks the newes
 test("the one-line macOS Center install downloads from the fixed tag the workflow refreshes", () => {
   const body = fs.readFileSync(path.join(repo, "scripts/install-center-macos-online.sh"), "utf8");
   const workflow = fs.readFileSync(path.join(repo, ".github/workflows/macos-distribution.yml"), "utf8");
-  assert.match(body, /tag="macos-center-latest"/);
-  assert.ok(body.indexOf('tag="macos-center-latest"') < body.indexOf("api.github.com"), "fixed tag is tried before the API");
+  assert.match(body, /FIXED_TAG="macos-center-latest"/);
+  assert.match(body, /FIXED_TAG="center-linux-latest"/);
+  assert.ok(body.indexOf('tag="$FIXED_TAG"') < body.indexOf("api.github.com"), "fixed tag is tried before the API");
   assert.match(workflow, /TAG="macos-center-latest"/);
   assert.match(workflow, /--clobber/);
 });
