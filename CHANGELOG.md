@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Windows Management Center installer: a running copy that cannot be closed (typically one an earlier install started from an administrator PowerShell) is reported with what to do instead of a locked-file error, and the installer now always starts the app as the signed-in user (through Explorer when run as administrator), so later updates from a normal PowerShell can close it.
+
 - Windows Management Center installer: upgrading over a running copy no longer stops with "access denied" on a locked DLL (`clrjit.dll`). It closes every running copy (also ones whose path it cannot read), waits until they have exited, and retries the removal for up to 10 s; if the files are still in use it says to quit the app from the tray and run the command again.
 
 - Installers show the WECOMMANDER logo in the terminal: the wordmark (block characters) when the window is at least 100 columns wide, otherwise the icon with the name and what is being installed. All five one-line installers (`center.ps1`, `center.sh`, `install.ps1`, `ubuntu.sh`, `macos.sh`); the PowerShell scripts stay ASCII and build the block characters at run time.
