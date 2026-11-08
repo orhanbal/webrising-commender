@@ -113,3 +113,18 @@ node scripts/soak-restart.mjs
 ```
 
 The destructive restore gate must be run only after a fresh backup has been verified and only during an explicit acceptance window.
+
+## A4 — independent HTTPS/TLS check (8 November 2026): PASSED
+
+Qualys SSL Labs (api.ssllabs.com, engine 2.4.3, criteria 2009q), full fresh assessment of `wecommander.app`:
+
+| Endpoint (Cloudflare) | Before | After minimum TLS 1.2 |
+|---|---|---|
+| 2606:4700:3036::ac43:a08e | B | **A+** |
+| 2606:4700:3033::6815:ecf | B | **A+** |
+| 104.21.14.207 | B | **A+** |
+| 172.67.160.142 | B | **A+** |
+
+- The B grade was caused only by TLS 1.0 and 1.1 being enabled at the Cloudflare edge. The owner set **SSL/TLS → Edge Certificates → Minimum TLS Version = TLS 1.2**; the re-run graded every endpoint A+ (`isExceptional: true`, no warnings).
+- Measured in the first run and unchanged: certificate chain trusted by Mozilla, Apple, Android, Java and Windows; TLS 1.3 with the post-quantum group X25519MLKEM768; forward secrecy; no Heartbleed, POODLE, ROBOT, Ticketbleed, CCS or renegotiation issues; HSTS `max-age=31536000` sent by the gateway and `wecommander.app` present in the Chrome, Edge, Firefox and IE HSTS preload lists (the `.app` TLD is preloaded); `content-security-policy`, `x-frame-options: DENY`, `x-content-type-options: nosniff`, `referrer-policy: no-referrer` and `permissions-policy` on the page.
+- WSS: agents and Management Centers connect over `wss://wecommander.app` through the same edge; the device list shows them online after the change.
