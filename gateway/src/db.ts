@@ -346,6 +346,10 @@ export async function migrate() {
       revoked_at timestamptz
     );
     create index if not exists management_centers_org_idx on management_centers(organization_id);
+    -- Which kind of computer a Management Center runs on (macos/windows), so
+    -- the others can say where a request was decided.
+    alter table center_link_requests add column if not exists platform text;
+    alter table management_centers add column if not exists platform text;
 
     create table if not exists approvals (
       id uuid primary key default gen_random_uuid(),
@@ -376,6 +380,9 @@ export async function migrate() {
     );
     create index if not exists approval_requests_org_status_idx
       on approval_requests(organization_id,status,created_at desc);
+    -- The Management Center that decided a request (null: the web panel).
+    alter table approval_requests add column if not exists decided_center_id uuid
+      references management_centers(id) on delete set null;
     create table if not exists device_command_allowlist (
       id uuid primary key default gen_random_uuid(),
       organization_id uuid not null references organizations(id) on delete cascade,

@@ -93,6 +93,40 @@ public struct CenterMe: Decodable, Equatable {
     public let organizationName: String?
 }
 
+/// Where a request was decided: a Management Center (with its name and the
+/// kind of computer) or the web panel. `isSelf` is this center.
+public struct DecidedVia: Decodable, Equatable {
+    public let kind: String
+    public let name: String?
+    public let platform: String?
+    public let isSelf: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case kind, name, platform
+        case isSelf = "self"
+    }
+
+    public init(kind: String, name: String?, platform: String?, isSelf: Bool) {
+        self.kind = kind; self.name = name; self.platform = platform; self.isSelf = isSelf
+    }
+}
+
+/// The outcome of one approval request (GET /api/approval-requests/{id}).
+public struct ApprovalOutcome: Decodable, Equatable {
+    public let id: String
+    public let status: String
+    public let decidedVia: DecidedVia?
+
+    enum CodingKeys: String, CodingKey {
+        case id, status
+        case decidedVia = "decided_via"
+    }
+
+    public init(id: String, status: String, decidedVia: DecidedVia?) {
+        self.id = id; self.status = status; self.decidedVia = decidedVia
+    }
+}
+
 public struct LinkStart: Decodable, Equatable {
     public let requestId: String
     public let requestSecret: String

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Management Center (Windows and macOS): when a request shown on several computers is decided on one of them, the others drop its notification and show a short one saying where it was decided ("macOS'tan onaylandı · cihaz", "Windows'tan reddedildi", "Web panelinden onaylandı"). Gateway: `GET /api/approval-requests/{id}` (also for center tokens) returns the outcome and `decided_via`; decisions record the deciding center; centers report their platform (`macos`/`windows`) when they link and on `/api/center/me`.
+
 - Discoverability for search engines and AI assistants: public pages arrive as readable HTML (no JavaScript needed) with their own title, description, canonical URL and JSON-LD (SoftwareApplication, Organization, FAQPage, HowTo); `/robots.txt` (AI crawlers explicitly allowed, account areas excluded), `/sitemap.xml`, `/llms.txt` and `/llms-full.txt`; new pages Docs, FAQ, Alternatives (by category, no product names), Security and four guides, linked from the header and footer.
 
 - Web: faster page changes (the current page stays until the next is ready, page code is preloaded in the background, built assets are cached for a year and sent brotli/gzip compressed); account pages send a signed-out visitor, or an expired session, to the login page and back afterwards instead of showing a sign-in card inside the panel; quieter, product-style site header.

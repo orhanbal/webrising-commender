@@ -970,8 +970,11 @@ assert.equal((await jsonFetch("/api/center-link/poll", {
   method: "POST", headers: { "Content-Type": "application/json" }, body: centerPollBody,
 })).status, "consumed");
 const centerHeaders = { Authorization: `Bearer ${centerRedeemed.centerToken}`, "Content-Type": "application/json" };
-const centerMe = await jsonFetch("/api/center/me", { headers: centerHeaders });
+const centerMe = await jsonFetch("/api/center/me?platform=windows", { headers: centerHeaders });
 assert.equal(centerMe.name, "Ofis-PC");
+assert.equal((await acceptanceDb.query(
+  "select platform from management_centers where id=$1", [centerRedeemed.centerId],
+)).rows[0].platform, "windows", "a center linked without a platform reports it on /api/center/me");
 assert.equal(centerMe.email, browserMe.email);
 assert.ok(Array.isArray((await jsonFetch("/api/approval-requests?status=pending", { headers: centerHeaders })).items));
 assert.ok(Array.isArray((await jsonFetch("/api/devices", { headers: centerHeaders })).items));
@@ -1609,15 +1612,52 @@ const pendingList = await jsonFetch("/api/approval-requests?status=pending", {
 });
 assert.ok(pendingList.items.some((item) => item.id === pendingPayload.approval_request_id));
 
+// Decided from a macOS Management Center: every other center can then read
+// where it was decided and say so ("macOS'tan onaylandı").
+const macCenterStart = await jsonFetch("/api/center-link/start", {
+  method: "POST", headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ name: "Mac", platform: "macos" }),
+});
+const macCenterApprove = await fetch(base + "/api/center-link/approve", {
+  method: "POST", headers: browserCenterHeaders,
+  body: JSON.stringify({ requestId: macCenterStart.requestId, organizationId: browserMe.organizationId }),
+});
+assert.equal(macCenterApprove.status, 200);
+await macCenterApprove.text();
+const macCenter = await jsonFetch("/api/center-link/poll", {
+  method: "POST", headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ requestId: macCenterStart.requestId, requestSecret: macCenterStart.requestSecret }),
+});
+const macCenterHeaders = { Authorization: `Bearer ${macCenter.centerToken}`, "Content-Type": "application/json" };
+const pendingItem = await jsonFetch(`/api/approval-requests/${pendingPayload.approval_request_id}`, {
+  headers: macCenterHeaders,
+});
+assert.equal(pendingItem.item.status, "pending");
+assert.equal(pendingItem.item.decided_via, null);
+
 const approvedRequest = await jsonFetch(
   `/api/approval-requests/${pendingPayload.approval_request_id}/approve`,
   {
     method: "POST",
-    headers: authHeaders,
+    headers: macCenterHeaders,
     body: "{}",
   },
 );
 assert.equal(approvedRequest.item.status, "approved");
+const decidedSeenByPanel = await jsonFetch(`/api/approval-requests/${pendingPayload.approval_request_id}`, {
+  headers: authHeaders,
+});
+assert.equal(decidedSeenByPanel.item.status, "approved");
+assert.deepEqual(decidedSeenByPanel.item.decided_via, { kind: "center", name: "Mac", platform: "macos", self: false });
+const decidedSeenBySelf = await jsonFetch(`/api/approval-requests/${pendingPayload.approval_request_id}`, {
+  headers: macCenterHeaders,
+});
+assert.equal(decidedSeenBySelf.item.decided_via.self, true);
+const missingItem = await fetch(`${base}/api/approval-requests/00000000-0000-4000-8000-000000000000`, {
+  headers: macCenterHeaders,
+});
+assert.equal(missingItem.status, 404);
+await missingItem.text();
 
 const humanApproved = await rpcAs(operatorHeaders, 51, "tools/call", {
   name: "process_exec",
@@ -1652,6 +1692,9 @@ const approveExpired = await fetch(
 );
 assert.equal(approveExpired.status, 409);
 assert.equal((await approveExpired.json()).error, "approval_request_expired");
+const expiredItem = await jsonFetch(`/api/approval-requests/${expiringRequestId}`, { headers: authHeaders });
+assert.equal(expiredItem.item.status, "expired");
+assert.equal(expiredItem.item.decided_via, null);
 
 const tamperApproval = await jsonFetch("/api/approvals", {
   method: "POST",

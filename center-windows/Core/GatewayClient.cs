@@ -66,13 +66,13 @@ public sealed class GatewayClient(HttpClient http, string baseUrl)
         (await SendAsync(HttpMethod.Get, path, token, null, ct).ConfigureAwait(false))?["items"].Deserialize<List<T>>() ?? [];
 
     public async Task<LinkStart> LinkStartAsync(string name, CancellationToken ct = default) =>
-        Read<LinkStart>(await SendAsync(HttpMethod.Post, "/api/center-link/start", null, new { name }, ct).ConfigureAwait(false));
+        Read<LinkStart>(await SendAsync(HttpMethod.Post, "/api/center-link/start", null, new { name, platform = "windows" }, ct).ConfigureAwait(false));
 
     public async Task<LinkPoll> LinkPollAsync(string id, string secret, CancellationToken ct = default) =>
         Read<LinkPoll>(await SendAsync(HttpMethod.Post, "/api/center-link/poll", null, new { requestId = id, requestSecret = secret }, ct).ConfigureAwait(false));
 
     public async Task<CenterMe> MeAsync(string token, CancellationToken ct = default) =>
-        Read<CenterMe>(await SendAsync(HttpMethod.Get, "/api/center/me", token, null, ct).ConfigureAwait(false));
+        Read<CenterMe>(await SendAsync(HttpMethod.Get, "/api/center/me?platform=windows", token, null, ct).ConfigureAwait(false));
 
     public Task<List<ApprovalRequest>> PendingAsync(string token, CancellationToken ct = default) =>
         ItemsAsync<ApprovalRequest>("/api/approval-requests?status=pending&limit=100", token, ct);
@@ -82,6 +82,15 @@ public sealed class GatewayClient(HttpClient http, string baseUrl)
 
     public Task<List<AutonomyItem>> AutonomyAsync(string token, CancellationToken ct = default) =>
         ItemsAsync<AutonomyItem>("/api/trust/autonomy", token, ct);
+
+    /// <summary>Where and how a request ended, once it left the pending list.</summary>
+    public async Task<ApprovalOutcome> OutcomeAsync(string token, string id, CancellationToken ct = default)
+    {
+        if (!Guid.TryParse(id, out var guid))
+            throw new GatewayException(GatewayErrorKind.Http, 400, "invalid_request", Texts.ForErrorCode("invalid_request", 400));
+        var node = await SendAsync(HttpMethod.Get, $"/api/approval-requests/{guid:D}", token, null, ct).ConfigureAwait(false);
+        return Read<ApprovalOutcome>(node?["item"]);
+    }
 
     public async Task DecideAsync(string token, string id, bool approve, CancellationToken ct = default)
     {

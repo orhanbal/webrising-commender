@@ -34,6 +34,9 @@ public partial class App : Application
     private DateTime _lastSync = DateTime.MinValue;
     private bool _syncing;
     private readonly HashSet<string> _seen = [];
+    // Requests this app approved or denied, so they are not announced as
+    // "decided elsewhere" when they leave the pending list.
+    private readonly HashSet<string> _decidedHere = [];
     // Requests whose notification is on screen, for the live countdown.
     private readonly Dictionary<string, (DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt, uint Sequence)> _shown = [];
     private DispatcherQueueTimer? _countdownTimer;
@@ -277,7 +280,7 @@ public partial class App : Application
             var devices = gateway.DevicesAsync(token);
             var autonomy = gateway.AutonomyAsync(token);
             await Task.WhenAll(pending, devices, autonomy);
-            var previous = Pending.Select(p => p.Id).ToHashSet();
+            var previous = Pending.ToDictionary(p => p.Id);
             Pending = pending.Result;
             Devices = devices.Result;
             Autonomy = autonomy.Result;
@@ -285,12 +288,15 @@ public partial class App : Application
             _lastSync = DateTime.UtcNow;
 
             // Requests decided elsewhere (panel, dashboard, another center) or
-            // expired: take their notification away.
-            foreach (var gone in previous.Except(Pending.Select(p => p.Id)))
+            // expired: take their notification away, and say where one was
+            // decided ("macOS'tan onaylandı").
+            var gone = previous.Keys.Except(Pending.Select(p => p.Id)).ToList();
+            foreach (var id in gone)
             {
-                _shown.Remove(gone);
-                RemoveToast(gone);
+                _shown.Remove(id);
+                RemoveToast(id);
             }
+            AnnounceDecidedElsewhere(gone.Select(id => previous[id]).ToList(), token);
 
             var fresh = Pending.Where(p => _seen.Add(p.Id)).ToList();
             if (fresh.Count > 0)
@@ -382,14 +388,45 @@ public partial class App : Application
         }
     }
 
+    private void AnnounceDecidedElsewhere(List<ApprovalRequest> items, string token)
+    {
+        var others = items.Where(item => !_decidedHere.Remove(item.Id)).ToList();
+        if (!Settings.Notifications || others.Count == 0) return;
+        var gateway = Gateway;
+        var names = Devices.ToDictionary(d => d.Id, d => d.Name);
+        foreach (var item in others.Take(5))
+        {
+            var device = names.GetValueOrDefault(item.DeviceId, "bilinmeyen cihaz");
+            var what = string.IsNullOrEmpty(item.Summary) ? Texts.KindLabel(item.ActionKind) : item.Summary;
+            _ = AnnounceAsync(item.Id, device, what);
+        }
+
+        async Task AnnounceAsync(string id, string device, string what)
+        {
+            try
+            {
+                var outcome = await gateway.OutcomeAsync(token, id);
+                if (Texts.DecidedElsewhere(outcome) is { } text)
+                    ShowToast(ToastContent.Simple($"{text} · {device}", what));
+            }
+            catch (GatewayException) { /* the request notification is already gone; nothing else to say */ }
+        }
+    }
+
     public async Task DecideAsync(string id, bool approve)
     {
         if (Token is not { } token) throw new GatewayException(GatewayErrorKind.Unauthorized, 401, "", "Önce oturum aç.");
+        _decidedHere.Add(id);
         try
         {
             await Gateway.DecideAsync(token, id, approve);
             _shown.Remove(id);
             RemoveToast(id);
+        }
+        catch
+        {
+            _decidedHere.Remove(id);
+            throw;
         }
         finally
         {
@@ -431,6 +468,7 @@ public partial class App : Application
         Autonomy = [];
         _seen.Clear();
         _shown.Clear();
+        _decidedHere.Clear();
         Error = message;
         LocalStore.DeleteToken();
         try { ToastNotificationManager.History.RemoveGroup(NotificationGroup, Program.AppUserModelId); }

@@ -16,6 +16,33 @@ public enum Texts {
         }
     }
 
+    /// "macOS'tan onaylandı" for a request this center showed but another
+    /// center or the web panel decided; nil when nothing should be said
+    /// (decided here, expired, still pending).
+    public static func decidedElsewhere(_ outcome: ApprovalOutcome) -> String? {
+        let verb: String
+        switch outcome.status {
+        case "approved", "consumed": verb = "onaylandı"
+        case "denied": verb = "reddedildi"
+        default: return nil
+        }
+        guard let via = outcome.decidedVia, !via.isSelf else { return nil }
+        let place: String
+        if via.kind == "panel" {
+            place = "Web panelinden"
+        } else {
+            switch via.platform {
+            case "macos": place = "macOS'tan"
+            case "windows": place = "Windows'tan"
+            case "linux": place = "Linux'tan"
+            default:
+                let name = via.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                place = name.isEmpty ? "Başka bir Yönetim Merkezinden" : "\(name) üzerinden"
+            }
+        }
+        return "\(place) \(verb)"
+    }
+
     public static let notificationIntroTitle = "WECOMMANDER bildirimleri hazır"
     public static let notificationIntroText =
         "Onay istekleri sağ üstte bildirim olarak görünecek. macOS izin sorarsa \"İzin Ver\"e bas."

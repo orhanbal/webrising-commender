@@ -161,6 +161,7 @@ final class CenterCoreTests: XCTestCase {
         let start = try await client.linkStart(name: "Mac")
         XCTAssertEqual(start.requestId, "r")
         XCTAssertEqual(fake.calls[0].body?["name"] as? String, "Mac")
+        XCTAssertEqual(fake.calls[0].body?["platform"] as? String, "macos")
         let poll = try await client.linkPoll(id: "r", secret: "s")
         XCTAssertEqual(poll.centerToken, "wmc_x")
         XCTAssertEqual(fake.calls[1].body?["requestSecret"] as? String, "s")
@@ -171,5 +172,26 @@ final class CenterCoreTests: XCTestCase {
         let value = try JSONDecoder().decode(JSONValue.self, from: data)
         XCTAssertEqual(ActionSummary.from(value), "pid 42")
         XCTAssertEqual(ActionSummary.from(nil), "")
+    }
+
+    func testOutcomeAndDecidedElsewhereText() async throws {
+        let fake = FakeTransport { _ in
+            (200, #"{"item":{"id":"99413e59-492a-4b60-b53a-9c36d5433112","status":"consumed","decided_via":{"kind":"center","name":"Ofis-PC","platform":"windows","self":false}}}"#)
+        }
+        let client = GatewayClient(baseURL: "https://wecommander.app", transport: fake)
+        let outcome = try await client.outcome(token: "t", id: "99413E59-492A-4B60-B53A-9C36D5433112")
+        XCTAssertEqual(fake.calls[0].path, "/api/approval-requests/99413e59-492a-4b60-b53a-9c36d5433112")
+        XCTAssertEqual(outcome.decidedVia?.platform, "windows")
+        XCTAssertEqual(Texts.decidedElsewhere(outcome), "Windows'tan onaylandı")
+
+        func text(_ status: String, _ via: DecidedVia?) -> String? {
+            Texts.decidedElsewhere(ApprovalOutcome(id: "x", status: status, decidedVia: via))
+        }
+        XCTAssertEqual(text("approved", DecidedVia(kind: "center", name: "Mac", platform: "macos", isSelf: false)), "macOS'tan onaylandı")
+        XCTAssertEqual(text("denied", DecidedVia(kind: "panel", name: nil, platform: nil, isSelf: false)), "Web panelinden reddedildi")
+        XCTAssertEqual(text("approved", DecidedVia(kind: "center", name: "Ev", platform: nil, isSelf: false)), "Ev üzerinden onaylandı")
+        XCTAssertNil(text("approved", DecidedVia(kind: "center", name: "Mac", platform: "macos", isSelf: true)))
+        XCTAssertNil(text("expired", nil))
+        XCTAssertNil(text("pending", nil))
     }
 }

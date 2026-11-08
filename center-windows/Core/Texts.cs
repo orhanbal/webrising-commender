@@ -16,6 +16,30 @@ public static class Texts
         _ => kind,
     };
 
+    /// <summary>
+    /// "macOS'tan onaylandı" for a request this center showed but another
+    /// center or the web panel decided; null when nothing should be said
+    /// (decided here, expired, still pending).
+    /// </summary>
+    public static string? DecidedElsewhere(ApprovalOutcome outcome)
+    {
+        var verb = outcome.Status switch
+        {
+            "approved" or "consumed" => "onaylandı",
+            "denied" => "reddedildi",
+            _ => null,
+        };
+        if (verb is null || outcome.DecidedVia is not { Self: false } via) return null;
+        var place = via.Kind == "panel" ? "Web panelinden" : via.Platform switch
+        {
+            "macos" => "macOS'tan",
+            "windows" => "Windows'tan",
+            "linux" => "Linux'tan",
+            _ => string.IsNullOrWhiteSpace(via.Name) ? "Başka bir Yönetim Merkezinden" : $"{via.Name.Trim()} üzerinden",
+        };
+        return $"{place} {verb}";
+    }
+
     public const string NotificationIntroTitle = "WECOMMANDER bildirimleri hazır";
     public const string NotificationIntroText =
         "Onay istekleri burada, sağ altta görünecek. Windows izin sorarsa \"İzin ver\"e bas.";
