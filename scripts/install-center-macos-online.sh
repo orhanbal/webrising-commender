@@ -14,6 +14,40 @@
 # signs in through the browser and starts at login.
 set -eu
 
+# Brand banner: the WECOMMANDER wordmark when the terminal is wide enough,
+# else the icon with the name. Only block characters; no colors.
+wecommander_banner() {
+  cols="$( { stty size </dev/tty; } 2>/dev/null | cut -d' ' -f2)"
+  case "$cols" in ""|*[!0-9]*) cols=80 ;; esac
+  if [ "$cols" -ge 100 ]; then
+    cat <<'WECOMMANDER_BANNER'
+▄▄▄    ▄▄▄    ▄▄
+▀███   ███   ███                                                                  ▄▄
+ ███  ████▄  ███  ▄▄▄▄      ▄▄▄▄   ▄▄▄                                            ██
+ ███  █████  ██▀ ▄█████▄   ██▀██▄ █████▄ ▄▄▄▄▄ ▄▄▄  ▄▄▄▄▄ ▄▄▄   ▄▄▄▄  ▄▄▄▄▄    ▄▄▄██  ▄▄▄   ▄▄▄▄
+  ██▄ █████ ███ ▄██▀▀▀██  ██     ███████ ██▀████▀█▄ ███▀███▀██  █▀▀█▄ ███▀██  ██▀███ ▄█▀▀█▄ ███▀
+  ██████ ██▄███ ███▄▄▄██  █      ███████ ██  ██  ██ ██  ▀█   █     ██ ██   █ ▄█   ██ ██  ██ ██
+  ██████ █████▀ ████████  █      ███▀███ ██  ██  ██ ██   █   █  ██▀██ ██   █ ██   ██ ██▀▀▀▀ ██
+   ████  ▀████  ███▄  ▄   █▄     ██ ▄ ██ ██  ██  ██ ██   █   █ ██  ██ ██   █  █▄ ▄██ ██  ▄  ██
+   ████   ████   ██████▄  ▀█▄▄▄█▄▀ ███ ▀ ██  ██  ██ ██   █   █  █████ ██   █  ▀█████  ████  ██
+   ▀██▀   ▀██     ▀███▀    ▀▀██▀  █████
+                                 ▀▀▀▀▀▀▀
+WECOMMANDER_BANNER
+    printf '  %s\n' "$1"
+  else
+    sed -e 's/@TITLE@/W E C O M M A N D E R/' -e "s/@SUB@/$1/" <<'WECOMMANDER_BANNER'
+       ▄███████▄
+     ▄███████████
+     █████████████       @TITLE@
+     █████▀ ▀█████
+     ▀██▀ ▄█▄ ▀██        @SUB@
+        ▄█████
+      ▄████████▄
+WECOMMANDER_BANNER
+  fi
+  echo
+}
+
 REPO="orhanbal/webrising-commender"
 DRY_RUN=0
 for arg in "$@"; do
@@ -22,6 +56,8 @@ for arg in "$@"; do
     *) echo "Unknown option: $arg" >&2; exit 2 ;;
   esac
 done
+
+wecommander_banner "Management Center installer"
 
 OS="$(uname -s)"
 case "$OS" in

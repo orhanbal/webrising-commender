@@ -9,8 +9,46 @@
 [CmdletBinding()]
 param([switch]$DryRun,[switch]$Tauri)
 $ErrorActionPreference='Stop'
+# Brand banner: the WECOMMANDER wordmark when the console is wide enough, else
+# the icon with the name. Block characters are built at run time so this
+# file stays ASCII (Windows PowerShell 5.1 reads files as ANSI).
+function Show-WecommanderBanner([string]$Subtitle){
+  $width=80
+  try { $width=[int]$Host.UI.RawUI.WindowSize.Width } catch { }
+  $wide=@(
+    ',,,    ,,,    ,,',
+    '^###   ###   ###                                                                  ,,',
+    ' ###  ####,  ###  ,,,,      ,,,,   ,,,                                            ##',
+    ' ###  #####  ##^ ,#####,   ##^##, #####, ,,,,, ,,,  ,,,,, ,,,   ,,,,  ,,,,,    ,,,##  ,,,   ,,,,',
+    '  ##, ##### ### ,##^^^##  ##     ####### ##^####^#, ###^###^##  #^^#, ###^##  ##^### ,#^^#, ###^',
+    '  ###### ##,### ###,,,##  #      ####### ##  ##  ## ##  ^#   #     ## ##   # ,#   ## ##  ## ##',
+    '  ###### #####^ ########  #      ###^### ##  ##  ## ##   #   #  ##^## ##   # ##   ## ##^^^^ ##',
+    '   ####  ^####  ###,  ,   #,     ## , ## ##  ##  ## ##   #   # ##  ## ##   #  #, ,## ##  ,  ##',
+    '   ####   ####   ######,  ^#,,,#,^ ### ^ ##  ##  ## ##   #   #  ##### ##   #  ^#####  ####  ##',
+    '   ^##^   ^##     ^###^    ^^##^  #####',
+    '                                 ^^^^^^^'
+  )
+  $narrow=@(
+    '       ,#######,',
+    '     ,###########',
+    '     #############       @TITLE@',
+    '     #####^ ^#####',
+    '     ^##^ ,#, ^##        @SUB@',
+    '        ,#####',
+    '      ,########,'
+  )
+  $lines = if($width -ge 100){ $wide + @('  ' + $Subtitle) } else { $narrow }
+  foreach($line in $lines){
+    $text=$line.Replace('@TITLE@','W E C O M M A N D E R').Replace('@SUB@',$Subtitle)
+    if($text -notmatch '[A-Za-z]'){ $text=$text.Replace('#',[string][char]0x2588).Replace('^',[string][char]0x2580).Replace(',',[string][char]0x2584) }
+    else { $art=$text.Substring(0,[Math]::Min(22,$text.Length)); $rest=$text.Substring($art.Length); $text=$art.Replace('#',[string][char]0x2588).Replace('^',[string][char]0x2580).Replace(',',[string][char]0x2584)+$rest }
+    Write-Host $text
+  }
+  Write-Host ""
+}
 $ProgressPreference='SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+Show-WecommanderBanner 'Management Center installer'
 $repo='orhanbal/webrising-commender'
 $releases='https://api.github.com/repos/'+$repo+'/releases?per_page=30'
 $name=if($Tauri){'WECOMMANDER-Center-windows-x64.exe'}else{'WECOMMANDER-Center-windows-x64.zip'}

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Installers show the WECOMMANDER logo in the terminal: the wordmark (block characters) when the window is at least 100 columns wide, otherwise the icon with the name and what is being installed. All five one-line installers (`center.ps1`, `center.sh`, `install.ps1`, `ubuntu.sh`, `macos.sh`); the PowerShell scripts stay ASCII and build the block characters at run time.
+
 - Management Center (Windows, macOS, Linux): "Bu bilgisayardaki ajan" card with the agent's state (çalışıyor / durdu / kapalı / kurulu değil) and an **Ajan çalışsın** switch, also in the tray / menu bar menu, plus a warning bar with "Ajanı başlat" while the agent is not running. Switched on, the Windows and macOS centers keep the agent running: when it stops they start it again (after 0 s, 30 s, 2 min) and say so in a notification, or say once that it could not be started. Switched off (after a confirmation), the agent stops and stays off at the next sign-in. Windows: the per-user scheduled task (no admin), or the legacy service through a UAC prompt; macOS: the LaunchAgent `tr.webrising.commender` via launchctl; Linux: `webrising-commender.service` via `pkexec systemctl` (systemd restarts crashes itself, the center reports a stop).
 
 - `health_snapshot` is quieter on Docker hosts (B12): bind mounts and container mounts of one disk are listed once (`mountCount`, `alsoMountedAt`), container/VM interfaces (`veth*`, `br-*`, `docker*`, `cni*`, `virbr*`, ...) are one summed entry with `interfaceCount`, and same-named processes are one row in the top lists with `count` and up to five `pids`.

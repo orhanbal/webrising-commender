@@ -3,7 +3,41 @@
 set -euo pipefail
 set +x
 umask 077
+# Brand banner: the WECOMMANDER wordmark when the terminal is wide enough,
+# else the icon with the name. Only block characters; no colors.
+wecommander_banner() {
+  cols="$( { stty size </dev/tty; } 2>/dev/null | cut -d' ' -f2)"
+  case "$cols" in ""|*[!0-9]*) cols=80 ;; esac
+  if [ "$cols" -ge 100 ]; then
+    cat <<'WECOMMANDER_BANNER'
+▄▄▄    ▄▄▄    ▄▄
+▀███   ███   ███                                                                  ▄▄
+ ███  ████▄  ███  ▄▄▄▄      ▄▄▄▄   ▄▄▄                                            ██
+ ███  █████  ██▀ ▄█████▄   ██▀██▄ █████▄ ▄▄▄▄▄ ▄▄▄  ▄▄▄▄▄ ▄▄▄   ▄▄▄▄  ▄▄▄▄▄    ▄▄▄██  ▄▄▄   ▄▄▄▄
+  ██▄ █████ ███ ▄██▀▀▀██  ██     ███████ ██▀████▀█▄ ███▀███▀██  █▀▀█▄ ███▀██  ██▀███ ▄█▀▀█▄ ███▀
+  ██████ ██▄███ ███▄▄▄██  █      ███████ ██  ██  ██ ██  ▀█   █     ██ ██   █ ▄█   ██ ██  ██ ██
+  ██████ █████▀ ████████  █      ███▀███ ██  ██  ██ ██   █   █  ██▀██ ██   █ ██   ██ ██▀▀▀▀ ██
+   ████  ▀████  ███▄  ▄   █▄     ██ ▄ ██ ██  ██  ██ ██   █   █ ██  ██ ██   █  █▄ ▄██ ██  ▄  ██
+   ████   ████   ██████▄  ▀█▄▄▄█▄▀ ███ ▀ ██  ██  ██ ██   █   █  █████ ██   █  ▀█████  ████  ██
+   ▀██▀   ▀██     ▀███▀    ▀▀██▀  █████
+                                 ▀▀▀▀▀▀▀
+WECOMMANDER_BANNER
+    printf '  %s\n' "$1"
+  else
+    sed -e 's/@TITLE@/W E C O M M A N D E R/' -e "s/@SUB@/$1/" <<'WECOMMANDER_BANNER'
+       ▄███████▄
+     ▄███████████
+     █████████████       @TITLE@
+     █████▀ ▀█████
+     ▀██▀ ▄█▄ ▀██        @SUB@
+        ▄█████
+      ▄████████▄
+WECOMMANDER_BANNER
+  fi
+  echo
+}
 [[ "$(uname -s)" == Darwin ]] || { echo "macOS required" >&2; exit 1; }
+wecommander_banner "Agent installer for macOS"
 case "$(uname -m)" in arm64|x86_64) ;; *) echo "Unsupported Mac architecture." >&2; exit 1 ;; esac
 (( EUID != 0 )) || { echo "Run in your Mac user session without sudo; installation will request it." >&2; exit 1; }
 INSTALL_ONLY=0
