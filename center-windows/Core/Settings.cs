@@ -25,6 +25,11 @@ public sealed class Settings
     /// request would not be seen at all.
     /// </summary>
     [JsonPropertyName("openPanelOnRequest")] public bool OpenOnRequest { get; set; }
+    /// <summary>
+    /// "Ajan çalışsın": keep the agent on this computer running, restarting it
+    /// when it stops. Switched off, the agent is stopped and stays off.
+    /// </summary>
+    [JsonPropertyName("agentKeepRunning")] public bool AgentKeepRunning { get; set; } = true;
 }
 
 public sealed class SettingsStore(string directory)

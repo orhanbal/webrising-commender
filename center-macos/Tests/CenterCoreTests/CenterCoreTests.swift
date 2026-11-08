@@ -201,4 +201,69 @@ final class CenterCoreTests: XCTestCase {
         XCTAssertEqual(ActionSummary.terminalInput("%%"), "")
         XCTAssertEqual(Texts.kindLabel("terminal_input"), "Terminale yaz")
     }
+
+    final class FakeLaunchctl: CommandRunning, @unchecked Sendable {
+        var loaded = true
+        var running = false
+        var disabled = false
+        var calls: [[String]] = []
+        func run(_ path: String, _ arguments: [String]) async -> (status: Int32, output: String) {
+            calls.append(arguments)
+            switch arguments.first {
+            case "print": return loaded ? (0, running ? "\tstate = running\n\tpid = 42\n" : "\tstate = not running\n") : (113, "")
+            case "print-disabled": return (0, disabled ? "\t\"tr.webrising.commender\" => disabled\n" : "\t\"other\" => disabled\n")
+            case "enable": disabled = false
+            case "disable": disabled = true
+            case "bootstrap": loaded = true
+            case "bootout": loaded = false; running = false
+            case "kickstart": running = loaded
+            default: break
+            }
+            return (0, "")
+        }
+    }
+
+    func testAgentControlSwitchesTheLaunchAgent() async throws {
+        let fake = FakeLaunchctl()
+        let control = AgentControl(uid: 501, home: "/Users/o", runner: fake, plistExists: { true })
+        var status = await control.status()
+        XCTAssertEqual(status, AgentStatus(state: .stopped, enabled: true))
+        XCTAssertEqual(Texts.agentStateLabel(status), "Ajan durdu")
+        try await control.setEnabled(true)
+        status = await control.status()
+        XCTAssertTrue(status.running)
+        XCTAssertTrue(fake.calls.contains(["kickstart", "gui/501/tr.webrising.commender"]))
+        try await control.setEnabled(false)
+        status = await control.status()
+        XCTAssertEqual(status, AgentStatus(state: .stopped, enabled: false))
+        XCTAssertEqual(Texts.agentStateLabel(status), "Ajan kapalı")
+        try await control.setEnabled(true)
+        XCTAssertTrue(fake.calls.contains(["bootstrap", "gui/501", "/Users/o/Library/LaunchAgents/tr.webrising.commender.plist"]))
+        let current = await control.status()
+        XCTAssertTrue(current.running)
+
+        let missing = AgentControl(uid: 501, home: "/Users/o", runner: FakeLaunchctl(), plistExists: { false })
+        (missing.runner as! FakeLaunchctl).loaded = false
+        let missingStatus = await missing.status()
+        XCTAssertEqual(missingStatus.state, .notInstalled)
+        do { try await missing.setEnabled(true); XCTFail("must refuse") } catch {}
+    }
+
+    func testAgentWatchdogBacksOffThenGivesUpOnce() {
+        var dog = AgentWatchdog()
+        let stopped = AgentStatus(state: .stopped, enabled: true)
+        let running = AgentStatus(state: .running, enabled: true)
+        let t = Date(timeIntervalSince1970: 1_000_000)
+        XCTAssertEqual(dog.next(keepRunning: false, status: stopped, now: t), .none)
+        XCTAssertEqual(dog.next(keepRunning: true, status: stopped, now: t), .start)
+        XCTAssertEqual(dog.next(keepRunning: true, status: stopped, now: t + 10), .none)
+        XCTAssertEqual(dog.next(keepRunning: true, status: stopped, now: t + 31), .start)
+        XCTAssertEqual(dog.next(keepRunning: true, status: stopped, now: t + 200), .start)
+        XCTAssertEqual(dog.next(keepRunning: true, status: stopped, now: t + 400), .giveUp)
+        XCTAssertEqual(dog.next(keepRunning: true, status: stopped, now: t + 800), .none)
+        XCTAssertEqual(dog.next(keepRunning: true, status: running, now: t + 900), .none)
+        XCTAssertEqual(dog.failures, 0)
+        XCTAssertTrue(AgentControl.isDisabled("  \"tr.webrising.commender\" => true"))
+        XCTAssertFalse(AgentControl.isDisabled("  \"tr.webrising.commender\" => enabled"))
+    }
 }

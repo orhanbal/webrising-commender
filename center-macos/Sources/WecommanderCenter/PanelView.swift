@@ -72,6 +72,13 @@ private struct Banners: View {
                     Button("Bildirimlere izin ver") { model.notifier.requestPermission() }
                 }
             }
+            if model.phase == .signedIn, let agent = model.agent, agent.state == .stopped, !model.agentBusy {
+                Callout(symbol: "bolt.horizontal.circle", tint: .red,
+                        title: agent.enabled ? "Bu Mac'teki ajan çalışmıyor" : "Bu Mac'teki ajan kapalı",
+                        text: Texts.agentOffWarning) {
+                    Button("Ajanı başlat") { Task { await model.setAgentEnabled(true) } }
+                }
+            }
             if model.phase == .signedIn && !model.autonomy.isEmpty {
                 Callout(symbol: "bolt.fill", tint: .orange, title: "Otonom mod açık",
                         text: "\(model.autonomy.count) cihazda onay istenmiyor.") { EmptyView() }
@@ -353,6 +360,8 @@ private struct DevicesView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            AgentCard(model: model)
+                .padding(.bottom, 6)
             if model.devices.isEmpty {
                 Text("Henüz cihaz yok.").font(.callout).foregroundStyle(.secondary)
             }
@@ -370,6 +379,57 @@ private struct DevicesView: View {
                 .padding(8)
                 .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
             }
+        }
+    }
+}
+
+/// "Bu Mac'teki ajan": state and the "Ajan çalışsın" switch.
+private struct AgentCard: View {
+    @ObservedObject var model: AppModel
+    @State private var confirmOff = false
+
+    private var color: Color {
+        switch model.agent?.state {
+        case .running: return .green
+        case .stopped: return .red
+        default: return .secondary
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Bu Mac'teki ajan").font(.callout.weight(.semibold))
+            HStack(spacing: 8) {
+                Circle().fill(color).frame(width: 8, height: 8)
+                Text(model.agentBusy ? "İşleniyor…" : Texts.agentStateLabel(model.agent)).font(.callout)
+                if model.agentBusy { ProgressView().controlSize(.small) }
+                Spacer()
+                Toggle("Ajan çalışsın", isOn: Binding(
+                    get: { model.agent?.running ?? model.settings.agentKeepRunning },
+                    set: { on in
+                        if on { Task { await model.setAgentEnabled(true) } } else { confirmOff = true }
+                    }))
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .disabled(model.agentBusy || model.agent == nil || model.agent?.state == .notInstalled)
+            }
+            Text(help).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+        .confirmationDialog("Ajan kapatılsın mı?", isPresented: $confirmOff) {
+            Button("Ajanı kapat", role: .destructive) { Task { await model.setAgentEnabled(false) } }
+            Button("Vazgeç", role: .cancel) {}
+        } message: {
+            Text(Texts.agentOffWarning + " Yeniden açana kadar oturum açılışında da başlamaz.")
+        }
+    }
+
+    private var help: String {
+        switch model.agent?.state {
+        case .notInstalled: return Texts.agentNotInstalled
+        case .running: return "Açıkken ajan durursa Yönetim Merkezi onu kendiliğinden yeniden başlatır ve bildirim gösterir."
+        default: return Texts.agentOffWarning
         }
     }
 }

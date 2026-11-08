@@ -13,10 +13,13 @@ public struct CenterSettings: Codable, Equatable {
     /// notification is enough. The panel still opens when notifications can
     /// not be shown (denied in macOS or turned off here).
     public var openPanelOnRequest: Bool = false
+    /// "Ajan çalışsın": keep the agent on this Mac running, starting it again
+    /// when it stops. Switched off, the agent is stopped and stays off.
+    public var agentKeepRunning: Bool = true
 
     public init() {}
 
-    enum CodingKeys: String, CodingKey { case server, notifications, notificationIntroShown, openPanelOnRequest }
+    enum CodingKeys: String, CodingKey { case server, notifications, notificationIntroShown, openPanelOnRequest, agentKeepRunning }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -24,6 +27,7 @@ public struct CenterSettings: Codable, Equatable {
         notifications = try c.decodeIfPresent(Bool.self, forKey: .notifications) ?? true
         notificationIntroShown = try c.decodeIfPresent(Bool.self, forKey: .notificationIntroShown) ?? false
         openPanelOnRequest = try c.decodeIfPresent(Bool.self, forKey: .openPanelOnRequest) ?? false
+        agentKeepRunning = try c.decodeIfPresent(Bool.self, forKey: .agentKeepRunning) ?? true
     }
 }
 

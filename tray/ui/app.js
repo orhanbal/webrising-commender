@@ -150,6 +150,20 @@ function renderDevices() {
           .filter(Boolean).join(" · "))))));
 }
 
+function renderAgent() {
+  const a = state.agent;
+  $("agentCard").hidden = !a;
+  if (!a) return;
+  $("agentState").textContent = state.agentBusy ? "İşleniyor…" : a.label;
+  $("agentSwitch").checked = a.state === "running";
+  $("agentSwitch").disabled = state.agentBusy || a.state === "notInstalled";
+  $("agentHelp").textContent = a.state === "notInstalled"
+    ? "Bu bilgisayarda WECOMMANDER ajanı kurulu değil. Kurmak için wecommander.app panelindeki Cihazlar sayfasındaki Ubuntu komutunu kullan."
+    : a.state === "running"
+      ? "Ajan bir sistem hizmeti; durursa sistem onu yeniden başlatır. Kapatıp açmak yönetici şifresi ister."
+      : "Ajan kapalıyken yapay zekâ bu bilgisayara erişemez. Açmak yönetici şifresi ister.";
+}
+
 function render(next) {
   state = next;
   $("signedOut").hidden = state.phase !== "signedOut";
@@ -167,6 +181,7 @@ function render(next) {
     renderPending();
     renderAutonomy();
     renderDevices();
+    renderAgent();
     $("setNotify").checked = state.settings.notifications;
     $("setOpen").checked = state.settings.openOnRequest;
     $("setAutostart").checked = state.autostart;
@@ -219,6 +234,13 @@ $("disconnectYes").addEventListener("click", async () => { $("disconnectConfirm"
 $("signOutTop").addEventListener("click", () => { $("signOutConfirm").hidden = false; });
 $("signOutNo").addEventListener("click", () => { $("signOutConfirm").hidden = true; });
 $("signOutYes").addEventListener("click", async () => { $("signOutConfirm").hidden = true; await call("disconnect"); });
+$("agentSwitch").addEventListener("change", () => {
+  if ($("agentSwitch").checked) { call("set_agent", { enabled: true }); return; }
+  $("agentSwitch").checked = true;
+  $("agentConfirm").hidden = false;
+});
+$("agentOffNo").addEventListener("click", () => { $("agentConfirm").hidden = true; });
+$("agentOffYes").addEventListener("click", async () => { $("agentConfirm").hidden = true; await call("set_agent", { enabled: false }); });
 $("closePanel").addEventListener("click", () => invoke("hide_panel"));
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") invoke("hide_panel");

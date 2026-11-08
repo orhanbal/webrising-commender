@@ -256,4 +256,88 @@ public class CoreTests
         Assert.Equal("", ActionSummary.TerminalInput("%%"));
         Assert.Equal("Terminale yaz", Texts.KindLabel("terminal_input"));
     }
+
+    private sealed class FakeRunner : ICommandRunner
+    {
+        public bool Running;
+        public string TaskStatus = "Ready";
+        public bool HasTask = true;
+        public bool HasService;
+        public string ServiceState = "STOPPED";
+        public readonly List<string> Calls = [];
+        public Task<(int, string)> RunAsync(string file, string arguments, bool elevated = false)
+        {
+            Calls.Add((elevated ? "elevated " : "") + file + " " + arguments);
+            if (file == "schtasks.exe" && arguments.StartsWith("/Query"))
+                return Task.FromResult(HasTask ? (0, $"\"\\WECOMMANDER-Agent-S-1\",\"N/A\",\"{TaskStatus}\"\r\n") : (1, ""));
+            if (file == "sc.exe" && arguments.StartsWith("query"))
+                return Task.FromResult(HasService ? (0, $"SERVICE_NAME: WebRisingCommender\n        STATE              : 4  {ServiceState}\n") : (1060, ""));
+            if (file == "schtasks.exe" && arguments.StartsWith("/Run")) Running = true;
+            if (file == "schtasks.exe" && arguments.Contains("/DISABLE")) TaskStatus = "Disabled";
+            if (file == "schtasks.exe" && arguments.Contains("/ENABLE")) TaskStatus = "Ready";
+            return Task.FromResult((0, ""));
+        }
+        public bool AgentProcessRunning() => Running;
+        public int KillAgentProcesses() { var was = Running; Running = false; return was ? 1 : 0; }
+    }
+
+    [Fact]
+    public async Task AgentTaskIsShownStartedAndStopped()
+    {
+        var runner = new FakeRunner();
+        var control = new AgentControl(runner, "S-1");
+        var status = await control.StatusAsync();
+        Assert.Equal(new AgentStatus(AgentRunState.Stopped, AgentMode.Task, true), status);
+        Assert.Equal("Ajan durdu", Texts.AgentStateLabel(status));
+
+        await control.SetEnabledAsync(true);
+        Assert.Contains(runner.Calls, c => c == "schtasks.exe /Run /TN \"WECOMMANDER-Agent-S-1\"");
+        Assert.Equal("Ajan çalışıyor", Texts.AgentStateLabel(await control.StatusAsync()));
+
+        await control.SetEnabledAsync(false);
+        status = await control.StatusAsync();
+        Assert.False(status.Running);
+        Assert.False(status.Enabled);
+        Assert.Equal("Ajan kapalı", Texts.AgentStateLabel(status));
+        Assert.DoesNotContain(runner.Calls, c => c.StartsWith("elevated"));
+    }
+
+    [Fact]
+    public async Task AgentServiceNeedsElevationAndMissingAgentIsReported()
+    {
+        var runner = new FakeRunner { HasTask = false, HasService = true, ServiceState = "RUNNING" };
+        var control = new AgentControl(runner, "S-1");
+        var status = await control.StatusAsync();
+        Assert.Equal(AgentMode.Service, status.Mode);
+        Assert.True(status.Running);
+        await control.SetEnabledAsync(false);
+        Assert.Contains(runner.Calls, c => c.StartsWith("elevated cmd.exe /c sc.exe stop WebRisingCommender"));
+
+        var none = new AgentControl(new FakeRunner { HasTask = false }, "S-1");
+        Assert.Equal(AgentRunState.NotInstalled, (await none.StatusAsync()).State);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => none.SetEnabledAsync(true));
+
+        Assert.Equal("Running", AgentControl.ParseTaskStatus("\"\\X\",\"N/A\",\"Running\"\r\n"));
+        Assert.Null(AgentControl.ParseTaskStatus(""));
+        Assert.Equal("STOPPED", AgentControl.ParseServiceState("  STATE : 1  STOPPED \n"));
+    }
+
+    [Fact]
+    public void WatchdogRestartsWithBackoffThenGivesUpOnce()
+    {
+        var dog = new AgentWatchdog();
+        var stopped = new AgentStatus(AgentRunState.Stopped, AgentMode.Task, true);
+        var running = stopped with { State = AgentRunState.Running };
+        var t = DateTimeOffset.UnixEpoch;
+        Assert.Equal(WatchdogAction.None, dog.Next(false, stopped, t));
+        Assert.Equal(WatchdogAction.Start, dog.Next(true, stopped, t));
+        Assert.Equal(WatchdogAction.None, dog.Next(true, stopped, t.AddSeconds(10)));
+        Assert.Equal(WatchdogAction.Start, dog.Next(true, stopped, t.AddSeconds(31)));
+        Assert.Equal(WatchdogAction.Start, dog.Next(true, stopped, t.AddSeconds(200)));
+        Assert.Equal(WatchdogAction.GiveUp, dog.Next(true, stopped, t.AddSeconds(400)));
+        Assert.Equal(WatchdogAction.None, dog.Next(true, stopped, t.AddSeconds(800)));
+        Assert.Equal(WatchdogAction.None, dog.Next(true, running, t.AddSeconds(900)));
+        Assert.Equal(0, dog.Failures);
+        Assert.Equal(WatchdogAction.Start, dog.Next(true, stopped, t.AddSeconds(901)));
+    }
 }

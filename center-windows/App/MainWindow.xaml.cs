@@ -155,6 +155,7 @@ public sealed partial class MainWindow : Window
                 RenderPending();
                 RenderAutonomy();
                 RenderDevices();
+                RenderAgent();
                 NotifySwitch.IsOn = Center.Settings.Notifications;
                 OpenSwitch.IsOn = Center.Settings.OpenOnRequest;
                 AutostartSwitch.IsOn = LocalStore.AutostartEnabled;
@@ -166,6 +167,48 @@ public sealed partial class MainWindow : Window
         }
         finally { _rendering = false; }
     }
+
+    private void RenderAgent()
+    {
+        var agent = Center.Agent;
+        var busy = Center.AgentBusy;
+        AgentStateText.Text = busy ? "İşleniyor…" : Texts.AgentStateLabel(agent);
+        AgentDot.Fill = new SolidColorBrush(agent switch
+        {
+            { State: AgentRunState.Running } => Microsoft.UI.Colors.SeaGreen,
+            { State: AgentRunState.NotInstalled } or null => Microsoft.UI.Colors.Gray,
+            _ => Microsoft.UI.Colors.IndianRed,
+        });
+        AgentProgress.IsActive = busy;
+        AgentSwitch.IsOn = agent?.Running ?? Center.Settings.AgentKeepRunning;
+        AgentSwitch.IsEnabled = !busy && agent is not null && agent.State != AgentRunState.NotInstalled;
+        AgentHelpText.Text = agent switch
+        {
+            { State: AgentRunState.NotInstalled } => Texts.AgentNotInstalled,
+            { Mode: AgentMode.Service } => "Ajan bir Windows hizmeti olarak kurulu: açıp kapatmak yönetici onayı ister. Durursa bildirim gelir.",
+            { Running: true } => "Açıkken ajan durursa Yönetim Merkezi onu kendiliğinden yeniden başlatır ve bildirim gösterir.",
+            _ => Texts.AgentOffWarning,
+        };
+        var down = agent is { Running: false, State: AgentRunState.Stopped } && !busy;
+        AgentBar.IsOpen = Center.Phase == Phase.SignedIn && down;
+        AgentBar.Title = agent is { Enabled: false } ? "Bu bilgisayardaki ajan kapalı" : "Bu bilgisayardaki ajan çalışmıyor";
+        AgentBar.Message = Texts.AgentOffWarning;
+    }
+
+    private async void AgentSwitch_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_rendering) return;
+        var on = AgentSwitch.IsOn;
+        if (!on && !await ConfirmAsync("Ajan kapatılsın mı?",
+                Texts.AgentOffWarning + " Yeniden açana kadar oturum açılışında da başlamaz.", "Ajanı kapat"))
+        {
+            Render();
+            return;
+        }
+        await Center.SetAgentEnabledAsync(on);
+    }
+
+    private async void StartAgent_Click(object sender, RoutedEventArgs e) => await Center.SetAgentEnabledAsync(true);
 
     private void UpdateStatus()
     {
@@ -382,7 +425,7 @@ public sealed partial class MainWindow : Window
         var selected = sender.SelectedItem;
         ApprovalsPanel.Visibility = selected == ApprovalsTab ? Visibility.Visible : Visibility.Collapsed;
         AutonomyPanel.Visibility = selected == AutonomyTab ? Visibility.Visible : Visibility.Collapsed;
-        DevicesPanel.Visibility = selected == DevicesTab ? Visibility.Visible : Visibility.Collapsed;
+        DevicesTabPanel.Visibility = selected == DevicesTab ? Visibility.Visible : Visibility.Collapsed;
         SettingsPanel.Visibility = selected == SettingsTab ? Visibility.Visible : Visibility.Collapsed;
     }
 

@@ -29,7 +29,13 @@ public partial class App : Application
     private MainWindow? _window;
     private TaskbarIcon? _tray;
     private MenuFlyoutItem? _pendingItem, _autonomyItem, _stopAutonomyItem, _accountItem, _allowNotifyItem;
-    private ToggleMenuFlyoutItem? _notifyItem;
+    private ToggleMenuFlyoutItem? _notifyItem, _agentItem;
+    private readonly AgentControl _agent = new(new ProcessRunner(),
+        System.Security.Principal.WindowsIdentity.GetCurrent().User?.Value ?? "");
+    private readonly AgentWatchdog _watchdog = new();
+    private DateTime _lastAgentCheck = DateTime.MinValue;
+    private bool _agentBusy;
+    private bool _serviceStopNoticeShown;
     private DispatcherQueueTimer? _timer;
     private DateTime _lastSync = DateTime.MinValue;
     private bool _syncing;
@@ -51,6 +57,9 @@ public partial class App : Application
     public IReadOnlyList<Device> Devices { get; private set; } = [];
     public IReadOnlyList<AutonomyItem> Autonomy { get; private set; } = [];
     public string? Error { get; set; }
+    /// <summary>The WECOMMANDER agent on this computer (null until first read).</summary>
+    public AgentStatus? Agent { get; private set; }
+    public bool AgentBusy => _agentBusy;
     public DateTime? LastSync => _lastSync == DateTime.MinValue ? null : _lastSync;
 
     /// <summary>Windows' own notification setting for this app (Settings, System, Notifications).</summary>
@@ -262,11 +271,91 @@ public partial class App : Application
             if (RefreshNotificationSetting()) Publish();
             if (_link is not null) await PollLinkAsync();
             else if (Token is not null && DateTime.UtcNow - _lastSync >= SyncEvery) await SyncAsync();
+            if (DateTime.UtcNow - _lastAgentCheck >= TimeSpan.FromSeconds(10)) await CheckAgentAsync();
         }
         finally { _syncing = false; }
     }
 
     public void RequestSync() => _lastSync = DateTime.MinValue;
+
+    /// <summary>
+    /// Reads the agent's state and, while "Ajan çalışsın" is on, starts it
+    /// again when it stopped (scheduled task: no prompt). A Windows service is
+    /// not restarted silently, since that needs a UAC prompt: the owner gets a
+    /// notification instead.
+    /// </summary>
+    private async Task CheckAgentAsync()
+    {
+        if (_agentBusy) return;
+        _lastAgentCheck = DateTime.UtcNow;
+        AgentStatus status;
+        try { status = await _agent.StatusAsync(); }
+        catch (Exception) { return; }
+        var changed = status != Agent;
+        Agent = status;
+        if (status.Running) _serviceStopNoticeShown = false;
+        if (status.Mode == AgentMode.Service)
+        {
+            if (!status.Running && Settings.AgentKeepRunning && status.Enabled && !_serviceStopNoticeShown)
+            {
+                _serviceStopNoticeShown = true;
+                Toast(Texts.AgentServiceStoppedText);
+            }
+        }
+        else
+        {
+            switch (_watchdog.Next(Settings.AgentKeepRunning && status.Enabled, status, DateTimeOffset.UtcNow))
+            {
+                case WatchdogAction.Start:
+                    try
+                    {
+                        await _agent.SetEnabledAsync(true);
+                        Agent = await _agent.StatusAsync();
+                        if (Agent.Running) Toast(Texts.AgentRestartedText);
+                    }
+                    catch (Exception) { /* next check tries again, then gives up */ }
+                    changed = true;
+                    break;
+                case WatchdogAction.GiveUp:
+                    Toast(Texts.AgentGaveUpText);
+                    break;
+            }
+        }
+        if (changed) Publish();
+    }
+
+    /// <summary>"Ajan çalışsın" in the panel and the tray menu.</summary>
+    public async Task SetAgentEnabledAsync(bool on)
+    {
+        if (_agentBusy) return;
+        _agentBusy = true;
+        Publish();
+        try
+        {
+            await _agent.SetEnabledAsync(on);
+            Settings.AgentKeepRunning = on;
+            SaveSettings();
+            _watchdog.Reset();
+            // A started agent needs a moment before its process shows up.
+            for (var i = 0; i < 10; i++)
+            {
+                Agent = await _agent.StatusAsync();
+                if (Agent.Running == on) break;
+                await Task.Delay(500);
+            }
+            Error = null;
+        }
+        catch (Exception e)
+        {
+            Error = e.Message;
+        }
+        finally
+        {
+            _agentBusy = false;
+            _lastAgentCheck = DateTime.UtcNow;
+            Publish();
+        }
+    }
 
     public async Task SyncAsync()
     {
@@ -542,6 +631,12 @@ public partial class App : Application
             Visibility = Visibility.Collapsed,
             Command = new RelayCommand(OpenNotificationSettings),
         };
+        _agentItem = new ToggleMenuFlyoutItem
+        {
+            Text = "Ajan çalışsın",
+            IsChecked = Settings.AgentKeepRunning,
+            Command = new RelayCommand(async () => await SetAgentEnabledAsync(!(Agent?.Running ?? false))),
+        };
         _accountItem = new MenuFlyoutItem
         {
             Text = "Oturum aç…",
@@ -562,6 +657,8 @@ public partial class App : Application
         menu.Items.Add(new MenuFlyoutItem { Text = "Paneli tarayıcıda aç", Command = new RelayCommand(OpenDashboard) });
         menu.Items.Add(_notifyItem);
         menu.Items.Add(_allowNotifyItem);
+        menu.Items.Add(new MenuFlyoutSeparator());
+        menu.Items.Add(_agentItem);
         menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(_accountItem);
         menu.Items.Add(new MenuFlyoutItem { Text = "Çıkış", Command = new RelayCommand(Quit) });
@@ -603,6 +700,10 @@ public partial class App : Application
         _allowNotifyItem!.Visibility = NotificationsBlocked ? Visibility.Visible : Visibility.Collapsed;
         if (NotificationsBlocked) _tray.ToolTipText = tooltip + " · Windows bildirimleri kapalı";
         _accountItem!.Text = !signedIn ? "Oturum aç…" : Me?.Email is { } email ? $"Oturumu kapat ({email})" : "Oturumu kapat";
+        _agentItem!.Text = Agent is null ? "Ajan çalışsın" : $"Ajan çalışsın ({Texts.AgentStateLabel(Agent).ToLowerInvariant()})";
+        _agentItem.IsChecked = Agent?.Running ?? Settings.AgentKeepRunning;
+        _agentItem.IsEnabled = !_agentBusy && Agent is not null && Agent.State != AgentRunState.NotInstalled;
+        if (Agent is { Running: false, State: not AgentRunState.NotInstalled }) _tray.ToolTipText += " · " + Texts.AgentStateLabel(Agent).ToLowerInvariant();
     }
 
     private void Quit()

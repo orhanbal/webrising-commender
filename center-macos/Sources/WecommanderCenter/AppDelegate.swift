@@ -90,6 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             : (pending == 0 ? "WECOMMANDER — bekleyen onay yok" : "WECOMMANDER — \(pending) bekleyen onay")
         if autonomy > 0 { tooltip += " · otonom mod açık (\(autonomy) cihaz)" }
         if model.notificationsBlocked { tooltip += " · macOS bildirimleri kapalı" }
+        if let agent = model.agent, agent.state == .stopped { tooltip += " · " + Texts.agentStateLabel(agent).lowercased() }
         button.toolTip = tooltip
     }
 
@@ -115,6 +116,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(item("macOS bildirimlerine izin ver…", #selector(menuAllowNotifications)))
         }
         menu.addItem(.separator())
+        let agentItem = item("Ajan çalışsın — " + Texts.agentStateLabel(model.agent).lowercased(), #selector(menuToggleAgent))
+        agentItem.state = model.agent?.running == true ? .on : .off
+        agentItem.isEnabled = !model.agentBusy && model.agent != nil && model.agent?.state != .notInstalled
+        menu.addItem(agentItem)
+        menu.addItem(.separator())
         let account = !signedIn ? "Oturum aç…" : model.me?.email.map { "Oturumu kapat (\($0))" } ?? "Oturumu kapat"
         menu.addItem(item(account, #selector(menuAccount)))
         menu.addItem(item("Çıkış", #selector(menuQuit), key: "q"))
@@ -131,6 +137,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func menuAllowNotifications() { Notifier.openSettings() }
     @objc private func menuToggleNotifications() { model.update { $0.notifications.toggle() } }
     @objc private func menuQuit() { NSApp.terminate(nil) }
+
+    @objc private func menuToggleAgent() {
+        if model.agent?.running == true {
+            // Same confirmation as in the panel.
+            showPanel()
+            return
+        }
+        Task { await model.setAgentEnabled(true) }
+    }
 
     @objc private func menuStopAutonomy() {
         Task {
