@@ -59,6 +59,8 @@ public static class Texts
         "Bu bilgisayardaki ajan durdu ve yeniden başlatılamadı. Yapay zekâ bu bilgisayara erişemez. Paneli açıp \"Ajan çalışsın\"ı yeniden dene.";
     public const string AgentServiceStoppedText =
         "Bu bilgisayardaki ajan (Windows hizmeti) durdu. Başlatmak için paneldeki \"Ajan çalışsın\"ı aç; Windows yönetici onayı isteyecek.";
+    public const string AgentUpdateStarted =
+        "Ajan güncelleme penceresi açıldı. Windows yönetici onayı isteyecek; cihazın kaydı korunur.";
     public const string AgentOffWarning = "Ajan kapalıyken yapay zekâ bu bilgisayara erişemez.";
 
     public const string NotificationIntroTitle = "WECOMMANDER bildirimleri hazır";

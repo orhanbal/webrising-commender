@@ -49,6 +49,8 @@ public enum Texts {
     public static let agentRestarted = "Bu Mac'teki ajan durmuştu; yeniden başlatıldı."
     public static let agentGaveUp =
         "Bu Mac'teki ajan durdu ve yeniden başlatılamadı. Yapay zekâ bu Mac'e erişemez. Menü çubuğundaki simgeden \"Ajan çalışsın\"ı yeniden dene."
+    public static let agentUpdateStarted =
+        "Ajan güncellemesi Terminal'de açıldı. macOS yönetici şifresini isteyecek; Mac'in kaydı korunur."
     public static let agentOffWarning = "Ajan kapalıyken yapay zekâ bu Mac'e erişemez."
 
     /// One line for the agent card and the menu.

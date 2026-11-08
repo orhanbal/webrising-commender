@@ -266,4 +266,11 @@ final class CenterCoreTests: XCTestCase {
         XCTAssertTrue(AgentControl.isDisabled("  \"tr.webrising.commender\" => true"))
         XCTAssertFalse(AgentControl.isDisabled("  \"tr.webrising.commender\" => enabled"))
     }
+
+    func testAgentVersionAndUpdateCommand() {
+        XCTAssertEqual(AgentControl.parseVersion("webrising-commender 0.1.58\n"), "0.1.58")
+        XCTAssertNil(AgentControl.parseVersion("error: no such file"))
+        XCTAssertNil(AgentControl.parseVersion(""))
+        XCTAssertEqual(AgentControl.updateCommand(server: "https://wecommander.app/"), "curl -fsSL https://wecommander.app/install.sh | sh")
+    }
 }

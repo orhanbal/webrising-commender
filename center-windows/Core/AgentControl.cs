@@ -80,8 +80,37 @@ public sealed class ProcessRunner : ICommandRunner
 /// (start/stop without admin; disabled while switched off so it does not come
 /// back at the next sign-in) or the legacy service (through a UAC prompt).
 /// </summary>
-public sealed class AgentControl(ICommandRunner runner, string userSid)
+public sealed class AgentControl(ICommandRunner runner, string userSid, string? agentExe = null)
 {
+    /// <summary>Where the WECOMMANDER Setup installs the agent.</summary>
+    public string AgentExe { get; } = agentExe ?? Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WECOMMANDER", "webrising-commender.exe");
+
+    /// <summary>"0.1.1651" from `webrising-commender --version`, or null when unknown.</summary>
+    public async Task<string?> InstalledVersionAsync()
+    {
+        try
+        {
+            var (code, output) = await runner.RunAsync(AgentExe, "--version").ConfigureAwait(false);
+            return code == 0 ? ParseVersion(output) : null;
+        }
+        catch (Exception) { return null; }
+    }
+
+    public static string? ParseVersion(string output)
+    {
+        var parts = output.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2 && parts[^1].Length > 0 && char.IsDigit(parts[^1][0]) ? parts[^1] : null;
+    }
+
+    /// <summary>
+    /// The official one-line agent installer for this server, run in a new
+    /// PowerShell window: it downloads the newest checked Setup, asks for
+    /// Windows UAC and keeps the device's enrollment.
+    /// </summary>
+    public static string UpdateArguments(string server) =>
+        $"-NoExit -NoProfile -ExecutionPolicy Bypass -Command \"& ([scriptblock]::Create((irm {server.TrimEnd('/')}/install.ps1)))\"";
+
     public const string ServiceName = "WebRisingCommender";
     public string TaskName => "WECOMMANDER-Agent-" + userSid;
 

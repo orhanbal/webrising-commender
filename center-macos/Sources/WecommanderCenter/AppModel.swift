@@ -27,6 +27,9 @@ final class AppModel: ObservableObject {
     /// The WECOMMANDER agent on this Mac (nil until first read).
     @Published private(set) var agent: AgentStatus?
     @Published private(set) var agentBusy = false
+    /// Installed agent version ("0.1.58"), read every few minutes.
+    @Published private(set) var agentVersion: String?
+    private var lastVersionCheck = Date.distantPast
 
     private let agentControl = AgentControl(uid: getuid(), home: NSHomeDirectory(), runner: ProcessRunner())
     private var watchdog = AgentWatchdog()
@@ -310,8 +313,13 @@ final class AppModel: ObservableObject {
         guard !agentBusy else { return }
         lastAgentCheck = Date()
         let status = await agentControl.status()
-        let changed = status != agent
+        var changed = status != agent
         agent = status
+        if status.state != .notInstalled && Date().timeIntervalSince(lastVersionCheck) >= 300 {
+            lastVersionCheck = Date()
+            let version = await agentControl.installedVersion()
+            if version != agentVersion { agentVersion = version; changed = true }
+        }
         switch watchdog.next(keepRunning: settings.agentKeepRunning && status.enabled, status: status, now: Date()) {
         case .start:
             do {
@@ -324,6 +332,25 @@ final class AppModel: ObservableObject {
             notifier.showPlain("WECOMMANDER", Texts.agentGaveUp)
         case .none:
             if changed { publish() }
+        }
+    }
+
+    /// Opens Terminal with the official agent installer (it asks for the
+    /// administrator password there).
+    func updateAgent() {
+        let command = AgentControl.updateCommand(server: settings.server)
+            .replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        let script = "tell application \"Terminal\"\nactivate\ndo script \"\(command)\"\nend tell"
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+        do {
+            try process.run()
+            lastVersionCheck = .distantPast
+            notifier.showPlain("WECOMMANDER", Texts.agentUpdateStarted)
+        } catch {
+            self.error = error.localizedDescription
+            publish()
         }
     }
 

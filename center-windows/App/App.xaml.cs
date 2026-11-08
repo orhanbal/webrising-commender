@@ -60,6 +60,26 @@ public partial class App : Application
     /// <summary>The WECOMMANDER agent on this computer (null until first read).</summary>
     public AgentStatus? Agent { get; private set; }
     public bool AgentBusy => _agentBusy;
+    /// <summary>Installed agent version ("0.1.1651"), read every few minutes.</summary>
+    public string? AgentVersion { get; private set; }
+    private DateTime _lastVersionCheck = DateTime.MinValue;
+
+    /// <summary>Opens the official agent installer in a new PowerShell window (it asks for UAC).</summary>
+    public void UpdateAgent()
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("powershell.exe",
+                AgentControl.UpdateArguments(Settings.Server)) { UseShellExecute = true });
+            _lastVersionCheck = DateTime.MinValue;
+            Toast(Texts.AgentUpdateStarted);
+        }
+        catch (Exception e)
+        {
+            Error = e.Message;
+            Publish();
+        }
+    }
     public DateTime? LastSync => _lastSync == DateTime.MinValue ? null : _lastSync;
 
     /// <summary>Windows' own notification setting for this app (Settings, System, Notifications).</summary>
@@ -293,6 +313,12 @@ public partial class App : Application
         catch (Exception) { return; }
         var changed = status != Agent;
         Agent = status;
+        if (status.State != AgentRunState.NotInstalled && DateTime.UtcNow - _lastVersionCheck >= TimeSpan.FromMinutes(5))
+        {
+            _lastVersionCheck = DateTime.UtcNow;
+            var version = await _agent.InstalledVersionAsync();
+            if (version != AgentVersion) { AgentVersion = version; changed = true; }
+        }
         if (status.Running) _serviceStopNoticeShown = false;
         if (status.Mode == AgentMode.Service)
         {
