@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `health_snapshot` is quieter on Docker hosts (B12): bind mounts and container mounts of one disk are listed once (`mountCount`, `alsoMountedAt`), container/VM interfaces (`veth*`, `br-*`, `docker*`, `cni*`, `virbr*`, ...) are one summed entry with `interfaceCount`, and same-named processes are one row in the top lists with `count` and up to five `pids`.
+
 - Management Center for Linux desktops (x86_64, WebKitGTK 4.1): the tray app (`tray/`) is built and published as `WECOMMANDER-Center-linux-x86_64.tar.gz` (in each `ubuntu-preview-N` and the fixed `center-linux-latest` release). Each approval request is a desktop notification with **Onayla / Reddet / Aç** actions (freedesktop, works on GNOME, KDE and most desktops) and its deadline. A request decided on another computer or in the web panel replaces its notification in place ("macOS'tan onaylandı · cihaz"), and one answered here is not announced again. The center reports its platform (`linux`). The one-line installer `curl -fsSL https://wecommander.app/install/center.sh | sh` now also installs it on Linux, for the current user under `~/.local`, with a menu entry, and starts it. It verifies the SHA-256 checksum and asks for `libwebkit2gtk-4.1-0` if it is missing.
 
 - Approvals (B03, second part): when an approved operation cannot be delivered because the device is offline (or the gateway is overloaded), the approval is no longer used up. The request goes back to approved with its operation, the AI client gets the request id and "retry when the device is online", and the audit log records `approval_restored`. A timeout after sending still counts as used, since the operation may have run.
