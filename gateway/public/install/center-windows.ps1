@@ -111,8 +111,17 @@ try {
     Where-Object { -not $_.Path -or $_.Path.StartsWith($dir, [StringComparison]::OrdinalIgnoreCase) })
   if($running.Count -gt 0){
     Write-Host 'Closing the running WECOMMANDER Center...'
-    $running | Stop-Process -Force -ErrorAction SilentlyContinue
+    $refused=$false
+    foreach($p in $running){
+      try { Stop-Process -Id $p.Id -Force -ErrorAction Stop }
+      catch { if(Get-Process -Id $p.Id -ErrorAction SilentlyContinue){ $refused=$true } }
+    }
     $running | Wait-Process -Timeout 15 -ErrorAction SilentlyContinue
+    if($refused -and @($running | Where-Object { Get-Process -Id $_.Id -ErrorAction SilentlyContinue }).Count -gt 0){
+      # Typically a copy that an earlier install started from an administrator
+      # PowerShell: a normal PowerShell may not end it.
+      throw 'The running WECOMMANDER Center could not be closed (it may have been started as administrator). Quit it from the tray menu (Cikis), or run this command once in an administrator PowerShell, then try again.'
+    }
   }
   for($attempt=1; (Test-Path -LiteralPath $dir); $attempt++){
     try { Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction Stop }
@@ -137,7 +146,11 @@ try {
   $shortcut.Description='WECOMMANDER Yonetim Merkezi: onaylar ve otonom mod'
   $shortcut.Save()
 
-  Start-Process -FilePath $exe -WorkingDirectory $dir
+  # Start it as the signed-in user even from an administrator PowerShell:
+  # an elevated tray app cannot be closed or updated later without admin.
+  $elevated=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+  if($elevated){ Start-Process -FilePath "$env:WINDIR\explorer.exe" -ArgumentList ('"' + $exe + '"') }
+  else { Start-Process -FilePath $exe -WorkingDirectory $dir }
   Write-Host 'WECOMMANDER Management Center installed and started. Look for its icon in the notification area (system tray).'
   Write-Host 'To remove it: quit it from the tray menu, then delete' $dir 'and the Start menu shortcut.'
 } finally {
