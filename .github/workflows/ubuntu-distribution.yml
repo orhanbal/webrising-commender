@@ -49,10 +49,14 @@ jobs:
           test -s dist/ci-winui/WECOMMANDER-Center-windows-x64.zip
           cp dist/ci-winui/WECOMMANDER-Center-windows-x64.zip dist/
           rm -rf dist/ci-winui
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" -n WECOMMANDER-Center-linux-x86_64 -D dist/ci-center-linux
+          test -s dist/ci-center-linux/WECOMMANDER-Center-linux-x86_64.tar.gz
+          cp dist/ci-center-linux/WECOMMANDER-Center-linux-x86_64.tar.gz dist/
+          rm -rf dist/ci-center-linux
       - name: Create shared integrity manifest
         run: |
           cd dist
-          sha256sum -- *.deb *.exe *.zip > SHA256SUMS.txt
+          sha256sum -- *.deb *.exe *.zip *.tar.gz > SHA256SUMS.txt
       - name: Preserve verified installers and checksums as an Actions artifact
         uses: actions/upload-artifact@v4
         with:
@@ -61,6 +65,7 @@ jobs:
             dist/*.deb
             dist/*.exe
             dist/*.zip
+            dist/*.tar.gz
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
@@ -74,11 +79,35 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="ubuntu-preview-${{ github.event.workflow_run.run_number }}"
-          gh release create "$TAG" dist/*.deb dist/*.exe dist/*.zip dist/SHA256SUMS.txt \
+          gh release create "$TAG" dist/*.deb dist/*.exe dist/*.zip dist/*.tar.gz dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "${{ github.event.workflow_run.head_sha }}" \
             --title "WECOMMANDER platform preview #${{ github.event.workflow_run.run_number }}" \
-            --prerelease --notes "Preview installers: Ubuntu AMD64 Debian, Windows x64 Setup, Windows Management Center (native WinUI 3 .zip; Tauri tray .exe kept as fallback). The macOS PKG is published separately (macos-preview-*) only after the macOS workflow passes. Checksums available. Must pass physical-device acceptance before production approval."
+            --prerelease --notes "Preview installers: Ubuntu AMD64 Debian, Windows x64 Setup, Windows Management Center (native WinUI 3 .zip; Tauri tray .exe kept as fallback), Linux Management Center (.tar.gz). The macOS PKG is published separately (macos-preview-*) only after the macOS workflow passes. Checksums available. Must pass physical-device acceptance before production approval."
+
+      - name: Refresh the fixed center-linux-latest release used by the one-line installer
+        if: ${{ steps.publish_release.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A fixed tag lets "curl -fsSL https://wecommander.app/install/center.sh | sh"
+          # download straight from GitHub's release CDN, without the releases API.
+          TAG="center-linux-latest"
+          mkdir -p latest
+          cp dist/WECOMMANDER-Center-linux-x86_64.tar.gz latest/
+          (cd latest && sha256sum -- WECOMMANDER-Center-linux-x86_64.tar.gz > SHA256SUMS.txt)
+          NOTES="Newest WECOMMANDER Center for Linux (from ubuntu-preview-${{ github.event.workflow_run.run_number }}, ${{ github.event.workflow_run.head_sha }}). Replaced on every platform preview; used by the one-line installer."
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" latest/WECOMMANDER-Center-linux-x86_64.tar.gz latest/SHA256SUMS.txt --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes "$NOTES"
+          else
+            gh release create "$TAG" latest/WECOMMANDER-Center-linux-x86_64.tar.gz latest/SHA256SUMS.txt \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "${{ github.event.workflow_run.head_sha }}" \
+              --title "WECOMMANDER Center for Linux (latest preview)" \
+              --prerelease --notes "$NOTES"
+          fi
 
       - name: Report preview publication status
         if: ${{ always() }}

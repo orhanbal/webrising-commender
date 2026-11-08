@@ -68,6 +68,36 @@ pub struct LinkPoll {
     pub center_token: Option<String>,
 }
 
+/// Where a request was decided: a Management Center (with its name and kind
+/// of computer) or the web panel. `is_self` is this center.
+#[derive(Clone, Debug, Deserialize)]
+pub struct DecidedVia {
+    pub kind: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub platform: Option<String>,
+    #[serde(default, rename = "self")]
+    pub is_self: bool,
+}
+
+/// The outcome of one approval request (GET /api/approval-requests/{id}).
+#[derive(Clone, Debug, Deserialize)]
+pub struct Outcome {
+    pub status: String,
+    #[serde(default)]
+    pub decided_via: Option<DecidedVia>,
+}
+
+/// The kind of computer this center runs on, as the gateway stores it.
+pub const PLATFORM: &str = if cfg!(windows) {
+    "windows"
+} else if cfg!(target_os = "macos") {
+    "macos"
+} else {
+    "linux"
+};
+
 #[derive(Debug)]
 pub enum ApiError {
     /// Token revoked, expired, or the user lost access.
@@ -157,7 +187,11 @@ impl Api {
 
     pub async fn link_start(&self, name: &str) -> Result<LinkStart, ApiError> {
         let body = self
-            .send(self.post(None, "/api/center-link/start", json!({ "name": name })))
+            .send(self.post(
+                None,
+                "/api/center-link/start",
+                json!({ "name": name, "platform": PLATFORM }),
+            ))
             .await?;
         serde_json::from_value(body).map_err(|e| ApiError::Network(e.to_string()))
     }
@@ -174,7 +208,9 @@ impl Api {
     }
 
     pub async fn me(&self, token: &str) -> Result<Me, ApiError> {
-        let body = self.send(self.get(token, "/api/center/me")).await?;
+        let body = self
+            .send(self.get(token, &format!("/api/center/me?platform={PLATFORM}")))
+            .await?;
         serde_json::from_value(body).map_err(|e| ApiError::Network(e.to_string()))
     }
 
@@ -200,6 +236,21 @@ impl Api {
 
     pub async fn autonomy(&self, token: &str) -> Result<Vec<AutonomyItem>, ApiError> {
         self.items(token, "/api/trust/autonomy").await
+    }
+
+    /// Where and how a request ended, once it left the pending list.
+    pub async fn outcome(&self, token: &str, id: &str) -> Result<Outcome, ApiError> {
+        if !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') || id.len() != 36 {
+            return Err(ApiError::Http {
+                status: 400,
+                code: "invalid_request".into(),
+            });
+        }
+        let body = self
+            .send(self.get(token, &format!("/api/approval-requests/{id}")))
+            .await?;
+        serde_json::from_value(body.get("item").cloned().unwrap_or(Value::Null))
+            .map_err(|e| ApiError::Network(e.to_string()))
     }
 
     pub async fn decide(&self, token: &str, id: &str, approve: bool) -> Result<(), ApiError> {
@@ -256,8 +307,52 @@ fn short(error: &reqwest::Error) -> String {
     }
 }
 
+/// "macOS'tan onaylandı" for a request this center showed but another center
+/// or the web panel decided; None when nothing should be said (decided here,
+/// expired, still pending).
+pub fn decided_elsewhere(outcome: &Outcome) -> Option<String> {
+    let verb = match outcome.status.as_str() {
+        "approved" | "consumed" => "onaylandı",
+        "denied" => "reddedildi",
+        _ => return None,
+    };
+    let via = outcome.decided_via.as_ref().filter(|v| !v.is_self)?;
+    let place = if via.kind == "panel" {
+        "Web panelinden".to_owned()
+    } else {
+        match via.platform.as_deref() {
+            Some("macos") => "macOS'tan".to_owned(),
+            Some("windows") => "Windows'tan".to_owned(),
+            Some("linux") => "Linux'tan".to_owned(),
+            _ => match via.name.as_deref().map(str::trim) {
+                Some(name) if !name.is_empty() => format!("{name} üzerinden"),
+                _ => "Başka bir Yönetim Merkezinden".to_owned(),
+            },
+        }
+    };
+    Some(format!("{place} {verb}"))
+}
+
+/// What an AI wants to type into a terminal: printable, one line, bounded.
+pub fn terminal_input(data_base64: &str) -> String {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    let Ok(bytes) = STANDARD.decode(data_base64) else {
+        return String::new();
+    };
+    String::from_utf8_lossy(&bytes)
+        .replace("\r\n", "⏎")
+        .replace(['\n', '\r'], "⏎")
+        .chars()
+        .map(|c| if c.is_control() { '·' } else { c })
+        .take(300)
+        .collect()
+}
+
 /// The exact thing an approval allows: the command, path or name.
 pub fn summary(action: &Value) -> String {
+    if let Some(Value::String(data)) = action.get("dataBase64") {
+        return terminal_input(data);
+    }
     for key in [
         "command",
         "path",
@@ -279,6 +374,57 @@ pub fn summary(action: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn terminal_input_and_decided_elsewhere() {
+        assert_eq!(
+            summary(
+                &json!({"kind":"terminal_input","sessionId":"s","dataBase64":"ZWNobyBoaQoHeA=="})
+            ),
+            "echo hi⏎·x"
+        );
+        assert_eq!(terminal_input("%%"), "");
+        let outcome: Outcome = serde_json::from_value(json!({
+            "id": "x", "status": "consumed",
+            "decided_via": {"kind":"center","name":"Mac","platform":"macos","self":false}
+        }))
+        .unwrap();
+        assert_eq!(
+            decided_elsewhere(&outcome).as_deref(),
+            Some("macOS'tan onaylandı")
+        );
+        let text = |status: &str, via: serde_json::Value| {
+            decided_elsewhere(
+                &serde_json::from_value(json!({"status": status, "decided_via": via})).unwrap(),
+            )
+        };
+        assert_eq!(
+            text("denied", json!({"kind":"panel"})).as_deref(),
+            Some("Web panelinden reddedildi")
+        );
+        assert_eq!(
+            text("approved", json!({"kind":"center","name":"Ev"})).as_deref(),
+            Some("Ev üzerinden onaylandı")
+        );
+        assert_eq!(
+            text(
+                "approved",
+                json!({"kind":"center","platform":"linux","self":true})
+            ),
+            None
+        );
+        assert_eq!(text("expired", json!(null)), None);
+        assert_eq!(
+            PLATFORM,
+            if cfg!(windows) {
+                "windows"
+            } else if cfg!(target_os = "macos") {
+                "macos"
+            } else {
+                "linux"
+            }
+        );
+    }
 
     #[test]
     fn summary_prefers_command_then_path() {
