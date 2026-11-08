@@ -103,12 +103,24 @@ try {
 
   $dir=Join-Path $env:LOCALAPPDATA 'Programs\WECOMMANDER Center'
   $exe=Join-Path $dir $(if($Tauri){'wecommander-center.exe'}else{'WecommanderCenter.exe'})
-  # Replace a running copy of either version (upgrade or switch).
-  Get-Process -Name 'WecommanderCenter','wecommander-center' -ErrorAction SilentlyContinue |
-    Where-Object { $_.Path -and $_.Path.StartsWith($dir, [StringComparison]::OrdinalIgnoreCase) } |
-    Stop-Process -Force -ErrorAction SilentlyContinue
-  Start-Sleep -Milliseconds 800
-  if(Test-Path -LiteralPath $dir){ Remove-Item -LiteralPath $dir -Recurse -Force }
+  # Replace a running copy of either version (upgrade or switch). A process
+  # whose path cannot be read (another session, elevated shell) is matched by
+  # name; the old files stay locked until every copy has exited, so wait for
+  # that and retry the removal instead of failing on the first locked DLL.
+  $running=@(Get-Process -Name 'WecommanderCenter','wecommander-center' -ErrorAction SilentlyContinue |
+    Where-Object { -not $_.Path -or $_.Path.StartsWith($dir, [StringComparison]::OrdinalIgnoreCase) })
+  if($running.Count -gt 0){
+    Write-Host 'Closing the running WECOMMANDER Center...'
+    $running | Stop-Process -Force -ErrorAction SilentlyContinue
+    $running | Wait-Process -Timeout 15 -ErrorAction SilentlyContinue
+  }
+  for($attempt=1; (Test-Path -LiteralPath $dir); $attempt++){
+    try { Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction Stop }
+    catch {
+      if($attempt -ge 10){ throw ('The old WECOMMANDER Center files are still in use. Quit it from the tray menu (Cikis) and run this command again. ' + $_.Exception.Message) }
+      Start-Sleep -Seconds 1
+    }
+  }
   New-Item -ItemType Directory -Path $dir -Force | Out-Null
   if($Tauri){
     Copy-Item -LiteralPath $download -Destination $exe -Force
