@@ -1,10 +1,30 @@
 # WECOMMANDER first-run enrollment. Run in the signed-in Windows user's session.
 # Never echo pairing codes or device credentials into logs.
+# -Reconnect (Start menu "Cihaz Baglantisi") always shows the dialog; after an
+# upgrade (Setup's post-install step) an existing pairing is reused silently.
+param([switch]$Reconnect)
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 $ErrorActionPreference = 'Stop'
 $exe = Join-Path $PSScriptRoot 'webrising-commender.exe'
 if (-not (Test-Path $exe)) { throw 'WECOMMANDER agent binary is missing.' }
+
+# Upgrade: this Windows user is already paired, so restart the background
+# agent with the new binary and keep the device identity; no dialog, no
+# second "Hesabimla Baglan". Any failure falls through to the dialog.
+$pairedConfig = Join-Path $env:APPDATA 'webrising-commender\agent.json'
+if (-not $Reconnect -and (Test-Path -LiteralPath $pairedConfig -PathType Leaf)) {
+  try {
+    & (Join-Path $PSScriptRoot 'Install-User-Agent.ps1') -BinaryPath $exe -ConfigPath $pairedConfig
+    [System.Windows.Forms.MessageBox]::Show(
+      'WECOMMANDER ajani guncellendi ve arka planda calisiyor. Cihaz eslestirmesi korundu; yeniden baglanmaniz gerekmiyor.',
+      'WECOMMANDER'
+    ) | Out-Null
+    return
+  } catch {
+    # Show the dialog below so the reason and the manual path are visible.
+  }
+}
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'WECOMMANDER | Cihaz Baglantisi'
 $form.Width = 560; $form.Height = 440
