@@ -247,4 +247,13 @@ public class CoreTests
         Assert.Null(Text("approved", new DecidedVia { Kind = "center", Platform = "macos", Self = true }));
         Assert.Null(Text("expired", null));
     }
+
+    [Fact]
+    public void TerminalInputShowsWhatWillBeTyped()
+    {
+        using var doc = JsonDocument.Parse("""{"kind":"terminal_input","sessionId":"s","dataBase64":"ZWNobyBoaQoHeA=="}""");
+        Assert.Equal("echo hi⏎·x", ActionSummary.From(doc.RootElement));
+        Assert.Equal("", ActionSummary.TerminalInput("%%"));
+        Assert.Equal("Terminale yaz", Texts.KindLabel("terminal_input"));
+    }
 }

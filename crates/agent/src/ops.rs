@@ -679,3 +679,66 @@ mod capability_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod terminal_input_approval_tests {
+    use super::*;
+    use crate::{config::DeviceCapabilities, policy::PathPolicy, task_manager::TaskManager};
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+
+    fn input(data: &str) -> AgentAction {
+        serde_json::from_value(json!({
+            "kind": "terminal_input",
+            "sessionId": "00000000-0000-4000-8000-000000000001",
+            "dataBase64": data,
+        }))
+        .unwrap()
+    }
+
+    // B01: a terminal input that reached the Agent without passing the
+    // Gateway's approval (or with an approval for other input) never runs.
+    #[tokio::test]
+    async fn terminal_input_needs_an_approval_for_the_exact_input() {
+        let root = std::env::temp_dir().join(format!("wc-b01-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let terminals =
+            TerminalManager::for_device("00000000-0000-4000-8000-0000000000b1").unwrap();
+        let tasks = TaskManager::default();
+        let key = URL_SAFE_NO_PAD.encode([5_u8; 32]);
+        assert_eq!(input("aWQK").risk(), Risk::High);
+        let other_token = approval::sign(
+            &key,
+            "00000000-0000-4000-8000-0000000000b1",
+            &input("ZWNobyBvawo="),
+            60,
+        )
+        .unwrap();
+        for token in [None, Some(other_token.as_str())] {
+            let error = execute(
+                ExecutionContext {
+                    policy: &policy,
+                    terminals: &terminals,
+                    tasks: &tasks,
+                    approval_token: token,
+                    approval_key: &key,
+                    device_id: "00000000-0000-4000-8000-0000000000b1",
+                    undo_scope: None,
+                    cancelled: Arc::new(AtomicBool::new(false)),
+                    paused: Arc::new(AtomicBool::new(false)),
+                    search_progress: None,
+                    capabilities: DeviceCapabilities::default(),
+                },
+                input("aWQK"),
+            )
+            .await
+            .unwrap_err()
+            .to_string();
+            assert!(
+                error.contains("approval"),
+                "terminal input without a matching approval must be refused: {error}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}

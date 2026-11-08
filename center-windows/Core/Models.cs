@@ -81,6 +81,8 @@ public static class ActionSummary
     public static string From(JsonElement action)
     {
         if (action.ValueKind != JsonValueKind.Object) return "";
+        if (action.TryGetProperty("dataBase64", out var input) && input.ValueKind == JsonValueKind.String)
+            return TerminalInput(input.GetString() ?? "");
         foreach (var key in new[] { "command", "path", "source", "name", "pid", "taskId", "sessionId" })
         {
             if (!action.TryGetProperty(key, out var value)) continue;
@@ -88,5 +90,15 @@ public static class ActionSummary
             if (value.ValueKind == JsonValueKind.Number) return $"{key} {value.GetRawText()}";
         }
         return "";
+    }
+
+    /// <summary>What an AI wants to type into a terminal: printable, one line, bounded.</summary>
+    public static string TerminalInput(string base64)
+    {
+        byte[] bytes;
+        try { bytes = Convert.FromBase64String(base64); } catch (FormatException) { return ""; }
+        var text = System.Text.Encoding.UTF8.GetString(bytes).Replace("\r\n", "⏎").Replace('\n', '⏎').Replace('\r', '⏎');
+        var printable = new string(text.Select(c => c < 0x20 || c == 0x7f ? '·' : c).ToArray());
+        return printable.Length > 300 ? printable[..300] : printable;
     }
 }

@@ -177,7 +177,7 @@ export const tools = [
     { shell: str(), cwd: str(), cols: integer(), rows: integer(), approval_token: str() },
     [],
   ),
-  tool("terminal_input", "Write at most 256 KiB of decoded bytes to an existing PTY session.", { session_id: str(), data_base64: { type: "string", maxLength: MAX_TERMINAL_INPUT_BASE64_BYTES } }, ["session_id", "data_base64"]),
+  tool("terminal_input", "Write at most 256 KiB of decoded bytes to an existing PTY session. HIGH risk: the input runs in the shell, so each exact input needs human approval unless the device is in autonomous mode. Omit approval_token to create a human approval request, then retry after approval.", { session_id: str(), data_base64: { type: "string", maxLength: MAX_TERMINAL_INPUT_BASE64_BYTES }, approval_token: str() }, ["session_id", "data_base64"]),
   tool("terminal_read", "Read buffered PTY output.", { session_id: str(), max_bytes: integer() }, ["session_id"]),
   tool(
     "terminal_read_page",

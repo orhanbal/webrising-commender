@@ -800,7 +800,7 @@
  },
  {
   "name": "terminal_input",
-  "description": "Write at most 256 KiB of decoded bytes to an existing PTY session.",
+  "description": "Write at most 256 KiB of decoded bytes to an existing PTY session. HIGH risk: the input runs in the shell, so each exact input needs human approval unless the device is in autonomous mode. Omit approval_token to create a human approval request, then retry after approval.",
   "inputSchema": {
    "type": "object",
    "properties": {

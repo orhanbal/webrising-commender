@@ -380,10 +380,13 @@ impl AgentAction {
             | Self::FsMove { .. }
             | Self::FsReplace { .. }
             | Self::FsUndo { .. }
-            | Self::TerminalInput { .. }
             | Self::TerminalResize { .. } => Risk::Medium,
 
-            Self::FsDelete { .. }
+            // Typing into a live shell runs whatever is typed: it needs the
+            // same exact-payload approval as process_exec, checked here so a
+            // request that skipped the gateway is refused too.
+            Self::TerminalInput { .. }
+            | Self::FsDelete { .. }
             | Self::ProcessExec { .. }
             | Self::ProcessKill { .. }
             | Self::TaskStart { .. }

@@ -194,4 +194,11 @@ final class CenterCoreTests: XCTestCase {
         XCTAssertNil(text("expired", nil))
         XCTAssertNil(text("pending", nil))
     }
+
+    func testTerminalInputShowsWhatWillBeTyped() throws {
+        let value = try JSONDecoder().decode(JSONValue.self, from: Data(#"{"kind":"terminal_input","sessionId":"s","dataBase64":"ZWNobyBoaQoHeA=="}"#.utf8))
+        XCTAssertEqual(ActionSummary.from(value), "echo hi⏎·x")
+        XCTAssertEqual(ActionSummary.terminalInput("%%"), "")
+        XCTAssertEqual(Texts.kindLabel("terminal_input"), "Terminale yaz")
+    }
 }

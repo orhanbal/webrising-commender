@@ -10,6 +10,7 @@ public enum Texts {
         case "task_cancel": return "Görevi iptal et"
         case "terminal_start": return "Terminal aç"
         case "terminal_stop": return "Terminali kapat"
+        case "terminal_input": return "Terminale yaz"
         case "fs_delete": return "Dosya sil"
         case "fs_move": return "Dosya taşı"
         default: return kind

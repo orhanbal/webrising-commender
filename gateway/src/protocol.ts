@@ -340,9 +340,11 @@ export function actionRisk(kind: AgentAction["kind"] | string): Risk {
     case "fs_move":
     case "fs_replace":
     case "fs_undo":
-    case "terminal_input":
     case "terminal_resize":
       return "medium";
+    // Typing into a live shell runs whatever is typed: an AI writing to a PTY
+    // needs the same exact-payload human approval as process_exec.
+    case "terminal_input":
     case "fs_delete":
     case "process_exec":
     case "process_kill":

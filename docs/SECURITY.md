@@ -25,7 +25,7 @@ A valid claim binds:
 
 The gateway derives a unique per-device approval verification key from `APPROVAL_SIGNING_SECRET` and the device id. Only the derived device key is provisioned during enrollment; the master signing secret never leaves the gateway.
 
-For HIGH-risk actions, the gateway validates and atomically consumes the one-time approval before dispatch. The native agent independently verifies the HMAC signature, device id, action, exact parameters and expiry before executing the operation. Changing a command, path, PID, PTY session id or any other approved parameter invalidates the approval. A compromised relay path therefore cannot turn an arbitrary string into local approval.
+For HIGH-risk actions, the gateway validates and atomically consumes the one-time approval before dispatch. The native agent independently verifies the HMAC signature, device id, action, exact parameters and expiry before executing the operation. Changing a command, path, PID, PTY session id, terminal input bytes or any other approved parameter invalidates the approval. Typing into a live terminal (`terminal_input`) is HIGH risk like `process_exec`: an AI client cannot run commands through an approved terminal without approving each input, unless the owner turned on autonomous mode for that device. A compromised relay path therefore cannot turn an arbitrary string into local approval.
 
 ## Command allowlist (routine commands without per-call approval)
 

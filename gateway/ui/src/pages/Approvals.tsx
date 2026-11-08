@@ -21,8 +21,15 @@ const trustInfo:Record<Trust,{title:string;text:string;icon:typeof ShieldCheck}>
 };
 
 /** The exact operation an approval would allow, shown before deciding. */
+/** What an AI wants to type into a terminal: printable, one line, bounded. */
+export function terminalInputText(dataBase64:string){
+ let text="";
+ try{text=new TextDecoder().decode(Uint8Array.from(atob(dataBase64),c=>c.charCodeAt(0)))}catch{return ""}
+ return text.replace(/\r?\n|\r/g,"⏎").replace(/[\u0000-\u001f\u007f]/g,"·").slice(0,300);
+}
 function operationSummary(item:ApprovalRequest){
  const a=item.action||{};
+ if(typeof a.dataBase64==="string")return terminalInputText(a.dataBase64);
  const pick=(...keys:string[])=>keys.map(k=>a[k]).find(v=>typeof v==="string"&&v) as string|undefined;
  return pick("command","path","source","name")??"";
 }

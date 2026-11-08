@@ -11,7 +11,10 @@ const MAX_RECIPIENTS = 10;
 
 function describe(action: AgentAction) {
   const a = action as Record<string, unknown>;
-  const detail = typeof a.command === "string" ? a.command
+  const detail = typeof a.dataBase64 === "string"
+    ? Buffer.from(a.dataBase64, "base64").toString("utf8").replace(/\r?\n|\r/g, "⏎")
+      .replace(/[\u0000-\u001f\u007f]/g, "·")
+    : typeof a.command === "string" ? a.command
     : typeof a.path === "string" ? a.path
     : typeof a.pid === "number" ? "pid " + a.pid
     : typeof a.taskId === "string" ? a.taskId
