@@ -157,6 +157,9 @@ function renderAgent() {
   $("agentState").textContent = state.agentBusy ? "İşleniyor…" : a.label;
   $("agentSwitch").checked = a.state === "running";
   $("agentSwitch").disabled = state.agentBusy || a.state === "notInstalled";
+  $("agentUpdate").textContent = a.state === "notInstalled" ? "Ajanı kur" : "Ajanı güncelle";
+  $("agentUpdate").disabled = state.agentBusy;
+  $("agentVersion").textContent = state.agentVersion ? "Kurulu sürüm: " + state.agentVersion : "";
   $("agentHelp").textContent = a.state === "notInstalled"
     ? "Bu bilgisayarda WECOMMANDER ajanı kurulu değil. Kurmak için wecommander.app panelindeki Cihazlar sayfasındaki Ubuntu komutunu kullan."
     : a.state === "running"
@@ -239,6 +242,7 @@ $("agentSwitch").addEventListener("change", () => {
   $("agentSwitch").checked = true;
   $("agentConfirm").hidden = false;
 });
+$("agentUpdate").addEventListener("click", () => call("update_agent"));
 $("agentOffNo").addEventListener("click", () => { $("agentConfirm").hidden = true; });
 $("agentOffYes").addEventListener("click", async () => { $("agentConfirm").hidden = true; await call("set_agent", { enabled: false }); });
 $("closePanel").addEventListener("click", () => invoke("hide_panel"));

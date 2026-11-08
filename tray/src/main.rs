@@ -64,6 +64,8 @@ struct Inner {
     /// The agent on this computer (Linux: systemd service).
     agent: Option<agent::AgentView>,
     agent_busy: bool,
+    agent_version: Option<String>,
+    agent_version_checked: Option<Instant>,
 }
 
 struct Menus {
@@ -112,6 +114,7 @@ struct Snapshot {
     version: &'static str,
     agent: Option<agent::AgentView>,
     agent_busy: bool,
+    agent_version: Option<String>,
 }
 
 fn snapshot(app: &AppHandle) -> Snapshot {
@@ -139,6 +142,7 @@ fn snapshot(app: &AppHandle) -> Snapshot {
         version: VERSION,
         agent: inner.agent.clone(),
         agent_busy: inner.agent_busy,
+        agent_version: inner.agent_version.clone(),
     }
 }
 
@@ -758,6 +762,27 @@ async fn check_agent(app: &AppHandle) {
     let Ok(Some(view)) = tauri::async_runtime::spawn_blocking(agent::status).await else {
         return;
     };
+    let version_due = app
+        .state::<AppState>()
+        .inner
+        .lock()
+        .unwrap()
+        .agent_version_checked
+        .is_none_or(|t| t.elapsed() >= Duration::from_secs(300));
+    if version_due && view.state != "notInstalled" {
+        let version = tauri::async_runtime::spawn_blocking(agent::installed_version)
+            .await
+            .ok()
+            .flatten();
+        let state = app.state::<AppState>();
+        let mut inner = state.inner.lock().unwrap();
+        inner.agent_version_checked = Some(Instant::now());
+        if inner.agent_version != version {
+            inner.agent_version = version;
+            drop(inner);
+            publish(app);
+        }
+    }
     let (changed, stopped_now, notifications) = {
         let state = app.state::<AppState>();
         let mut inner = state.inner.lock().unwrap();
@@ -776,6 +801,24 @@ async fn check_agent(app: &AppHandle) {
     if changed {
         publish(app);
     }
+}
+
+/// "Ajanı güncelle": the official installer in a terminal window.
+#[tauri::command]
+fn update_agent(app: AppHandle) -> Result<(), String> {
+    let server = {
+        let state = app.state::<AppState>();
+        let mut inner = state.inner.lock().unwrap();
+        inner.agent_version_checked = None;
+        inner.settings.server.clone()
+    };
+    agent::open_update_terminal(&server)?;
+    notify(
+        &app,
+        "WECOMMANDER",
+        "Ajan güncellemesi bir terminalde açıldı. Yönetici şifresi istenecek; cihazın kaydı korunur.",
+    );
+    Ok(())
 }
 
 /// "Ajan çalışsın" in the panel and the tray menu.
@@ -1354,6 +1397,7 @@ fn main() {
             set_settings,
             set_autostart,
             set_agent,
+            update_agent,
             refresh,
             hide_panel,
             default_name

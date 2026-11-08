@@ -61,6 +61,85 @@ pub fn label(state: &str, enabled: bool) -> &'static str {
     }
 }
 
+/// "0.1.1676" from `webrising-commender --version`.
+pub fn parse_version(output: &str) -> Option<String> {
+    let last = output.split_whitespace().last()?;
+    last.chars()
+        .next()
+        .filter(char::is_ascii_digit)
+        .map(|_| last.to_owned())
+}
+
+/// The installed agent's version (Debian package path first, then the
+/// manual install path).
+#[cfg(target_os = "linux")]
+pub fn installed_version() -> Option<String> {
+    [
+        "/opt/wecommander/bin/webrising-commender",
+        "/usr/local/bin/webrising-commender",
+    ]
+    .iter()
+    .find_map(|bin| {
+        let out = std::process::Command::new(bin)
+            .arg("--version")
+            .output()
+            .ok()?;
+        out.status
+            .success()
+            .then(|| parse_version(&String::from_utf8_lossy(&out.stdout)))
+            .flatten()
+    })
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn installed_version() -> Option<String> {
+    None
+}
+
+/// The official one-line installer for this server (it asks for sudo).
+pub fn update_command(server: &str) -> String {
+    format!(
+        "curl -fsSL {}/install.sh | sh",
+        server.trim_end_matches('/')
+    )
+}
+
+/// Opens a terminal window running the installer and waiting for Enter.
+#[cfg(target_os = "linux")]
+pub fn open_update_terminal(server: &str) -> Result<(), String> {
+    let script = format!(
+        "{}; echo; printf 'Kapatmak için Enter tuşuna bas. '; read _",
+        update_command(server)
+    );
+    for (term, args) in [
+        ("x-terminal-emulator", vec!["-e", "sh", "-c"]),
+        ("gnome-terminal", vec!["--", "sh", "-c"]),
+        ("konsole", vec!["-e", "sh", "-c"]),
+        ("xfce4-terminal", vec!["-x", "sh", "-c"]),
+        ("xterm", vec!["-e", "sh", "-c"]),
+    ] {
+        let spawned = std::process::Command::new(term)
+            .args(&args)
+            .arg(&script)
+            .spawn();
+        if spawned.is_ok() {
+            return Ok(());
+        }
+    }
+    Err(format!(
+        "Terminal açılamadı. Bir terminalde çalıştır: {}",
+        update_command(server)
+    ))
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn open_update_terminal(server: &str) -> Result<(), String> {
+    Err(format!(
+        "Bir terminalde çalıştır: {}",
+        update_command(server)
+    ))
+}
+
 pub const STOPPED_NOTICE: &str =
     "Bu bilgisayardaki ajan durdu. Yapay zekâ bu bilgisayara erişemez. Paneldeki \"Ajan çalışsın\" ile yeniden başlatabilirsin.";
 
@@ -119,6 +198,20 @@ pub fn set_enabled(_on: bool) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn version_and_update_command() {
+        assert_eq!(
+            parse_version("webrising-commender 0.1.1676\n").as_deref(),
+            Some("0.1.1676")
+        );
+        assert_eq!(parse_version("error: nope"), None);
+        assert_eq!(parse_version(""), None);
+        assert_eq!(
+            update_command("https://wecommander.app/"),
+            "curl -fsSL https://wecommander.app/install.sh | sh"
+        );
+    }
 
     #[test]
     fn parses_systemctl_show() {

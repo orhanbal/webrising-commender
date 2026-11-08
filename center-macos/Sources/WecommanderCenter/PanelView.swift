@@ -414,6 +414,13 @@ private struct AgentCard: View {
                     .disabled(model.agentBusy || model.agent == nil || model.agent?.state == .notInstalled)
             }
             Text(help).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Button(model.agent?.state == .notInstalled ? "Ajanı kur" : "Ajanı güncelle") { model.updateAgent() }
+                    .disabled(model.agentBusy)
+                if let version = model.agentVersion {
+                    Text("Kurulu sürüm: \(version)").font(.caption).foregroundStyle(.secondary)
+                }
+            }
         }
         .padding(10)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))

@@ -340,4 +340,16 @@ public class CoreTests
         Assert.Equal(0, dog.Failures);
         Assert.Equal(WatchdogAction.Start, dog.Next(true, stopped, t.AddSeconds(901)));
     }
+
+    [Fact]
+    public async Task AgentVersionAndUpdateCommand()
+    {
+        Assert.Equal("0.1.1651", AgentControl.ParseVersion("webrising-commender 0.1.1651\r\n"));
+        Assert.Null(AgentControl.ParseVersion("error: not found"));
+        Assert.Null(AgentControl.ParseVersion(""));
+        var control = new AgentControl(new FakeRunner(), "S-1", @"C:\x\agent.exe");
+        Assert.Null(await control.InstalledVersionAsync());
+        Assert.Equal("-NoExit -NoProfile -ExecutionPolicy Bypass -Command \"& ([scriptblock]::Create((irm https://wecommander.app/install.ps1)))\"",
+            AgentControl.UpdateArguments("https://wecommander.app/"));
+    }
 }

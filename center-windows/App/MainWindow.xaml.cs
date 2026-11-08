@@ -189,6 +189,9 @@ public sealed partial class MainWindow : Window
             { Running: true } => "Açıkken ajan durursa Yönetim Merkezi onu kendiliğinden yeniden başlatır ve bildirim gösterir.",
             _ => Texts.AgentOffWarning,
         };
+        AgentVersionText.Text = Center.AgentVersion is { } v ? "Kurulu sürüm: " + v : "";
+        AgentUpdateButton.Content = agent is { State: AgentRunState.NotInstalled } ? "Ajanı kur" : "Ajanı güncelle";
+        AgentUpdateButton.IsEnabled = !busy;
         var down = agent is { Running: false, State: AgentRunState.Stopped } && !busy;
         AgentBar.IsOpen = Center.Phase == Phase.SignedIn && down;
         AgentBar.Title = agent is { Enabled: false } ? "Bu bilgisayardaki ajan kapalı" : "Bu bilgisayardaki ajan çalışmıyor";
@@ -209,6 +212,8 @@ public sealed partial class MainWindow : Window
     }
 
     private async void StartAgent_Click(object sender, RoutedEventArgs e) => await Center.SetAgentEnabledAsync(true);
+
+    private void UpdateAgent_Click(object sender, RoutedEventArgs e) => Center.UpdateAgent();
 
     private void UpdateStatus()
     {

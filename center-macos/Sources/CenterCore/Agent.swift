@@ -71,6 +71,29 @@ public struct AgentControl: Sendable {
         }
     }
 
+    /// Where the WECOMMANDER PKG installs the agent.
+    public static let agentBinary = "/usr/local/bin/webrising-commender"
+
+    /// "0.1.58" from `webrising-commender --version`, or nil when unknown.
+    public func installedVersion() async -> String? {
+        let (code, out) = await runner.run(AgentControl.agentBinary, ["--version"])
+        return code == 0 ? AgentControl.parseVersion(out) : nil
+    }
+
+    public static func parseVersion(_ output: String) -> String? {
+        guard let last = output.split(whereSeparator: { $0 == " " || $0 == "\n" }).last,
+              last.first?.isNumber == true else { return nil }
+        return String(last)
+    }
+
+    /// The official one-line installer for this server; it asks for the
+    /// administrator password in Terminal and keeps the device's enrollment.
+    public static func updateCommand(server: String) -> String {
+        var origin = server
+        while origin.hasSuffix("/") { origin.removeLast() }
+        return "curl -fsSL \(origin)/install.sh | sh"
+    }
+
     /// `launchctl print` of a running job has "state = running".
     public static func isRunning(_ printed: String) -> Bool {
         printed.split(separator: "\n").contains { line in
