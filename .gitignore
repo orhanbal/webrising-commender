@@ -15,3 +15,6 @@ backups/
 # Swift (center-macos)
 center-macos/.build/
 center-macos/dist/
+
+# Python bytecode (plan tools)
+__pycache__/

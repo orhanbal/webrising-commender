@@ -1,0 +1,8 @@
+{
+ "schema_version": 1,
+ "as_of": null,
+ "scenario": "S2",
+ "completed": {},
+ "reestimates": {},
+ "note": "A01–A03 tamamlandıkça gerçekleşen eforlar buraya işlenir (R1). completed: {\"A01\": {\"actual_mh\": 3.2, \"start\": \"2026-11-16\", \"end\": \"2026-12-11\", \"lane\": \"D2\"}}; reestimates: {\"A09\": 6.5}"
+}
