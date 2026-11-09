@@ -27,8 +27,12 @@ while (($#)); do
     --package-only) PACKAGE_ONLY=1; shift ;;
     --control-url)
       [[ "${2:-}" =~ ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$ ]] || { echo "--control-url needs an HTTPS origin." >&2; exit 2; }
-      SETUP_ARGS=(--control-url "${2%/}"); shift 2 ;;
-    *) echo "Usage: sudo bash install-ubuntu-online.sh [--package-only] [--control-url https://HOST]" >&2; exit 2 ;;
+      SETUP_ARGS+=(--control-url "${2%/}"); shift 2 ;;
+    --pairing-code-file)
+      # From a signed-in Management Center: pair without a browser sign-in.
+      [[ -n "${2:-}" ]] || { echo "--pairing-code-file needs a file." >&2; exit 2; }
+      SETUP_ARGS+=(--pairing-code-file "$2"); shift 2 ;;
+    *) echo "Usage: sudo bash install-ubuntu-online.sh [--package-only] [--control-url https://HOST] [--pairing-code-file FILE]" >&2; exit 2 ;;
   esac
 done
 wecommander_banner "Agent installer for Ubuntu"

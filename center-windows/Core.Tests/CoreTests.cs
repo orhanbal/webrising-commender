@@ -352,4 +352,18 @@ public class CoreTests
         Assert.Equal("-NoExit -NoProfile -ExecutionPolicy Bypass -Command \"& ([scriptblock]::Create((irm https://wecommander.app/install.ps1)))\"",
             AgentControl.UpdateArguments("https://wecommander.app/"));
     }
+
+    [Fact]
+    public void InstallerGetsPairingCodeOnlyThroughTheEnvironment()
+    {
+        var update = AgentControl.InstallerStartInfo("https://wecommander.app/", null);
+        Assert.True(update.UseShellExecute);
+        Assert.False(update.Environment.ContainsKey("WECOMMANDER_PAIRING_CODE"));
+
+        var install = AgentControl.InstallerStartInfo("https://wecommander.app/", "secret-code-123456789012345");
+        Assert.False(install.UseShellExecute);
+        Assert.Equal("secret-code-123456789012345", install.Environment["WECOMMANDER_PAIRING_CODE"]);
+        Assert.Equal("https://wecommander.app", install.Environment["WECOMMANDER_SERVER"]);
+        Assert.DoesNotContain("secret-code", install.Arguments);
+    }
 }

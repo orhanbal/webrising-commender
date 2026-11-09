@@ -111,6 +111,13 @@ public sealed class GatewayClient(HttpClient http, string baseUrl)
         await SendAsync(HttpMethod.Post, "/api/trust/autonomy", token, body, ct).ConfigureAwait(false);
     }
 
+    /// <summary>One-time pairing code (5 minutes) for the agent installer on this computer.</summary>
+    public async Task<string> PairingCodeAsync(string token, CancellationToken ct = default)
+    {
+        var node = await SendAsync(HttpMethod.Post, "/api/center/pairing-code", token, new { }, ct).ConfigureAwait(false);
+        return node?["pairingCode"]?.GetValue<string>() ?? throw new GatewayException(GatewayErrorKind.Http, 0, "", "Eşleştirme kodu alınamadı.");
+    }
+
     public async Task DisconnectAsync(string token, CancellationToken ct = default) =>
         await SendAsync(HttpMethod.Post, "/api/center/disconnect", token, new { }, ct).ConfigureAwait(false);
 }

@@ -111,6 +111,27 @@ public sealed class AgentControl(ICommandRunner runner, string userSid, string? 
     public static string UpdateArguments(string server) =>
         $"-NoExit -NoProfile -ExecutionPolicy Bypass -Command \"& ([scriptblock]::Create((irm {server.TrimEnd('/')}/install.ps1)))\"";
 
+    /// <summary>
+    /// Starts the agent installer in a new PowerShell window. With a pairing
+    /// code (a signed-in Center installing a new agent) the code and server go
+    /// in the child's environment, never on its command line, and the
+    /// installer pairs without a second browser sign-in.
+    /// </summary>
+    public static ProcessStartInfo InstallerStartInfo(string server, string? pairingCode)
+    {
+        var info = new ProcessStartInfo("powershell.exe", UpdateArguments(server));
+        if (pairingCode is null)
+        {
+            info.UseShellExecute = true;
+            return info;
+        }
+        // A console program started this way from a windowed app gets its own console window.
+        info.UseShellExecute = false;
+        info.Environment["WECOMMANDER_PAIRING_CODE"] = pairingCode;
+        info.Environment["WECOMMANDER_SERVER"] = server.TrimEnd('/');
+        return info;
+    }
+
     public const string ServiceName = "WebRisingCommender";
     public string TaskName => "WECOMMANDER-Agent-" + userSid;
 

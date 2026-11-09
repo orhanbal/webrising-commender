@@ -272,5 +272,15 @@ final class CenterCoreTests: XCTestCase {
         XCTAssertNil(AgentControl.parseVersion("error: no such file"))
         XCTAssertNil(AgentControl.parseVersion(""))
         XCTAssertEqual(AgentControl.updateCommand(server: "https://wecommander.app/"), "curl -fsSL https://wecommander.app/install.sh | sh")
+        XCTAssertEqual(AgentControl.installCommand(server: "https://wecommander.app", pairingCodeFile: "/tmp/a b'c"),
+                       "curl -fsSL https://wecommander.app/install.sh | sh -s -- --pairing-code-file '/tmp/a b'\\''c'")
+    }
+
+    func testPairingCodeFileIsOwnerOnly() throws {
+        let path = try AgentControl.writePairingCodeFile("code-1234567890-abcdefghij")
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        XCTAssertEqual(try String(contentsOfFile: path, encoding: .utf8), "code-1234567890-abcdefghij")
+        let perms = try FileManager.default.attributesOfItem(atPath: path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual(perms?.intValue, 0o600)
     }
 }

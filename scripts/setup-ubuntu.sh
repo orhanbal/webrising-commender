@@ -13,6 +13,7 @@ BINARY=""
 EXPECTED_SHA256=""
 ALLOWED_ROOT=""
 SKIP_ENROLL=0
+PAIRING_CODE_FILE=""
 CAPABILITY_ARGS=()
 
 usage() {
@@ -21,6 +22,7 @@ Usage: sudo bash scripts/setup-ubuntu.sh --binary /path/to/webrising-commender -
 Options: --control-url https://wecommander.app
          --allowed-root /path/to/specific/directory
          --skip-enroll (existing enrollment only)
+         --pairing-code-file FILE (one-time code from a signed-in Management Center)
          --read-only    (device refuses all file writes)
          --no-commands  (device refuses command execution, tasks and terminals)
 The agent uses an unprivileged Linux system account. Device approval
@@ -33,6 +35,7 @@ while (($#)); do
     --sha256) EXPECTED_SHA256="${2:-}"; shift 2 ;;
     --control-url) CONTROL_URL="${2:-}"; shift 2 ;;
     --allowed-root) ALLOWED_ROOT="${2:-}"; shift 2 ;;
+    --pairing-code-file) PAIRING_CODE_FILE="${2:-}"; shift 2 ;;
     --skip-enroll) SKIP_ENROLL=1; shift ;;
     --read-only) CAPABILITY_ARGS+=(--read-only); shift ;;
     --no-commands) CAPABILITY_ARGS+=(--no-commands); shift ;;
@@ -75,6 +78,25 @@ case "$ALLOWED_ROOT" in
 esac
 runuser -u "$SERVICE_USER" -- test -r "$ALLOWED_ROOT" || { echo "Agent cannot read allowed directory." >&2; exit 1; }
 runuser -u "$SERVICE_USER" -- test -x "$ALLOWED_ROOT" || { echo "Agent cannot traverse allowed directory." >&2; exit 1; }
+# A one-time pairing code from a signed-in Management Center ("Ajani kur"):
+# read once, delete, never print. Without it the browser approval below runs.
+read_pairing_code_file() {
+  local file="$1" value=""
+  [[ -f "$file" && ! -L "$file" ]] || return 0
+  value="$(head -c 200 -- "$file" | tr -d '\r\n')"
+  rm -f -- "$file"
+  [[ "$value" =~ ^[A-Za-z0-9_-]{20,200}$ ]] && printf '%s' "$value"
+  return 0
+}
+center_code=""
+[[ -z "${PAIRING_CODE_FILE:-}" ]] || center_code="$(read_pairing_code_file "$PAIRING_CODE_FILE")"
+if [[ ! -f "$CONFIG" && -n "$center_code" ]] && ! ((SKIP_ENROLL)); then
+  echo "Pairing with the account signed in to WECOMMANDER Center..."
+  runuser -u "$SERVICE_USER" -- "$STAGED_BINARY" --config "$CONFIG" enroll \
+    --control-url "$CONTROL_URL" --pairing-code "$center_code" --allowed-root "$ALLOWED_ROOT" \
+    "${CAPABILITY_ARGS[@]}" || echo "Center pairing failed; continuing with browser approval." >&2
+fi
+unset center_code
 if [[ -f "$CONFIG" ]]; then
   runuser -u "$SERVICE_USER" -- test -r "$CONFIG" || { echo "Existing config inaccessible, no re-pair." >&2; exit 1; }
   echo "Preserving existing device identity."

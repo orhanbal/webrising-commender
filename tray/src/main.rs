@@ -804,19 +804,37 @@ async fn check_agent(app: &AppHandle) {
 }
 
 /// "Ajanı güncelle": the official installer in a terminal window.
+/// With no agent yet and a signed-in Center, the installer gets a one-time
+/// pairing code (in a private file) and pairs without a browser sign-in.
 #[tauri::command]
-fn update_agent(app: AppHandle) -> Result<(), String> {
-    let server = {
+async fn update_agent(app: AppHandle) -> Result<(), String> {
+    let (server, not_installed) = {
         let state = app.state::<AppState>();
         let mut inner = state.inner.lock().unwrap();
         inner.agent_version_checked = None;
-        inner.settings.server.clone()
+        let not_installed = inner
+            .agent
+            .as_ref()
+            .is_some_and(|a| a.state == "notInstalled");
+        (inner.settings.server.clone(), not_installed)
     };
-    agent::open_update_terminal(&server)?;
+    let mut code_file = None;
+    if not_installed {
+        if let Ok((api, token)) = session(&app) {
+            if let Ok(code) = api.pairing_code(&token).await {
+                code_file = agent::write_pairing_code_file(&code).ok();
+            }
+        }
+    }
+    agent::open_update_terminal(&server, code_file.as_deref())?;
     notify(
         &app,
         "WECOMMANDER",
-        "Ajan güncellemesi bir terminalde açıldı. Yönetici şifresi istenecek; cihazın kaydı korunur.",
+        if code_file.is_some() {
+            "Ajan kurulumu bir terminalde açıldı. Yönetici şifresi istenecek; ajan bu hesapla otomatik bağlanır."
+        } else {
+            "Ajan güncellemesi bir terminalde açıldı. Yönetici şifresi istenecek; cihazın kaydı korunur."
+        },
     );
     Ok(())
 }

@@ -984,6 +984,18 @@ for (const [method, path] of [["GET", "/api/tokens"], ["POST", "/api/pairing"], 
   assert.equal(denied.status, 403, `center token must not reach ${method} ${path}`);
   assert.equal((await denied.json()).error, "center_scope");
 }
+// "Ajani kur" in a signed-in Center: a one-time pairing code, audited.
+const centerPairing = await fetch(base + "/api/center/pairing-code", { method: "POST", headers: centerHeaders, body: "{}" });
+assert.equal(centerPairing.status, 201, "a signed-in Center gets a one-time pairing code");
+const centerPairingBody = await centerPairing.json();
+assert.ok(centerPairingBody.pairingCode.length >= 20);
+assert.equal(centerPairingBody.expiresInSeconds, 300);
+assert.equal((await acceptanceDb.query(
+  "select 1 from audit_logs where tool='center.pairing_code'",
+)).rowCount, 1, "center pairing codes are audited");
+const browserPairingCode = await fetch(base + "/api/center/pairing-code", { method: "POST", headers: browserCenterHeaders, body: "{}" });
+assert.equal(browserPairingCode.status, 403, "only a Center token gets a Center pairing code");
+await browserPairingCode.text();
 const centerMcp = await fetch(base + "/mcp", {
   method: "POST", headers: centerHeaders,
   body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),

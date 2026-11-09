@@ -94,6 +94,24 @@ public struct AgentControl: Sendable {
         return "curl -fsSL \(origin)/install.sh | sh"
     }
 
+    /// The installer for a new agent from a signed-in Center: the one-time
+    /// pairing code is in a private file (never on the command line), which
+    /// the installer reads once and deletes.
+    public static func installCommand(server: String, pairingCodeFile: String) -> String {
+        let quoted = "'" + pairingCodeFile.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        return updateCommand(server: server) + " -s -- --pairing-code-file " + quoted
+    }
+
+    /// Writes the code to a new owner-only (0600) file and returns its path.
+    public static func writePairingCodeFile(_ code: String, directory: String = NSTemporaryDirectory()) throws -> String {
+        let path = (directory as NSString).appendingPathComponent("wecommander-pairing-\(UUID().uuidString)")
+        guard FileManager.default.createFile(atPath: path, contents: Data(code.utf8),
+                                             attributes: [.posixPermissions: 0o600]) else {
+            throw AgentError("Eşleştirme kodu dosyası yazılamadı.")
+        }
+        return path
+    }
+
     /// `launchctl print` of a running job has "state = running".
     public static func isRunning(_ printed: String) -> Bool {
         printed.split(separator: "\n").contains { line in

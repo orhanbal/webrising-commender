@@ -65,14 +65,21 @@ public partial class App : Application
     private DateTime _lastVersionCheck = DateTime.MinValue;
 
     /// <summary>Opens the official agent installer in a new PowerShell window (it asks for UAC).</summary>
-    public void UpdateAgent()
+    public async void UpdateAgent()
     {
         try
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("powershell.exe",
-                AgentControl.UpdateArguments(Settings.Server)) { UseShellExecute = true });
+            // Installing a new agent while signed in: pair it with this
+            // account through a one-time code, no second browser sign-in.
+            string? code = null;
+            if (Agent is { State: AgentRunState.NotInstalled } && Token is { } token)
+            {
+                try { code = await Gateway.PairingCodeAsync(token); }
+                catch (GatewayException) { /* the installer falls back to account sign-in */ }
+            }
+            System.Diagnostics.Process.Start(AgentControl.InstallerStartInfo(Settings.Server, code));
             _lastVersionCheck = DateTime.MinValue;
-            Toast(Texts.AgentUpdateStarted);
+            Toast(code is null ? Texts.AgentUpdateStarted : Texts.AgentInstallStarted);
         }
         catch (Exception e)
         {

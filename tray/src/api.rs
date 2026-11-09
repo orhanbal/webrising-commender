@@ -290,6 +290,21 @@ impl Api {
             .map(|_| ())
     }
 
+    /// One-time pairing code (5 minutes) for the agent installer on this computer.
+    pub async fn pairing_code(&self, token: &str) -> Result<String, ApiError> {
+        let body = self
+            .send(self.post(Some(token), "/api/center/pairing-code", json!({})))
+            .await?;
+        body.get("pairingCode")
+            .and_then(Value::as_str)
+            .filter(|c| c.len() >= 20)
+            .map(str::to_owned)
+            .ok_or_else(|| ApiError::Http {
+                status: 0,
+                code: "no_pairing_code".into(),
+            })
+    }
+
     pub async fn disconnect(&self, token: &str) -> Result<(), ApiError> {
         self.send(self.post(Some(token), "/api/center/disconnect", json!({})))
             .await

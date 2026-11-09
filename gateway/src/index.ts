@@ -3692,6 +3692,29 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         role: principal!.role, organizationName: org.rows[0]?.name ?? null,
       });
     }
+    if (req.method === "POST" && url.pathname === "/api/center/pairing-code") {
+      // "Ajani kur" in a signed-in Management Center: a one-time code the
+      // installer on the same computer redeems, so the owner signs in once.
+      // Same rules as /api/pairing (operator, device capacity), tighter limit,
+      // shorter life, audited.
+      if (principal!.authKind !== "center") return void json(res, 403, { error: "center_token_required" });
+      if (!requireRole(principal!, "operator", res)) return;
+      const rate = pairingRateLimit.hit("center:" + principal!.centerId, 5, 60 * 60_000);
+      if (!rate.allowed) {
+        res.setHeader("Retry-After", String(rate.retryAfterSeconds));
+        return void json(res, 429, { error: "rate_limited" });
+      }
+      const orgId = principal!.organizationId;
+      if (!(await requireCapacity(orgId, "device", res))) return;
+      await db.query("delete from pairing_codes where expires_at < now() or used_at is not null");
+      const code = randomToken(24);
+      await db.query(
+        "insert into pairing_codes(organization_id,code_hash,expires_at) values($1,$2,now()+interval '5 minutes')",
+        [orgId, sha256(code)],
+      );
+      await auditControl(principal!, null, "center.pairing_code", "medium", "success", "{}");
+      return void json(res, 201, { pairingCode: code, expiresInSeconds: 300 });
+    }
     if (req.method === "POST" && url.pathname === "/api/center/disconnect") {
       if (principal!.authKind !== "center") return void json(res, 403, { error: "center_token_required" });
       await db.query("update management_centers set revoked_at=coalesce(revoked_at,now()) where id=$1", [principal!.centerId]);
