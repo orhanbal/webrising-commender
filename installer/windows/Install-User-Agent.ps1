@@ -56,8 +56,6 @@ if ($legacy) {
 }
 
 $action = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}" -BinaryPath "{1}" -ConfigPath "{2}"' -f $launcher,$BinaryPath,$ConfigPath)
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $identity.Name
-$principal = New-ScheduledTaskPrincipal -UserId $sid -LogonType Interactive -RunLevel Limited
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
 
 $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
@@ -70,7 +68,30 @@ if ($existing) {
   }
   Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction Stop
 }
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'WECOMMANDER agent runs only while its Windows user is signed in; no password stored.' -ErrorAction Stop | Out-Null
+# Task Scheduler rejects some spellings of the same account with "The
+# parameter is incorrect. (n,m):UserId:" (Microsoft and Azure AD accounts:
+# the display name "AzureAD\Name" does not resolve). Try the SID first, then
+# the names, and keep the first form this computer accepts.
+$userForms = @($sid, $identity.Name, "$env:USERDOMAIN\$env:USERNAME") | Where-Object { $_ } | Select-Object -Unique
+$registered = $false
+$lastError = $null
+foreach ($principalUser in $userForms) {
+  foreach ($triggerUser in $userForms) {
+    try {
+      $trigger = New-ScheduledTaskTrigger -AtLogOn -User $triggerUser
+      $principal = New-ScheduledTaskPrincipal -UserId $principalUser -LogonType Interactive -RunLevel Limited
+      Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'WECOMMANDER agent runs only while its Windows user is signed in; no password stored.' -ErrorAction Stop | Out-Null
+      $registered = $true
+      break
+    } catch {
+      $lastError = $_.Exception.Message
+    }
+  }
+  if ($registered) { break }
+}
+if (-not $registered) {
+  throw "Scheduled task could not be registered: $lastError"
+}
 
 if ($SkipStart) {
   # GitHub Windows runners have no guaranteed interactive logon session.
