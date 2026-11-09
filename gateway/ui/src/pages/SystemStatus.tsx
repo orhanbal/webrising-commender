@@ -7,6 +7,7 @@ import {consoleText} from "../console-text";
 type SystemData={
   mailConfigured?:boolean;
   signupEnabled?:boolean;
+  signupSetting?:{enabled:boolean;source:"console"|"environment"};
   deploymentMode?:string;
   checkedAt?:string;
   database?:string;
@@ -30,6 +31,18 @@ export function SystemStatus({data}:{data:Record<string,unknown>|null}){
  const [selected,setSelected]=useState<string|null>(null);
  const [currentPassword,setCurrentPassword]=useState("");
  const [busy,setBusy]=useState(false);
+ const [signupOverride,setSignupOverride]=useState<{enabled:boolean;source:string}|null>(null);
+ const [signupTarget,setSignupTarget]=useState<boolean|null>(null);
+ const [signupPassword,setSignupPassword]=useState("");
+ const [signupError,setSignupError]=useState("");
+ const saveSignup=async()=>{
+  if(signupTarget===null)return;
+  setBusy(true);setSignupError("");
+  try{
+   const result=await api<{signupSetting:{enabled:boolean;source:string}}>("/api/console/settings/public-signup",{method:"POST",body:JSON.stringify({enabled:signupTarget,currentPassword:signupPassword})});
+   setSignupOverride(result.signupSetting);setSignupTarget(null);setSignupPassword("");
+  }catch(error){setSignupError(String(error))}finally{setBusy(false)}
+ };
  const reloadIncidents=async()=>{
    const records=await api<{items:Incident[]}>("/api/console/incidents");
    setIncidents(records.items);
@@ -55,6 +68,7 @@ export function SystemStatus({data}:{data:Record<string,unknown>|null}){
 
  if(!data)return <div className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-6"><p className="muted">{ui("Loading…")}</p></div>;
  const current=data as SystemData;
+ const signup=signupOverride??current.signupSetting??{enabled:Boolean(current.signupEnabled),source:"environment"};
  const mail=current.mailQueue;
  const ops=current.operations;
  const signals=[
@@ -120,11 +134,33 @@ export function SystemStatus({data}:{data:Record<string,unknown>|null}){
    <p className="muted text-xs mt-4">{ui("These are read-only indicators; no external notifications are sent.")}</p>
   </section>
   <section className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-6">
+   <div className="flex justify-between flex-wrap items-center gap-3">
+    <div><h3 className="text-lg font-bold">{ui("Public sign-up")}</h3>
+     <p className="muted text-sm mt-2">{signup.enabled?ui("Anyone can create a workspace from the website."):ui("New visitors cannot create an account; existing users can still sign in.")}</p>
+     {current.deploymentMode!=="saas"&&<p className="text-sm mt-2 text-[var(--danger)]">{ui("Sign-up only works in SaaS mode.")}</p>}
+     {!current.mailConfigured&&<p className="text-sm mt-2 text-[var(--danger)]">{ui("Sign-up needs working email (SMTP) for verification.")}</p>}
+    </div>
+    <button type="button" className={"rounded-xl px-4 py-2 text-sm "+(signup.enabled?"border border-[var(--stroke)]":"bg-[var(--accent)] text-[var(--accent-ink)]")}
+      onClick={()=>{setSignupTarget(!signup.enabled);setSignupPassword("");setSignupError("")}}>{signup.enabled?ui("Turn off sign-up"):ui("Turn on sign-up")}</button>
+   </div>
+   {signupTarget!==null&&<div className="mt-5 rounded-xl border border-[var(--stroke)] p-5">
+    <label className="block text-sm font-semibold">{ui("Current admin password")}
+     <input type="password" autoComplete="current-password" value={signupPassword} onChange={e=>setSignupPassword(e.target.value)}
+       className="block mt-2 w-full max-w-lg rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-3"/>
+    </label>
+    <div className="flex gap-3 mt-4">
+     <button type="button" className="rounded-xl border border-[var(--stroke)] px-4 py-2" onClick={()=>{setSignupTarget(null);setSignupPassword("")}}>{ui("Cancel")}</button>
+     <button type="button" className="rounded-xl bg-[var(--accent)] text-[var(--accent-ink)] px-4 py-2 disabled:opacity-40" onClick={()=>void saveSignup()} disabled={busy||signupPassword.length<12}>{signupTarget?ui("Turn on sign-up"):ui("Turn off sign-up")}</button>
+    </div>
+   </div>}
+   {signupError&&<p role="alert" className="text-sm text-[var(--danger)] mt-4">{signupError}</p>}
+  </section>
+  <section className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-6">
    <h3 className="text-lg font-bold mb-4 flex gap-2 items-center"><ShieldCheck size={19}/>{ui("Configuration summary")}</h3>
    <dl className="grid gap-3 text-sm">
     <div className="flex justify-between gap-4"><dt className="muted">{ui("Deployment mode")}</dt><dd className="font-medium">{current.deploymentMode||"—"}</dd></div>
     <div className="flex justify-between gap-4"><dt className="muted">{ui("Branded SMTP")}</dt><dd className="font-medium">{current.mailConfigured?ui("Configured"):ui("Not configured")}</dd></div>
-    <div className="flex justify-between gap-4"><dt className="muted">{ui("Public signup")}</dt><dd className="font-medium">{current.signupEnabled?ui("Enabled"):ui("Disabled")}</dd></div>
+    <div className="flex justify-between gap-4"><dt className="muted">{ui("Public signup")}</dt><dd className="font-medium">{signup.enabled&&current.mailConfigured&&current.deploymentMode==="saas"?ui("Enabled"):ui("Disabled")}</dd></div>
     {current.checkedAt&&<div className="flex justify-between gap-4"><dt className="muted">{ui("Last checked")}</dt><dd className="font-medium">{new Date(current.checkedAt).toLocaleString(language==="tr"?"tr-TR":"en-US")}</dd></div>}
    </dl>
    <p className="muted text-sm mt-5">{ui("Credentials and secrets are not exposed.")}</p>

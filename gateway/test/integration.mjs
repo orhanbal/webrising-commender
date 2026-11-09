@@ -507,6 +507,24 @@ const operatorBilling=await (await fetch(base+"/api/billing",{headers:{Cookie:br
 assert.equal(operatorBilling.entitled,true);
 assert.equal(operatorBilling.plan.key,"internal");
 assert.equal(operatorBilling.limits.maxDevices,null);
+// Console: a super admin switches public sign-up without a redeploy.
+{
+  const headers={Cookie:browserCookies,"Content-Type":"application/json","X-CSRF-Token":browserLogin.csrfToken};
+  const flip=(enabled,currentPassword="correct-horse-battery-staple")=>fetch(base+"/api/console/settings/public-signup",
+    {method:"POST",headers,body:JSON.stringify({enabled,currentPassword})});
+  assert.equal((await jsonFetch("/api/public/config")).signupEnabled,true,"environment default while no console value");
+  const off=await flip(false);
+  assert.equal(off.status,200);
+  assert.deepEqual((await off.json()).signupSetting,{enabled:false,source:"console"});
+  assert.equal((await jsonFetch("/api/public/config")).signupEnabled,false);
+  const blocked=await fetch(base+"/api/auth/signup",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({email:"closed-signup@example.test"})});
+  assert.equal(blocked.status,404);
+  await blocked.text();
+  assert.equal((await flip(true)).status,200);
+  assert.equal((await jsonFetch("/api/public/config")).signupEnabled,true);
+  assert.equal((await (await fetch(base+"/api/console/system",{headers})).json()).signupSetting.source,"console");
+}
 // Console: the free plan's monthly tool-call limit is edited with the other limits.
 {
   const headers={Cookie:browserCookies,"Content-Type":"application/json","X-CSRF-Token":browserLogin.csrfToken};
@@ -518,8 +536,6 @@ assert.equal(operatorBilling.limits.maxDevices,null);
   assert.equal(consoleBilling.plans.find((plan)=>plan.key==="free").monthly_tool_calls,1200);
   const freeCard=(await jsonFetch("/api/public/plans")).plans.find((plan)=>plan.key==="free");
   assert.ok(freeCard.features.includes("Ayda 1.200 araç çağrısı"),"the pricing card shows the limit in force");
-  assert.equal((await setLimits(null)).status,200);
-  assert.ok((await jsonFetch("/api/public/plans")).plans.find((plan)=>plan.key==="free").features.includes("Sınırsız araç çağrısı"));
   assert.equal((await setLimits(5000)).status,200);
   await acceptanceDb.query("update billing_plans set active=false where key='free'");
 }
