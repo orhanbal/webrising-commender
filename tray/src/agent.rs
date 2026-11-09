@@ -154,7 +154,11 @@ pub fn open_update_terminal(server: &str, pairing_code_file: Option<&str>) -> Re
         Some(file) => install_command(server, file),
         None => update_command(server),
     };
-    let script = format!("{command}; echo; printf 'Kapatmak için Enter tuşuna bas. '; read _");
+    // Closes by itself when the installer succeeds; on failure it stays
+    // open so the reason can be read.
+    let script = format!(
+        "{command} && exit 0; echo; printf 'Kurulum tamamlanamadı. Kapatmak için Enter tuşuna bas. '; read _"
+    );
     for (term, args) in [
         ("x-terminal-emulator", vec!["-e", "sh", "-c"]),
         ("gnome-terminal", vec!["--", "sh", "-c"]),

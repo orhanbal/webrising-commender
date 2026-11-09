@@ -55,7 +55,17 @@ if ($legacy) {
   throw 'Old Windows service still exists. Migrate it first, preserving agent.json.'
 }
 
-$action = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}" -BinaryPath "{1}" -ConfigPath "{2}"' -f $launcher,$BinaryPath,$ConfigPath)
+$powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+$launchArgs = '-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}" -BinaryPath "{1}" -ConfigPath "{2}"' -f $launcher,$BinaryPath,$ConfigPath
+# Windows 11 hands console programs to Windows Terminal, which ignores
+# -WindowStyle Hidden: the agent showed up as an open terminal window (and
+# closing it stopped the agent). A headless console host never opens one.
+$conhost = "$env:SystemRoot\System32\conhost.exe"
+if (Test-Path -LiteralPath $conhost -PathType Leaf) {
+  $action = New-ScheduledTaskAction -Execute $conhost -Argument ('--headless "{0}" {1}' -f $powershell,$launchArgs)
+} else {
+  $action = New-ScheduledTaskAction -Execute $powershell -Argument $launchArgs
+}
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
 
 $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue

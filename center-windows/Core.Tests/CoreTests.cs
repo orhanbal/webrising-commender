@@ -349,15 +349,22 @@ public class CoreTests
         Assert.Null(AgentControl.ParseVersion(""));
         var control = new AgentControl(new FakeRunner(), "S-1", @"C:\x\agent.exe");
         Assert.Null(await control.InstalledVersionAsync());
-        Assert.Equal("-NoExit -NoProfile -ExecutionPolicy Bypass -Command \"& ([scriptblock]::Create((irm https://wecommander.app/install.ps1)))\"",
+        Assert.Equal("-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"[Console]::OutputEncoding=[Text.Encoding]::UTF8; & ([scriptblock]::Create((irm https://wecommander.app/install.ps1)))\"",
             AgentControl.UpdateArguments("https://wecommander.app/"));
+        Assert.Null(AgentControl.InstallerLine("   "));
+        Assert.Null(AgentControl.InstallerLine("     \u2584\u2588\u2588\u2588\u2584"));
+        Assert.Equal("W E C O M M A N D E R", AgentControl.InstallerLine("   \u2588\u2588\u2588       W E C O M M A N D E R"[3..].Replace("\u2588", "").Trim()));
+        Assert.Equal("WECOMMANDER installed.", AgentControl.InstallerLine("WECOMMANDER installed.  "));
     }
 
     [Fact]
     public void InstallerGetsPairingCodeOnlyThroughTheEnvironment()
     {
         var update = AgentControl.InstallerStartInfo("https://wecommander.app/", null);
-        Assert.True(update.UseShellExecute);
+        Assert.False(update.UseShellExecute);
+        Assert.True(update.CreateNoWindow);
+        Assert.True(update.RedirectStandardOutput);
+        Assert.Equal("1", update.Environment["WECOMMANDER_FROM_CENTER"]);
         Assert.False(update.Environment.ContainsKey("WECOMMANDER_PAIRING_CODE"));
 
         var install = AgentControl.InstallerStartInfo("https://wecommander.app/", "secret-code-123456789012345");

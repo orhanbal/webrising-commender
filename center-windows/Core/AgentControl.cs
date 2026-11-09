@@ -104,32 +104,47 @@ public sealed class AgentControl(ICommandRunner runner, string userSid, string? 
     }
 
     /// <summary>
-    /// The official one-line agent installer for this server, run in a new
-    /// PowerShell window: it downloads the newest checked Setup, asks for
-    /// Windows UAC and keeps the device's enrollment.
+    /// The official one-line agent installer for this server: it downloads the
+    /// newest checked Setup, asks for Windows UAC and keeps the device's
+    /// enrollment. Output is UTF-8 so the Center can show it.
     /// </summary>
     public static string UpdateArguments(string server) =>
-        $"-NoExit -NoProfile -ExecutionPolicy Bypass -Command \"& ([scriptblock]::Create((irm {server.TrimEnd('/')}/install.ps1)))\"";
+        $"-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"[Console]::OutputEncoding=[Text.Encoding]::UTF8; & ([scriptblock]::Create((irm {server.TrimEnd('/')}/install.ps1)))\"";
 
     /// <summary>
-    /// Starts the agent installer in a new PowerShell window. With a pairing
-    /// code (a signed-in Center installing a new agent) the code and server go
-    /// in the child's environment, never on its command line, and the
-    /// installer pairs without a second browser sign-in.
+    /// Runs the agent installer without a console window; the Center reads its
+    /// output and shows it in the agent card (no window left to close). With a
+    /// pairing code (a signed-in Center installing a new agent) the code and
+    /// server go in the child's environment, never on its command line, and
+    /// the installer pairs without a second browser sign-in.
     /// </summary>
     public static ProcessStartInfo InstallerStartInfo(string server, string? pairingCode)
     {
-        var info = new ProcessStartInfo("powershell.exe", UpdateArguments(server));
-        if (pairingCode is null)
+        var info = new ProcessStartInfo("powershell.exe", UpdateArguments(server))
         {
-            info.UseShellExecute = true;
-            return info;
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = System.Text.Encoding.UTF8,
+            StandardErrorEncoding = System.Text.Encoding.UTF8,
+        };
+        info.Environment["WECOMMANDER_FROM_CENTER"] = "1";
+        if (pairingCode is not null)
+        {
+            info.Environment["WECOMMANDER_PAIRING_CODE"] = pairingCode;
+            info.Environment["WECOMMANDER_SERVER"] = server.TrimEnd('/');
         }
-        // A console program started this way from a windowed app gets its own console window.
-        info.UseShellExecute = false;
-        info.Environment["WECOMMANDER_PAIRING_CODE"] = pairingCode;
-        info.Environment["WECOMMANDER_SERVER"] = server.TrimEnd('/');
         return info;
+    }
+
+    /// <summary>A line of installer output worth showing (no blank lines, no logo art).</summary>
+    public static string? InstallerLine(string? line)
+    {
+        if (string.IsNullOrWhiteSpace(line)) return null;
+        var text = line.TrimEnd();
+        // The banner's block-art rows carry no letters; the title rows do.
+        return text.Any(char.IsLetterOrDigit) ? text.Trim() : null;
     }
 
     public const string ServiceName = "WebRisingCommender";

@@ -352,7 +352,9 @@ final class AppModel: ObservableObject {
             raw = AgentControl.installCommand(server: settings.server, pairingCodeFile: file)
             installing = true
         }
-        let command = raw
+        // "&& exit" closes the Terminal session when the installer succeeds
+        // (on failure it stays open so the reason can be read).
+        let command = (raw + " && exit")
             .replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
         let script = "tell application \"Terminal\"\nactivate\ndo script \"\(command)\"\nend tell"
         let process = Process()

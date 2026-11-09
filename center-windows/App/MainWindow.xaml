@@ -144,6 +144,17 @@
                                         <TextBlock x:Name="AgentVersionText" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}"
                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                     </StackPanel>
+                                    <!-- Installer output ("mini terminal"): no separate window to close. -->
+                                    <Border x:Name="InstallerPanel" Visibility="Collapsed" Margin="0,8,0,0" Padding="8" CornerRadius="6"
+                                            Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
+                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                                        <StackPanel Spacing="6">
+                                            <ScrollViewer x:Name="InstallerScroll" MaxHeight="180" VerticalScrollBarVisibility="Auto">
+                                                <TextBlock x:Name="InstallerText" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                            </ScrollViewer>
+                                            <HyperlinkButton x:Name="InstallerCloseButton" Content="Kapat" Padding="0" Click="InstallerClose_Click" />
+                                        </StackPanel>
+                                    </Border>
                                 </StackPanel>
                             </Border>
                             <StackPanel x:Name="DevicesPanel" Spacing="6" />
