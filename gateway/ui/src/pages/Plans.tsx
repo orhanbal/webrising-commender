@@ -29,7 +29,8 @@ export function PlansPage({nav,pricing,account,checkoutMode=false,theme="dark",s
     // Never grant entitlement based on a browser event. Wait for signed Paddle webhook.
     nav("/billing?pending=1");
    });
-   paddle.Checkout.open({transactionId:transaction.transactionId,settings:{displayMode:"overlay",theme,locale:"tr"}});
+   // Signed in: Paddle's first step is pre-filled with the account e-mail.
+   paddle.Checkout.open({transactionId:transaction.transactionId,...(account?.email?{customer:{email:account.email}}:{}),settings:{displayMode:"overlay",theme,locale:"tr"}});
   }catch(e){setMessage(e instanceof Error?e.message:translate("Ödeme ekranı açılamadı."))}
   finally{setBusy(false)}
  }
