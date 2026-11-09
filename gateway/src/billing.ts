@@ -583,6 +583,8 @@ type QuotaSnapshot = { mode: DeploymentMode; entitled: boolean; plan: { key: str
 export function monthlyToolCallLimit(snapshot: QuotaSnapshot): number | null {
   if (snapshot.mode === "self_hosted" || snapshot.plan?.key === "internal") return null;
   const metadata = (snapshot.plan?.metadata ?? {}) as Record<string, unknown>;
+  // Set to empty (null) in the console: no monthly limit for this plan.
+  if (Object.hasOwn(metadata, "monthlyToolCalls") && metadata.monthlyToolCalls === null) return null;
   const configured = Number(metadata.monthlyToolCalls ?? metadata.maxToolCalls ?? metadata.toolCallLimit ?? Number.NaN);
   if (Number.isFinite(configured) && configured >= 0) return configured;
   if (snapshot.plan?.key === FREE_PLAN_KEY) return FREE_TOOL_CALLS_DEFAULT;
