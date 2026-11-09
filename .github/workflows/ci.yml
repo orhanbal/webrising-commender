@@ -1013,7 +1013,10 @@ jobs:
             if ($task.Principal.LogonType -ne 'Interactive' -or $task.Principal.RunLevel -ne 'Limited') {
               throw "Unexpected user-task principal: $($task.Principal.LogonType) / $($task.Principal.RunLevel)"
             }
-            if ($task.Actions.Execute -notmatch 'powershell.exe') { throw 'Agent launcher not configured.' }
+            # Started through a headless console host (no Windows Terminal window).
+          $launch = "$($task.Actions.Execute) $($task.Actions.Arguments)"
+          if ($launch -notmatch 'powershell.exe' -or $launch -notmatch 'Run-User-Agent.ps1') { throw 'Agent launcher not configured.' }
+          if ((Test-Path "$env:SystemRoot\System32\conhost.exe") -and ($task.Actions.Execute -notmatch 'conhost.exe' -or $task.Actions.Arguments -notmatch '--headless')) { throw 'Agent must start without a window (conhost --headless).' }
           } finally {
             .\installer\windows\Uninstall-User-Agent.ps1
             Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
