@@ -116,6 +116,7 @@ export const commonEnglish:Record<string,string> = {
   "Paket özeti": "Order summary",
   "Ödeme henüz açık değil": "Checkout not enabled",
   "Ücretsiz başla": "Start free",
+  "Pro'ya yükselt": "Upgrade to Pro",
   "Paketi seç": "Choose plan",
   "Güvenli ödeme Paddle ile işlenir": "Secure payments are processed by Paddle",
   "Paddle ile güvenli ödeme": "Secure checkout with Paddle",

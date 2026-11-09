@@ -371,6 +371,8 @@ for (const key of ["free", "pro", "team"]) assert.ok(catalog.plans.some((plan) =
 assert.equal(catalog.plans.find((plan) => plan.key === "free").free, true);
 assert.equal(catalog.plans.find((plan) => plan.key === "pro").featured, true);
 assert.equal(catalog.plans.find((plan) => plan.key === "pro").priceId, null, "no price ID until PADDLE_PRICE_PRO is set");
+const freeUsage = await (await fetch(base + "/api/usage", { headers: { Cookie: signupCookies } })).json();
+assert.equal(freeUsage.limit, 5000, "the free plan has a monthly tool-call quota");
 // The rest of this suite checks paid-plan enforcement without a free tier.
 await acceptanceDb.query("update billing_plans set active=false where key='free'");
 const signupBillingNoFree = await (await fetch(base + "/api/billing", { headers: { Cookie: signupCookies } })).json();
@@ -2788,6 +2790,32 @@ assert.equal(secondClose.status,409);
 await acceptanceDb.query("delete from billing_support_requests where id=$1",[requestId]);
 await acceptanceDb.query("delete from users where id=$1",[supportViewer.rows[0].id]);
 await acceptanceDb.query("update platform_administrators set revoked_at=now() where user_id=$1",[browserMe.userId]);
+
+// Monthly tool-call quota: a workspace whose plan allows 0 calls gets a clear
+// error from /mcp tools/call and nothing reaches a device.
+{
+  await acceptanceDb.query(
+    `insert into billing_plans(key,name,max_devices,max_members,max_api_tokens,metadata,active)
+     values('ci-quota','CI Quota',1,1,1,'{"monthlyToolCalls":0}'::jsonb,true) on conflict (key) do nothing`,
+  );
+  const quotaOrg = await jsonFetch("/api/organizations", {
+    method: "POST", headers: authHeaders, body: JSON.stringify({ name: "CI Quota" }),
+  });
+  await assignSubscription(quotaOrg.item.id, "ci-quota");
+  const quotaToken = await jsonFetch("/api/tokens", {
+    method: "POST", headers: authHeaders,
+    body: JSON.stringify({ name: "CI Quota", role: "operator", organizationId: quotaOrg.item.id }),
+  });
+  const quotaHeaders = { Authorization: `Bearer ${quotaToken.token}`, "Content-Type": "application/json" };
+  const blocked = await rpcAs(quotaHeaders, 9901, "tools/call", { name: "devices_list", arguments: {} });
+  assert.equal(blocked.result.isError, true);
+  const reason = JSON.parse(blocked.result.content[0].text);
+  assert.equal(reason.error, "monthly_tool_call_limit");
+  assert.equal(reason.limit, 0);
+  assert.match(reason.upgrade_url, /\/pricing$/);
+  const listed = await rpcAs(quotaHeaders, 9902, "tools/list");
+  assert.ok(listed.result.tools.length > 0, "tools/list is not counted or blocked");
+}
 
 const browserLogoutResponse = await fetch(base + "/api/auth/logout", {
   method: "POST",

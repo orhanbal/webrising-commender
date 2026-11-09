@@ -28,6 +28,7 @@ import {
   applyNormalizedBillingEvent,
   billingSnapshot,
   deploymentMode,
+  monthlyToolCallLimit,
   upsertBillingPlan,
   upsertSubscription,
   type AllocationResource,
@@ -2777,23 +2778,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
 
       const monthCalls = Number(current.rows[0]?.month_calls ?? 0);
       const daysElapsed = Math.max(1, Number(current.rows[0]?.days_elapsed ?? 1));
-      const metadata = (snapshot.plan?.metadata ?? {}) as Record<string, unknown>;
-      const configuredLimit = Number(
-        metadata.monthlyToolCalls ??
-        metadata.maxToolCalls ??
-        metadata.toolCallLimit ??
-        Number.NaN,
-      );
-      let limit: number | null;
-      if (snapshot.mode === "self_hosted" || snapshot.plan?.key === "pro") {
-        limit = null;
-      } else if (Number.isFinite(configuredLimit) && configuredLimit >= 0) {
-        limit = configuredLimit;
-      } else if (snapshot.plan?.key === "free") {
-        limit = 10_000;
-      } else {
-        limit = snapshot.entitled ? null : 0;
-      }
+      const limit = monthlyToolCallLimit(snapshot);
 
       return void json(res, 200, {
         monthCalls,

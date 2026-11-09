@@ -45,6 +45,11 @@ Paddle webhook can provision or update entitlements.
    console (`/console`, plan limits); the price ID and label always follow the
    environment at the next start. A plan without a valid price ID stays
    visible but cannot be bought.
+   The free plan also has a monthly MCP tool-call quota (`BILLING_FREE_TOOL_CALLS`,
+   default 5000; plan metadata `monthlyToolCalls`). When it is used up,
+   `tools/call` returns `monthly_tool_call_limit` with the upgrade URL and
+   nothing reaches a device; it resets on the 1st of the month. Paid plans
+   have no call limit.
    Workspaces owned by a platform administrator (console access) are never
    limited by a plan, so switching to SaaS does not lock the operator out.
 6. Configure `PUBLIC_SIGNUP_ENABLED=true` and a working SMTP/mail outbox if

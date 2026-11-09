@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { db } from "./db.js";
-import { applyNormalizedBillingEvent, deploymentMode, FREE_PLAN_KEY } from "./billing.js";
+import { applyNormalizedBillingEvent, deploymentMode, FREE_PLAN_KEY, FREE_TOOL_CALLS_DEFAULT } from "./billing.js";
 
 export const paddleEnvironment = process.env.PADDLE_ENVIRONMENT === "live" ? "live" : "sandbox";
 const pricePattern = /^pri_[a-z0-9]{26}$/;
@@ -224,19 +224,19 @@ export const planCatalog: CatalogPlan[] = [
   {
     key: FREE_PLAN_KEY, name: "Free", maxDevices: 1, maxMembers: 1, maxApiTokens: 2,
     description: "Bir bilgisayar, tek kişi. Kart gerekmez.",
-    features: ["1 cihaz", "1 kişi", "MCP erişimi ve insan onayı", "Denetim kaydı"],
+    features: ["1 cihaz", "Ayda 5.000 araç çağrısı", "MCP erişimi ve insan onayı", "Denetim kaydı"],
     defaultLabel: "Ücretsiz",
   },
   {
     key: "pro", name: "Pro", maxDevices: 5, maxMembers: 1, maxApiTokens: 5,
     description: "Kendi bilgisayarların ve sunucuların için.",
-    features: ["5 cihaz", "1 kişi", "Otonom mod ve izinli komutlar", "Yönetim Merkezi bildirimleri"],
+    features: ["5 cihaz", "Sınırsız araç çağrısı", "Otonom mod ve izinli komutlar", "Yönetim Merkezi bildirimleri"],
     featured: true, priceEnv: "PADDLE_PRICE_PRO", labelEnv: "PADDLE_PRICE_PRO_LABEL", defaultLabel: "9 USD / ay",
   },
   {
     key: "team", name: "Team", maxDevices: 25, maxMembers: 5, maxApiTokens: 25,
     description: "Ekipler ve birden çok sunucu için.",
-    features: ["25 cihaz", "5 ekip üyesi", "Roller ve ortak onaylar", "Denetim kaydı"],
+    features: ["25 cihaz", "5 ekip üyesi", "Sınırsız araç çağrısı", "Roller ve ortak onaylar"],
     priceEnv: "PADDLE_PRICE_TEAM", labelEnv: "PADDLE_PRICE_TEAM_LABEL", defaultLabel: "29 USD / ay",
   },
 ];
@@ -251,10 +251,17 @@ export async function syncPlanCatalog() {
       priceId = "";
     }
     const label = (plan.labelEnv ? String(process.env[plan.labelEnv] || "").trim() : "") || plan.defaultLabel;
-    const metadata = {
+    const metadata: Record<string, unknown> = {
       description: plan.description, features: plan.features, featured: plan.featured === true,
       priceLabel: label, ...(priceId ? { paddlePriceId: priceId } : {}),
     };
+    if (plan.key === FREE_PLAN_KEY) {
+      const calls = Number(process.env.BILLING_FREE_TOOL_CALLS || FREE_TOOL_CALLS_DEFAULT);
+      const limit = Number.isInteger(calls) && calls >= 0 ? calls : FREE_TOOL_CALLS_DEFAULT;
+      metadata.monthlyToolCalls = limit;
+      metadata.features = plan.features.map((feature) =>
+        feature.includes("araç çağrısı") ? `Ayda ${limit.toLocaleString("tr-TR")} araç çağrısı` : feature);
+    }
     await db.query(
       `insert into billing_plans(key,name,max_devices,max_members,max_api_tokens,metadata,active)
        values($1,$2,$3,$4,$5,$6::jsonb,true)

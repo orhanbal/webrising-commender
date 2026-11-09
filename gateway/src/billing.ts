@@ -573,3 +573,50 @@ export async function applyNormalizedBillingEvent(event: NormalizedBillingEvent)
     client.release();
   }
 }
+
+/** Monthly MCP tool calls of the free plan unless its metadata says otherwise. */
+export const FREE_TOOL_CALLS_DEFAULT = 5_000;
+
+type QuotaSnapshot = { mode: DeploymentMode; entitled: boolean; plan: { key: string; metadata?: Record<string, unknown> } | null };
+
+/** The workspace's monthly MCP tool-call limit; null means unlimited. */
+export function monthlyToolCallLimit(snapshot: QuotaSnapshot): number | null {
+  if (snapshot.mode === "self_hosted" || snapshot.plan?.key === "internal") return null;
+  const metadata = (snapshot.plan?.metadata ?? {}) as Record<string, unknown>;
+  const configured = Number(metadata.monthlyToolCalls ?? metadata.maxToolCalls ?? metadata.toolCallLimit ?? Number.NaN);
+  if (Number.isFinite(configured) && configured >= 0) return configured;
+  if (snapshot.plan?.key === FREE_PLAN_KEY) return FREE_TOOL_CALLS_DEFAULT;
+  return snapshot.entitled ? null : 0;
+}
+
+/** MCP tool calls of this calendar month (the same count the usage page shows). */
+export async function monthlyToolCalls(organizationId: string, queryable: Queryable = db) {
+  const result = await queryable.query<{ calls: string; reset_at: string }>(
+    `select (select count(*) from audit_logs
+               where organization_id=$1
+                 and created_at >= date_trunc('month',now())
+                 and (tool not like '%.%' or tool like 'direct.%'))::text as calls,
+            (date_trunc('month',now()) + interval '1 month')::timestamptz::text as reset_at`,
+    [organizationId],
+  );
+  return { calls: count(result.rows[0]?.calls), resetAt: result.rows[0]?.reset_at ?? null };
+}
+
+const quotaCache = new Map<string, { limit: number | null; until: number }>();
+
+/**
+ * Checked before every MCP tools/call. The plan's limit is cached for a
+ * minute; the count is read each time so the limit holds exactly.
+ */
+export async function toolCallQuota(organizationId: string) {
+  const now = Date.now();
+  let cached = quotaCache.get(organizationId);
+  if (!cached || cached.until < now) {
+    cached = { limit: monthlyToolCallLimit(await billingSnapshot(organizationId)), until: now + 60_000 };
+    quotaCache.set(organizationId, cached);
+    if (quotaCache.size > 10_000) quotaCache.clear();
+  }
+  if (cached.limit === null) return { exceeded: false as const, limit: null, used: null, resetAt: null };
+  const { calls, resetAt } = await monthlyToolCalls(organizationId);
+  return { exceeded: calls >= cached.limit, limit: cached.limit, used: calls, resetAt };
+}
