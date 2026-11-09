@@ -41,7 +41,13 @@ export async function getPublicPlans(): Promise<PublicPlan[]> {
   return result.rows.map((row) => {
     const meta = row.metadata ?? {};
     const id = String(meta.paddlePriceId ?? meta.paddle_price_id ?? "").trim();
-    const features = Array.isArray(meta.features) ? meta.features.filter((value): value is string => typeof value === "string").slice(0,8) : [];
+    let features = Array.isArray(meta.features) ? meta.features.filter((value): value is string => typeof value === "string").slice(0,8) : [];
+    if (Object.hasOwn(meta, "monthlyToolCalls")) {
+      // The quota line always shows the limit in force (set in the console).
+      const calls = meta.monthlyToolCalls;
+      const line = typeof calls === "number" ? `Ayda ${calls.toLocaleString("tr-TR")} araç çağrısı` : "Sınırsız araç çağrısı";
+      features = features.map((feature) => feature.includes("araç çağrısı") ? line : feature);
+    }
     return {
       key: row.key, name: row.name, description: String(meta.description ?? "").slice(0,240),
       featured: meta.featured === true,
@@ -257,16 +263,18 @@ export async function syncPlanCatalog() {
     };
     if (plan.key === FREE_PLAN_KEY) {
       const calls = Number(process.env.BILLING_FREE_TOOL_CALLS || FREE_TOOL_CALLS_DEFAULT);
-      const limit = Number.isInteger(calls) && calls >= 0 ? calls : FREE_TOOL_CALLS_DEFAULT;
-      metadata.monthlyToolCalls = limit;
-      metadata.features = plan.features.map((feature) =>
-        feature.includes("araç çağrısı") ? `Ayda ${limit.toLocaleString("tr-TR")} araç çağrısı` : feature);
+      // Only the first value: the console owns it afterwards.
+      metadata.monthlyToolCalls = Number.isInteger(calls) && calls >= 0 ? calls : FREE_TOOL_CALLS_DEFAULT;
     }
     await db.query(
       `insert into billing_plans(key,name,max_devices,max_members,max_api_tokens,metadata,active)
        values($1,$2,$3,$4,$5,$6::jsonb,true)
        on conflict (key) do update
-         set metadata=(billing_plans.metadata - 'paddlePriceId' - 'paddle_price_id') || excluded.metadata,
+         set metadata=(billing_plans.metadata - 'paddlePriceId' - 'paddle_price_id')
+                      || (excluded.metadata - 'monthlyToolCalls')
+                      || case when billing_plans.metadata ? 'monthlyToolCalls' or not (excluded.metadata ? 'monthlyToolCalls')
+                              then '{}'::jsonb
+                              else jsonb_build_object('monthlyToolCalls', excluded.metadata->'monthlyToolCalls') end,
              updated_at=now()`,
       [plan.key, plan.name, plan.maxDevices, plan.maxMembers, plan.maxApiTokens, JSON.stringify(metadata)],
     );

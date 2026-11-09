@@ -2114,6 +2114,8 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           maxDevices:z.number().int().min(0).nullable(),
           maxMembers:z.number().int().min(0).nullable(),
           maxApiTokens:z.number().int().min(0).nullable(),
+          // Monthly MCP tool calls; null = unlimited, omitted = unchanged.
+          monthlyToolCalls:z.number().int().min(0).max(100_000_000).nullable().optional(),
           currentPassword:z.string().min(12).max(256),
         }).parse(await readJson(req));
         const passwordRow=await db.query<{password_hash:string}>("select password_hash from users where id=$1 and disabled_at is null",[principal.userId]);
@@ -2126,6 +2128,9 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           if(!plan.rowCount){await client.query("rollback");return void json(res,404,{error:"plan_not_found"});}
           await client.query(`update billing_plans set max_devices=$2,max_members=$3,max_api_tokens=$4,updated_at=now() where key=$1`,
              [payload.key,payload.maxDevices,payload.maxMembers,payload.maxApiTokens]);
+          if(payload.monthlyToolCalls!==undefined)
+            await client.query("update billing_plans set metadata=metadata||jsonb_build_object('monthlyToolCalls',$2::int) where key=$1",
+               [payload.key,payload.monthlyToolCalls]);
           await client.query("insert into platform_admin_audit(actor_user_id,action,detail) values($1,'billing.plan_limits',$2)",
              [principal.userId,"plan:"+payload.key]);
           await client.query("commit");
@@ -2173,7 +2178,9 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         return void json(res,200,{ok:true,providerActionPerformed:false});
       }
       if (req.method === "GET" && url.pathname === "/api/console/billing") {
-        const plans=await db.query("select key,name,max_devices,max_members,max_api_tokens,active from billing_plans order by name");
+        const plans=await db.query(`select key,name,max_devices,max_members,max_api_tokens,active,
+            (metadata ? 'monthlyToolCalls') as has_tool_call_limit,(metadata->>'monthlyToolCalls')::int as monthly_tool_calls
+           from billing_plans order by name`);
         const subscriptions=await db.query(
           `select o.name as organization,s.plan_key,s.status,s.provider,s.current_period_end,s.cancel_at_period_end
            from organization_subscriptions s join organizations o on o.id=s.organization_id

@@ -507,6 +507,22 @@ const operatorBilling=await (await fetch(base+"/api/billing",{headers:{Cookie:br
 assert.equal(operatorBilling.entitled,true);
 assert.equal(operatorBilling.plan.key,"internal");
 assert.equal(operatorBilling.limits.maxDevices,null);
+// Console: the free plan's monthly tool-call limit is edited with the other limits.
+{
+  const headers={Cookie:browserCookies,"Content-Type":"application/json","X-CSRF-Token":browserLogin.csrfToken};
+  const setLimits=(monthlyToolCalls)=>fetch(base+"/api/console/plans/limits",{method:"POST",headers,body:JSON.stringify({
+    key:"free",maxDevices:1,maxMembers:1,maxApiTokens:2,monthlyToolCalls,currentPassword:"correct-horse-battery-staple"})});
+  await acceptanceDb.query("update billing_plans set active=true where key='free'");
+  assert.equal((await setLimits(1200)).status,200);
+  const consoleBilling=await (await fetch(base+"/api/console/billing",{headers})).json();
+  assert.equal(consoleBilling.plans.find((plan)=>plan.key==="free").monthly_tool_calls,1200);
+  const freeCard=(await jsonFetch("/api/public/plans")).plans.find((plan)=>plan.key==="free");
+  assert.ok(freeCard.features.includes("Ayda 1.200 araç çağrısı"),"the pricing card shows the limit in force");
+  assert.equal((await setLimits(null)).status,200);
+  assert.ok((await jsonFetch("/api/public/plans")).plans.find((plan)=>plan.key==="free").features.includes("Sınırsız araç çağrısı"));
+  assert.equal((await setLimits(5000)).status,200);
+  await acceptanceDb.query("update billing_plans set active=false where key='free'");
+}
 // Verify revisioned CMS draft, publication, rollback and safe HTML metadata rendering.
 const cmsSessionHeaders={Cookie:browserCookies,"Content-Type":"application/json","X-CSRF-Token":browserLogin.csrfToken};
 const tinyPng="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9YRHuwoAAAAASUVORK5CYII=";
