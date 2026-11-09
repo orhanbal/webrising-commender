@@ -176,6 +176,14 @@ export async function migrate() {
       acknowledged_by uuid references users(id) on delete set null,
       acknowledged_at timestamptz not null default now()
     );
+    -- Platform switches a super admin flips in the console (no redeploy).
+    create table if not exists platform_settings (
+      key text primary key,
+      value jsonb not null,
+      updated_by uuid references users(id) on delete set null,
+      updated_at timestamptz not null default now()
+    );
+
     create table if not exists platform_admin_audit (
       id bigserial primary key,
       actor_user_id uuid references users(id) on delete set null,

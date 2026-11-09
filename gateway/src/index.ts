@@ -43,7 +43,7 @@ import { DeviceRouter } from "./device-router.js";
 import { reconcileRemoteSearchStops, recoverInterruptedSearches, setSearchPersistence } from "./search-sessions.js";
 import { PgSearchPersistence } from "./search-persistence.js";
 import { RelayCancellationRegistry } from "./relay-cancellation.js";
-import { enqueueMail, mailConfigured, publicSignupEnabled, startMailWorker } from "./mail.js";
+import { enqueueMail, mailConfigured, publicSignupSetting, startMailWorker } from "./mail.js";
 import { handleMcp } from "./mcp.js";
 import { handleOAuthHttp, oauthChallenge } from "./oauth.js";
 import { authenticateOAuthAccessToken } from "./oauth-tokens.js";
@@ -728,7 +728,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         deploymentMode,
         signupEnabled:
           deploymentMode === "saas" &&
-          publicSignupEnabled() &&
+          (await publicSignupSetting()).enabled &&
           mailConfigured(),
         passwordResetEnabled: mailConfigured(),
         regionalRelayEnabled: regionalRelayEnabled(),
@@ -1028,7 +1028,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     }
 
     if (req.method === "POST" && url.pathname === "/api/auth/signup") {
-      if (deploymentMode !== "saas" || !publicSignupEnabled()) {
+      if (deploymentMode !== "saas" || !(await publicSignupSetting()).enabled) {
         return void json(res, 404, { error: "signup_disabled" });
       }
       if (!mailConfigured()) {
@@ -2300,12 +2300,27 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
             (select count(*)::int from relay_nodes where enabled and not drain and last_seen_at>now()-interval '2 minutes') as healthy_relays,
             (select count(*)::int from browser_sessions where revoked_at is null and expires_at>now()) as active_sessions,
             (select count(*)::int from approval_requests where status='pending') as pending_approvals`);
+        const signup=await publicSignupSetting();
         return void json(res,200,{
           mailConfigured:mailConfigured(),
-          signupEnabled:deploymentMode==="saas"&&publicSignupEnabled()&&mailConfigured(),
+          signupEnabled:deploymentMode==="saas"&&signup.enabled&&mailConfigured(),
+          signupSetting:signup,
           deploymentMode,mailQueue:counts.rows[0],
           database:"connected",operations:operations.rows[0],checkedAt:new Date().toISOString(),
         });
+      }
+      if (req.method === "POST" && url.pathname === "/api/console/settings/public-signup") {
+        const payload=z.object({enabled:z.boolean(),currentPassword:z.string().min(12).max(256)}).parse(await readJson(req));
+        const passwordRow=await db.query<{password_hash:string}>("select password_hash from users where id=$1 and disabled_at is null",[principal.userId]);
+        if(!passwordRow.rows[0]||!(await verifyPassword(payload.currentPassword,passwordRow.rows[0].password_hash)))
+          return void json(res,403,{error:"reauthentication_failed"});
+        await db.query(
+          `insert into platform_settings(key,value,updated_by,updated_at) values('public_signup',to_jsonb($1::boolean),$2,now())
+           on conflict (key) do update set value=excluded.value,updated_by=excluded.updated_by,updated_at=now()`,
+          [payload.enabled,principal.userId]);
+        await db.query("insert into platform_admin_audit(actor_user_id,action,detail) values($1,'platform.public_signup',$2)",
+          [principal.userId,payload.enabled?"enabled":"disabled"]);
+        return void json(res,200,{ok:true,signupSetting:await publicSignupSetting(),mailConfigured:mailConfigured()});
       }
       if (req.method === "GET" && url.pathname === "/api/console/legal") {
         const page=z.enum(["privacy","terms"]).parse(url.searchParams.get("page"));

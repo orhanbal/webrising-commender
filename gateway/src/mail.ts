@@ -77,6 +77,16 @@ export function publicSignupEnabled() {
   return /^(1|true|yes|on)$/i.test(String(process.env.PUBLIC_SIGNUP_ENABLED || ""));
 }
 
+/**
+ * Public sign-up switch: the console setting when a super admin has set one,
+ * otherwise PUBLIC_SIGNUP_ENABLED.
+ */
+export async function publicSignupSetting(): Promise<{ enabled: boolean; source: "console" | "environment" }> {
+  const row = await db.query<{ value: unknown }>("select value from platform_settings where key='public_signup'");
+  if (row.rows[0]) return { enabled: row.rows[0].value === true, source: "console" };
+  return { enabled: publicSignupEnabled(), source: "environment" };
+}
+
 function encryptPayload(payload: MailPayload) {
   const key = encryptionKey();
   if (!key) throw new Error("mail_outbox_key_not_configured");
