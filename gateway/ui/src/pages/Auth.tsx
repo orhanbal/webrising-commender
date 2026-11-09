@@ -8,7 +8,6 @@ export function AuthPage({path,nav,refresh,pricing,signupEnabled}:{path:string;n
  const mode=path as Mode;
  const [email,setEmail]=useState("");
  const [password,setPassword]=useState("");
- const [workspace,setWorkspace]=useState("");
  const [show,setShow]=useState(false);
  const [loading,setLoading]=useState(false);
  const [error,setError]=useState("");
@@ -48,7 +47,7 @@ export function AuthPage({path,nav,refresh,pricing,signupEnabled}:{path:string;n
     return;
    }
    if(mode==="/register"){
-    await api("/api/auth/signup",{method:"POST",body:JSON.stringify({email,password,workspaceName:workspace})});
+    await api("/api/auth/signup",{method:"POST",body:JSON.stringify({email,password})});
     setSuccess(translate("Kayıt talebiniz alındı. E-postanıza gelen doğrulama bağlantısını açarak işlemi tamamlayın."));
     return;
    }
@@ -88,7 +87,7 @@ export function AuthPage({path,nav,refresh,pricing,signupEnabled}:{path:string;n
    {mode==="/register"&&(pricing?.mode==="self_hosted"||signupEnabled===false)&&<div className="form-error mb-5">{translate("Bu kurulumda genel kayıt kapalıdır. Self-hosted yönetici hesabınızla giriş yapın.")}</div>}
    <form onSubmit={submit} className="form-stack" autoComplete="on">
     {["/login","/register","/forgot-password"].includes(mode)&&<label><span className="field-label">{translate("E-posta adresi")}</span><Input autoComplete="email" type="email" placeholder={translate("siz@ornek.com")} required maxLength={320} value={email} onChange={e=>setEmail(e.target.value)}/></label>}
-    {mode==="/register"&&<label><span className="field-label">{translate("Çalışma alanı adı")}</span><Input placeholder={translate("Örn. Benim Çalışma Alanım")} autoComplete="organization" required minLength={2} maxLength={120} value={workspace} onChange={e=>setWorkspace(e.target.value)}/></label>}
+
     {!["/forgot-password"].includes(mode)&&<label><span className="flex items-center justify-between mb-2"><span className="field-label !mb-0">{mode==="/reset-password"?translate("Yeni şifre"):translate("Şifre")}</span>{mode==="/login"&&<NavLink nav={nav} to="/forgot-password" className="text-xs text-[var(--accent)] font-semibold">{translate("Şifremi unuttum")}</NavLink>}</span><span className="relative block"><Input placeholder="••••••••••••" type={show?"text":"password"} required minLength={mode==="/verify"?1:12} maxLength={256} autoComplete={mode==="/login"?"current-password":"new-password"} value={password} onChange={e=>setPassword(e.target.value)} className="pr-12"/><button type="button" onClick={()=>setShow(!show)} className="absolute top-2 right-3 size-7 grid place-items-center text-[var(--muted)]" aria-label={show?translate("Şifreyi gizle"):translate("Şifreyi göster")}>{show?<EyeOff size={17}/>:<Eye size={17}/>}</button></span>{mode==="/register"&&<small className="form-help">{translate("En az 12 karakter; güçlü bir parola kullanın.")}</small>}</label>}
     {error&&<div role="alert" className="form-error">{error}</div>}
     {success&&<div role="status" className="form-success">{success}</div>}

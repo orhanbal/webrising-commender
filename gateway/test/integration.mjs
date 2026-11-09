@@ -263,6 +263,17 @@ const signupResponse = await fetch(base + "/api/auth/signup", {
 });
 assert.equal(signupResponse.status, 202);
 assert.equal((await signupResponse.json()).ok, true);
+// The form no longer asks for a workspace name: it comes from the e-mail address.
+const namelessSignup = await fetch(base + "/api/auth/signup", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ email: "jane.doe+test@example.test", password: "nameless-signup-password" }),
+});
+assert.equal(namelessSignup.status, 202);
+await namelessSignup.text();
+assert.equal((await acceptanceDb.query(
+  "select workspace_name from pending_signups where lower(email)='jane.doe+test@example.test'",
+)).rows[0].workspace_name, "jane.doe test");
 
 const signupLoginBeforeVerify = await fetch(base + "/api/auth/login", {
   method: "POST",

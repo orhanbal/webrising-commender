@@ -1038,9 +1038,12 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       const body = z.object({
         email: z.string().trim().email().max(320),
         password: z.string().min(12).max(256),
-        workspaceName: z.string().trim().min(2).max(120),
+        // Optional: the sign-up form no longer asks; renamed later in settings.
+        workspaceName: z.string().trim().min(2).max(120).optional(),
       }).parse(await readJson(req));
       const email = normalizeEmail(body.email);
+      const localPart = (email.split("@")[0] ?? "").replace(/[^\p{L}\p{N}._-]+/gu, " ").trim().slice(0, 60);
+      const workspaceName = body.workspaceName ?? (localPart.length >= 2 ? localPart : "My Workspace");
       const ip = remoteKey(req);
       const ipRate = signupIpRateLimit.hit(ip, 30, 60 * 60_000);
       const emailRate = signupEmailRateLimit.hit(sha256(email), 6, 60 * 60_000);
@@ -1084,7 +1087,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
              expires_at=excluded.expires_at,
              consumed_at=null,
              updated_at=now()`,
-          [email, passwordHash, body.workspaceName, sha256(token), ttlHours],
+          [email, passwordHash, workspaceName, sha256(token), ttlHours],
         );
         await enqueueMail(
           {
