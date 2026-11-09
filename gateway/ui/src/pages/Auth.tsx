@@ -1,6 +1,6 @@
 import {useEffect,useState} from "react";import type{FormEvent}from"react";
 import { t as translate,useLocale } from "../i18n";
-import{ArrowLeft,ArrowRight,Check,Eye,EyeOff,KeyRound,LockKeyhole,Monitor,ShieldCheck,Sparkles}from"lucide-react";
+import{ArrowLeft,ArrowRight,Check,Eye,EyeOff,KeyRound,LockKeyhole,MailCheck,Monitor,ShieldCheck,Sparkles}from"lucide-react";
 import{Button,Badge,Input}from"../components/ui";import{api,type Account,type Pricing}from"../api";import type{Nav}from"../App";import{NavLink}from"../App";
 type Mode="/login"|"/register"|"/forgot-password"|"/reset-password"|"/verify";
 export function AuthPage({path,nav,refresh,pricing,signupEnabled}:{path:string;nav:Nav;refresh:()=>Promise<Account|null>;pricing:Pricing|null;signupEnabled:boolean|null}){
@@ -13,7 +13,10 @@ export function AuthPage({path,nav,refresh,pricing,signupEnabled}:{path:string;n
  const [error,setError]=useState("");
  const [success,setSuccess]=useState("");
  const [token,setToken]=useState("");
- useEffect(()=>{setError("");setSuccess("");setPassword("");const fragment=new URLSearchParams(window.location.hash.slice(1));setToken(fragment.get(mode==="/verify"?"verify":"reset")||"")},[mode]);
+ // After sign-up: a dedicated "check your inbox" screen instead of the form.
+ const [sentTo,setSentTo]=useState("");
+ const [resent,setResent]=useState(false);
+ useEffect(()=>{setError("");setSuccess("");setPassword("");setSentTo("");setResent(false);const fragment=new URLSearchParams(window.location.hash.slice(1));setToken(fragment.get(mode==="/verify"?"verify":"reset")||"")},[mode]);
  const titles:Record<Mode,string>={
   "/login":translate("Tekrar hoş geldiniz"),"/register":translate("Hesabınızı oluşturun"),
   "/forgot-password":translate("Şifrenizi sıfırlayın"),"/reset-password":translate("Yeni bir şifre belirleyin"),"/verify":translate("E-posta adresinizi doğrulayın")
@@ -48,7 +51,7 @@ export function AuthPage({path,nav,refresh,pricing,signupEnabled}:{path:string;n
    }
    if(mode==="/register"){
     await api("/api/auth/signup",{method:"POST",body:JSON.stringify({email,password})});
-    setSuccess(translate("Kayıt talebiniz alındı. E-postanıza gelen doğrulama bağlantısını açarak işlemi tamamlayın."));
+    setSentTo(email.trim());setResent(false);
     return;
    }
    if(mode==="/verify"){
@@ -71,6 +74,29 @@ export function AuthPage({path,nav,refresh,pricing,signupEnabled}:{path:string;n
   }catch(err){setError(err instanceof Error?err.message:translate("Bir hata oluştu."))}
   finally{setLoading(false)}
  }
+ async function resend(){
+  setError("");setLoading(true);
+  try{await api("/api/auth/signup",{method:"POST",body:JSON.stringify({email:sentTo,password})});setResent(true)}
+  catch(err){setError(err instanceof Error?err.message:translate("Bir hata oluştu."))}
+  finally{setLoading(false)}
+ }
+ const inbox=mode==="/register"&&sentTo?<div className="text-center py-4">
+   <div className="mx-auto mb-6 flex size-16 items-center justify-center rounded-2xl bg-[var(--subtle-surface)] text-[var(--accent)]"><MailCheck size={30}/></div>
+   <h1>{translate("E-postanı kontrol et")}</h1>
+   <p className="mt-3">{translate("Doğrulama bağlantısını şu adrese gönderdik:")}<br/><strong className="text-[var(--text)] break-all">{sentTo}</strong></p>
+   <p className="mt-3">{translate("Hesabını etkinleştirmek için e-postayı açıp içindeki bağlantıya tıkla ve kayıtta belirlediğin şifreyi gir.")}</p>
+   <div className="mt-6 rounded-xl border border-[var(--stroke)] p-4 text-left text-sm text-[var(--muted)] grid gap-2">
+    <span className="flex gap-2"><Check className="size-4 text-[var(--success)] shrink-0 mt-0.5"/>{translate("Birkaç dakika içinde gelmezse Spam / Gereksiz klasörüne bak.")}</span>
+    <span className="flex gap-2"><Check className="size-4 text-[var(--success)] shrink-0 mt-0.5"/>{translate("Bağlantı sınırlı bir süre geçerlidir.")}</span>
+   </div>
+   {error&&<div role="alert" className="form-error mt-5">{error}</div>}
+   {resent&&<div role="status" className="form-success mt-5">{translate("Doğrulama e-postası yeniden gönderildi.")}</div>}
+   <div className="mt-6 grid gap-3">
+    <Button className="w-full" size="lg" type="button" disabled={loading||!password} onClick={()=>void resend()}>{loading?translate("Gönderiliyor…"):translate("E-postayı yeniden gönder")}</Button>
+    <Button className="w-full" variant="outline" type="button" onClick={()=>{setSentTo("");setResent(false);setError("")}}>{translate("Farklı bir e-posta kullan")}</Button>
+   </div>
+   <p className="text-center text-sm text-[var(--muted)] mt-8">{translate("Zaten doğruladın mı?")} <NavLink to="/login" nav={nav} className="font-bold text-[var(--accent)]">{translate("Giriş yapın")}</NavLink></p>
+  </div>:null;
  return <div className="auth-wrap"><aside className="auth-aside">
    <Badge><Sparkles size={14}/> {translate("Windows Fluent Workspace")}</Badge>
    <h2 className="mt-8">{translate("İşinize odaklanın.")}<br/><span className="text-gradient">{translate("Kontrol sizde olsun.")}</span></h2>
@@ -82,6 +108,7 @@ export function AuthPage({path,nav,refresh,pricing,signupEnabled}:{path:string;n
   </aside>
   <div className="auth-panel"><div className="auth-card">
    <button type="button" className="inline-flex items-center gap-2 text-sm text-[var(--muted)] hover:text-[var(--text)] mb-9" onClick={()=>nav("/")}><ArrowLeft size={16}/> {translate("Ana sayfaya dön")}</button>
+   {inbox??<>
    <div className="mb-5 flex size-12 items-center justify-center rounded-2xl bg-[var(--subtle-surface)] text-[var(--accent)]"><KeyRound size={23}/></div>
    <h1>{titles[mode]}</h1><p>{descriptions[mode]}</p>
    {mode==="/register"&&(pricing?.mode==="self_hosted"||signupEnabled===false)&&<div className="form-error mb-5">{translate("Bu kurulumda genel kayıt kapalıdır. Self-hosted yönetici hesabınızla giriş yapın.")}</div>}
@@ -96,6 +123,7 @@ export function AuthPage({path,nav,refresh,pricing,signupEnabled}:{path:string;n
    {mode==="/login"&&<p className="text-center text-sm text-[var(--muted)] mt-8">{translate("Henüz hesabınız yok mu?")} <NavLink to="/register" nav={nav} className="font-bold text-[var(--accent)]">{translate("Hesap oluşturun")}</NavLink></p>}
    {mode==="/register"&&<p className="text-center text-sm text-[var(--muted)] mt-8">{translate("Zaten hesabınız var mı?")} <NavLink to="/login" nav={nav} className="font-bold text-[var(--accent)]">{translate("Giriş yapın")}</NavLink></p>}
    {["/forgot-password","/reset-password","/verify"].includes(mode)&&<p className="text-center mt-8 text-sm"><NavLink to="/login" nav={nav} className="font-semibold text-[var(--accent)]">{translate("Giriş sayfasına dön")}</NavLink></p>}
+   </>}
    <div className="divider-text">{translate("Güvenli oturum")}</div><p className="text-xs leading-6 text-[var(--muted)] flex gap-2"><Check className="size-4 text-[var(--success)] shrink-0 mt-1"/>{translate("Oturumunuz HttpOnly çerez ile korunur. Şifreniz tarayıcıda saklanmaz.")}</p>
    <p className="text-xs mt-8 text-[var(--faint)]">{translate("Devam ederek")} <NavLink to="/terms" nav={nav} className="underline">{translate("kullanım koşullarını")}</NavLink> {translate("ve")} <NavLink to="/privacy" nav={nav} className="underline">{translate("gizlilik ilkelerini")}</NavLink>{language==="en"?".":" kabul etmiş olursunuz."}</p>
   </div></div>
