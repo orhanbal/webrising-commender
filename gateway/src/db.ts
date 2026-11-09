@@ -552,6 +552,8 @@ export async function migrate() {
       created_at timestamptz not null default now()
     );
     create index if not exists audit_logs_created_idx on audit_logs(created_at desc);
+    -- Monthly tool-call quota: counted per workspace on every MCP call.
+    create index if not exists audit_logs_org_created_idx on audit_logs(organization_id,created_at desc);
 
     insert into organizations(name)
       select 'Self Hosted'

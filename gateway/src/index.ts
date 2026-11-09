@@ -28,12 +28,13 @@ import {
   applyNormalizedBillingEvent,
   billingSnapshot,
   deploymentMode,
+  monthlyToolCallLimit,
   upsertBillingPlan,
   upsertSubscription,
   type AllocationResource,
 } from "./billing.js";
 import { db, housekeeping, migrate, ready } from "./db.js";
-import { getPublicPlans, publicPaddleConfig, createPaddleCheckout, createPaddlePortal, consumePaddleWebhook } from "./paddle.js";
+import { getPublicPlans, publicPaddleConfig, createPaddleCheckout, createPaddlePortal, consumePaddleWebhook, syncPlanCatalog } from "./paddle.js";
 import { getDownloads } from "./downloads.js";
 import { installRoute } from "./install-scripts.js";
 import { createDeviceLink, getDeviceLinkStatus, approveDeviceLink } from "./device-link.js";
@@ -143,6 +144,7 @@ const resetTokenRateLimit = new FixedWindowRateLimiter();
 const trustProxyHeaders = /^(1|true|yes)$/i.test(String(process.env.TRUST_PROXY_HEADERS || ""));
 
 await migrate();
+await syncPlanCatalog();
 const searchPersistence = new PgSearchPersistence(db);
 await searchPersistence.activate();
 setSearchPersistence(searchPersistence);
@@ -2776,23 +2778,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
 
       const monthCalls = Number(current.rows[0]?.month_calls ?? 0);
       const daysElapsed = Math.max(1, Number(current.rows[0]?.days_elapsed ?? 1));
-      const metadata = (snapshot.plan?.metadata ?? {}) as Record<string, unknown>;
-      const configuredLimit = Number(
-        metadata.monthlyToolCalls ??
-        metadata.maxToolCalls ??
-        metadata.toolCallLimit ??
-        Number.NaN,
-      );
-      let limit: number | null;
-      if (snapshot.mode === "self_hosted" || snapshot.plan?.key === "pro") {
-        limit = null;
-      } else if (Number.isFinite(configuredLimit) && configuredLimit >= 0) {
-        limit = configuredLimit;
-      } else if (snapshot.plan?.key === "free") {
-        limit = 10_000;
-      } else {
-        limit = snapshot.entitled ? null : 0;
-      }
+      const limit = monthlyToolCallLimit(snapshot);
 
       return void json(res, 200, {
         monthCalls,

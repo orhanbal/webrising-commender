@@ -6,6 +6,7 @@ import { notifyApprovers } from "./approval-notify.js";
 import { consumeApproval } from "./approvals.js";
 import { roleAtLeast, type Principal } from "./auth.js";
 import { db } from "./db.js";
+import { toolCallQuota } from "./billing.js";
 import { actionRisk, type AgentAction } from "./protocol.js";
 import type { DeviceRouter } from "./device-router.js";
 import { issueApproval, redact } from "./security.js";
@@ -313,6 +314,22 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
   let name = String(request.params?.name || "");
   let args = request.params?.arguments || {};
   const orgIdEarly = principal.organizationId;
+
+  // Free plan: monthly tool-call quota. The AI gets a clear reason and where
+  // to upgrade; nothing on the device runs.
+  const quota = await toolCallQuota(orgIdEarly);
+  if (quota.exceeded) {
+    const base = String(process.env.PUBLIC_BASE_URL || "https://wecommander.app").replace(/\/$/, "");
+    return ok(request.id, toolResult({
+      error: "monthly_tool_call_limit",
+      limit: quota.limit,
+      used: quota.used,
+      resets_at: quota.resetAt,
+      upgrade_url: base + "/pricing",
+      message: `This WECOMMANDER workspace used its ${quota.limit} free tool calls for this month. ` +
+        `Tell the user to upgrade at ${base}/pricing, or wait until ${quota.resetAt}.`,
+    }, true));
+  }
 
   // Desktop Commander-compatible surface: url_fetch runs on the gateway,
   // edit_block is a guarded read+write, the rest are pure aliases.

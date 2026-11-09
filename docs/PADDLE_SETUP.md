@@ -32,29 +32,26 @@ Paddle webhook can provision or update entitlements.
    `subscription.trialing`, `subscription.past_due`, `subscription.paused`,
    `subscription.resumed` and `subscription.canceled`. Set the destination
    signing secret in the server environment.
-5. Create an active billing plan in the **global-admin plan endpoint**
-   `POST /api/admin/billing/plans` (global-admin credentials only), including
-   price metadata. Example (replace all example values):
-   ```json
-   {
-     "key": "pro",
-     "name": "Pro",
-     "maxDevices": 5,
-     "maxMembers": 2,
-     "maxApiTokens": 5,
-     "metadata": {
-       "paddlePriceId": "pri_01exampleReplaceWithRealPriceId",
-       "priceLabel": "Price verified in checkout",
-       "description": "Individual remote workspace",
-       "features": ["5 devices", "2 seats", "MCP access"],
-       "featured": true
-     },
-     "active": true
-   }
-   ```
-   The *actual* price is controlled by the Paddle price ID. Display labels
-   must match the Paddle product, currency, interval, and tax disclosures.
-   Reusing the same price ID for multiple plans is disallowed in fulfillment.
+5. Plans come from the built-in catalog (`gateway/src/paddle.ts`, `planCatalog`)
+   and are created at startup in SaaS mode:
+   - `free`: 1 device, 1 member, 2 API tokens, no payment. Every workspace
+     without an active paid subscription uses it (new sign-ups, canceled,
+     paused or past-due subscriptions).
+   - `pro`: 5 devices, 1 member, 5 API tokens. Price: `PADDLE_PRICE_PRO`
+     (`pri_...`), label `PADDLE_PRICE_PRO_LABEL` (default "9 USD / ay").
+   - `team`: 25 devices, 5 members, 25 API tokens. Price:
+     `PADDLE_PRICE_TEAM`, label `PADDLE_PRICE_TEAM_LABEL` (default "29 USD / ay").
+   The label must match the Paddle price. Limits can be changed later in the
+   console (`/console`, plan limits); the price ID and label always follow the
+   environment at the next start. A plan without a valid price ID stays
+   visible but cannot be bought.
+   The free plan also has a monthly MCP tool-call quota (`BILLING_FREE_TOOL_CALLS`,
+   default 5000; plan metadata `monthlyToolCalls`). When it is used up,
+   `tools/call` returns `monthly_tool_call_limit` with the upgrade URL and
+   nothing reaches a device; it resets on the 1st of the month. Paid plans
+   have no call limit.
+   Workspaces owned by a platform administrator (console access) are never
+   limited by a plan, so switching to SaaS does not lock the operator out.
 6. Configure `PUBLIC_SIGNUP_ENABLED=true` and a working SMTP/mail outbox if
    public SaaS registration should be offered.
 7. Review and publish complete merchant-specific terms, privacy notice,

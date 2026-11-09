@@ -19,6 +19,9 @@ if (rawMode !== "self_hosted" && rawMode !== "saas") {
 
 export const deploymentMode = rawMode as DeploymentMode;
 
+/** The plan every SaaS workspace has without a paid subscription. */
+export const FREE_PLAN_KEY = "free";
+
 export type BillingPlanInput = {
   key: string;
   name: string;
@@ -115,6 +118,46 @@ export async function billingSnapshot(organizationId: string, queryable: Queryab
     };
   }
 
+  // The platform operator's own workspaces are never limited by a plan:
+  // switching the server to SaaS must not lock its owner out.
+  const operator = await queryable.query(
+    `select 1 from organization_members m
+       join platform_administrators p on p.user_id=m.user_id and p.revoked_at is null
+       join users u on u.id=m.user_id and u.disabled_at is null
+      where m.organization_id=$1 and m.role='owner'
+      limit 1`,
+    [organizationId],
+  );
+  if (operator.rowCount) {
+    return {
+      mode: deploymentMode,
+      entitled: true,
+      reason: null,
+      plan: { key: "internal", name: "Internal", active: true, metadata: {} },
+      subscription: { status: "active", provider: null, currentPeriodEnd: null, cancelAtPeriodEnd: false },
+      limits: quotaLimits({ maxDevices: null, maxMembers: null, maxApiTokens: null }),
+      usage,
+    };
+  }
+
+  // Without a paid subscription (never bought, canceled, paused or past due)
+  // a workspace uses the free plan when one is offered.
+  const freePlan = async () => {
+    const free = await queryable.query<{
+      key: string; name: string; max_devices: number | null; max_members: number | null;
+      max_api_tokens: number | null; metadata: Record<string, unknown>;
+    }>(
+      "select key,name,max_devices,max_members,max_api_tokens,metadata from billing_plans where key=$1 and active=true",
+      [FREE_PLAN_KEY],
+    );
+    const plan = free.rows[0];
+    if (!plan) return null;
+    return {
+      plan: { key: plan.key, name: plan.name, active: true, metadata: plan.metadata ?? {} },
+      limits: quotaLimits({ maxDevices: plan.max_devices, maxMembers: plan.max_members, maxApiTokens: plan.max_api_tokens }),
+    };
+  };
+
   const result = await queryable.query<{
     plan_key: string;
     plan_name: string;
@@ -158,6 +201,10 @@ export async function billingSnapshot(organizationId: string, queryable: Queryab
 
   const row = result.rows[0];
   if (!row) {
+    const free = await freePlan();
+    if (free) {
+      return { mode: deploymentMode, entitled: true, reason: null, ...free, subscription: null, usage };
+    }
     return {
       mode: deploymentMode,
       entitled: false,
@@ -179,6 +226,23 @@ export async function billingSnapshot(organizationId: string, queryable: Queryab
     row.plan_active &&
     (row.status === "active" || row.status === "trialing") &&
     periodValid;
+
+  const subscription = {
+    status: row.status,
+    provider: row.provider,
+    externalCustomerId: row.external_customer_id,
+    externalSubscriptionId: row.external_subscription_id,
+    currentPeriodEnd: row.current_period_end,
+    cancelAtPeriodEnd: row.cancel_at_period_end,
+    providerEventAt: row.provider_event_at,
+    providerEventId: row.provider_event_id,
+    updatedAt: row.updated_at,
+  };
+  if (!entitled) {
+    // The ended or unpaid subscription stays visible on the billing page.
+    const free = await freePlan();
+    if (free) return { mode: deploymentMode, entitled: true, reason: null, ...free, subscription, usage };
+  }
 
   return {
     mode: deploymentMode,
@@ -508,4 +572,51 @@ export async function applyNormalizedBillingEvent(event: NormalizedBillingEvent)
   } finally {
     client.release();
   }
+}
+
+/** Monthly MCP tool calls of the free plan unless its metadata says otherwise. */
+export const FREE_TOOL_CALLS_DEFAULT = 5_000;
+
+type QuotaSnapshot = { mode: DeploymentMode; entitled: boolean; plan: { key: string; metadata?: Record<string, unknown> } | null };
+
+/** The workspace's monthly MCP tool-call limit; null means unlimited. */
+export function monthlyToolCallLimit(snapshot: QuotaSnapshot): number | null {
+  if (snapshot.mode === "self_hosted" || snapshot.plan?.key === "internal") return null;
+  const metadata = (snapshot.plan?.metadata ?? {}) as Record<string, unknown>;
+  const configured = Number(metadata.monthlyToolCalls ?? metadata.maxToolCalls ?? metadata.toolCallLimit ?? Number.NaN);
+  if (Number.isFinite(configured) && configured >= 0) return configured;
+  if (snapshot.plan?.key === FREE_PLAN_KEY) return FREE_TOOL_CALLS_DEFAULT;
+  return snapshot.entitled ? null : 0;
+}
+
+/** MCP tool calls of this calendar month (the same count the usage page shows). */
+export async function monthlyToolCalls(organizationId: string, queryable: Queryable = db) {
+  const result = await queryable.query<{ calls: string; reset_at: string }>(
+    `select (select count(*) from audit_logs
+               where organization_id=$1
+                 and created_at >= date_trunc('month',now())
+                 and (tool not like '%.%' or tool like 'direct.%'))::text as calls,
+            (date_trunc('month',now()) + interval '1 month')::timestamptz::text as reset_at`,
+    [organizationId],
+  );
+  return { calls: count(result.rows[0]?.calls), resetAt: result.rows[0]?.reset_at ?? null };
+}
+
+const quotaCache = new Map<string, { limit: number | null; until: number }>();
+
+/**
+ * Checked before every MCP tools/call. The plan's limit is cached for a
+ * minute; the count is read each time so the limit holds exactly.
+ */
+export async function toolCallQuota(organizationId: string) {
+  const now = Date.now();
+  let cached = quotaCache.get(organizationId);
+  if (!cached || cached.until < now) {
+    cached = { limit: monthlyToolCallLimit(await billingSnapshot(organizationId)), until: now + 60_000 };
+    quotaCache.set(organizationId, cached);
+    if (quotaCache.size > 10_000) quotaCache.clear();
+  }
+  if (cached.limit === null) return { exceeded: false as const, limit: null, used: null, resetAt: null };
+  const { calls, resetAt } = await monthlyToolCalls(organizationId);
+  return { exceeded: calls >= cached.limit, limit: cached.limit, used: calls, resetAt };
 }
