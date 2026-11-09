@@ -1,4 +1,4 @@
-export type PaddleClient={Environment:{set:(environment:"sandbox")=>void};Initialize:(options:{token:string;eventCallback?:(event:{name:string;data?:unknown})=>void})=>void;Checkout:{open:(options:{transactionId:string;settings:{displayMode:"overlay";theme:"light"|"dark";locale:"tr"}})=>void;close:()=>void}};
+export type PaddleClient={Environment:{set:(environment:"sandbox")=>void};Initialize:(options:{token:string;eventCallback?:(event:{name:string;data?:unknown})=>void})=>void;Checkout:{open:(options:{transactionId:string;customer?:{email:string};settings:{displayMode:"overlay";theme:"light"|"dark";locale:"tr"}})=>void;close:()=>void}};
 declare global{interface Window{Paddle?:PaddleClient}}
 let loadPromise:Promise<PaddleClient>|null=null;
 let isInitialized=false;
