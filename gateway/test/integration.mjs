@@ -2833,5 +2833,7 @@ const revokedBrowserSession = await fetch(base + "/api/auth/me", {
 assert.equal(revokedBrowserSession.status, 401);
 
 socket.close();
+// Later CI suites run against this database in SaaS mode: leave the free plan on.
+await acceptanceDb.query("update billing_plans set active=true where key='free'");
 await acceptanceDb.end();
 console.log("integration: ok");
