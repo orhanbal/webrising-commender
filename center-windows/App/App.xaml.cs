@@ -64,9 +64,28 @@ public partial class App : Application
     public string? AgentVersion { get; private set; }
     private DateTime _lastVersionCheck = DateTime.MinValue;
 
-    /// <summary>Opens the official agent installer in a new PowerShell window (it asks for UAC).</summary>
+    /// <summary>Installer output shown in the agent card (newest last).</summary>
+    public IReadOnlyList<string> InstallerLog => _installerLog;
+    private readonly List<string> _installerLog = [];
+    public bool InstallerRunning { get; private set; }
+    /// <summary>null while running or never run; true when the last run ended well.</summary>
+    public bool? InstallerSucceeded { get; private set; }
+
+    public void ClearInstallerLog()
+    {
+        if (InstallerRunning) return;
+        _installerLog.Clear();
+        InstallerSucceeded = null;
+        Publish();
+    }
+
+    /// <summary>
+    /// Runs the official agent installer without a window and shows its output
+    /// in the agent card ("mini terminal"); Windows still asks for UAC.
+    /// </summary>
     public async void UpdateAgent()
     {
+        if (InstallerRunning) return;
         try
         {
             // Installing a new agent while signed in: pair it with this
@@ -77,16 +96,49 @@ public partial class App : Application
                 try { code = await Gateway.PairingCodeAsync(token); }
                 catch (GatewayException) { /* the installer falls back to account sign-in */ }
             }
-            System.Diagnostics.Process.Start(AgentControl.InstallerStartInfo(Settings.Server, code));
-            _lastVersionCheck = DateTime.MinValue;
-            Toast(code is null ? Texts.AgentUpdateStarted : Texts.AgentInstallStarted);
+            _installerLog.Clear();
+            InstallerSucceeded = null;
+            InstallerRunning = true;
+            AddInstallerLine(code is null ? "Ajan güncellemesi başladı…" : "Ajan kurulumu başladı (bu hesapla otomatik bağlanacak)…");
+            Publish();
+
+            using var process = new System.Diagnostics.Process { StartInfo = AgentControl.InstallerStartInfo(Settings.Server, code) };
+            process.OutputDataReceived += (_, e) => OnInstallerOutput(e.Data);
+            process.ErrorDataReceived += (_, e) => OnInstallerOutput(e.Data);
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            await process.WaitForExitAsync();
+            InstallerSucceeded = process.ExitCode == 0;
+            AddInstallerLine(InstallerSucceeded == true ? "Tamamlandı." : $"Kurulum bitmedi (çıkış kodu {process.ExitCode}).");
+            Toast(InstallerSucceeded == true ? "Ajan kurulumu/güncellemesi tamamlandı." : "Ajan kurulumu tamamlanamadı; ayrıntı Cihazlar sekmesinde.");
         }
         catch (Exception e)
         {
-            Error = e.Message;
+            InstallerSucceeded = false;
+            AddInstallerLine(e.Message);
+        }
+        finally
+        {
+            InstallerRunning = false;
+            _lastVersionCheck = DateTime.MinValue;
             Publish();
+            await CheckAgentAsync();
         }
     }
+
+    private void OnInstallerOutput(string? data)
+    {
+        if (AgentControl.InstallerLine(data) is not { } line) return;
+        _ui.TryEnqueue(() => { AddInstallerLine(line); Publish(); });
+    }
+
+    private void AddInstallerLine(string line)
+    {
+        _installerLog.Add(line);
+        if (_installerLog.Count > 200) _installerLog.RemoveAt(0);
+    }
+
     public DateTime? LastSync => _lastSync == DateTime.MinValue ? null : _lastSync;
 
     /// <summary>Windows' own notification setting for this app (Settings, System, Notifications).</summary>
@@ -337,7 +389,9 @@ public partial class App : Application
         }
         else
         {
-            switch (_watchdog.Next(Settings.AgentKeepRunning && status.Enabled, status, DateTimeOffset.UtcNow))
+            // While the installer runs, Setup stops the agent on purpose; a
+            // restart here would hold the files Setup is replacing.
+            switch (InstallerRunning ? WatchdogAction.None : _watchdog.Next(Settings.AgentKeepRunning && status.Enabled, status, DateTimeOffset.UtcNow))
             {
                 case WatchdogAction.Start:
                     try

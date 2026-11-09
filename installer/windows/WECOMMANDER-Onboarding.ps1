@@ -12,6 +12,13 @@ if (-not (Test-Path $exe)) { throw 'WECOMMANDER agent binary is missing.' }
 # Upgrade: this Windows user is already paired, so restart the background
 # agent with the new binary and keep the device identity; no dialog, no
 # second "Hesabimla Baglan". Any failure falls through to the dialog.
+# Started by the Management Center ("Ajani kur" / "Ajani guncelle"): the
+# Center shows this output in its own window, so success needs no dialog.
+$fromCenter = $env:WECOMMANDER_FROM_CENTER -eq '1'
+function Show-Done([string]$message) {
+  if ($fromCenter) { Write-Output $message }
+  else { [System.Windows.Forms.MessageBox]::Show($message, 'WECOMMANDER') | Out-Null }
+}
 # Each step is written to %LOCALAPPDATA%\webrising-commender\onboarding.log
 # (no secrets) so a fall-through can be diagnosed afterwards.
 $logDir = Join-Path $env:LOCALAPPDATA 'webrising-commender'
@@ -40,10 +47,7 @@ if (-not $Reconnect -and (Test-Path -LiteralPath $pairedConfig -PathType Leaf)) 
     }
   }
   if ($script:silentDone) {
-    [System.Windows.Forms.MessageBox]::Show(
-      'WECOMMANDER ajani guncellendi ve arka planda calisiyor. Cihaz eslestirmesi korundu; yeniden baglanmaniz gerekmiyor.',
-      'WECOMMANDER'
-    ) | Out-Null
+    Show-Done 'WECOMMANDER ajani guncellendi ve arka planda calisiyor. Cihaz eslestirmesi korundu; yeniden baglanmaniz gerekmiyor.'
     return
   }
   # Fall through to the dialog; its notice shows why (see below).
@@ -66,10 +70,7 @@ if ($centerCode -and -not $script:silentDone -and -not (Test-Path -LiteralPath $
     if (-not (Test-Path -LiteralPath $pairedConfig -PathType Leaf)) { throw 'Agent config could not be created.' }
     & (Join-Path $PSScriptRoot 'Install-User-Agent.ps1') -BinaryPath $exe -ConfigPath $pairedConfig | Out-Null
     Write-OnboardingLog 'center pairing ok'
-    [System.Windows.Forms.MessageBox]::Show(
-      'WECOMMANDER ajani kuruldu ve Yonetim Merkezi hesabinla baglandi. Arka planda calisiyor; Windows oturum acilisinda otomatik baslar.',
-      'WECOMMANDER'
-    ) | Out-Null
+    Show-Done 'WECOMMANDER ajani kuruldu ve Yonetim Merkezi hesabinla baglandi. Arka planda calisiyor; Windows oturum acilisinda otomatik baslar.'
     return
   } catch {
     $script:silentFailure = $_.Exception.Message

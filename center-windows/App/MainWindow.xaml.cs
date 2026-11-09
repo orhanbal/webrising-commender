@@ -191,7 +191,18 @@ public sealed partial class MainWindow : Window
         };
         AgentVersionText.Text = Center.AgentVersion is { } v ? "Kurulu sürüm: " + v : "";
         AgentUpdateButton.Content = agent is { State: AgentRunState.NotInstalled } ? "Ajanı kur" : "Ajanı güncelle";
-        AgentUpdateButton.IsEnabled = !busy;
+        AgentUpdateButton.IsEnabled = !busy && !Center.InstallerRunning;
+        var log = Center.InstallerLog;
+        InstallerPanel.Visibility = log.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        var text = string.Join("\n", log);
+        if (InstallerText.Text != text)
+        {
+            InstallerText.Text = text;
+            InstallerScroll.UpdateLayout();
+            InstallerScroll.ChangeView(null, InstallerScroll.ScrollableHeight, null, true);
+        }
+        InstallerCloseButton.Visibility = Center.InstallerRunning ? Visibility.Collapsed : Visibility.Visible;
+        if (Center.InstallerRunning) AgentProgress.IsActive = true;
         var down = agent is { Running: false, State: AgentRunState.Stopped } && !busy;
         AgentBar.IsOpen = Center.Phase == Phase.SignedIn && down;
         AgentBar.Title = agent is { Enabled: false } ? "Bu bilgisayardaki ajan kapalı" : "Bu bilgisayardaki ajan çalışmıyor";
@@ -214,6 +225,8 @@ public sealed partial class MainWindow : Window
     private async void StartAgent_Click(object sender, RoutedEventArgs e) => await Center.SetAgentEnabledAsync(true);
 
     private void UpdateAgent_Click(object sender, RoutedEventArgs e) => Center.UpdateAgent();
+
+    private void InstallerClose_Click(object sender, RoutedEventArgs e) => Center.ClearInstallerLog();
 
     private void UpdateStatus()
     {
