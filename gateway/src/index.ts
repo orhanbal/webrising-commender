@@ -33,7 +33,7 @@ import {
   type AllocationResource,
 } from "./billing.js";
 import { db, housekeeping, migrate, ready } from "./db.js";
-import { getPublicPlans, publicPaddleConfig, createPaddleCheckout, createPaddlePortal, consumePaddleWebhook } from "./paddle.js";
+import { getPublicPlans, publicPaddleConfig, createPaddleCheckout, createPaddlePortal, consumePaddleWebhook, syncPlanCatalog } from "./paddle.js";
 import { getDownloads } from "./downloads.js";
 import { installRoute } from "./install-scripts.js";
 import { createDeviceLink, getDeviceLinkStatus, approveDeviceLink } from "./device-link.js";
@@ -143,6 +143,7 @@ const resetTokenRateLimit = new FixedWindowRateLimiter();
 const trustProxyHeaders = /^(1|true|yes)$/i.test(String(process.env.TRUST_PROXY_HEADERS || ""));
 
 await migrate();
+await syncPlanCatalog();
 const searchPersistence = new PgSearchPersistence(db);
 await searchPersistence.activate();
 setSearchPersistence(searchPersistence);

@@ -361,8 +361,21 @@ const signupBilling = await fetch(base + "/api/billing", {
 });
 assert.equal(signupBilling.status, 200);
 const signupBillingBody = await signupBilling.json();
-assert.equal(signupBillingBody.entitled, false);
-assert.equal(signupBillingBody.reason, "billing_required");
+// SaaS: the plan catalog gives every new workspace the free plan.
+assert.equal(signupBillingBody.entitled, true, "a new SaaS workspace starts on the free plan");
+assert.equal(signupBillingBody.plan.key, "free");
+assert.equal(signupBillingBody.limits.maxDevices, 1);
+assert.equal(signupBillingBody.subscription, null);
+const catalog = await jsonFetch("/api/public/plans");
+for (const key of ["free", "pro", "team"]) assert.ok(catalog.plans.some((plan) => plan.key === key), "catalog plan " + key);
+assert.equal(catalog.plans.find((plan) => plan.key === "free").free, true);
+assert.equal(catalog.plans.find((plan) => plan.key === "pro").featured, true);
+assert.equal(catalog.plans.find((plan) => plan.key === "pro").priceId, null, "no price ID until PADDLE_PRICE_PRO is set");
+// The rest of this suite checks paid-plan enforcement without a free tier.
+await acceptanceDb.query("update billing_plans set active=false where key='free'");
+const signupBillingNoFree = await (await fetch(base + "/api/billing", { headers: { Cookie: signupCookies } })).json();
+assert.equal(signupBillingNoFree.entitled, false);
+assert.equal(signupBillingNoFree.reason, "billing_required");
 
 const unknownResetRequest = await fetch(base + "/api/auth/password-reset/request", {
   method: "POST",
@@ -487,6 +500,11 @@ await acceptanceDb.query(
 const platformMe=await fetch(base+"/api/console/me",{headers:{Cookie:browserCookies}});
 assert.equal(platformMe.status,200);
 assert.equal((await platformMe.json()).platformRole,"super_admin");
+// The platform operator's own workspace is never limited by a SaaS plan.
+const operatorBilling=await (await fetch(base+"/api/billing",{headers:{Cookie:browserCookies}})).json();
+assert.equal(operatorBilling.entitled,true);
+assert.equal(operatorBilling.plan.key,"internal");
+assert.equal(operatorBilling.limits.maxDevices,null);
 // Verify revisioned CMS draft, publication, rollback and safe HTML metadata rendering.
 const cmsSessionHeaders={Cookie:browserCookies,"Content-Type":"application/json","X-CSRF-Token":browserLogin.csrfToken};
 const tinyPng="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9YRHuwoAAAAASUVORK5CYII=";

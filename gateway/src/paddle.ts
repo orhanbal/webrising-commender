@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { db } from "./db.js";
-import { applyNormalizedBillingEvent, deploymentMode } from "./billing.js";
+import { applyNormalizedBillingEvent, deploymentMode, FREE_PLAN_KEY } from "./billing.js";
 
 export const paddleEnvironment = process.env.PADDLE_ENVIRONMENT === "live" ? "live" : "sandbox";
 const pricePattern = /^pri_[a-z0-9]{26}$/;
@@ -27,7 +27,7 @@ export function publicPaddleConfig() {
 }
 
 export type PublicPlan = {
-  key: string; name: string; description: string; featured: boolean;
+  key: string; name: string; description: string; featured: boolean; free: boolean;
   priceLabel: string | null; priceId: string | null; features: string[];
   maxDevices: number | null; maxMembers: number | null; maxApiTokens: number | null;
 };
@@ -45,6 +45,7 @@ export async function getPublicPlans(): Promise<PublicPlan[]> {
     return {
       key: row.key, name: row.name, description: String(meta.description ?? "").slice(0,240),
       featured: meta.featured === true,
+      free: row.key === FREE_PLAN_KEY,
       priceLabel: typeof meta.priceLabel === "string" ? meta.priceLabel.slice(0,90) : null,
       priceId: pricePattern.test(id) ? id : null,
       features,
@@ -205,4 +206,62 @@ export async function consumePaddleWebhook(raw:Buffer,signature:string) {
     }
   });
   return {ok:true,applied:result.applied};
+}
+
+type CatalogPlan = {
+  key: string; name: string; maxDevices: number | null; maxMembers: number | null; maxApiTokens: number | null;
+  description: string; features: string[]; featured?: boolean;
+  priceEnv?: string; labelEnv?: string; defaultLabel: string;
+};
+
+/**
+ * The SaaS plans. Created once with these limits (the console can change
+ * them later); the Paddle price ID and the price label always follow the
+ * server environment (PADDLE_PRICE_PRO, PADDLE_PRICE_PRO_LABEL, ...), so
+ * prices are set in Paddle and Coolify, never in the code.
+ */
+export const planCatalog: CatalogPlan[] = [
+  {
+    key: FREE_PLAN_KEY, name: "Free", maxDevices: 1, maxMembers: 1, maxApiTokens: 2,
+    description: "Bir bilgisayar, tek kişi. Kart gerekmez.",
+    features: ["1 cihaz", "1 kişi", "MCP erişimi ve insan onayı", "Denetim kaydı"],
+    defaultLabel: "Ücretsiz",
+  },
+  {
+    key: "pro", name: "Pro", maxDevices: 5, maxMembers: 1, maxApiTokens: 5,
+    description: "Kendi bilgisayarların ve sunucuların için.",
+    features: ["5 cihaz", "1 kişi", "Otonom mod ve izinli komutlar", "Yönetim Merkezi bildirimleri"],
+    featured: true, priceEnv: "PADDLE_PRICE_PRO", labelEnv: "PADDLE_PRICE_PRO_LABEL", defaultLabel: "9 USD / ay",
+  },
+  {
+    key: "team", name: "Team", maxDevices: 25, maxMembers: 5, maxApiTokens: 25,
+    description: "Ekipler ve birden çok sunucu için.",
+    features: ["25 cihaz", "5 ekip üyesi", "Roller ve ortak onaylar", "Denetim kaydı"],
+    priceEnv: "PADDLE_PRICE_TEAM", labelEnv: "PADDLE_PRICE_TEAM_LABEL", defaultLabel: "29 USD / ay",
+  },
+];
+
+export async function syncPlanCatalog() {
+  if (deploymentMode !== "saas") return;
+  for (const plan of planCatalog) {
+    let priceId = plan.priceEnv ? String(process.env[plan.priceEnv] || "").trim() : "";
+    if (priceId && !pricePattern.test(priceId)) {
+      // A typo must not take the whole service down; the plan just stays unpurchasable.
+      console.warn(`${plan.priceEnv} is not a Paddle price ID (pri_...); ${plan.key} checkout stays off.`);
+      priceId = "";
+    }
+    const label = (plan.labelEnv ? String(process.env[plan.labelEnv] || "").trim() : "") || plan.defaultLabel;
+    const metadata = {
+      description: plan.description, features: plan.features, featured: plan.featured === true,
+      priceLabel: label, ...(priceId ? { paddlePriceId: priceId } : {}),
+    };
+    await db.query(
+      `insert into billing_plans(key,name,max_devices,max_members,max_api_tokens,metadata,active)
+       values($1,$2,$3,$4,$5,$6::jsonb,true)
+       on conflict (key) do update
+         set metadata=(billing_plans.metadata - 'paddlePriceId' - 'paddle_price_id') || excluded.metadata,
+             updated_at=now()`,
+      [plan.key, plan.name, plan.maxDevices, plan.maxMembers, plan.maxApiTokens, JSON.stringify(metadata)],
+    );
+  }
 }

@@ -115,6 +115,7 @@ export const commonEnglish:Record<string,string> = {
   "Test ortamı": "Sandbox",
   "Paket özeti": "Order summary",
   "Ödeme henüz açık değil": "Checkout not enabled",
+  "Ücretsiz başla": "Start free",
   "Paketi seç": "Choose plan",
   "Güvenli ödeme Paddle ile işlenir": "Secure payments are processed by Paddle",
   "Paddle ile güvenli ödeme": "Secure checkout with Paddle",
