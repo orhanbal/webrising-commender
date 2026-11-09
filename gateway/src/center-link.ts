@@ -112,6 +112,9 @@ export function centerMayAccess(method: string, pathname: string) {
       pathname === "/api/approval-requests" || pathname === "/api/trust/autonomy")) return true;
   if (method === "GET" && /^\/api\/approval-requests\/[0-9a-f-]{36}$/i.test(pathname)) return true;
   if (method === "POST" && (pathname === "/api/trust/autonomy" || pathname === "/api/center/disconnect")) return true;
+  // A signed-in Center installs the agent on its own computer without a
+  // second browser sign-in (one-time code, see /api/center/pairing-code).
+  if (method === "POST" && pathname === "/api/center/pairing-code") return true;
   if (method === "POST" && /^\/api\/approval-requests\/[0-9a-f-]{36}\/(approve|deny)$/i.test(pathname)) return true;
   return false;
 }

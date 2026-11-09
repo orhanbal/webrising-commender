@@ -156,6 +156,15 @@ public struct GatewayClient: Sendable {
         _ = try await send("POST", "/api/trust/autonomy", token: token, body: body)
     }
 
+    /// One-time pairing code (5 minutes) for the agent installer on this Mac.
+    public func pairingCode(token: String) async throws -> String {
+        let json = try await send("POST", "/api/center/pairing-code", token: token, body: [:]) as? [String: Any]
+        guard let code = json?["pairingCode"] as? String, code.count >= 20 else {
+            throw GatewayError(.http, 0, "", "Eşleştirme kodu alınamadı.")
+        }
+        return code
+    }
+
     public func disconnect(token: String) async throws {
         _ = try await send("POST", "/api/center/disconnect", token: token, body: [:])
     }

@@ -338,7 +338,21 @@ final class AppModel: ObservableObject {
     /// Opens Terminal with the official agent installer (it asks for the
     /// administrator password there).
     func updateAgent() {
-        let command = AgentControl.updateCommand(server: settings.server)
+        Task { await runAgentInstaller() }
+    }
+
+    private func runAgentInstaller() async {
+        // Installing a new agent while signed in: pair it with this account
+        // through a one-time code, no second browser sign-in.
+        var raw = AgentControl.updateCommand(server: settings.server)
+        var installing = false
+        if agent?.state == .notInstalled, let token,
+           let code = try? await gateway.pairingCode(token: token),
+           let file = try? AgentControl.writePairingCodeFile(code) {
+            raw = AgentControl.installCommand(server: settings.server, pairingCodeFile: file)
+            installing = true
+        }
+        let command = raw
             .replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
         let script = "tell application \"Terminal\"\nactivate\ndo script \"\(command)\"\nend tell"
         let process = Process()
@@ -347,7 +361,7 @@ final class AppModel: ObservableObject {
         do {
             try process.run()
             lastVersionCheck = .distantPast
-            notifier.showPlain("WECOMMANDER", Texts.agentUpdateStarted)
+            notifier.showPlain("WECOMMANDER", installing ? Texts.agentInstallStarted : Texts.agentUpdateStarted)
         } catch {
             self.error = error.localizedDescription
             publish()

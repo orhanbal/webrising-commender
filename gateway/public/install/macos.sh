@@ -32,7 +32,11 @@ while (($#)); do
     --allowed-root)
       [[ -n "${2:-}" ]] || { echo "--allowed-root needs a folder." >&2; exit 2; }
       SETUP_ARGS+=(--allowed-root "$2"); shift 2 ;;
-    *) echo "Usage: bash install-macos-online.sh [--install-only] [--control-url https://HOST] [--allowed-root FOLDER]" >&2; exit 2 ;;
+    --pairing-code-file)
+      # From a signed-in Management Center: pair without a browser sign-in.
+      [[ -n "${2:-}" ]] || { echo "--pairing-code-file needs a file." >&2; exit 2; }
+      SETUP_ARGS+=(--pairing-code-file "$2"); shift 2 ;;
+    *) echo "Usage: bash install-macos-online.sh [--install-only] [--control-url https://HOST] [--allowed-root FOLDER] [--pairing-code-file FILE]" >&2; exit 2 ;;
   esac
 done
 TMP="$(mktemp -d)"

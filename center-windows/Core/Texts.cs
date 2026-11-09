@@ -61,6 +61,8 @@ public static class Texts
         "Bu bilgisayardaki ajan (Windows hizmeti) durdu. Başlatmak için paneldeki \"Ajan çalışsın\"ı aç; Windows yönetici onayı isteyecek.";
     public const string AgentUpdateStarted =
         "Ajan güncelleme penceresi açıldı. Windows yönetici onayı isteyecek; cihazın kaydı korunur.";
+    public const string AgentInstallStarted =
+        "Ajan kurulum penceresi açıldı. Windows yönetici onayı isteyecek; ajan bu hesapla otomatik bağlanır.";
     public const string AgentOffWarning = "Ajan kapalıyken yapay zekâ bu bilgisayara erişemez.";
 
     public const string NotificationIntroTitle = "WECOMMANDER bildirimleri hazır";

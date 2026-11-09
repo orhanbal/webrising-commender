@@ -7,12 +7,14 @@ CONTROL_URL="https://wecommander.app"
 # Not under ~/Documents, ~/Desktop or ~/Downloads: macOS privacy protection
 # (TCC) asks for permission on every command a background agent starts there.
 ALLOWED_ROOT="$HOME/WECOMMANDER"
+PAIRING_CODE_FILE=""
 while (($#)); do
   case "$1" in
     --control-url) CONTROL_URL="${2:-}"; shift 2 ;;
     --allowed-root) ALLOWED_ROOT="${2:-}"; shift 2 ;;
+    --pairing-code-file) PAIRING_CODE_FILE="${2:-}"; shift 2 ;;
     --help|-h)
-      echo "Usage: wecommander-setup [--allowed-root EXISTING_DIRECTORY] [--control-url HTTPS_URL]"
+      echo "Usage: wecommander-setup [--allowed-root EXISTING_DIRECTORY] [--control-url HTTPS_URL] [--pairing-code-file FILE]"
       exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
@@ -45,6 +47,28 @@ json_post() {
     --connect-timeout 7 --max-time 15 -H 'Content-Type: application/json' \
     --data-binary @- "$CONTROL_URL$1"
 }
+# A one-time pairing code from a signed-in Management Center ("Ajani kur"):
+# read once, delete, never print. Without it the browser approval below runs.
+read_pairing_code_file() {
+  local file="$1" value=""
+  [[ -f "$file" && ! -L "$file" ]] || return 0
+  value="$(head -c 200 -- "$file" | tr -d '\r\n')"
+  rm -f -- "$file"
+  [[ "$value" =~ ^[A-Za-z0-9_-]{20,200}$ ]] && printf '%s' "$value"
+  return 0
+}
+center_code=""
+[[ -z "$PAIRING_CODE_FILE" ]] || center_code="$(read_pairing_code_file "$PAIRING_CODE_FILE")"
+if [[ ! -f "$CONFIG" && -n "$center_code" ]]; then
+  echo "Pairing with the account signed in to WECOMMANDER Center..."
+  if "$BIN" --config "$CONFIG" enroll --control-url "$CONTROL_URL" \
+      --pairing-code "$center_code" --allowed-root "$ALLOWED_ROOT"; then
+    :
+  else
+    echo "Center pairing failed; continuing with browser approval." >&2
+  fi
+fi
+unset center_code
 if [[ ! -f "$CONFIG" ]]; then
   response="$(json_post '/api/device-link/start' '{}')"
   id="$(json_field requestId "$response")"

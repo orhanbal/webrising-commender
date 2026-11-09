@@ -104,13 +104,57 @@ pub fn update_command(server: &str) -> String {
     )
 }
 
+/// The installer for a new agent from a signed-in Center: the one-time
+/// pairing code is in a private file (never on the command line), which the
+/// installer reads once and deletes.
+pub fn install_command(server: &str, pairing_code_file: &str) -> String {
+    format!(
+        "{} -s -- --pairing-code-file '{}'",
+        update_command(server),
+        pairing_code_file.replace('\'', "'\\''")
+    )
+}
+
+/// Writes the code to a new owner-only (0600) file and returns its path.
+#[cfg(unix)]
+pub fn write_pairing_code_file(code: &str) -> std::io::Result<String> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let dir = std::env::var("XDG_RUNTIME_DIR")
+        .ok()
+        .filter(|d| !d.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let path = dir.join(format!(
+        "wecommander-pairing-{}-{nonce}",
+        std::process::id()
+    ));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&path)?;
+    file.write_all(code.as_bytes())?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+#[cfg(not(unix))]
+pub fn write_pairing_code_file(_code: &str) -> std::io::Result<String> {
+    Err(std::io::Error::other("unsupported"))
+}
+
 /// Opens a terminal window running the installer and waiting for Enter.
 #[cfg(target_os = "linux")]
-pub fn open_update_terminal(server: &str) -> Result<(), String> {
-    let script = format!(
-        "{}; echo; printf 'Kapatmak için Enter tuşuna bas. '; read _",
-        update_command(server)
-    );
+pub fn open_update_terminal(server: &str, pairing_code_file: Option<&str>) -> Result<(), String> {
+    let command = match pairing_code_file {
+        Some(file) => install_command(server, file),
+        None => update_command(server),
+    };
+    let script = format!("{command}; echo; printf 'Kapatmak için Enter tuşuna bas. '; read _");
     for (term, args) in [
         ("x-terminal-emulator", vec!["-e", "sh", "-c"]),
         ("gnome-terminal", vec!["--", "sh", "-c"]),
@@ -133,7 +177,7 @@ pub fn open_update_terminal(server: &str) -> Result<(), String> {
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn open_update_terminal(server: &str) -> Result<(), String> {
+pub fn open_update_terminal(server: &str, _pairing_code_file: Option<&str>) -> Result<(), String> {
     Err(format!(
         "Bir terminalde çalıştır: {}",
         update_command(server)
@@ -211,6 +255,24 @@ mod tests {
             update_command("https://wecommander.app/"),
             "curl -fsSL https://wecommander.app/install.sh | sh"
         );
+        assert_eq!(
+            install_command("https://wecommander.app", "/run/user/1000/a b'c"),
+            "curl -fsSL https://wecommander.app/install.sh | sh -s -- --pairing-code-file '/run/user/1000/a b'\\''c'"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pairing_code_file_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let path = write_pairing_code_file("code-1234567890-abcdefghij").unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "code-1234567890-abcdefghij"
+        );
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(mode, 0o600);
     }
 
     #[test]

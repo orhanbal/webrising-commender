@@ -48,6 +48,34 @@ if (-not $Reconnect -and (Test-Path -LiteralPath $pairedConfig -PathType Leaf)) 
   }
   # Fall through to the dialog; its notice shows why (see below).
 }
+# "Ajani kur" in a signed-in Management Center: the Center passes a one-time
+# pairing code (5 minutes) in the environment, so the owner does not sign in
+# a second time. Never logged or shown. Any failure falls through to the dialog.
+$centerCode = $env:WECOMMANDER_PAIRING_CODE
+$centerServer = $env:WECOMMANDER_SERVER
+Remove-Item Env:WECOMMANDER_PAIRING_CODE -ErrorAction SilentlyContinue
+if ($centerCode -and -not $script:silentDone -and -not (Test-Path -LiteralPath $pairedConfig -PathType Leaf)) {
+  try {
+    $url = if ($centerServer -match '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$') { $centerServer.TrimEnd('/') } else { 'https://wecommander.app' }
+    $root = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'WECOMMANDER'
+    if (-not (Test-Path -LiteralPath $root -PathType Container)) { New-Item -ItemType Directory -Path $root -Force | Out-Null }
+    $output = & $exe enroll --control-url $url --pairing-code $centerCode --allowed-root $root 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      throw (($output | Out-String) -replace [regex]::Escape($centerCode),'[REDACTED]').Trim()
+    }
+    if (-not (Test-Path -LiteralPath $pairedConfig -PathType Leaf)) { throw 'Agent config could not be created.' }
+    & (Join-Path $PSScriptRoot 'Install-User-Agent.ps1') -BinaryPath $exe -ConfigPath $pairedConfig | Out-Null
+    Write-OnboardingLog 'center pairing ok'
+    [System.Windows.Forms.MessageBox]::Show(
+      'WECOMMANDER ajani kuruldu ve Yonetim Merkezi hesabinla baglandi. Arka planda calisiyor; Windows oturum acilisinda otomatik baslar.',
+      'WECOMMANDER'
+    ) | Out-Null
+    return
+  } catch {
+    $script:silentFailure = $_.Exception.Message
+    Write-OnboardingLog "center pairing failed: $($script:silentFailure)"
+  }
+}
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'WECOMMANDER | Cihaz Baglantisi'
 $form.Width = 560; $form.Height = 440
@@ -71,7 +99,7 @@ for ($i=0; $i -lt $fields.Count; $i++) {
 $notice = New-Object System.Windows.Forms.Label
 $notice.Text = 'Hesabinla giris yap. Cihaz onayindan sonra otomatik baslatilir; Windows parolasi sorulmaz.'
 if ($script:silentFailure) {
-  $notice.Text = 'Otomatik guncelleme tamamlanamadi: ' + $script:silentFailure + ' "Eslestir" mevcut eslestirmeyi kullanir.'
+  $notice.Text = 'Otomatik baglanti tamamlanamadi: ' + $script:silentFailure + ' Asagidaki dugmeyle devam edebilirsin.'
 }
 $notice.Location = New-Object System.Drawing.Point(20,232)
 $notice.Width = 510; $notice.Height = 44
