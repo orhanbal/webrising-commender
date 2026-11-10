@@ -218,3 +218,23 @@ jobs:
           path: center-macos/dist/WECOMMANDER-Center-macos.zip
           if-no-files-found: error
           retention-days: 14
+
+  desktop-macos:
+    # V2 desktop app (desktop/) on macOS; the Linux and Windows legs are the
+    # desktop job in ci.yml.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Shared crates (lint, tests)
+        run: |
+          cargo clippy --locked -p wc-ssh-core -p wc-vault --all-targets -- -D warnings
+          cargo test --locked -p wc-ssh-core -p wc-vault
+      - name: Desktop app (format, lint, release build)
+        working-directory: desktop
+        run: |
+          cargo fmt -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo build --release --locked

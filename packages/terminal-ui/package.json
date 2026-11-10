@@ -1,0 +1,9 @@
+{
+  "name": "@wecommander/terminal-ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WECOMMANDER terminal view (xterm.js) shared by the desktop app and the web console. V2 A01 skeleton; the renderer arrives with A03 (G3).",
+  "type": "module",
+  "main": "src/index.js",
+  "license": "MIT"
+}

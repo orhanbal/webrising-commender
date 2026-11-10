@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WECOMMANDER</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside class="rail">
+    <div class="brand">WE<b>C</b></div>
+    <button class="ws active" data-ws="user" title="User Mode">SSH</button>
+    <button class="ws" data-ws="agent" title="Agent Mode">AI</button>
+    <div class="spacer"></div>
+    <div class="meta" id="meta"></div>
+  </aside>
+  <main>
+    <section id="ws-user" class="workspace">
+      <header><h1>Sunucular</h1><p>SSH ve SFTP ile kendi sunucularına bağlan.</p></header>
+      <form id="add-host" class="card add">
+        <input name="label" placeholder="Ad (örn. Prod web)" required maxlength="120">
+        <input name="user" placeholder="Kullanıcı" required maxlength="64">
+        <input name="host" placeholder="Adres (sunucu.ornek.com)" required maxlength="253">
+        <input name="port" type="number" min="1" max="65535" value="22" required>
+        <button type="submit">Ekle</button>
+      </form>
+      <p class="error" id="error" role="alert"></p>
+      <ul id="hosts" class="hosts"></ul>
+      <form id="connect" class="card connect" hidden>
+        <h2 id="connect-title"></h2>
+        <div class="row">
+          <label><input type="radio" name="kind" value="key" checked> Özel anahtar</label>
+          <label><input type="radio" name="kind" value="password"> Parola</label>
+        </div>
+        <textarea name="key" rows="5" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" spellcheck="false"></textarea>
+        <input name="passphrase" type="password" placeholder="Anahtar parolası (varsa)" autocomplete="off">
+        <input name="password" type="password" placeholder="Parola" autocomplete="off" hidden>
+        <div class="row">
+          <button type="submit">Bağlan</button>
+          <button type="button" class="secondary" id="connect-cancel">Kapat</button>
+        </div>
+        <div id="hostkey" class="hostkey" hidden>
+          <p id="hostkey-text"></p>
+          <code id="hostkey-fp"></code>
+          <div class="row">
+            <button type="button" id="hostkey-accept">Güven ve bağlan</button>
+            <button type="button" class="secondary" id="hostkey-reject">Vazgeç</button>
+          </div>
+        </div>
+        <p id="connect-status" class="status" role="status"></p>
+        <pre id="connect-output" hidden></pre>
+      </form>
+      <p class="empty" id="empty">Henüz sunucu yok. Yukarıdan ilk sunucunu ekle.</p>
+      <p class="note">Önizleme: “Bağlan” bağlantıyı ve sunucu anahtarını doğrular. Terminal ve SFTP sonraki sürümlerde gelecek; sunucular ve güvenilen anahtarlar şimdilik kaydedilmez.</p>
+    </section>
+    <section id="ws-agent" class="workspace" hidden>
+      <header><h1>Agent Mode</h1><p>WECOMMANDER hesabın: cihazlar, onaylar ve yapay zekâ erişimi.</p></header>
+      <div class="card">
+        <p>Bu alan, Yönetim Merkezi'ndeki hesap, onay ve cihaz görünümünü masaüstü uygulamasına taşıyacak.</p>
+        <p class="note">Şimdilik onaylar için WECOMMANDER Yönetim Merkezi'ni kullan.</p>
+      </div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
