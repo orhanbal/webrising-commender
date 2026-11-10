@@ -230,8 +230,8 @@ jobs:
           components: rustfmt, clippy
       - name: Shared crates (lint, tests)
         run: |
-          cargo clippy --locked -p wc-ssh-core -p wc-vault --all-targets -- -D warnings
-          cargo test --locked -p wc-ssh-core -p wc-vault
+          cargo clippy --locked -p wc-ssh-core -p wc-vault -p wc-app-core -p wc-core-service --all-targets -- -D warnings
+          cargo test --locked -p wc-ssh-core -p wc-vault -p wc-app-core -p wc-core-service
       - name: G1 keyring smoke test (macOS Keychain)
         run: cargo test --locked -p wc-vault --features os-keyring --lib -- --ignored
       - name: Desktop app (format, lint, tests, release build)

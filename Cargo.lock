@@ -4321,6 +4321,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "wc-app-core"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+ "wc-ssh-core",
+ "wc-vault",
+]
+
+[[package]]
+name = "wc-core-service"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tokio",
+ "wc-app-core",
+]
+
+[[package]]
 name = "wc-ssh-core"
 version = "0.1.0"
 dependencies = [

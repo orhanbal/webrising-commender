@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/agent", "crates/wc-ssh-core", "crates/wc-vault"]
+members = ["crates/agent", "crates/wc-ssh-core", "crates/wc-vault", "crates/wc-app-core", "crates/wc-core-service"]
 resolver = "2"
 
 [workspace.package]
