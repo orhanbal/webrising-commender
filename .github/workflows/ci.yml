@@ -872,12 +872,16 @@ jobs:
         shell: bash
         env:
           BUNDLES: ${{ runner.os == 'Linux' && 'deb' || 'nsis' }}
+          VERSION: 0.1.${{ github.run_number }}
         run: |
-          npx -y @tauri-apps/cli@2.12.4 build --ci --bundles "$BUNDLES"
+          npx -y @tauri-apps/cli@2.12.4 build --ci --bundles "$BUNDLES" --config "{\"version\":\"$VERSION\"}"
           mkdir -p dist
-          find target/release/bundle \( -name '*.deb' -o -name '*-setup.exe' \) -exec cp {} dist/ \;
+          if [ "$BUNDLES" = deb ]; then
+            cp target/release/bundle/deb/*.deb dist/WECOMMANDER-Desktop-linux-amd64.deb
+          else
+            cp target/release/bundle/nsis/*-setup.exe dist/WECOMMANDER-Desktop-windows-x64-setup.exe
+          fi
           ls -la dist
-          test -n "$(ls dist)"
       - uses: actions/upload-artifact@v4
         with:
           name: WECOMMANDER-Desktop-${{ runner.os }}

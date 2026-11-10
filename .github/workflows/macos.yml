@@ -243,7 +243,7 @@ jobs:
       - name: Desktop app bundle (A04, ad-hoc signed)
         working-directory: desktop
         run: |
-          npx -y @tauri-apps/cli@2.12.4 build --ci --bundles app
+          npx -y @tauri-apps/cli@2.12.4 build --ci --bundles app --config "{\"version\":\"0.1.${{ github.run_number }}\"}"
           mkdir -p dist
           ditto -c -k --keepParent target/release/bundle/macos/WECOMMANDER.app dist/WECOMMANDER-Desktop-macos.zip
           ls -la dist

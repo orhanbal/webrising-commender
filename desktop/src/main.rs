@@ -52,16 +52,17 @@ impl AppState {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AppInfo {
-    version: &'static str,
+    version: String,
     vault_backend: &'static str,
     vault_persistent: bool,
     os: &'static str,
 }
 
 #[tauri::command]
-fn app_info(state: tauri::State<'_, AppState>) -> AppInfo {
+fn app_info(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> AppInfo {
     AppInfo {
-        version: env!("CARGO_PKG_VERSION"),
+        // The installer version (0.1.<CI run>), not the crate version.
+        version: app.package_info().version.to_string(),
         vault_backend: state.vault.backend().label(),
         vault_persistent: state.vault_persistent,
         os: std::env::consts::OS,
