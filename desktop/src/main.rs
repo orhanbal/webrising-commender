@@ -448,6 +448,7 @@ fn open_vault() -> (Box<dyn SecretStore>, bool) {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             let store = Store::new(&dir);

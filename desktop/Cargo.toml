@@ -26,3 +26,4 @@ wc-vault = { path = "../crates/wc-vault", features = ["os-keyring"] }
 uuid = { version = "1", features = ["v4"] }
 tokio = { version = "1", features = ["sync", "rt"] }
 base64 = "0.22"
+tauri-plugin-clipboard-manager = "2"

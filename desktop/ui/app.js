@@ -4,6 +4,7 @@ import { createTerminalView } from "./terminal-view.js";
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
+const clipboard = window.__TAURI__.clipboardManager;
 const $ = (id) => document.getElementById(id);
 
 let hosts = [];
@@ -263,6 +264,7 @@ function addTerminal(host, sessionId) {
   session.view = createTerminalView(pane, {
     onData: (text) => { if (!session.closed) invoke("terminal_write", { sessionId, data: text }).catch(() => {}); },
     onResize: (cols, rows) => { if (!session.closed) invoke("terminal_resize", { sessionId, cols, rows }).catch(() => {}); },
+    clipboard,
   });
   session.view.fit();
   invoke("terminal_resize", { sessionId, cols: session.view.cols, rows: session.view.rows }).catch(() => {});

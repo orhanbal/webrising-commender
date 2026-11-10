@@ -23,12 +23,30 @@
     }
   },
   "bundle": {
-    "active": false,
+    "active": true,
+    "targets": [
+      "deb",
+      "nsis",
+      "app"
+    ],
+    "publisher": "WebRising",
+    "category": "DeveloperTool",
+    "shortDescription": "SSH terminals and WECOMMANDER agent control",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/icon.png",
       "icons/icon.ico"
-    ]
+    ],
+    "linux": {
+      "deb": {
+        "depends": []
+      }
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
   }
 }
