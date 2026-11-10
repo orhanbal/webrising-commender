@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { dispatcher, installCommands, installRoute } from "./install-scripts.js";
+import { dispatcher, installCommands, installRoute, windowsCmd } from "./install-scripts.js";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -28,7 +28,8 @@ test("served platform installers are identical to scripts/", async () => {
   for (const [route, source] of [
     ["/install/ubuntu.sh", "scripts/install-ubuntu-online.sh"],
     ["/install/macos.sh", "scripts/install-macos-online.sh"],
-    ["/install.ps1", "scripts/install-windows-online.ps1"],
+    ["/install.ps1", "scripts/install-center-windows-online.ps1"],
+    ["/install/agent.ps1", "scripts/install-windows-online.ps1"],
     ["/install/center.ps1", "scripts/install-center-windows-online.ps1"],
     ["/install/center.sh", "scripts/install-center-macos-online.sh"],
   ] as const) {
@@ -39,6 +40,19 @@ test("served platform installers are identical to scripts/", async () => {
   }
   assert.equal(await installRoute("/install/other.sh", "https://wecommander.app"), null);
   assert.equal(await installRoute("/install", "https://wecommander.app"), null);
+});
+
+test("the Windows .cmd runs the one-line app installer from this gateway", async () => {
+  const served = await installRoute("/install/WECOMMANDER-Kur.cmd", "https://wecommander.app");
+  assert.ok(Buffer.isBuffer(served));
+  const body = (served as Buffer).toString("ascii");
+  assert.match(body, /^@echo off\r\n/);
+  assert.ok(!/[^\r]\n/.test(body), "CRLF line endings");
+  assert.ok(/^[\x09\x0a\x0d\x20-\x7e]*$/.test(body), "ASCII only");
+  assert.match(body, /irm 'https:\/\/wecommander\.app\/install\.ps1' \| iex/);
+  assert.match(body, /-ExecutionPolicy Bypass/);
+  assert.throws(() => windowsCmd("https://x.test\" & calc"), /invalid_origin/);
+  assert.equal(installCommands("https://wecommander.app").windows, "irm https://wecommander.app/install.ps1 | iex");
 });
 
 test("the macOS installer finds the PKG where macos-distribution publishes it", () => {

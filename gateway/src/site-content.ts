@@ -139,10 +139,10 @@ export const publicPages: PublicPage[] = [
     blocks: [
       { h2: "Linux (Ubuntu, Debian) and macOS" },
       { code: "curl -fsSL https://wecommander.app/install.sh | sh" },
-      { h2: "Windows (PowerShell)" },
+      { h2: "Windows (PowerShell): the WECOMMANDER app with the agent inside" },
       { code: "irm https://wecommander.app/install.ps1 | iex" },
-      { h2: "Management Center for Windows (approvals on your desktop)" },
-      { code: "irm https://wecommander.app/install/center.ps1 | iex" },
+      { h2: "Windows server without a desktop: the agent alone" },
+      { code: "irm https://wecommander.app/install/agent.ps1 | iex" },
       { h2: "Management Center for macOS (menu bar app, macOS 13 or newer)" },
       { code: "curl -fsSL https://wecommander.app/install/center.sh | sh" },
     ],
@@ -301,7 +301,7 @@ export const publicPages: PublicPage[] = [
     intro: "ChatGPT can read and edit files on your Windows PC through a custom MCP connector. Only the folder you choose is reachable.",
     blocks: [
       { ul: [
-        "In PowerShell: irm https://wecommander.app/install.ps1 | iex, then approve the device and choose a folder such as C:\\Users\\you\\WECOMMANDER.",
+        "In PowerShell: irm https://wecommander.app/install.ps1 | iex. The WECOMMANDER app opens your browser to sign in and connects this PC by itself; the folder it shares is C:\\Users\\you\\WECOMMANDER.",
         "In ChatGPT: Settings → Connectors → create a custom connector with https://wecommander.app/mcp (OAuth).",
         "Ask ChatGPT to summarise, search or edit documents in that folder; Word, Excel and PDF files can be read too.",
         "Deleting or moving files and running commands wait for your approval; edits keep undo snapshots.",

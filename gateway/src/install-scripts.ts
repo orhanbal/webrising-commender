@@ -1,6 +1,10 @@
 // One-line device install (v1.1 item 2).
 //   Linux/macOS: curl -fsSL https://<gateway>/install.sh | sh
-//   Windows:     powershell ... "& ([scriptblock]::Create((irm https://<gateway>/install.ps1)))"
+//   Windows:     irm https://<gateway>/install.ps1 | iex
+//                (or the panel's WECOMMANDER-Kur.cmd, which runs the same)
+// On Windows this installs the one WECOMMANDER app for the current user; the
+// app carries the agent, signs in through the browser and pairs itself.
+// The agent alone (servers without a desktop) stays at /install/agent.ps1.
 // /install.sh is a small dispatcher bound to this gateway's public origin. It
 // downloads the platform installer from the same origin; that installer only
 // accepts a GitHub release package whose SHA-256 matches the published
@@ -13,7 +17,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const files: Record<string, string> = {
   "/install/ubuntu.sh": "ubuntu.sh",
   "/install/macos.sh": "macos.sh",
-  "/install.ps1": "windows.ps1",
+  "/install.ps1": "center-windows.ps1",
+  "/install/agent.ps1": "windows.ps1",
   "/install/center.ps1": "center-windows.ps1",
   "/install/center.sh": "center-macos.sh",
 };
@@ -21,7 +26,10 @@ const files: Record<string, string> = {
 export function installCommands(origin: string) {
   return {
     unix: `curl -fsSL ${origin}/install.sh | sh`,
-    windows: `powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm ${origin}/install.ps1)))"`,
+    windows: `irm ${origin}/install.ps1 | iex`,
+    /** For Win+R or cmd.exe, where irm is not a command. */
+    windowsRun: `powershell -NoProfile -ExecutionPolicy Bypass -Command "irm ${origin}/install.ps1 | iex"`,
+    windowsAgent: `powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm ${origin}/install/agent.ps1)))"`,
     centerWindows: `irm ${origin}/install/center.ps1 | iex`,
     centerMacos: `curl -fsSL ${origin}/install/center.sh | sh`,
   };
@@ -74,9 +82,40 @@ async function packaged(name: string) {
   return null;
 }
 
+export const windowsCmdPath = "/install/WECOMMANDER-Kur.cmd";
+
+/**
+ * The panel's download for Windows: a .cmd that runs the PowerShell one-line
+ * installer. What it downloads (the app and its agent) arrives through
+ * PowerShell, not the browser, so it carries no "downloaded from the
+ * internet" mark and no SmartScreen warning; only this small file itself
+ * may be asked about once. ASCII with CRLF, as cmd.exe expects.
+ */
+export function windowsCmd(origin: string) {
+  if (!/^https?:\/\/[A-Za-z0-9.-]+(:[0-9]{1,5})?$/.test(origin)) throw new Error("invalid_origin");
+  return [
+    "@echo off",
+    "rem WECOMMANDER installer: downloads the app from the official GitHub release,",
+    "rem checks its SHA-256 and installs it for this Windows user (no administrator rights).",
+    "title WECOMMANDER kurulumu",
+    `powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; irm '${origin}/install.ps1' | iex"`,
+    "if errorlevel 1 (",
+    "  echo.",
+    "  echo Kurulum tamamlanamadi. Yukaridaki mesaja bak ve yeniden dene.",
+    "  pause",
+    "  exit /b 1",
+    ")",
+    "echo.",
+    "echo WECOMMANDER kuruldu. Tarayicida hesabinla giris yap; bu pencere birazdan kapanir.",
+    "timeout /t 8 >nul",
+    "",
+  ].join("\r\n");
+}
+
 /** Returns the body for an install route, or null when the path is not one. */
 export async function installRoute(pathname: string, origin: string): Promise<Buffer | null | "missing"> {
   if (pathname === "/install.sh") return Buffer.from(dispatcher(origin), "utf8");
+  if (pathname === windowsCmdPath) return Buffer.from(windowsCmd(origin), "ascii");
   const name = files[pathname];
   if (!name) return null;
   return (await packaged(name)) ?? "missing";

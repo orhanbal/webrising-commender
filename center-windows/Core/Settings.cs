@@ -30,6 +30,11 @@ public sealed class Settings
     /// when it stops. Switched off, the agent is stopped and stays off.
     /// </summary>
     [JsonPropertyName("agentKeepRunning")] public bool AgentKeepRunning { get; set; } = true;
+    /// <summary>
+    /// The one UAC prompt that removes an earlier, separately installed agent
+    /// (scheduled task, service, Program Files setup) was already shown.
+    /// </summary>
+    [JsonPropertyName("legacyCleanupPrompted")] public bool LegacyCleanupPrompted { get; set; }
 }
 
 public sealed class SettingsStore(string directory)

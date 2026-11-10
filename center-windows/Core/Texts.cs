@@ -44,6 +44,11 @@ public static class Texts
     public const string AgentNotInstalled =
         "Bu bilgisayarda WECOMMANDER ajanı kurulu değil. Kurmak için wecommander.app panelindeki Cihazlar sayfasındaki Windows komutunu kullan.";
 
+    public const string EmbeddedNotPaired =
+        "Bu bilgisayar henüz hesabına bağlı değil. Giriş yaptığında uygulama onu kendiliğinden bağlar; ayrıca bir şey kurman gerekmez.";
+    public const string EmbeddedRunning =
+        "Ajan bu uygulamanın içinde, arka planda çalışıyor. Durursa uygulama onu yeniden başlatır. Tepsiden Çıkış yaparsan ajan da durur.";
+
     /// <summary>One line for the agent card and the tray menu.</summary>
     public static string AgentStateLabel(AgentStatus? status) => status switch
     {

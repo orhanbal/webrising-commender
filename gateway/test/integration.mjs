@@ -211,11 +211,15 @@ assert.match(health.build?.commit ?? "", /^(unknown|[0-9a-f]{40})$/);
   const body = await installer.text();
   assert.match(body, /^#!\/bin\/sh/);
   assert.ok(body.includes(`BASE='${new URL(process.env.PUBLIC_BASE_URL || base).origin}'`), "dispatcher uses the gateway origin");
-  for (const route of ["/install/ubuntu.sh", "/install/macos.sh", "/install.ps1"]) {
+  for (const route of ["/install/ubuntu.sh", "/install/macos.sh", "/install.ps1", "/install/agent.ps1"]) {
     const r = await fetch(base + route);
     assert.equal(r.status, 200, route);
     assert.ok((await r.text()).length > 500, route);
   }
+  const cmd = await fetch(base + "/install/WECOMMANDER-Kur.cmd");
+  assert.equal(cmd.status, 200);
+  assert.match(cmd.headers.get("content-disposition") || "", /attachment; filename="WECOMMANDER-Kur\.cmd"/);
+  assert.match(await cmd.text(), /install\.ps1' \| iex/);
 }
 
 const publicConfig = await jsonFetch("/api/public/config");

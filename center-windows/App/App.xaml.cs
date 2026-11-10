@@ -68,7 +68,7 @@ public partial class App : Application
     public string? AgentVersion { get; private set; }
     /// <summary>Newest published agent build (the N of 0.1.N), checked every 6 hours.</summary>
     public int? LatestAgentBuild { get; private set; }
-    public bool AgentUpdateAvailable => AgentUpdate.IsNewer(LatestAgentBuild, AgentVersion);
+    public bool AgentUpdateAvailable => Embedded ? AppUpdateAvailable : AgentUpdate.IsNewer(LatestAgentBuild, AgentVersion);
     private DateTime _lastReleaseCheck = DateTime.MinValue;
     private int? _announcedBuild;
     private DateTime _lastVersionCheck = DateTime.MinValue;
@@ -94,6 +94,7 @@ public partial class App : Application
     /// </summary>
     public async void UpdateAgent()
     {
+        if (Embedded) { UpdateApp(); return; }
         if (InstallerRunning) return;
         try
         {
@@ -196,6 +197,7 @@ public partial class App : Application
         BuildTray();
         Servers.Changed += () => _ui.TryEnqueue(UpdateServersMenu);
         Servers.Start();
+        StartEmbeddedAgent();
 
         var activation = AppInstance.GetCurrent().GetActivatedEventArgs();
         var hidden = Environment.GetCommandLineArgs().Contains("--hidden");
@@ -379,6 +381,7 @@ public partial class App : Application
     {
         if (_agentBusy) return;
         _lastAgentCheck = DateTime.UtcNow;
+        if (Embedded) { await CheckEmbeddedAsync(); return; }
         AgentStatus status;
         try { status = await _agent.StatusAsync(); }
         catch (Exception) { return; }
@@ -447,6 +450,7 @@ public partial class App : Application
     /// <summary>"Ajan çalışsın" in the panel and the tray menu.</summary>
     public async Task SetAgentEnabledAsync(bool on)
     {
+        if (Embedded) { SetEmbeddedEnabled(on); return; }
         if (_agentBusy) return;
         _agentBusy = true;
         Publish();
@@ -580,6 +584,7 @@ public partial class App : Application
                     Toast("Yönetim Merkezi hesabına bağlandı.");
                     _window?.ShowPanel();
                     await SyncAsync();
+                    await EnsurePairedAsync();
                     break;
                 case "pending":
                     break;
@@ -872,6 +877,7 @@ public partial class App : Application
     private void Quit()
     {
         Servers.Dispose();
+        _embedded.Dispose();
         _timer?.Stop();
         _tray?.Dispose();
         _window?.Quit();

@@ -394,5 +394,9 @@ export const productEnglish:Record<string,string> = {
   "Otonom mod açıldı": "Autonomous mode started",
   "cihaz": "devices",
   "Otonom mod durduruldu. Onaylar yeniden geçerli.": "Autonomous mode stopped. Approvals apply again.",
-  "cihazda onay istenmiyor.": "devices run without approvals."
+  "cihazda onay istenmiyor.": "devices run without approvals.",
+  ".cmd olarak indir": "Download as .cmd",
+  "PowerShell'e yapıştır. WECOMMANDER uygulamasını (ajan içinde) bu Windows kullanıcısına, yönetici izni istemeden kurar; paket GitHub yayınından iner ve SHA-256 ile doğrulanır. Uygulama tarayıcıda hesabınla giriş yapmanı ister ve bu bilgisayarı kendiliğinden bağlar. Terminalden indiği için SmartScreen uyarısı çıkmaz.": "Paste it into PowerShell. It installs the WECOMMANDER app (with the agent inside) for this Windows user without administrator rights; the package comes from the GitHub release and is checked with SHA-256. The app asks you to sign in in your browser and connects this computer by itself. Since it is downloaded from the terminal, SmartScreen shows no warning.",
+  "Kurulum dosyasını indir (.cmd)": "Download the installer (.cmd)",
+  "İndirip çift tıkla; aynı komutu çalıştırır. Windows bu küçük dosya için bir kez “Yine de çalıştır” sorabilir.": "Download it and double-click; it runs the same command. Windows may ask once to “Run anyway” for this small file."
 };

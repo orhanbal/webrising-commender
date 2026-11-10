@@ -998,6 +998,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Build wecommander-core (shared Rust app core)
         run: cargo build --locked --release -p wc-core-service
+      - name: Build the agent the app carries and runs itself
+        env:
+          WECOMMANDER_VERSION: 0.1.${{ github.run_number }}
+        run: cargo build --locked --release -p webrising-commender-agent
       - name: Core unit tests (CoreClient against the real wecommander-core)
         env:
           WECOMMANDER_CORE_BIN: ${{ github.workspace }}\target\release\wecommander-core.exe
@@ -1006,11 +1010,18 @@ jobs:
         run: |
           dotnet publish center-windows/App/WecommanderCenter.csproj -c Release -r win-x64 --self-contained true -p:Platform=x64 -o center-windows/publish
           Copy-Item target\release\wecommander-core.exe center-windows\publish\wecommander-core.exe
+          Copy-Item target\release\webrising-commender.exe center-windows\publish\webrising-commender.exe
+          # The app compares this build with the newest release for in-app updates.
+          Set-Content -Path center-windows\publish\build.txt -Value "${{ github.run_number }}" -NoNewline -Encoding ascii
       - name: Package
         shell: pwsh
         run: |
           if (-not (Test-Path "center-windows\publish\WecommanderCenter.exe")) { throw "WecommanderCenter.exe missing from publish output" }
           if (-not (Test-Path "center-windows\publish\wecommander-core.exe")) { throw "wecommander-core.exe missing from publish output" }
+          if (-not (Test-Path "center-windows\publish\webrising-commender.exe")) { throw "embedded agent missing from publish output" }
+          $agentVersion = (& "center-windows\publish\webrising-commender.exe" --version) -join ' '
+          if ($agentVersion -notmatch "0\.1\.${{ github.run_number }}$") { throw "embedded agent has the wrong version: $agentVersion" }
+          if ((Get-Content center-windows\publish\build.txt -Raw).Trim() -ne "${{ github.run_number }}") { throw "build.txt missing or wrong" }
           if (-not (Test-Path "center-windows\publish\Assets\terminal\index.html")) { throw "terminal surface missing from publish output" }
           foreach ($asset in @("icon.ico","icon.png","tray.ico","tray-pending.ico","tray-autonomy.ico","tray-autonomy-pending.ico","wordmark-dark-text.png","wordmark-light-text.png")) {
             if (-not (Test-Path "center-windows\publish\Assets\$asset")) { throw "asset missing: $asset" }

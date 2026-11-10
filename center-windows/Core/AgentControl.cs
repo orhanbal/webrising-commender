@@ -11,6 +11,8 @@ public enum AgentMode
     Task,
     /// <summary>Legacy Windows service WebRisingCommender (start/stop needs administrator approval).</summary>
     Service,
+    /// <summary>Shipped inside the app and run by it as a hidden child process.</summary>
+    Embedded,
     None,
 }
 
@@ -300,4 +302,62 @@ public sealed class AgentWatchdog
 
     /// <summary>The owner switched it on by hand: try again from the start.</summary>
     public void Reset() { Failures = 0; _gaveUp = false; _lastAttempt = DateTimeOffset.MinValue; }
+}
+
+/// <summary>
+/// Removes what earlier versions installed outside the app (the per-user
+/// scheduled task, the legacy service and the Program Files setup) once the
+/// app runs the agent itself. The pairing (agent.json) is kept. Whatever the
+/// user may not remove alone goes into one UAC prompt.
+/// </summary>
+public sealed class LegacyAgentCleanup(ICommandRunner runner, string userSid, string? programFiles = null, Func<string, bool>? fileExists = null)
+{
+    private readonly Func<string, bool> _exists = fileExists ?? File.Exists;
+    public string TaskName => "WECOMMANDER-Agent-" + userSid;
+    public string Uninstaller => Path.Combine(programFiles ?? Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WECOMMANDER", "unins000.exe");
+
+    /// <summary>What is still there: (task, service, setup).</summary>
+    public async Task<(bool Task, bool Service, bool Setup)> FindAsync()
+    {
+        var (taskCode, _) = await runner.RunAsync("schtasks.exe", $"/Query /TN \"{TaskName}\"").ConfigureAwait(false);
+        var (svcCode, _) = await runner.RunAsync("sc.exe", $"query {AgentControl.ServiceName}").ConfigureAwait(false);
+        return (taskCode == 0, svcCode == 0, _exists(Uninstaller));
+    }
+
+    /// <summary>
+    /// The elevated command for what is left, or null when nothing needs admin.
+    /// </summary>
+    public string? ElevatedCommand(bool task, bool service, bool setup)
+    {
+        var steps = new List<string>();
+        if (task) { steps.Add($"schtasks.exe /End /TN \"{TaskName}\""); steps.Add($"schtasks.exe /Delete /TN \"{TaskName}\" /F"); }
+        if (service) { steps.Add($"sc.exe stop {AgentControl.ServiceName}"); steps.Add($"sc.exe delete {AgentControl.ServiceName}"); }
+        if (setup) steps.Add($"\"{Uninstaller}\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART");
+        return steps.Count == 0 ? null : "/c " + string.Join(" & ", steps);
+    }
+
+    /// <summary>
+    /// Returns true when nothing of the old install is left. Stops old agent
+    /// processes first so the embedded agent is the only one connected.
+    /// </summary>
+    public async Task<bool> RunAsync(bool allowPrompt)
+    {
+        var (task, service, setup) = await FindAsync().ConfigureAwait(false);
+        if (!task && !service && !setup) return true;
+        if (task)
+        {
+            await runner.RunAsync("schtasks.exe", $"/End /TN \"{TaskName}\"").ConfigureAwait(false);
+            var (deleted, _) = await runner.RunAsync("schtasks.exe", $"/Delete /TN \"{TaskName}\" /F").ConfigureAwait(false);
+            task = deleted != 0;
+        }
+        runner.KillAgentProcesses();
+        if (ElevatedCommand(task, service, setup) is not { } command) return true;
+        if (!allowPrompt) return false;
+        var (code, _) = await runner.RunAsync("cmd.exe", command, elevated: true).ConfigureAwait(false);
+        if (code != 0) return false;
+        // The Inno uninstaller finishes from a temp copy after it returns;
+        // the task and the service are what would run a second agent.
+        var left = await FindAsync().ConfigureAwait(false);
+        return !left.Task && !left.Service;
+    }
 }

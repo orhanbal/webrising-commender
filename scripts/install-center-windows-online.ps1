@@ -1,10 +1,14 @@
-# WECOMMANDER Management Center (tray app) installer for Windows (PowerShell 5.1+).
-# Usage: irm https://wecommander.app/install/center.ps1 | iex
+# WECOMMANDER app installer for Windows (PowerShell 5.1+).
+# Usage: irm https://wecommander.app/install.ps1 | iex
+#        (also /install/center.ps1, and the panel's WECOMMANDER-Kur.cmd)
 # Installs for the current user only (no administrator rights): downloads the
-# native WinUI 3 app (.zip) from the newest GitHub preview release, verifies it
-# against SHA256SUMS.txt, unpacks it to %LOCALAPPDATA%\Programs\WECOMMANDER
-# Center, adds a Start menu shortcut and starts it. The app then signs in
-# through the browser and starts with Windows.
+# native WinUI 3 app (.zip, with the agent inside) from the newest GitHub
+# preview release, verifies it against SHA256SUMS.txt, unpacks it to
+# %LOCALAPPDATA%\Programs\WECOMMANDER Center, adds a Start menu shortcut and
+# starts it. The app signs in through the browser, pairs this computer by
+# itself, runs the agent in the background and starts with Windows. Files
+# downloaded this way carry no "from the internet" mark, so Windows shows no
+# SmartScreen warning for them.
 # -Tauri installs the earlier cross-platform tray app (.exe) instead.
 [CmdletBinding()]
 param([switch]$DryRun,[switch]$Tauri)
@@ -33,7 +37,7 @@ function Show-WecommanderBanner([string]$Subtitle){
 }
 $ProgressPreference='SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-Show-WecommanderBanner 'Management Center installer'
+Show-WecommanderBanner 'Windows installer'
 $repo='orhanbal/webrising-commender'
 $releases='https://api.github.com/repos/'+$repo+'/releases?per_page=30'
 $name=if($Tauri){'WECOMMANDER-Center-windows-x64.exe'}else{'WECOMMANDER-Center-windows-x64.zip'}
@@ -76,7 +80,7 @@ try {
 
   $download=Join-Path $temp $name
   $checksumFile=Join-Path $temp 'SHA256SUMS.txt'
-  Write-Host "WECOMMANDER Center $($candidate.tag): downloading..."
+  Write-Host "WECOMMANDER $($candidate.tag): downloading..."
   Invoke-WebRequest -UseBasicParsing -Uri $candidate.app -OutFile $download -TimeoutSec 150
   Invoke-WebRequest -UseBasicParsing -Uri $candidate.sum -OutFile $checksumFile -TimeoutSec 30
   $matching=@(Get-Content $checksumFile | Where-Object {$_ -match ('^([a-fA-F0-9]{64})\s+\*?'+[regex]::Escape($name)+'$')})
@@ -123,12 +127,15 @@ try {
     if(-not (Test-Path -LiteralPath $exe -PathType Leaf)){ throw 'The package does not contain WecommanderCenter.exe. Aborting.' }
   }
 
-  $menu=Join-Path ([Environment]::GetFolderPath('Programs')) 'WECOMMANDER Yonetim Merkezi.lnk'
+  # One app now: the earlier "Yonetim Merkezi" shortcut is replaced.
+  $programs=[Environment]::GetFolderPath('Programs')
+  Remove-Item -LiteralPath (Join-Path $programs 'WECOMMANDER Yonetim Merkezi.lnk') -Force -ErrorAction SilentlyContinue
+  $menu=Join-Path $programs 'WECOMMANDER.lnk'
   $shell=New-Object -ComObject WScript.Shell
   $shortcut=$shell.CreateShortcut($menu)
   $shortcut.TargetPath=$exe
   $shortcut.WorkingDirectory=$dir
-  $shortcut.Description='WECOMMANDER Yonetim Merkezi: onaylar ve otonom mod'
+  $shortcut.Description='WECOMMANDER: sunucular, terminaller, onaylar ve bu bilgisayarin ajani'
   $shortcut.Save()
 
   # Start it as the signed-in user even from an administrator PowerShell:
@@ -136,7 +143,9 @@ try {
   $elevated=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
   if($elevated){ Start-Process -FilePath "$env:WINDIR\explorer.exe" -ArgumentList ('"' + $exe + '"') }
   else { Start-Process -FilePath $exe -WorkingDirectory $dir }
-  Write-Host 'WECOMMANDER Management Center installed and started. Look for its icon in the notification area (system tray).'
+  Write-Host 'WECOMMANDER installed and started. Sign in to your account in the browser window it opens;'
+  Write-Host 'this computer is then connected by itself and the agent runs in the background.'
+  Write-Host 'The WECOMMANDER icon is in the notification area (system tray).'
   Write-Host 'To remove it: quit it from the tray menu, then delete' $dir 'and the Start menu shortcut.'
 } finally {
   Remove-Item -LiteralPath $temp -Force -Recurse -ErrorAction SilentlyContinue
