@@ -17,8 +17,15 @@ trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
 
-swift build -c release --package-path "$PKG" --arch arm64 --arch x86_64
-BIN="$PKG/.build/apple/Products/Release/WecommanderCenter"
+# One architecture at a time, then lipo: the multi-arch build goes through
+# the Xcode build system, which cannot resolve SwiftTerm's build plugin.
+for triple in arm64-apple-macosx13.0 x86_64-apple-macosx13.0; do
+  swift build -c release --package-path "$PKG" --triple "$triple"
+done
+BIN="$WORK/WecommanderCenter"
+lipo -create -output "$BIN" \
+  "$PKG/.build/arm64-apple-macosx/release/WecommanderCenter" \
+  "$PKG/.build/x86_64-apple-macosx/release/WecommanderCenter"
 test -x "$BIN"
 lipo -archs "$BIN" | grep -q arm64
 lipo -archs "$BIN" | grep -q x86_64
