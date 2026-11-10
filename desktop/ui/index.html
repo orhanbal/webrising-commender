@@ -26,8 +26,32 @@
       </form>
       <p class="error" id="error" role="alert"></p>
       <ul id="hosts" class="hosts"></ul>
+      <form id="connect" class="card connect" hidden>
+        <h2 id="connect-title"></h2>
+        <div class="row">
+          <label><input type="radio" name="kind" value="key" checked> Özel anahtar</label>
+          <label><input type="radio" name="kind" value="password"> Parola</label>
+        </div>
+        <textarea name="key" rows="5" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" spellcheck="false"></textarea>
+        <input name="passphrase" type="password" placeholder="Anahtar parolası (varsa)" autocomplete="off">
+        <input name="password" type="password" placeholder="Parola" autocomplete="off" hidden>
+        <div class="row">
+          <button type="submit">Bağlan</button>
+          <button type="button" class="secondary" id="connect-cancel">Kapat</button>
+        </div>
+        <div id="hostkey" class="hostkey" hidden>
+          <p id="hostkey-text"></p>
+          <code id="hostkey-fp"></code>
+          <div class="row">
+            <button type="button" id="hostkey-accept">Güven ve bağlan</button>
+            <button type="button" class="secondary" id="hostkey-reject">Vazgeç</button>
+          </div>
+        </div>
+        <p id="connect-status" class="status" role="status"></p>
+        <pre id="connect-output" hidden></pre>
+      </form>
       <p class="empty" id="empty">Henüz sunucu yok. Yukarıdan ilk sunucunu ekle.</p>
-      <p class="note">Önizleme: bağlantı, terminal ve SFTP sonraki sürümlerde gelecek; eklenen sunucular şimdilik kaydedilmez.</p>
+      <p class="note">Önizleme: “Bağlan” bağlantıyı ve sunucu anahtarını doğrular. Terminal ve SFTP sonraki sürümlerde gelecek; sunucular ve güvenilen anahtarlar şimdilik kaydedilmez.</p>
     </section>
     <section id="ws-agent" class="workspace" hidden>
       <header><h1>Agent Mode</h1><p>WECOMMANDER hesabın: cihazlar, onaylar ve yapay zekâ erişimi.</p></header>

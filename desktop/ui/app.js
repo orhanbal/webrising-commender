@@ -11,15 +11,25 @@ document.querySelectorAll(".ws").forEach((button) => {
   });
 });
 
+let hostList = [];
+let current = null; // { index, pendingFingerprint }
+
 function renderHosts(hosts) {
+  hostList = hosts;
   const list = $("hosts");
-  list.replaceChildren(...hosts.map((h) => {
+  list.replaceChildren(...hosts.map((h, index) => {
     const li = document.createElement("li");
+    const text = document.createElement("div");
     const name = document.createElement("strong");
     name.textContent = h.label;
     const target = document.createElement("span");
     target.textContent = h.target;
-    li.append(name, target);
+    text.append(name, target);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Bağlan";
+    button.addEventListener("click", () => openConnect(index));
+    li.append(text, button);
     return li;
   }));
   $("empty").hidden = hosts.length > 0;
@@ -39,6 +49,77 @@ $("add-host").addEventListener("submit", async (event) => {
     $("error").textContent = String(error);
   }
 });
+
+const form = $("connect");
+
+function setStatus(text, isError = false) {
+  $("connect-status").textContent = text;
+  $("connect-status").classList.toggle("error", isError);
+}
+
+function syncKind() {
+  const kind = form.elements.kind.value;
+  form.elements.key.hidden = kind !== "key";
+  form.elements.passphrase.hidden = kind !== "key";
+  form.elements.password.hidden = kind !== "password";
+}
+
+function openConnect(index) {
+  current = { index, pendingFingerprint: null };
+  form.hidden = false;
+  $("connect-title").textContent = `${hostList[index].label} · ${hostList[index].target}`;
+  $("hostkey").hidden = true;
+  $("connect-output").hidden = true;
+  setStatus("");
+  syncKind();
+}
+
+function closeConnect() {
+  form.hidden = true;
+  // Secrets live in the form only while it is open.
+  form.elements.key.value = form.elements.passphrase.value = form.elements.password.value = "";
+  current = null;
+}
+
+async function runConnect(acceptFingerprint) {
+  const kind = form.elements.kind.value;
+  const auth = kind === "key"
+    ? { kind, secret: form.elements.key.value, passphrase: form.elements.passphrase.value }
+    : { kind, secret: form.elements.password.value, passphrase: null };
+  $("hostkey").hidden = true;
+  $("connect-output").hidden = true;
+  setStatus("Bağlanıyor…");
+  try {
+    const result = await invoke("test_connection", {
+      index: current.index, auth, acceptFingerprint: acceptFingerprint ?? null,
+    });
+    if (result.status === "connected") {
+      setStatus(`Bağlandı. Sunucu anahtarı: ${result.fingerprint}`);
+      $("connect-output").textContent = result.output;
+      $("connect-output").hidden = false;
+      return;
+    }
+    current.pendingFingerprint = result.fingerprint;
+    const box = $("hostkey");
+    const changed = result.status === "hostKeyChanged";
+    box.classList.toggle("danger", changed);
+    $("hostkey-text").textContent = changed
+      ? `UYARI: Bu sunucunun anahtarı değişti. Güvendiğin anahtar ${result.trusted} idi. Sunucuyu yeniden kurmadıysan bağlanma; araya biri girmiş olabilir.`
+      : `Bu sunucuya ilk kez bağlanıyorsun. Sunucunun ${result.algorithm} anahtarının parmak izi aşağıda. Sunucu yöneticisinden aldığın değerle aynıysa güven.`;
+    $("hostkey-fp").textContent = result.fingerprint;
+    $("hostkey-accept").textContent = changed ? "Yeni anahtara yine de güven" : "Güven ve bağlan";
+    box.hidden = false;
+    setStatus("");
+  } catch (error) {
+    setStatus(String(error), true);
+  }
+}
+
+form.addEventListener("change", (event) => { if (event.target.name === "kind") syncKind(); });
+form.addEventListener("submit", (event) => { event.preventDefault(); runConnect(null); });
+$("connect-cancel").addEventListener("click", closeConnect);
+$("hostkey-reject").addEventListener("click", () => { $("hostkey").hidden = true; setStatus("Bağlantı iptal edildi."); });
+$("hostkey-accept").addEventListener("click", () => runConnect(current.pendingFingerprint));
 
 (async () => {
   const info = await invoke("app_info");

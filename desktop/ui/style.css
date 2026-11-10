@@ -16,3 +16,13 @@ button[type=submit]{background:var(--accent);color:#fff;border:none;font-weight:
 .hosts span{color:var(--muted);font-family:ui-monospace,Consolas,monospace}
 .error{color:var(--danger);min-height:1em}.empty,.note{color:var(--muted)}.note{font-size:12px}
 @media(max-width:900px){.add{grid-template-columns:1fr 1fr}}
+.hosts li{align-items:center;gap:12px}.hosts li div{display:flex;flex-direction:column}
+.hosts li button,.secondary{font:inherit;padding:6px 12px;border-radius:8px;border:1px solid var(--stroke);background:var(--bg);color:var(--text);cursor:pointer}
+.connect{display:grid;gap:10px;margin:16px 0}.connect h2{margin:0;font-size:16px}
+.connect .row{display:flex;gap:12px;align-items:center}
+.connect button[type=button]:not(.secondary){font:inherit;padding:8px 10px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-weight:600;cursor:pointer}
+textarea{font:12px ui-monospace,Consolas,monospace;padding:8px 10px;border-radius:8px;border:1px solid var(--stroke);background:var(--bg);color:var(--text);resize:vertical}
+.hostkey{border:1px solid var(--stroke);border-radius:10px;padding:12px;display:grid;gap:8px}
+.hostkey.danger{border-color:var(--danger)}.hostkey.danger p{color:var(--danger);font-weight:600}
+.hostkey code{word-break:break-all}.status{margin:0;color:var(--muted)}.status.error{color:var(--danger)}
+pre{margin:0;padding:10px;border-radius:8px;background:var(--bg);border:1px solid var(--stroke);white-space:pre-wrap}
