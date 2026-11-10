@@ -66,6 +66,11 @@ public partial class App : Application
     public bool AgentBusy => _agentBusy;
     /// <summary>Installed agent version ("0.1.1651"), read every few minutes.</summary>
     public string? AgentVersion { get; private set; }
+    /// <summary>Newest published agent build (the N of 0.1.N), checked every 6 hours.</summary>
+    public int? LatestAgentBuild { get; private set; }
+    public bool AgentUpdateAvailable => AgentUpdate.IsNewer(LatestAgentBuild, AgentVersion);
+    private DateTime _lastReleaseCheck = DateTime.MinValue;
+    private int? _announcedBuild;
     private DateTime _lastVersionCheck = DateTime.MinValue;
 
     /// <summary>Installer output shown in the agent card (newest last).</summary>
@@ -383,6 +388,27 @@ public partial class App : Application
             _lastVersionCheck = DateTime.UtcNow;
             var version = await _agent.InstalledVersionAsync();
             if (version != AgentVersion) { AgentVersion = version; changed = true; }
+        }
+        if (status.State != AgentRunState.NotInstalled && DateTime.UtcNow - _lastReleaseCheck >= TimeSpan.FromHours(6))
+        {
+            _lastReleaseCheck = DateTime.UtcNow;
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, AgentUpdate.ReleasesUrl);
+                request.Headers.UserAgent.ParseAdd("WECOMMANDER-Center");
+                request.Headers.Accept.ParseAdd("application/vnd.github+json");
+                using var response = await Http.SendAsync(request);
+                if (response.IsSuccessStatusCode && AgentUpdate.LatestWindowsBuild(await response.Content.ReadAsStringAsync()) is { } latest)
+                {
+                    if (latest != LatestAgentBuild) { LatestAgentBuild = latest; changed = true; }
+                }
+            }
+            catch (Exception) { _lastReleaseCheck = DateTime.UtcNow - TimeSpan.FromHours(5); /* retry in an hour */ }
+            if (AgentUpdateAvailable && _announcedBuild != LatestAgentBuild)
+            {
+                _announcedBuild = LatestAgentBuild;
+                Toast($"Ajan için yeni sürüm var (0.1.{LatestAgentBuild}). Yönetim Merkezinde \"Ajanı güncelle\" ile kurabilirsin.");
+            }
         }
         if (status.Running) _serviceStopNoticeShown = false;
         if (status.Mode == AgentMode.Service)

@@ -59,3 +59,28 @@ public class CoreClientTests
         Assert.Equal("other", CoreText.Turkish("other"));
     }
 }
+
+public class AgentUpdateTests
+{
+    [Fact]
+    public void FindsTheNewestWindowsBuild()
+    {
+        const string json = """
+        [
+          {"tag_name":"ubuntu-preview-1765","draft":false,"assets":[{"name":"WECOMMANDER-Setup-windows-x64.exe"}]},
+          {"tag_name":"ubuntu-preview-1770","draft":true,"assets":[{"name":"WECOMMANDER-Setup-windows-x64.exe"}]},
+          {"tag_name":"ubuntu-preview-1768","draft":false,"assets":[{"name":"other.deb"}]},
+          {"tag_name":"macos-preview-1800","draft":false,"assets":[{"name":"WECOMMANDER-Setup-windows-x64.exe"}]},
+          {"tag_name":"ubuntu-preview-1740","assets":[{"name":"WECOMMANDER-Setup-windows-x64.exe"}]}
+        ]
+        """;
+        Assert.Equal(1765, AgentUpdate.LatestWindowsBuild(json));
+        Assert.Null(AgentUpdate.LatestWindowsBuild("{\"message\":\"rate limited\"}"));
+        Assert.Null(AgentUpdate.LatestWindowsBuild("not json"));
+        Assert.True(AgentUpdate.IsNewer(1765, "0.1.1725"));
+        Assert.False(AgentUpdate.IsNewer(1765, "0.1.1765"));
+        Assert.False(AgentUpdate.IsNewer(null, "0.1.1"));
+        Assert.False(AgentUpdate.IsNewer(1765, null));
+        Assert.Equal(1725, AgentUpdate.Build("0.1.1725"));
+    }
+}

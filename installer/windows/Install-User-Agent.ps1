@@ -68,15 +68,45 @@ if (Test-Path -LiteralPath $conhost -PathType Leaf) {
 }
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
 
+# Older installers registered this task from the elevated setup, so the
+# user's own session may not be allowed to stop, delete or overwrite it
+# ("Access is denied"; it may not even be visible). Then remove it once with
+# a UAC prompt; the pairing (agent.json) is kept and nothing else runs elevated.
+function Remove-AgentTaskElevated {
+  param([string]$Name)
+  Get-Process -Name 'webrising-commender' -ErrorAction SilentlyContinue |
+    Where-Object { $_.SessionId -eq (Get-Process -Id $PID).SessionId } |
+    Stop-Process -Force -ErrorAction SilentlyContinue
+  $command = "Stop-ScheduledTask -TaskName '$Name' -ErrorAction SilentlyContinue; " +
+             "Unregister-ScheduledTask -TaskName '$Name' -Confirm:`$false -ErrorAction SilentlyContinue; " +
+             "if (Get-ScheduledTask -TaskName '$Name' -ErrorAction SilentlyContinue) { exit 1 }"
+  try {
+    $p = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Verb RunAs -WindowStyle Hidden -Wait -PassThru `
+      -ArgumentList '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-Command',$command
+  } catch {
+    throw 'The old agent task needs administrator approval to be replaced, and it was not given.'
+  }
+  if ($p.ExitCode -ne 0) { throw 'The old agent task could not be removed, even with administrator approval.' }
+}
+function Test-AccessDenied($err) {
+  $text = [string]$err.Exception.Message
+  return ($err.Exception.HResult -eq -2147024891) -or ($text -match 'Access is denied|Erişim engellendi|0x80070005')
+}
+
 $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if ($existing) {
   if ((Resolve-TaskPrincipalSid ([string]$existing.Principal.UserId)) -ne $sid) {
     throw 'Scheduled task belongs to another Windows user; refusing to overwrite it.'
   }
-  if ($existing.State -eq 'Running') {
-    Stop-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+  try {
+    if ($existing.State -eq 'Running') {
+      Stop-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+    }
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction Stop
+  } catch {
+    if (-not (Test-AccessDenied $_)) { throw }
+    Remove-AgentTaskElevated $TaskName
   }
-  Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction Stop
 }
 # Task Scheduler rejects some spellings of the same account with "The
 # parameter is incorrect. (n,m):UserId:" (Microsoft and Azure AD accounts:
@@ -85,6 +115,7 @@ if ($existing) {
 $userForms = @($sid, $identity.Name, "$env:USERDOMAIN\$env:USERNAME") | Where-Object { $_ } | Select-Object -Unique
 $registered = $false
 $lastError = $null
+$elevatedRemoval = $false
 foreach ($principalUser in $userForms) {
   foreach ($triggerUser in $userForms) {
     try {
@@ -95,6 +126,19 @@ foreach ($principalUser in $userForms) {
       break
     } catch {
       $lastError = $_.Exception.Message
+      # A task this session cannot see or overwrite (made by an elevated
+      # installer): remove it once with approval, then retry this form.
+      if ((Test-AccessDenied $_) -and -not $elevatedRemoval) {
+        $elevatedRemoval = $true
+        Remove-AgentTaskElevated $TaskName
+        try {
+          Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'WECOMMANDER agent runs only while its Windows user is signed in; no password stored.' -ErrorAction Stop | Out-Null
+          $registered = $true
+          break
+        } catch {
+          $lastError = $_.Exception.Message
+        }
+      }
     }
   }
   if ($registered) { break }

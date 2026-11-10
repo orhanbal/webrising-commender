@@ -42,7 +42,7 @@ if (-not $Reconnect -and (Test-Path -LiteralPath $pairedConfig -PathType Leaf)) 
       Write-OnboardingLog "silent reuse ok (attempt $attempt)"
     } catch {
       $script:silentFailure = $_.Exception.Message
-      Write-OnboardingLog "silent reuse failed (attempt $attempt): $($script:silentFailure)"
+      Write-OnboardingLog "silent reuse failed (attempt $attempt): $($script:silentFailure) at $($_.InvocationInfo.ScriptName):$($_.InvocationInfo.ScriptLineNumber)"
       Start-Sleep -Seconds 5
     }
   }
