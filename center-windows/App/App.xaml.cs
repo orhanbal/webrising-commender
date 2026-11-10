@@ -27,6 +27,10 @@ public partial class App : Application
     private readonly SettingsStore _settingsStore = new(LocalStore.Directory);
     private DispatcherQueue _ui = null!;
     private MainWindow? _window;
+    /// <summary>SSH, SFTP and tunnels (wecommander-core), for the app's lifetime.</summary>
+    public ServersController Servers { get; } = new();
+    private ServersWindow? _servers;
+    private MenuFlyoutSubItem? _connectMenu, _tunnelMenu;
     private TaskbarIcon? _tray;
     private MenuFlyoutItem? _pendingItem, _autonomyItem, _stopAutonomyItem, _accountItem, _allowNotifyItem;
     private ToggleMenuFlyoutItem? _notifyItem, _agentItem;
@@ -62,6 +66,11 @@ public partial class App : Application
     public bool AgentBusy => _agentBusy;
     /// <summary>Installed agent version ("0.1.1651"), read every few minutes.</summary>
     public string? AgentVersion { get; private set; }
+    /// <summary>Newest published agent build (the N of 0.1.N), checked every 6 hours.</summary>
+    public int? LatestAgentBuild { get; private set; }
+    public bool AgentUpdateAvailable => AgentUpdate.IsNewer(LatestAgentBuild, AgentVersion);
+    private DateTime _lastReleaseCheck = DateTime.MinValue;
+    private int? _announcedBuild;
     private DateTime _lastVersionCheck = DateTime.MinValue;
 
     /// <summary>Installer output shown in the agent card (newest last).</summary>
@@ -88,10 +97,11 @@ public partial class App : Application
         if (InstallerRunning) return;
         try
         {
-            // Installing a new agent while signed in: pair it with this
-            // account through a one-time code, no second browser sign-in.
+            // Signed in: a one-time pairing code goes with every install and
+            // update, so the installer never asks for a second browser sign-in
+            // (it uses the code only if the existing pairing cannot be kept).
             string? code = null;
-            if (Agent is { State: AgentRunState.NotInstalled } && Token is { } token)
+            if (Token is { } token)
             {
                 try { code = await Gateway.PairingCodeAsync(token); }
                 catch (GatewayException) { /* the installer falls back to account sign-in */ }
@@ -99,7 +109,7 @@ public partial class App : Application
             _installerLog.Clear();
             InstallerSucceeded = null;
             InstallerRunning = true;
-            AddInstallerLine(code is null ? "Ajan güncellemesi başladı…" : "Ajan kurulumu başladı (bu hesapla otomatik bağlanacak)…");
+            AddInstallerLine(Agent is { State: AgentRunState.NotInstalled } ? "Ajan kurulumu başladı (bu hesapla otomatik bağlanacak)…" : "Ajan güncellemesi başladı…");
             Publish();
 
             using var process = new System.Diagnostics.Process { StartInfo = AgentControl.InstallerStartInfo(Settings.Server, code) };
@@ -184,6 +194,8 @@ public partial class App : Application
 
         _window = new MainWindow();
         BuildTray();
+        Servers.Changed += () => _ui.TryEnqueue(UpdateServersMenu);
+        Servers.Start();
 
         var activation = AppInstance.GetCurrent().GetActivatedEventArgs();
         var hidden = Environment.GetCommandLineArgs().Contains("--hidden");
@@ -377,6 +389,27 @@ public partial class App : Application
             _lastVersionCheck = DateTime.UtcNow;
             var version = await _agent.InstalledVersionAsync();
             if (version != AgentVersion) { AgentVersion = version; changed = true; }
+        }
+        if (status.State != AgentRunState.NotInstalled && DateTime.UtcNow - _lastReleaseCheck >= TimeSpan.FromHours(6))
+        {
+            _lastReleaseCheck = DateTime.UtcNow;
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, AgentUpdate.ReleasesUrl);
+                request.Headers.UserAgent.ParseAdd("WECOMMANDER-Center");
+                request.Headers.Accept.ParseAdd("application/vnd.github+json");
+                using var response = await Http.SendAsync(request);
+                if (response.IsSuccessStatusCode && AgentUpdate.LatestWindowsBuild(await response.Content.ReadAsStringAsync()) is { } latest)
+                {
+                    if (latest != LatestAgentBuild) { LatestAgentBuild = latest; changed = true; }
+                }
+            }
+            catch (Exception) { _lastReleaseCheck = DateTime.UtcNow - TimeSpan.FromHours(5); /* retry in an hour */ }
+            if (AgentUpdateAvailable && _announcedBuild != LatestAgentBuild)
+            {
+                _announcedBuild = LatestAgentBuild;
+                Toast($"Ajan için yeni sürüm var (0.1.{LatestAgentBuild}). Yönetim Merkezinde \"Ajanı güncelle\" ile kurabilirsin.");
+            }
         }
         if (status.Running) _serviceStopNoticeShown = false;
         if (status.Mode == AgentMode.Service)
@@ -736,6 +769,11 @@ public partial class App : Application
         };
         var menu = new MenuFlyout();
         menu.Items.Add(new MenuFlyoutItem { Text = "Yönetim Merkezini aç", Command = new RelayCommand(() => _window?.ShowPanel()) });
+        menu.Items.Add(new MenuFlyoutItem { Text = "Sunucular ve terminaller…", Command = new RelayCommand(ShowServers) });
+        _connectMenu = new MenuFlyoutSubItem { Text = "Bağlan", IsEnabled = false };
+        _tunnelMenu = new MenuFlyoutSubItem { Text = "Tüneller", IsEnabled = false };
+        menu.Items.Add(_connectMenu);
+        menu.Items.Add(_tunnelMenu);
         menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(_pendingItem);
         menu.Items.Add(_autonomyItem);
@@ -793,8 +831,47 @@ public partial class App : Application
         if (Agent is { Running: false, State: not AgentRunState.NotInstalled }) _tray.ToolTipText += " · " + Texts.AgentStateLabel(Agent).ToLowerInvariant();
     }
 
+    /// <summary>The Servers window (hosts, terminals, files, tunnels).</summary>
+    public void ShowServers()
+    {
+        Servers.Start();
+        _servers ??= new ServersWindow(Servers);
+        _servers.ShowWindow();
+    }
+
+    private void UpdateServersMenu()
+    {
+        if (_connectMenu is null || _tunnelMenu is null) return;
+        _connectMenu.Items.Clear();
+        foreach (var host in Servers.Hosts)
+        {
+            var h = host;
+            _connectMenu.Items.Add(new MenuFlyoutItem
+            {
+                Text = h.Label,
+                Command = new RelayCommand(async () => { ShowServers(); await _servers!.OpenHost(h); }),
+            });
+        }
+        _connectMenu.IsEnabled = Servers.Hosts.Count > 0;
+        _tunnelMenu.Items.Clear();
+        foreach (var tunnel in Servers.SavedTunnels)
+        {
+            var t = tunnel;
+            _tunnelMenu.Items.Add(new ToggleMenuFlyoutItem
+            {
+                Text = $"{t.HostLabel}  {t.Local} → {t.Remote}",
+                IsChecked = t.Running,
+                Command = new RelayCommand(async () => await Servers.ToggleTunnel(t)),
+            });
+        }
+        _tunnelMenu.IsEnabled = Servers.SavedTunnels.Count > 0;
+        var running = Servers.SavedTunnels.Count(t => t.Running);
+        if (_tray is not null && running > 0) _tray.ToolTipText = $"WECOMMANDER · {running} tünel açık";
+    }
+
     private void Quit()
     {
+        Servers.Dispose();
         _timer?.Stop();
         _tray?.Dispose();
         _window?.Quit();

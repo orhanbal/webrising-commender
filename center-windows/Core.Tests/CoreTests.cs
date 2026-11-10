@@ -318,6 +318,14 @@ public class CoreTests
         await Assert.ThrowsAsync<InvalidOperationException>(() => none.SetEnabledAsync(true));
 
         Assert.Equal("Running", AgentControl.ParseTaskStatus("\"\\X\",\"N/A\",\"Running\"\r\n"));
+
+        // Old installs run the agent directly (a visible Windows Terminal window
+        // on Windows 11); the task is rewritten to start through conhost --headless.
+        const string oldTask = "<Task><Actions><Exec><Command>\"C:\\Users\\u\\AppData\\Local\\WECOMMANDER\\webrising-commender.exe\"</Command><Arguments>--config &quot;C:\\c.json&quot;</Arguments></Exec></Actions></Task>";
+        Assert.Equal("\"C:\\Windows\\System32\\conhost.exe\" --headless \"C:\\Users\\u\\AppData\\Local\\WECOMMANDER\\webrising-commender.exe\" --config \"C:\\c.json\"",
+            AgentControl.HeadlessTaskCommand(oldTask, @"C:\Windows\System32\conhost.exe"));
+        Assert.Null(AgentControl.HeadlessTaskCommand("<Command>C:\\Windows\\System32\\conhost.exe</Command><Arguments>--headless x</Arguments>", "c"));
+        Assert.Null(AgentControl.HeadlessTaskCommand("<Task/>", "c"));
         Assert.Null(AgentControl.ParseTaskStatus(""));
         Assert.Equal("STOPPED", AgentControl.ParseServiceState("  STATE : 1  STOPPED \n"));
     }

@@ -177,6 +177,7 @@ public sealed class AgentControl(ICommandRunner runner, string userSid, string? 
         switch (status.Mode)
         {
             case AgentMode.Task when on:
+                await EnsureHeadlessTaskAsync().ConfigureAwait(false);
                 await Must(runner.RunAsync("schtasks.exe", $"/Change /TN \"{TaskName}\" /ENABLE"), "Görev etkinleştirilemedi.").ConfigureAwait(false);
                 if (!runner.AgentProcessRunning())
                     await Must(runner.RunAsync("schtasks.exe", $"/Run /TN \"{TaskName}\""), "Ajan başlatılamadı.").ConfigureAwait(false);
@@ -196,6 +197,42 @@ public sealed class AgentControl(ICommandRunner runner, string userSid, string? 
             default:
                 throw new InvalidOperationException(Texts.AgentNotInstalled);
         }
+    }
+
+    /// <summary>
+    /// Agents installed before the headless task action (conhost --headless)
+    /// run their task action directly, which Windows 11 opens in a visible
+    /// terminal window that stops the agent when closed. Rewrites such a task
+    /// in place before starting it; best effort (the update button
+    /// re-registers it anyway).
+    /// </summary>
+    public async Task<bool> EnsureHeadlessTaskAsync()
+    {
+        var (code, xml) = await runner.RunAsync("schtasks.exe", $"/Query /TN \"{TaskName}\" /XML ONE").ConfigureAwait(false);
+        if (code != 0 || HeadlessTaskCommand(xml, ConhostPath) is not { } command) return false;
+        var (changed, _) = await runner.RunAsync("schtasks.exe", $"/Change /TN \"{TaskName}\" /TR \"{command.Replace("\"", "\\\"")}\"").ConfigureAwait(false);
+        return changed == 0;
+    }
+
+    private static string ConhostPath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System) is { Length: > 0 } sys ? sys : @"C:\Windows\System32", "conhost.exe");
+
+    /// <summary>
+    /// The headless command line for a task's XML, or null when the task
+    /// already runs through conhost (or has no command).
+    /// </summary>
+    public static string? HeadlessTaskCommand(string taskXml, string conhost)
+    {
+        static string? Tag(string xml, string name)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(xml, $"<{name}>(.*?)</{name}>", System.Text.RegularExpressions.RegexOptions.Singleline);
+            return m.Success ? System.Net.WebUtility.HtmlDecode(m.Groups[1].Value).Trim() : null;
+        }
+        var command = Tag(taskXml, "Command");
+        if (string.IsNullOrEmpty(command) || command.Contains("conhost", StringComparison.OrdinalIgnoreCase)) return null;
+        var arguments = Tag(taskXml, "Arguments");
+        var exe = command.Trim('"');
+        return $"\"{conhost}\" --headless \"{exe}\"" + (string.IsNullOrEmpty(arguments) ? "" : " " + arguments);
     }
 
     private static async Task Must(Task<(int ExitCode, string Output)> run, string message)

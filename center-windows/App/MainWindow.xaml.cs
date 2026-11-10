@@ -189,8 +189,16 @@ public sealed partial class MainWindow : Window
             { Running: true } => "Açıkken ajan durursa Yönetim Merkezi onu kendiliğinden yeniden başlatır ve bildirim gösterir.",
             _ => Texts.AgentOffWarning,
         };
-        AgentVersionText.Text = Center.AgentVersion is { } v ? "Kurulu sürüm: " + v : "";
-        AgentUpdateButton.Content = agent is { State: AgentRunState.NotInstalled } ? "Ajanı kur" : "Ajanı güncelle";
+        var update = Center.AgentUpdateAvailable;
+        AgentVersionText.Text = Center.AgentVersion is { } v
+            ? "Kurulu sürüm: " + v + (update ? $" · yeni sürüm: 0.1.{Center.LatestAgentBuild}" : Center.LatestAgentBuild is not null ? " · güncel" : "")
+            : "";
+        AgentUpdateButton.Content = agent is { State: AgentRunState.NotInstalled } ? "Ajanı kur"
+            : update ? "Yeni sürüm var — Ajanı güncelle" : "Ajanı güncelle";
+        // Accent (blue) button while an update is waiting, like Windows Update.
+        AgentUpdateButton.Style = update || agent is { State: AgentRunState.NotInstalled }
+            ? (Style)Application.Current.Resources["AccentButtonStyle"]
+            : null;
         AgentUpdateButton.IsEnabled = !busy && !Center.InstallerRunning;
         var log = Center.InstallerLog;
         InstallerPanel.Visibility = log.Count > 0 ? Visibility.Visible : Visibility.Collapsed;

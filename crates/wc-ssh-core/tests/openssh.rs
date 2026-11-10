@@ -291,5 +291,52 @@ async fn openssh_host_key_auth_and_exec() {
     sftp.close().await.unwrap();
     conn.close().await.unwrap();
 
+    // 9. A10: jump host and local port forwarding.
+    let jump = std::sync::Arc::new(connect(&profile, &key(&ed, None), &trusted).await.unwrap());
+    let via = wc_ssh_core::client::connect_via(&jump, &profile, &key(&rsa, None), &trusted)
+        .await
+        .expect("connect through the jump host");
+    assert_eq!(
+        via.host_key().fingerprint,
+        host_fp,
+        "target host key still checked"
+    );
+    assert_eq!(
+        via.exec("echo via-jump", 64).await.unwrap().stdout,
+        b"via-jump\n"
+    );
+    via.close().await.unwrap();
+    // An echo server only the 'remote' side would know about.
+    let echo = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let echo_port = echo.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        while let Ok((mut s, _)) = echo.accept().await {
+            tokio::spawn(async move {
+                let (mut r, mut w) = s.split();
+                let _ = tokio::io::copy(&mut r, &mut w).await;
+            });
+        }
+    });
+    let forward = jump
+        .forward_local("127.0.0.1:0", "127.0.0.1", echo_port)
+        .await
+        .unwrap();
+    for round in 0..2 {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let mut c = tokio::net::TcpStream::connect(forward.local).await.unwrap();
+        let msg = format!("ping-{round}");
+        c.write_all(msg.as_bytes()).await.unwrap();
+        let mut buf = vec![0u8; msg.len()];
+        c.read_exact(&mut buf).await.unwrap();
+        assert_eq!(buf, msg.as_bytes(), "tunnelled echo");
+    }
+    let local = forward.local;
+    drop(forward);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(
+        tokio::net::TcpStream::connect(local).await.is_err(),
+        "forward stopped"
+    );
+
     let _ = std::fs::remove_dir_all(&keys);
 }

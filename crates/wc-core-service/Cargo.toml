@@ -1,0 +1,17 @@
+[package]
+name = "wc-core-service"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "wecommander-core: the WECOMMANDER app core as a helper process for the native apps (JSON lines over stdin/stdout)"
+
+[[bin]]
+name = "wecommander-core"
+path = "src/main.rs"
+
+[dependencies]
+wc-app-core = { path = "../wc-app-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "io-util", "sync"] }

@@ -42,7 +42,7 @@ if (-not $Reconnect -and (Test-Path -LiteralPath $pairedConfig -PathType Leaf)) 
       Write-OnboardingLog "silent reuse ok (attempt $attempt)"
     } catch {
       $script:silentFailure = $_.Exception.Message
-      Write-OnboardingLog "silent reuse failed (attempt $attempt): $($script:silentFailure)"
+      Write-OnboardingLog "silent reuse failed (attempt $attempt): $($script:silentFailure) at $($_.InvocationInfo.ScriptName):$($_.InvocationInfo.ScriptLineNumber)"
       Start-Sleep -Seconds 5
     }
   }
@@ -58,8 +58,16 @@ if (-not $Reconnect -and (Test-Path -LiteralPath $pairedConfig -PathType Leaf)) 
 $centerCode = $env:WECOMMANDER_PAIRING_CODE
 $centerServer = $env:WECOMMANDER_SERVER
 Remove-Item Env:WECOMMANDER_PAIRING_CODE -ErrorAction SilentlyContinue
-if ($centerCode -and -not $script:silentDone -and -not (Test-Path -LiteralPath $pairedConfig -PathType Leaf)) {
+# Also when an existing pairing could not be reused: the signed-in Center
+# vouches for this user, so the device is paired again with its code (the old
+# config is kept as agent.json.bak) instead of asking for a browser sign-in.
+if ($centerCode -and -not $script:silentDone) {
   try {
+    if (Test-Path -LiteralPath $pairedConfig -PathType Leaf) {
+      Copy-Item -LiteralPath $pairedConfig -Destination ($pairedConfig + '.bak') -Force
+      Remove-Item -LiteralPath $pairedConfig -Force
+      Write-OnboardingLog 'existing pairing could not be reused; pairing again with the Center code'
+    }
     $url = if ($centerServer -match '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$') { $centerServer.TrimEnd('/') } else { 'https://wecommander.app' }
     $root = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'WECOMMANDER'
     if (-not (Test-Path -LiteralPath $root -PathType Container)) { New-Item -ItemType Directory -Path $root -Force | Out-Null }
@@ -75,7 +83,18 @@ if ($centerCode -and -not $script:silentDone -and -not (Test-Path -LiteralPath $
   } catch {
     $script:silentFailure = $_.Exception.Message
     Write-OnboardingLog "center pairing failed: $($script:silentFailure)"
+    $backup = $pairedConfig + '.bak'
+    if (-not (Test-Path -LiteralPath $pairedConfig -PathType Leaf) -and (Test-Path -LiteralPath $backup -PathType Leaf)) {
+      Move-Item -LiteralPath $backup -Destination $pairedConfig -Force
+    }
   }
+}
+# Started by the Management Center: never open the sign-in dialog (the Center
+# is already signed in). Report the reason in the Center's output instead.
+if ($fromCenter) {
+  Write-OnboardingLog "from center: no dialog; failure: $($script:silentFailure)"
+  Write-Output ('Ajan baglanamadi: ' + $script:silentFailure + ' Ayrinti: ' + $script:logFile)
+  exit 1
 }
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'WECOMMANDER | Cihaz Baglantisi'

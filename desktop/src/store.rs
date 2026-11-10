@@ -18,6 +18,20 @@ pub struct SavedHost {
     /// The key is read at connect time and never copied into the keyring.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key_path: Option<String>,
+    /// Another saved host used as the jump host (bastion), A10.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jump_id: Option<String>,
+    /// Saved local forwards, started from the tray (A10).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tunnels: Vec<SavedTunnel>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedTunnel {
+    pub local_port: u16,
+    pub remote_host: String,
+    pub remote_port: u16,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq)]
@@ -85,6 +99,8 @@ mod tests {
             profile: HostProfile::new("Web", "srv.example.com", 22, "deploy").unwrap(),
             auth_kind: "key".into(),
             key_path: None,
+            jump_id: None,
+            tunnels: Vec::new(),
         });
         data.known_hosts
             .insert("srv.example.com:22".into(), "SHA256:x".into());

@@ -7,6 +7,10 @@ const { listen } = window.__TAURI__.event;
 const clipboard = window.__TAURI__.clipboardManager;
 const $ = (id) => document.getElementById(id);
 
+// Platform look (Windows 11 Fluent, macOS, Linux/GTK) before first paint.
+const OS = /Windows/i.test(navigator.userAgent) ? "windows" : /Macintosh|Mac OS X/i.test(navigator.userAgent) ? "macos" : "linux";
+document.body.classList.add(`os-${OS}`);
+
 let hosts = [];
 const sessions = new Map(); // sessionId -> { hostId, tab, pane, view, closed }
 let activeSession = null;
@@ -38,6 +42,8 @@ function renderHosts(list) {
     const target = document.createElement("span");
     target.textContent = h.target;
     who.append(name, target);
+    const jump = h.jumpId && list.find((j) => j.id === h.jumpId);
+    if (jump) { const via = document.createElement("span"); via.className = "via"; via.textContent = `↪ ${jump.label} üzerinden`; who.append(via); }
     const badge = document.createElement("span");
     badge.className = "badge";
     badge.textContent = h.savedSecret ? "🔑" : "";
@@ -54,6 +60,10 @@ function renderHosts(list) {
     return li;
   }));
   $("empty").hidden = list.length > 0;
+  const select = $("add-host").elements.jumpId;
+  const keep = select.value;
+  select.replaceChildren(new Option("Doğrudan bağlan", ""), ...list.map((h) => new Option(`${h.label} üzerinden (atlama sunucusu)`, h.id)));
+  select.value = list.some((h) => h.id === keep) ? keep : "";
 }
 
 $("add-toggle").addEventListener("click", () => {
@@ -72,6 +82,7 @@ $("add-host").addEventListener("submit", async (event) => {
       label: form.elements.label.value, host: form.elements.host.value,
       port: Number(form.elements.port.value), user: form.elements.user.value,
       authKind: form.elements.authKind.value,
+      jumpId: form.elements.jumpId.value || null,
     }));
     form.reset();
     form.hidden = true;
@@ -229,14 +240,17 @@ async function runConnect(acceptFingerprint) {
     else alertToast(`${host.label}: bağlantı başarılı (${result.output}).`);
   } catch (error) {
     const text = String(error);
-    if ($("dialog").hidden) openDialog(host, mode, readableError(text));
-    else setStatus(readableError(text), true);
+    const needsCredential = /no saved credential|authentication failed|private key could not be used|key file /.test(text);
+    if (!$("dialog").hidden) setStatus(readableError(text), true);
+    else if (needsCredential) openDialog(host, mode, readableError(text));
+    else { pending = null; alertToast(`${host.label}: ${readableError(text)}`); }
   }
 }
 
 function readableError(text) {
   if (text.includes("no saved credential")) return "Bu sunucu için kayıtlı giriş bilgisi yok; bir kez gir.";
   if (text.includes("authentication failed")) return "Giriş reddedildi. Anahtarı veya parolayı kontrol et.";
+  if (text.includes("jump host ")) return `Atlama sunucusu: ${text.replace(/^.*jump host /, "")}`;
   if (text.includes("key file ")) return `Anahtar dosyası okunamadı: ${text.replace(/^key file /, "")}`;
   if (text.includes("private key could not be used")) return "Özel anahtar okunamadı (biçim veya anahtar parolası yanlış).";
   if (text.includes("timed out")) return "Sunucu yanıt vermedi (zaman aşımı).";
@@ -379,6 +393,7 @@ function fmtTime(secs) {
 function syncFilesButton() {
   const s = activeSession && sessions.get(activeSession);
   $("files-toggle").disabled = !s || s.closed;
+  $("tunnels-toggle").disabled = !s || s.closed;
   $("files-toggle").setAttribute("aria-pressed", String(filesOpen && !!s));
   $("files").hidden = !(filesOpen && s && !s.closed);
   if (!$("files").hidden) loadFiles(s.files?.path ?? null);
@@ -528,6 +543,90 @@ window.__TAURI__.webview.getCurrentWebview().onDragDropEvent(({ payload }) => {
   else panel.classList.remove("drop");
   if (payload.type === "drop" && payload.paths?.length) uploadPaths(payload.paths);
 });
+
+// ---- tunnels (A10, ssh -L) -------------------------------------------------
+function renderTunnels(list) {
+  const sessionId = activeSession;
+  $("tunnel-list").replaceChildren(...list.map((t) => {
+    const li = document.createElement("li");
+    const text = document.createElement("span");
+    text.textContent = `${t.local}  →  ${t.remote}`;
+    const stop = document.createElement("button");
+    stop.type = "button"; stop.textContent = "Kapat";
+    stop.addEventListener("click", async () => renderTunnels(await invoke("forward_stop", { sessionId, local: t.local })));
+    li.append(text, stop);
+    return li;
+  }));
+  const s = sessions.get(sessionId);
+  if (s) s.tab.title = list.length ? `${list.length} tünel açık` : "";
+}
+
+async function renderSavedTunnels(list) {
+  list = list ?? await invoke("saved_tunnels");
+  const hostId = sessions.get(activeSession)?.hostId;
+  const mine = list.filter((t) => !hostId || t.hostId === hostId);
+  $("saved-tunnel-list").replaceChildren(...(mine.length ? mine.map((t) => {
+    const li = document.createElement("li");
+    const text = document.createElement("span");
+    text.textContent = `${t.running ? "● " : "○ "}${t.local}  →  ${t.remote}`;
+    const toggle = document.createElement("button");
+    toggle.type = "button"; toggle.textContent = t.running ? "Durdur" : "Başlat";
+    toggle.addEventListener("click", async () => {
+      toggle.disabled = true;
+      try { renderSavedTunnels(await invoke("tunnel_toggle", { hostId: t.hostId, index: t.index })); }
+      catch (e) { $("tunnel-status").classList.add("error"); $("tunnel-status").textContent = String(e); toggle.disabled = false; }
+    });
+    const del = document.createElement("button");
+    del.type = "button"; del.textContent = "Sil";
+    del.addEventListener("click", async () => renderSavedTunnels(await invoke("tunnel_delete", { hostId: t.hostId, index: t.index })));
+    li.append(text, toggle, del);
+    return li;
+  }) : [Object.assign(document.createElement("li"), { textContent: "Bu sunucu için kayıtlı tünel yok." })]));
+}
+
+$("tunnels-toggle").addEventListener("click", async () => {
+  if (!activeSession) return;
+  $("tunnel-status").textContent = "";
+  $("tunnels").hidden = false;
+  renderSavedTunnels().catch(() => {});
+  try { renderTunnels(await invoke("forward_list", { sessionId: activeSession })); } catch (e) { $("tunnel-status").textContent = String(e); }
+  $("tunnel-form").elements.localPort.focus();
+});
+$("tunnel-close").addEventListener("click", () => { $("tunnels").hidden = true; });
+$("tunnels").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); $("tunnels").hidden = true; } });
+$("tunnel-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const f = event.target.elements;
+  $("tunnel-status").classList.remove("error");
+  try {
+    const list = await invoke("forward_start", {
+      sessionId: activeSession, localPort: Number(f.localPort.value || 0),
+      remoteHost: f.remoteHost.value, remotePort: Number(f.remotePort.value),
+    });
+    renderTunnels(list);
+    const opened = list[list.length - 1];
+    if (f.save.checked) {
+      const hostId = sessions.get(activeSession)?.hostId;
+      const port = Number(opened.local.split(":").pop());
+      try { await renderSavedTunnels(await invoke("tunnel_save", { hostId, localPort: port, remoteHost: f.remoteHost.value, remotePort: Number(f.remotePort.value) })); }
+      catch (e) { $("tunnel-status").textContent = `Tünel açık ama kaydedilemedi: ${e}`; return; }
+    }
+    $("tunnel-status").textContent = `Açıldı: ${opened.local} adresine bağlan.`;
+    f.localPort.value = ""; f.remotePort.value = "";
+  } catch (error) {
+    $("tunnel-status").classList.add("error");
+    $("tunnel-status").textContent = String(error).replace("cannot listen on", "Port dinlenemiyor:");
+  }
+});
+
+// ---- tray events -------------------------------------------------------------
+listen("tray-open-host", ({ payload }) => {
+  const host = hosts.find((h) => h.id === payload);
+  document.querySelector('.ws[data-ws="user"]').click();
+  if (host) openTerminal(host);
+});
+listen("tray-error", ({ payload }) => alertToast(`Tünel açılamadı: ${payload}`));
+listen("tunnels-changed", () => { if (!$("tunnels").hidden) renderSavedTunnels().catch(() => {}); });
 
 // ---- Agent Mode (B09) ------------------------------------------------------
 let agentTimer = null;

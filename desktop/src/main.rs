@@ -11,6 +11,7 @@
 
 mod agent;
 mod store;
+mod tray;
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -19,7 +20,8 @@ use std::sync::{Arc, Mutex};
 use store::{secret_key, Data, SavedHost, Store};
 use tauri::{Emitter, Manager};
 use wc_ssh_core::client::{
-    connect, ConnectOptions, Connection, Credential, ShellEvent, ShellWriter, SshError,
+    connect, connect_via, ConnectOptions, Connection, Credential, LocalForward, ShellEvent,
+    ShellWriter, SshError,
 };
 use wc_ssh_core::sftp::{self as sftp_path, Entry, Sftp};
 use wc_ssh_core::HostProfile;
@@ -33,6 +35,10 @@ struct Terminal {
     // manager (A09) opens its SFTP session on the same connection.
     connection: Arc<Connection>,
     sftp: Arc<tokio::sync::Mutex<Option<Arc<Sftp>>>>,
+    /// Local port forwards on this connection (A10); dropped with the tab.
+    forwards: Arc<Mutex<Vec<(LocalForward, String)>>>,
+    /// Keeps the jump host connection alive while this terminal uses it.
+    _jump: Option<Arc<Connection>>,
 }
 
 pub(crate) struct AppState {
@@ -82,6 +88,7 @@ struct HostView {
     auth_kind: String,
     saved_secret: bool,
     key_path: Option<String>,
+    jump_id: Option<String>,
     trusted_key: Option<String>,
 }
 
@@ -102,6 +109,7 @@ fn host_views(state: &AppState) -> Result<Vec<HostView>, String> {
                 .flatten()
                 .is_some(),
             key_path: h.key_path.clone(),
+            jump_id: h.jump_id.clone(),
             trusted_key: data
                 .known_hosts
                 .get(&format!("{}:{}", h.profile.host, h.profile.port))
@@ -116,13 +124,16 @@ fn list_hosts(state: tauri::State<'_, AppState>) -> Result<Vec<HostView>, String
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 fn add_host(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     label: String,
     host: String,
     port: u16,
     user: String,
     auth_kind: String,
+    jump_id: Option<String>,
 ) -> Result<Vec<HostView>, String> {
     let profile = HostProfile::new(&label, &host, port, &user).map_err(|e| e.to_string())?;
     let auth_kind = if auth_kind == "password" {
@@ -132,14 +143,18 @@ fn add_host(
     };
     {
         let mut data = state.data.lock().map_err(|_| "busy")?;
+        let jump_id = jump_id.filter(|j| data.hosts.iter().any(|h| &h.id == j));
         data.hosts.push(SavedHost {
             id: uuid::Uuid::new_v4().to_string(),
             profile,
             auth_kind: auth_kind.into(),
             key_path: None,
+            jump_id,
+            tunnels: Vec::new(),
         });
         state.save(&data)?;
     }
+    tray::refresh(&app);
     host_views(&state)
 }
 
@@ -158,7 +173,10 @@ fn home_dir() -> Option<std::path::PathBuf> {
 /// Imports the concrete hosts of `~/.ssh/config`; hosts already saved
 /// (same user, address and port) are skipped.
 #[tauri::command]
-fn import_ssh_config(state: tauri::State<'_, AppState>) -> Result<ImportResult, String> {
+fn import_ssh_config(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<ImportResult, String> {
     let home = home_dir().ok_or("home folder not found")?;
     let path = home.join(".ssh").join("config");
     let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -184,11 +202,14 @@ fn import_ssh_config(state: tauri::State<'_, AppState>) -> Result<ImportResult, 
                 profile: host.profile,
                 auth_kind: "key".into(),
                 key_path: host.identity_file,
+                jump_id: None,
+                tunnels: Vec::new(),
             });
             added += 1;
         }
         state.save(&data)?;
     }
+    tray::refresh(&app);
     Ok(ImportResult {
         added,
         skipped,
@@ -203,13 +224,23 @@ fn forget_secrets(state: &AppState, id: &str) {
 }
 
 #[tauri::command]
-fn delete_host(state: tauri::State<'_, AppState>, id: String) -> Result<Vec<HostView>, String> {
+fn delete_host(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> Result<Vec<HostView>, String> {
     {
         let mut data = state.data.lock().map_err(|_| "busy")?;
         data.hosts.retain(|h| h.id != id);
+        for h in data.hosts.iter_mut() {
+            if h.jump_id.as_deref() == Some(id.as_str()) {
+                h.jump_id = None;
+            }
+        }
         state.save(&data)?;
     }
     forget_secrets(&state, &id);
+    tray::refresh(&app);
     host_views(&state)
 }
 
@@ -353,7 +384,17 @@ async fn connect_host(
         trusted_fingerprint: accept_fingerprint.or(trusted),
         ..Default::default()
     };
-    let conn = match connect(&saved.profile, &credential, &options).await {
+    // A10: reach the host through its jump host with the jump host's own
+    // saved credential and trusted key.
+    let jump_conn = match &saved.jump_id {
+        Some(jump_id) => Some(Arc::new(connect_jump(&state, jump_id).await?)),
+        None => None,
+    };
+    let attempt = match &jump_conn {
+        Some(jump) => connect_via(jump, &saved.profile, &credential, &options).await,
+        None => connect(&saved.profile, &credential, &options).await,
+    };
+    let conn = match attempt {
         Ok(conn) => conn,
         Err(SshError::HostKeyUnknown(key)) => {
             return Ok(ConnectOutcome::HostKeyUnknown {
@@ -427,6 +468,8 @@ async fn connect_host(
             writer,
             connection: Arc::new(conn),
             sftp: Arc::new(tokio::sync::Mutex::new(None)),
+            forwards: Arc::new(Mutex::new(Vec::new())),
+            _jump: jump_conn,
         },
     );
     let mut reader = shell.reader;
@@ -465,6 +508,204 @@ async fn connect_host(
         fingerprint,
         session_id,
     })
+}
+
+/// Connects to a saved host used as a jump host, with its saved credential
+/// (keyring secret or key file) and the host key already trusted for it.
+async fn connect_jump(state: &AppState, jump_id: &str) -> Result<Connection, String> {
+    connect_saved_direct(state, jump_id)
+        .await
+        .map_err(|e| format!("jump host {e}"))
+}
+
+/// Connects to saved host `id` without any dialog: saved credential, host
+/// key already trusted. Errors start with the host's label.
+pub(crate) async fn connect_saved_direct(state: &AppState, id: &str) -> Result<Connection, String> {
+    let (host, trusted) = {
+        let data = state.data.lock().map_err(|_| "busy")?;
+        let host = data
+            .hosts
+            .iter()
+            .find(|h| h.id == id)
+            .cloned()
+            .ok_or("host no longer exists")?;
+        let trusted = data
+            .known_hosts
+            .get(&format!("{}:{}", host.profile.host, host.profile.port))
+            .cloned();
+        (host, trusted)
+    };
+    let name = host.profile.label.clone();
+    let trusted = trusted.ok_or(format!(
+        "{name}: connect to it once in a terminal to approve its host key"
+    ))?;
+    let credential = saved_credential(state, &host).ok_or(format!(
+        "{name}: no saved credential; connect to it once and save it"
+    ))?;
+    let options = ConnectOptions {
+        trusted_fingerprint: Some(trusted),
+        ..Default::default()
+    };
+    connect(&host.profile, &credential, &options)
+        .await
+        .map_err(|e| format!("{name}: {e}"))
+}
+
+/// Connects to saved host `id` with saved credentials, through its jump host
+/// when it has one. The jump connection is returned too: it must stay alive.
+pub(crate) async fn connect_saved(
+    state: &AppState,
+    id: &str,
+) -> Result<(Connection, Option<Arc<Connection>>), String> {
+    let (host, trusted) = {
+        let data = state.data.lock().map_err(|_| "busy")?;
+        let host = data
+            .hosts
+            .iter()
+            .find(|h| h.id == id)
+            .cloned()
+            .ok_or("host no longer exists")?;
+        let trusted = data
+            .known_hosts
+            .get(&format!("{}:{}", host.profile.host, host.profile.port))
+            .cloned();
+        (host, trusted)
+    };
+    let Some(jump_id) = host.jump_id.clone() else {
+        return Ok((connect_saved_direct(state, id).await?, None));
+    };
+    let name = host.profile.label.clone();
+    let jump = Arc::new(connect_jump(state, &jump_id).await?);
+    let trusted = trusted.ok_or(format!(
+        "{name}: connect to it once in a terminal to approve its host key"
+    ))?;
+    let credential = saved_credential(state, &host).ok_or(format!(
+        "{name}: no saved credential; connect to it once and save it"
+    ))?;
+    let options = ConnectOptions {
+        trusted_fingerprint: Some(trusted),
+        ..Default::default()
+    };
+    let conn = connect_via(&jump, &host.profile, &credential, &options)
+        .await
+        .map_err(|e| format!("{name}: {e}"))?;
+    Ok((conn, Some(jump)))
+}
+
+fn saved_credential(state: &AppState, host: &SavedHost) -> Option<Credential> {
+    let kind = host.auth_kind.as_str();
+    let secret = state
+        .vault
+        .get(&secret_key(&host.id, kind))
+        .ok()
+        .flatten()
+        .or_else(|| {
+            (kind == "key")
+                .then(|| {
+                    host.key_path
+                        .as_deref()
+                        .and_then(|p| std::fs::read_to_string(p).ok())
+                })
+                .flatten()
+        })?;
+    Some(if kind == "password" {
+        Credential::Password(secret)
+    } else {
+        Credential::PrivateKey {
+            key: secret,
+            passphrase: state
+                .vault
+                .get(&secret_key(&host.id, "passphrase"))
+                .ok()
+                .flatten(),
+        }
+    })
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ForwardView {
+    local: String,
+    remote: String,
+}
+
+fn forward_views(list: &[(LocalForward, String)]) -> Vec<ForwardView> {
+    list.iter()
+        .map(|(f, remote)| ForwardView {
+            local: f.local.to_string(),
+            remote: remote.clone(),
+        })
+        .collect()
+}
+
+/// Starts `ssh -L`-style forwarding on terminal `session_id`'s connection:
+/// 127.0.0.1:`local_port` (0 = any free port) -> `remote_host:remote_port`
+/// as seen from the server.
+#[tauri::command]
+async fn forward_start(
+    state: tauri::State<'_, AppState>,
+    session_id: String,
+    local_port: u16,
+    remote_host: String,
+    remote_port: u16,
+) -> Result<Vec<ForwardView>, String> {
+    let remote_host = remote_host.trim().to_owned();
+    if remote_host.is_empty() || remote_host.len() > 253 || remote_port == 0 {
+        return Err("remote host and port are required".into());
+    }
+    let (connection, forwards) = {
+        let terminals = state.terminals.lock().map_err(|_| "busy")?;
+        let t = terminals.get(&session_id).ok_or("terminal closed")?;
+        (t.connection.clone(), t.forwards.clone())
+    };
+    // Only on this computer: never listen on other interfaces.
+    let forward = connection
+        .forward_local(
+            &format!("127.0.0.1:{local_port}"),
+            &remote_host,
+            remote_port,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut list = forwards.lock().map_err(|_| "busy")?;
+    list.push((forward, format!("{remote_host}:{remote_port}")));
+    Ok(forward_views(&list))
+}
+
+#[tauri::command]
+fn forward_list(
+    state: tauri::State<'_, AppState>,
+    session_id: String,
+) -> Result<Vec<ForwardView>, String> {
+    let forwards = {
+        let terminals = state.terminals.lock().map_err(|_| "busy")?;
+        terminals
+            .get(&session_id)
+            .ok_or("terminal closed")?
+            .forwards
+            .clone()
+    };
+    let list = forwards.lock().map_err(|_| "busy")?;
+    Ok(forward_views(&list))
+}
+
+#[tauri::command]
+fn forward_stop(
+    state: tauri::State<'_, AppState>,
+    session_id: String,
+    local: String,
+) -> Result<Vec<ForwardView>, String> {
+    let forwards = {
+        let terminals = state.terminals.lock().map_err(|_| "busy")?;
+        terminals
+            .get(&session_id)
+            .ok_or("terminal closed")?
+            .forwards
+            .clone()
+    };
+    let mut list = forwards.lock().map_err(|_| "busy")?;
+    list.retain(|(f, _)| f.local.to_string() != local);
+    Ok(forward_views(&list))
 }
 
 fn terminal_writer(state: &AppState, session_id: &str) -> Result<Arc<ShellWriter>, String> {
@@ -695,7 +936,15 @@ fn main() {
                 vault_persistent,
                 terminals: Mutex::new(HashMap::new()),
             });
+            tray::setup(app.handle())?;
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Closing the window keeps the app (and its tunnels) in the tray.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             app_info,
@@ -714,6 +963,13 @@ fn main() {
             files_mkdir,
             files_rename,
             files_delete,
+            forward_start,
+            forward_list,
+            forward_stop,
+            tray::saved_tunnels,
+            tray::tunnel_save,
+            tray::tunnel_delete,
+            tray::tunnel_toggle,
             agent::agent_status,
             agent::agent_link_start,
             agent::agent_overview,

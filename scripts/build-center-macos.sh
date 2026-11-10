@@ -17,8 +17,15 @@ trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
 
-swift build -c release --package-path "$PKG" --arch arm64 --arch x86_64
-BIN="$PKG/.build/apple/Products/Release/WecommanderCenter"
+# One architecture at a time, then lipo: the multi-arch build goes through
+# the Xcode build system, which cannot resolve SwiftTerm's build plugin.
+for triple in arm64-apple-macosx13.0 x86_64-apple-macosx13.0; do
+  swift build -c release --package-path "$PKG" --triple "$triple"
+done
+BIN="$WORK/WecommanderCenter"
+lipo -create -output "$BIN" \
+  "$PKG/.build/arm64-apple-macosx/release/WecommanderCenter" \
+  "$PKG/.build/x86_64-apple-macosx/release/WecommanderCenter"
 test -x "$BIN"
 lipo -archs "$BIN" | grep -q arm64
 lipo -archs "$BIN" | grep -q x86_64
@@ -26,6 +33,13 @@ lipo -archs "$BIN" | grep -q x86_64
 APP="$WORK/$APP_NAME.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/WecommanderCenter"
+# The shared Rust app core (SSH, SFTP, tunnels), built by CI as a universal
+# binary: CORE_BIN or center-macos/core/wecommander-core.
+CORE_BIN="${CORE_BIN:-$PKG/core/wecommander-core}"
+test -x "$CORE_BIN" || { echo "wecommander-core missing at $CORE_BIN" >&2; exit 1; }
+lipo -archs "$CORE_BIN" | grep -q arm64
+lipo -archs "$CORE_BIN" | grep -q x86_64
+cp "$CORE_BIN" "$APP/Contents/MacOS/wecommander-core"
 cp "$PKG/Resources/menubar.png" "$PKG/Resources/menubar@2x.png" \
    "$PKG/Resources/wordmark-dark-text.png" "$PKG/Resources/wordmark-light-text.png" \
    "$APP/Contents/Resources/"
@@ -70,6 +84,7 @@ plutil -lint "$APP/Contents/Info.plist"
 
 # Ad-hoc signature: no paid certificate. Installed from the terminal (curl
 # sets no quarantine flag), so Gatekeeper does not block it.
+codesign --force --sign - --timestamp=none "$APP/Contents/MacOS/wecommander-core"
 codesign --force --sign - --timestamp=none "$APP"
 codesign --verify --strict --verbose=2 "$APP"
 
