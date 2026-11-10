@@ -14,6 +14,10 @@ pub struct SavedHost {
     pub profile: HostProfile,
     /// "key" or "password": which form the connect dialog opens with.
     pub auth_kind: String,
+    /// Private key file on this computer (for example `~/.ssh/id_ed25519`).
+    /// The key is read at connect time and never copied into the keyring.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_path: Option<String>,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq)]
@@ -80,6 +84,7 @@ mod tests {
             id: "a".into(),
             profile: HostProfile::new("Web", "srv.example.com", 22, "deploy").unwrap(),
             auth_kind: "key".into(),
+            key_path: None,
         });
         data.known_hosts
             .insert("srv.example.com:22".into(), "SHA256:x".into());

@@ -82,7 +82,8 @@ fn start(sshd: &Path, authorized: &[&Path]) -> Sshd {
     let config = format!(
         "Port {port}\nListenAddress 127.0.0.1\nHostKey {d}/host_ed25519\nAuthorizedKeysFile {d}/authorized_keys\n\
          PidFile {d}/sshd.pid\nStrictModes no\nUsePAM no\nPasswordAuthentication no\n\
-         KbdInteractiveAuthentication no\nPermitRootLogin yes\nAllowUsers {user}\n",
+         KbdInteractiveAuthentication no\nPermitRootLogin yes\nAllowUsers {user}\n\
+         Subsystem sftp internal-sftp\n",
         d = dir.display(),
         user = whoami()
     );
@@ -239,6 +240,55 @@ async fn openssh_host_key_auth_and_exec() {
     assert!(text.contains("TERM=xterm-256color"), "{text:?}");
     assert_eq!(exit, Some(Some(7)));
     assert!(shell.reader.next().await.is_none());
+    conn.close().await.unwrap();
+
+    // 8. SFTP: upload, list, download, mkdir, rename, delete.
+    let conn = connect(&profile, &key(&ed, None), &trusted).await.unwrap();
+    let sftp = conn.sftp().await.expect("sftp subsystem");
+    let home = sftp.home().await.unwrap();
+    assert!(home.starts_with('/'), "{home}");
+    let work = format!("{}/wc-sftp-{}", server.dir.display(), rand_suffix());
+    sftp.mkdir(&work).await.unwrap();
+    let local = keys.join("big.bin");
+    let data: Vec<u8> = (0..3_000_000u32).map(|i| (i * 31 % 251) as u8).collect();
+    std::fs::write(&local, &data).unwrap();
+    let mut last = (0, 0);
+    let sent = sftp
+        .upload(&local, &format!("{work}/big.bin"), |d, t| last = (d, t))
+        .await
+        .unwrap();
+    assert_eq!(sent, 3_000_000);
+    assert_eq!(last, (3_000_000, 3_000_000));
+    sftp.mkdir(&format!("{work}/sub")).await.unwrap();
+    let names: Vec<_> = sftp
+        .list(&work)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|e| (e.name, e.kind, e.size))
+        .collect();
+    assert_eq!(names[0].0, "sub", "folders first: {names:?}");
+    assert!(names.contains(&("big.bin".into(), "file", 3_000_000)));
+    sftp.rename(&format!("{work}/big.bin"), &format!("{work}/sub/moved.bin"))
+        .await
+        .unwrap();
+    let back = keys.join("back.bin");
+    let got = sftp
+        .download(&format!("{work}/sub/moved.bin"), &back, |_, _| {})
+        .await
+        .unwrap();
+    assert_eq!(got, 3_000_000);
+    assert_eq!(
+        std::fs::read(&back).unwrap(),
+        data,
+        "round trip is byte-exact"
+    );
+    assert!(!back.with_extension("wc-partial").exists());
+    sftp.remove(&format!("{work}/sub/moved.bin")).await.unwrap();
+    sftp.remove(&format!("{work}/sub")).await.unwrap();
+    sftp.remove(&work).await.unwrap();
+    assert!(sftp.list(&work).await.is_err(), "folder is gone");
+    sftp.close().await.unwrap();
     conn.close().await.unwrap();
 
     let _ = std::fs::remove_dir_all(&keys);

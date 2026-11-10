@@ -316,6 +316,16 @@ impl Connection {
         })
     }
 
+    /// Starts an SFTP session on this connection (A09).
+    pub async fn sftp(&self) -> Result<crate::sftp::Sftp, SshError> {
+        let channel = self
+            .handle
+            .channel_open_session()
+            .await
+            .map_err(map_error)?;
+        crate::sftp::Sftp::start(channel).await
+    }
+
     /// True once the server or the network closed the connection.
     pub fn is_closed(&self) -> bool {
         self.handle.is_closed()

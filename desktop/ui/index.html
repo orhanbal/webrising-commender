@@ -38,25 +38,63 @@
       </form>
       <ul id="hosts" class="hosts"></ul>
       <p class="empty" id="empty">Henüz sunucu yok. “+” ile ilk sunucunu ekle.</p>
+      <button type="button" class="import" id="import-config" title="~/.ssh/config içindeki sunucuları ekler">~/.ssh/config'den içe aktar</button>
       <p class="vault-note" id="vault-note"></p>
     </div>
 
     <div class="term-pane">
-      <nav class="tabs" id="tabs" aria-label="Terminaller"></nav>
-      <div class="term-stack" id="term-stack">
-        <div class="welcome" id="welcome">
-          <h2>Bir sunucu seç</h2>
-          <p>Soldaki listeden bir sunucuya tıkla; terminal burada açılır. Birden fazla sunucuya aynı anda bağlanabilirsin.</p>
+      <div class="tabbar">
+        <nav class="tabs" id="tabs" aria-label="Terminaller"></nav>
+        <button type="button" class="files-toggle" id="files-toggle" aria-pressed="false" disabled title="Bu sunucunun dosyaları (SFTP)">Dosyalar</button>
+      </div>
+      <div class="term-body">
+        <div class="term-stack" id="term-stack">
+          <div class="welcome" id="welcome">
+            <h2>Bir sunucu seç</h2>
+            <p>Soldaki listeden bir sunucuya tıkla; terminal burada açılır. Birden fazla sunucuya aynı anda bağlanabilirsin.</p>
+          </div>
         </div>
+        <aside class="files" id="files" hidden aria-label="Dosyalar">
+          <div class="files-bar">
+            <button type="button" id="files-up" title="Üst klasör">↑</button>
+            <input id="files-path" aria-label="Uzak klasör" spellcheck="false">
+            <button type="button" id="files-refresh" title="Yenile">⟳</button>
+          </div>
+          <div class="files-actions">
+            <button type="button" id="files-upload">Yükle…</button>
+            <button type="button" id="files-mkdir">Yeni klasör</button>
+          </div>
+          <ul class="file-list" id="file-list"></ul>
+          <p class="files-hint">Dosyaları buraya sürükleyip bırakarak da yükleyebilirsin.</p>
+          <div class="transfers" id="transfers"></div>
+        </aside>
       </div>
     </div>
   </section>
 
   <section id="ws-agent" class="workspace agent" hidden>
-    <div class="agent-card">
-      <h1>Agent Mode</h1>
-      <p>WECOMMANDER hesabın: cihazlar, onaylar ve yapay zekâ erişimi.</p>
-      <p class="muted">Bu alan Yönetim Merkezi'ndeki onay ve cihaz görünümünü masaüstüne taşıyacak. Şimdilik onaylar için WECOMMANDER Yönetim Merkezi'ni kullan.</p>
+    <div class="agent-wrap">
+      <header class="agent-head">
+        <div>
+          <h1>Agent Mode</h1>
+          <p class="muted" id="agent-who">WECOMMANDER hesabın: cihazların ve yapay zekânın onay bekleyen işlemleri.</p>
+        </div>
+        <button type="button" id="agent-unlink" hidden>Bağlantıyı kes</button>
+      </header>
+      <div class="agent-card" id="agent-link" hidden>
+        <h2>Hesabını bağla</h2>
+        <p>Tarayıcıda WECOMMANDER açılır; giriş yapıp bu bilgisayarı onaylarsın. Bağlantı anahtarı bu bilgisayarın şifre kasasında saklanır.</p>
+        <button type="button" class="primary" id="agent-link-start">Tarayıcıda bağla</button>
+        <p class="status" id="agent-link-status" role="status"></p>
+      </div>
+      <div id="agent-main" hidden>
+        <h2 class="section">Onay bekleyenler <span class="count" id="pending-count">0</span></h2>
+        <ul class="approvals" id="approvals"></ul>
+        <p class="muted small" id="approvals-empty">Şu an onay bekleyen işlem yok.</p>
+        <h2 class="section">Cihazlar</h2>
+        <ul class="devices" id="devices"></ul>
+      </div>
+      <p class="error" id="agent-error" role="alert"></p>
     </div>
   </section>
 
@@ -66,6 +104,10 @@
       <div class="row radios">
         <label><input type="radio" name="kind" value="key" checked> Özel anahtar</label>
         <label><input type="radio" name="kind" value="password"> Parola</label>
+      </div>
+      <div class="keyfile" id="keyfile-row">
+        <button type="button" id="keyfile-pick">Anahtar dosyası seç…</button>
+        <span id="keyfile-path" class="muted">ya da anahtarı aşağıya yapıştır</span>
       </div>
       <textarea name="key" rows="6" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" spellcheck="false"></textarea>
       <input name="passphrase" type="password" placeholder="Anahtar parolası (varsa)" autocomplete="off">
@@ -83,6 +125,18 @@
       <div class="row end">
         <button type="button" id="connect-cancel">Kapat</button>
         <button type="submit" class="primary" id="connect-submit">Bağlan</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="overlay" id="ask" hidden>
+    <form class="dialog" id="ask-form" role="dialog" aria-modal="true" aria-labelledby="ask-title">
+      <h2 id="ask-title"></h2>
+      <p class="muted" id="ask-text"></p>
+      <input id="ask-input" spellcheck="false" autocomplete="off">
+      <div class="row end">
+        <button type="button" id="ask-cancel">Vazgeç</button>
+        <button type="submit" class="primary" id="ask-ok">Tamam</button>
       </div>
     </form>
   </div>

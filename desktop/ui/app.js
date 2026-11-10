@@ -18,6 +18,7 @@ document.querySelectorAll(".ws").forEach((button) => {
     document.querySelectorAll(".ws").forEach((b) => b.classList.toggle("active", b === button));
     $("ws-user").hidden = button.dataset.ws !== "user";
     $("ws-agent").hidden = button.dataset.ws !== "agent";
+    if (button.dataset.ws === "agent") refreshAgent();
     if (button.dataset.ws === "user" && activeSession) sessions.get(activeSession)?.view.fit();
   });
 });
@@ -101,12 +102,36 @@ function openMenu(host, anchor) {
   item("Bağlantıyı test et", () => startConnect(host, "test"));
   if (host.savedSecret) item("Kayıtlı giriş bilgisini unut", async () => renderHosts(await invoke("forget_secret", { id: host.id })));
   item("Sunucuyu sil", async () => {
-    if (confirm(`${host.label} silinsin mi? Kasadaki giriş bilgisi de silinir.`)) renderHosts(await invoke("delete_host", { id: host.id }));
+    if (await ask({ title: `${host.label} silinsin mi?`, text: "Kasadaki giriş bilgisi de silinir.", ok: "Sil" }) !== null) renderHosts(await invoke("delete_host", { id: host.id }));
   }, "danger");
   const r = anchor.getBoundingClientRect();
   menu.style.left = `${Math.min(r.left, innerWidth - 200)}px`;
   menu.style.top = `${r.bottom + 4}px`;
   document.body.append(menu);
+}
+
+// ---- small question dialog (window.prompt/confirm are unreliable in webviews)
+/** Resolves to the entered text (or "" without an input), null on cancel. */
+function ask({ title, text = "", value = null, ok = "Tamam" }) {
+  return new Promise((resolve) => {
+    const overlay = $("ask"), formEl = $("ask-form"), input = $("ask-input");
+    $("ask-title").textContent = title;
+    $("ask-text").textContent = text;
+    $("ask-ok").textContent = ok;
+    input.hidden = value === null;
+    input.value = value ?? "";
+    overlay.hidden = false;
+    (value === null ? $("ask-ok") : input).focus();
+    if (value !== null) input.select();
+    const done = (result) => {
+      overlay.hidden = true;
+      formEl.onsubmit = null; $("ask-cancel").onclick = null; overlay.onkeydown = null;
+      resolve(result);
+    };
+    formEl.onsubmit = (e) => { e.preventDefault(); done(value === null ? "" : input.value.trim()); };
+    $("ask-cancel").onclick = () => done(null);
+    overlay.onkeydown = (e) => { if (e.key === "Escape") { e.stopPropagation(); done(null); } };
+  });
 }
 
 // ---- connect dialog -------------------------------------------------------
@@ -119,14 +144,23 @@ function setStatus(text, isError = false) {
 
 function syncKind() {
   const kind = form.elements.kind.value;
-  form.elements.key.hidden = kind !== "key";
+  form.elements.key.hidden = kind !== "key" || Boolean(pickedKeyPath);
+  $("keyfile-row").hidden = kind !== "key";
   form.elements.passphrase.hidden = kind !== "key";
   form.elements.password.hidden = kind !== "password";
 }
 form.addEventListener("change", (e) => { if (e.target.name === "kind") syncKind(); });
 
+let pickedKeyPath = null;
+function showKeyPath(path) {
+  pickedKeyPath = path;
+  $("keyfile-path").textContent = path || "ya da anahtarı aşağıya yapıştır";
+  form.elements.key.hidden = Boolean(path) || form.elements.kind.value !== "key";
+}
+
 function openDialog(host, mode, message = "") {
   pending = { host, mode, auth: null };
+  showKeyPath(host.keyPath || null);
   $("dialog").hidden = false;
   $("connect-title").textContent = `${host.label} · ${host.target}`;
   form.elements.kind.value = host.authKind;
@@ -142,6 +176,7 @@ function closeDialog() {
   // Secrets stay in the form only while it is open.
   form.elements.key.value = form.elements.passphrase.value = form.elements.password.value = "";
   pending = null;
+  pickedKeyPath = null;
 }
 $("connect-cancel").addEventListener("click", closeDialog);
 
@@ -152,6 +187,7 @@ function typedAuth() {
     secret: kind === "key" ? form.elements.key.value : form.elements.password.value,
     passphrase: kind === "key" ? form.elements.passphrase.value : null,
     remember: form.elements.remember.checked,
+    keyPath: kind === "key" && pickedKeyPath && !form.elements.key.value ? pickedKeyPath : null,
   };
 }
 
@@ -159,7 +195,7 @@ form.addEventListener("submit", (event) => {
   event.preventDefault();
   if (!pending) return;
   pending.auth = typedAuth();
-  if (!pending.auth.secret) { setStatus(pending.auth.kind === "key" ? "Özel anahtarı yapıştır." : "Parolayı gir.", true); return; }
+  if (!pending.auth.secret && !pending.auth.keyPath) { setStatus(pending.auth.kind === "key" ? "Özel anahtarı yapıştır." : "Parolayı gir.", true); return; }
   runConnect(null);
 });
 
@@ -168,10 +204,10 @@ $("hostkey-accept").addEventListener("click", () => runConnect(pending?.fingerpr
 
 function openTerminal(host) { startConnect(host, "terminal"); }
 
-/** Uses the saved credential when there is one, otherwise asks. */
+/** Uses the saved credential or key file when there is one, otherwise asks. */
 function startConnect(host, mode) {
-  if (!host.savedSecret) { openDialog(host, mode); return; }
-  pending = { host, mode, auth: { kind: host.authKind, secret: "", passphrase: null, remember: false } };
+  if (!host.savedSecret && !(host.authKind === "key" && host.keyPath)) { openDialog(host, mode); return; }
+  pending = { host, mode, auth: { kind: host.authKind, secret: "", passphrase: null, remember: false, keyPath: null } };
   runConnect(null);
 }
 
@@ -201,6 +237,7 @@ async function runConnect(acceptFingerprint) {
 function readableError(text) {
   if (text.includes("no saved credential")) return "Bu sunucu için kayıtlı giriş bilgisi yok; bir kez gir.";
   if (text.includes("authentication failed")) return "Giriş reddedildi. Anahtarı veya parolayı kontrol et.";
+  if (text.includes("key file ")) return `Anahtar dosyası okunamadı: ${text.replace(/^key file /, "")}`;
   if (text.includes("private key could not be used")) return "Özel anahtar okunamadı (biçim veya anahtar parolası yanlış).";
   if (text.includes("timed out")) return "Sunucu yanıt vermedi (zaman aşımı).";
   if (text.includes("connection failed")) return `Bağlanılamadı: ${text.replace("connection failed: ", "")}`;
@@ -282,6 +319,7 @@ function activate(sessionId) {
   const s = sessions.get(sessionId);
   document.querySelectorAll(".host").forEach((li, i) => li.classList.toggle("active", hosts[i]?.id === s?.hostId));
   if (s?.view) { s.view.fit(); s.view.focus(); }
+  syncFilesButton();
 }
 
 function closeTerminal(sessionId) {
@@ -294,7 +332,7 @@ function closeTerminal(sessionId) {
   sessions.delete(sessionId);
   const next = [...sessions.keys()].pop();
   if (next) activate(next);
-  else { activeSession = null; $("welcome").hidden = false; }
+  else { activeSession = null; $("welcome").hidden = false; syncFilesButton(); }
 }
 
 const decoder = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
@@ -304,7 +342,289 @@ listen("terminal-exit", ({ payload }) => {
   if (!s) return;
   s.closed = true;
   s.tab.classList.add("closed");
+  if (payload.sessionId === activeSession) syncFilesButton();
   s.view?.write(`\r\n\x1b[90m[Bağlantı kapandı${payload.code != null ? `, çıkış kodu ${payload.code}` : ""}. Sekmeyi kapatabilirsin.]\x1b[0m\r\n`);
+});
+
+$("keyfile-pick").addEventListener("click", async () => {
+  const path = await window.__TAURI__.dialog.open({ multiple: false, directory: false, title: "Özel anahtar dosyası (ör. ~/.ssh/id_ed25519)" });
+  if (path) showKeyPath(Array.isArray(path) ? path[0] : path);
+});
+
+$("import-config").addEventListener("click", async () => {
+  try {
+    const result = await invoke("import_ssh_config");
+    renderHosts(result.hosts);
+    alertToast(result.added ? `${result.added} sunucu içe aktarıldı${result.skipped ? `, ${result.skipped} zaten vardı` : ""}.` : "Yeni sunucu bulunamadı.");
+  } catch (error) {
+    alertToast(`~/.ssh/config okunamadı: ${error}`);
+  }
+});
+
+// ---- file manager (SFTP, A09) ----------------------------------------------
+const { save: saveDialog, open: openDialogFiles } = window.__TAURI__.dialog;
+let filesOpen = false;
+
+function fmtSize(n) {
+  if (n < 1024) return `${n} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = n / 1024, i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v.toFixed(v < 10 ? 1 : 0)} ${units[i]}`;
+}
+function fmtTime(secs) {
+  return secs ? new Date(secs * 1000).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" }) : "";
+}
+
+function syncFilesButton() {
+  const s = activeSession && sessions.get(activeSession);
+  $("files-toggle").disabled = !s || s.closed;
+  $("files-toggle").setAttribute("aria-pressed", String(filesOpen && !!s));
+  $("files").hidden = !(filesOpen && s && !s.closed);
+  if (!$("files").hidden) loadFiles(s.files?.path ?? null);
+  sessions.get(activeSession)?.view?.fit();
+}
+
+$("files-toggle").addEventListener("click", () => { filesOpen = !filesOpen; syncFilesButton(); });
+
+async function loadFiles(path) {
+  const sessionId = activeSession;
+  const s = sessions.get(sessionId);
+  if (!s) return;
+  const list = $("file-list");
+  try {
+    const listing = await invoke("files_list", { sessionId, path });
+    if (sessionId !== activeSession) return;
+    s.files = listing;
+    $("files-path").value = listing.path;
+    list.replaceChildren(...listing.entries.map((e) => fileRow(sessionId, e)));
+    if (!listing.entries.length) {
+      const li = document.createElement("li");
+      li.className = "files-error"; li.style.color = "var(--muted)"; li.textContent = "Bu klasör boş.";
+      list.append(li);
+    }
+  } catch (error) {
+    const li = document.createElement("li");
+    li.className = "files-error";
+    li.textContent = String(error).includes("did not start SFTP")
+      ? "Bu sunucu SFTP'yi açmadı. sshd_config içinde 'Subsystem sftp' satırı olmalı."
+      : `Klasör açılamadı: ${error}`;
+    list.replaceChildren(li);
+  }
+}
+
+function fileRow(sessionId, e) {
+  const li = document.createElement("li");
+  li.className = `file ${e.kind}`;
+  li.tabIndex = 0;
+  li.title = `${e.permissions}  ${e.path}`;
+  const ico = document.createElement("span"); ico.className = "ico";
+  ico.textContent = e.kind === "dir" ? "📁" : e.kind === "link" ? "🔗" : "📄";
+  const name = document.createElement("span"); name.className = "name"; name.textContent = e.name;
+  const meta = document.createElement("span"); meta.className = "meta";
+  meta.textContent = e.kind === "dir" ? fmtTime(e.modified) : `${fmtSize(e.size)} · ${fmtTime(e.modified)}`;
+  const acts = document.createElement("span"); acts.className = "acts";
+  const btn = (text, fn, cls) => { const b = document.createElement("button"); b.type = "button"; b.textContent = text; if (cls) b.className = cls; b.addEventListener("click", (ev) => { ev.stopPropagation(); fn(); }); acts.append(b); };
+  if (e.kind !== "dir") btn("İndir", () => download(sessionId, e));
+  btn("Ad", () => renameEntry(sessionId, e));
+  btn("Sil", () => deleteEntry(sessionId, e), "danger");
+  li.append(ico, name, meta, acts);
+  const openDir = () => { if (e.kind === "dir" || e.kind === "link") loadFiles(e.path); };
+  li.addEventListener("dblclick", openDir);
+  name.addEventListener("click", () => { if (e.kind === "dir") openDir(); });
+  li.addEventListener("keydown", (ev) => { if (ev.key === "Enter") openDir(); });
+  return li;
+}
+
+$("files-up").addEventListener("click", () => { const s = sessions.get(activeSession); if (s?.files) loadFiles(s.files.parent); });
+$("files-refresh").addEventListener("click", () => loadFiles(sessions.get(activeSession)?.files?.path ?? null));
+$("files-path").addEventListener("keydown", (e) => { if (e.key === "Enter") loadFiles(e.target.value.trim() || null); });
+
+$("files-mkdir").addEventListener("click", async () => {
+  const s = sessions.get(activeSession); if (!s?.files) return;
+  const name = await ask({ title: "Yeni klasör", text: s.files.path, value: "", ok: "Oluştur" });
+  if (!name) return;
+  try { await invoke("files_mkdir", { sessionId: activeSession, path: joinPath(s.files.path, name) }); loadFiles(s.files.path); }
+  catch (error) { transferNote(`Klasör oluşturulamadı: ${error}`, "err"); }
+});
+
+async function renameEntry(sessionId, e) {
+  const name = await ask({ title: "Yeniden adlandır", text: e.path, value: e.name, ok: "Kaydet" });
+  if (!name || name === e.name) return;
+  const dir = sessions.get(sessionId)?.files?.path;
+  try { await invoke("files_rename", { sessionId, from: e.path, to: joinPath(dir, name) }); loadFiles(dir); }
+  catch (error) { transferNote(`Yeniden adlandırılamadı: ${error}`, "err"); }
+}
+
+async function deleteEntry(sessionId, e) {
+  const sure = await ask({ title: `${e.name} silinsin mi?`, text: e.kind === "dir" ? "Yalnızca boş klasörler silinebilir." : "Bu işlem geri alınamaz.", ok: "Sil" });
+  if (sure === null) return;
+  const dir = sessions.get(sessionId)?.files?.path;
+  try { await invoke("files_delete", { sessionId, path: e.path }); loadFiles(dir); }
+  catch (error) { transferNote(`Silinemedi: ${error}`, "err"); }
+}
+
+function joinPath(dir, name) { return dir.endsWith("/") ? dir + name : `${dir}/${name}`; }
+
+const transfers = new Map();
+function transferRow(label) {
+  const id = crypto.randomUUID();
+  const row = document.createElement("div"); row.className = "transfer";
+  const text = document.createElement("div"); text.textContent = label;
+  const bar = document.createElement("div"); bar.className = "bar"; const fill = document.createElement("i"); bar.append(fill);
+  row.append(text, bar);
+  $("transfers").prepend(row);
+  transfers.set(id, { row, text, fill, label });
+  return id;
+}
+function finishTransfer(id, ok, message) {
+  const t = transfers.get(id); if (!t) return;
+  t.row.classList.add(ok ? "ok" : "err");
+  t.text.textContent = message;
+  t.fill.style.width = ok ? "100%" : t.fill.style.width;
+  setTimeout(() => { t.row.remove(); transfers.delete(id); }, ok ? 4000 : 12000);
+}
+function transferNote(message, cls) {
+  const id = transferRow(message);
+  finishTransfer(id, cls !== "err", message);
+}
+listen("transfer-progress", ({ payload }) => {
+  const t = transfers.get(payload.transferId); if (!t) return;
+  const pct = payload.total ? Math.round((payload.done / payload.total) * 100) : 100;
+  t.fill.style.width = `${pct}%`;
+  t.text.textContent = `${t.label} · ${fmtSize(payload.done)} / ${fmtSize(payload.total)}`;
+});
+
+async function download(sessionId, e) {
+  const local = await saveDialog({ defaultPath: e.name, title: "Nereye kaydedilsin?" });
+  if (!local) return;
+  const transferId = transferRow(`⬇ ${e.name}`);
+  try { const n = await invoke("files_download", { sessionId, remote: e.path, local, transferId }); finishTransfer(transferId, true, `⬇ ${e.name} indirildi (${fmtSize(n)})`); }
+  catch (error) { finishTransfer(transferId, false, `⬇ ${e.name}: ${error}`); }
+}
+
+async function uploadPaths(paths) {
+  const sessionId = activeSession;
+  const dir = sessions.get(sessionId)?.files?.path;
+  if (!dir) return;
+  for (const local of paths) {
+    const name = local.split(/[\\/]/).pop();
+    const transferId = transferRow(`⬆ ${name}`);
+    try { const n = await invoke("files_upload", { sessionId, local, remoteDir: dir, transferId }); finishTransfer(transferId, true, `⬆ ${name} yüklendi (${fmtSize(n)})`); }
+    catch (error) { finishTransfer(transferId, false, `⬆ ${name}: ${error}`); }
+  }
+  if (sessionId === activeSession) loadFiles(dir);
+}
+
+$("files-upload").addEventListener("click", async () => {
+  const picked = await openDialogFiles({ multiple: true, directory: false, title: "Yüklenecek dosyalar" });
+  if (picked) uploadPaths(Array.isArray(picked) ? picked : [picked]);
+});
+
+window.__TAURI__.webview.getCurrentWebview().onDragDropEvent(({ payload }) => {
+  const panel = $("files");
+  if (panel.hidden) return;
+  if (payload.type === "enter" || payload.type === "over") panel.classList.add("drop");
+  else panel.classList.remove("drop");
+  if (payload.type === "drop" && payload.paths?.length) uploadPaths(payload.paths);
+});
+
+// ---- Agent Mode (B09) ------------------------------------------------------
+let agentTimer = null;
+// Same labels as the Management Center (tray/ui/app.js).
+const KIND = {
+  process_exec: "Komut çalıştır", process_kill: "İşlemi sonlandır", task_start: "Arka plan görevi başlat",
+  task_cancel: "Görevi iptal et", terminal_start: "Terminal aç", terminal_stop: "Terminali kapat",
+  terminal_input: "Terminale yaz", fs_delete: "Dosya sil", fs_move: "Dosya taşı",
+};
+
+async function refreshAgent() {
+  clearTimeout(agentTimer);
+  $("agent-error").textContent = "";
+  try {
+    const status = await invoke("agent_status");
+    $("agent-link").hidden = status.linked;
+    $("agent-main").hidden = !status.linked;
+    $("agent-unlink").hidden = !status.linked;
+    if (!status.linked) {
+      $("agent-who").textContent = "WECOMMANDER hesabın: cihazların ve yapay zekânın onay bekleyen işlemleri.";
+      if (!status.keyring) $("agent-link-status").textContent = "Uyarı: şifre kasası yok; bağlantı uygulama kapanınca unutulur.";
+      return;
+    }
+    const me = status.me;
+    $("agent-who").textContent = `${me.email ?? me.name} · ${me.organizationName ?? ""} · ${me.role}`;
+    const overview = await invoke("agent_overview");
+    renderApprovals(overview.pending);
+    renderDevices(overview.devices);
+  } catch (error) {
+    $("agent-error").textContent = String(error);
+  } finally {
+    if (!$("ws-agent").hidden) agentTimer = setTimeout(refreshAgent, 5000);
+  }
+}
+
+function renderApprovals(items) {
+  $("pending-count").textContent = items.length;
+  $("approvals-empty").hidden = items.length > 0;
+  $("approvals").replaceChildren(...items.map((a) => {
+    const li = document.createElement("li");
+    li.className = "approval";
+    const who = document.createElement("div");
+    who.className = "who";
+    const left = Math.max(0, Math.round((new Date(a.expiresAt) - Date.now()) / 60000));
+    who.textContent = `${KIND[a.kind] ?? a.kind} · ${a.device} · ${left} dk içinde düşer`;
+    const code = document.createElement("code");
+    code.textContent = a.summary || "(ayrıntı yok)";
+    const acts = document.createElement("div");
+    acts.className = "acts";
+    const yes = document.createElement("button"); yes.className = "primary"; yes.textContent = "Onayla";
+    const no = document.createElement("button"); no.className = "deny"; no.textContent = "Reddet";
+    const decide = async (approve) => {
+      yes.disabled = no.disabled = true;
+      try { await invoke("agent_decide", { id: a.id, approve }); }
+      catch (error) { $("agent-error").textContent = String(error); }
+      refreshAgent();
+    };
+    yes.addEventListener("click", () => decide(true));
+    no.addEventListener("click", () => decide(false));
+    acts.append(yes, no);
+    li.append(who, acts, code);
+    return li;
+  }));
+}
+
+function renderDevices(items) {
+  const names = { windows: "Windows", macos: "macOS", linux: "Linux" };
+  $("devices").replaceChildren(...items.map((d) => {
+    const li = document.createElement("li");
+    li.className = `device${d.online ? " on" : ""}`;
+    const dot = document.createElement("span"); dot.className = "dot";
+    const name = document.createElement("strong"); name.textContent = d.name;
+    const state = document.createElement("span"); state.className = "muted small"; state.textContent = d.online ? "çevrimiçi" : "çevrimdışı";
+    const plat = document.createElement("span"); plat.className = "plat"; plat.textContent = names[d.platform] ?? d.platform ?? "";
+    li.append(dot, name, state, plat);
+    return li;
+  }));
+}
+
+$("agent-link-start").addEventListener("click", async () => {
+  $("agent-link-status").textContent = "Bağlantı isteği oluşturuluyor…";
+  try {
+    const start = await invoke("agent_link_start");
+    await window.__TAURI__.opener.openUrl(start.approveUrl);
+    $("agent-link-status").textContent = "Tarayıcıda onayla; bu ekran kendiliğinden güncellenecek.";
+  } catch (error) {
+    $("agent-link-status").textContent = `Başlatılamadı: ${error}`;
+  }
+});
+listen("agent-linked", () => { $("agent-link-status").textContent = ""; refreshAgent(); });
+listen("agent-link-failed", ({ payload }) => {
+  $("agent-link-status").textContent = payload === "expired" ? "Bağlantı isteğinin süresi doldu; yeniden dene." : `Bağlanamadı: ${payload}`;
+});
+$("agent-unlink").addEventListener("click", async () => {
+  if (await ask({ title: "Hesap bağlantısı kesilsin mi?", text: "Bu bilgisayar onay bekleyenleri artık göstermez.", ok: "Bağlantıyı kes" }) === null) return;
+  await invoke("agent_unlink");
+  refreshAgent();
 });
 
 // ---- startup --------------------------------------------------------------

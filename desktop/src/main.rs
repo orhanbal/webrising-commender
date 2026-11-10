@@ -9,6 +9,7 @@
 //! on a pseudo-terminal through wc-ssh-core and is drawn by xterm.js.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod agent;
 mod store;
 
 use base64::Engine;
@@ -20,24 +21,27 @@ use tauri::{Emitter, Manager};
 use wc_ssh_core::client::{
     connect, ConnectOptions, Connection, Credential, ShellEvent, ShellWriter, SshError,
 };
+use wc_ssh_core::sftp::{self as sftp_path, Entry, Sftp};
 use wc_ssh_core::HostProfile;
 use wc_vault::{Backend, MemoryStore, OsKeyring, SecretStore};
 
-const KEYRING_SERVICE: &str = "app.wecommander.desktop";
+pub(crate) const KEYRING_SERVICE: &str = "app.wecommander.desktop";
 
 struct Terminal {
     writer: Arc<ShellWriter>,
-    // Keeps the SSH connection open while the terminal is.
-    _connection: Arc<Connection>,
+    // Keeps the SSH connection open while the terminal is; the file
+    // manager (A09) opens its SFTP session on the same connection.
+    connection: Arc<Connection>,
+    sftp: Arc<tokio::sync::Mutex<Option<Arc<Sftp>>>>,
 }
 
-struct AppState {
+pub(crate) struct AppState {
     data: Mutex<Data>,
     store: Store,
-    vault: Box<dyn SecretStore>,
+    pub(crate) vault: Box<dyn SecretStore>,
     /// False when no OS keyring answered (headless Linux): secrets are then
     /// kept only until the app closes.
-    vault_persistent: bool,
+    pub(crate) vault_persistent: bool,
     terminals: Mutex<HashMap<String, Terminal>>,
 }
 
@@ -77,6 +81,7 @@ struct HostView {
     target: String,
     auth_kind: String,
     saved_secret: bool,
+    key_path: Option<String>,
     trusted_key: Option<String>,
 }
 
@@ -96,6 +101,7 @@ fn host_views(state: &AppState) -> Result<Vec<HostView>, String> {
                 .ok()
                 .flatten()
                 .is_some(),
+            key_path: h.key_path.clone(),
             trusted_key: data
                 .known_hosts
                 .get(&format!("{}:{}", h.profile.host, h.profile.port))
@@ -130,10 +136,64 @@ fn add_host(
             id: uuid::Uuid::new_v4().to_string(),
             profile,
             auth_kind: auth_kind.into(),
+            key_path: None,
         });
         state.save(&data)?;
     }
     host_views(&state)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportResult {
+    added: usize,
+    skipped: usize,
+    hosts: Vec<HostView>,
+}
+
+fn home_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(Into::into)
+}
+
+/// Imports the concrete hosts of `~/.ssh/config`; hosts already saved
+/// (same user, address and port) are skipped.
+#[tauri::command]
+fn import_ssh_config(state: tauri::State<'_, AppState>) -> Result<ImportResult, String> {
+    let home = home_dir().ok_or("home folder not found")?;
+    let path = home.join(".ssh").join("config");
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let default_user = std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_else(|_| "root".into());
+    let found = wc_ssh_core::ssh_config::parse(&text, &home.to_string_lossy(), &default_user);
+    let (mut added, mut skipped) = (0, 0);
+    {
+        let mut data = state.data.lock().map_err(|_| "busy")?;
+        for host in found {
+            let exists = data.hosts.iter().any(|h| {
+                h.profile.host == host.profile.host
+                    && h.profile.port == host.profile.port
+                    && h.profile.user == host.profile.user
+            });
+            if exists {
+                skipped += 1;
+                continue;
+            }
+            data.hosts.push(SavedHost {
+                id: uuid::Uuid::new_v4().to_string(),
+                profile: host.profile,
+                auth_kind: "key".into(),
+                key_path: host.identity_file,
+            });
+            added += 1;
+        }
+        state.save(&data)?;
+    }
+    Ok(ImportResult {
+        added,
+        skipped,
+        hosts: host_views(&state)?,
+    })
 }
 
 fn forget_secrets(state: &AppState, id: &str) {
@@ -169,6 +229,8 @@ struct AuthInput {
     passphrase: Option<String>,
     /// Save the secret in the OS keyring after a successful login.
     remember: bool,
+    /// Read the private key from this file instead (remembered per host).
+    key_path: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -247,18 +309,28 @@ async fn connect_host(
     } else {
         "key"
     };
+    // Key file: chosen now, or remembered for the host.
+    let key_file = auth
+        .key_path
+        .clone()
+        .filter(|p| !p.is_empty())
+        .or_else(|| saved.key_path.clone());
     let typed = !auth.secret.is_empty();
+    let from_file =
+        kind == "key" && !typed && auth.key_path.as_deref().is_some_and(|p| !p.is_empty());
     let secret = if typed {
         auth.secret.clone()
+    } else if let Some(stored) = (!from_file)
+        .then(|| state.vault.get(&secret_key(&id, kind)).ok().flatten())
+        .flatten()
+    {
+        stored
+    } else if let (true, Some(path)) = (kind == "key", key_file.as_deref()) {
+        std::fs::read_to_string(path).map_err(|e| format!("key file {path}: {e}"))?
     } else {
-        state
-            .vault
-            .get(&secret_key(&id, kind))
-            .ok()
-            .flatten()
-            .ok_or("no saved credential for this host; enter it once")?
+        return Err("no saved credential for this host; enter it once".into());
     };
-    let passphrase = if typed {
+    let passphrase = if typed || from_file {
         auth.passphrase.clone().filter(|p| !p.is_empty())
     } else {
         state
@@ -306,8 +378,17 @@ async fn connect_host(
         data.known_hosts.insert(host_id, fingerprint.clone());
         if let Some(h) = data.hosts.iter_mut().find(|h| h.id == id) {
             h.auth_kind = kind.into();
+            if from_file {
+                h.key_path = auth.key_path.clone();
+            }
         }
         state.save(&data)?;
+    }
+    if from_file && auth.remember {
+        // The key stays in its file; only its passphrase goes to the keyring.
+        if let Some(p) = &passphrase {
+            let _ = state.vault.put(&secret_key(&id, "passphrase"), p);
+        }
     }
     if typed && auth.remember {
         let _ = state.vault.put(&secret_key(&id, kind), &secret);
@@ -344,7 +425,8 @@ async fn connect_host(
         session_id.clone(),
         Terminal {
             writer,
-            _connection: Arc::new(conn),
+            connection: Arc::new(conn),
+            sftp: Arc::new(tokio::sync::Mutex::new(None)),
         },
     );
     let mut reader = shell.reader;
@@ -438,6 +520,154 @@ async fn terminal_close(
     Ok(())
 }
 
+// ---- file manager (A09) ---------------------------------------------------
+
+async fn sftp_for(state: &AppState, session_id: &str) -> Result<Arc<Sftp>, String> {
+    let (connection, slot) = {
+        let terminals = state.terminals.lock().map_err(|_| "busy")?;
+        let t = terminals.get(session_id).ok_or("terminal closed")?;
+        (t.connection.clone(), t.sftp.clone())
+    };
+    let mut slot = slot.lock().await;
+    if let Some(sftp) = slot.as_ref() {
+        return Ok(sftp.clone());
+    }
+    let sftp = Arc::new(connection.sftp().await.map_err(|e| e.to_string())?);
+    *slot = Some(sftp.clone());
+    Ok(sftp)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Listing {
+    path: String,
+    parent: String,
+    entries: Vec<Entry>,
+}
+
+#[tauri::command]
+async fn files_list(
+    state: tauri::State<'_, AppState>,
+    session_id: String,
+    path: Option<String>,
+) -> Result<Listing, String> {
+    let sftp = sftp_for(&state, &session_id).await?;
+    let path = match path.filter(|p| !p.trim().is_empty()) {
+        Some(p) => p,
+        None => sftp.home().await.map_err(|e| e.to_string())?,
+    };
+    let entries = sftp.list(&path).await.map_err(|e| e.to_string())?;
+    Ok(Listing {
+        parent: sftp_path::parent(&path),
+        path,
+        entries,
+    })
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TransferProgress {
+    transfer_id: String,
+    done: u64,
+    total: u64,
+}
+
+fn progress_reporter(app: tauri::AppHandle, transfer_id: String) -> impl FnMut(u64, u64) {
+    let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
+    move |done, total| {
+        // At most ~10 events a second, plus the final one.
+        if done == total || last.elapsed().as_millis() >= 100 {
+            last = std::time::Instant::now();
+            let _ = app.emit(
+                "transfer-progress",
+                TransferProgress {
+                    transfer_id: transfer_id.clone(),
+                    done,
+                    total,
+                },
+            );
+        }
+    }
+}
+
+#[tauri::command]
+async fn files_download(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    session_id: String,
+    remote: String,
+    local: String,
+    transfer_id: String,
+) -> Result<u64, String> {
+    let sftp = sftp_for(&state, &session_id).await?;
+    sftp.download(
+        &remote,
+        std::path::Path::new(&local),
+        progress_reporter(app, transfer_id),
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn files_upload(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    session_id: String,
+    local: String,
+    remote_dir: String,
+    transfer_id: String,
+) -> Result<u64, String> {
+    let local = std::path::PathBuf::from(local);
+    let name = local
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("not a file")?
+        .to_owned();
+    if !local.is_file() {
+        return Err(format!("{name}: only files can be uploaded (not folders)"));
+    }
+    let sftp = sftp_for(&state, &session_id).await?;
+    sftp.upload(
+        &local,
+        &sftp_path::join(&remote_dir, &name),
+        progress_reporter(app, transfer_id),
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn files_mkdir(
+    state: tauri::State<'_, AppState>,
+    session_id: String,
+    path: String,
+) -> Result<(), String> {
+    let sftp = sftp_for(&state, &session_id).await?;
+    sftp.mkdir(&path).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn files_rename(
+    state: tauri::State<'_, AppState>,
+    session_id: String,
+    from: String,
+    to: String,
+) -> Result<(), String> {
+    let sftp = sftp_for(&state, &session_id).await?;
+    sftp.rename(&from, &to).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn files_delete(
+    state: tauri::State<'_, AppState>,
+    session_id: String,
+    path: String,
+) -> Result<(), String> {
+    let sftp = sftp_for(&state, &session_id).await?;
+    sftp.remove(&path).await.map_err(|e| e.to_string())
+}
+
 fn open_vault() -> (Box<dyn SecretStore>, bool) {
     let keyring = OsKeyring::new(KEYRING_SERVICE);
     if keyring.probe() {
@@ -450,6 +680,8 @@ fn open_vault() -> (Box<dyn SecretStore>, bool) {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             let store = Store::new(&dir);
@@ -471,10 +703,22 @@ fn main() {
             add_host,
             delete_host,
             forget_secret,
+            import_ssh_config,
             connect_host,
             terminal_write,
             terminal_resize,
-            terminal_close
+            terminal_close,
+            files_list,
+            files_download,
+            files_upload,
+            files_mkdir,
+            files_rename,
+            files_delete,
+            agent::agent_status,
+            agent::agent_link_start,
+            agent::agent_overview,
+            agent::agent_decide,
+            agent::agent_unlink
         ])
         .run(tauri::generate_context!())
         .expect("WECOMMANDER desktop failed to start");

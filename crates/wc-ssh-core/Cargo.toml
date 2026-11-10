@@ -8,8 +8,9 @@ description = "WECOMMANDER User Mode SSH core: host profiles and the russh clien
 
 [dependencies]
 russh = "0.65"
+russh-sftp = "3"
 serde = { version = "1", features = ["derive"] }
-tokio = { version = "1", features = ["rt", "time", "net", "macros", "io-util"] }
+tokio = { version = "1", features = ["rt", "time", "net", "macros", "io-util", "fs"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

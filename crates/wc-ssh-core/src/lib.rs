@@ -4,6 +4,8 @@
 //! The SSH protocol itself (russh, auth methods, SFTP) arrives with A02 and
 //! is gated by G2 (compatibility matrix).
 pub mod client;
+pub mod sftp;
+pub mod ssh_config;
 
 use serde::{Deserialize, Serialize};
 
