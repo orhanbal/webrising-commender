@@ -101,12 +101,36 @@ function openMenu(host, anchor) {
   item("Bağlantıyı test et", () => startConnect(host, "test"));
   if (host.savedSecret) item("Kayıtlı giriş bilgisini unut", async () => renderHosts(await invoke("forget_secret", { id: host.id })));
   item("Sunucuyu sil", async () => {
-    if (confirm(`${host.label} silinsin mi? Kasadaki giriş bilgisi de silinir.`)) renderHosts(await invoke("delete_host", { id: host.id }));
+    if (await ask({ title: `${host.label} silinsin mi?`, text: "Kasadaki giriş bilgisi de silinir.", ok: "Sil" }) !== null) renderHosts(await invoke("delete_host", { id: host.id }));
   }, "danger");
   const r = anchor.getBoundingClientRect();
   menu.style.left = `${Math.min(r.left, innerWidth - 200)}px`;
   menu.style.top = `${r.bottom + 4}px`;
   document.body.append(menu);
+}
+
+// ---- small question dialog (window.prompt/confirm are unreliable in webviews)
+/** Resolves to the entered text (or "" without an input), null on cancel. */
+function ask({ title, text = "", value = null, ok = "Tamam" }) {
+  return new Promise((resolve) => {
+    const overlay = $("ask"), formEl = $("ask-form"), input = $("ask-input");
+    $("ask-title").textContent = title;
+    $("ask-text").textContent = text;
+    $("ask-ok").textContent = ok;
+    input.hidden = value === null;
+    input.value = value ?? "";
+    overlay.hidden = false;
+    (value === null ? $("ask-ok") : input).focus();
+    if (value !== null) input.select();
+    const done = (result) => {
+      overlay.hidden = true;
+      formEl.onsubmit = null; $("ask-cancel").onclick = null; overlay.onkeydown = null;
+      resolve(result);
+    };
+    formEl.onsubmit = (e) => { e.preventDefault(); done(value === null ? "" : input.value.trim()); };
+    $("ask-cancel").onclick = () => done(null);
+    overlay.onkeydown = (e) => { if (e.key === "Escape") { e.stopPropagation(); done(null); } };
+  });
 }
 
 // ---- connect dialog -------------------------------------------------------
@@ -282,6 +306,7 @@ function activate(sessionId) {
   const s = sessions.get(sessionId);
   document.querySelectorAll(".host").forEach((li, i) => li.classList.toggle("active", hosts[i]?.id === s?.hostId));
   if (s?.view) { s.view.fit(); s.view.focus(); }
+  syncFilesButton();
 }
 
 function closeTerminal(sessionId) {
@@ -294,7 +319,7 @@ function closeTerminal(sessionId) {
   sessions.delete(sessionId);
   const next = [...sessions.keys()].pop();
   if (next) activate(next);
-  else { activeSession = null; $("welcome").hidden = false; }
+  else { activeSession = null; $("welcome").hidden = false; syncFilesButton(); }
 }
 
 const decoder = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
@@ -304,7 +329,176 @@ listen("terminal-exit", ({ payload }) => {
   if (!s) return;
   s.closed = true;
   s.tab.classList.add("closed");
+  if (payload.sessionId === activeSession) syncFilesButton();
   s.view?.write(`\r\n\x1b[90m[Bağlantı kapandı${payload.code != null ? `, çıkış kodu ${payload.code}` : ""}. Sekmeyi kapatabilirsin.]\x1b[0m\r\n`);
+});
+
+// ---- file manager (SFTP, A09) ----------------------------------------------
+const { save: saveDialog, open: openDialogFiles } = window.__TAURI__.dialog;
+let filesOpen = false;
+
+function fmtSize(n) {
+  if (n < 1024) return `${n} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = n / 1024, i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v.toFixed(v < 10 ? 1 : 0)} ${units[i]}`;
+}
+function fmtTime(secs) {
+  return secs ? new Date(secs * 1000).toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" }) : "";
+}
+
+function syncFilesButton() {
+  const s = activeSession && sessions.get(activeSession);
+  $("files-toggle").disabled = !s || s.closed;
+  $("files-toggle").setAttribute("aria-pressed", String(filesOpen && !!s));
+  $("files").hidden = !(filesOpen && s && !s.closed);
+  if (!$("files").hidden) loadFiles(s.files?.path ?? null);
+  sessions.get(activeSession)?.view?.fit();
+}
+
+$("files-toggle").addEventListener("click", () => { filesOpen = !filesOpen; syncFilesButton(); });
+
+async function loadFiles(path) {
+  const sessionId = activeSession;
+  const s = sessions.get(sessionId);
+  if (!s) return;
+  const list = $("file-list");
+  try {
+    const listing = await invoke("files_list", { sessionId, path });
+    if (sessionId !== activeSession) return;
+    s.files = listing;
+    $("files-path").value = listing.path;
+    list.replaceChildren(...listing.entries.map((e) => fileRow(sessionId, e)));
+    if (!listing.entries.length) {
+      const li = document.createElement("li");
+      li.className = "files-error"; li.style.color = "var(--muted)"; li.textContent = "Bu klasör boş.";
+      list.append(li);
+    }
+  } catch (error) {
+    const li = document.createElement("li");
+    li.className = "files-error";
+    li.textContent = String(error).includes("did not start SFTP")
+      ? "Bu sunucu SFTP'yi açmadı. sshd_config içinde 'Subsystem sftp' satırı olmalı."
+      : `Klasör açılamadı: ${error}`;
+    list.replaceChildren(li);
+  }
+}
+
+function fileRow(sessionId, e) {
+  const li = document.createElement("li");
+  li.className = `file ${e.kind}`;
+  li.tabIndex = 0;
+  li.title = `${e.permissions}  ${e.path}`;
+  const ico = document.createElement("span"); ico.className = "ico";
+  ico.textContent = e.kind === "dir" ? "📁" : e.kind === "link" ? "🔗" : "📄";
+  const name = document.createElement("span"); name.className = "name"; name.textContent = e.name;
+  const meta = document.createElement("span"); meta.className = "meta";
+  meta.textContent = e.kind === "dir" ? fmtTime(e.modified) : `${fmtSize(e.size)} · ${fmtTime(e.modified)}`;
+  const acts = document.createElement("span"); acts.className = "acts";
+  const btn = (text, fn, cls) => { const b = document.createElement("button"); b.type = "button"; b.textContent = text; if (cls) b.className = cls; b.addEventListener("click", (ev) => { ev.stopPropagation(); fn(); }); acts.append(b); };
+  if (e.kind !== "dir") btn("İndir", () => download(sessionId, e));
+  btn("Ad", () => renameEntry(sessionId, e));
+  btn("Sil", () => deleteEntry(sessionId, e), "danger");
+  li.append(ico, name, meta, acts);
+  const openDir = () => { if (e.kind === "dir" || e.kind === "link") loadFiles(e.path); };
+  li.addEventListener("dblclick", openDir);
+  name.addEventListener("click", () => { if (e.kind === "dir") openDir(); });
+  li.addEventListener("keydown", (ev) => { if (ev.key === "Enter") openDir(); });
+  return li;
+}
+
+$("files-up").addEventListener("click", () => { const s = sessions.get(activeSession); if (s?.files) loadFiles(s.files.parent); });
+$("files-refresh").addEventListener("click", () => loadFiles(sessions.get(activeSession)?.files?.path ?? null));
+$("files-path").addEventListener("keydown", (e) => { if (e.key === "Enter") loadFiles(e.target.value.trim() || null); });
+
+$("files-mkdir").addEventListener("click", async () => {
+  const s = sessions.get(activeSession); if (!s?.files) return;
+  const name = await ask({ title: "Yeni klasör", text: s.files.path, value: "", ok: "Oluştur" });
+  if (!name) return;
+  try { await invoke("files_mkdir", { sessionId: activeSession, path: joinPath(s.files.path, name) }); loadFiles(s.files.path); }
+  catch (error) { transferNote(`Klasör oluşturulamadı: ${error}`, "err"); }
+});
+
+async function renameEntry(sessionId, e) {
+  const name = await ask({ title: "Yeniden adlandır", text: e.path, value: e.name, ok: "Kaydet" });
+  if (!name || name === e.name) return;
+  const dir = sessions.get(sessionId)?.files?.path;
+  try { await invoke("files_rename", { sessionId, from: e.path, to: joinPath(dir, name) }); loadFiles(dir); }
+  catch (error) { transferNote(`Yeniden adlandırılamadı: ${error}`, "err"); }
+}
+
+async function deleteEntry(sessionId, e) {
+  const sure = await ask({ title: `${e.name} silinsin mi?`, text: e.kind === "dir" ? "Yalnızca boş klasörler silinebilir." : "Bu işlem geri alınamaz.", ok: "Sil" });
+  if (sure === null) return;
+  const dir = sessions.get(sessionId)?.files?.path;
+  try { await invoke("files_delete", { sessionId, path: e.path }); loadFiles(dir); }
+  catch (error) { transferNote(`Silinemedi: ${error}`, "err"); }
+}
+
+function joinPath(dir, name) { return dir.endsWith("/") ? dir + name : `${dir}/${name}`; }
+
+const transfers = new Map();
+function transferRow(label) {
+  const id = crypto.randomUUID();
+  const row = document.createElement("div"); row.className = "transfer";
+  const text = document.createElement("div"); text.textContent = label;
+  const bar = document.createElement("div"); bar.className = "bar"; const fill = document.createElement("i"); bar.append(fill);
+  row.append(text, bar);
+  $("transfers").prepend(row);
+  transfers.set(id, { row, text, fill, label });
+  return id;
+}
+function finishTransfer(id, ok, message) {
+  const t = transfers.get(id); if (!t) return;
+  t.row.classList.add(ok ? "ok" : "err");
+  t.text.textContent = message;
+  t.fill.style.width = ok ? "100%" : t.fill.style.width;
+  setTimeout(() => { t.row.remove(); transfers.delete(id); }, ok ? 4000 : 12000);
+}
+function transferNote(message, cls) {
+  const id = transferRow(message);
+  finishTransfer(id, cls !== "err", message);
+}
+listen("transfer-progress", ({ payload }) => {
+  const t = transfers.get(payload.transferId); if (!t) return;
+  const pct = payload.total ? Math.round((payload.done / payload.total) * 100) : 100;
+  t.fill.style.width = `${pct}%`;
+  t.text.textContent = `${t.label} · ${fmtSize(payload.done)} / ${fmtSize(payload.total)}`;
+});
+
+async function download(sessionId, e) {
+  const local = await saveDialog({ defaultPath: e.name, title: "Nereye kaydedilsin?" });
+  if (!local) return;
+  const transferId = transferRow(`⬇ ${e.name}`);
+  try { const n = await invoke("files_download", { sessionId, remote: e.path, local, transferId }); finishTransfer(transferId, true, `⬇ ${e.name} indirildi (${fmtSize(n)})`); }
+  catch (error) { finishTransfer(transferId, false, `⬇ ${e.name}: ${error}`); }
+}
+
+async function uploadPaths(paths) {
+  const sessionId = activeSession;
+  const dir = sessions.get(sessionId)?.files?.path;
+  if (!dir) return;
+  for (const local of paths) {
+    const name = local.split(/[\\/]/).pop();
+    const transferId = transferRow(`⬆ ${name}`);
+    try { const n = await invoke("files_upload", { sessionId, local, remoteDir: dir, transferId }); finishTransfer(transferId, true, `⬆ ${name} yüklendi (${fmtSize(n)})`); }
+    catch (error) { finishTransfer(transferId, false, `⬆ ${name}: ${error}`); }
+  }
+  if (sessionId === activeSession) loadFiles(dir);
+}
+
+$("files-upload").addEventListener("click", async () => {
+  const picked = await openDialogFiles({ multiple: true, directory: false, title: "Yüklenecek dosyalar" });
+  if (picked) uploadPaths(Array.isArray(picked) ? picked : [picked]);
+});
+
+window.__TAURI__.webview.getCurrentWebview().onDragDropEvent(({ payload }) => {
+  const panel = $("files");
+  if (panel.hidden) return;
+  if (payload.type === "enter" || payload.type === "over") panel.classList.add("drop");
+  else panel.classList.remove("drop");
+  if (payload.type === "drop" && payload.paths?.length) uploadPaths(payload.paths);
 });
 
 // ---- startup --------------------------------------------------------------

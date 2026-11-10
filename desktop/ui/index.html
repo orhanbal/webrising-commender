@@ -42,12 +42,31 @@
     </div>
 
     <div class="term-pane">
-      <nav class="tabs" id="tabs" aria-label="Terminaller"></nav>
-      <div class="term-stack" id="term-stack">
-        <div class="welcome" id="welcome">
-          <h2>Bir sunucu seç</h2>
-          <p>Soldaki listeden bir sunucuya tıkla; terminal burada açılır. Birden fazla sunucuya aynı anda bağlanabilirsin.</p>
+      <div class="tabbar">
+        <nav class="tabs" id="tabs" aria-label="Terminaller"></nav>
+        <button type="button" class="files-toggle" id="files-toggle" aria-pressed="false" disabled title="Bu sunucunun dosyaları (SFTP)">Dosyalar</button>
+      </div>
+      <div class="term-body">
+        <div class="term-stack" id="term-stack">
+          <div class="welcome" id="welcome">
+            <h2>Bir sunucu seç</h2>
+            <p>Soldaki listeden bir sunucuya tıkla; terminal burada açılır. Birden fazla sunucuya aynı anda bağlanabilirsin.</p>
+          </div>
         </div>
+        <aside class="files" id="files" hidden aria-label="Dosyalar">
+          <div class="files-bar">
+            <button type="button" id="files-up" title="Üst klasör">↑</button>
+            <input id="files-path" aria-label="Uzak klasör" spellcheck="false">
+            <button type="button" id="files-refresh" title="Yenile">⟳</button>
+          </div>
+          <div class="files-actions">
+            <button type="button" id="files-upload">Yükle…</button>
+            <button type="button" id="files-mkdir">Yeni klasör</button>
+          </div>
+          <ul class="file-list" id="file-list"></ul>
+          <p class="files-hint">Dosyaları buraya sürükleyip bırakarak da yükleyebilirsin.</p>
+          <div class="transfers" id="transfers"></div>
+        </aside>
       </div>
     </div>
   </section>
@@ -83,6 +102,18 @@
       <div class="row end">
         <button type="button" id="connect-cancel">Kapat</button>
         <button type="submit" class="primary" id="connect-submit">Bağlan</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="overlay" id="ask" hidden>
+    <form class="dialog" id="ask-form" role="dialog" aria-modal="true" aria-labelledby="ask-title">
+      <h2 id="ask-title"></h2>
+      <p class="muted" id="ask-text"></p>
+      <input id="ask-input" spellcheck="false" autocomplete="off">
+      <div class="row end">
+        <button type="button" id="ask-cancel">Vazgeç</button>
+        <button type="submit" class="primary" id="ask-ok">Tamam</button>
       </div>
     </form>
   </div>

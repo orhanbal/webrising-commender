@@ -47,3 +47,23 @@ textarea{font:12px ui-monospace,Consolas,monospace;resize:vertical}
 .hostkey.danger{border-color:var(--danger)}.hostkey.danger p{color:var(--danger);font-weight:600}.hostkey code{word-break:break-all}
 .status{margin:0;color:var(--muted);min-height:1.2em}.status.error{color:var(--danger)}
 .error{color:var(--danger);margin:0;min-height:1em;font-size:13px}
+.tabbar{display:flex;align-items:flex-end;background:var(--surface);border-bottom:1px solid var(--stroke)}
+.tabbar .tabs{flex:1;border-bottom:0}
+.files-toggle{margin:4px 8px 6px;padding:4px 10px;font-size:13px}.files-toggle[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+.files-toggle:disabled{opacity:.4;cursor:default}
+.term-body{flex:1;display:flex;min-height:0}
+.files{width:360px;flex-shrink:0;background:var(--surface);border-left:1px solid var(--stroke);display:flex;flex-direction:column;min-height:0}
+.files.drop{outline:2px dashed var(--accent);outline-offset:-6px}
+.files-bar{display:flex;gap:6px;padding:8px}.files-bar input{font:12px ui-monospace,Consolas,monospace}.files-bar button{padding:4px 9px}
+.files-actions{display:flex;gap:6px;padding:0 8px 8px}.files-actions button{font-size:13px;padding:4px 10px}
+.file-list{list-style:none;margin:0;padding:0 4px;overflow:auto;flex:1;border-top:1px solid var(--stroke)}
+.file{display:grid;grid-template-columns:20px 1fr auto;gap:8px;align-items:center;padding:5px 6px;border-radius:6px;cursor:default;font-size:13px}
+.file:hover{background:var(--bg)}.file .ico{text-align:center}.file .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file .meta{color:var(--muted);font-size:11px;white-space:nowrap}
+.file .acts{display:none;gap:4px}.file:hover .acts,.file:focus-within .acts{display:flex}.file:hover .meta,.file:focus-within .meta{display:none}
+.file .acts button{padding:1px 6px;font-size:12px}.file .acts .danger{color:var(--danger)}
+.file.dir .name{font-weight:600;cursor:pointer}
+.files-hint{color:var(--muted);font-size:11px;margin:0;padding:6px 10px;border-top:1px solid var(--stroke)}
+.transfers{display:grid;gap:4px;padding:0 8px 8px}.transfer{font-size:12px}.transfer .bar{height:4px;background:var(--bg);border-radius:3px;overflow:hidden;margin-top:2px}
+.transfer .bar i{display:block;height:100%;background:var(--accent);width:0}.transfer.err{color:var(--danger)}.transfer.ok{color:var(--ok)}
+.files-error{color:var(--danger);font-size:12px;padding:8px}

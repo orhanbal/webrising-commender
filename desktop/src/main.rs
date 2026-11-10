@@ -20,6 +20,7 @@ use tauri::{Emitter, Manager};
 use wc_ssh_core::client::{
     connect, ConnectOptions, Connection, Credential, ShellEvent, ShellWriter, SshError,
 };
+use wc_ssh_core::sftp::{self as sftp_path, Entry, Sftp};
 use wc_ssh_core::HostProfile;
 use wc_vault::{Backend, MemoryStore, OsKeyring, SecretStore};
 
@@ -27,8 +28,10 @@ const KEYRING_SERVICE: &str = "app.wecommander.desktop";
 
 struct Terminal {
     writer: Arc<ShellWriter>,
-    // Keeps the SSH connection open while the terminal is.
-    _connection: Arc<Connection>,
+    // Keeps the SSH connection open while the terminal is; the file
+    // manager (A09) opens its SFTP session on the same connection.
+    connection: Arc<Connection>,
+    sftp: Arc<tokio::sync::Mutex<Option<Arc<Sftp>>>>,
 }
 
 struct AppState {
@@ -344,7 +347,8 @@ async fn connect_host(
         session_id.clone(),
         Terminal {
             writer,
-            _connection: Arc::new(conn),
+            connection: Arc::new(conn),
+            sftp: Arc::new(tokio::sync::Mutex::new(None)),
         },
     );
     let mut reader = shell.reader;
@@ -438,6 +442,154 @@ async fn terminal_close(
     Ok(())
 }
 
+// ---- file manager (A09) ---------------------------------------------------
+
+async fn sftp_for(state: &AppState, session_id: &str) -> Result<Arc<Sftp>, String> {
+    let (connection, slot) = {
+        let terminals = state.terminals.lock().map_err(|_| "busy")?;
+        let t = terminals.get(session_id).ok_or("terminal closed")?;
+        (t.connection.clone(), t.sftp.clone())
+    };
+    let mut slot = slot.lock().await;
+    if let Some(sftp) = slot.as_ref() {
+        return Ok(sftp.clone());
+    }
+    let sftp = Arc::new(connection.sftp().await.map_err(|e| e.to_string())?);
+    *slot = Some(sftp.clone());
+    Ok(sftp)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Listing {
+    path: String,
+    parent: String,
+    entries: Vec<Entry>,
+}
+
+#[tauri::command]
+async fn files_list(
+    state: tauri::State<'_, AppState>,
+    session_id: String,
+    path: Option<String>,
+) -> Result<Listing, String> {
+    let sftp = sftp_for(&state, &session_id).await?;
+    let path = match path.filter(|p| !p.trim().is_empty()) {
+        Some(p) => p,
+        None => sftp.home().await.map_err(|e| e.to_string())?,
+    };
+    let entries = sftp.list(&path).await.map_err(|e| e.to_string())?;
+    Ok(Listing {
+        parent: sftp_path::parent(&path),
+        path,
+        entries,
+    })
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TransferProgress {
+    transfer_id: String,
+    done: u64,
+    total: u64,
+}
+
+fn progress_reporter(app: tauri::AppHandle, transfer_id: String) -> impl FnMut(u64, u64) {
+    let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
+    move |done, total| {
+        // At most ~10 events a second, plus the final one.
+        if done == total || last.elapsed().as_millis() >= 100 {
+            last = std::time::Instant::now();
+            let _ = app.emit(
+                "transfer-progress",
+                TransferProgress {
+                    transfer_id: transfer_id.clone(),
+                    done,
+                    total,
+                },
+            );
+        }
+    }
+}
+
+#[tauri::command]
+async fn files_download(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    session_id: String,
+    remote: String,
+    local: String,
+    transfer_id: String,
+) -> Result<u64, String> {
+    let sftp = sftp_for(&state, &session_id).await?;
+    sftp.download(
+        &remote,
+        std::path::Path::new(&local),
+        progress_reporter(app, transfer_id),
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn files_upload(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    session_id: String,
+    local: String,
+    remote_dir: String,
+    transfer_id: String,
+) -> Result<u64, String> {
+    let local = std::path::PathBuf::from(local);
+    let name = local
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("not a file")?
+        .to_owned();
+    if !local.is_file() {
+        return Err(format!("{name}: only files can be uploaded (not folders)"));
+    }
+    let sftp = sftp_for(&state, &session_id).await?;
+    sftp.upload(
+        &local,
+        &sftp_path::join(&remote_dir, &name),
+        progress_reporter(app, transfer_id),
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn files_mkdir(
+    state: tauri::State<'_, AppState>,
+    session_id: String,
+    path: String,
+) -> Result<(), String> {
+    let sftp = sftp_for(&state, &session_id).await?;
+    sftp.mkdir(&path).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn files_rename(
+    state: tauri::State<'_, AppState>,
+    session_id: String,
+    from: String,
+    to: String,
+) -> Result<(), String> {
+    let sftp = sftp_for(&state, &session_id).await?;
+    sftp.rename(&from, &to).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn files_delete(
+    state: tauri::State<'_, AppState>,
+    session_id: String,
+    path: String,
+) -> Result<(), String> {
+    let sftp = sftp_for(&state, &session_id).await?;
+    sftp.remove(&path).await.map_err(|e| e.to_string())
+}
+
 fn open_vault() -> (Box<dyn SecretStore>, bool) {
     let keyring = OsKeyring::new(KEYRING_SERVICE);
     if keyring.probe() {
@@ -450,6 +602,7 @@ fn open_vault() -> (Box<dyn SecretStore>, bool) {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             let store = Store::new(&dir);
@@ -474,7 +627,13 @@ fn main() {
             connect_host,
             terminal_write,
             terminal_resize,
-            terminal_close
+            terminal_close,
+            files_list,
+            files_download,
+            files_upload,
+            files_mkdir,
+            files_rename,
+            files_delete
         ])
         .run(tauri::generate_context!())
         .expect("WECOMMANDER desktop failed to start");
