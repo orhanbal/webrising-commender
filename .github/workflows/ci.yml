@@ -816,11 +816,12 @@ jobs:
 
   desktop:
     # V2 desktop app (desktop/): Tauri 2 with User and Agent workspaces, built
-    # on all three OSes (G1). Separate cargo workspace, like tray/.
+    # on Linux and Windows here and on macOS in macos.yml (G1). Separate cargo
+    # workspace, like tray/.
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5

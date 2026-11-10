@@ -50,7 +50,6 @@ export const REQUIRED_CI_JOBS = Object.freeze([
   "plan-tools",
   "desktop (ubuntu-latest)",
   "desktop (windows-latest)",
-  "desktop (macos-latest)",
 ]);
 
 /**
