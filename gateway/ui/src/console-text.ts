@@ -120,6 +120,7 @@ export const consoleTurkish:Record<string,string> = {
   "Privacy & terms editor": "Gizlilik ve kullanım koşulları editörü",
   "Maintain EN/TR legal drafts and published versions. Only publish content reviewed by the appropriate legal owner. Text is rendered as plain paragraphs, never executable HTML.": "TR/EN hukuki taslakları ve yayınlanmış sürümleri yönetin. Yalnızca yetkili kişi tarafından incelenmiş metinleri yayınlayın. Metinler çalıştırılabilir HTML olarak değil, düz paragraf olarak görüntülenir.",
   "Privacy policy": "Gizlilik politikası",
+  "Refund policy": "İade politikası",
   "Terms of service": "Kullanım koşulları",
   "Page heading": "Sayfa başlığı",
   "Full legal text (up to 30,000 characters)": "Hukuki metnin tamamı (en fazla 30.000 karakter)",

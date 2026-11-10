@@ -119,7 +119,7 @@ export async function migrate() {
 
     create table if not exists legal_page_revisions (
       id bigserial primary key,
-      page text not null check(page in ('privacy','terms')),
+      page text not null check(page in ('privacy','terms','refund')),
       locale text not null check(locale in ('en','tr')),
       title text not null check(length(title) between 1 and 160),
       body text not null check(length(body) between 20 and 30000),
@@ -129,6 +129,15 @@ export async function migrate() {
     );
     create unique index if not exists legal_page_one_published
       on legal_page_revisions(page,locale) where state='published';
+    -- Refund policy page (Paddle requires one). Widen the original check once.
+    do $$ begin
+      if exists (select 1 from pg_constraint where conname='legal_page_revisions_page_check'
+                  and pg_get_constraintdef(oid) not like '%refund%') then
+        alter table legal_page_revisions drop constraint legal_page_revisions_page_check;
+        alter table legal_page_revisions add constraint legal_page_revisions_page_check
+          check (page in ('privacy','terms','refund'));
+      end if;
+    end $$;
     create table if not exists site_content_revisions (
       id bigserial primary key,
       locale text not null check(locale in ('en','tr')),

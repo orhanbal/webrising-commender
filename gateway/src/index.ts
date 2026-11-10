@@ -427,7 +427,7 @@ const modernPages = new Set([
   "/", "/features", "/how-it-works", "/login", "/register", "/forgot-password", "/verify",
   "/reset-password", "/pricing", "/checkout", "/install", "/console", "/console/users", "/console/organizations", "/console/devices", "/console/operations", "/console/landing", "/console/billing", "/console/system", "/console/brand", "/console/legal", "/dashboard", "/account", "/billing",
   "/devices", "/terminal", "/files", "/tasks", "/mcp", "/usage", "/approvals", "/team", "/audit", "/invite",
-  "/privacy", "/terms",
+  "/privacy", "/terms", "/refund",
   ...contentPagePaths,
 ]);
 /** Last-modified date for the sitemap: the day this gateway build started. */
@@ -707,7 +707,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       res.end(result.rows[0].content);return;
     }
     if (req.method === "GET" && url.pathname === "/api/public/legal") {
-      const page=z.enum(["privacy","terms"]).parse(url.searchParams.get("page"));
+      const page=z.enum(["privacy","terms","refund"]).parse(url.searchParams.get("page"));
       const locale=url.searchParams.get("locale")==="tr"?"tr":"en";
       const result=await db.query(
         "select id,page,locale,title,body from legal_page_revisions where page=$1 and locale=$2 and state='published' limit 1",
@@ -2326,7 +2326,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         return void json(res,200,{ok:true,signupSetting:await publicSignupSetting(),mailConfigured:mailConfigured()});
       }
       if (req.method === "GET" && url.pathname === "/api/console/legal") {
-        const page=z.enum(["privacy","terms"]).parse(url.searchParams.get("page"));
+        const page=z.enum(["privacy","terms","refund"]).parse(url.searchParams.get("page"));
         const locale=url.searchParams.get("locale")==="tr"?"tr":"en";
         const result=await db.query(
           "select id,page,locale,title,body,state,created_at from legal_page_revisions where page=$1 and locale=$2 order by id desc limit 30",
@@ -2336,7 +2336,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (req.method === "POST" && url.pathname === "/api/console/legal") {
         const body=z.object({
-          page:z.enum(["privacy","terms"]),locale:z.enum(["en","tr"]),
+          page:z.enum(["privacy","terms","refund"]),locale:z.enum(["en","tr"]),
           title:z.string().trim().min(1).max(160),body:z.string().trim().min(20).max(30000),
         }).parse(await readJson(req));
         const result=await db.query(

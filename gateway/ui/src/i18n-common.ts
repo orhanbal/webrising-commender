@@ -17,6 +17,7 @@ export const commonEnglish:Record<string,string> = {
   "Koşullar": "Terms",
   "Kullanım koşulları": "Terms of service",
   "Kullanım Koşulları": "Terms of service",
+  "İade ve İptal": "Refunds & cancellation",
   "Hesap": "Account",
   "Hesap oluştur": "Create account",
   "Hesap Oluştur": "Create account",

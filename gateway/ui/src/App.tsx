@@ -46,7 +46,7 @@ export type Nav=(path:string)=>void;
 export type Theme="light"|"dark";
 /** Public docs and guides (text in gateway/src/site-content.ts). */
 const contentPaths=["/docs","/faq","/alternatives","/security","/guides/claude-server-terminal","/guides/remote-mcp-server","/guides/chatgpt-windows-files","/guides/ai-approvals"];
-const routes=new Set(["/console","/console/users","/console/organizations","/console/devices","/console/operations","/console/landing","/console/billing","/console/system","/console/brand","/console/legal","/","/features","/how-it-works","/login","/register","/forgot-password","/reset-password","/verify","/pricing","/checkout","/install","/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage","/approvals","/team","/audit","/invite","/privacy","/terms",...contentPaths]);
+const routes=new Set(["/console","/console/users","/console/organizations","/console/devices","/console/operations","/console/landing","/console/billing","/console/system","/console/brand","/console/legal","/","/features","/how-it-works","/login","/register","/forgot-password","/reset-password","/verify","/pricing","/checkout","/install","/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage","/approvals","/team","/audit","/invite","/privacy","/terms","/refund",...contentPaths]);
 export function Brand({onClick,subtitle=false}:{onClick?:()=>void;subtitle?:boolean}){return <a href="/" onClick={e=>{if(onClick){e.preventDefault();onClick()}}} aria-label={translate("WECOMMANDER ana sayfa")} className="inline-flex flex-col gap-1 items-start"><img className="logo-light" src="/api/public/brand/logo_light" alt="WECOMMANDER"/><img className="logo-dark" src="/api/public/brand/logo_dark" alt="" aria-hidden="true"/>{subtitle&&<span className="text-[11px] tracking-wide text-[var(--muted)]">Remote MCP · AI Workspace</span>}</a>}
 export function NavLink({to,nav,children,className}:{to:string;nav:Nav;children:ReactNode;className?:string}){return <a href={to} className={className} onClick={e=>{if(e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey){e.preventDefault();nav(to)}}}>{children}</a>}
 export function ThemeToggle({theme,onToggle}:{theme:Theme;onToggle:()=>void}){return <button type="button" className="theme-button" onClick={onToggle} aria-label={theme==="dark"?translate("Açık temaya geç"):translate("Koyu temaya geç")} title={theme==="dark"?translate("Windows açık tema"):translate("Windows koyu tema")}>{theme==="dark"?<Sun className="size-[19px]"/>:<Moon className="size-[19px]"/>}</button>}
@@ -112,7 +112,7 @@ export default function App(){
  {path==="/usage"&&<UsagePage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
 
   {contentPaths.includes(path)&&<ContentPage path={path} nav={navigate}/>}
-  {(path==="/privacy"||path==="/terms")&&<LegalPage page={path==="/privacy"?"privacy":"terms"}/>}
+  {(path==="/privacy"||path==="/terms"||path==="/refund")&&<LegalPage page={path==="/privacy"?"privacy":path==="/refund"?"refund":"terms"}/>}
  </>;
  const globalHeader=!path.startsWith("/console")&&!["/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage","/approvals","/team","/audit"].includes(path);
  return <div className="app-shell">
