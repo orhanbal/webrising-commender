@@ -4,7 +4,12 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "WECOMMANDER User Mode SSH core: host profiles and connection model (V2 A01 skeleton; protocol work lands in A02)"
+description = "WECOMMANDER User Mode SSH core: host profiles and the russh client (connect, host key check, auth, exec)"
 
 [dependencies]
+russh = "0.65"
 serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["rt", "time", "net", "macros", "io-util"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

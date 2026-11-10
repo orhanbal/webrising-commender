@@ -3,6 +3,8 @@
 //! V2 A01 skeleton: the host profile model the desktop app saves and lists.
 //! The SSH protocol itself (russh, auth methods, SFTP) arrives with A02 and
 //! is gated by G2 (compatibility matrix).
+pub mod client;
+
 use serde::{Deserialize, Serialize};
 
 /// A saved SSH destination.
