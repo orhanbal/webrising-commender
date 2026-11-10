@@ -9,6 +9,7 @@
 //! on a pseudo-terminal through wc-ssh-core and is drawn by xterm.js.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod agent;
 mod store;
 
 use base64::Engine;
@@ -24,7 +25,7 @@ use wc_ssh_core::sftp::{self as sftp_path, Entry, Sftp};
 use wc_ssh_core::HostProfile;
 use wc_vault::{Backend, MemoryStore, OsKeyring, SecretStore};
 
-const KEYRING_SERVICE: &str = "app.wecommander.desktop";
+pub(crate) const KEYRING_SERVICE: &str = "app.wecommander.desktop";
 
 struct Terminal {
     writer: Arc<ShellWriter>,
@@ -34,13 +35,13 @@ struct Terminal {
     sftp: Arc<tokio::sync::Mutex<Option<Arc<Sftp>>>>,
 }
 
-struct AppState {
+pub(crate) struct AppState {
     data: Mutex<Data>,
     store: Store,
-    vault: Box<dyn SecretStore>,
+    pub(crate) vault: Box<dyn SecretStore>,
     /// False when no OS keyring answered (headless Linux): secrets are then
     /// kept only until the app closes.
-    vault_persistent: bool,
+    pub(crate) vault_persistent: bool,
     terminals: Mutex<HashMap<String, Terminal>>,
 }
 
@@ -680,6 +681,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             let store = Store::new(&dir);
@@ -711,7 +713,12 @@ fn main() {
             files_upload,
             files_mkdir,
             files_rename,
-            files_delete
+            files_delete,
+            agent::agent_status,
+            agent::agent_link_start,
+            agent::agent_overview,
+            agent::agent_decide,
+            agent::agent_unlink
         ])
         .run(tauri::generate_context!())
         .expect("WECOMMANDER desktop failed to start");

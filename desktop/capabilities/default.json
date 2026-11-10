@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main window: core events, the app's own commands, clipboard text (terminal copy/paste) and open/save dialogs (file transfers).",
+  "description": "Main window: core events, the app's own commands, clipboard text (terminal copy/paste), open/save dialogs (file transfers) and opening the account link page in the browser.",
   "windows": [
     "main"
   ],
@@ -10,6 +10,7 @@
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
     "dialog:allow-open",
-    "dialog:allow-save"
+    "dialog:allow-save",
+    "opener:allow-open-url"
   ]
 }

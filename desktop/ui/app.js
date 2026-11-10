@@ -18,6 +18,7 @@ document.querySelectorAll(".ws").forEach((button) => {
     document.querySelectorAll(".ws").forEach((b) => b.classList.toggle("active", b === button));
     $("ws-user").hidden = button.dataset.ws !== "user";
     $("ws-agent").hidden = button.dataset.ws !== "agent";
+    if (button.dataset.ws === "agent") refreshAgent();
     if (button.dataset.ws === "user" && activeSession) sessions.get(activeSession)?.view.fit();
   });
 });
@@ -526,6 +527,104 @@ window.__TAURI__.webview.getCurrentWebview().onDragDropEvent(({ payload }) => {
   if (payload.type === "enter" || payload.type === "over") panel.classList.add("drop");
   else panel.classList.remove("drop");
   if (payload.type === "drop" && payload.paths?.length) uploadPaths(payload.paths);
+});
+
+// ---- Agent Mode (B09) ------------------------------------------------------
+let agentTimer = null;
+// Same labels as the Management Center (tray/ui/app.js).
+const KIND = {
+  process_exec: "Komut çalıştır", process_kill: "İşlemi sonlandır", task_start: "Arka plan görevi başlat",
+  task_cancel: "Görevi iptal et", terminal_start: "Terminal aç", terminal_stop: "Terminali kapat",
+  terminal_input: "Terminale yaz", fs_delete: "Dosya sil", fs_move: "Dosya taşı",
+};
+
+async function refreshAgent() {
+  clearTimeout(agentTimer);
+  $("agent-error").textContent = "";
+  try {
+    const status = await invoke("agent_status");
+    $("agent-link").hidden = status.linked;
+    $("agent-main").hidden = !status.linked;
+    $("agent-unlink").hidden = !status.linked;
+    if (!status.linked) {
+      $("agent-who").textContent = "WECOMMANDER hesabın: cihazların ve yapay zekânın onay bekleyen işlemleri.";
+      if (!status.keyring) $("agent-link-status").textContent = "Uyarı: şifre kasası yok; bağlantı uygulama kapanınca unutulur.";
+      return;
+    }
+    const me = status.me;
+    $("agent-who").textContent = `${me.email ?? me.name} · ${me.organizationName ?? ""} · ${me.role}`;
+    const overview = await invoke("agent_overview");
+    renderApprovals(overview.pending);
+    renderDevices(overview.devices);
+  } catch (error) {
+    $("agent-error").textContent = String(error);
+  } finally {
+    if (!$("ws-agent").hidden) agentTimer = setTimeout(refreshAgent, 5000);
+  }
+}
+
+function renderApprovals(items) {
+  $("pending-count").textContent = items.length;
+  $("approvals-empty").hidden = items.length > 0;
+  $("approvals").replaceChildren(...items.map((a) => {
+    const li = document.createElement("li");
+    li.className = "approval";
+    const who = document.createElement("div");
+    who.className = "who";
+    const left = Math.max(0, Math.round((new Date(a.expiresAt) - Date.now()) / 60000));
+    who.textContent = `${KIND[a.kind] ?? a.kind} · ${a.device} · ${left} dk içinde düşer`;
+    const code = document.createElement("code");
+    code.textContent = a.summary || "(ayrıntı yok)";
+    const acts = document.createElement("div");
+    acts.className = "acts";
+    const yes = document.createElement("button"); yes.className = "primary"; yes.textContent = "Onayla";
+    const no = document.createElement("button"); no.className = "deny"; no.textContent = "Reddet";
+    const decide = async (approve) => {
+      yes.disabled = no.disabled = true;
+      try { await invoke("agent_decide", { id: a.id, approve }); }
+      catch (error) { $("agent-error").textContent = String(error); }
+      refreshAgent();
+    };
+    yes.addEventListener("click", () => decide(true));
+    no.addEventListener("click", () => decide(false));
+    acts.append(yes, no);
+    li.append(who, acts, code);
+    return li;
+  }));
+}
+
+function renderDevices(items) {
+  const names = { windows: "Windows", macos: "macOS", linux: "Linux" };
+  $("devices").replaceChildren(...items.map((d) => {
+    const li = document.createElement("li");
+    li.className = `device${d.online ? " on" : ""}`;
+    const dot = document.createElement("span"); dot.className = "dot";
+    const name = document.createElement("strong"); name.textContent = d.name;
+    const state = document.createElement("span"); state.className = "muted small"; state.textContent = d.online ? "çevrimiçi" : "çevrimdışı";
+    const plat = document.createElement("span"); plat.className = "plat"; plat.textContent = names[d.platform] ?? d.platform ?? "";
+    li.append(dot, name, state, plat);
+    return li;
+  }));
+}
+
+$("agent-link-start").addEventListener("click", async () => {
+  $("agent-link-status").textContent = "Bağlantı isteği oluşturuluyor…";
+  try {
+    const start = await invoke("agent_link_start");
+    await window.__TAURI__.opener.openUrl(start.approveUrl);
+    $("agent-link-status").textContent = "Tarayıcıda onayla; bu ekran kendiliğinden güncellenecek.";
+  } catch (error) {
+    $("agent-link-status").textContent = `Başlatılamadı: ${error}`;
+  }
+});
+listen("agent-linked", () => { $("agent-link-status").textContent = ""; refreshAgent(); });
+listen("agent-link-failed", ({ payload }) => {
+  $("agent-link-status").textContent = payload === "expired" ? "Bağlantı isteğinin süresi doldu; yeniden dene." : `Bağlanamadı: ${payload}`;
+});
+$("agent-unlink").addEventListener("click", async () => {
+  if (await ask({ title: "Hesap bağlantısı kesilsin mi?", text: "Bu bilgisayar onay bekleyenleri artık göstermez.", ok: "Bağlantıyı kes" }) === null) return;
+  await invoke("agent_unlink");
+  refreshAgent();
 });
 
 // ---- startup --------------------------------------------------------------
