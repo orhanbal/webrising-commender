@@ -97,10 +97,11 @@ public partial class App : Application
         if (InstallerRunning) return;
         try
         {
-            // Installing a new agent while signed in: pair it with this
-            // account through a one-time code, no second browser sign-in.
+            // Signed in: a one-time pairing code goes with every install and
+            // update, so the installer never asks for a second browser sign-in
+            // (it uses the code only if the existing pairing cannot be kept).
             string? code = null;
-            if (Agent is { State: AgentRunState.NotInstalled } && Token is { } token)
+            if (Token is { } token)
             {
                 try { code = await Gateway.PairingCodeAsync(token); }
                 catch (GatewayException) { /* the installer falls back to account sign-in */ }
@@ -108,7 +109,7 @@ public partial class App : Application
             _installerLog.Clear();
             InstallerSucceeded = null;
             InstallerRunning = true;
-            AddInstallerLine(code is null ? "Ajan güncellemesi başladı…" : "Ajan kurulumu başladı (bu hesapla otomatik bağlanacak)…");
+            AddInstallerLine(Agent is { State: AgentRunState.NotInstalled } ? "Ajan kurulumu başladı (bu hesapla otomatik bağlanacak)…" : "Ajan güncellemesi başladı…");
             Publish();
 
             using var process = new System.Diagnostics.Process { StartInfo = AgentControl.InstallerStartInfo(Settings.Server, code) };
