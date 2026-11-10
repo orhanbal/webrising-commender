@@ -38,6 +38,7 @@
       </form>
       <ul id="hosts" class="hosts"></ul>
       <p class="empty" id="empty">Henüz sunucu yok. “+” ile ilk sunucunu ekle.</p>
+      <button type="button" class="import" id="import-config" title="~/.ssh/config içindeki sunucuları ekler">~/.ssh/config'den içe aktar</button>
       <p class="vault-note" id="vault-note"></p>
     </div>
 
@@ -85,6 +86,10 @@
       <div class="row radios">
         <label><input type="radio" name="kind" value="key" checked> Özel anahtar</label>
         <label><input type="radio" name="kind" value="password"> Parola</label>
+      </div>
+      <div class="keyfile" id="keyfile-row">
+        <button type="button" id="keyfile-pick">Anahtar dosyası seç…</button>
+        <span id="keyfile-path" class="muted">ya da anahtarı aşağıya yapıştır</span>
       </div>
       <textarea name="key" rows="6" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" spellcheck="false"></textarea>
       <input name="passphrase" type="password" placeholder="Anahtar parolası (varsa)" autocomplete="off">

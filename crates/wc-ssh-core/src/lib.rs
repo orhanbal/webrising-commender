@@ -5,6 +5,7 @@
 //! is gated by G2 (compatibility matrix).
 pub mod client;
 pub mod sftp;
+pub mod ssh_config;
 
 use serde::{Deserialize, Serialize};
 

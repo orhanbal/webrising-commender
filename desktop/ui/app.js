@@ -143,14 +143,23 @@ function setStatus(text, isError = false) {
 
 function syncKind() {
   const kind = form.elements.kind.value;
-  form.elements.key.hidden = kind !== "key";
+  form.elements.key.hidden = kind !== "key" || Boolean(pickedKeyPath);
+  $("keyfile-row").hidden = kind !== "key";
   form.elements.passphrase.hidden = kind !== "key";
   form.elements.password.hidden = kind !== "password";
 }
 form.addEventListener("change", (e) => { if (e.target.name === "kind") syncKind(); });
 
+let pickedKeyPath = null;
+function showKeyPath(path) {
+  pickedKeyPath = path;
+  $("keyfile-path").textContent = path || "ya da anahtarı aşağıya yapıştır";
+  form.elements.key.hidden = Boolean(path) || form.elements.kind.value !== "key";
+}
+
 function openDialog(host, mode, message = "") {
   pending = { host, mode, auth: null };
+  showKeyPath(host.keyPath || null);
   $("dialog").hidden = false;
   $("connect-title").textContent = `${host.label} · ${host.target}`;
   form.elements.kind.value = host.authKind;
@@ -166,6 +175,7 @@ function closeDialog() {
   // Secrets stay in the form only while it is open.
   form.elements.key.value = form.elements.passphrase.value = form.elements.password.value = "";
   pending = null;
+  pickedKeyPath = null;
 }
 $("connect-cancel").addEventListener("click", closeDialog);
 
@@ -176,6 +186,7 @@ function typedAuth() {
     secret: kind === "key" ? form.elements.key.value : form.elements.password.value,
     passphrase: kind === "key" ? form.elements.passphrase.value : null,
     remember: form.elements.remember.checked,
+    keyPath: kind === "key" && pickedKeyPath && !form.elements.key.value ? pickedKeyPath : null,
   };
 }
 
@@ -183,7 +194,7 @@ form.addEventListener("submit", (event) => {
   event.preventDefault();
   if (!pending) return;
   pending.auth = typedAuth();
-  if (!pending.auth.secret) { setStatus(pending.auth.kind === "key" ? "Özel anahtarı yapıştır." : "Parolayı gir.", true); return; }
+  if (!pending.auth.secret && !pending.auth.keyPath) { setStatus(pending.auth.kind === "key" ? "Özel anahtarı yapıştır." : "Parolayı gir.", true); return; }
   runConnect(null);
 });
 
@@ -192,10 +203,10 @@ $("hostkey-accept").addEventListener("click", () => runConnect(pending?.fingerpr
 
 function openTerminal(host) { startConnect(host, "terminal"); }
 
-/** Uses the saved credential when there is one, otherwise asks. */
+/** Uses the saved credential or key file when there is one, otherwise asks. */
 function startConnect(host, mode) {
-  if (!host.savedSecret) { openDialog(host, mode); return; }
-  pending = { host, mode, auth: { kind: host.authKind, secret: "", passphrase: null, remember: false } };
+  if (!host.savedSecret && !(host.authKind === "key" && host.keyPath)) { openDialog(host, mode); return; }
+  pending = { host, mode, auth: { kind: host.authKind, secret: "", passphrase: null, remember: false, keyPath: null } };
   runConnect(null);
 }
 
@@ -225,6 +236,7 @@ async function runConnect(acceptFingerprint) {
 function readableError(text) {
   if (text.includes("no saved credential")) return "Bu sunucu için kayıtlı giriş bilgisi yok; bir kez gir.";
   if (text.includes("authentication failed")) return "Giriş reddedildi. Anahtarı veya parolayı kontrol et.";
+  if (text.includes("key file ")) return `Anahtar dosyası okunamadı: ${text.replace(/^key file /, "")}`;
   if (text.includes("private key could not be used")) return "Özel anahtar okunamadı (biçim veya anahtar parolası yanlış).";
   if (text.includes("timed out")) return "Sunucu yanıt vermedi (zaman aşımı).";
   if (text.includes("connection failed")) return `Bağlanılamadı: ${text.replace("connection failed: ", "")}`;
@@ -331,6 +343,21 @@ listen("terminal-exit", ({ payload }) => {
   s.tab.classList.add("closed");
   if (payload.sessionId === activeSession) syncFilesButton();
   s.view?.write(`\r\n\x1b[90m[Bağlantı kapandı${payload.code != null ? `, çıkış kodu ${payload.code}` : ""}. Sekmeyi kapatabilirsin.]\x1b[0m\r\n`);
+});
+
+$("keyfile-pick").addEventListener("click", async () => {
+  const path = await window.__TAURI__.dialog.open({ multiple: false, directory: false, title: "Özel anahtar dosyası (ör. ~/.ssh/id_ed25519)" });
+  if (path) showKeyPath(Array.isArray(path) ? path[0] : path);
+});
+
+$("import-config").addEventListener("click", async () => {
+  try {
+    const result = await invoke("import_ssh_config");
+    renderHosts(result.hosts);
+    alertToast(result.added ? `${result.added} sunucu içe aktarıldı${result.skipped ? `, ${result.skipped} zaten vardı` : ""}.` : "Yeni sunucu bulunamadı.");
+  } catch (error) {
+    alertToast(`~/.ssh/config okunamadı: ${error}`);
+  }
 });
 
 // ---- file manager (SFTP, A09) ----------------------------------------------
