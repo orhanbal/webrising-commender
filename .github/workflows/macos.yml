@@ -240,4 +240,16 @@ jobs:
           cargo fmt -- --check
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked
-          cargo build --release --locked
+      - name: Desktop app bundle (A04, ad-hoc signed)
+        working-directory: desktop
+        run: |
+          npx -y @tauri-apps/cli@2.12.4 build --ci --bundles app
+          mkdir -p dist
+          ditto -c -k --keepParent target/release/bundle/macos/WECOMMANDER.app dist/WECOMMANDER-Desktop-macos.zip
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WECOMMANDER-Desktop-macOS
+          path: desktop/dist/WECOMMANDER-Desktop-macos.zip
+          if-no-files-found: error
+          retention-days: 14

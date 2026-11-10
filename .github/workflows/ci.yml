@@ -867,7 +867,23 @@ jobs:
           cargo fmt -- --check
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked
-          cargo build --release --locked
+      - name: Desktop installer (A04, unsigned)
+        working-directory: desktop
+        shell: bash
+        env:
+          BUNDLES: ${{ runner.os == 'Linux' && 'deb' || 'nsis' }}
+        run: |
+          npx -y @tauri-apps/cli@2.12.4 build --ci --bundles "$BUNDLES"
+          mkdir -p dist
+          find target/release/bundle \( -name '*.deb' -o -name '*-setup.exe' \) -exec cp {} dist/ \;
+          ls -la dist
+          test -n "$(ls dist)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WECOMMANDER-Desktop-${{ runner.os }}
+          path: desktop/dist/*
+          if-no-files-found: error
+          retention-days: 14
 
   center-windows:
     # Management Center (tray app). Separate cargo workspace in tray/.
