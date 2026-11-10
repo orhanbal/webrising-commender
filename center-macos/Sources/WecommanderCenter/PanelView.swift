@@ -415,10 +415,17 @@ private struct AgentCard: View {
             }
             Text(help).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
-                Button(model.agent?.state == .notInstalled ? "Ajanı kur" : "Ajanı güncelle") { model.updateAgent() }
-                    .disabled(model.agentBusy)
+                if model.agent?.state == .notInstalled || model.agentUpdateAvailable {
+                    Button(model.agent?.state == .notInstalled ? "Ajanı kur" : "Yeni sürüm var — Ajanı güncelle") { model.updateAgent() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(model.agentBusy)
+                } else {
+                    Button("Ajanı güncelle") { model.updateAgent() }
+                        .disabled(model.agentBusy)
+                }
                 if let version = model.agentVersion {
-                    Text("Kurulu sürüm: \(version)").font(.caption).foregroundStyle(.secondary)
+                    Text("Kurulu sürüm: \(version)" + (model.agentUpdateAvailable ? " · yeni: 0.1.\(model.latestAgentBuild ?? 0)" : model.latestAgentBuild != nil ? " · güncel" : ""))
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
         }

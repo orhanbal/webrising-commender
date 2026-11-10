@@ -30,6 +30,11 @@ final class AppModel: ObservableObject {
     /// Installed agent version ("0.1.58"), read every few minutes.
     @Published private(set) var agentVersion: String?
     private var lastVersionCheck = Date.distantPast
+    /// Newest published agent build (the N of 0.1.N), checked every 6 hours.
+    @Published private(set) var latestAgentBuild: Int?
+    private var lastReleaseCheck = Date.distantPast
+    private var announcedBuild: Int?
+    var agentUpdateAvailable: Bool { AgentUpdate.isNewer(latestAgentBuild, than: agentVersion) }
 
     private let agentControl = AgentControl(uid: getuid(), home: NSHomeDirectory(), runner: ProcessRunner())
     private var watchdog = AgentWatchdog()
@@ -319,6 +324,23 @@ final class AppModel: ObservableObject {
             lastVersionCheck = Date()
             let version = await agentControl.installedVersion()
             if version != agentVersion { agentVersion = version; changed = true }
+        }
+        if status.state != .notInstalled && Date().timeIntervalSince(lastReleaseCheck) >= 6 * 3600 {
+            lastReleaseCheck = Date()
+            var request = URLRequest(url: AgentUpdate.releasesURL, timeoutInterval: 20)
+            request.setValue("WECOMMANDER-Center", forHTTPHeaderField: "User-Agent")
+            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+            if let (data, response) = try? await URLSession.shared.data(for: request),
+               (response as? HTTPURLResponse)?.statusCode == 200,
+               let latest = AgentUpdate.latestMacBuild(data) {
+                if latest != latestAgentBuild { latestAgentBuild = latest; changed = true }
+            } else {
+                lastReleaseCheck = Date().addingTimeInterval(-5 * 3600) // retry in an hour
+            }
+            if agentUpdateAvailable, announcedBuild != latestAgentBuild, let latest = latestAgentBuild {
+                announcedBuild = latest
+                notifier.showPlain("WECOMMANDER", "Ajan için yeni sürüm var (0.1.\(latest)). Yönetim Merkezinde \"Ajanı güncelle\" ile kurabilirsin.")
+            }
         }
         switch watchdog.next(keepRunning: settings.agentKeepRunning && status.enabled, status: status, now: Date()) {
         case .start:

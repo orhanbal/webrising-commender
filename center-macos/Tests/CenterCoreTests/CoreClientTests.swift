@@ -52,3 +52,20 @@ final class CoreClientTests: XCTestCase {
         XCTAssertEqual(CoreText.turkish("something new"), "something new")
     }
 }
+
+final class AgentUpdateTests: XCTestCase {
+    func testNewestMacBuild() {
+        let json = """
+        [{"tag_name":"macos-preview-120","draft":false,"assets":[{"name":"WECOMMANDER-macos-universal.pkg"}]},
+         {"tag_name":"macos-preview-130","draft":true,"assets":[{"name":"WECOMMANDER-macos-universal.pkg"}]},
+         {"tag_name":"macos-preview-125","assets":[{"name":"other.zip"}]},
+         {"tag_name":"ubuntu-preview-999","assets":[{"name":"WECOMMANDER-macos-universal.pkg"}]}]
+        """
+        XCTAssertEqual(AgentUpdate.latestMacBuild(Data(json.utf8)), 120)
+        XCTAssertNil(AgentUpdate.latestMacBuild(Data("{}".utf8)))
+        XCTAssertTrue(AgentUpdate.isNewer(120, than: "0.1.58"))
+        XCTAssertFalse(AgentUpdate.isNewer(120, than: "0.1.120"))
+        XCTAssertFalse(AgentUpdate.isNewer(nil, than: "0.1.1"))
+        XCTAssertEqual(AgentUpdate.build("0.1.58"), 58)
+    }
+}
