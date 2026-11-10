@@ -232,9 +232,12 @@ jobs:
         run: |
           cargo clippy --locked -p wc-ssh-core -p wc-vault --all-targets -- -D warnings
           cargo test --locked -p wc-ssh-core -p wc-vault
-      - name: Desktop app (format, lint, release build)
+      - name: G1 keyring smoke test (macOS Keychain)
+        run: cargo test --locked -p wc-vault --features os-keyring --lib -- --ignored
+      - name: Desktop app (format, lint, tests, release build)
         working-directory: desktop
         run: |
           cargo fmt -- --check
           cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
           cargo build --release --locked

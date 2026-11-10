@@ -1,6 +1,9 @@
 # @wecommander/terminal-ui
 
-Terminal view shared by the WECOMMANDER desktop app (`desktop/`) and the web
-console. This is the V2 **A01** skeleton: a placeholder with the final API
-shape (`createTerminalView(element) → { write, dispose }`). **A03** brings the
-xterm.js renderer once the G3 gate (WebView2, WKWebView, WebKitGTK) passes.
+Terminal view shared by the WECOMMANDER desktop app (`desktop/`) and, later,
+the web console: `createTerminalView(element, { onData, onResize })` returns
+`{ write, fit, focus, dispose, cols, rows }`. It uses xterm.js 5 and
+`@xterm/addon-fit` as globals (vendored in `desktop/ui/vendor/xterm`).
+
+The desktop app serves a copy at `desktop/ui/terminal-view.js`; CI fails if the
+copy and `src/index.js` differ.

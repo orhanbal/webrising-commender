@@ -4,6 +4,21 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "WECOMMANDER local vault: secret store abstraction (V2 A01 skeleton; OS keyring and master-password backends land in A05)"
+description = "WECOMMANDER local vault: secret store abstraction with OS keyring (Windows Credential Manager, macOS Keychain, Linux Secret Service) and an in-memory backend"
+
+[features]
+default = []
+# OS keyring backend, used by the desktop app. Off for the agent workspace.
+os-keyring = ["dep:keyring"]
 
 [dependencies]
+
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3", optional = true, features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", optional = true, features = ["apple-native"] }
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+# zbus-based Secret Service: pure Rust, no libdbus needed at build time.
+keyring = { version = "3", optional = true, features = ["async-secret-service", "async-io", "crypto-rust"] }

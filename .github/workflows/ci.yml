@@ -832,7 +832,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev openssh-server
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev openssh-server gnome-keyring dbus-x11
           # The OpenSSH interop test starts its own sshd on 127.0.0.1.
           sudo mkdir -p /run/sshd
       - name: Shared crates (format, lint, tests)
@@ -841,12 +841,32 @@ jobs:
           cargo fmt -p wc-ssh-core -p wc-vault -- --check
           cargo clippy --locked -p wc-ssh-core -p wc-vault --all-targets -- -D warnings
           cargo test --locked -p wc-ssh-core -p wc-vault
-      - name: Desktop app (format, lint, release build)
+      - name: G1 keyring smoke test (Linux Secret Service)
+        if: runner.os == 'Linux'
+        run: |
+          cat > /tmp/keyring-smoke.sh <<'SH'
+          set -e
+          echo -n ci-keyring-password | gnome-keyring-daemon --unlock --components=secrets >/dev/null
+          cargo test --locked -p wc-vault --features os-keyring --lib -- --ignored
+          SH
+          dbus-run-session -- bash /tmp/keyring-smoke.sh
+      - name: G1 keyring smoke test (Windows Credential Manager)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: cargo test --locked -p wc-vault --features os-keyring --lib -- --ignored
+      - name: Terminal view copy and UI syntax
+        shell: bash
+        run: |
+          cmp packages/terminal-ui/src/index.js desktop/ui/terminal-view.js
+          node --check desktop/ui/app.js
+          node --check desktop/ui/terminal-view.js
+      - name: Desktop app (format, lint, tests, release build)
         working-directory: desktop
         shell: bash
         run: |
           cargo fmt -- --check
           cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
           cargo build --release --locked
 
   center-windows:

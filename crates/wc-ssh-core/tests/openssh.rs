@@ -212,5 +212,34 @@ async fn openssh_host_key_auth_and_exec() {
         Err(SshError::AuthFailed { .. })
     ));
 
+    // 7. Interactive shell on a pty: output, resize, exit status.
+    let conn = connect(&profile, &key(&ed, None), &trusted).await.unwrap();
+    let mut shell = conn
+        .open_shell("xterm-256color", 80, 24)
+        .await
+        .expect("shell");
+    shell.writer.resize(120, 40).await.unwrap();
+    shell
+        .writer
+        .write(b"stty size; echo TERM=$TERM; exit 7\n")
+        .await
+        .unwrap();
+    let mut text = String::new();
+    let mut exit = None;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while let Ok(Some(event)) = tokio::time::timeout_at(deadline, shell.reader.next()).await {
+        match event {
+            wc_ssh_core::client::ShellEvent::Output(bytes) => {
+                text.push_str(&String::from_utf8_lossy(&bytes))
+            }
+            wc_ssh_core::client::ShellEvent::Exit(code) => exit = Some(code),
+        }
+    }
+    assert!(text.contains("40 120"), "pty size follows resize: {text:?}");
+    assert!(text.contains("TERM=xterm-256color"), "{text:?}");
+    assert_eq!(exit, Some(Some(7)));
+    assert!(shell.reader.next().await.is_none());
+    conn.close().await.unwrap();
+
     let _ = std::fs::remove_dir_all(&keys);
 }

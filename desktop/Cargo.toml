@@ -22,4 +22,7 @@ tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 wc-ssh-core = { path = "../crates/wc-ssh-core" }
-wc-vault = { path = "../crates/wc-vault" }
+wc-vault = { path = "../crates/wc-vault", features = ["os-keyring"] }
+uuid = { version = "1", features = ["v4"] }
+tokio = { version = "1", features = ["sync", "rt"] }
+base64 = "0.22"
