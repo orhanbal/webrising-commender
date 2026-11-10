@@ -82,3 +82,39 @@ textarea{font:12px ui-monospace,Consolas,monospace;resize:vertical}
 .tunnel-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}.tunnel-list li{display:flex;gap:8px;align-items:center;font:12px ui-monospace,Consolas,monospace;background:var(--bg);border-radius:8px;padding:6px 8px}
 .tunnel-list li span{flex:1}.tunnel-list li button{font:inherit;padding:2px 8px}
 .host .via{display:block;font-size:11px;color:var(--muted)}
+
+/* ---- platform looks: Windows 11 (Fluent) and macOS --------------------- */
+.ws{display:grid;place-items:center;gap:1px;height:50px}.ws svg{width:20px;height:20px}.ws span{font-size:10px;font-weight:600}
+.sub{font-size:13px;margin:6px 0 0}
+
+body.os-windows{--bg:#f3f3f3;--surface:#fbfbfb;--stroke:#e5e5e5;--accent:#005fb8;--accent-ink:#fff;--muted:#5f5f5f;font-family:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif}
+@media(prefers-color-scheme:dark){body.os-windows{--bg:#202020;--surface:#2c2c2c;--stroke:#3d3d3d;--accent:#60cdff;--accent-ink:#00243a;--muted:#c5c5c5}}
+body.os-windows button,body.os-windows input,body.os-windows select,body.os-windows textarea{border-radius:4px}
+body.os-windows input,body.os-windows select,body.os-windows textarea{background:var(--surface);border-bottom-color:color-mix(in srgb,var(--text) 45%,transparent)}
+body.os-windows input:focus,body.os-windows textarea:focus{outline:none;border-bottom:2px solid var(--accent)}
+body.os-windows button{background:var(--surface)}body.os-windows button:hover{background:color-mix(in srgb,var(--surface) 92%,var(--text))}
+body.os-windows button.primary{background:var(--accent)}body.os-windows button.primary:hover{background:color-mix(in srgb,var(--accent) 90%,#000)}
+body.os-windows .rail{background:var(--bg);border-right:0}
+body.os-windows .ws{position:relative;border-radius:4px}body.os-windows .ws.active{background:color-mix(in srgb,var(--text) 6%,transparent);border-color:transparent}
+body.os-windows .ws.active::before{content:"";position:absolute;left:-6px;top:15px;bottom:15px;width:3px;border-radius:2px;background:var(--accent)}
+body.os-windows .hosts-pane{background:var(--bg);border-right:1px solid var(--stroke)}
+body.os-windows .host{border-radius:4px}body.os-windows .host.active{background:color-mix(in srgb,var(--text) 6%,transparent)}
+body.os-windows .dialog{border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,.28)}body.os-windows .menu{border-radius:8px}
+body.os-windows .tab{border-radius:6px 6px 0 0}
+
+body.os-macos{--bg:#ffffff;--surface:#f5f5f7;--stroke:#dcdce0;--accent:#007aff;--accent-ink:#fff;--muted:#6e6e73;font:13px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif}
+@media(prefers-color-scheme:dark){body.os-macos{--bg:#1e1e1e;--surface:#2a2a2c;--stroke:#3a3a3c;--accent:#0a84ff;--muted:#98989d}}
+body.os-macos .rail{padding-top:40px;background:color-mix(in srgb,var(--surface) 88%,var(--stroke));border-right:1px solid var(--stroke)}
+body.os-macos .brand{display:none}
+body.os-macos .hosts-pane{background:color-mix(in srgb,var(--surface) 88%,var(--stroke))}
+body.os-macos .pane-head{padding-top:14px}
+body.os-macos .ws{border-radius:7px}body.os-macos .ws.active{background:color-mix(in srgb,var(--accent) 16%,transparent);border-color:transparent;color:var(--accent)}
+body.os-macos button,body.os-macos input,body.os-macos select,body.os-macos textarea{border-radius:6px}
+body.os-macos button{padding:4px 12px;box-shadow:0 .5px 1px rgba(0,0,0,.12)}body.os-macos button.primary{border-radius:6px}
+body.os-macos input:focus,body.os-macos textarea:focus{outline:3px solid color-mix(in srgb,var(--accent) 45%,transparent);outline-offset:0}
+body.os-macos .host{border-radius:6px}body.os-macos .host.active{background:color-mix(in srgb,var(--accent) 18%,transparent)}
+body.os-macos .dialog{border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.3)}body.os-macos .menu{border-radius:8px}
+body.os-macos .tabbar{padding-left:4px}
+body.os-windows .ws{background:transparent}body.os-windows .ws:hover{background:color-mix(in srgb,var(--text) 5%,transparent)}
+body.os-windows .files-toggle[aria-pressed=true],body.os-macos .files-toggle[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+body.os-macos .ws{background:transparent;box-shadow:none}

@@ -7,6 +7,10 @@ const { listen } = window.__TAURI__.event;
 const clipboard = window.__TAURI__.clipboardManager;
 const $ = (id) => document.getElementById(id);
 
+// Platform look (Windows 11 Fluent, macOS, Linux/GTK) before first paint.
+const OS = /Windows/i.test(navigator.userAgent) ? "windows" : /Macintosh|Mac OS X/i.test(navigator.userAgent) ? "macos" : "linux";
+document.body.classList.add(`os-${OS}`);
+
 let hosts = [];
 const sessions = new Map(); // sessionId -> { hostId, tab, pane, view, closed }
 let activeSession = null;
@@ -557,10 +561,34 @@ function renderTunnels(list) {
   if (s) s.tab.title = list.length ? `${list.length} tünel açık` : "";
 }
 
+async function renderSavedTunnels(list) {
+  list = list ?? await invoke("saved_tunnels");
+  const hostId = sessions.get(activeSession)?.hostId;
+  const mine = list.filter((t) => !hostId || t.hostId === hostId);
+  $("saved-tunnel-list").replaceChildren(...(mine.length ? mine.map((t) => {
+    const li = document.createElement("li");
+    const text = document.createElement("span");
+    text.textContent = `${t.running ? "● " : "○ "}${t.local}  →  ${t.remote}`;
+    const toggle = document.createElement("button");
+    toggle.type = "button"; toggle.textContent = t.running ? "Durdur" : "Başlat";
+    toggle.addEventListener("click", async () => {
+      toggle.disabled = true;
+      try { renderSavedTunnels(await invoke("tunnel_toggle", { hostId: t.hostId, index: t.index })); }
+      catch (e) { $("tunnel-status").classList.add("error"); $("tunnel-status").textContent = String(e); toggle.disabled = false; }
+    });
+    const del = document.createElement("button");
+    del.type = "button"; del.textContent = "Sil";
+    del.addEventListener("click", async () => renderSavedTunnels(await invoke("tunnel_delete", { hostId: t.hostId, index: t.index })));
+    li.append(text, toggle, del);
+    return li;
+  }) : [Object.assign(document.createElement("li"), { textContent: "Bu sunucu için kayıtlı tünel yok." })]));
+}
+
 $("tunnels-toggle").addEventListener("click", async () => {
   if (!activeSession) return;
   $("tunnel-status").textContent = "";
   $("tunnels").hidden = false;
+  renderSavedTunnels().catch(() => {});
   try { renderTunnels(await invoke("forward_list", { sessionId: activeSession })); } catch (e) { $("tunnel-status").textContent = String(e); }
   $("tunnel-form").elements.localPort.focus();
 });
@@ -577,6 +605,12 @@ $("tunnel-form").addEventListener("submit", async (event) => {
     });
     renderTunnels(list);
     const opened = list[list.length - 1];
+    if (f.save.checked) {
+      const hostId = sessions.get(activeSession)?.hostId;
+      const port = Number(opened.local.split(":").pop());
+      try { await renderSavedTunnels(await invoke("tunnel_save", { hostId, localPort: port, remoteHost: f.remoteHost.value, remotePort: Number(f.remotePort.value) })); }
+      catch (e) { $("tunnel-status").textContent = `Tünel açık ama kaydedilemedi: ${e}`; return; }
+    }
     $("tunnel-status").textContent = `Açıldı: ${opened.local} adresine bağlan.`;
     f.localPort.value = ""; f.remotePort.value = "";
   } catch (error) {
@@ -584,6 +618,15 @@ $("tunnel-form").addEventListener("submit", async (event) => {
     $("tunnel-status").textContent = String(error).replace("cannot listen on", "Port dinlenemiyor:");
   }
 });
+
+// ---- tray events -------------------------------------------------------------
+listen("tray-open-host", ({ payload }) => {
+  const host = hosts.find((h) => h.id === payload);
+  document.querySelector('.ws[data-ws="user"]').click();
+  if (host) openTerminal(host);
+});
+listen("tray-error", ({ payload }) => alertToast(`Tünel açılamadı: ${payload}`));
+listen("tunnels-changed", () => { if (!$("tunnels").hidden) renderSavedTunnels().catch(() => {}); });
 
 // ---- Agent Mode (B09) ------------------------------------------------------
 let agentTimer = null;
