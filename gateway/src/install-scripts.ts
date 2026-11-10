@@ -38,7 +38,7 @@ export function installCommands(origin: string) {
 export function dispatcher(origin: string) {
   if (!/^https?:\/\/[A-Za-z0-9.-]+(:[0-9]{1,5})?$/.test(origin)) throw new Error("invalid_origin");
   return `#!/bin/sh
-# WECOMMANDER one-line installer for Ubuntu/Debian (amd64) and macOS.
+# WECOMMANDER one-line installer for Ubuntu/Debian (amd64) and macOS (the app).
 # Usage: curl -fsSL ${origin}/install.sh | sh
 #        curl -fsSL ${origin}/install.sh | sh -s -- --package-only
 # The platform installer verifies the package SHA-256 against the published
@@ -47,7 +47,9 @@ set -eu
 BASE='${origin}'
 case "$(uname -s)" in
   Linux) platform=ubuntu ;;
-  Darwin) platform=macos ;;
+  # A Mac gets the WECOMMANDER app, which carries the agent and pairs itself
+  # (the agent alone stays at /install/macos.sh).
+  Darwin) platform=center ;;
   *) echo "Unsupported system. On Windows run: ${installCommands(origin).windows.replace(/"/g, '\\"')}" >&2; exit 1 ;;
 esac
 command -v curl >/dev/null 2>&1 || { echo "curl is required." >&2; exit 1; }
@@ -56,7 +58,9 @@ tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT INT TERM
 curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location --max-time 60 "$BASE/install/$platform.sh" -o "$tmp"
 run() {
-  if [ "$platform" = ubuntu ] && [ "$(id -u)" -ne 0 ]; then
+  if [ "$platform" = center ]; then
+    sh "$tmp" "$@"
+  elif [ "$platform" = ubuntu ] && [ "$(id -u)" -ne 0 ]; then
     command -v sudo >/dev/null 2>&1 || { echo "Run as root or install sudo." >&2; exit 1; }
     sudo bash "$tmp" --control-url "$BASE" "$@"
   else

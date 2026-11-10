@@ -40,6 +40,14 @@ test -x "$CORE_BIN" || { echo "wecommander-core missing at $CORE_BIN" >&2; exit 
 lipo -archs "$CORE_BIN" | grep -q arm64
 lipo -archs "$CORE_BIN" | grep -q x86_64
 cp "$CORE_BIN" "$APP/Contents/MacOS/wecommander-core"
+# The agent the app pairs and runs itself (universal): AGENT_BIN or
+# center-macos/core/webrising-commender. Same version as the app.
+AGENT_BIN="${AGENT_BIN:-$PKG/core/webrising-commender}"
+test -x "$AGENT_BIN" || { echo "webrising-commender (agent) missing at $AGENT_BIN" >&2; exit 1; }
+lipo -archs "$AGENT_BIN" | grep -q arm64
+lipo -archs "$AGENT_BIN" | grep -q x86_64
+"$AGENT_BIN" --version | grep -q "${VERSION}$" || { echo "agent version is not ${VERSION}" >&2; exit 1; }
+cp "$AGENT_BIN" "$APP/Contents/MacOS/webrising-commender"
 cp "$PKG/Resources/menubar.png" "$PKG/Resources/menubar@2x.png" \
    "$PKG/Resources/wordmark-dark-text.png" "$PKG/Resources/wordmark-light-text.png" \
    "$APP/Contents/Resources/"
@@ -64,7 +72,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <dict>
   <key>CFBundleIdentifier</key><string>app.wecommander.center</string>
   <key>CFBundleName</key><string>WECOMMANDER Center</string>
-  <key>CFBundleDisplayName</key><string>WECOMMANDER Yönetim Merkezi</string>
+  <key>CFBundleDisplayName</key><string>WECOMMANDER</string>
   <key>CFBundleExecutable</key><string>WecommanderCenter</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -85,6 +93,7 @@ plutil -lint "$APP/Contents/Info.plist"
 # Ad-hoc signature: no paid certificate. Installed from the terminal (curl
 # sets no quarantine flag), so Gatekeeper does not block it.
 codesign --force --sign - --timestamp=none "$APP/Contents/MacOS/wecommander-core"
+codesign --force --sign - --timestamp=none "$APP/Contents/MacOS/webrising-commender"
 codesign --force --sign - --timestamp=none "$APP"
 codesign --verify --strict --verbose=2 "$APP"
 

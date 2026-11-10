@@ -1,5 +1,6 @@
 import AppKit
 import CenterCore
+import CryptoKit
 import Foundation
 
 enum Phase { case signedOut, linking, signedIn }
@@ -34,7 +35,23 @@ final class AppModel: ObservableObject {
     @Published private(set) var latestAgentBuild: Int?
     private var lastReleaseCheck = Date.distantPast
     private var announcedBuild: Int?
-    var agentUpdateAvailable: Bool { AgentUpdate.isNewer(latestAgentBuild, than: agentVersion) }
+    var agentUpdateAvailable: Bool {
+        isEmbedded ? AppUpdate.isNewer(latestApp, than: appBuild) : AgentUpdate.isNewer(latestAgentBuild, than: agentVersion)
+    }
+
+    /// The agent inside the app (Contents/MacOS/webrising-commender).
+    let embedded = EmbeddedAgent.forThisApp()
+    /// This build carries the agent and runs it itself.
+    var isEmbedded: Bool { embedded.available }
+    /// This app's build (the N of 0.1.N), or nil in a developer build.
+    let appBuild: Int? = AgentUpdate.build(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)
+    @Published private(set) var latestApp: AppUpdate.Release?
+    @Published private(set) var pairing = false
+    @Published private(set) var updating = false
+    @Published private(set) var updateMessage: String?
+    private var embeddedReady = false
+    private var lastPairAttempt = Date.distantPast
+    private var announcedApp: Int?
 
     private let agentControl = AgentControl(uid: getuid(), home: NSHomeDirectory(), runner: ProcessRunner())
     private var watchdog = AgentWatchdog()
@@ -83,6 +100,7 @@ final class AppModel: ObservableObject {
             Task { @MainActor in await self?.tick() }
         }
         Task { await tick() }
+        Task { await startEmbedded() }
     }
 
     private func publish() {
@@ -227,6 +245,7 @@ final class AppModel: ObservableObject {
                 error = nil
                 notifier.showPlain("WECOMMANDER", "Yönetim Merkezi hesabına bağlandı.")
                 requestSync()
+                Task { await ensurePaired() }
             case "denied", "expired", "consumed":
                 link = nil
                 error = result.status == "denied" ? "Bağlantı tarayıcıda reddedildi." : "Bağlantı isteğinin süresi doldu. Yeniden oturum aç."
@@ -317,6 +336,7 @@ final class AppModel: ObservableObject {
     private func checkAgent() async {
         guard !agentBusy else { return }
         lastAgentCheck = Date()
+        if isEmbedded { await checkEmbedded(); return }
         let status = await agentControl.status()
         var changed = status != agent
         agent = status
@@ -360,6 +380,7 @@ final class AppModel: ObservableObject {
     /// Opens Terminal with the official agent installer (it asks for the
     /// administrator password there).
     func updateAgent() {
+        if isEmbedded { Task { await updateApp() }; return }
         Task { await runAgentInstaller() }
     }
 
@@ -394,6 +415,7 @@ final class AppModel: ObservableObject {
 
     /// "Ajan çalışsın" in the panel and the menu.
     func setAgentEnabled(_ on: Bool) async {
+        if isEmbedded { setEmbedded(on); return }
         guard !agentBusy else { return }
         agentBusy = true
         publish()
@@ -445,5 +467,177 @@ final class AppModel: ObservableObject {
 
     func deviceName(_ id: String) -> String {
         devices.first { $0.id == id }?.name ?? "bilinmeyen cihaz"
+    }
+}
+
+// MARK: the agent inside the app
+
+extension AppModel {
+    /// At launch: end what a crashed copy left, remove the old LaunchAgent
+    /// (per user, no password), then start and pair when needed.
+    fileprivate func startEmbedded() async {
+        guard isEmbedded else { return }
+        _ = await ProcessRunner().run("/usr/bin/pkill", ["-f", embedded.executable])
+        if await LegacyAgentCleanup(control: agentControl).run() {
+            notifier.showPlain("WECOMMANDER", "Eski ajan kurulumu kaldırıldı; artık ajan bu uygulamanın içinde çalışıyor. Hesap bağlantın korundu.")
+        }
+        embeddedReady = true
+        if embedded.paired && settings.agentKeepRunning { embedded.tick(keepRunning: true) }
+        await ensurePaired()
+        await checkAgent()
+    }
+
+    /// Signed in and not paired yet: pair this Mac with a one-time code, then start.
+    func ensurePaired() async {
+        guard isEmbedded, !embedded.paired, !pairing, let token else { return }
+        pairing = true
+        lastPairAttempt = Date()
+        publish()
+        defer {
+            pairing = false
+            agent = embedded.status(keepRunning: settings.agentKeepRunning)
+            publish()
+        }
+        do {
+            let code = try await gateway.pairingCode(token: token)
+            if await embedded.pair(server: settings.server, pairingCode: code) {
+                settings.agentKeepRunning = true
+                saveSettings()
+                embedded.resetWatchdog()
+                embedded.tick(keepRunning: true)
+                notifier.showPlain("WECOMMANDER", "Bu Mac hesabına bağlandı. Ajan arka planda çalışıyor.")
+                requestSync()
+            } else {
+                error = embedded.lastError
+            }
+        } catch {
+            self.error = "Bu Mac hesaba bağlanamadı: " + error.localizedDescription
+        }
+    }
+
+    fileprivate func checkEmbedded() async {
+        guard embeddedReady else { return }
+        let before = agent
+        switch embedded.tick(keepRunning: settings.agentKeepRunning) {
+        case .start where embedded.running && before?.state == .stopped:
+            notifier.showPlain("WECOMMANDER", Texts.agentRestarted)
+        case .giveUp:
+            notifier.showPlain("WECOMMANDER", Texts.agentGaveUp + (embedded.lastError.map { " (\($0))" } ?? ""))
+        default:
+            break
+        }
+        agent = embedded.status(keepRunning: settings.agentKeepRunning)
+        if agentVersion == nil || Date().timeIntervalSince(lastVersionCheck) >= 3600 {
+            lastVersionCheck = Date()
+            agentVersion = await embedded.version()
+        }
+        if !embedded.paired, token != nil, Date().timeIntervalSince(lastPairAttempt) >= 300 {
+            await ensurePaired()
+        }
+        if Date().timeIntervalSince(lastReleaseCheck) >= 6 * 3600 {
+            lastReleaseCheck = Date()
+            if let data = await releasesJSON(), let latest = AppUpdate.latest(data) {
+                latestApp = latest
+            } else {
+                lastReleaseCheck = Date().addingTimeInterval(-5 * 3600) // retry in an hour
+            }
+            if agentUpdateAvailable, let latest = latestApp, announcedApp != latest.build {
+                announcedApp = latest.build
+                notifier.showPlain("WECOMMANDER", "WECOMMANDER için yeni sürüm var (0.1.\(latest.build)). Panelde \"Uygulamayı güncelle\"ye bas.")
+            }
+        }
+        if before != agent { publish() }
+    }
+
+    private func releasesJSON() async -> Data? {
+        var request = URLRequest(url: AgentUpdate.releasesURL, timeoutInterval: 20)
+        request.setValue("WECOMMANDER-Center", forHTTPHeaderField: "User-Agent")
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return data
+    }
+
+    fileprivate func setEmbedded(_ on: Bool) {
+        settings.agentKeepRunning = on
+        saveSettings()
+        embedded.resetWatchdog()
+        if on {
+            if !embedded.paired { Task { await ensurePaired() }; return }
+            error = embedded.start() ? nil : embedded.lastError
+        } else {
+            embedded.stop()
+        }
+        agent = embedded.status(keepRunning: on)
+        lastAgentCheck = Date()
+        publish()
+    }
+
+    /// Quitting the app stops the agent it runs.
+    func stopEmbeddedAgent() { embedded.stop() }
+
+    /// Downloads the newest app (with its agent), checks it against
+    /// SHA256SUMS.txt, unpacks it and lets a helper swap it in after the app
+    /// quits; the app then opens again by itself.
+    fileprivate func updateApp() async {
+        guard !updating else { return }
+        updating = true
+        updateMessage = "Yeni sürüm aranıyor…"
+        publish()
+        let work = FileManager.default.temporaryDirectory.appendingPathComponent("wecommander-update-" + UUID().uuidString)
+        do {
+            guard let data = await releasesJSON(), let latest = AppUpdate.latest(data) else {
+                throw AgentError("Yayımlanmış bir sürüm bulunamadı.")
+            }
+            latestApp = latest
+            if let current = appBuild, latest.build <= current {
+                updateMessage = "Uygulama güncel (0.1.\(current))."
+                updating = false
+                publish()
+                return
+            }
+            updateMessage = "0.1.\(latest.build) indiriliyor…"
+            publish()
+            try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+            let (zipFile, zipResponse) = try await URLSession.shared.download(from: latest.zipURL)
+            guard (zipResponse as? HTTPURLResponse)?.statusCode == 200 else { throw AgentError("Paket indirilemedi.") }
+            let zip = work.appendingPathComponent(AppUpdate.zipAsset)
+            try FileManager.default.moveItem(at: zipFile, to: zip)
+            let (sumsData, _) = try await URLSession.shared.data(from: latest.sumsURL)
+            guard let expected = AppUpdate.expectedHash(String(decoding: sumsData, as: UTF8.self), asset: AppUpdate.zipAsset) else {
+                throw AgentError("Sağlama listesinde bu paket yok; güncelleme durduruldu.")
+            }
+            let actual = SHA256.hash(data: try Data(contentsOf: zip)).map { String(format: "%02x", $0) }.joined()
+            guard actual == expected else {
+                throw AgentError("İndirilen paket doğrulanamadı (SHA-256 uyuşmuyor); güncelleme durduruldu.")
+            }
+            updateMessage = "SHA-256 doğrulandı. Hazırlanıyor…"
+            publish()
+            let unpacked = work.appendingPathComponent("app")
+            let (code, _) = await ProcessRunner().run("/usr/bin/ditto", ["-x", "-k", zip.path, unpacked.path])
+            let newApp = unpacked.appendingPathComponent("WECOMMANDER Center.app")
+            guard code == 0,
+                  FileManager.default.isExecutableFile(atPath: newApp.appendingPathComponent("Contents/MacOS/\(EmbeddedAgent.executableName)").path)
+            else { throw AgentError("Paket açılamadı ya da içinde ajan yok; güncelleme durduruldu.") }
+            let script = work.appendingPathComponent("swap.sh")
+            try AppUpdate.swapScript(appPath: Bundle.main.bundlePath, newAppPath: newApp.path, pid: getpid())
+                .write(to: script, atomically: true, encoding: .utf8)
+            let helper = Process()
+            helper.executableURL = URL(fileURLWithPath: "/bin/sh")
+            helper.arguments = [script.path]
+            helper.standardOutput = FileHandle.nullDevice
+            helper.standardError = FileHandle.nullDevice
+            try helper.run()
+            updateMessage = "Uygulama yeniden başlatılıyor…"
+            publish()
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            NSApp.terminate(nil)
+        } catch {
+            try? FileManager.default.removeItem(at: work)
+            updating = false
+            updateMessage = error.localizedDescription
+            notifier.showPlain("WECOMMANDER", "Güncelleme tamamlanamadı; ayrıntı panelde.")
+            publish()
+        }
     }
 }
