@@ -54,6 +54,10 @@ public enum Texts {
     public static let agentInstallStarted =
         "Ajan kurulumu Terminal'de açıldı. macOS yönetici şifresini isteyecek; ajan bu hesapla otomatik bağlanır."
     public static let agentOffWarning = "Ajan kapalıyken yapay zekâ bu Mac'e erişemez."
+    public static let embeddedNotPaired =
+        "Bu Mac henüz hesabına bağlı değil. Giriş yaptığında uygulama onu kendiliğinden bağlar; ayrıca bir şey kurman gerekmez."
+    public static let embeddedRunning =
+        "Ajan bu uygulamanın içinde, arka planda çalışıyor. Durursa uygulama onu yeniden başlatır. Menüden Çıkış yaparsan ajan da durur."
 
     /// One line for the agent card and the menu.
     public static func agentStateLabel(_ status: AgentStatus?) -> String {

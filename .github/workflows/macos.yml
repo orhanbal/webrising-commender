@@ -209,6 +209,15 @@ jobs:
           lipo -create -output center-macos/core/wecommander-core \
             target/aarch64-apple-darwin/release/wecommander-core target/x86_64-apple-darwin/release/wecommander-core
           lipo -archs center-macos/core/wecommander-core
+      - name: Build the agent the app carries and runs itself (universal)
+        env:
+          WECOMMANDER_VERSION: 0.1.${{ github.run_number }}
+        run: |
+          cargo build --locked --release -p webrising-commender-agent --target aarch64-apple-darwin
+          cargo build --locked --release -p webrising-commender-agent --target x86_64-apple-darwin
+          lipo -create -output center-macos/core/webrising-commender \
+            target/aarch64-apple-darwin/release/webrising-commender target/x86_64-apple-darwin/release/webrising-commender
+          center-macos/core/webrising-commender --version | grep -q "0.1.${{ github.run_number }}$"
       - name: Core unit tests (CoreClient against the real wecommander-core)
         env:
           WECOMMANDER_CORE_BIN: ${{ github.workspace }}/center-macos/core/wecommander-core

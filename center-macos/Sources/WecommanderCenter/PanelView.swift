@@ -414,6 +414,26 @@ private struct AgentCard: View {
                     .disabled(model.agentBusy || model.agent == nil || model.agent?.state == .notInstalled)
             }
             Text(help).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if model.isEmbedded {
+                // The agent ships with the app: one version, one update button.
+                HStack(spacing: 8) {
+                    if model.agentUpdateAvailable {
+                        Button("Yeni sürüm var — Uygulamayı güncelle") { model.updateAgent() }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(model.updating)
+                    } else {
+                        Button("Güncellemeleri denetle") { model.updateAgent() }
+                            .disabled(model.updating)
+                    }
+                    if model.updating { ProgressView().controlSize(.small) }
+                    Text("Sürüm: " + (model.appBuild.map { "0.1.\($0)" } ?? model.agentVersion ?? "geliştirici sürümü")
+                         + (model.agentUpdateAvailable ? " · yeni: 0.1.\(model.latestApp?.build ?? 0)" : model.latestApp != nil ? " · güncel" : ""))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if let message = model.updateMessage {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                }
+            } else {
             HStack(spacing: 8) {
                 if model.agent?.state == .notInstalled || model.agentUpdateAvailable {
                     Button(model.agent?.state == .notInstalled ? "Ajanı kur" : "Yeni sürüm var — Ajanı güncelle") { model.updateAgent() }
@@ -428,6 +448,7 @@ private struct AgentCard: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
+            }
         }
         .padding(10)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
@@ -440,6 +461,13 @@ private struct AgentCard: View {
     }
 
     private var help: String {
+        if model.isEmbedded {
+            switch model.agent?.state {
+            case .notInstalled: return model.pairing ? "Bu Mac hesabına bağlanıyor…" : Texts.embeddedNotPaired
+            case .running: return Texts.embeddedRunning
+            default: return Texts.agentOffWarning
+            }
+        }
         switch model.agent?.state {
         case .notInstalled: return Texts.agentNotInstalled
         case .running: return "Açıkken ajan durursa Yönetim Merkezi onu kendiliğinden yeniden başlatır ve bildirim gösterir."

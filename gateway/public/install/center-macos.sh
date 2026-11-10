@@ -1,7 +1,8 @@
 #!/bin/sh
-# WECOMMANDER Management Center installer for macOS 13 or newer and Linux
-# desktops (x86_64, WebKitGTK 4.1).
-# Usage: curl -fsSL https://wecommander.app/install/center.sh | sh
+# WECOMMANDER app installer for macOS 13 or newer and Linux desktops
+# (x86_64, WebKitGTK 4.1).
+# Usage: curl -fsSL https://wecommander.app/install.sh | sh   (on a Mac)
+#        curl -fsSL https://wecommander.app/install/center.sh | sh
 #        curl -fsSL https://wecommander.app/install/center.sh | sh -s -- --dry-run
 # Installs for the current user only (no administrator password).
 #   macOS: downloads WECOMMANDER-Center-macos.zip (fixed tag macos-center-latest,
@@ -11,7 +12,9 @@
 #          center-linux-latest, else the newest ubuntu-preview-N release), puts
 #          it in ~/.local/share/wecommander-center with a menu entry and starts it.
 # Each download is verified against its release's SHA256SUMS.txt. The app then
-# signs in through the browser and starts at login.
+# signs in through the browser and starts at login. On macOS the app carries
+# the agent: it pairs this Mac by itself and runs it in the background. curl
+# sets no quarantine flag, so Gatekeeper does not block the app.
 set -eu
 
 # Brand banner: the WECOMMANDER icon with the name and what is being
@@ -31,14 +34,21 @@ WECOMMANDER_BANNER
 
 REPO="orhanbal/webrising-commender"
 DRY_RUN=0
-for arg in "$@"; do
-  case "$arg" in
+# --control-url and --pairing-code-file come from the install.sh dispatcher
+# and from earlier Management Centers; the app signs in and pairs itself, so
+# they are accepted and not needed (a pairing code file is deleted unread).
+while [ $# -gt 0 ]; do
+  case "$1" in
     --dry-run) DRY_RUN=1 ;;
-    *) echo "Unknown option: $arg" >&2; exit 2 ;;
+    --control-url) shift ;;
+    --pairing-code-file) shift; [ -n "${1:-}" ] && rm -f "$1" ;;
+    --package-only) ;;
+    *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
+  [ $# -gt 0 ] && shift
 done
 
-wecommander_banner "Management Center installer"
+wecommander_banner "installer"
 
 OS="$(uname -s)"
 case "$OS" in
@@ -177,8 +187,9 @@ if [ "$OS" = "Darwin" ]; then
   xattr -dr com.apple.quarantine "$dest" >/dev/null 2>&1 || true
 
   open "$dest"
-  echo "WECOMMANDER Center installed in $dest and started."
-  echo "Click the WECOMMANDER icon in the menu bar to sign in. When macOS asks to allow notifications, choose Allow."
+  echo "WECOMMANDER installed in $dest and started."
+  echo "Sign in to your account in the browser window it opens; this Mac is then connected"
+  echo "by itself and the agent runs in the background. When macOS asks to allow notifications, choose Allow."
   exit 0
 fi
 

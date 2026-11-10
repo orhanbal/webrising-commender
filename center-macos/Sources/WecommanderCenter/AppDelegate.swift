@@ -51,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     func applicationWillTerminate(_ notification: Notification) {
         servers.stop()
+        model.stopEmbeddedAgent()
     }
 
     /// The Servers window (sidebar of hosts, SwiftTerm terminals, files,
