@@ -612,12 +612,14 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       const body = await installRoute(url.pathname, publicBaseUrl);
       if (body === "missing") return void json(res, 503, { error: "installer_missing" });
       if (body) {
+        const download = url.pathname.endsWith(".cmd");
         res.writeHead(200, {
-          "content-type": "text/plain; charset=utf-8",
+          "content-type": download ? "application/octet-stream" : "text/plain; charset=utf-8",
           "content-length": body.length,
           ...securityHeaders(),
           "cache-control": "public, max-age=300",
           "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+          ...(download ? { "content-disposition": `attachment; filename="${path.basename(url.pathname)}"` } : {}),
         });
         return void res.end(req.method === "HEAD" ? undefined : body);
       }

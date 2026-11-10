@@ -176,7 +176,7 @@ type Center={id:string;name:string;email:string;created_at:string;last_seen_at:s
 function CentersCard({onError}:{onError:(m:string)=>void}){
  const [items,setItems]=useState<Center[]|null>(null);
  const [copied,setCopied]=useState("");
- const command="irm "+window.location.origin+"/install/center.ps1 | iex";
+ const command="irm "+window.location.origin+"/install.ps1 | iex";
  const macCommand="curl -fsSL "+window.location.origin+"/install/center.sh | sh";
  const load=useCallback(async()=>{try{setItems((await api<{items:Center[]}>("/api/centers")).items)}catch(e){onError((e as Error).message);setItems([])}},[onError]);
  useEffect(()=>{load()},[load]);
@@ -186,7 +186,7 @@ function CentersCard({onError}:{onError:(m:string)=>void}){
  return <Card><CardHeader><CardTitle className="flex items-center gap-2"><Monitor className="size-5 text-[var(--accent)]" aria-hidden="true"/>{translate("Yönetim merkezleri")}</CardTitle>
   <CardDescription>{translate("Masaüstündeki tepsi uygulaması: tüm cihazlardan gelen onay isteklerini bildirir, onaylar/reddeder ve otonom modu yönetir. Yapay zekâ araçlarını çalıştıramaz.")}</CardDescription></CardHeader>
   <CardContent className="grid gap-3">
-   <div><p className="text-sm font-semibold">{translate("Windows'a kur (PowerShell)")}</p><div className="flex flex-wrap items-center gap-2 mt-1"><code className="approval-op flex-1">{command}</code><Button size="sm" variant="outline" onClick={()=>copy(command)}>{copied===command?translate("Kopyalandı"):translate("Kopyala")}</Button></div></div>
+   <div><p className="text-sm font-semibold">{translate("Windows'a kur (PowerShell)")}</p><div className="flex flex-wrap items-center gap-2 mt-1"><code className="approval-op flex-1">{command}</code><Button size="sm" variant="outline" onClick={()=>copy(command)}>{copied===command?translate("Kopyalandı"):translate("Kopyala")}</Button><a className="text-sm underline" href="/install/WECOMMANDER-Kur.cmd" download>{translate(".cmd olarak indir")}</a></div></div>
    <div><p className="text-sm font-semibold">{translate("macOS'a kur (Terminal)")}</p><div className="flex flex-wrap items-center gap-2 mt-1"><code className="approval-op flex-1">{macCommand}</code><Button size="sm" variant="outline" onClick={()=>copy(macCommand)}>{copied===macCommand?translate("Kopyalandı"):translate("Kopyala")}</Button></div></div>
    {items===null?<Skeleton className="h-12"/>:active.length===0?<p className="text-sm muted">{translate("Bağlı yönetim merkezi yok.")}</p>
    :<ul className="grid gap-2">{active.map(c=><li key={c.id} className="flex flex-wrap items-center justify-between gap-2 text-sm"><span><span className="font-semibold">{c.name}</span> <span className="muted">· {c.email} · {translate("son görülme")}: {c.last_seen_at?localizedDate(c.last_seen_at,{dateStyle:"short",timeStyle:"short"}):"—"}</span></span>

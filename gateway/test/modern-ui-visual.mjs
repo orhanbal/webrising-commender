@@ -333,7 +333,7 @@ try{
  assert.equal(await evalJs("document.querySelector('.autonomy-banner')"),null,"The banner is not repeated on the approvals page");
  assert.ok(await evalJs("[...document.querySelectorAll('code')].some(c=>c.textContent==='df -h')"),"Allowed commands must be listed");
  assert.ok(await evalJs("document.body.textContent.includes('Management Centers')&&document.body.textContent.includes('Ofis-PC')"),"Connected Management Centers are listed");
- assert.ok(await evalJs("[...document.querySelectorAll('code')].some(c=>/^irm https?:\\/\\/[^ ]+\\/install\\/center\\.ps1 \\| iex$/.test(c.textContent))"),"The tray app install command is shown");
+ assert.ok(await evalJs("[...document.querySelectorAll('code')].some(c=>/^irm https?:\\/\\/[^ ]+\\/install\\.ps1 \\| iex$/.test(c.textContent))"),"The Windows app install command is shown");
  const approvalsShot=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
  writeFileSync(join(artifacts,"modern-approvals-full-trust.png"),Buffer.from(approvalsShot.data,"base64"));
 

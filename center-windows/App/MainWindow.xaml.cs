@@ -184,19 +184,31 @@ public sealed partial class MainWindow : Window
         AgentSwitch.IsEnabled = !busy && agent is not null && agent.State != AgentRunState.NotInstalled;
         AgentHelpText.Text = agent switch
         {
+            { Mode: AgentMode.Embedded, State: AgentRunState.NotInstalled } => Center.Pairing ? "Bu bilgisayar hesabına bağlanıyor…" : Texts.EmbeddedNotPaired,
+            { Mode: AgentMode.Embedded, Running: true } => Texts.EmbeddedRunning,
             { State: AgentRunState.NotInstalled } => Texts.AgentNotInstalled,
             { Mode: AgentMode.Service } => "Ajan bir Windows hizmeti olarak kurulu: açıp kapatmak yönetici onayı ister. Durursa bildirim gelir.",
             { Running: true } => "Açıkken ajan durursa Yönetim Merkezi onu kendiliğinden yeniden başlatır ve bildirim gösterir.",
             _ => Texts.AgentOffWarning,
         };
         var update = Center.AgentUpdateAvailable;
-        AgentVersionText.Text = Center.AgentVersion is { } v
-            ? "Kurulu sürüm: " + v + (update ? $" · yeni sürüm: 0.1.{Center.LatestAgentBuild}" : Center.LatestAgentBuild is not null ? " · güncel" : "")
-            : "";
-        AgentUpdateButton.Content = agent is { State: AgentRunState.NotInstalled } ? "Ajanı kur"
-            : update ? "Yeni sürüm var — Ajanı güncelle" : "Ajanı güncelle";
+        if (Center.Embedded)
+        {
+            // The agent ships with the app: one version, one update button.
+            var current = Center.AppBuild is { } b ? "0.1." + b : Center.AgentVersion ?? "geliştirici sürümü";
+            AgentVersionText.Text = "Sürüm: " + current + (update ? $" · yeni sürüm: 0.1.{Center.LatestAppBuild}" : Center.LatestAppBuild is not null ? " · güncel" : "");
+            AgentUpdateButton.Content = update ? "Yeni sürüm var — Uygulamayı güncelle" : "Güncellemeleri denetle";
+        }
+        else
+        {
+            AgentVersionText.Text = Center.AgentVersion is { } v
+                ? "Kurulu sürüm: " + v + (update ? $" · yeni sürüm: 0.1.{Center.LatestAgentBuild}" : Center.LatestAgentBuild is not null ? " · güncel" : "")
+                : "";
+            AgentUpdateButton.Content = agent is { State: AgentRunState.NotInstalled } ? "Ajanı kur"
+                : update ? "Yeni sürüm var — Ajanı güncelle" : "Ajanı güncelle";
+        }
         // Accent (blue) button while an update is waiting, like Windows Update.
-        AgentUpdateButton.Style = update || agent is { State: AgentRunState.NotInstalled }
+        AgentUpdateButton.Style = update || (!Center.Embedded && agent is { State: AgentRunState.NotInstalled })
             ? (Style)Application.Current.Resources["AccentButtonStyle"]
             : null;
         AgentUpdateButton.IsEnabled = !busy && !Center.InstallerRunning;

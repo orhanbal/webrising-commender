@@ -11,7 +11,7 @@ type ReleaseInfo={available:boolean;releaseUrl:string;tagName:string|null;assets
 const project="https://github.com/orhanbal/webrising-commender";
 const endpoint=()=>location.origin+"/mcp";
 const oneLine=(p:Platform)=>p==="windows"
- ?`powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm ${location.origin}/install.ps1)))"`
+ ?`irm ${location.origin}/install.ps1 | iex`
  :`curl -fsSL ${location.origin}/install.sh | sh`;
 const docs:Record<Client,{name:string;url:string;steps:string[];caution:string}>={
  chatgpt:{
@@ -94,7 +94,10 @@ export function InstallPage({nav}:{nav:Nav}){
     {platformAsset?<a className="install-primary-link" href={platformAsset.url} target="_blank" rel="noopener noreferrer"><Download size={18}/> {platforms.find(p=>p.key===platform)?.name} {translate("Agent indir")} <ArrowUpRight size={16}/></a>
      :<a className="install-primary-link" href={downloads?.releaseUrl||project+"/releases"} target="_blank" rel="noopener noreferrer"><Download size={18}/> {translate("Sürümleri kontrol et")} <ArrowUpRight size={16}/></a>}
     <a className="install-secondary-link" href={project+"/blob/main/docs/QUICKSTART.md"} target="_blank" rel="noopener noreferrer"><FolderOpen size={17}/> {translate("Kurulum rehberi")}</a>
-   </div></div><div className="install-code-wrap"><div className="install-code-top"><span><Code2 size={15}/> {translate("Tek satırda kur")}</span><button type="button" className="install-code-copy" onClick={()=>copy(oneLine(platform))}><Copy size={14}/> {translate("Kopyala")}</button></div><pre className="install-code">{oneLine(platform)}</pre><p className="install-code-note">{translate("Komut, paketi GitHub yayınından indirir, SHA-256 özetini doğrular ve cihazı bu hesaba bağlamak için tarayıcı onay bağlantısı verir. Agent root olmayan bir servis kullanıcısıyla çalışır.")}</p></div></div></Card>
+   </div></div><div className="install-code-wrap"><div className="install-code-top"><span><Code2 size={15}/> {translate("Tek satırda kur")}</span><button type="button" className="install-code-copy" onClick={()=>copy(oneLine(platform))}><Copy size={14}/> {translate("Kopyala")}</button></div><pre className="install-code">{oneLine(platform)}</pre>{platform==="windows"
+     ?<><p className="install-code-note">{translate("PowerShell'e yapıştır. WECOMMANDER uygulamasını (ajan içinde) bu Windows kullanıcısına, yönetici izni istemeden kurar; paket GitHub yayınından iner ve SHA-256 ile doğrulanır. Uygulama tarayıcıda hesabınla giriş yapmanı ister ve bu bilgisayarı kendiliğinden bağlar. Terminalden indiği için SmartScreen uyarısı çıkmaz.")}</p>
+      <div className="flex gap-3 mt-3 flex-wrap items-center"><a className="install-link" href="/install/WECOMMANDER-Kur.cmd" download><Download size={14}/> {translate("Kurulum dosyasını indir (.cmd)")}</a><span className="muted text-xs">{translate("İndirip çift tıkla; aynı komutu çalıştırır. Windows bu küçük dosya için bir kez “Yine de çalıştır” sorabilir.")}</span></div></>
+     :<p className="install-code-note">{translate("Komut, paketi GitHub yayınından indirir, SHA-256 özetini doğrular ve cihazı bu hesaba bağlamak için tarayıcı onay bağlantısı verir. Agent root olmayan bir servis kullanıcısıyla çalışır.")}</p>}</div></div></Card>
    <div className="install-steps"><span><Check size={15}/> {translate("Agent'ı hazırla")}</span><ChevronRight size={16}/><span><Check size={15}/> <button type="button" onClick={()=>nav("/devices")}>{translate("Panelden cihaz eşleştir")}</button></span><ChevronRight size={16}/><span><Check size={15}/> {translate("AI istemcinle bağlan")}</span></div>
   </div></section>
   <section className="install-end container-w"><div className="install-end-banner"><div><span className="eyebrow">{translate("BAŞLAMAYA HAZIR MISIN?")}</span><h2>{translate("Tek panel. Çoklu cihaz.")} <span className="text-gradient">{translate("Tam kontrol.")}</span></h2><p>{translate("Kurulum adımlarını tamamladığında cihazlarını yönetmeye başlayabilirsin.")}</p></div><Button size="lg" onClick={()=>nav("/dashboard")}>{translate("Kullanıcı paneline git")} <ArrowRight size={17}/></Button></div></section>
