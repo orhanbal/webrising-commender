@@ -198,7 +198,20 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Core unit tests
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Build wecommander-core (universal) for the app bundle
+        run: |
+          cargo build --locked --release -p wc-core-service --target aarch64-apple-darwin
+          cargo build --locked --release -p wc-core-service --target x86_64-apple-darwin
+          mkdir -p center-macos/core
+          lipo -create -output center-macos/core/wecommander-core \
+            target/aarch64-apple-darwin/release/wecommander-core target/x86_64-apple-darwin/release/wecommander-core
+          lipo -archs center-macos/core/wecommander-core
+      - name: Core unit tests (CoreClient against the real wecommander-core)
+        env:
+          WECOMMANDER_CORE_BIN: ${{ github.workspace }}/center-macos/core/wecommander-core
         run: swift test --package-path center-macos
       - name: Build universal app bundle (ad-hoc signed) and zip
         run: bash scripts/build-center-macos.sh "0.1.${{ github.run_number }}" center-macos/dist

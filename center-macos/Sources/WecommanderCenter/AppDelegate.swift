@@ -5,10 +5,14 @@ import SwiftUI
 /// The menu bar item: a click opens the panel (a native popover), a right
 /// click or Control-click shows the menu, like the Windows tray icon.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
     nonisolated static let showPanelNotification = Notification.Name("app.wecommander.center.showPanel")
 
     let model = AppModel()
+    /// SSH, SFTP and tunnels (wecommander-core); runs while the app runs, so
+    /// saved tunnels keep working with the Servers window closed.
+    let servers = ServersModel()
+    private var serversWindow: NSWindow?
     private var statusItem: NSStatusItem!
     private let popover = NSPopover()
     private let menu = NSMenu()
@@ -34,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.onChange = { [weak self] in self?.updateStatusItem() }
         model.showPanel = { [weak self] in self?.showPanel() }
         model.start()
+        servers.start()
 
         DistributedNotificationCenter.default().addObserver(
             forName: Self.showPanelNotification, object: nil, queue: .main) { [weak self] _ in
@@ -42,6 +47,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         updateStatusItem()
         if model.phase != .signedIn { showPanel() }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        servers.stop()
+    }
+
+    /// The Servers window (sidebar of hosts, SwiftTerm terminals, files,
+    /// tunnels). The app shows in the Dock while it is open.
+    func showServers() {
+        servers.start()
+        if serversWindow == nil {
+            let window = NSWindow(contentViewController: NSHostingController(rootView: ServersView(model: servers)))
+            window.title = "WECOMMANDER"
+            window.setContentSize(NSSize(width: 1100, height: 700))
+            window.styleMask.insert(.fullSizeContentView)
+            window.titlebarAppearsTransparent = false
+            window.toolbarStyle = .unified
+            window.isReleasedWhenClosed = false
+            window.setFrameAutosaveName("WecommanderServers")
+            window.delegate = self
+            serversWindow = window
+        }
+        NSApp.setActivationPolicy(.regular)
+        serversWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard (notification.object as? NSWindow) === serversWindow else { return }
+        // Back to a menu bar app; terminals stay open until closed in the window.
+        NSApp.setActivationPolicy(.accessory)
     }
 
     static func menuBarImage() -> NSImage {
@@ -100,6 +136,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
         let signedIn = model.phase == .signedIn
         menu.addItem(item("Yönetim Merkezini aç", #selector(menuOpen)))
+        menu.addItem(item("Sunucular ve terminaller…", #selector(menuServers), key: "s"))
+        let connectMenu = NSMenu()
+        for host in servers.hosts {
+            let entry = item(host.label, #selector(menuConnectHost(_:)))
+            entry.representedObject = host.id
+            connectMenu.addItem(entry)
+        }
+        let connectItem = NSMenuItem(title: "Bağlan", action: nil, keyEquivalent: "")
+        connectItem.submenu = connectMenu
+        connectItem.isEnabled = !servers.hosts.isEmpty
+        menu.addItem(connectItem)
+        let tunnelMenu = NSMenu()
+        for tunnel in servers.savedTunnels {
+            let entry = item("\(tunnel.hostLabel)  \(tunnel.local) → \(tunnel.remote)", #selector(menuToggleTunnel(_:)))
+            entry.representedObject = tunnel.id
+            entry.state = tunnel.running ? .on : .off
+            tunnelMenu.addItem(entry)
+        }
+        let tunnelItem = NSMenuItem(title: "Tüneller", action: nil, keyEquivalent: "")
+        tunnelItem.submenu = tunnelMenu
+        tunnelItem.isEnabled = !servers.savedTunnels.isEmpty
+        menu.addItem(tunnelItem)
         menu.addItem(.separator())
         let pending = model.pending.count
         menu.addItem(item(!signedIn ? "Oturum açılmadı" : pending == 0 ? "Bekleyen onay yok" : "Bekleyen onaylar: \(pending)", #selector(menuOpen)))
@@ -133,6 +191,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func menuOpen() { showPanel() }
+    @objc private func menuServers() { showServers() }
+
+    @objc private func menuConnectHost(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String, let host = servers.hosts.first(where: { $0.id == id }) else { return }
+        showServers()
+        servers.open(host)
+    }
+
+    @objc private func menuToggleTunnel(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String, let tunnel = servers.savedTunnels.first(where: { $0.id == id }) else { return }
+        Task { await servers.toggleTunnel(tunnel) }
+    }
     @objc private func menuDashboard() { model.openDashboard() }
     @objc private func menuAllowNotifications() { Notifier.openSettings() }
     @objc private func menuToggleNotifications() { model.update { $0.notifications.toggle() } }

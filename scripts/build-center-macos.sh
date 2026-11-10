@@ -26,6 +26,13 @@ lipo -archs "$BIN" | grep -q x86_64
 APP="$WORK/$APP_NAME.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/WecommanderCenter"
+# The shared Rust app core (SSH, SFTP, tunnels), built by CI as a universal
+# binary: CORE_BIN or center-macos/core/wecommander-core.
+CORE_BIN="${CORE_BIN:-$PKG/core/wecommander-core}"
+test -x "$CORE_BIN" || { echo "wecommander-core missing at $CORE_BIN" >&2; exit 1; }
+lipo -archs "$CORE_BIN" | grep -q arm64
+lipo -archs "$CORE_BIN" | grep -q x86_64
+cp "$CORE_BIN" "$APP/Contents/MacOS/wecommander-core"
 cp "$PKG/Resources/menubar.png" "$PKG/Resources/menubar@2x.png" \
    "$PKG/Resources/wordmark-dark-text.png" "$PKG/Resources/wordmark-light-text.png" \
    "$APP/Contents/Resources/"
@@ -70,6 +77,7 @@ plutil -lint "$APP/Contents/Info.plist"
 
 # Ad-hoc signature: no paid certificate. Installed from the terminal (curl
 # sets no quarantine flag), so Gatekeeper does not block it.
+codesign --force --sign - --timestamp=none "$APP/Contents/MacOS/wecommander-core"
 codesign --force --sign - --timestamp=none "$APP"
 codesign --verify --strict --verbose=2 "$APP"
 
