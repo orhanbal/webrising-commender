@@ -22,7 +22,8 @@ final class CoreClientTests: XCTestCase {
         XCTAssertEqual(hosts.map(\.target), ["deploy@web.example.com:2222"])
         let listed = try await core.call("hosts.list", as: [CoreHost].self)
         XCTAssertEqual(listed.first?.label, "Prod web")
-        XCTAssertEqual(try await core.call("tunnels.saved", as: [SavedTunnel].self), [])
+        let tunnels = try await core.call("tunnels.saved", as: [SavedTunnel].self)
+        XCTAssertEqual(tunnels, [])
         do {
             _ = try await core.call("no.such.method")
             XCTFail("expected an error")
