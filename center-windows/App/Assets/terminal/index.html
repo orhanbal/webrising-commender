@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="xterm.css">
+<style>html,body{margin:0;height:100%;background:#0c0c0c;overflow:hidden}#t{position:absolute;inset:0;padding:6px 0 0 8px}</style>
+</head>
+<body>
+<div id="t"></div>
+<script src="xterm.js"></script>
+<script src="addon-fit.js"></script>
+<script>
+// Terminal surface of the WECOMMANDER Windows app (WebView2 in a WinUI 3
+// window). The app sends {type:"output", data:base64} and {type:"focus"};
+// the page sends {type:"ready"|"input"|"resize"}.
+const host = window.chrome.webview;
+const term = new Terminal({
+  cursorBlink: true, fontFamily: '"Cascadia Mono", Consolas, monospace', fontSize: 13, scrollback: 10000,
+  theme: { background: "#0c0c0c", foreground: "#cccccc", cursor: "#60cdff", selectionBackground: "#264f78" },
+});
+const fit = new FitAddon.FitAddon();
+term.loadAddon(fit);
+term.open(document.getElementById("t"));
+const post = (m) => host.postMessage(JSON.stringify(m));
+term.onData((data) => post({ type: "input", data }));
+term.onResize(({ cols, rows }) => post({ type: "resize", cols, rows }));
+// Windows Terminal keys: Ctrl+C copies when text is selected, Ctrl+V and
+// Ctrl+Shift+V paste, Ctrl+Shift+C copies.
+term.attachCustomKeyEventHandler((e) => {
+  if (e.type !== "keydown") return true;
+  const k = e.key.toLowerCase();
+  if (e.ctrlKey && k === "c" && (e.shiftKey || term.hasSelection())) {
+    navigator.clipboard.writeText(term.getSelection()).catch(() => {});
+    if (!e.shiftKey) term.clearSelection();
+    e.preventDefault(); return false;
+  }
+  if (e.ctrlKey && k === "v") {
+    e.preventDefault();
+    navigator.clipboard.readText().then((t) => t && term.paste(t)).catch(() => {});
+    return false;
+  }
+  return true;
+});
+new ResizeObserver(() => { try { fit.fit(); } catch {} }).observe(document.getElementById("t"));
+const bytes = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+host.addEventListener("message", (e) => {
+  const m = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
+  if (m.type === "output") term.write(bytes(m.data));
+  else if (m.type === "text") term.write(m.data);
+  else if (m.type === "focus") term.focus();
+});
+fit.fit();
+post({ type: "ready", cols: term.cols, rows: term.rows });
+term.focus();
+</script>
+</body>
+</html>

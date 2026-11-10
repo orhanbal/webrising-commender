@@ -27,6 +27,10 @@ public partial class App : Application
     private readonly SettingsStore _settingsStore = new(LocalStore.Directory);
     private DispatcherQueue _ui = null!;
     private MainWindow? _window;
+    /// <summary>SSH, SFTP and tunnels (wecommander-core), for the app's lifetime.</summary>
+    public ServersController Servers { get; } = new();
+    private ServersWindow? _servers;
+    private MenuFlyoutSubItem? _connectMenu, _tunnelMenu;
     private TaskbarIcon? _tray;
     private MenuFlyoutItem? _pendingItem, _autonomyItem, _stopAutonomyItem, _accountItem, _allowNotifyItem;
     private ToggleMenuFlyoutItem? _notifyItem, _agentItem;
@@ -184,6 +188,8 @@ public partial class App : Application
 
         _window = new MainWindow();
         BuildTray();
+        Servers.Changed += () => _ui.TryEnqueue(UpdateServersMenu);
+        Servers.Start();
 
         var activation = AppInstance.GetCurrent().GetActivatedEventArgs();
         var hidden = Environment.GetCommandLineArgs().Contains("--hidden");
@@ -736,6 +742,11 @@ public partial class App : Application
         };
         var menu = new MenuFlyout();
         menu.Items.Add(new MenuFlyoutItem { Text = "Yönetim Merkezini aç", Command = new RelayCommand(() => _window?.ShowPanel()) });
+        menu.Items.Add(new MenuFlyoutItem { Text = "Sunucular ve terminaller…", Command = new RelayCommand(ShowServers) });
+        _connectMenu = new MenuFlyoutSubItem { Text = "Bağlan", IsEnabled = false };
+        _tunnelMenu = new MenuFlyoutSubItem { Text = "Tüneller", IsEnabled = false };
+        menu.Items.Add(_connectMenu);
+        menu.Items.Add(_tunnelMenu);
         menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(_pendingItem);
         menu.Items.Add(_autonomyItem);
@@ -793,8 +804,47 @@ public partial class App : Application
         if (Agent is { Running: false, State: not AgentRunState.NotInstalled }) _tray.ToolTipText += " · " + Texts.AgentStateLabel(Agent).ToLowerInvariant();
     }
 
+    /// <summary>The Servers window (hosts, terminals, files, tunnels).</summary>
+    public void ShowServers()
+    {
+        Servers.Start();
+        _servers ??= new ServersWindow(Servers);
+        _servers.ShowWindow();
+    }
+
+    private void UpdateServersMenu()
+    {
+        if (_connectMenu is null || _tunnelMenu is null) return;
+        _connectMenu.Items.Clear();
+        foreach (var host in Servers.Hosts)
+        {
+            var h = host;
+            _connectMenu.Items.Add(new MenuFlyoutItem
+            {
+                Text = h.Label,
+                Command = new RelayCommand(async () => { ShowServers(); await _servers!.OpenHost(h); }),
+            });
+        }
+        _connectMenu.IsEnabled = Servers.Hosts.Count > 0;
+        _tunnelMenu.Items.Clear();
+        foreach (var tunnel in Servers.SavedTunnels)
+        {
+            var t = tunnel;
+            _tunnelMenu.Items.Add(new ToggleMenuFlyoutItem
+            {
+                Text = $"{t.HostLabel}  {t.Local} → {t.Remote}",
+                IsChecked = t.Running,
+                Command = new RelayCommand(async () => await Servers.ToggleTunnel(t)),
+            });
+        }
+        _tunnelMenu.IsEnabled = Servers.SavedTunnels.Count > 0;
+        var running = Servers.SavedTunnels.Count(t => t.Running);
+        if (_tray is not null && running > 0) _tray.ToolTipText = $"WECOMMANDER · {running} tünel açık";
+    }
+
     private void Quit()
     {
+        Servers.Dispose();
         _timer?.Stop();
         _tray?.Dispose();
         _window?.Quit();

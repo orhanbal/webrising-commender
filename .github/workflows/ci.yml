@@ -995,14 +995,23 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Core unit tests
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build wecommander-core (shared Rust app core)
+        run: cargo build --locked --release -p wc-core-service
+      - name: Core unit tests (CoreClient against the real wecommander-core)
+        env:
+          WECOMMANDER_CORE_BIN: ${{ github.workspace }}\target\release\wecommander-core.exe
         run: dotnet test center-windows/Core.Tests/WecommanderCenter.Core.Tests.csproj
       - name: Publish self-contained WinUI app
-        run: dotnet publish center-windows/App/WecommanderCenter.csproj -c Release -r win-x64 --self-contained true -p:Platform=x64 -o center-windows/publish
+        run: |
+          dotnet publish center-windows/App/WecommanderCenter.csproj -c Release -r win-x64 --self-contained true -p:Platform=x64 -o center-windows/publish
+          Copy-Item target\release\wecommander-core.exe center-windows\publish\wecommander-core.exe
       - name: Package
         shell: pwsh
         run: |
           if (-not (Test-Path "center-windows\publish\WecommanderCenter.exe")) { throw "WecommanderCenter.exe missing from publish output" }
+          if (-not (Test-Path "center-windows\publish\wecommander-core.exe")) { throw "wecommander-core.exe missing from publish output" }
+          if (-not (Test-Path "center-windows\publish\Assets\terminal\index.html")) { throw "terminal surface missing from publish output" }
           foreach ($asset in @("icon.ico","icon.png","tray.ico","tray-pending.ico","tray-autonomy.ico","tray-autonomy-pending.ico","wordmark-dark-text.png","wordmark-light-text.png")) {
             if (-not (Test-Path "center-windows\publish\Assets\$asset")) { throw "asset missing: $asset" }
           }

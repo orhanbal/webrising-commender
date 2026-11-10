@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- WECOMMANDER Management Center for Windows: native WinUI 3 tray app.
+  <!-- WECOMMANDER for Windows: native WinUI 3 tray app with the Servers window
+       (SSH terminals, SFTP, tunnels via wecommander-core.exe next to the app).
        Unpackaged and self-contained (Windows App SDK included), so it runs
        without installing runtimes and without signing. -->
   <PropertyGroup>
@@ -36,5 +37,7 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="Assets\*.*" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Terminal surface for the Servers window (xterm.js, MIT) -->
+    <Content Include="Assets\terminal\*.*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
