@@ -165,15 +165,40 @@ pub async fn connect(
     profile
         .validate()
         .map_err(|e| SshError::Protocol(e.to_string()))?;
-    tokio::time::timeout(options.timeout, connect_inner(profile, credential, options))
-        .await
-        .map_err(|_| SshError::Timeout)?
+    tokio::time::timeout(
+        options.timeout,
+        connect_inner(profile, credential, options, None),
+    )
+    .await
+    .map_err(|_| SshError::Timeout)?
+}
+
+/// Like [`connect`], but reaches `profile` through `jump` (a bastion / jump
+/// host, A10): the TCP connection is a direct-tcpip channel of the jump
+/// connection, so the target only needs to be reachable from the jump host.
+/// The target's host key is checked exactly as with a direct connection.
+pub async fn connect_via(
+    jump: &Connection,
+    profile: &HostProfile,
+    credential: &Credential,
+    options: &ConnectOptions,
+) -> Result<Connection, SshError> {
+    profile
+        .validate()
+        .map_err(|e| SshError::Protocol(e.to_string()))?;
+    tokio::time::timeout(
+        options.timeout,
+        connect_inner(profile, credential, options, Some(jump)),
+    )
+    .await
+    .map_err(|_| SshError::Timeout)?
 }
 
 async fn connect_inner(
     profile: &HostProfile,
     credential: &Credential,
     options: &ConnectOptions,
+    jump: Option<&Connection>,
 ) -> Result<Connection, SshError> {
     // Decode the key first so a wrong passphrase fails before any network I/O.
     let key = match credential {
@@ -196,7 +221,27 @@ async fn connect_inner(
         ..Default::default()
     });
 
-    let connected = client::connect(config, (profile.host.as_str(), profile.port), handler).await;
+    let connected = match jump {
+        None => client::connect(config, (profile.host.as_str(), profile.port), handler).await,
+        Some(jump) => match jump
+            .handle
+            .channel_open_direct_tcpip(
+                profile.host.as_str(),
+                u32::from(profile.port),
+                "127.0.0.1",
+                0,
+            )
+            .await
+        {
+            Ok(channel) => client::connect_stream(config, channel.into_stream(), handler).await,
+            Err(e) => {
+                return Err(SshError::Io(format!(
+                    "jump host could not reach {}:{}: {e}",
+                    profile.host, profile.port
+                )))
+            }
+        },
+    };
     let mut handle = match connected {
         Ok(handle) => handle,
         Err(err) => {
@@ -326,6 +371,49 @@ impl Connection {
         crate::sftp::Sftp::start(channel).await
     }
 
+    /// Local port forwarding (A10, like `ssh -L`): listens on `bind` (for
+    /// example `127.0.0.1:0` for a free port) and tunnels each accepted TCP
+    /// connection to `remote_host:remote_port` as seen from the server. The
+    /// forward stops when the returned value is dropped.
+    pub async fn forward_local(
+        self: &std::sync::Arc<Self>,
+        bind: &str,
+        remote_host: &str,
+        remote_port: u16,
+    ) -> Result<LocalForward, SshError> {
+        let listener = tokio::net::TcpListener::bind(bind)
+            .await
+            .map_err(|e| SshError::Io(format!("cannot listen on {bind}: {e}")))?;
+        let local = listener
+            .local_addr()
+            .map_err(|e| SshError::Io(e.to_string()))?;
+        let conn = self.clone();
+        let host = remote_host.to_owned();
+        let task = tokio::spawn(async move {
+            while let Ok((mut socket, peer)) = listener.accept().await {
+                let conn = conn.clone();
+                let host = host.clone();
+                tokio::spawn(async move {
+                    let Ok(channel) = conn
+                        .handle
+                        .channel_open_direct_tcpip(
+                            host,
+                            u32::from(remote_port),
+                            peer.ip().to_string(),
+                            u32::from(peer.port()),
+                        )
+                        .await
+                    else {
+                        return;
+                    };
+                    let mut stream = channel.into_stream();
+                    let _ = tokio::io::copy_bidirectional(&mut socket, &mut stream).await;
+                });
+            }
+        });
+        Ok(LocalForward { local, task })
+    }
+
     /// True once the server or the network closed the connection.
     pub fn is_closed(&self) -> bool {
         self.handle.is_closed()
@@ -336,6 +424,18 @@ impl Connection {
             .disconnect(russh::Disconnect::ByApplication, "", "en")
             .await
             .map_err(map_error)
+    }
+}
+
+/// A running local port forward; dropping it stops listening.
+pub struct LocalForward {
+    pub local: std::net::SocketAddr,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for LocalForward {
+    fn drop(&mut self) {
+        self.task.abort();
     }
 }
 

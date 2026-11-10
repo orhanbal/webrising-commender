@@ -79,3 +79,6 @@ textarea{font:12px ui-monospace,Consolas,monospace;resize:vertical}
 .device{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--stroke);border-radius:10px;padding:10px 14px}
 .device .dot{width:8px;height:8px;border-radius:50%;background:#a1a1aa}.device.on .dot{background:var(--ok)}.device .plat{margin-left:auto;color:var(--muted);font-size:12px}
 .small{font-size:12px}
+.tunnel-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}.tunnel-list li{display:flex;gap:8px;align-items:center;font:12px ui-monospace,Consolas,monospace;background:var(--bg);border-radius:8px;padding:6px 8px}
+.tunnel-list li span{flex:1}.tunnel-list li button{font:inherit;padding:2px 8px}
+.host .via{display:block;font-size:11px;color:var(--muted)}
