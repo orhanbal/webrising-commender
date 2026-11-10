@@ -832,7 +832,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev openssh-server
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev openssh-server gnome-keyring dbus-x11
           # The OpenSSH interop test starts its own sshd on 127.0.0.1.
           sudo mkdir -p /run/sshd
       - name: Shared crates (format, lint, tests)
@@ -841,13 +841,53 @@ jobs:
           cargo fmt -p wc-ssh-core -p wc-vault -- --check
           cargo clippy --locked -p wc-ssh-core -p wc-vault --all-targets -- -D warnings
           cargo test --locked -p wc-ssh-core -p wc-vault
-      - name: Desktop app (format, lint, release build)
+      - name: G1 keyring smoke test (Linux Secret Service)
+        if: runner.os == 'Linux'
+        run: |
+          cat > /tmp/keyring-smoke.sh <<'SH'
+          set -e
+          echo -n ci-keyring-password | gnome-keyring-daemon --unlock --components=secrets >/dev/null
+          cargo test --locked -p wc-vault --features os-keyring --lib -- --ignored
+          SH
+          dbus-run-session -- bash /tmp/keyring-smoke.sh
+      - name: G1 keyring smoke test (Windows Credential Manager)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: cargo test --locked -p wc-vault --features os-keyring --lib -- --ignored
+      - name: Terminal view copy and UI syntax
+        shell: bash
+        run: |
+          cmp packages/terminal-ui/src/index.js desktop/ui/terminal-view.js
+          node --check desktop/ui/app.js
+          node --check desktop/ui/terminal-view.js
+      - name: Desktop app (format, lint, tests, release build)
         working-directory: desktop
         shell: bash
         run: |
           cargo fmt -- --check
           cargo clippy --locked --all-targets -- -D warnings
-          cargo build --release --locked
+          cargo test --locked
+      - name: Desktop installer (A04, unsigned)
+        working-directory: desktop
+        shell: bash
+        env:
+          BUNDLES: ${{ runner.os == 'Linux' && 'deb' || 'nsis' }}
+          VERSION: 0.1.${{ github.run_number }}
+        run: |
+          npx -y @tauri-apps/cli@2.12.4 build --ci --bundles "$BUNDLES" --config "{\"version\":\"$VERSION\"}"
+          mkdir -p dist
+          if [ "$BUNDLES" = deb ]; then
+            cp target/release/bundle/deb/*.deb dist/WECOMMANDER-Desktop-linux-amd64.deb
+          else
+            cp target/release/bundle/nsis/*-setup.exe dist/WECOMMANDER-Desktop-windows-x64-setup.exe
+          fi
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WECOMMANDER-Desktop-${{ runner.os }}
+          path: desktop/dist/*
+          if-no-files-found: error
+          retention-days: 14
 
   center-windows:
     # Management Center (tray app). Separate cargo workspace in tray/.

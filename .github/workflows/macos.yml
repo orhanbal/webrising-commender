@@ -232,9 +232,24 @@ jobs:
         run: |
           cargo clippy --locked -p wc-ssh-core -p wc-vault --all-targets -- -D warnings
           cargo test --locked -p wc-ssh-core -p wc-vault
-      - name: Desktop app (format, lint, release build)
+      - name: G1 keyring smoke test (macOS Keychain)
+        run: cargo test --locked -p wc-vault --features os-keyring --lib -- --ignored
+      - name: Desktop app (format, lint, tests, release build)
         working-directory: desktop
         run: |
           cargo fmt -- --check
           cargo clippy --locked --all-targets -- -D warnings
-          cargo build --release --locked
+          cargo test --locked
+      - name: Desktop app bundle (A04, ad-hoc signed)
+        working-directory: desktop
+        run: |
+          npx -y @tauri-apps/cli@2.12.4 build --ci --bundles app --config "{\"version\":\"0.1.${{ github.run_number }}\"}"
+          mkdir -p dist
+          ditto -c -k --keepParent target/release/bundle/macos/WECOMMANDER.app dist/WECOMMANDER-Desktop-macos.zip
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WECOMMANDER-Desktop-macOS
+          path: desktop/dist/WECOMMANDER-Desktop-macos.zip
+          if-no-files-found: error
+          retention-days: 14

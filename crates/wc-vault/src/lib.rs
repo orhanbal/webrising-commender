@@ -1,9 +1,9 @@
 //! WECOMMANDER local vault.
 //!
-//! V2 A01 skeleton: the secret store interface the desktop app uses and an
-//! in-memory backend for tests. The OS keyrings (Windows Credential Manager,
-//! macOS Keychain, Linux Secret Service) and the master-password fallback
-//! arrive with A05 after the G1 keyring smoke test.
+//! The secret store interface the desktop app uses, an in-memory backend for
+//! tests and sessions without a keyring, and (feature `os-keyring`) the OS
+//! keyrings: Windows Credential Manager, macOS Keychain, Linux Secret Service.
+//! The master-password file for headless Linux is a later slice (A05).
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -106,6 +106,62 @@ impl SecretStore for MemoryStore {
     }
 }
 
+/// The OS keyring. Items are stored under the service name (for example
+/// `app.wecommander.desktop`) with the vault key as the account.
+#[cfg(feature = "os-keyring")]
+pub struct OsKeyring {
+    service: String,
+}
+
+#[cfg(feature = "os-keyring")]
+impl OsKeyring {
+    pub fn new(service: &str) -> Self {
+        Self {
+            service: service.to_owned(),
+        }
+    }
+
+    /// Writes, reads and deletes a probe item; `false` means the keyring is
+    /// missing or locked (headless Linux without a Secret Service).
+    pub fn probe(&self) -> bool {
+        let key = "probe/availability";
+        self.put(key, "ok").is_ok()
+            && self.get(key).ok().flatten().as_deref() == Some("ok")
+            && self.delete(key).is_ok()
+    }
+
+    fn entry(&self, key: &str) -> Result<keyring::Entry, VaultError> {
+        check_key(key)?;
+        keyring::Entry::new(&self.service, key).map_err(|_| VaultError::Unavailable)
+    }
+}
+
+#[cfg(feature = "os-keyring")]
+impl SecretStore for OsKeyring {
+    fn backend(&self) -> Backend {
+        Backend::platform_default()
+    }
+    fn put(&self, key: &str, secret: &str) -> Result<(), VaultError> {
+        self.entry(key)?
+            .set_password(secret)
+            .map_err(|_| VaultError::Unavailable)
+    }
+    fn get(&self, key: &str) -> Result<Option<String>, VaultError> {
+        match self.entry(key)?.get_password() {
+            Ok(secret) => Ok(Some(secret)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(_) => Err(VaultError::Unavailable),
+        }
+    }
+    fn delete(&self, key: &str) -> Result<bool, VaultError> {
+        match self.entry(key)?.delete_credential() {
+            Ok(()) => Ok(true),
+            Err(keyring::Error::NoEntry) => Ok(false),
+            Err(_) => Err(VaultError::Unavailable),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -132,5 +188,24 @@ mod tests {
     fn platform_default_is_an_os_keyring() {
         assert_ne!(Backend::platform_default(), Backend::Memory);
         assert!(!Backend::platform_default().label().is_empty());
+    }
+
+    /// G1 keyring smoke test. Needs an unlocked OS keyring, so it is ignored
+    /// by default; CI runs it with `--ignored` on Windows, macOS and Linux
+    /// (gnome-keyring in a D-Bus session).
+    #[cfg(feature = "os-keyring")]
+    #[test]
+    #[ignore]
+    fn os_keyring_smoke() {
+        let store = OsKeyring::new("app.wecommander.desktop.ci");
+        assert!(store.probe(), "OS keyring is not available");
+        let key = format!("ci/{}/password", std::process::id());
+        store.put(&key, "s3cret ü").unwrap();
+        assert_eq!(store.get(&key), Ok(Some("s3cret ü".into())));
+        store.put(&key, "rotated").unwrap();
+        assert_eq!(store.get(&key), Ok(Some("rotated".into())));
+        assert_eq!(store.delete(&key), Ok(true));
+        assert_eq!(store.get(&key), Ok(None));
+        assert_eq!(store.delete(&key), Ok(false));
     }
 }

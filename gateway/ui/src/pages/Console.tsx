@@ -1,5 +1,7 @@
 import {useEffect,useRef,useState} from "react";
-import {Activity,ArrowLeft,Building2,ChevronDown,LayoutDashboard,LogOut,Menu,Monitor,Settings2,ShieldCheck,FileText,CreditCard,Image as ImageIcon,Users,X} from "lucide-react";
+import {Activity,ArrowLeft,Building2,ChevronDown,LayoutDashboard,LogOut,Menu,Monitor,Settings2,ShieldCheck,FileText,CreditCard,Image as ImageIcon,Users,X,Mail,ClipboardCheck,UserPlus,Scale} from "lucide-react";
+import {AdminTable,Panel,Pill,ShortId,Stat,Toolbar,When,fieldClass,smallButton,type Column,type Tone} from "./ConsoleParts";
+import {PageHeader} from "../components/ui";
 import {api} from "../api";
 import {landingCopySections} from "../landing-copy-sections";
 import {LegalEditor} from "./LegalEditor";
@@ -11,31 +13,9 @@ import {LanguageSwitcher,t as translate,useLocale} from "../i18n";
 import {Brand,ThemeToggle} from "../App";
 import type {Nav,Theme} from "../App";
 
-const adminColumnLabels:Record<string,string>={
- id:"Record ID",item_id:"Record ID",email:"Email",name:"Name",
- created_at:"Created",last_login_at:"Last login",last_seen_at:"Last seen",
- revoked_at:"Revoked at",disabled:"Disabled",verified:"Verified",
- workspace_count:"Workspaces",members:"Members",devices:"Devices",
- platform:"Platform",agent_version:"Agent version",
- organization_name:"Workspace",quota_overrides:"Quota limits",
- tool:"Action",outcome:"Outcome",risk:"Risk",source:"Source",
-};
-function formatAdminCell(key:string,value:unknown,language:"en"|"tr"):string {
- if(value===null||value===undefined||value==="")return "—";
- if(typeof value==="boolean")return language==="tr"?(value?"Evet":"Hayır"):(value?"Yes":"No");
- if(typeof value==="number")return value.toLocaleString(language==="tr"?"tr-TR":"en-US");
- if(typeof value==="object"){
-   if(Array.isArray(value))return value.length?value.map(v=>String(v)).join(", "):"—";
-   const entries=Object.entries(value as Record<string,unknown>);
-   return entries.length?entries.map(([name,val])=>name+": "+(val===null?"∞":String(val))).join(" · "):"—";
- }
- if(typeof value==="string"&&/(?:_at|_time|_date)$/.test(key)&&/^\\d{4}-\\d{2}-\\d{2}T/.test(value)){
-  const date=new Date(value);
-  return Number.isNaN(date.getTime())?value:date.toLocaleString(language==="tr"?"tr-TR":"en-US");
- }
- return String(value);
-}
 type Overview={users:number;organizations:number;devices:number;activeDevices:number};
+type Row=Record<string,unknown>;
+type ReactNodeLike=string|number;
 type Admin={email:string;userId:string;platformRole:string};
 const faqCopy=landingCopySections.find(group=>group.name==="FAQ")?.keys??[];
 const faqPairs:Array<{question:string;answer:string}>=Array.from({length:Math.floor((faqCopy.length-2)/2)},(_,i)=>({
@@ -259,6 +239,17 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
  useEffect(()=>{if(section!=="Landing CMS"||!admin)return;void reloadCms().catch(e=>setCmsMessage(String(e)))},[section,cmsLocale,admin]);
  const saveCms=async()=>{setCmsBusy(true);setCmsMessage("");try{await api("/api/console/site-content",{method:"POST",body:JSON.stringify({locale:cmsLocale,heroTitle:cmsTitle,heroSubtitle:cmsSubtitle,overrides:cmsOverrides,seoTitle:cmsSeoTitle,seoDescription:cmsSeoDescription})});await reloadCms();setCmsMessage("Draft saved.")}catch(e){setCmsMessage(String(e))}finally{setCmsBusy(false)}};
  const publishCms=async(id:string)=>{setCmsBusy(true);setCmsMessage("");try{await api("/api/console/site-content/publish",{method:"POST",body:JSON.stringify({id,currentPassword:cmsPublishPassword})});await reloadCms();setCmsPublishPassword("");setCmsMessage("Published. You can now refresh the landing page.")}catch(e){setCmsMessage(String(e))}finally{setCmsBusy(false)}};
+ const [recentUsers,setRecentUsers]=useState<Array<Row>>([]);
+ const [overviewSystem,setOverviewSystem]=useState<Record<string,unknown>|null>(null);
+ const [openRequests,setOpenRequests]=useState<number|null>(null);
+ useEffect(()=>{
+  if(!admin||section!=="Overview")return;
+  let active=true;
+  void api<{items:Array<Row>}>("/api/console/users?limit=6&offset=0&q=").then(d=>{if(active)setRecentUsers(d.items)}).catch(()=>{});
+  void api<Record<string,unknown>>("/api/console/system").then(d=>{if(active)setOverviewSystem(d)}).catch(()=>{});
+  void api<{items:Array<{status:string}>}>("/api/console/billing/requests").then(d=>{if(active)setOpenRequests(d.items.filter(x=>x.status!=="closed").length)}).catch(()=>{});
+  return()=>{active=false};
+ },[admin,section]);
  const [profileOpen,setProfileOpen]=useState(false);
  const profileRef=useRef<HTMLDivElement>(null);
  // Native keyboard semantics for the existing accessible admin modal surfaces.
@@ -326,14 +317,69 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
     <p className="text-sm mt-4">{error}</p>
     <button className="mt-6 px-5 py-3 rounded-xl bg-[var(--accent)] text-[var(--accent-ink)] font-semibold" onClick={()=>nav("/login")}>{ui("Sign in")}</button>
    </div></div>;
- const items=[{label:"Overview",icon:LayoutDashboard},{label:"Users",icon:Users},{label:"Organizations",icon:Building2},{label:"Devices",icon:Monitor},{label:"Operations",icon:Activity},{label:"Landing CMS",icon:FileText},{label:"Billing",icon:CreditCard},{label:"System",icon:Settings2},{label:"Brand",icon:ImageIcon}, {label:"Legal CMS",icon:FileText}];
+ const groups:Array<{title:string;items:Array<{label:string;icon:typeof Users}>}>=[
+  {title:"",items:[{label:"Overview",icon:LayoutDashboard}]},
+  {title:"Customers",items:[{label:"Users",icon:Users},{label:"Organizations",icon:Building2},{label:"Devices",icon:Monitor},{label:"Billing",icon:CreditCard}]},
+  {title:"Monitoring",items:[{label:"Operations",icon:Activity},{label:"System",icon:Settings2}]},
+  {title:"Website",items:[{label:"Landing CMS",icon:FileText},{label:"Legal CMS",icon:Scale},{label:"Brand",icon:ImageIcon}]},
+ ];
+ const limitLabel=(k:string)=>ui(({maxDevices:"Maximum devices",maxMembers:"Maximum members",maxApiTokens:"Maximum API tokens",monthlyToolCalls:"Monthly tool calls"} as Record<string,string>)[k]??k);
+ const go=(label:string)=>{setSection(label);setMenu(false);nav(routes[label])};
+ const tr=currentLocale;
+ const never=ui("Never");
+ const riskTone=(r:unknown):Tone=>r==="critical"||r==="high"?"danger":r==="medium"?"warning":"neutral";
+ const outcomeTone=(o:unknown):Tone=>o==="success"?"success":typeof o==="string"&&/fail|error|denied|reject/.test(o)?"danger":o==="approval_pending"?"warning":"neutral";
+ const platformLabel=(p:unknown)=>({windows:"Windows",macos:"macOS",darwin:"macOS",linux:"Linux"} as Record<string,string>)[String(p).toLowerCase()]??(String(p||"—"));
+ const isOnline=(v:unknown)=>typeof v==="string"&&Date.now()-new Date(v).getTime()<5*60_000;
+ const quotaChips=(q:unknown)=>{const entries=Object.entries((q||{}) as Record<string,number|null>);const names:Record<string,string>={maxDevices:ui("Devices"),maxMembers:ui("Members"),maxApiTokens:ui("API tokens")};return entries.length?<div className="flex flex-wrap gap-1">{entries.map(([k,v])=><Pill key={k} tone="accent">{names[k]??k}: {v===null?"∞":v}</Pill>)}</div>:<span className="text-[var(--faint)]">{ui("Plan default")}</span>};
+ const tableColumns:Record<string,Column<Row>[]>={
+  Users:[
+   {key:"user",label:ui("User"),render:r=><div className="min-w-0"><div className="font-medium break-all">{String(r.email)}</div><ShortId value={r.id}/></div>},
+   {key:"status",label:ui("Status"),render:r=><div className="flex flex-wrap gap-1">{r.disabled?<Pill tone="danger" dot>{ui("Disabled")}</Pill>:<Pill tone="success" dot>{ui("Active")}</Pill>}{!r.verified&&<Pill tone="warning">{ui("Unverified")}</Pill>}</div>},
+   {key:"ws",label:ui("Workspaces"),className:"text-right tabular-nums",render:r=>String(r.workspace_count??0)},
+   {key:"created",label:ui("Joined"),render:r=><When value={r.created_at} locale={tr} empty={never}/>},
+   {key:"login",label:ui("Last login"),render:r=><When value={r.last_login_at} locale={tr} empty={never}/>},
+   {key:"actions",label:ui("Actions"),className:"console-actions",render:r=><>
+    <button type="button" className={smallButton} onClick={()=>setDetailUserId(String(r.id))}>{ui("Details")}</button>
+    <button type="button" className={smallButton} onClick={()=>void openSessions({id:String(r.id),email:String(r.email)})}>{ui("Sessions")}</button>
+    <button type="button" className={smallButton+(r.disabled?"":" text-[var(--danger)]")} onClick={()=>{setUserActionError("");setTargetUser({id:String(r.id),email:String(r.email),disabled:Boolean(r.disabled)})}}>{ui(r.disabled?"Enable":"Disable")}</button>
+   </>},
+  ],
+  Organizations:[
+   {key:"name",label:ui("Workspace"),render:r=><div className="min-w-0"><div className="font-medium">{String(r.name)}</div><ShortId value={r.id}/></div>},
+   {key:"members",label:ui("Members"),className:"text-right tabular-nums",render:r=>String(r.members??0)},
+   {key:"devices",label:ui("Devices"),className:"text-right tabular-nums",render:r=>String(r.devices??0)},
+   {key:"quota",label:ui("Quota limits"),render:r=>quotaChips(r.quota_overrides)},
+   {key:"created",label:ui("Created"),render:r=><When value={r.created_at} locale={tr} empty="—"/>},
+   {key:"actions",label:ui("Actions"),className:"console-actions",render:r=><>
+    <button type="button" className={smallButton} onClick={()=>void openMembers({id:String(r.id),name:String(r.name)})}>{ui("Members")}</button>
+    <button type="button" className={smallButton} onClick={()=>{const q=(r.quota_overrides||{}) as Record<string,number|null>;setOrgError("");setOrgEdit({id:String(r.id),name:String(r.name),maxDevices:q.maxDevices==null?"":String(q.maxDevices),maxMembers:q.maxMembers==null?"":String(q.maxMembers),maxApiTokens:q.maxApiTokens==null?"":String(q.maxApiTokens)})}}>{ui("Edit quotas")}</button>
+   </>},
+  ],
+  Devices:[
+   {key:"name",label:ui("Device"),render:r=><div className="min-w-0"><div className="font-medium">{String(r.name)}</div><ShortId value={r.id}/></div>},
+   {key:"ws",label:ui("Workspace"),render:r=>String(r.organization_name??"—")},
+   {key:"platform",label:ui("Platform"),render:r=><Pill>{platformLabel(r.platform)}</Pill>},
+   {key:"agent",label:ui("Agent version"),render:r=>r.agent_version?<code className="font-mono text-xs">{String(r.agent_version)}</code>:<span className="text-[var(--faint)]">—</span>},
+   {key:"status",label:ui("Status"),render:r=>r.revoked_at?<Pill tone="danger">{ui("Revoked")}</Pill>:isOnline(r.last_seen_at)?<Pill tone="success" dot>{ui("Online")}</Pill>:<Pill dot>{ui("Offline")}</Pill>},
+   {key:"seen",label:ui("Last seen"),render:r=><When value={r.last_seen_at} locale={tr} empty={never}/>},
+  ],
+  Operations:[
+   {key:"when",label:ui("Time"),render:r=><When value={r.created_at} locale={tr} empty="—"/>},
+   {key:"action",label:ui("Action"),render:r=><code className="font-mono text-xs break-all">{String(r.tool)}</code>},
+   {key:"ws",label:ui("Workspace"),render:r=>String(r.organization_name??"—")},
+   {key:"source",label:ui("Source"),render:r=><Pill tone={r.source==="platform"?"accent":"neutral"}>{ui(r.source==="platform"?"Platform":"Workspace")}</Pill>},
+   {key:"risk",label:ui("Risk"),render:r=><Pill tone={riskTone(r.risk)}>{ui(String(r.risk).charAt(0).toUpperCase()+String(r.risk).slice(1))}</Pill>},
+   {key:"outcome",label:ui("Outcome"),render:r=><Pill tone={outcomeTone(r.outcome)}>{String(r.outcome).replaceAll("_"," ")}</Pill>},
+  ],
+ };
  return <div className="dashboard-layout">
   {menu&&<button className="fixed inset-0 bg-black/60 z-[92] md:hidden" aria-label={ui("Close navigation")} onClick={()=>setMenu(false)}/>}
   <aside className={"dashboard-sidebar "+(menu?"open":"")} aria-label={ui("Platform administration")}>
    <div className="px-3 pt-2"><Brand onClick={()=>nav("/")}/></div>
-   <div className="px-4 py-5"><div className="flex items-center gap-2 text-[var(--accent)] text-sm font-bold"><ShieldCheck size={18}/> {ui("SUPER ADMIN")}</div></div>
-   <nav className="dash-nav">{items.map(item=><button type="button" key={item.label} onClick={()=>{setSection(item.label);setMenu(false);nav(routes[item.label])}} className={"dash-link text-left "+(section===item.label?"active":"")} aria-current={section===item.label?"page":undefined} title={item.label}><item.icon size={19}/><span>{ui(item.label)}</span></button>)}</nav>
-   <div className="dash-sidebar-bottom"><p className="text-sm muted">{ui("Platform administration is separate from workspace ownership.")}</p><button className="mt-5 text-sm flex items-center gap-2" onClick={()=>nav("/dashboard")}><ArrowLeft size={17}/> {ui("User dashboard")}</button></div>
+   <div className="px-3 pt-4"><span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--accent-soft)] px-2.5 py-1 text-[11px] font-bold tracking-wider text-[var(--accent)]"><ShieldCheck size={14}/> {ui("SUPER ADMIN")}</span></div>
+   <nav className="dash-nav console-nav">{groups.map((group,gi)=><div key={gi} className="grid gap-0.5">{group.title&&<div className="console-nav-heading">{ui(group.title)}</div>}{group.items.map(item=><button type="button" key={item.label} onClick={()=>go(item.label)} className={"dash-link text-left "+(section===item.label?"active":"")} aria-current={section===item.label?"page":undefined}><item.icon size={18}/><span>{ui(item.label)}</span></button>)}</div>)}</nav>
+   <div className="mt-auto pt-4 border-t border-[var(--stroke)]"><button className="dash-link w-full" onClick={()=>nav("/dashboard")}><ArrowLeft size={18}/><span>{ui("User dashboard")}</span></button><p className="px-3 pt-2 text-xs text-[var(--faint)]">{ui("Platform administration is separate from workspace ownership.")}</p></div>
   </aside>
   <div className="dash-main">
    {detailUserId&&<ConsoleUserDetail userId={detailUserId} onClose={()=>setDetailUserId(null)} onSessions={user=>void openSessions(user)}/>}
@@ -377,7 +423,7 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
        </div>}
      </div>
    </div>}
-   {orgEdit&&<div className="fixed inset-0 z-[230] bg-black/65 grid place-items-center p-4" role="dialog" aria-modal="true" aria-label={ui("Organization quotas")}><div className="w-full max-w-lg rounded-2xl bg-[var(--surface)] border border-[var(--stroke)] p-7"><h2 className="text-xl font-bold mb-2">{ui("Workspace limits")}: {orgEdit.name}</h2><p className="muted text-sm mb-5">{ui("Blank means inherit plan defaults; limits cannot activate an unpaid subscription.")}</p>{(["maxDevices","maxMembers","maxApiTokens"] as const).map(field=><label className="block mb-4" key={field}><span className="text-sm font-semibold">{field}</span><input inputMode="numeric" className="w-full rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 mt-1" value={orgEdit[field]} onChange={e=>setOrgEdit({...orgEdit,[field]:e.target.value})}/></label>)}<label className="block text-sm font-semibold mb-2">{ui("Current password")}</label><input type="password" autoComplete="current-password" className="w-full rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3" value={orgPassword} onChange={e=>setOrgPassword(e.target.value)}/><p role="alert" className="text-[var(--danger)] text-sm mt-2">{orgError}</p><div className="flex justify-end gap-3 mt-6"><button className="rounded-xl border border-[var(--stroke)] px-4 py-3" onClick={()=>{setOrgEdit(null);setOrgPassword("")}}>{ui("Cancel")}</button><button className="rounded-xl bg-[var(--accent)] text-[var(--accent-ink)] px-4 py-3 disabled:opacity-50" disabled={orgBusy||orgPassword.length<12} onClick={()=>void saveOrgLimits()}>{ui("Save limits")}</button></div></div></div>}
+   {orgEdit&&<div className="fixed inset-0 z-[230] bg-black/65 grid place-items-center p-4" role="dialog" aria-modal="true" aria-label={ui("Organization quotas")}><div className="w-full max-w-lg rounded-2xl bg-[var(--surface)] border border-[var(--stroke)] p-7"><h2 className="text-xl font-bold mb-2">{ui("Workspace limits")}: {orgEdit.name}</h2><p className="muted text-sm mb-5">{ui("Blank means inherit plan defaults; limits cannot activate an unpaid subscription.")}</p>{(["maxDevices","maxMembers","maxApiTokens"] as const).map(field=><label className="block mb-4" key={field}><span className="text-sm font-semibold">{limitLabel(field)}</span><input inputMode="numeric" className="w-full rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 mt-1" value={orgEdit[field]} onChange={e=>setOrgEdit({...orgEdit,[field]:e.target.value})}/></label>)}<label className="block text-sm font-semibold mb-2">{ui("Current password")}</label><input type="password" autoComplete="current-password" className="w-full rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3" value={orgPassword} onChange={e=>setOrgPassword(e.target.value)}/><p role="alert" className="text-[var(--danger)] text-sm mt-2">{orgError}</p><div className="flex justify-end gap-3 mt-6"><button className="rounded-xl border border-[var(--stroke)] px-4 py-3" onClick={()=>{setOrgEdit(null);setOrgPassword("")}}>{ui("Cancel")}</button><button className="rounded-xl bg-[var(--accent)] text-[var(--accent-ink)] px-4 py-3 disabled:opacity-50" disabled={orgBusy||orgPassword.length<12} onClick={()=>void saveOrgLimits()}>{ui("Save limits")}</button></div></div></div>}
    {reviewTarget&&<div className="fixed inset-0 z-[250] bg-black/65 grid place-items-center p-4" role="dialog" aria-modal="true" aria-label={ui("Review billing request")}><div className="w-full max-w-lg rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-7">
     <h2 className="text-xl font-bold">{ui("Review billing support request")}</h2>
     <p className="muted text-sm mt-2">{ui("This operation records a support decision only. It does not cancel a Paddle subscription or issue a refund.")}</p>
@@ -387,8 +433,8 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
     {reviewMessage&&<p role="alert" className="text-sm text-[var(--danger)] mt-3">{reviewMessage}</p>}
     <div className="flex justify-end gap-3 mt-6"><button className="rounded-xl border border-[var(--stroke)] px-4 py-3" onClick={()=>{setReviewTarget(null);setReviewPassword("");setReviewMessage("")}}>{ui("Cancel")}</button><button disabled={reviewBusy||reviewNote.trim().length<10||reviewPassword.length<12} className="rounded-xl bg-[var(--accent)] text-[var(--accent-ink)] px-4 py-3 disabled:opacity-40" onClick={()=>void submitBillingReview()}>{ui("Save review")}</button></div>
    </div></div>}
-   {planEdit&&<div className="fixed inset-0 z-[220] bg-black/65 grid place-items-center p-4" role="dialog" aria-modal="true" aria-label={ui("Edit plan limits")}><div className="w-full max-w-lg rounded-2xl bg-[var(--surface)] border border-[var(--stroke)] p-7"><h2 className="text-xl font-bold mb-3">{ui("Edit plan limits")}: {planEdit.key}</h2><p className="muted text-sm mb-5">{ui("Leave an input empty for unlimited. This never changes prices or Paddle payments.")}</p>{(["maxDevices","maxMembers","maxApiTokens","monthlyToolCalls"] as const).map(key=><label className="block mb-4" key={key}><span className="text-sm font-semibold">{key}</span><input inputMode="numeric" className="mt-2 w-full rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3" value={planEdit[key]} onChange={e=>setPlanEdit({...planEdit,[key]:e.target.value})}/></label>)}<label className="block text-sm font-semibold mb-2">{ui("Current password")}</label><input autoComplete="current-password" type="password" className="w-full rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3" value={planPassword} onChange={e=>setPlanPassword(e.target.value)}/><p role="alert" className="text-[var(--danger)] mt-3 text-sm">{planError}</p><div className="flex justify-end gap-3 mt-5"><button className="rounded-xl border border-[var(--stroke)] px-5 py-3" onClick={()=>{setPlanEdit(null);setPlanPassword("")}}>{ui("Cancel")}</button><button disabled={planBusy||planPassword.length<12} className="rounded-xl bg-[var(--accent)] text-[var(--accent-ink)] px-5 py-3 disabled:opacity-50" onClick={()=>void saveLimits()}>{ui("Save limits")}</button></div></div></div>}
-   {targetUser&&<div className="fixed inset-0 z-[220] bg-black/65 flex justify-center items-center p-4" role="dialog" aria-modal="true" aria-label={ui("Confirm account change")}><div className="w-full max-w-lg rounded-2xl bg-[var(--surface)] border border-[var(--stroke)] p-7"><h2 className="text-xl font-bold">{targetUser.disabled?"Enable user":"Disable user"}</h2><p className="muted mt-3">{targetUser.email}. This operation is audited and requires your current password.</p><label className="block mt-5 mb-2 text-sm font-semibold">{ui("Current password")}</label><input type="password" autoComplete="current-password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} className="w-full rounded-xl bg-[var(--input)] border border-[var(--stroke)] p-3"/><p role="alert" className="text-[var(--danger)] mt-3 text-sm">{userActionError}</p><div className="flex gap-3 justify-end mt-6"><button onClick={()=>{setTargetUser(null);setConfirmPassword("")}} className="rounded-xl border border-[var(--stroke)] px-5 py-3">{ui("Cancel")}</button><button disabled={confirmPassword.length<12||userActionBusy} onClick={()=>void applyUserAction()} className="rounded-xl bg-[var(--accent)] text-[var(--accent-ink)] px-5 py-3 disabled:opacity-50">{ui("Confirm")}</button></div></div></div>}
+   {planEdit&&<div className="fixed inset-0 z-[220] bg-black/65 grid place-items-center p-4" role="dialog" aria-modal="true" aria-label={ui("Edit plan limits")}><div className="w-full max-w-lg rounded-2xl bg-[var(--surface)] border border-[var(--stroke)] p-7"><h2 className="text-xl font-bold mb-3">{ui("Edit plan limits")}: {billing?.plans.find(p=>p.key===planEdit.key)?.name as string??planEdit.key}</h2><p className="muted text-sm mb-5">{ui("Leave an input empty for unlimited. This never changes prices or Paddle payments.")}</p>{(["maxDevices","maxMembers","maxApiTokens","monthlyToolCalls"] as const).map(key=><label className="block mb-4" key={key}><span className="text-sm font-semibold">{limitLabel(key)}</span><input inputMode="numeric" className="mt-2 w-full rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3" value={planEdit[key]} onChange={e=>setPlanEdit({...planEdit,[key]:e.target.value})}/></label>)}<label className="block text-sm font-semibold mb-2">{ui("Current password")}</label><input autoComplete="current-password" type="password" className="w-full rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3" value={planPassword} onChange={e=>setPlanPassword(e.target.value)}/><p role="alert" className="text-[var(--danger)] mt-3 text-sm">{planError}</p><div className="flex justify-end gap-3 mt-5"><button className="rounded-xl border border-[var(--stroke)] px-5 py-3" onClick={()=>{setPlanEdit(null);setPlanPassword("")}}>{ui("Cancel")}</button><button disabled={planBusy||planPassword.length<12} className="rounded-xl bg-[var(--accent)] text-[var(--accent-ink)] px-5 py-3 disabled:opacity-50" onClick={()=>void saveLimits()}>{ui("Save limits")}</button></div></div></div>}
+   {targetUser&&<div className="fixed inset-0 z-[220] bg-black/65 flex justify-center items-center p-4" role="dialog" aria-modal="true" aria-label={ui("Confirm account change")}><div className="w-full max-w-lg rounded-2xl bg-[var(--surface)] border border-[var(--stroke)] p-7"><h2 className="text-xl font-bold">{ui(targetUser.disabled?"Enable user":"Disable user")}</h2><p className="muted mt-3"><strong className="text-[var(--text)]">{targetUser.email}</strong> — {ui("This operation is audited and requires your current password.")}</p><label className="block mt-5 mb-2 text-sm font-semibold">{ui("Current password")}</label><input type="password" autoComplete="current-password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} className="w-full rounded-xl bg-[var(--input)] border border-[var(--stroke)] p-3"/><p role="alert" className="text-[var(--danger)] mt-3 text-sm">{userActionError}</p><div className="flex gap-3 justify-end mt-6"><button onClick={()=>{setTargetUser(null);setConfirmPassword("")}} className="rounded-xl border border-[var(--stroke)] px-5 py-3">{ui("Cancel")}</button><button disabled={confirmPassword.length<12||userActionBusy} onClick={()=>void applyUserAction()} className="rounded-xl bg-[var(--accent)] text-[var(--accent-ink)] px-5 py-3 disabled:opacity-50">{ui("Confirm")}</button></div></div></div>}
 
     <div className="dash-topbar">
       <div className="flex items-center gap-3"><button className="mobile-dash-open size-9 place-items-center rounded-lg border border-[var(--stroke)]" onClick={()=>setMenu(true)} aria-label={ui("Open navigation")}>{menu?<X/>:<Menu/>}</button><span className="text-sm muted">{ui("Administration")} / <strong className="text-[var(--text)]">{ui(section)}</strong></span></div>
@@ -403,19 +449,37 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
 </div>}</div></div>
     </div>
     <main className="dash-content">
-      <p className="text-sm font-semibold text-[var(--accent)] mb-2">{ui("WECOMMANDER CONTROL CENTER")}</p>
-      <h1 className="dash-title">{ui(section==="Overview"?"Platform Overview":section)}</h1>
-      <p className="muted mt-3 mb-8">{ui(sectionDescriptions[section]??"Platform-wide counts from the production database.")} <span className="whitespace-nowrap">{ui("Signed in as")} {admin.email}.</span></p>
-      {section==="Legal CMS"?<LegalEditor/>:section==="Brand"?<div className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-6 max-w-3xl"><h2 className="text-xl font-bold mb-3">{ui("Brand assets")}</h2><p className="muted text-sm mb-5">{ui("Upload PNG or WebP images up to 500 KB, or SVG up to 250 KB (converted to PNG), for dark/light logos and favicon. Original assets remain until replaced.")}</p><label className="block text-sm font-semibold mb-2">{ui("Asset")}</label><select className="w-full bg-[var(--input)] border border-[var(--stroke)] rounded-xl p-3 mb-5" value={brandKind} onChange={e=>{setBrandKind(e.target.value as "logo_light"|"logo_dark"|"favicon");setBrandImage("")}}><option value="logo_light">{ui("Logo displayed on dark background")}</option><option value="logo_dark">{ui("Logo displayed on light background")}</option><option value="favicon">{ui("Favicon")}</option></select><img src={"/api/public/brand/"+brandKind} alt="Current brand asset" className="w-auto max-w-[230px] max-h-[90px] object-contain p-3 rounded-xl bg-neutral-500/20 mb-5"/><label className="block text-sm font-semibold mb-2">{ui("Replacement image")}</label><input type="file" accept="image/png,image/webp,image/svg+xml,.svg" onChange={e=>readBrand(e.target.files?.[0])} className="block w-full text-sm mb-4"/>{brandImage&&<img src={brandImage} alt="Selected asset preview" className="max-h-[120px] max-w-[270px] object-contain p-3 bg-neutral-500/20 rounded-xl mb-5"/>}<label className="block text-sm font-semibold mb-2">{ui("Current administrator password")}</label><input type="password" autoComplete="current-password" value={brandPassword} onChange={e=>setBrandPassword(e.target.value)} className="w-full bg-[var(--input)] border border-[var(--stroke)] rounded-xl p-3 mb-4"/><button className="rounded-xl bg-[var(--accent)] text-[var(--accent-ink)] px-6 py-3 font-bold disabled:opacity-50" disabled={brandBusy||brandPassword.length<12||!brandImage} onClick={()=>void uploadBrand()}>{ui("Upload asset")}</button><p className="mt-3 text-sm" role="status">{brandError}</p></div>:section==="Billing"?<div className="grid gap-6">{(["plans","subscriptions"] as const).map(kind=><section key={kind} className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-6"><h2 className="text-xl font-bold mb-4">{kind==="plans"?ui("Plans"):ui("Subscriptions")}</h2>{!billing?<p className="muted">{ui("Loading…")}</p>:billing[kind].length===0?<p className="muted">{ui("No records.")}</p>:billing[kind].map((item,index)=><div key={index} className="border-t border-[var(--stroke)] py-3 text-sm flex gap-4 flex-wrap items-center">{Object.entries(item).map(([key,value])=><span key={key}><strong>{key}:</strong> {String(value??"—")}</span>)}{kind==="plans"&&<button className="ml-auto rounded-lg border border-[var(--stroke)] px-3 py-2" onClick={()=>{setPlanError("");setPlanEdit({key:String(item.key),maxDevices:item.max_devices==null?"":String(item.max_devices),maxMembers:item.max_members==null?"":String(item.max_members),maxApiTokens:item.max_api_tokens==null?"":String(item.max_api_tokens),monthlyToolCalls:item.monthly_tool_calls==null?"":String(item.monthly_tool_calls),hasToolCallLimit:Boolean(item.has_tool_call_limit)})}}>{ui("Edit quotas")}</button>}</div>)}</section>)}<section className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-6">
- <h2 className="text-xl font-bold mb-2">{ui("Cancellation & refund requests")}</h2>
- <p className="muted text-sm mb-4">{ui("Requests are tracked internally. No provider refund or cancellation is executed by this review queue.")}</p>
+      <PageHeader className="mb-6" title={ui(section==="Overview"?"Platform Overview":section)} description={ui(sectionDescriptions[section]??"Platform-wide counts from the production database.")}/>
+      {section==="Legal CMS"?<LegalEditor/>:section==="Brand"?<div className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-6 max-w-3xl"><h2 className="text-xl font-bold mb-3">{ui("Brand assets")}</h2><p className="muted text-sm mb-5">{ui("Upload PNG or WebP images up to 500 KB, or SVG up to 250 KB (converted to PNG), for dark/light logos and favicon. Original assets remain until replaced.")}</p><label className="block text-sm font-semibold mb-2">{ui("Asset")}</label><select className="w-full bg-[var(--input)] border border-[var(--stroke)] rounded-xl p-3 mb-5" value={brandKind} onChange={e=>{setBrandKind(e.target.value as "logo_light"|"logo_dark"|"favicon");setBrandImage("")}}><option value="logo_light">{ui("Logo displayed on dark background")}</option><option value="logo_dark">{ui("Logo displayed on light background")}</option><option value="favicon">{ui("Favicon")}</option></select><img src={"/api/public/brand/"+brandKind} alt="Current brand asset" className="w-auto max-w-[230px] max-h-[90px] object-contain p-3 rounded-xl bg-neutral-500/20 mb-5"/><label className="block text-sm font-semibold mb-2">{ui("Replacement image")}</label><input type="file" accept="image/png,image/webp,image/svg+xml,.svg" onChange={e=>readBrand(e.target.files?.[0])} className="block w-full text-sm mb-4"/>{brandImage&&<img src={brandImage} alt="Selected asset preview" className="max-h-[120px] max-w-[270px] object-contain p-3 bg-neutral-500/20 rounded-xl mb-5"/>}<label className="block text-sm font-semibold mb-2">{ui("Current administrator password")}</label><input type="password" autoComplete="current-password" value={brandPassword} onChange={e=>setBrandPassword(e.target.value)} className="w-full bg-[var(--input)] border border-[var(--stroke)] rounded-xl p-3 mb-4"/><button className="rounded-xl bg-[var(--accent)] text-[var(--accent-ink)] px-6 py-3 font-bold disabled:opacity-50" disabled={brandBusy||brandPassword.length<12||!brandImage} onClick={()=>void uploadBrand()}>{ui("Upload asset")}</button><p className="mt-3 text-sm" role="status">{brandError}</p></div>:section==="Billing"?<div className="grid gap-5">
+ <Panel flush title={ui("Plans")} description={ui("Limits per plan. Prices live in Paddle.")}>
+  {!billing?<p className="muted px-5 pb-5 text-sm">{ui("Loading…")}</p>:<AdminTable rowKey={r=>String(r.key)} rows={billing.plans} columns={[
+   {key:"plan",label:ui("Plan"),render:r=><div><div className="font-medium">{String(r.name)}</div><code className="font-mono text-[11px] text-[var(--faint)]">{String(r.key)}</code></div>},
+   {key:"devices",label:ui("Devices"),className:"text-right tabular-nums",render:r=>r.max_devices==null?"∞":String(r.max_devices)},
+   {key:"members",label:ui("Members"),className:"text-right tabular-nums",render:r=>r.max_members==null?"∞":String(r.max_members)},
+   {key:"tokens",label:ui("API tokens"),className:"text-right tabular-nums",render:r=>r.max_api_tokens==null?"∞":String(r.max_api_tokens)},
+   {key:"calls",label:ui("Monthly tool calls"),className:"text-right tabular-nums",render:r=>r.monthly_tool_calls==null?"∞":Number(r.monthly_tool_calls).toLocaleString(tr==="tr"?"tr-TR":"en-US")},
+   {key:"active",label:ui("Status"),render:r=>r.active?<Pill tone="success" dot>{ui("Active")}</Pill>:<Pill>{ui("Inactive")}</Pill>},
+   {key:"actions",label:ui("Actions"),className:"console-actions",render:r=><button type="button" className={smallButton} onClick={()=>{setPlanError("");setPlanEdit({key:String(r.key),maxDevices:r.max_devices==null?"":String(r.max_devices),maxMembers:r.max_members==null?"":String(r.max_members),maxApiTokens:r.max_api_tokens==null?"":String(r.max_api_tokens),monthlyToolCalls:r.monthly_tool_calls==null?"":String(r.monthly_tool_calls),hasToolCallLimit:Boolean(r.has_tool_call_limit)})}}>{ui("Edit quotas")}</button>},
+  ]}/>}
+ </Panel>
+ <Panel flush title={ui("Subscriptions")} description={ui("Paddle remains the only source of truth for paid subscription status.")}>
+  {!billing?<p className="muted px-5 pb-5 text-sm">{ui("Loading…")}</p>:billing.subscriptions.length===0?<p className="muted px-5 py-8 text-center text-sm border-t border-[var(--stroke)]">{ui("No records.")}</p>:<AdminTable rowKey={(r,i)=>String(r.organization)+i} rows={billing.subscriptions} columns={[
+   {key:"org",label:ui("Workspace"),render:r=><span className="font-medium">{String(r.organization)}</span>},
+   {key:"plan",label:ui("Plan"),render:r=><Pill tone="accent">{String(r.plan_key)}</Pill>},
+   {key:"status",label:ui("Status"),render:r=><Pill tone={r.status==="active"||r.status==="trialing"?"success":r.status==="past_due"?"warning":r.status==="canceled"?"danger":"neutral"} dot>{String(r.status).replaceAll("_"," ")}{r.cancel_at_period_end?" · "+ui("ends at period end"):""}</Pill>},
+   {key:"provider",label:ui("Provider"),render:r=>String(r.provider??"—")},
+   {key:"renews",label:ui("Period ends"),render:r=><When value={r.current_period_end} locale={tr} empty="—"/>},
+  ]}/>}
+ </Panel>
+ <Panel title={ui("Cancellation & refund requests")} description={ui("Requests are tracked internally. No provider refund or cancellation is executed by this review queue.")}>
  {billingRequests.length===0?<p className="muted text-sm">{ui("No requests.")}</p>:<div className="grid gap-3">{billingRequests.map(item=><div key={item.id} className="rounded-xl border border-[var(--stroke)] p-4">
-   <div className="flex flex-wrap items-center justify-between gap-3"><div><strong className="text-sm">{item.organization} — {item.type}</strong><p className="muted text-xs mt-1">{item.requested_by_email} · {new Date(item.created_at).toLocaleString()}</p></div><span className="text-sm">{item.status.replace("_"," ")}</span></div>
+   <div className="flex flex-wrap items-center justify-between gap-3"><div><strong className="text-sm">{item.organization}</strong> <Pill tone={item.type==="refund"?"warning":"neutral"}>{item.type}</Pill><p className="muted text-xs mt-1">{item.requested_by_email} · <When value={item.created_at} locale={tr} empty="—"/></p></div><Pill tone={item.status==="closed"?"neutral":item.status==="in_review"?"info":"warning"} dot>{item.status.replace("_"," ")}</Pill></div>
    <p className="text-sm mt-3 break-words">{item.message}</p>
    {item.resolution_note&&<p className="text-sm muted mt-2">{ui("Note")}: {item.resolution_note}</p>}
-   {item.status!=="closed"&&<button type="button" className="rounded-xl border border-[var(--stroke)] px-4 py-2 mt-3" onClick={()=>{setReviewTarget(item.id);setReviewStatus("in_review");setReviewNote(item.resolution_note||"");setReviewPassword("");setReviewMessage("")}}>{ui("Review")}</button>}
+   {item.status!=="closed"&&<button type="button" className={smallButton+" mt-3"} onClick={()=>{setReviewTarget(item.id);setReviewStatus("in_review");setReviewNote(item.resolution_note||"");setReviewPassword("");setReviewMessage("")}}>{ui("Review")}</button>}
  </div>)}</div>}
-</section><p className="muted text-sm">{ui("Paddle remains the only source of truth for paid subscription status.")}</p></div>:section==="System"?<SystemStatus data={system}/>:section==="Landing CMS"?<div className="rounded-2xl bg-[var(--surface)] border border-[var(--stroke)] p-6 max-w-4xl"><h2 className="font-bold text-xl mb-4">{ui("Landing content editor")}</h2><p className="muted mb-4 text-sm">{ui("Edit localized hero copy, save revisions, then publish. Published revisions can be restored by publishing them again.")}</p><label className="block text-sm font-semibold mb-2">{ui("Language")}</label><select className="w-full rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 mb-4" value={cmsLocale} onChange={e=>{setCmsLocale(e.target.value as "en"|"tr");setCmsTitle("");setCmsSubtitle("");setCmsSeoTitle("");setCmsSeoDescription("");setCmsOverrides({});setCmsMessage("")}}><option value="en">{ui("English")}</option><option value="tr">{ui("Türkçe")}</option></select><label className="block text-sm font-semibold mb-2">{ui("Hero title")}</label><input maxLength={160} className="w-full rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 mb-4" value={cmsTitle} onChange={e=>setCmsTitle(e.target.value)}/><label className="block text-sm font-semibold mb-2">{ui("Hero description")}</label><textarea maxLength={500} className="w-full rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 mb-4" rows={4} value={cmsSubtitle} onChange={e=>setCmsSubtitle(e.target.value)}/><h3 className="text-lg font-bold mt-7 mb-3">{ui("Search and sharing metadata")}</h3>
+ </Panel>
+</div>:section==="System"?<SystemStatus data={system}/>:section==="Landing CMS"?<div className="rounded-2xl bg-[var(--surface)] border border-[var(--stroke)] p-6 max-w-4xl"><h2 className="font-bold text-xl mb-4">{ui("Landing content editor")}</h2><p className="muted mb-4 text-sm">{ui("Edit localized hero copy, save revisions, then publish. Published revisions can be restored by publishing them again.")}</p><label className="block text-sm font-semibold mb-2">{ui("Language")}</label><select className="w-full rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 mb-4" value={cmsLocale} onChange={e=>{setCmsLocale(e.target.value as "en"|"tr");setCmsTitle("");setCmsSubtitle("");setCmsSeoTitle("");setCmsSeoDescription("");setCmsOverrides({});setCmsMessage("")}}><option value="en">{ui("English")}</option><option value="tr">{ui("Türkçe")}</option></select><label className="block text-sm font-semibold mb-2">{ui("Hero title")}</label><input maxLength={160} className="w-full rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 mb-4" value={cmsTitle} onChange={e=>setCmsTitle(e.target.value)}/><label className="block text-sm font-semibold mb-2">{ui("Hero description")}</label><textarea maxLength={500} className="w-full rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 mb-4" rows={4} value={cmsSubtitle} onChange={e=>setCmsSubtitle(e.target.value)}/><h3 className="text-lg font-bold mt-7 mb-3">{ui("Search and sharing metadata")}</h3>
 <p className="muted mb-4 text-sm">{ui("Optional localized title and description, shown in search results and social previews. Leave blank to keep the defaults.")}</p>
 <label className="block text-sm font-semibold mb-3">{ui("SEO title (up to 70 characters)")}
  <input maxLength={70} value={cmsSeoTitle} onChange={e=>setCmsSeoTitle(e.target.value)} className="block mt-2 w-full rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-3"/>
@@ -461,48 +525,51 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
 <button disabled={cmsBusy||!cmsTitle.trim()||!cmsSubtitle.trim()} onClick={()=>void saveCms()} className="px-5 py-3 bg-[var(--accent)] text-[var(--accent-ink)] rounded-xl font-bold disabled:opacity-50">{ui("Save draft")}</button><p role="status" className="text-sm mt-3">{cmsMessage}</p><h3 className="text-lg font-bold mt-8 mb-3">{ui("Revisions")}</h3>
 <label className="block mb-4 text-sm font-semibold">{ui("Current password to publish or restore a revision")}
  <input type="password" autoComplete="current-password" value={cmsPublishPassword} onChange={e=>setCmsPublishPassword(e.target.value)} className="block w-full mt-2 rounded-xl border border-[var(--stroke)] bg-[var(--surface)] p-3"/>
-</label>{cmsItems.map(item=><div key={item.id} className="flex flex-wrap items-center justify-between border-t border-[var(--stroke)] py-4 gap-4"><div className="min-w-0"><button className="font-semibold text-left hover:underline" title="Load this revision into editor" onClick={()=>{setCmsTitle(item.hero_title);setCmsSubtitle(item.hero_subtitle);setCmsSeoTitle(item.seo_title||"");setCmsSeoDescription(item.seo_description||"");setCmsOverrides(item.overrides||{});setCmsMessage("Revision loaded into editor.")}}>{item.hero_title}</button><div className="muted text-sm">{item.state} · revision {item.id}</div></div><button disabled={cmsBusy||cmsPublishPassword.length<12||item.state==="published"} className="rounded-xl border border-[var(--stroke)] px-4 py-2 disabled:opacity-50" onClick={()=>void publishCms(item.id)}>{item.state==="published"?"Published":"Publish"}</button></div>)}</div>:section==="Overview"?<><div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-       {([{label:"Total users",value:overview?.users,icon:Users},{label:"Organizations",value:overview?.organizations,icon:Building2},{label:"Registered devices",value:overview?.devices,icon:Monitor},{label:"Recently active devices",value:overview?.activeDevices,icon:Activity}]).map(item=><section key={item.label} className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-6">
-        <div className="flex justify-between items-center"><span className="muted text-sm">{ui(item.label)}</span><item.icon size={20} className="text-[var(--accent)]"/></div>
-        <div className="text-4xl font-bold mt-5">{item.value?.toLocaleString()??"—"}</div>
-       </section>)}
-      </div>
-      <div className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-6 mt-7">
-       <h2 className="text-xl font-bold">{ui("Platform tools")}</h2>
-       <p className="muted mt-2 mb-5 text-sm">{ui("Open an administration module. Privileged changes require role checks, CSRF protection and password confirmation.")}</p>
-       <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">{items.filter(item=>item.label!=="Overview").map(item=><button type="button" key={item.label} onClick={()=>{setSection(item.label);nav(routes[item.label])}} className="rounded-xl border border-[var(--stroke)] bg-[var(--surface-2)] p-4 text-left hover:border-[var(--accent)] flex items-center gap-3"><item.icon size={20} className="text-[var(--accent)]"/><span className="font-semibold">{ui(item.label)}</span></button>)}</div>
-      </div></>:<div className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-5 overflow-x-auto">
-        {section==="Users"&&<div className="flex flex-wrap gap-3 mb-5"><input className="flex-1 min-w-[220px] rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 text-sm" placeholder={ui("Search user email")} aria-label={ui("Search user email")} value={userSearch} onChange={e=>{setUserPage(0);setUserSearch(e.target.value)}}/><button type="button" disabled={userPage===0} onClick={()=>setUserPage(x=>Math.max(0,x-1))} className="rounded-xl border border-[var(--stroke)] px-4 disabled:opacity-40">{ui("Previous")}</button><span className="self-center text-sm muted">{ui("Page")} {userPage+1} / {Math.max(1,Math.ceil(userTotal/25))} · {userTotal} {ui("total")}</span><button type="button" disabled={recordsBusy||(userPage+1)*25>=userTotal} onClick={()=>setUserPage(x=>x+1)} className="rounded-xl border border-[var(--stroke)] px-4 disabled:opacity-40">{ui("Next")}</button></div>}
-        {section==="Organizations"&&<div className="flex flex-wrap gap-3 mb-5">
-  <input className="flex-1 min-w-[220px] rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 text-sm" placeholder={ui("Search workspaces")} aria-label={ui("Organizations")} value={organizationSearch} onChange={e=>{setOrganizationSearch(e.target.value);setOrganizationPage(0)}}/>
-  <button type="button" disabled={organizationPage===0||recordsBusy} onClick={()=>setOrganizationPage(x=>Math.max(0,x-1))} className="rounded-xl border border-[var(--stroke)] px-4 disabled:opacity-40">{ui("Previous")}</button>
-  <span className="self-center text-sm muted">{ui("Page")} {organizationPage+1} / {Math.max(1,Math.ceil(organizationTotal/25))} · {organizationTotal} {ui("total")}</span>
-  <button type="button" disabled={recordsBusy||(organizationPage+1)*25>=organizationTotal} onClick={()=>setOrganizationPage(x=>x+1)} className="rounded-xl border border-[var(--stroke)] px-4 disabled:opacity-40">{ui("Next")}</button>
- </div>}
-{section==="Devices"&&<div className="flex flex-wrap items-center gap-3 mb-5">
-  <input aria-label={ui("Search devices")} placeholder={ui("Search device, platform or workspace")} value={deviceSearch} onChange={e=>{setDeviceSearch(e.target.value);setDevicePage(0)}} className="flex-1 min-w-[220px] rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 text-sm"/>
-  <select aria-label={ui("Device status")} value={deviceStatus} onChange={e=>{setDeviceStatus(e.target.value as "all"|"active"|"revoked");setDevicePage(0)}} className="rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 text-sm">
-   <option value="all">{ui("All devices")}</option><option value="active">{ui("Not revoked")}</option><option value="revoked">{ui("Revoked")}</option>
-  </select>
-  <button type="button" disabled={recordsBusy||devicePage===0} onClick={()=>setDevicePage(x=>Math.max(0,x-1))} className="rounded-xl border border-[var(--stroke)] px-4 py-3 disabled:opacity-40">{ui("Previous")}</button>
-  <span className="self-center text-sm muted">{ui("Page")} {devicePage+1} / {Math.max(1,Math.ceil(deviceTotal/25))} · {deviceTotal} {ui("total")}</span>
-  <button type="button" disabled={recordsBusy||(devicePage+1)*25>=deviceTotal} onClick={()=>setDevicePage(x=>x+1)} className="rounded-xl border border-[var(--stroke)] px-4 py-3 disabled:opacity-40">{ui("Next")}</button>
- </div>}
-{section==="Operations"&&<div className="flex flex-wrap gap-3 mb-5 items-center">
-  <input aria-label={ui("Search audit records")} placeholder={ui("Search action or workspace")} value={auditSearch} onChange={e=>{setAuditSearch(e.target.value);setAuditPage(0)}} className="flex-1 min-w-[220px] rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 text-sm"/>
-  <select aria-label={ui("Audit source")} value={auditSource} onChange={e=>{setAuditSource(e.target.value as "all"|"tenant"|"platform");setAuditPage(0)}} className="rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 text-sm">
-    <option value="all">{ui("All sources")}</option><option value="tenant">{ui("Workspace activity")}</option><option value="platform">{ui("Platform activity")}</option>
-  </select>
-  <select aria-label={ui("Risk filter")} value={auditRisk} onChange={e=>{setAuditRisk(e.target.value as "all"|"low"|"medium"|"high"|"critical");setAuditPage(0)}} className="rounded-xl border border-[var(--stroke)] bg-[var(--input)] p-3 text-sm">
-    <option value="all">{ui("All risks")}</option><option value="low">{ui("Low")}</option><option value="medium">{ui("Medium")}</option><option value="high">{ui("High")}</option><option value="critical">{ui("Critical")}</option>
-  </select>
-  <button type="button" disabled={recordsBusy||auditPage===0} onClick={()=>setAuditPage(x=>Math.max(0,x-1))} className="rounded-xl border border-[var(--stroke)] px-4 py-3 disabled:opacity-40">{ui("Previous")}</button>
-  <span className="self-center text-sm muted">{ui("Page")} {auditPage+1} / {Math.max(1,Math.ceil(auditTotal/25))} · {auditTotal} {ui("total")}</span>
-  <button type="button" disabled={recordsBusy||(auditPage+1)*25>=auditTotal} onClick={()=>setAuditPage(x=>x+1)} className="rounded-xl border border-[var(--stroke)] px-4 py-3 disabled:opacity-40">{ui("Next")}</button>
- </div>}
-{recordsBusy?<p className="muted py-8">{ui("Loading records…")}</p>:recordsError?<p role="alert" className="text-[var(--danger)]">{recordsError}</p>:records.length===0?<p className="muted py-8">{ui("No records.")}</p>:<div className="w-full overflow-x-auto rounded-xl border border-[var(--stroke)]"><table className="console-table w-full min-w-[740px] text-base text-left"><thead><tr>{Object.keys(records[0]||{}).map(k=><th key={k} className="px-3 py-3 border-b border-[var(--stroke)] whitespace-nowrap font-semibold">{ui(adminColumnLabels[k]??k.replaceAll("_"," "))}</th>)}{(section==="Users"||section==="Organizations")&&<th className="px-3 py-3 border-b border-[var(--stroke)]">{ui("Actions")}</th>}</tr></thead><tbody>{records.map((row,i)=><tr key={String(row.item_id||row.id||i)}>{Object.entries(row).map(([key,value],j)=><td key={j} data-label={ui(adminColumnLabels[key]??key.replaceAll("_"," "))} className="px-3 py-3 border-b border-[var(--stroke)] whitespace-nowrap">{(key==="id"||key==="item_id")&&typeof value==="string"&&/^[0-9a-f-]{36}$/i.test(value)?<code className="font-mono text-sm" title={value}>{value.slice(0,8)}…</code>:formatAdminCell(key,value,currentLocale)}</td>)}{section==="Organizations"&&<td data-label={ui("Actions")} className="console-actions px-3 py-3 border-b border-[var(--stroke)]"><button className="rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm" onClick={()=>{const q=(row.quota_overrides||{}) as Record<string,number|null>;setOrgError("");setOrgEdit({id:String(row.id),name:String(row.name),maxDevices:q.maxDevices==null?"":String(q.maxDevices),maxMembers:q.maxMembers==null?"":String(q.maxMembers),maxApiTokens:q.maxApiTokens==null?"":String(q.maxApiTokens)})}}>{ui("Edit quotas")}</button><button className="rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm" onClick={()=>void openMembers({id:String(row.id),name:String(row.name)})}>{ui("Members")}</button></td>}{section==="Users"&&<td data-label={ui("Actions")} className="console-actions px-3 py-3 border-b border-[var(--stroke)]"><button type="button" className="rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm" onClick={()=>setDetailUserId(String(row.id))}>{ui("Details")}</button><button onClick={()=>{setUserActionError("");setTargetUser({id:String(row.id),email:String(row.email),disabled:Boolean(row.disabled)})}} className="rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm">{ui(row.disabled?"Enable":"Disable")}</button><button type="button" className="rounded-lg border border-[var(--stroke)] px-3 py-2 text-sm" onClick={()=>void openSessions({id:String(row.id),email:String(row.email)})}>{ui("Sessions")}</button></td>}</tr>)}</tbody></table></div>}
-        {(section==="Devices"||section==="Operations")&&<p className="muted text-xs mt-5">{ui("Read-only records. Administrative changes require audited controls.")}</p>}
-       </div>}
+</label>{cmsItems.map(item=><div key={item.id} className="flex flex-wrap items-center justify-between border-t border-[var(--stroke)] py-4 gap-4"><div className="min-w-0"><button className="font-semibold text-left hover:underline" title="Load this revision into editor" onClick={()=>{setCmsTitle(item.hero_title);setCmsSubtitle(item.hero_subtitle);setCmsSeoTitle(item.seo_title||"");setCmsSeoDescription(item.seo_description||"");setCmsOverrides(item.overrides||{});setCmsMessage("Revision loaded into editor.")}}>{item.hero_title}</button><div className="muted text-sm">{item.state} · revision {item.id}</div></div><button disabled={cmsBusy||cmsPublishPassword.length<12||item.state==="published"} className="rounded-xl border border-[var(--stroke)] px-4 py-2 disabled:opacity-50" onClick={()=>void publishCms(item.id)}>{item.state==="published"?"Published":"Publish"}</button></div>)}</div>:section==="Overview"?<div className="grid gap-5">
+       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <Stat label={ui("Total users")} value={overview?.users?.toLocaleString(tr==="tr"?"tr-TR":"en-US")??"—"} icon={Users} onClick={()=>go("Users")}/>
+        <Stat label={ui("Organizations")} value={overview?.organizations?.toLocaleString(tr==="tr"?"tr-TR":"en-US")??"—"} icon={Building2} onClick={()=>go("Organizations")}/>
+        <Stat label={ui("Registered devices")} value={overview?.devices?.toLocaleString(tr==="tr"?"tr-TR":"en-US")??"—"} icon={Monitor} onClick={()=>go("Devices")}/>
+        <Stat label={ui("Recently active devices")} value={overview?.activeDevices?.toLocaleString(tr==="tr"?"tr-TR":"en-US")??"—"} hint={overview&&overview.devices?Math.round(overview.activeDevices/overview.devices*100)+"% "+ui("of registered"):undefined} icon={Activity} tone="success" onClick={()=>go("Devices")}/>
+       </div>
+       <div className="grid gap-5 xl:grid-cols-[1.4fr_1fr]">
+        <Panel flush title={ui("Recent sign-ups")} actions={<button type="button" className={smallButton} onClick={()=>go("Users")}>{ui("All users")}</button>}>
+         {recentUsers.length===0?<p className="px-5 pb-5 text-sm text-[var(--muted)]">{ui("No records.")}</p>:<ul className="divide-y divide-[var(--stroke)] border-t border-[var(--stroke)]">{recentUsers.map(u=><li key={String(u.id)} className="flex items-center gap-3 px-5 py-3">
+          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[var(--subtle-surface)] text-xs font-bold text-[var(--accent)]"><UserPlus size={15}/></span>
+          <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{String(u.email)}</div><div className="text-xs text-[var(--muted)]"><When value={u.created_at} locale={tr} empty="—"/></div></div>
+          {u.disabled?<Pill tone="danger">{ui("Disabled")}</Pill>:u.verified?<Pill tone="success">{ui("Verified")}</Pill>:<Pill tone="warning">{ui("Unverified")}</Pill>}
+         </li>)}</ul>}
+        </Panel>
+        <Panel title={ui("Needs attention")} actions={<button type="button" className={smallButton} onClick={()=>go("System")}>{ui("System")}</button>}>
+         {(()=>{const sys=(overviewSystem||{}) as {mailQueue?:{pending?:number;failed?:number};operations?:{pending_approvals?:number};signupEnabled?:boolean;mailConfigured?:boolean};
+          const rows:Array<{icon:typeof Mail;label:string;value:ReactNodeLike;tone:Tone;go:string}>=[
+           {icon:Mail,label:ui("Mail delivery failures"),value:sys.mailQueue?.failed??0,tone:(sys.mailQueue?.failed??0)>0?"danger":"success",go:"System"},
+           {icon:Mail,label:ui("Pending mail"),value:sys.mailQueue?.pending??0,tone:(sys.mailQueue?.pending??0)>20?"warning":"neutral",go:"System"},
+           {icon:ClipboardCheck,label:ui("Pending approvals"),value:sys.operations?.pending_approvals??0,tone:"neutral",go:"System"},
+           {icon:CreditCard,label:ui("Open billing requests"),value:openRequests??"—",tone:(openRequests??0)>0?"warning":"neutral",go:"Billing"},
+           {icon:UserPlus,label:ui("Public sign-up"),value:sys.signupEnabled===undefined?"—":ui(sys.signupEnabled?"On":"Off"),tone:"neutral",go:"System"},
+          ];
+          return <ul className="grid gap-1">{rows.map(row=><li key={row.label}><button type="button" onClick={()=>go(row.go)} className="flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left hover:bg-[var(--hover)]"><row.icon size={17} className="text-[var(--muted)]"/><span className="flex-1 text-sm">{row.label}</span><Pill tone={row.tone}>{row.value}</Pill></button></li>)}</ul>;})()}
+        </Panel>
+       </div>
+      </div>:<Panel flush className="pt-5">
+        {section==="Users"&&<Toolbar ui={ui} label={ui("Search user email")} placeholder={ui("Search user email")} search={userSearch} onSearch={v=>{setUserPage(0);setUserSearch(v)}} page={userPage} total={userTotal} onPage={setUserPage} busy={recordsBusy}/>}
+        {section==="Organizations"&&<Toolbar ui={ui} label={ui("Organizations")} placeholder={ui("Search workspaces")} search={organizationSearch} onSearch={v=>{setOrganizationSearch(v);setOrganizationPage(0)}} page={organizationPage} total={organizationTotal} onPage={setOrganizationPage} busy={recordsBusy}/>}
+        {section==="Devices"&&<Toolbar ui={ui} label={ui("Search devices")} placeholder={ui("Search device, platform or workspace")} search={deviceSearch} onSearch={v=>{setDeviceSearch(v);setDevicePage(0)}} page={devicePage} total={deviceTotal} onPage={setDevicePage} busy={recordsBusy} filters={
+          <select aria-label={ui("Device status")} value={deviceStatus} onChange={e=>{setDeviceStatus(e.target.value as "all"|"active"|"revoked");setDevicePage(0)}} className={fieldClass}>
+           <option value="all">{ui("All devices")}</option><option value="active">{ui("Not revoked")}</option><option value="revoked">{ui("Revoked")}</option>
+          </select>}/>}
+        {section==="Operations"&&<Toolbar ui={ui} label={ui("Search audit records")} placeholder={ui("Search action or workspace")} search={auditSearch} onSearch={v=>{setAuditSearch(v);setAuditPage(0)}} page={auditPage} total={auditTotal} onPage={setAuditPage} busy={recordsBusy} filters={<>
+          <select aria-label={ui("Audit source")} value={auditSource} onChange={e=>{setAuditSource(e.target.value as "all"|"tenant"|"platform");setAuditPage(0)}} className={fieldClass}>
+           <option value="all">{ui("All sources")}</option><option value="tenant">{ui("Workspace activity")}</option><option value="platform">{ui("Platform activity")}</option>
+          </select>
+          <select aria-label={ui("Risk filter")} value={auditRisk} onChange={e=>{setAuditRisk(e.target.value as "all"|"low"|"medium"|"high"|"critical");setAuditPage(0)}} className={fieldClass}>
+           <option value="all">{ui("All risks")}</option><option value="low">{ui("Low")}</option><option value="medium">{ui("Medium")}</option><option value="high">{ui("High")}</option><option value="critical">{ui("Critical")}</option>
+          </select></>}/>}
+        {recordsBusy&&records.length===0?<p className="muted px-5 py-10 text-sm">{ui("Loading records…")}</p>:recordsError?<p role="alert" className="px-5 pb-5 text-[var(--danger)]">{recordsError}</p>:records.length===0?<p className="muted px-5 py-10 text-center text-sm border-t border-[var(--stroke)]">{ui("No records.")}</p>:
+         <AdminTable columns={tableColumns[section]??[]} rows={records} rowKey={(row,i)=>String(row.item_id||row.id||i)}/>}
+        {(section==="Devices"||section==="Operations")&&<p className="muted text-xs px-5 py-4 border-t border-[var(--stroke)]">{ui("Read-only records. Administrative changes require audited controls.")}</p>}
+       </Panel>}
     </main>
   </div>
  </div>;

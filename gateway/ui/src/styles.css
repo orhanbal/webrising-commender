@@ -251,6 +251,15 @@
 /* Console (v1.1 item 5d): action buttons in one row; tables collapse to labelled cards on phones. */
 .console-actions{white-space:nowrap}
 .console-actions>button{margin:2px 4px 2px 0}
+.console-table th{padding:10px 16px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);background:var(--surface-2);border-bottom:1px solid var(--stroke);white-space:nowrap}
+.console-table td{padding:12px 16px;border-bottom:1px solid var(--stroke);vertical-align:middle}
+.console-table tbody tr:last-child td{border-bottom:0}
+.console-table tbody tr:hover td{background:var(--hover)}
+.console-table .console-actions{text-align:right}
+.console-panel{overflow:hidden}
+.console-nav{margin-top:20px;gap:14px}
+.console-nav .dash-link{padding:9px 12px}
+.console-nav-heading{padding:0 12px 4px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
 @media (max-width:760px){
  .console-table{min-width:0!important}
  .console-table thead{display:none}
@@ -259,6 +268,12 @@
  .console-table tr:last-child{border-bottom:0}
  .console-table td{border:0!important;padding:var(--wc-space-1) var(--wc-space-4)!important;white-space:normal!important;word-break:break-word}
  .console-table td[data-label]::before{content:attr(data-label);display:block;font-size:var(--wc-text-xs);font-weight:var(--wc-weight-bold);color:var(--faint);text-transform:uppercase;letter-spacing:.06em}
+ .console-table td[data-label]{display:flex!important;align-items:center;justify-content:space-between;gap:12px;text-align:right!important}
+ .console-table td[data-label]::before{display:inline!important;flex-shrink:0;text-align:left}
+ .console-table td[data-label]>*{min-width:0}
+ .console-table td.console-actions{flex-wrap:wrap;justify-content:flex-end}
+ .console-table td.console-actions::before{display:none!important}
+ .console-table tbody tr:hover td{background:transparent}
  .console-actions{white-space:normal}
 }
 .team-row{display:flex;flex-wrap:wrap;align-items:center;gap:var(--wc-space-3);padding:var(--wc-space-3) var(--wc-space-4);border:1px solid var(--stroke);border-radius:var(--wc-radius-md);background:var(--surface-2)}

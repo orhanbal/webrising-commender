@@ -4,63 +4,91 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>WECOMMANDER</title>
+  <link rel="stylesheet" href="vendor/xterm/xterm.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <aside class="rail">
     <div class="brand">WE<b>C</b></div>
-    <button class="ws active" data-ws="user" title="User Mode">SSH</button>
+    <button class="ws active" data-ws="user" title="Sunucular (SSH)">SSH</button>
     <button class="ws" data-ws="agent" title="Agent Mode">AI</button>
     <div class="spacer"></div>
     <div class="meta" id="meta"></div>
   </aside>
-  <main>
-    <section id="ws-user" class="workspace">
-      <header><h1>Sunucular</h1><p>SSH ve SFTP ile kendi sunucularına bağlan.</p></header>
-      <form id="add-host" class="card add">
+
+  <section id="ws-user" class="workspace user">
+    <div class="hosts-pane">
+      <header class="pane-head">
+        <h1>Sunucular</h1>
+        <button type="button" class="icon" id="add-toggle" title="Sunucu ekle" aria-expanded="false">+</button>
+      </header>
+      <form id="add-host" class="add" hidden>
         <input name="label" placeholder="Ad (örn. Prod web)" required maxlength="120">
-        <input name="user" placeholder="Kullanıcı" required maxlength="64">
         <input name="host" placeholder="Adres (sunucu.ornek.com)" required maxlength="253">
-        <input name="port" type="number" min="1" max="65535" value="22" required>
-        <button type="submit">Ekle</button>
+        <div class="row">
+          <input name="user" placeholder="Kullanıcı" required maxlength="64">
+          <input name="port" type="number" min="1" max="65535" value="22" required aria-label="Port">
+        </div>
+        <select name="authKind" aria-label="Giriş yöntemi">
+          <option value="key">Özel anahtar ile</option>
+          <option value="password">Parola ile</option>
+        </select>
+        <button type="submit" class="primary">Kaydet</button>
+        <p class="error" id="add-error" role="alert"></p>
       </form>
-      <p class="error" id="error" role="alert"></p>
       <ul id="hosts" class="hosts"></ul>
-      <form id="connect" class="card connect" hidden>
-        <h2 id="connect-title"></h2>
-        <div class="row">
-          <label><input type="radio" name="kind" value="key" checked> Özel anahtar</label>
-          <label><input type="radio" name="kind" value="password"> Parola</label>
+      <p class="empty" id="empty">Henüz sunucu yok. “+” ile ilk sunucunu ekle.</p>
+      <p class="vault-note" id="vault-note"></p>
+    </div>
+
+    <div class="term-pane">
+      <nav class="tabs" id="tabs" aria-label="Terminaller"></nav>
+      <div class="term-stack" id="term-stack">
+        <div class="welcome" id="welcome">
+          <h2>Bir sunucu seç</h2>
+          <p>Soldaki listeden bir sunucuya tıkla; terminal burada açılır. Birden fazla sunucuya aynı anda bağlanabilirsin.</p>
         </div>
-        <textarea name="key" rows="5" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" spellcheck="false"></textarea>
-        <input name="passphrase" type="password" placeholder="Anahtar parolası (varsa)" autocomplete="off">
-        <input name="password" type="password" placeholder="Parola" autocomplete="off" hidden>
-        <div class="row">
-          <button type="submit">Bağlan</button>
-          <button type="button" class="secondary" id="connect-cancel">Kapat</button>
-        </div>
-        <div id="hostkey" class="hostkey" hidden>
-          <p id="hostkey-text"></p>
-          <code id="hostkey-fp"></code>
-          <div class="row">
-            <button type="button" id="hostkey-accept">Güven ve bağlan</button>
-            <button type="button" class="secondary" id="hostkey-reject">Vazgeç</button>
-          </div>
-        </div>
-        <p id="connect-status" class="status" role="status"></p>
-        <pre id="connect-output" hidden></pre>
-      </form>
-      <p class="empty" id="empty">Henüz sunucu yok. Yukarıdan ilk sunucunu ekle.</p>
-      <p class="note">Önizleme: “Bağlan” bağlantıyı ve sunucu anahtarını doğrular. Terminal ve SFTP sonraki sürümlerde gelecek; sunucular ve güvenilen anahtarlar şimdilik kaydedilmez.</p>
-    </section>
-    <section id="ws-agent" class="workspace" hidden>
-      <header><h1>Agent Mode</h1><p>WECOMMANDER hesabın: cihazlar, onaylar ve yapay zekâ erişimi.</p></header>
-      <div class="card">
-        <p>Bu alan, Yönetim Merkezi'ndeki hesap, onay ve cihaz görünümünü masaüstü uygulamasına taşıyacak.</p>
-        <p class="note">Şimdilik onaylar için WECOMMANDER Yönetim Merkezi'ni kullan.</p>
       </div>
-    </section>
-  </main>
-  <script src="app.js"></script>
+    </div>
+  </section>
+
+  <section id="ws-agent" class="workspace agent" hidden>
+    <div class="agent-card">
+      <h1>Agent Mode</h1>
+      <p>WECOMMANDER hesabın: cihazlar, onaylar ve yapay zekâ erişimi.</p>
+      <p class="muted">Bu alan Yönetim Merkezi'ndeki onay ve cihaz görünümünü masaüstüne taşıyacak. Şimdilik onaylar için WECOMMANDER Yönetim Merkezi'ni kullan.</p>
+    </div>
+  </section>
+
+  <div class="overlay" id="dialog" hidden>
+    <form class="dialog" id="connect" role="dialog" aria-modal="true" aria-labelledby="connect-title">
+      <h2 id="connect-title"></h2>
+      <div class="row radios">
+        <label><input type="radio" name="kind" value="key" checked> Özel anahtar</label>
+        <label><input type="radio" name="kind" value="password"> Parola</label>
+      </div>
+      <textarea name="key" rows="6" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" spellcheck="false"></textarea>
+      <input name="passphrase" type="password" placeholder="Anahtar parolası (varsa)" autocomplete="off">
+      <input name="password" type="password" placeholder="Parola" autocomplete="off" hidden>
+      <label class="check"><input type="checkbox" name="remember" checked> <span id="remember-label">Bu bilgisayarın şifre kasasında sakla</span></label>
+      <div class="hostkey" id="hostkey" hidden>
+        <p id="hostkey-text"></p>
+        <code id="hostkey-fp"></code>
+        <div class="row">
+          <button type="button" class="primary" id="hostkey-accept">Güven ve bağlan</button>
+          <button type="button" id="hostkey-reject">Vazgeç</button>
+        </div>
+      </div>
+      <p class="status" id="connect-status" role="status"></p>
+      <div class="row end">
+        <button type="button" id="connect-cancel">Kapat</button>
+        <button type="submit" class="primary" id="connect-submit">Bağlan</button>
+      </div>
+    </form>
+  </div>
+
+  <script src="vendor/xterm/xterm.js"></script>
+  <script src="vendor/xterm/addon-fit.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

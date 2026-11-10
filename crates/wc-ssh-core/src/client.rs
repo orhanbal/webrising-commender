@@ -1,6 +1,6 @@
 //! SSH client (V2 A02): connect, verify the host key, authenticate, run a
-//! command. Built on russh; terminal sessions (A03) and SFTP (A09) build on
-//! the same [`Connection`].
+//! command, or open an interactive shell on a pseudo-terminal. Built on
+//! russh; SFTP (A09) builds on the same [`Connection`].
 //!
 //! Host keys are never accepted silently. The caller passes the fingerprint
 //! it trusts for this host (from its known-hosts store) or `None`. When the
@@ -292,11 +292,113 @@ impl Connection {
         Ok(out)
     }
 
+    /// Opens an interactive login shell on a pseudo-terminal of `cols` x
+    /// `rows` with the given `TERM` (for example `xterm-256color`).
+    pub async fn open_shell(&self, term: &str, cols: u32, rows: u32) -> Result<Shell, SshError> {
+        let channel = self
+            .handle
+            .channel_open_session()
+            .await
+            .map_err(map_error)?;
+        channel
+            .request_pty(true, term, cols.max(1), rows.max(1), 0, 0, &[])
+            .await
+            .map_err(map_error)?;
+        channel.request_shell(true).await.map_err(map_error)?;
+        let (reader, writer) = channel.split();
+        Ok(Shell {
+            reader: ShellReader {
+                half: reader,
+                done: false,
+                exit: None,
+            },
+            writer: ShellWriter { half: writer },
+        })
+    }
+
+    /// True once the server or the network closed the connection.
+    pub fn is_closed(&self) -> bool {
+        self.handle.is_closed()
+    }
+
     pub async fn close(self) -> Result<(), SshError> {
         self.handle
             .disconnect(russh::Disconnect::ByApplication, "", "en")
             .await
             .map_err(map_error)
+    }
+}
+
+/// An interactive shell. The reader and writer halves can live in different
+/// tasks: one pumps output to the terminal view, the other forwards keys.
+pub struct Shell {
+    pub reader: ShellReader,
+    pub writer: ShellWriter,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ShellEvent {
+    /// Bytes for the terminal (stdout and stderr share the pty).
+    Output(Vec<u8>),
+    /// The shell exited; `None` when it ended without an exit status.
+    Exit(Option<u32>),
+}
+
+pub struct ShellReader {
+    half: russh::ChannelReadHalf,
+    done: bool,
+    exit: Option<u32>,
+}
+
+impl ShellReader {
+    /// Next event. After [`ShellEvent::Exit`] it returns `None`.
+    pub async fn next(&mut self) -> Option<ShellEvent> {
+        if self.done {
+            return None;
+        }
+        loop {
+            match self.half.wait().await {
+                Some(russh::ChannelMsg::Data { data })
+                | Some(russh::ChannelMsg::ExtendedData { data, .. }) => {
+                    return Some(ShellEvent::Output(data.to_vec()))
+                }
+                Some(russh::ChannelMsg::ExitStatus { exit_status }) => {
+                    self.exit = Some(exit_status)
+                }
+                Some(russh::ChannelMsg::Close) | None => {
+                    self.done = true;
+                    return Some(ShellEvent::Exit(self.exit));
+                }
+                Some(_) => {}
+            }
+        }
+    }
+}
+
+pub struct ShellWriter {
+    half: russh::ChannelWriteHalf<client::Msg>,
+}
+
+impl ShellWriter {
+    /// Sends keystrokes or pasted text.
+    pub async fn write(&self, bytes: &[u8]) -> Result<(), SshError> {
+        self.half
+            .data_bytes(bytes.to_vec())
+            .await
+            .map_err(map_error)
+    }
+
+    /// Tells the server the terminal view changed size.
+    pub async fn resize(&self, cols: u32, rows: u32) -> Result<(), SshError> {
+        self.half
+            .window_change(cols.max(1), rows.max(1), 0, 0)
+            .await
+            .map_err(map_error)
+    }
+
+    pub async fn close(&self) -> Result<(), SshError> {
+        let _ = self.half.eof().await;
+        self.half.close().await.map_err(map_error)
     }
 }
 

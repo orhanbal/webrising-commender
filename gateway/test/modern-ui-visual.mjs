@@ -203,7 +203,7 @@ try{
  await evalJs("document.querySelector('.dash-toolbar .locale-option[role=menuitemradio]:last-of-type').click()");
  await sleep(120);
  assert.equal(await evalJs("document.documentElement.lang"),"tr","Super admin locale must change");
- assert.ok(await evalJs("document.body.textContent.includes('Genel Bakış')&&document.body.textContent.includes('Platform araçları')"),"Super admin overview should be translated");
+ assert.ok(await evalJs("document.body.textContent.includes('Genel Bakış')&&document.body.textContent.includes('Son kayıtlar')"),"Super admin overview should be translated");
  await evalJs("document.querySelector('.dash-toolbar .locale-trigger').click()");
  await evalJs("document.querySelector('.dash-toolbar .locale-option[role=menuitemradio]:first-of-type').click()");
  await sleep(120);
@@ -212,7 +212,7 @@ try{
  await evalJs("document.querySelector('.dash-toolbar .locale-trigger').click()");
  await evalJs("document.querySelector('.dash-toolbar .locale-option[role=menuitemradio]:last-of-type').click()");
  await sleep(120);
- assert.ok(await evalJs("document.querySelector('th')?.textContent.includes('Kayıt kimliği')"),"Admin table column names are localized into Turkish");
+ assert.ok(await evalJs("document.querySelector('th')?.textContent.includes('Kullanıcı')"),"Admin table column names are localized into Turkish");
  await evalJs("document.querySelector('.dash-toolbar .locale-trigger').click()");
  await evalJs("document.querySelector('.dash-toolbar .locale-option[role=menuitemradio]:first-of-type').click()");
  await sleep(120);
