@@ -185,6 +185,7 @@ export const landingCopySections = [
       "Yasal",
       "Gizlilik",
       "Kullanım Koşulları",
+      "İade ve İptal",
       "Sistem durumu",
       "Uzak MCP · Root olmayan agent · Sunucu tarafı onaylar"
     ]

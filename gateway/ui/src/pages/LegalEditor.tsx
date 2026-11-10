@@ -2,7 +2,7 @@ import {useEffect,useState} from "react";
 import {api} from "../api";
 import {useLocale} from "../i18n";
 import {consoleText} from "../console-text";
-type Page="privacy"|"terms";
+type Page="privacy"|"terms"|"refund";
 type Locale="en"|"tr";
 type Revision={id:string;title:string;body:string;state:string;created_at:string};
 
@@ -41,7 +41,7 @@ export function LegalEditor(){
   <p className="text-sm muted mt-2 mb-6">{ui("Maintain EN/TR legal drafts and published versions. Only publish content reviewed by the appropriate legal owner. Text is rendered as plain paragraphs, never executable HTML.")}</p>
   <div className="grid sm:grid-cols-2 gap-4">
    <label className="text-sm font-semibold">Page
-    <select value={page} onChange={e=>setPage(e.target.value as Page)} className="block mt-2 w-full p-3 rounded-xl border border-[var(--stroke)] bg-[var(--surface)]"><option value="privacy">{ui("Privacy policy")}</option><option value="terms">{ui("Terms of service")}</option></select>
+    <select value={page} onChange={e=>setPage(e.target.value as Page)} className="block mt-2 w-full p-3 rounded-xl border border-[var(--stroke)] bg-[var(--surface)]"><option value="privacy">{ui("Privacy policy")}</option><option value="terms">{ui("Terms of service")}</option><option value="refund">{ui("Refund policy")}</option></select>
    </label>
    <label className="text-sm font-semibold">Language
     <select value={locale} onChange={e=>setLocale(e.target.value as Locale)} className="block mt-2 w-full p-3 rounded-xl border border-[var(--stroke)] bg-[var(--surface)]"><option value="en">{ui("English")}</option><option value="tr">{ui("Türkçe")}</option></select>
