@@ -155,10 +155,7 @@ async fn test_connection(
             if let Ok(mut known) = state.known_hosts.lock() {
                 known.insert(host_id, fingerprint.clone());
             }
-            let out = conn
-                .exec("whoami", 4096)
-                .await
-                .map_err(|e| e.to_string())?;
+            let out = conn.exec("whoami", 4096).await.map_err(|e| e.to_string())?;
             let _ = conn.close().await;
             Ok(ConnectOutcome::Connected {
                 fingerprint,
