@@ -2581,6 +2581,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "wc-ssh-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "wc-vault"
+version = "0.1.0"
+
+[[package]]
 name = "web-sys"
 version = "0.3.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"

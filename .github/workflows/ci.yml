@@ -814,6 +814,38 @@ jobs:
           path: dist/*
           retention-days: 14
 
+  desktop:
+    # V2 desktop app (desktop/): Tauri 2 with User and Agent workspaces, built
+    # on all three OSes (G1). Separate cargo workspace, like tray/.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Install WebKitGTK
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev
+      - name: Shared crates (format, lint, tests)
+        shell: bash
+        run: |
+          cargo fmt -p wc-ssh-core -p wc-vault -- --check
+          cargo clippy --locked -p wc-ssh-core -p wc-vault --all-targets -- -D warnings
+          cargo test --locked -p wc-ssh-core -p wc-vault
+      - name: Desktop app (format, lint, release build)
+        working-directory: desktop
+        shell: bash
+        run: |
+          cargo fmt -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo build --release --locked
+
   center-windows:
     # Management Center (tray app). Separate cargo workspace in tray/.
     runs-on: windows-latest
