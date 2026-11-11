@@ -5,15 +5,22 @@
 # whole install is retried.
 # Usage: scripts/ci-apt-install.sh <package>...
 set -uo pipefail
-# The runner's Azure mirror sometimes stalls on every package (20 s per
-# file, so a large install never finishes). Put the main Ubuntu archive
-# first in the runner's mirror list and keep the Azure mirror as fallback.
+# Ubuntu's own archive and the runner's Azure mirror sometimes stall from
+# GitHub runners (every file times out, so a large install never ends).
+# Point every Ubuntu source at one mirror list with several independent
+# mirrors, so apt moves on to the next one when a mirror does not answer
+# (no per-mirror retries: a stalled mirror costs one 15 s timeout per file).
 mirrors=/etc/apt/apt-mirrors.txt
-if [ -f "$mirrors" ]; then
-  printf 'http://archive.ubuntu.com/ubuntu/\tpriority:1\nhttp://azure.archive.ubuntu.com/ubuntu/\tpriority:2\nhttp://security.ubuntu.com/ubuntu/\tpriority:3\n' \
-    | sudo tee "$mirrors" >/dev/null
-fi
-opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o DPkg::Lock::Timeout=180)
+printf '%s\tpriority:%s\n' \
+  http://azure.archive.ubuntu.com/ubuntu/ 1 \
+  http://mirrors.edge.kernel.org/ubuntu/ 2 \
+  http://archive.ubuntu.com/ubuntu/ 3 \
+  http://mirror.math.princeton.edu/pub/ubuntu/ 4 | sudo tee "$mirrors" >/dev/null
+for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list; do
+  [ -f "$f" ] || continue
+  sudo sed -i -E "s#(mirror\+file:[^ ]*|https?://(azure\.)?archive\.ubuntu\.com/ubuntu/?|https?://security\.ubuntu\.com/ubuntu/?)#mirror+file:$mirrors#g" "$f"
+done
+opts=(-o Acquire::Retries=0 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=30 -o DPkg::Lock::Timeout=180)
 for attempt in 1 2 3; do
   if timeout 420 sudo apt-get "${opts[@]}" update \
      && timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get "${opts[@]}" install -y "$@"; then
