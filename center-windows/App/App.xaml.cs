@@ -171,6 +171,44 @@ public partial class App : Application
     public App()
     {
         InitializeComponent();
+        // A bug in one action must not close the whole app (and with it the
+        // agent): log it, tell the person, keep running.
+        UnhandledException += (_, e) =>
+        {
+            LogCrash(e.Exception);
+            e.Handled = true;
+            ReportError(e.Exception);
+        };
+        TaskScheduler.UnobservedTaskException += (_, e) => { LogCrash(e.Exception); e.SetObserved(); };
+    }
+
+    /// <summary>%LOCALAPPDATA%\WECOMMANDER\errors.log (newest last, kept small).</summary>
+    public static string ErrorLogPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WECOMMANDER", "errors.log");
+
+    public static void LogCrash(Exception error)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(ErrorLogPath)!);
+            if (File.Exists(ErrorLogPath) && new FileInfo(ErrorLogPath).Length > 512 * 1024) File.Delete(ErrorLogPath);
+            File.AppendAllText(ErrorLogPath, $"--- {DateTimeOffset.Now:O} {AppUpdate.CurrentBuild()}\n{error}\n");
+        }
+        catch (Exception) { }
+    }
+
+    private void ReportError(Exception error)
+    {
+        try
+        {
+            _ui?.TryEnqueue(() =>
+            {
+                Error = "Beklenmeyen bir hata oldu (" + error.GetType().Name + ": " + error.Message + "). Ayrıntı: " + ErrorLogPath;
+                Toast("Bir işlem hata verdi; uygulama çalışmaya devam ediyor.");
+                Publish();
+            });
+        }
+        catch (Exception) { }
     }
 
     private GatewayClient Gateway => new(Http, Settings.Server);
