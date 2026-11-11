@@ -1075,6 +1075,7 @@ struct ConnectSheet: View {
     @State private var passphrase = ""
     @State private var password = ""
     @State private var remember = true
+    @State private var installKey = true
     @State private var busy = false
 
     var body: some View {
@@ -1124,6 +1125,7 @@ struct ConnectSheet: View {
             if key.isEmpty, let keyPath { a["keyPath"] = keyPath }
         } else {
             a["secret"] = password
+            a["installKey"] = installKey
         }
         return a
     }
@@ -1151,6 +1153,7 @@ struct ConnectSheet: View {
                 SecureField("Anahtar parolası (varsa)", text: $passphrase)
             } else {
                 SecureField("Parola", text: $password)
+                Toggle("Bir dahaki sefere parola sorma (bu Mac'in anahtarını sunucuya ekle)", isOn: $installKey)
             }
             Toggle("macOS Anahtar Zinciri'nde sakla", isOn: $remember)
         }

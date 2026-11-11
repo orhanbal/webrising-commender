@@ -57,6 +57,7 @@ connection.
 | `keys.generate` | `label` | same list; a new Ed25519 key |
 | `keys.import` | `label, private, passphrase?` | same list; the key is checked first |
 | `keys.delete` | `id` | same list; hosts using it forget it |
+| `connect` auth extras | `installKey` (password logins) | after the login, this computer's app key ("WECOMMANDER <computer>", made once) is appended to the server's `~/.ssh/authorized_keys` and the host switches to it. With no saved credential a key host also tries `~/.ssh/id_ed25519`, `id_ecdsa`, `id_rsa` (unencrypted) and remembers the one that works |
 | `hosts.setKey` | `id, keyId?` | `[Host]`; connect then uses that key (Host has `keyId`) |
 | `hosts.setOptions` | `id, startupCommand?, env? ({NAME: value}), agentForwarding` | `[Host]`; the terminal sends `env` (server `AcceptEnv` decides), types `startupCommand` once it opens, and with `agentForwarding` lets the server use this computer's ssh-agent (`ssh -A`) |
 | `identities.list` | – | `[{id, label, user, authKind, keyId?}]` |
