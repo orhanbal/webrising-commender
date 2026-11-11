@@ -81,6 +81,17 @@ public class CoreClientTests
             await Assert.ThrowsAsync<CoreException>(() => core.CallAsync("snippets.save", new { label = "", command = "x" }));
             Assert.Empty(await core.CallAsync<List<Snippet>>("snippets.delete", new { id = disk.Id }));
 
+            // Keys: made here, imported, used by a host, deleted.
+            var keys = await core.CallAsync<List<KeyMeta>>("keys.generate", new { label = "Laptop" });
+            var made = Assert.Single(keys);
+            Assert.StartsWith("ssh-ed25519 AAAA", made.PublicKey);
+            Assert.StartsWith("SHA256:", made.Fingerprint);
+            await Assert.ThrowsAsync<CoreException>(() => core.CallAsync("keys.import", new { label = "Bad", @private = "not a key" }));
+            hosts = await core.CallAsync<List<CoreHost>>("hosts.setKey", new { id = web.Id, keyId = made.Id });
+            Assert.Equal((made.Id, "key", true), (hosts[0].KeyId, hosts[0].AuthKind, hosts[0].CanConnectSilently));
+            Assert.Empty(await core.CallAsync<List<KeyMeta>>("keys.delete", new { id = made.Id }));
+            Assert.Null(Assert.Single(await core.CallAsync<List<CoreHost>>("hosts.list")).KeyId);
+
             Assert.Empty(await core.CallAsync<List<KnownHost>>("known.list"));
             Assert.Empty(await core.CallAsync<List<HistoryEntry>>("history.list"));
         }

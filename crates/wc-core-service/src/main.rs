@@ -80,6 +80,24 @@ struct UpdateHost {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct Label {
+    label: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportKey {
+    label: String,
+    private: String,
+    passphrase: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HostKey {
+    id: String,
+    key_id: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Target {
     target: String,
 }
@@ -318,6 +336,25 @@ async fn dispatch(
             )?)
         }
         "snippets.delete" => ok(core::library::snippet_delete(state, p::<Id>(params)?.id)?),
+        "keys.list" => ok(core::library::keys_list(state)?),
+        "keys.generate" => ok(core::library::key_generate(
+            state,
+            p::<Label>(params)?.label,
+        )?),
+        "keys.import" => {
+            let k: ImportKey = p(params)?;
+            ok(core::library::key_import(
+                state,
+                k.label,
+                k.private,
+                k.passphrase,
+            )?)
+        }
+        "keys.delete" => ok(core::library::key_delete(state, p::<Id>(params)?.id)?),
+        "hosts.setKey" => {
+            let h: HostKey = p(params)?;
+            ok(core::library::host_set_key(state, h.id, h.key_id)?)
+        }
         "history.list" => ok(core::library::history_list(state)?),
         "history.clear" => ok(core::library::history_clear(state)?),
         other => Err(format!("unknown method {other}")),

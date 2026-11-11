@@ -179,7 +179,8 @@ public static class CoreText
 // ---- protocol models (docs/CORE_PROTOCOL.md) ----
 
 public sealed record CoreHost(string Id, string Label, string Target, string AuthKind, bool SavedSecret,
-    string? KeyPath, string? JumpId, string? TrustedKey, string? Group = null, string User = "", string Host = "", int Port = 22)
+    string? KeyPath, string? JumpId, string? TrustedKey, string? Group = null, string User = "", string Host = "", int Port = 22,
+    string? KeyId = null)
 {
     /// <summary>Hosts without a group are listed under this name.</summary>
     public const string NoGroup = "Gruplanmamış";
@@ -210,6 +211,9 @@ public sealed record ImportResult(int Added, int Skipped, List<CoreHost> Hosts);
 public sealed record KnownHost(string Target, string Fingerprint, List<string> Labels);
 
 public sealed record Snippet(string Id, string Label, string Command);
+
+/// <summary>A key made or imported in the app; the private half is in the OS keyring.</summary>
+public sealed record KeyMeta(string Id, string Label, string Algorithm, string Fingerprint, string PublicKey, long Created);
 
 public sealed record HistoryEntry(string HostId, string Label, string Target, long At)
 {

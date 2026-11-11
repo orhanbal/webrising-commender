@@ -42,6 +42,7 @@ struct ServersView: View {
         List(selection: Binding(get: { model.selection }, set: { model.selection = $0 })) {
             Section {
                 Label("Sunucular", systemImage: "server.rack").tag(Optional(Self.hostsPage))
+                Label("Anahtarlar", systemImage: "key").tag(Optional("page:keys"))
                 Label("Parçacıklar", systemImage: "text.badge.plus").tag(Optional("page:snippets"))
                 Label("Tüneller", systemImage: "point.3.connected.trianglepath.dotted").tag(Optional("page:tunnels"))
                 Label("Bilinen sunucular", systemImage: "checkmark.shield").tag(Optional("page:known"))
@@ -103,6 +104,7 @@ struct ServersView: View {
         } else {
             switch model.selection ?? "" {
             case "page:snippets": SnippetsPage(model: model)
+            case "page:keys": KeysPage(model: model)
             case "page:tunnels": TunnelsPage(model: model)
             case "page:known": KnownHostsPage(model: model)
             case "page:history": HistoryPage(model: model)
@@ -314,6 +316,95 @@ struct SnippetSheet: View {
     }
 }
 
+struct KeysPage: View {
+    @ObservedObject var model: ServersModel
+    @State private var keys: [KeyMeta] = []
+    @State private var importing = false
+    @State private var error: String?
+    var body: some View {
+        List {
+            if keys.isEmpty {
+                Text("Henüz anahtar yok. \"Yeni anahtar\" ile oluştur; genel anahtarını sunucunun ~/.ssh/authorized_keys dosyasına ekle, sonra sunucuyu düzenleyip bu anahtarı seç.")
+                    .foregroundStyle(.secondary)
+            }
+            if let error { Text(error).foregroundStyle(.red) }
+            ForEach(keys) { k in
+                let used = model.hosts.filter { $0.keyId == k.id }.map(\.label)
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(k.label).font(.body.weight(.semibold))
+                        Text("\(k.algorithm)  ·  \(k.fingerprint)").font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                        Text(used.isEmpty ? "Henüz bir sunucuda kullanılmıyor" : "Kullanan: " + used.joined(separator: ", "))
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Genel anahtarı kopyala") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(k.publicKey, forType: .string)
+                        model.notice = "Genel anahtar kopyalandı. Sunucuda ~/.ssh/authorized_keys dosyasına ekle."
+                    }
+                }
+                .contextMenu { Button("Sil", role: .destructive) { Task { keys = await model.deleteKey(k) } } }
+            }
+        }
+        .navigationTitle("Anahtarlar")
+        .toolbar {
+            ToolbarItemGroup {
+                Button { importing = true } label: { Label("İçe aktar", systemImage: "square.and.arrow.down") }
+                Button {
+                    Task {
+                        do { keys = try await model.generateKey(label: (Host.current().localizedName ?? "Mac") + " anahtarı"); error = nil }
+                        catch { self.error = error.localizedDescription }
+                    }
+                } label: { Label("Yeni anahtar", systemImage: "plus") }
+            }
+        }
+        .sheet(isPresented: $importing) { ImportKeySheet(model: model) { keys = $0 } }
+        .task { keys = await model.keys() }
+    }
+}
+
+struct ImportKeySheet: View {
+    @ObservedObject var model: ServersModel
+    let imported: ([KeyMeta]) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var label = ""
+    @State private var key = ""
+    @State private var passphrase = ""
+    @State private var error: String?
+    var body: some View {
+        Form {
+            TextField("Ad", text: $label, prompt: Text("İş anahtarı"))
+            Button("Dosyadan seç…") {
+                let panel = NSOpenPanel()
+                panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ssh")
+                panel.showsHiddenFiles = true
+                if panel.runModal() == .OK, let url = panel.url, let text = try? String(contentsOf: url, encoding: .utf8) {
+                    key = text
+                    if label.isEmpty { label = url.lastPathComponent }
+                }
+            }
+            TextEditor(text: $key).font(.caption.monospaced()).frame(height: 120)
+            SecureField("Anahtar parolası (varsa)", text: $passphrase)
+            if let error { Text(error).foregroundStyle(.red).font(.callout) }
+        }
+        .formStyle(.grouped)
+        .frame(width: 460)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button("Vazgeç") { dismiss() } }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("İçe aktar") {
+                    Task {
+                        do { imported(try await model.importKey(label: label, privateKey: key, passphrase: passphrase)); dismiss() }
+                        catch { self.error = error.localizedDescription }
+                    }
+                }
+                .disabled(key.isEmpty)
+            }
+        }
+    }
+}
+
 struct TunnelsPage: View {
     @ObservedObject var model: ServersModel
     var body: some View {
@@ -489,6 +580,8 @@ struct EditHostSheet: View {
     @State private var group = ""
     @State private var authKind = "key"
     @State private var jumpId = ""
+    @State private var keyId = ""
+    @State private var keys: [KeyMeta] = []
     @State private var error: String?
 
     var body: some View {
@@ -502,6 +595,10 @@ struct EditHostSheet: View {
                 Text("Özel anahtar").tag("key")
                 Text("Parola").tag("password")
             }
+            Picker("Anahtar", selection: $keyId) {
+                Text("Bağlanırken sor / anahtar dosyası").tag("")
+                ForEach(keys) { Text($0.label).tag($0.id) }
+            }
             Picker("Atlama sunucusu", selection: $jumpId) {
                 Text("Doğrudan bağlan").tag("")
                 ForEach(model.hosts.filter { $0.id != host?.id }) { Text($0.label).tag($0.id) }
@@ -510,8 +607,10 @@ struct EditHostSheet: View {
         }
         .formStyle(.grouped)
         .frame(width: 440)
+        .task { keys = await model.keys() }
         .onAppear {
             guard let host else { return }
+            keyId = host.keyId ?? ""
             label = host.label
             address = host.host ?? ""
             user = host.user ?? ""
@@ -540,6 +639,9 @@ struct EditHostSheet: View {
                                                                authKind: added.authKind, jumpId: added.jumpId, group: group)
                                 }
                             }
+                            let chosen = keyId.isEmpty ? nil : keyId
+                            let saved = host.flatMap { h in model.hosts.first { $0.id == h.id } } ?? model.hosts.last
+                            if let saved, saved.keyId != chosen { try await model.setKey(saved, keyId: chosen) }
                             dismiss()
                         } catch {
                             self.error = error.localizedDescription
