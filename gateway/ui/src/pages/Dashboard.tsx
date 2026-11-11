@@ -1,28 +1,43 @@
 import {useEffect,useRef,useState} from "react";import type React from "react";import type{ReactNode}from"react";
 import { t as translate,useLocale,locale,LanguageSwitcher } from "../i18n";
-import {Activity,ArrowRight,Download,ArrowUpRight,Bell,ChevronDown,Clock3,Command,CreditCard,FileText,HardDrive,LayoutDashboard,LockKeyhole,LogOut,Menu,Monitor,Plus,Search,Server,Settings2,ShieldCheck,TerminalSquare,Users,Workflow,Zap}from"lucide-react";
+import {Activity,ArrowRight,Download,Bell,ChevronDown,Clock3,Command,CreditCard,FileText,HardDrive,LayoutDashboard,LockKeyhole,LogOut,Menu,Monitor,Plus,Search,Server,Settings2,ShieldCheck,TerminalSquare,Users,Workflow,Zap}from"lucide-react";
 import{Button,Card,CardContent,CardDescription,CardHeader,CardTitle,Badge}from"../components/ui";
 import{api,type Account,type Device,type Usage,type Billing}from"../api";
 import{dateText,formatCount}from"../lib";
 import{Brand,ThemeToggle}from"../App";import type{Nav,Theme}from"../App";
 
-const pages=[
+type NavLeaf={title:string;href:string;icon:typeof Monitor};
+type NavSection={title:string;icon:typeof Monitor;href?:string;children?:NavLeaf[]};
+/** Five top-level entries; related pages sit in a group that opens in place. */
+const sections:NavSection[]=[
 {title:"Genel Bakış",href:"/dashboard",icon:LayoutDashboard},
-{title:"Cihazlar",href:"/devices",icon:Monitor},
-{title:"Uygulamayı indir",href:"/download",icon:Download},
-{title:"Terminal",href:"/terminal",icon:TerminalSquare},
-{title:"Dosyalar",href:"/files",icon:FileText},
-{title:"Görevler",href:"/tasks",icon:Workflow},
-{title:"MCP Araçları",href:"/mcp",icon:Command},
-{title:"Onaylar",href:"/approvals",icon:ShieldCheck},
-{title:"Ekip",href:"/team",icon:Users},
-{title:"Denetim kaydı",href:"/audit",icon:FileText},
-{title:"Kullanım",href:"/usage",icon:Activity},
-{title:"Paket ve Ödemeler",href:"/billing",icon:CreditCard}
+{title:"Cihazlar",icon:Monitor,children:[
+ {title:"Cihazlarım",href:"/devices",icon:Monitor},
+ {title:"Uygulamayı indir",href:"/download",icon:Download}]},
+{title:"Çalışma alanı",icon:TerminalSquare,children:[
+ {title:"Terminal",href:"/terminal",icon:TerminalSquare},
+ {title:"Dosyalar",href:"/files",icon:FileText},
+ {title:"Görevler",href:"/tasks",icon:Workflow}]},
+{title:"Yapay zekâ",icon:ShieldCheck,children:[
+ {title:"Onaylar",href:"/approvals",icon:ShieldCheck},
+ {title:"MCP Araçları",href:"/mcp",icon:Command}]},
+{title:"Yönetim",icon:Users,children:[
+ {title:"Ekip",href:"/team",icon:Users},
+ {title:"Denetim kaydı",href:"/audit",icon:FileText},
+ {title:"Kullanım",href:"/usage",icon:Activity},
+ {title:"Paket ve Ödemeler",href:"/billing",icon:CreditCard}]}
 ];
+const pages:NavLeaf[]=sections.flatMap(s=>s.children??(s.href?[{title:s.title,href:s.href,icon:s.icon}]:[]));
 export function DashboardShell({nav,path,account,theme,toggle,logout,children}:{nav:Nav;path:string;account:Account|null;theme:Theme;toggle:()=>void;logout:()=>void;children:ReactNode}){
  useLocale();
  const [mobile,setMobile]=useState(false);
+ // Groups start open when they hold the current page; the choice is kept per browser.
+ const [openGroups,setOpenGroups]=useState<Set<string>>(()=>{
+  let saved:string[]=[];try{saved=JSON.parse(localStorage.getItem("wc-nav-open")||"[]")}catch{/* storage unavailable */}
+  const active=sections.find(s=>s.children?.some(c=>c.href===path))?.title;
+  return new Set([...saved.filter(x=>typeof x==="string"),...(active?[active]:[])]);
+ });
+ const toggleGroup=(title:string)=>setOpenGroups(old=>{const next=new Set(old);if(next.has(title))next.delete(title);else next.add(title);try{localStorage.setItem("wc-nav-open",JSON.stringify([...next]))}catch{/* storage unavailable */}return next});
  const [search,setSearch]=useState("");
  const [profileOpen,setProfileOpen]=useState(false);
  const profileRef=useRef<HTMLDivElement>(null);
@@ -42,8 +57,16 @@ export function DashboardShell({nav,path,account,theme,toggle,logout,children}:{
   {mobile&&<button type="button" aria-label={translate("Menüyü kapat")} className="fixed inset-0 bg-[var(--overlay)] z-[92] md:hidden" onClick={()=>setMobile(false)}/>}
   <aside className={"dashboard-sidebar "+(mobile?"open":"")} aria-label={translate("Uygulama menüsü")}>
    <div className="px-3 pt-2"><Brand subtitle onClick={()=>navTo("/")}/></div>
-   <nav className="dash-nav" aria-label={translate("Uygulama menüsü")}>{pages.map(p=><a key={p.title} href={p.href} onClick={e=>follow(e,p.href)} aria-current={p.href===path?"page":undefined} className={"dash-link text-left "+(p.href===path?"active":"")}><p.icon aria-hidden="true"/>{translate(p.title)}{p.href==="/approvals"&&pendingApprovals>0?<span className="ml-auto min-w-5 h-5 px-1.5 rounded-full bg-[var(--danger-strong)] text-[var(--danger-ink)] text-[11px] font-bold grid place-items-center"><span aria-hidden="true">{pendingApprovals}</span><span className="sr-only">{pendingApprovals} {translate("bekleyen onay")}</span></span>:p.href===path&&<span aria-hidden="true" className="ml-auto w-1.5 h-1.5 rounded-full bg-[var(--accent)]"/>}</a>)}</nav>
-   <div className="dash-sidebar-bottom"><Badge><ShieldCheck size={13}/> {translate("Güvenli çalışma alanı")}</Badge><p className="text-sm font-semibold mt-3">WECOMMANDER</p><p className="muted text-xs mt-1">{translate("Yetkilendirilmiş erişim ve iş akışları.")}</p><Button className="w-full mt-4" variant="outline" size="sm" onClick={()=>navTo("/pricing")}>{translate("Paketleri Gör")} <ArrowUpRight className="size-3.5"/></Button></div>
+   <nav className="dash-nav" aria-label={translate("Uygulama menüsü")}>{sections.map(sec=>{
+    const badge=(href:string)=>href==="/approvals"&&pendingApprovals>0?<span className="ml-auto min-w-5 h-5 px-1.5 rounded-full bg-[var(--danger-strong)] text-[var(--danger-ink)] text-[11px] font-bold grid place-items-center"><span aria-hidden="true">{pendingApprovals}</span><span className="sr-only">{pendingApprovals} {translate("bekleyen onay")}</span></span>:null;
+    if(!sec.children){const href=sec.href!;return <a key={sec.title} href={href} onClick={e=>follow(e,href)} aria-current={href===path?"page":undefined} className={"dash-link text-left "+(href===path?"active":"")}><sec.icon aria-hidden="true"/>{translate(sec.title)}</a>}
+    const open=openGroups.has(sec.title);
+    const hasActive=sec.children.some(c=>c.href===path);
+    const groupBadge=!open&&sec.children.some(c=>c.href==="/approvals")?badge("/approvals"):null;
+    return <div key={sec.title} className="dash-group">
+     <button type="button" aria-expanded={open} onClick={()=>toggleGroup(sec.title)} className={"dash-link dash-group-head text-left "+(hasActive&&!open?"active":"")}><sec.icon aria-hidden="true"/>{translate(sec.title)}{groupBadge}<ChevronDown aria-hidden="true" className={"dash-group-chevron "+(groupBadge?"":"ml-auto ")+(open?"open":"")}/></button>
+     {open&&<div className="dash-subnav">{sec.children.map(p=><a key={p.href} href={p.href} onClick={e=>follow(e,p.href)} aria-current={p.href===path?"page":undefined} className={"dash-link dash-sublink text-left "+(p.href===path?"active":"")}>{translate(p.title)}{badge(p.href)}</a>)}</div>}
+    </div>})}</nav>
   </aside>
   <div className="dash-main">
    <div className="dash-topbar">
