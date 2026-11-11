@@ -68,6 +68,30 @@ struct AddHost {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct UpdateHost {
+    id: String,
+    label: String,
+    host: String,
+    port: u16,
+    user: String,
+    auth_kind: String,
+    jump_id: Option<String>,
+    group: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Target {
+    target: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SaveSnippet {
+    id: Option<String>,
+    label: String,
+    command: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Connect {
     id: String,
     auth: core::AuthInput,
@@ -267,6 +291,35 @@ async fn dispatch(
             let t: TunnelRef = p(params)?;
             ok(core::tunnel_toggle(state, t.host_id, t.index).await?)
         }
+        "hosts.update" => {
+            let u: UpdateHost = p(params)?;
+            ok(core::library::update_host(
+                state,
+                u.id,
+                u.label,
+                u.host,
+                u.port,
+                u.user,
+                u.auth_kind,
+                u.jump_id,
+                u.group,
+            )?)
+        }
+        "known.list" => ok(core::library::known_list(state)?),
+        "known.forget" => ok(core::library::known_forget(
+            state,
+            p::<Target>(params)?.target,
+        )?),
+        "snippets.list" => ok(core::library::snippets_list(state)?),
+        "snippets.save" => {
+            let s: SaveSnippet = p(params)?;
+            ok(core::library::snippet_save(
+                state, s.id, s.label, s.command,
+            )?)
+        }
+        "snippets.delete" => ok(core::library::snippet_delete(state, p::<Id>(params)?.id)?),
+        "history.list" => ok(core::library::history_list(state)?),
+        "history.clear" => ok(core::library::history_clear(state)?),
         other => Err(format!("unknown method {other}")),
     }
 }

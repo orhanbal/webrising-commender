@@ -26,7 +26,7 @@ connection.
 | Method | Params | Result |
 |---|---|---|
 | `app.info` | – | `{version, vaultBackend, vaultPersistent, os}` |
-| `hosts.list` | – | `[Host]` |
+| `hosts.list` | – | `[Host]`: `{id, label, target, authKind, savedSecret, keyPath, jumpId, trustedKey, group, user, host, port}` |
 | `hosts.add` | `label, host, port, user, authKind ("key"\|"password"), jumpId?` | `[Host]` |
 | `hosts.delete` | `id` | `[Host]` (also forgets its secrets) |
 | `hosts.import` | – | `{added, skipped, hosts:[Host]}` from `~/.ssh/config` |
@@ -46,6 +46,13 @@ connection.
 | `tunnels.saved` | – | `[{hostId, hostLabel, index, local, remote, running}]` |
 | `tunnels.save` | `hostId, localPort, remoteHost, remotePort` | same list |
 | `tunnels.delete` / `tunnels.toggle` | `hostId, index` | same list |
+| `hosts.update` | `id, label, host, port, user, authKind, jumpId?, group?` | `[Host]` (a host is never its own jump host; loops are dropped) |
+| `known.list` | – | `[{target ("host:port"), fingerprint, labels}]` trusted host keys |
+| `known.forget` | `target` | same list; the next connect asks again |
+| `snippets.list` | – | `[{id, label, command}]` saved commands |
+| `snippets.save` | `id?, label, command` | same list (no `id`: new) |
+| `snippets.delete` | `id` | same list |
+| `history.list` / `history.clear` | – | `[{hostId, label, target, at}]`, newest first, at most 200 |
 
 `Host` = `{id, label, target, authKind, savedSecret, keyPath, jumpId, trustedKey}`.
 

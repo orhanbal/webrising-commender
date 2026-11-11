@@ -202,5 +202,56 @@ public sealed class ServersController : IDisposable
         catch (CoreException e) { Notice?.Invoke("Tünel açılamadı: " + e.Message); }
     }
 
+    // ---- the host library (edit, groups, trusted keys, snippets, history) ----
+
+    public async Task UpdateHost(CoreHost host, string label, string address, int port, string user, string authKind, string? jumpId, string? group)
+    {
+        Hosts = await Core.CallAsync<List<CoreHost>>("hosts.update", new { id = host.Id, label, host = address, port, user, authKind, jumpId, group });
+        Changed?.Invoke();
+    }
+
+    public async Task<List<KnownHost>> KnownHosts()
+    {
+        try { return await Core.CallAsync<List<KnownHost>>("known.list"); }
+        catch (CoreException e) { Notice?.Invoke(e.Message); return []; }
+    }
+
+    public async Task<List<KnownHost>> ForgetKnownHost(KnownHost known)
+    {
+        var list = await Core.CallAsync<List<KnownHost>>("known.forget", new { target = known.Target });
+        await Reload();
+        return list;
+    }
+
+    public async Task<List<Snippet>> Snippets()
+    {
+        try { return await Core.CallAsync<List<Snippet>>("snippets.list"); }
+        catch (CoreException e) { Notice?.Invoke(e.Message); return []; }
+    }
+
+    public Task<List<Snippet>> SaveSnippet(string? id, string label, string command) =>
+        Core.CallAsync<List<Snippet>>("snippets.save", new { id, label, command });
+
+    public Task<List<Snippet>> DeleteSnippet(Snippet snippet) =>
+        Core.CallAsync<List<Snippet>>("snippets.delete", new { id = snippet.Id });
+
+    public async Task<List<HistoryEntry>> History()
+    {
+        try { return await Core.CallAsync<List<HistoryEntry>>("history.list"); }
+        catch (CoreException e) { Notice?.Invoke(e.Message); return []; }
+    }
+
+    public Task<List<HistoryEntry>> ClearHistory() => Core.CallAsync<List<HistoryEntry>>("history.clear");
+
+    public async Task DeleteTunnel(SavedTunnel tunnel)
+    {
+        try
+        {
+            SavedTunnels = await Core.CallAsync<List<SavedTunnel>>("tunnels.delete", new { hostId = tunnel.HostId, index = tunnel.Index });
+            Changed?.Invoke();
+        }
+        catch (CoreException e) { Notice?.Invoke(e.Message); }
+    }
+
     public void Dispose() => _core?.Dispose();
 }

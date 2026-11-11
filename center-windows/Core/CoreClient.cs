@@ -179,8 +179,12 @@ public static class CoreText
 // ---- protocol models (docs/CORE_PROTOCOL.md) ----
 
 public sealed record CoreHost(string Id, string Label, string Target, string AuthKind, bool SavedSecret,
-    string? KeyPath, string? JumpId, string? TrustedKey)
+    string? KeyPath, string? JumpId, string? TrustedKey, string? Group = null, string User = "", string Host = "", int Port = 22)
 {
+    /// <summary>Hosts without a group are listed under this name.</summary>
+    public const string NoGroup = "Gruplanmamış";
+    public string GroupName => string.IsNullOrWhiteSpace(Group) ? NoGroup : Group!;
+
     public bool CanConnectSilently => SavedSecret || (AuthKind == "key" && KeyPath is not null);
 }
 
@@ -202,3 +206,12 @@ public sealed record ForwardInfo(string Local, string Remote);
 public sealed record SavedTunnel(string HostId, string HostLabel, int Index, string Local, string Remote, bool Running);
 
 public sealed record ImportResult(int Added, int Skipped, List<CoreHost> Hosts);
+
+public sealed record KnownHost(string Target, string Fingerprint, List<string> Labels);
+
+public sealed record Snippet(string Id, string Label, string Command);
+
+public sealed record HistoryEntry(string HostId, string Label, string Target, long At)
+{
+    public DateTimeOffset When => DateTimeOffset.FromUnixTimeSeconds(At);
+}
