@@ -830,9 +830,9 @@ jobs:
           components: rustfmt, clippy
       - name: Install WebKitGTK
         if: runner.os == 'Linux'
+        timeout-minutes: 30
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev openssh-server gnome-keyring dbus-x11
+          bash scripts/ci-apt-install.sh libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev openssh-server gnome-keyring dbus-x11
           # The OpenSSH interop test starts its own sshd on 127.0.0.1.
           sudo mkdir -p /run/sshd
       - name: Shared crates (format, lint, tests)
@@ -948,9 +948,8 @@ jobs:
         with:
           components: rustfmt, clippy
       - name: Install WebKitGTK and tray libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+        timeout-minutes: 30
+        run: bash scripts/ci-apt-install.sh libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
       - name: Format, lint and unit tests
         working-directory: tray
         run: |
