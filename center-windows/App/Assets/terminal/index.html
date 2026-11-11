@@ -3,23 +3,49 @@
 <head>
 <meta charset="utf-8">
 <link rel="stylesheet" href="xterm.css">
-<style>html,body{margin:0;height:100%;background:#0c0c0c;overflow:hidden}#t{position:absolute;inset:0;padding:6px 0 0 8px}</style>
+<style>html,body{margin:0;height:100%;background:#0c0c0c;overflow:hidden}#t{position:absolute;inset:0;padding:6px 0 0 8px}
+#find{position:absolute;top:8px;right:14px;display:none;gap:4px;align-items:center;background:#2b2b2b;border:1px solid #444;border-radius:6px;padding:4px 6px;font:12px "Segoe UI",sans-serif;color:#ddd;z-index:5}
+#find input{background:#1e1e1e;border:1px solid #555;border-radius:4px;color:#eee;padding:3px 6px;width:200px;outline:none}
+#find button{background:none;border:0;color:#ddd;cursor:pointer;padding:2px 6px;border-radius:4px}#find button:hover{background:#3a3a3a}</style>
 </head>
 <body>
 <div id="t"></div>
+<div id="find"><input id="q" placeholder="Ara (Enter: sonraki, Shift+Enter: önceki)"><button id="prev" title="Önceki">▲</button><button id="next" title="Sonraki">▼</button><button id="close" title="Kapat (Esc)">✕</button></div>
 <script src="xterm.js"></script>
 <script src="addon-fit.js"></script>
+<script src="addon-search.js"></script>
 <script>
 // Terminal surface of the WECOMMANDER Windows app (WebView2 in a WinUI 3
 // window). The app sends {type:"output", data:base64} and {type:"focus"};
 // the page sends {type:"ready"|"input"|"resize"}.
 const host = window.chrome.webview;
 const term = new Terminal({
-  cursorBlink: true, fontFamily: '"Cascadia Mono", Consolas, monospace', fontSize: 13, scrollback: 10000,
+  cursorBlink: true, allowProposedApi: true, fontFamily: '"Cascadia Mono", Consolas, monospace', fontSize: 13, scrollback: 10000,
   theme: { background: "#0c0c0c", foreground: "#cccccc", cursor: "#60cdff", selectionBackground: "#264f78" },
 });
 const fit = new FitAddon.FitAddon();
 term.loadAddon(fit);
+// Search in the output (Ctrl+F), xterm.js search addon.
+const search = new SearchAddon.SearchAddon();
+term.loadAddon(search);
+const findBox = document.getElementById("find"), q = document.getElementById("q");
+const findOpts = { decorations: { matchOverviewRuler: "#888", activeMatchColorOverviewRuler: "#60cdff", matchBackground: "#4b4b2b", activeMatchBackground: "#1f6feb" } };
+const openFind = () => { findBox.style.display = "flex"; q.focus(); q.select(); };
+const closeFind = () => { findBox.style.display = "none"; search.clearDecorations(); term.focus(); };
+q.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); e.shiftKey ? search.findPrevious(q.value, findOpts) : search.findNext(q.value, findOpts); }
+  else if (e.key === "Escape") closeFind();
+});
+q.addEventListener("input", () => search.findNext(q.value, { ...findOpts, incremental: true }));
+document.getElementById("next").onclick = () => search.findNext(q.value, findOpts);
+document.getElementById("prev").onclick = () => search.findPrevious(q.value, findOpts);
+document.getElementById("close").onclick = closeFind;
+// Font size: Ctrl+= / Ctrl+- / Ctrl+0 here, or from the app's settings.
+const setFont = (size) => {
+  term.options.fontSize = Math.max(8, Math.min(32, size));
+  try { fit.fit(); } catch {}
+  post({ type: "fontSize", size: term.options.fontSize });
+};
 term.open(document.getElementById("t"));
 const post = (m) => host.postMessage(JSON.stringify(m));
 term.onData((data) => post({ type: "input", data }));
@@ -29,6 +55,10 @@ term.onResize(({ cols, rows }) => post({ type: "resize", cols, rows }));
 term.attachCustomKeyEventHandler((e) => {
   if (e.type !== "keydown") return true;
   const k = e.key.toLowerCase();
+  if (e.ctrlKey && !e.shiftKey && k === "f") { e.preventDefault(); openFind(); return false; }
+  if (e.ctrlKey && (k === "=" || k === "+")) { e.preventDefault(); setFont(term.options.fontSize + 1); return false; }
+  if (e.ctrlKey && k === "-") { e.preventDefault(); setFont(term.options.fontSize - 1); return false; }
+  if (e.ctrlKey && k === "0") { e.preventDefault(); setFont(13); return false; }
   if (e.ctrlKey && k === "c" && (e.shiftKey || term.hasSelection())) {
     navigator.clipboard.writeText(term.getSelection()).catch(() => {});
     if (!e.shiftKey) term.clearSelection();
@@ -48,6 +78,16 @@ host.addEventListener("message", (e) => {
   if (m.type === "output") term.write(bytes(m.data));
   else if (m.type === "text") term.write(m.data);
   else if (m.type === "focus") term.focus();
+  else if (m.type === "settings") {
+    if (m.fontSize) { term.options.fontSize = m.fontSize; try { fit.fit(); } catch {} }
+    if (m.theme === "light") {
+      term.options.theme = { background: "#fafafa", foreground: "#1e1e1e", cursor: "#005fb8", selectionBackground: "#add6ff" };
+      document.body.style.background = "#fafafa";
+    } else {
+      term.options.theme = { background: "#0c0c0c", foreground: "#cccccc", cursor: "#60cdff", selectionBackground: "#264f78" };
+      document.body.style.background = "#0c0c0c";
+    }
+  }
 });
 fit.fit();
 post({ type: "ready", cols: term.cols, rows: term.rows });

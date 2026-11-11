@@ -66,7 +66,7 @@ public sealed class ServersWindow : Window
         _nav.MenuItems.Add(new NavigationViewItem { Content = "Geçmiş", Tag = "history", Icon = new FontIcon { Glyph = "\uE81C" } });
         _nav.FooterMenuItems.Add(new NavigationViewItem { Content = "Onaylar ve otonom mod", Tag = "approvals", SelectsOnInvoked = false, Icon = new FontIcon { Glyph = "\uE8FB" } });
         _nav.FooterMenuItems.Add(new NavigationViewItem { Content = "Bu bilgisayar (ajan)", Tag = "agent", SelectsOnInvoked = false, Icon = new FontIcon { Glyph = "\uE7F4" } });
-        _nav.FooterMenuItems.Add(new NavigationViewItem { Content = "Ayarlar", Tag = "settings", SelectsOnInvoked = false, Icon = new SymbolIcon(Symbol.Setting) });
+        _nav.FooterMenuItems.Add(new NavigationViewItem { Content = "Ayarlar", Tag = "settings", Icon = new SymbolIcon(Symbol.Setting) });
         _nav.ItemInvoked += (_, e) => OnNavInvoked(e.InvokedItemContainer?.Tag);
 
         _tabs.IsAddTabButtonVisible = true;
@@ -230,8 +230,10 @@ public sealed class ServersWindow : Window
         {
             case "approvals":
             case "agent":
-            case "settings":
                 App.Current.ShowPanel();
+                break;
+            case "settings":
+                ShowSettings();
                 break;
             case string section: Navigate(section); break;
         }
@@ -353,6 +355,48 @@ public sealed class ServersWindow : Window
         DefaultButton = ContentDialogButton.Primary,
         XamlRoot = Content.XamlRoot,
     };
+
+    // ---- settings ----
+
+    private string TerminalSettingsJson() => JsonSerializer.Serialize(new
+    {
+        type = "settings",
+        fontSize = App.Current.Settings.TerminalFontSize,
+        theme = App.Current.Settings.TerminalTheme,
+    });
+
+    private void ApplyTerminalSettings()
+    {
+        App.Current.SaveSettings();
+        var json = TerminalSettingsJson();
+        foreach (var item in _tabs.TabItems.OfType<TabViewItem>())
+            if (item.Tag is TerminalTab t) t.Post(json);
+    }
+
+    private void ShowSettings()
+    {
+        var settings = App.Current.Settings;
+        var font = new NumberBox { Header = "Terminal yazı boyutu", Value = settings.TerminalFontSize, Minimum = 8, Maximum = 32, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, Width = 220, HorizontalAlignment = HorizontalAlignment.Left };
+        font.ValueChanged += (_, e) =>
+        {
+            if (double.IsNaN(e.NewValue)) return;
+            settings.TerminalFontSize = (int)Math.Clamp(e.NewValue, 8, 32);
+            ApplyTerminalSettings();
+        };
+        var theme = new RadioButtons { Header = "Terminal teması", ItemsSource = new[] { "Koyu", "Açık" }, SelectedIndex = settings.TerminalTheme == "light" ? 1 : 0 };
+        theme.SelectionChanged += (_, _) => { settings.TerminalTheme = theme.SelectedIndex == 1 ? "light" : "dark"; ApplyTerminalSettings(); };
+        var keys = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Secondary,
+            Text = "Terminal kısayolları: Ctrl+F ara · Ctrl+= / Ctrl+- yazı boyutu · Ctrl+0 varsayılan boyut · seçiliyken Ctrl+C kopyala · Ctrl+V yapıştır.",
+        };
+        var center = new HyperlinkButton { Content = "Bildirimler, otonom mod ve bu bilgisayarın ajanı: Yönetim Merkezi panelini aç" };
+        center.Click += (_, _) => App.Current.ShowPanel();
+        var body = new StackPanel { Spacing = 18, MaxWidth = 640, HorizontalAlignment = HorizontalAlignment.Left };
+        foreach (var e in new UIElement[] { font, theme, keys, center }) body.Children.Add(e);
+        _nav.Content = Page("Ayarlar", "Terminal görünümü; değişiklikler açık terminallere hemen uygulanır.", new ScrollViewer { Content = body });
+    }
 
     // ---- keys ----
 
@@ -785,6 +829,7 @@ public sealed class ServersWindow : Window
             {
                 case "ready":
                     tab.Ready = true;
+                    tab.Post(TerminalSettingsJson());
                     _c.Resize(tab, (int?)m!["cols"] ?? 100, (int?)m["rows"] ?? 30);
                     tab.Flush();
                     break;
@@ -793,6 +838,11 @@ public sealed class ServersWindow : Window
                     break;
                 case "resize":
                     _c.Resize(tab, (int?)m!["cols"] ?? 100, (int?)m["rows"] ?? 30);
+                    break;
+                case "fontSize":
+                    // Ctrl+= / Ctrl+- in a terminal: remembered for the next ones.
+                    var size = (int?)m!["size"] ?? 13;
+                    DispatcherQueue.TryEnqueue(() => { App.Current.Settings.TerminalFontSize = size; App.Current.SaveSettings(); });
                     break;
             }
         };
