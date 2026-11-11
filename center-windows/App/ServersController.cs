@@ -62,8 +62,10 @@ public sealed class ServersController : IDisposable
                 var sid = (string?)data?["sessionId"];
                 if (sid is not null && _tabs.TryGetValue(sid, out var t))
                 {
-                    var json = JsonSerializer.Serialize(new { type = "output", data = (string?)data?["data"] ?? "" });
+                    var b64 = (string?)data?["data"] ?? "";
+                    var json = JsonSerializer.Serialize(new { type = "output", data = b64 });
                     t.Ui.TryEnqueue(() => t.Tab.Post(json));
+                    if (t.Tab.Hosting is { } share) _ = share.SendOutputAsync(b64);
                 }
                 break;
             }
@@ -147,18 +149,21 @@ public sealed class ServersController : IDisposable
 
     public void Write(TerminalTab tab, string data)
     {
+        if (tab.Guest is { } guest) { _ = guest.SendInputAsync(data); return; }
         if (tab.Closed) return;
         _ = Core.CallAsync("terminal.write", new { sessionId = tab.SessionId, data }).ContinueWith(_ => { });
     }
 
     public void Resize(TerminalTab tab, int cols, int rows)
     {
-        if (tab.Closed) return;
+        if (tab.Closed || tab.Guest is not null) return;
         _ = Core.CallAsync("terminal.resize", new { sessionId = tab.SessionId, cols, rows }).ContinueWith(_ => { });
     }
 
     public void Close(TerminalTab tab)
     {
+        if (tab.Guest is { } guest) { tab.Guest = null; tab.Closed = true; _ = guest.DisposeAsync().AsTask(); return; }
+        if (tab.Hosting is not null) _ = StopSharing(tab);
         _tabs.TryRemove(tab.SessionId, out _);
         if (!tab.Closed) _ = Core.CallAsync("terminal.close", new { sessionId = tab.SessionId }).ContinueWith(_ => { });
         tab.Closed = true;
@@ -232,6 +237,38 @@ public sealed class ServersController : IDisposable
             if (changed) await Reload();
         }
         finally { _syncGate.Release(); }
+    }
+
+    // ---- A27 shared terminals ----
+
+    /// <summary>Shares this terminal with the team; guests see it live (and type when allowed).</summary>
+    public async Task StartSharing(TerminalTab tab, bool allowInput)
+    {
+        if (App.Current.Credentials() is not { } c) throw new CoreException("Önce oturum aç.");
+        if (!(await Core.CallAsync<TeamKeyStatus>("team.status")).HasKey)
+            throw new CoreException("Paylaşmak için ekip anahtarı gerekli: Ayarlar → Ekip'te eşitlemenin tamamlanmasını bekle.");
+        var id = await c.Gateway.CreateShareAsync(c.Token, tab.Host.Label);
+        var share = await TerminalShare.ConnectAsync(Core, c.Gateway.ShareSocketUri(id, "host"), c.Token, id, host: true);
+        share.AllowInput = allowInput;
+        share.Input += keys => Write(tab, keys);
+        tab.Hosting = share;
+    }
+
+    public async Task StopSharing(TerminalTab tab)
+    {
+        if (tab.Hosting is not { } share) return;
+        tab.Hosting = null;
+        if (App.Current.Credentials() is { } c) await c.Gateway.EndShareAsync(c.Token, share.Id);
+        await share.DisposeAsync();
+    }
+
+    public async Task<List<ShareInfo>> Shares() =>
+        App.Current.Credentials() is { } c ? await c.Gateway.SharesAsync(c.Token) : [];
+
+    public async Task<TerminalShare> JoinShare(ShareInfo info)
+    {
+        if (App.Current.Credentials() is not { } c) throw new CoreException("Önce oturum aç.");
+        return await TerminalShare.ConnectAsync(Core, c.Gateway.ShareSocketUri(info.Id, "guest"), c.Token, info.Id, host: false);
     }
 
     // ---- A22 team ----

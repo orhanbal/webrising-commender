@@ -73,6 +73,7 @@ connection.
 | `team.accept` | `sealed` | `{publicKey, hasKey}`: takes the team key another app sealed for this one |
 | `team.share` | `publicKey` | `{sealed}`: the team key sealed for another team app |
 | `team.merge` / `team.committed` | `remote?` / – | like `sync.merge` / `sync.committed`, for the hosts and snippets shared with the team (with their saved passwords); key files, app keys, identities and personal jump hosts stay with each computer |
+| `team.seal` / `team.open` | `data` | `{data}`: A27 shared terminal frames sealed / opened with the team key (AES-256-GCM); the relay (`/center/share`) only sees sealed frames |
 | `team.leave` | – | removed from the team: the team key and the shared items go |
 | `library.setTeam` | `kind (host\|snippet), id, team` | `[Host]`; shares the item with the team or takes it back (Host and Snippet have `team`) |
 | `library.export` | – | `{json}`: hosts (groups, tunnels, terminal options), snippets, trusted host keys; no passwords, no private keys, no key files |

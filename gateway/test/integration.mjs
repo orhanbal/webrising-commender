@@ -1103,6 +1103,41 @@ assert.equal((await jsonFetch("/api/center/team", { headers: centerHeaders })).m
 await putTeam("/api/center/team/key", { publicKey: "B".repeat(43) + "=" });
 assert.equal((await jsonFetch("/api/center/team", { headers: centerHeaders })).myWrappedKey, null);
 assert.equal((await fetch(base + "/api/center/team", { headers: browserCenterHeaders })).status, 403);
+// A27: a shared terminal relayed between a host app and a guest app.
+const shareCreated = await fetch(base + "/api/center/shares", { method: "POST", headers: centerHeaders, body: JSON.stringify({ title: "web-1" }) });
+assert.equal(shareCreated.status, 201);
+const shareId = (await shareCreated.json()).id;
+assert.deepEqual((await jsonFetch("/api/center/shares", { headers: centerHeaders })).items, [], "a share without a connected host is not listed");
+const wsBase = base.replace(/^http/, "ws");
+const openWs = (role) => new Promise((resolve, reject) => {
+  const ws = new WebSocket(`${wsBase}/center/share?id=${shareId}&role=${role}`, { headers: { Authorization: centerHeaders.Authorization } });
+  ws.once("open", () => resolve(ws));
+  ws.once("error", reject);
+});
+const nextFrame = (ws) => new Promise((resolve) => ws.once("message", (m) => resolve(JSON.parse(m.toString()))));
+const hostWs = await openWs("host");
+assert.equal((await jsonFetch("/api/center/shares", { headers: centerHeaders })).items[0].title, "web-1");
+const hostJoin = nextFrame(hostWs);
+const guestWs = await openWs("guest");
+assert.equal((await hostJoin).t, "join");
+const guestData = nextFrame(guestWs);
+hostWs.send(JSON.stringify({ t: "data", d: "sealed-output" }));
+assert.deepEqual(await guestData, { t: "data", d: "sealed-output" });
+const hostInput = nextFrame(hostWs);
+guestWs.send(JSON.stringify({ t: "input", d: "sealed-keys" }));
+const input = await hostInput;
+assert.equal(input.t, "input");
+assert.equal(input.d, "sealed-keys");
+const guestClosed = new Promise((resolve) => guestWs.once("close", (code) => resolve(code)));
+assert.equal((await fetch(base + "/api/center/shares/" + shareId, { method: "DELETE", headers: centerHeaders })).status, 200);
+assert.equal(await guestClosed, 4000, "guests leave when the host ends the share");
+hostWs.close();
+const badShare = await new Promise((resolve) => {
+  const ws = new WebSocket(`${wsBase}/center/share?id=${shareId}&role=guest`);
+  ws.once("error", () => resolve("refused"));
+  ws.once("open", () => resolve("opened"));
+});
+assert.equal(badShare, "refused", "a share socket needs an app token");
 const browserPairingCode = await fetch(base + "/api/center/pairing-code", { method: "POST", headers: browserCenterHeaders, body: "{}" });
 assert.equal(browserPairingCode.status, 403, "only a Center token gets a Center pairing code");
 await browserPairingCode.text();

@@ -234,6 +234,10 @@ struct SyncMerge {
     remote: Option<String>,
 }
 #[derive(Deserialize)]
+struct Frame {
+    data: String,
+}
+#[derive(Deserialize)]
 struct Sealed {
     sealed: String,
 }
@@ -454,6 +458,12 @@ async fn dispatch(
             let k: PublicKey = p(params)?;
             ok(serde_json::json!({ "sealed": core::team::share(state, k.public_key)? }))
         }
+        "team.seal" => ok(
+            serde_json::json!({ "data": core::team::seal_frame(state, p::<Frame>(params)?.data)? }),
+        ),
+        "team.open" => ok(
+            serde_json::json!({ "data": core::team::open_frame(state, p::<Frame>(params)?.data)? }),
+        ),
         "team.leave" => {
             core::team::leave(state)?;
             ok(serde_json::json!({ "ok": true }))

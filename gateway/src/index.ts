@@ -10,6 +10,7 @@ import type { SecureVersion } from "node:tls";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
+import { attach as attachShare, createShare, endShare, listShares } from "./terminal-share.js";
 import { z } from "zod";
 import type { PoolClient } from "pg";
 import { consumeApproval } from "./approvals.js";
@@ -3772,6 +3773,25 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       }
       return void json(res, 200, { revision: Number(written.rows[0]!.revision) });
     }
+    if (url.pathname === "/api/center/shares" || url.pathname.startsWith("/api/center/shares/")) {
+      // A27: shared terminals of this workspace.
+      if (principal!.authKind !== "center") return void json(res, 403, { error: "center_token_required" });
+      if (req.method === "GET" && url.pathname === "/api/center/shares") {
+        return void json(res, 200, { items: listShares(principal!.organizationId) });
+      }
+      if (req.method === "POST" && url.pathname === "/api/center/shares") {
+        if (!requireRole(principal!, "operator", res)) return;
+        const body = z.object({ title: z.string().min(1).max(120) }).parse(await readJson(req));
+        const id = createShare(principal!.organizationId, principal!.centerId!, principal!.email ?? "", body.title);
+        if (!id) return void json(res, 429, { error: "too_many_shares" });
+        await auditControl(principal!, null, "terminal.share", "medium", "success", JSON.stringify({ title: body.title }));
+        return void json(res, 201, { id });
+      }
+      const end = url.pathname.match(/^\/api\/center\/shares\/([0-9a-f-]{36})$/i);
+      if (req.method === "DELETE" && end) {
+        return void json(res, endShare(principal!.organizationId, principal!.centerId!, end[1]!) ? 200 : 404, {});
+      }
+    }
     if (url.pathname === "/api/center/team" || url.pathname.startsWith("/api/center/team/")) {
       if (principal!.authKind !== "center") return void json(res, 403, { error: "center_token_required" });
       // A22 team library. Members see it; operators and above change it.
@@ -4463,6 +4483,22 @@ const wss = new WebSocketServer({ noServer: true, maxPayload: 2 * 1024 * 1024 })
 server.on("upgrade", async (req, socket, head) => {
   try {
     const url = new URL(req.url || "/", publicBaseUrl);
+    if (url.pathname === "/center/share") {
+      // A27: an app joins a shared terminal (as its host or as a guest).
+      const principal = await authenticateRequest(req.headers.authorization, undefined);
+      const id = url.searchParams.get("id") || "";
+      const role = url.searchParams.get("role");
+      if (!principal || principal.authKind !== "center" || !principal.centerId || !/^[0-9a-f-]{36}$/i.test(id) ||
+          (role !== "host" && role !== "guest")) {
+        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        attachShare(ws, id, role, { organizationId: principal.organizationId, centerId: principal.centerId!, email: principal.email ?? "" });
+      });
+      return;
+    }
     if (url.pathname !== "/agent") {
       socket.destroy();
       return;

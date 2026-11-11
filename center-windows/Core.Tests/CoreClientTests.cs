@@ -251,6 +251,11 @@ public class CoreClientTests
             var shared = Assert.Single(await b.CallAsync<List<CoreHost>>("hosts.list"));
             Assert.Equal(("DB", true), (shared.Label, shared.Team)); // only the shared host
 
+            // A27: a shared terminal frame sealed by A opens on B (same team key).
+            var frame = (await a.CallAsync<JsonElement>("team.seal", new { data = "bHMgLWxh" })).GetProperty("data").GetString();
+            Assert.DoesNotContain("bHMgLWxh", frame);
+            Assert.Equal("bHMgLWxh", (await b.CallAsync<JsonElement>("team.open", new { data = frame })).GetProperty("data").GetString());
+
             // B renames it; A gets the change. A viewer never uploads.
             await b.CallAsync("hosts.update", new { id = shared.Id, label = "DB prod", host = "db.example.com", port = 22, user = "ops", authKind = "password", group = "Ekip" });
             await TeamSync.RunAsync(b, team.For("B", "operator"));

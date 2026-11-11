@@ -175,6 +175,35 @@ pub fn leave(state: &Arc<AppState>) -> Result<(), String> {
     Ok(())
 }
 
+/// A27: seals one frame of a shared terminal (output or keys) with the team
+/// key, so the relay never sees the session.
+pub fn seal_frame(state: &Arc<AppState>, data: String) -> Result<String, String> {
+    let key = team_key(state).ok_or("this app does not have the team key yet")?;
+    let mut nonce = [0u8; 12];
+    getrandom::fill(&mut nonce).map_err(|e| e.to_string())?;
+    let ct = Aes256Gcm::new_from_slice(&key)
+        .map_err(|_| "bad key")?
+        .encrypt(&nonce.into(), data.as_bytes())
+        .map_err(|_| "could not encrypt")?;
+    let mut out = nonce.to_vec();
+    out.extend_from_slice(&ct);
+    Ok(B64.encode(out))
+}
+
+pub fn open_frame(state: &Arc<AppState>, sealed: String) -> Result<String, String> {
+    let key = team_key(state).ok_or("this app does not have the team key yet")?;
+    let raw = B64.decode(sealed).map_err(|_| "damaged frame")?;
+    if raw.len() < 12 + 16 {
+        return Err("damaged frame".into());
+    }
+    let nonce: [u8; 12] = raw[..12].try_into().map_err(|_| "damaged frame")?;
+    let plain = Aes256Gcm::new_from_slice(&key)
+        .map_err(|_| "bad key")?
+        .decrypt(&nonce.into(), &raw[12..])
+        .map_err(|_| "this frame was not sealed with the team key".to_string())?;
+    String::from_utf8(plain).map_err(|_| "damaged frame".into())
+}
+
 pub fn merge(
     state: &Arc<AppState>,
     pending: &TeamPending,

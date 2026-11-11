@@ -34,6 +34,7 @@ public sealed class ServersWindow : Window
     private readonly AppBarButton _snippetButton = new() { Label = "Parçacık", Icon = new FontIcon { Glyph = "\uE943" } };
     private readonly AppBarButton _splitButton = new() { Label = "Böl", Icon = new FontIcon { Glyph = "\uE70D" } };
     private readonly AppBarToggleButton _broadcastButton = new() { Label = "Tümüne yaz", Icon = new FontIcon { Glyph = "\uE789" } };
+    private readonly AppBarButton _shareButton = new() { Label = "Ekiple paylaş", Icon = new FontIcon { Glyph = "\uE72D" } };
     private readonly StackPanel _empty = new() { Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
     private readonly Grid _terminals = new();
     private readonly AutoSuggestBox _search = new() { PlaceholderText = "Sunucu ara ya da hızlı bağlan (kullanıcı@adres)", QueryIcon = new SymbolIcon(Symbol.Find), MinWidth = 360 };
@@ -92,6 +93,9 @@ public sealed class ServersWindow : Window
         _broadcastButton.Click += (_, _) => { if (CurrentPage is { } page) page.Broadcast = _broadcastButton.IsChecked == true; };
         ToolTipService.SetToolTip(_broadcastButton, "Yazdığın her şey bu sekmedeki tüm terminallere gider");
         var bar = new CommandBar { DefaultLabelPosition = CommandBarDefaultLabelPosition.Right, IsOpen = false };
+        _shareButton.Flyout = ShareMenu();
+        ToolTipService.SetToolTip(_shareButton, "Bu terminali ekipten birine canlı göster (uçtan uca şifreli)");
+        bar.PrimaryCommands.Add(_shareButton);
         bar.PrimaryCommands.Add(_splitButton);
         bar.PrimaryCommands.Add(_broadcastButton);
         bar.PrimaryCommands.Add(_snippetButton);
@@ -153,9 +157,12 @@ public sealed class ServersWindow : Window
     {
         var t = Current;
         var live = t is not null && !t.Closed;
-        _filesButton.IsEnabled = live;
-        _tunnelsButton.IsEnabled = live;
+        var own = live && t!.Guest is null; // a teammate's shared terminal has no files or tunnels here
+        _filesButton.IsEnabled = own;
+        _tunnelsButton.IsEnabled = own;
         _snippetButton.IsEnabled = live;
+        _shareButton.IsEnabled = live && t!.Guest is null;
+        _shareButton.Label = t?.Hosting is { } hs ? $"Paylaşılıyor ({hs.Guests.Count})" : "Ekiple paylaş";
         var page = CurrentPage;
         _splitButton.IsEnabled = page is not null && page.Panes.Count < TabPage.MaxPanes;
         _broadcastButton.IsEnabled = page is { Panes.Count: > 1 };
@@ -163,7 +170,7 @@ public sealed class ServersWindow : Window
         _empty.Visibility = _tabs.TabItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         _terminalsBadge.Value = _tabs.TabItems.Count;
         _terminalsBadge.Visibility = _tabs.TabItems.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        if (!live) { _filesPane.Visibility = Visibility.Collapsed; _filesButton.IsChecked = false; }
+        if (!own) { _filesPane.Visibility = Visibility.Collapsed; _filesButton.IsChecked = false; }
     }
 
     // ---- sections ----
@@ -233,6 +240,7 @@ public sealed class ServersWindow : Window
                 var scroll = new ScrollViewer { Content = _hostGroups };
                 _nav.Content = Page("Sunucular", "Bir sunucuya tıkla, terminal yeni sekmede açılsın. Sağ tık: düzenle, sil.", scroll,
                     _search,
+                    ActionButton("Ortak terminaller", Symbol.People, () => _ = ShowShares()),
                     ActionButton("İçe aktar", Symbol.Import, async () => Show(await _c.ImportSshConfig(), InfoBarSeverity.Informational)),
                     ActionButton("Yeni sunucu", Symbol.Add, () => _ = EditHost(null), accent: true));
                 break;
@@ -1231,6 +1239,104 @@ public sealed class ServersWindow : Window
         return menu;
     }
 
+    private MenuFlyout ShareMenu()
+    {
+        var menu = new MenuFlyout();
+        menu.Opening += (_, _) =>
+        {
+            menu.Items.Clear();
+            if (Current is not { Closed: false } tab) return;
+            if (tab.Hosting is { } share)
+            {
+                var allow = new ToggleMenuFlyoutItem { Text = "Misafirler yazabilsin", IsChecked = share.AllowInput };
+                allow.Click += (_, _) => share.AllowInput = allow.IsChecked;
+                menu.Items.Add(allow);
+                menu.Items.Add(new MenuFlyoutSeparator());
+                if (share.Guests.Count == 0) menu.Items.Add(new MenuFlyoutItem { Text = "Henüz izleyen yok", IsEnabled = false });
+                foreach (var (id, email) in share.Guests.ToList())
+                    menu.Items.Add(Item($"Çıkar: {email}", () => _ = share.KickAsync(id)));
+                menu.Items.Add(new MenuFlyoutSeparator());
+                menu.Items.Add(Item("Paylaşmayı durdur", async () => { await _c.StopSharing(tab); SyncCommands(); Show("Paylaşım durduruldu.", InfoBarSeverity.Informational); }));
+                return;
+            }
+            menu.Items.Add(Item("Paylaş: yalnız izlesinler", () => _ = StartShare(tab, false)));
+            menu.Items.Add(Item("Paylaş: yazabilsinler de", () => _ = StartShare(tab, true)));
+        };
+        return menu;
+    }
+
+    private async Task StartShare(TerminalTab tab, bool allowInput)
+    {
+        try
+        {
+            await _c.StartSharing(tab, allowInput);
+            tab.Hosting!.GuestsChanged += () => DispatcherQueue.TryEnqueue(() =>
+            {
+                SyncCommands();
+                Show($"Bu terminali izleyen: {tab.Hosting?.Guests.Count ?? 0} kişi.", InfoBarSeverity.Informational);
+            });
+            SyncCommands();
+            Show("Terminal ekiple paylaşılıyor. Ekiptekiler Sunucular → \"Ortak terminaller\"den katılabilir.", InfoBarSeverity.Success);
+        }
+        catch (Exception e) when (e is CoreException or GatewayException or System.Net.WebSockets.WebSocketException)
+        {
+            Show("Paylaşılamadı: " + e.Message, InfoBarSeverity.Error);
+        }
+    }
+
+    /// <summary>Teammates' shared terminals; joining opens a tab here.</summary>
+    private async Task ShowShares()
+    {
+        List<ShareInfo> shares;
+        try { shares = await _c.Shares(); }
+        catch (GatewayException e) { Show(e.Message, InfoBarSeverity.Error); return; }
+        var list = new StackPanel { Spacing = 8, MinWidth = 420 };
+        if (shares.Count == 0) list.Children.Add(new TextBlock { Text = "Şu an ekipte paylaşılan terminal yok. Bir terminalde \"Ekiple paylaş\" ile başlatılır.", TextWrapping = TextWrapping.Wrap, Foreground = Secondary });
+        var dialog = Dialog("Ortak terminaller", list, "Kapat", "Vazgeç");
+        dialog.PrimaryButtonText = "";
+        dialog.CloseButtonText = "Kapat";
+        foreach (var s in shares)
+        {
+            var row = new Grid { ColumnSpacing = 8 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var text = new StackPanel();
+            text.Children.Add(new TextBlock { Text = s.Title, Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"] });
+            text.Children.Add(new TextBlock { Text = $"{s.HostEmail} · {s.Guests} izleyen", Foreground = Secondary, FontSize = 12 });
+            row.Children.Add(text);
+            var join = new Button { Content = "Katıl" };
+            join.Click += async (_, _) => { dialog.Hide(); await JoinShare(s); };
+            Grid.SetColumn(join, 1); row.Children.Add(join);
+            list.Children.Add(row);
+        }
+        await ShowDialog(dialog);
+    }
+
+    private async Task JoinShare(ShareInfo info)
+    {
+        try
+        {
+            var share = await _c.JoinShare(info);
+            var host = new CoreHost("share:" + info.Id, $"{info.Title} · {info.HostEmail}", info.HostEmail, "key", false, null, null, null);
+            AddTab(host, "share:" + info.Id);
+            var tab = CurrentPage?.Panes.LastOrDefault(p => p.SessionId == "share:" + info.Id);
+            if (tab is null) { await share.DisposeAsync(); return; }
+            tab.Guest = share;
+            share.Output += b64 => DispatcherQueue.TryEnqueue(() => tab.Post(JsonSerializer.Serialize(new { type = "output", data = b64 })));
+            share.Ended += reason => DispatcherQueue.TryEnqueue(() =>
+            {
+                tab.Closed = true;
+                tab.Post(JsonSerializer.Serialize(new { type = "text", data = $"\r\n\u001b[90m[{reason}]\u001b[0m\r\n" }));
+                tab.Caption.Text = tab.Host.Label + " (bitti)";
+                SyncCommands();
+            });
+        }
+        catch (Exception e) when (e is CoreException or GatewayException or System.Net.WebSockets.WebSocketException)
+        {
+            Show("Katılamadın: " + e.Message, InfoBarSeverity.Error);
+        }
+    }
+
     private void Split(TabPage page, bool vertical, CoreHost host)
     {
         if (page.Panes.Count >= TabPage.MaxPanes) return;
@@ -1747,6 +1853,10 @@ public sealed class TerminalTab(string sessionId, CoreHost host, Microsoft.UI.Xa
     public CoreHost Host { get; } = host;
     public Microsoft.UI.Xaml.Controls.WebView2 View { get; } = view;
     public TabViewItem? Item { get; set; }
+    /// <summary>A27: this terminal is shared with the team (host side).</summary>
+    public TerminalShare? Hosting { get; set; }
+    /// <summary>A27: a teammate's shared terminal watched here (guest side).</summary>
+    public TerminalShare? Guest { get; set; }
     /// <summary>The tab page this terminal is a pane of.</summary>
     public TabPage? Page { get; set; }
     /// <summary>Pane header (host name) shown when a tab is split.</summary>

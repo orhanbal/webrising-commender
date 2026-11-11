@@ -462,6 +462,9 @@ public partial class App : Application
         }
     }
 
+    /// <summary>The gateway and the signed-in token (null when signed out).</summary>
+    public (GatewayClient Gateway, string Token)? Credentials() => Token is { } t ? (Gateway, t) : null;
+
     /// <summary>The last team sync problem, shown in Settings.</summary>
     public string? TeamSyncError { get; private set; }
 

@@ -168,9 +168,32 @@ public sealed class GatewayClient(HttpClient http, string baseUrl)
             return (false, new LibraryState(team.Revision, team.Envelope));
         }
     }
+
+    // ---- A27 shared terminals ----
+
+    public Task<List<ShareInfo>> SharesAsync(string token, CancellationToken ct = default) =>
+        ItemsAsync<ShareInfo>("/api/center/shares", token, ct);
+
+    public async Task<string> CreateShareAsync(string token, string title, CancellationToken ct = default) =>
+        (await SendAsync(HttpMethod.Post, "/api/center/shares", token, new { title }, ct).ConfigureAwait(false))?["id"]?.GetValue<string>()
+        ?? throw new GatewayException(GatewayErrorKind.Network, 0, "bad_response", "Sunucudan beklenmeyen yanıt.");
+
+    public async Task EndShareAsync(string token, string id, CancellationToken ct = default)
+    {
+        try { await SendAsync(HttpMethod.Delete, "/api/center/shares/" + id, token, null, ct).ConfigureAwait(false); }
+        catch (GatewayException e) when (e.Status == 404) { }
+    }
+
+    /// <summary>The relay socket of a shared terminal.</summary>
+    public Uri ShareSocketUri(string id, string role) =>
+        new((_base.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ? "wss://" + _base[8..] : "ws://" + _base.Replace("http://", "")) +
+            $"/center/share?id={Uri.EscapeDataString(id)}&role={role}");
 }
 
 public sealed record LibraryState(long Revision, string? Envelope);
+
+/// <summary>A27: a shared terminal of the workspace.</summary>
+public sealed record ShareInfo(string Id, string Title, string HostEmail, int Guests, string CreatedAt);
 
 /// <summary>A22: one app (Management Center) of a team member and whether it has the team key.</summary>
 public sealed record TeamMember(string CenterId, string Email, string Role, string CenterName, string PublicKey, bool HasKey);
