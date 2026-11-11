@@ -117,6 +117,10 @@ export function centerMayAccess(method: string, pathname: string) {
   if (method === "POST" && pathname === "/api/center/pairing-code") return true;
   // A20: the app's encrypted host library (sync between the user's computers).
   if ((method === "GET" || method === "PUT") && pathname === "/api/center/library") return true;
+  // A22: the team's encrypted library and its key exchange.
+  if (method === "GET" && pathname === "/api/center/team") return true;
+  if (method === "PUT" && (pathname === "/api/center/team/key" || pathname === "/api/center/team/wrapped-key" ||
+      pathname === "/api/center/team/library")) return true;
   if (method === "POST" && /^\/api\/approval-requests\/[0-9a-f-]{36}\/(approve|deny)$/i.test(pathname)) return true;
   return false;
 }
