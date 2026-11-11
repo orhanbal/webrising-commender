@@ -46,7 +46,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
 
         updateStatusItem()
+        // Opened by the person: the main window (hosts and terminals); not
+        // signed in yet: the sign-in panel. Started at login: menu bar only.
         if model.phase != .signedIn { showPanel() }
+        else if !CommandLine.arguments.contains("--hidden") && !Self.launchedAtLogin { showServers() }
+    }
+
+    /// Opened by macOS at login (Login Items) rather than by the person.
+    static var launchedAtLogin: Bool {
+        guard let event = NSAppleEventManager.shared().currentAppleEvent else { return false }
+        return event.eventID == kAEOpenApplication
+            && event.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
+    }
+
+    /// Opened again from Finder, Launchpad or the Dock: the main window.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if model.phase != .signedIn { showPanel() } else { showServers() }
+        return false
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -59,7 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     func showServers() {
         servers.start()
         if serversWindow == nil {
-            let window = NSWindow(contentViewController: NSHostingController(rootView: ServersView(model: servers)))
+            let window = NSWindow(contentViewController: NSHostingController(rootView: ServersView(model: servers, showPanel: { [weak self] in self?.showPanel() })))
             window.title = "WECOMMANDER"
             window.setContentSize(NSSize(width: 1100, height: 700))
             window.styleMask.insert(.fullSizeContentView)
@@ -137,7 +153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         menu.removeAllItems()
         let signedIn = model.phase == .signedIn
         menu.addItem(item("Yönetim Merkezini aç", #selector(menuOpen)))
-        menu.addItem(item("Sunucular ve terminaller…", #selector(menuServers), key: "s"))
+        menu.addItem(item("WECOMMANDER'ı aç", #selector(menuServers), key: "s"))
         let connectMenu = NSMenu()
         for host in servers.hosts {
             let entry = item(host.label, #selector(menuConnectHost(_:)))
