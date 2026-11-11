@@ -183,6 +183,8 @@ public static class CoreText
         if (text.Contains("made by a newer version")) return "Bu yedek daha yeni bir sürümle alınmış; önce uygulamayı güncelle.";
         if (text.Contains("backup file is too large")) return "Yedek dosyası çok büyük.";
         if (text == "terminal closed") return "Terminal kapalı.";
+        if (text.Contains("identity needs a valid user name")) return "Kimlik için geçerli bir kullanıcı adı gir.";
+        if (text.Contains("choose a key for this identity")) return "Bu kimlik için bir anahtar seç (Anahtarlar sayfasından oluşturabilirsin).";
         return text;
     }
 }
@@ -192,7 +194,7 @@ public static class CoreText
 public sealed record CoreHost(string Id, string Label, string Target, string AuthKind, bool SavedSecret,
     string? KeyPath, string? JumpId, string? TrustedKey, string? Group = null, string User = "", string Host = "", int Port = 22,
     string? KeyId = null, string? StartupCommand = null, Dictionary<string, string>? Env = null,
-    bool AgentForwarding = false)
+    bool AgentForwarding = false, string? IdentityId = null)
 {
     /// <summary>Hosts without a group are listed under this name.</summary>
     public const string NoGroup = "Gruplanmamış";
@@ -222,6 +224,9 @@ public sealed record ForwardInfo(string Local, string Remote, string Id = "", st
 
 /// <summary>What a new tunnel does, as typed in the tunnel dialog.</summary>
 public sealed record TunnelRequest(string Kind, int LocalPort, string RemoteHost, int RemotePort, string? LocalHost = null);
+
+/// <summary>A user name with a key or password, shared by many hosts.</summary>
+public sealed record Identity(string Id, string Label, string User, string AuthKind, string? KeyId = null);
 
 /// <summary>Counts from a backup import.</summary>
 public sealed record ImportSummary(int Hosts, int Snippets, int KnownHosts, int Skipped);

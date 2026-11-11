@@ -203,6 +203,26 @@ struct HostOptions {
     agent_forwarding: bool,
 }
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IdentitySave {
+    #[serde(default)]
+    id: Option<String>,
+    label: String,
+    user: String,
+    auth_kind: String,
+    #[serde(default)]
+    key_id: Option<String>,
+    #[serde(default)]
+    password: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HostIdentity {
+    id: String,
+    #[serde(default)]
+    identity_id: Option<String>,
+}
+#[derive(Deserialize)]
 struct ImportArg {
     json: String,
 }
@@ -363,6 +383,28 @@ async fn dispatch(
                 h.startup_command,
                 h.env,
                 h.agent_forwarding,
+            )?)
+        }
+        "identities.list" => ok(core::library::identities_list(state)?),
+        "identities.save" => {
+            let i: IdentitySave = p(params)?;
+            ok(core::library::identity_save(
+                state,
+                i.id,
+                i.label,
+                i.user,
+                i.auth_kind,
+                i.key_id,
+                i.password,
+            )?)
+        }
+        "identities.delete" => ok(core::library::identity_delete(state, p::<Id>(params)?.id)?),
+        "hosts.setIdentity" => {
+            let h: HostIdentity = p(params)?;
+            ok(core::library::host_set_identity(
+                state,
+                h.id,
+                h.identity_id,
             )?)
         }
         "library.export" => {

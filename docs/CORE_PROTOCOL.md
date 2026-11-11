@@ -59,6 +59,10 @@ connection.
 | `keys.delete` | `id` | same list; hosts using it forget it |
 | `hosts.setKey` | `id, keyId?` | `[Host]`; connect then uses that key (Host has `keyId`) |
 | `hosts.setOptions` | `id, startupCommand?, env? ({NAME: value}), agentForwarding` | `[Host]`; the terminal sends `env` (server `AcceptEnv` decides), types `startupCommand` once it opens, and with `agentForwarding` lets the server use this computer's ssh-agent (`ssh -A`) |
+| `identities.list` | – | `[{id, label, user, authKind, keyId?}]` |
+| `identities.save` | `id?, label, user, authKind (key\|password), keyId? (key), password? (password; empty keeps the stored one)` | same list; the password goes to the keyring (`identity/<id>/password`) |
+| `identities.delete` | `id` | same list; hosts using it go back to their own credential |
+| `hosts.setIdentity` | `id, identityId?` | `[Host]`; connect then uses the identity's user and credential (Host has `identityId`) |
 | `library.export` | – | `{json}`: hosts (groups, tunnels, terminal options), snippets, trusted host keys; no passwords, no private keys, no key files |
 | `library.import` | `json` | `{hosts, snippets, knownHosts, skipped}`; only adds what is new |
 

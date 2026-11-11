@@ -40,6 +40,30 @@ pub struct SavedHost {
     /// Lets this server use this computer's SSH agent (`ssh -A`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub agent_forwarding: bool,
+    /// A saved identity (user + key or password) used instead of the
+    /// host's own user and credential.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_id: Option<String>,
+}
+
+/// A user name with a credential, shared by many hosts ("deploy with the
+/// team key"). A password lives in the keyring under
+/// `identity/<id>/password`; a key is one of the app keys.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Identity {
+    pub id: String,
+    pub label: String,
+    pub user: String,
+    /// "key" or "password".
+    pub auth_kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_id: Option<String>,
+}
+
+/// Keyring entry of an identity's password.
+pub fn identity_secret(identity_id: &str) -> String {
+    format!("identity/{identity_id}/password")
 }
 
 /// A key pair made or imported in the app. The private key is in the OS
@@ -116,6 +140,8 @@ pub struct Data {
     pub history: Vec<HistoryEntry>,
     #[serde(default)]
     pub keys: Vec<KeyMeta>,
+    #[serde(default)]
+    pub identities: Vec<Identity>,
 }
 
 pub struct Store {
@@ -187,6 +213,7 @@ mod tests {
             startup_command: None,
             env: Default::default(),
             agent_forwarding: false,
+            identity_id: None,
         });
         data.known_hosts
             .insert("srv.example.com:22".into(), "SHA256:x".into());

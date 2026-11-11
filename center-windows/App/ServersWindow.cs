@@ -62,6 +62,7 @@ public sealed class ServersWindow : Window
         _nav.MenuItems.Add(_hostsItem);
         _nav.MenuItems.Add(_terminalsItem);
         _nav.MenuItems.Add(new NavigationViewItem { Content = "Anahtarlar", Tag = "keys", Icon = new FontIcon { Glyph = "\uE8D7" } });
+        _nav.MenuItems.Add(new NavigationViewItem { Content = "Kimlikler", Tag = "identities", Icon = new FontIcon { Glyph = "\uE77B" } });
         _nav.MenuItems.Add(new NavigationViewItem { Content = "Parçacıklar", Tag = "snippets", Icon = new FontIcon { Glyph = "\uE943" } });
         _nav.MenuItems.Add(new NavigationViewItem { Content = "Tüneller", Tag = "tunnels", Icon = new FontIcon { Glyph = "\uE8AF" } });
         _nav.MenuItems.Add(new NavigationViewItem { Content = "Bilinen sunucular", Tag = "known", Icon = new FontIcon { Glyph = "\uE72E" } });
@@ -221,6 +222,7 @@ public sealed class ServersWindow : Window
                 break;
             case "snippets": _ = ShowSnippets(); break;
             case "keys": _ = ShowKeys(); break;
+            case "identities": _ = ShowIdentities(); break;
             case "tunnels": ShowTunnelsPage(); break;
             case "known": _ = ShowKnown(); break;
             case "history": _ = ShowHistory(); break;
@@ -549,6 +551,82 @@ public sealed class ServersWindow : Window
         if (await ShowDialog(dialog) == ContentDialogResult.Primary) await ShowKeys();
     }
 
+    // ---- identities ----
+
+    private async Task ShowIdentities()
+    {
+        var identities = await _c.Identities();
+        var keys = await _c.Keys();
+        var list = new StackPanel { Spacing = 8 };
+        if (identities.Count == 0)
+            list.Children.Add(new TextBlock { Text = "Kimlik, bir kullanıcı adı ile anahtarı ya da parolasıdır; birçok sunucuda kullanılır. Örneğin \"deploy + ekip anahtarı\". Bir kez oluştur, sunucuyu düzenlerken seç; değiştirince hepsi güncellenir.", Foreground = Secondary, TextWrapping = TextWrapping.Wrap });
+        foreach (var i in identities)
+        {
+            var row = new Grid { ColumnSpacing = 8, Padding = new Thickness(12), CornerRadius = new CornerRadius(6), Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"] };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var used = _c.Hosts.Where(h => h.IdentityId == i.Id).Select(h => h.Label).ToList();
+            var keyName = keys.FirstOrDefault(k => k.Id == i.KeyId)?.Label;
+            var text = new StackPanel { Spacing = 2 };
+            text.Children.Add(new TextBlock { Text = i.Label, Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"] });
+            text.Children.Add(new TextBlock { Text = i.User + "  ·  " + (i.AuthKind == "password" ? "Parola" : keyName is null ? "Anahtar seçilmemiş" : "Anahtar: " + keyName), Foreground = Secondary });
+            text.Children.Add(new TextBlock { Text = used.Count > 0 ? "Kullanan: " + string.Join(", ", used) : "Henüz bir sunucuda kullanılmıyor", Foreground = Secondary, FontSize = 12 });
+            row.Children.Add(text);
+            var edit = new Button { Content = new SymbolIcon(Symbol.Edit) };
+            edit.Click += async (_, _) => await EditIdentity(i);
+            Grid.SetColumn(edit, 1); row.Children.Add(edit);
+            var del = new Button { Content = new SymbolIcon(Symbol.Delete) };
+            del.Click += async (_, _) =>
+            {
+                var dialog = Dialog($"{i.Label} silinsin mi?", new TextBlock { Text = used.Count > 0 ? "Bu kimliği kullanan sunucular kendi giriş bilgilerine döner." : "Kayıtlı parolası da silinir.", TextWrapping = TextWrapping.Wrap }, "Sil");
+                if (await ShowDialog(dialog) != ContentDialogResult.Primary) return;
+                await Guard(() => _c.DeleteIdentity(i));
+                await ShowIdentities();
+            };
+            Grid.SetColumn(del, 2); row.Children.Add(del);
+            list.Children.Add(row);
+        }
+        _nav.Content = Page("Kimlikler", "Birçok sunucuda kullanılan kullanıcı + anahtar ya da parola. Parola Windows Kimlik Bilgisi Yöneticisi'nde saklanır.", new ScrollViewer { Content = list },
+            ActionButton("Yeni kimlik", Symbol.Add, () => _ = EditIdentity(null), accent: true));
+    }
+
+    private async Task EditIdentity(Identity? existing)
+    {
+        var keys = await _c.Keys();
+        var label = new TextBox { Header = "Ad", Text = existing?.Label ?? "", PlaceholderText = "Ekip deploy" };
+        var user = new TextBox { Header = "Kullanıcı", Text = existing?.User ?? "" };
+        var kind = new RadioButtons { Header = "Giriş", ItemsSource = new[] { "Anahtar", "Parola" }, SelectedIndex = existing?.AuthKind == "password" ? 1 : 0, MaxColumns = 2 };
+        var keyNames = keys.Select(k => k.Label).ToList();
+        var key = new ComboBox { Header = "Anahtar", ItemsSource = keyNames, SelectedIndex = existing?.KeyId is { } kid ? keys.FindIndex(k => k.Id == kid) : keys.Count > 0 ? 0 : -1, HorizontalAlignment = HorizontalAlignment.Stretch, PlaceholderText = keys.Count == 0 ? "Önce Anahtarlar'dan bir anahtar oluştur" : "" };
+        var password = new PasswordBox { Header = existing is null ? "Parola" : "Parola (boş bırakırsan kayıtlı parola kalır)" };
+        var error = new TextBlock { Foreground = new SolidColorBrush(Microsoft.UI.Colors.IndianRed), TextWrapping = TextWrapping.Wrap };
+        void Sync()
+        {
+            key.Visibility = kind.SelectedIndex == 0 ? Visibility.Visible : Visibility.Collapsed;
+            password.Visibility = kind.SelectedIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
+        }
+        kind.SelectionChanged += (_, _) => Sync();
+        Sync();
+        var panel = new StackPanel { Spacing = 10, MinWidth = 420 };
+        foreach (var e in new UIElement[] { label, user, kind, key, password, error }) panel.Children.Add(e);
+        var dialog = Dialog(existing is null ? "Yeni kimlik" : "Kimliği düzenle", panel, "Kaydet");
+        dialog.PrimaryButtonClick += async (_, args) =>
+        {
+            var deferral = args.GetDeferral();
+            try
+            {
+                var authKind = kind.SelectedIndex == 1 ? "password" : "key";
+                var keyId = authKind == "key" && key.SelectedIndex >= 0 ? keys[key.SelectedIndex].Id : null;
+                await _c.SaveIdentity(existing?.Id, label.Text, user.Text, authKind, keyId, authKind == "password" && password.Password.Length > 0 ? password.Password : null);
+                await _c.Reload();
+            }
+            catch (CoreException e) { error.Text = e.Message; args.Cancel = true; }
+            finally { deferral.Complete(); }
+        };
+        if (await ShowDialog(dialog) == ContentDialogResult.Primary) await ShowIdentities();
+    }
+
     // ---- snippets ----
 
     private async Task ShowSnippets()
@@ -716,6 +794,21 @@ public sealed class ServersWindow : Window
         keyNames.AddRange(appKeys.Select(k => k.Label));
         var keyIndex = existing?.KeyId is { } kid ? appKeys.FindIndex(k => k.Id == kid) + 1 : 0;
         var keyChoice = new ComboBox { Header = "Anahtar", ItemsSource = keyNames, SelectedIndex = Math.Max(0, keyIndex), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var identities = await _c.Identities();
+        var identityNames = new List<string> { "Yok (bu sunucunun kendi kullanıcısı ve giriş bilgisi)" };
+        identityNames.AddRange(identities.Select(i => $"{i.Label} ({i.User})"));
+        var identityIndex = existing?.IdentityId is { } iid ? identities.FindIndex(i => i.Id == iid) + 1 : 0;
+        var identity = new ComboBox { Header = "Kimlik", ItemsSource = identityNames, SelectedIndex = Math.Max(0, identityIndex), HorizontalAlignment = HorizontalAlignment.Stretch };
+        ToolTipService.SetToolTip(identity, "Seçersen kullanıcı adı ve giriş bilgisi kimlikten gelir.");
+        void SyncIdentity()
+        {
+            var own = identity.SelectedIndex <= 0;
+            kind.IsEnabled = keyChoice.IsEnabled = own;
+            user.IsEnabled = own;
+            if (!own) user.Text = identities[identity.SelectedIndex - 1].User;
+        }
+        identity.SelectionChanged += (_, _) => SyncIdentity();
+        SyncIdentity();
         var startup = new TextBox { Header = "Bağlanınca çalışacak komut (isteğe bağlı)", Text = existing?.StartupCommand ?? "", PlaceholderText = "cd /var/www && git status", FontFamily = new FontFamily("Cascadia Mono, Consolas") };
         var envText = new TextBox
         {
@@ -738,7 +831,7 @@ public sealed class ServersWindow : Window
         terminalOptions.Content = optionsPanel;
         var error = new TextBlock { Foreground = new SolidColorBrush(Microsoft.UI.Colors.IndianRed), TextWrapping = TextWrapping.Wrap };
         var panel = new StackPanel { Spacing = 10, MinWidth = 400 };
-        foreach (var e in new UIElement[] { label, host, user, port, group, kind, keyChoice, jump, terminalOptions, error }) panel.Children.Add(e);
+        foreach (var e in new UIElement[] { label, host, user, port, group, identity, kind, keyChoice, jump, terminalOptions, error }) panel.Children.Add(e);
         var dialog = Dialog(existing is null ? "Yeni sunucu" : "Sunucuyu düzenle", new ScrollViewer { Content = panel, MaxHeight = 560 }, "Kaydet");
         dialog.PrimaryButtonClick += async (d, args) =>
         {
@@ -761,7 +854,9 @@ public sealed class ServersWindow : Window
                     await _c.UpdateHost(existing, label.Text.Trim(), host.Text.Trim(), (int)port.Value, user.Text.Trim(), authKind, jumpId, group.Text.Trim());
                 }
                 var saved = existing is null ? _c.Hosts.LastOrDefault() : _c.Hosts.FirstOrDefault(h => h.Id == existing.Id);
-                if (saved is not null && saved.KeyId != keyId) await _c.SetHostKey(saved, keyId);
+                var identityId = identity.SelectedIndex > 0 ? identities[identity.SelectedIndex - 1].Id : null;
+                if (identityId is null && saved is not null && saved.KeyId != keyId) await _c.SetHostKey(saved, keyId);
+                if (saved is not null && saved.IdentityId != identityId) await _c.SetHostIdentity(saved, identityId);
                 if (saved is not null)
                 {
                     var vars = new Dictionary<string, string>();

@@ -199,6 +199,24 @@ public sealed class ServersController : IDisposable
         return list;
     }
 
+    public Task<List<Identity>> Identities() => Core.CallAsync<List<Identity>>("identities.list");
+
+    public Task<List<Identity>> SaveIdentity(string? id, string label, string user, string authKind, string? keyId, string? password) =>
+        Core.CallAsync<List<Identity>>("identities.save", new { id, label, user, authKind, keyId, password });
+
+    public async Task<List<Identity>> DeleteIdentity(Identity identity)
+    {
+        var list = await Core.CallAsync<List<Identity>>("identities.delete", new { id = identity.Id });
+        await Reload();
+        return list;
+    }
+
+    public async Task SetHostIdentity(CoreHost host, string? identityId)
+    {
+        Hosts = await Core.CallAsync<List<CoreHost>>("hosts.setIdentity", new { id = host.Id, identityId });
+        Changed?.Invoke();
+    }
+
     /// <summary>Terminal options of a host: startup command, environment variables, agent forwarding.</summary>
     public async Task SetHostOptions(CoreHost host, string? startupCommand, Dictionary<string, string> env, bool agentForwarding)
     {

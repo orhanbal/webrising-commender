@@ -137,6 +137,7 @@ pub struct HostView {
     pub startup_command: Option<String>,
     pub env: std::collections::BTreeMap<String, String>,
     pub agent_forwarding: bool,
+    pub identity_id: Option<String>,
 }
 
 pub(crate) fn host_views(state: &AppState) -> Result<Vec<HostView>, String> {
@@ -144,7 +145,9 @@ pub(crate) fn host_views(state: &AppState) -> Result<Vec<HostView>, String> {
     Ok(data
         .hosts
         .iter()
-        .map(|h| HostView {
+        .map(|own| (own, effective_host(&data, own)))
+        .map(|(own, h)| HostView {
+            identity_id: own.identity_id.clone(),
             id: h.id.clone(),
             label: h.profile.label.clone(),
             target: h.profile.display_target(),
@@ -155,7 +158,8 @@ pub(crate) fn host_views(state: &AppState) -> Result<Vec<HostView>, String> {
                 .ok()
                 .flatten()
                 .is_some()
-                || (h.auth_kind == "key" && h.key_id.is_some()),
+                || (h.auth_kind == "key" && h.key_id.is_some())
+                || identity_password(state, &h).is_some(),
             key_path: h.key_path.clone(),
             jump_id: h.jump_id.clone(),
             trusted_key: data
@@ -209,6 +213,7 @@ pub fn add_host(
             startup_command: None,
             env: Default::default(),
             agent_forwarding: false,
+            identity_id: None,
         });
         state.save(&data)?;
     }
@@ -263,6 +268,7 @@ pub fn import_ssh_config(state: &Arc<AppState>) -> Result<ImportResult, String> 
                 startup_command: None,
                 env: Default::default(),
                 agent_forwarding: false,
+                identity_id: None,
             });
             added += 1;
         }
@@ -377,7 +383,7 @@ pub async fn connect_host(
             .hosts
             .iter()
             .find(|h| h.id == id)
-            .cloned()
+            .map(|h| effective_host(&data, h))
             .ok_or("host not found")?;
         let trusted = data
             .known_hosts
@@ -422,7 +428,11 @@ pub async fn connect_host(
     } else if let Some((private, _)) = &app_key {
         private.clone()
     } else if let Some(stored) = (!from_file)
-        .then(|| state.vault.get(&secret_key(&id, kind)).ok().flatten())
+        .then(|| {
+            identity_password(state, &saved)
+                .filter(|_| kind == "password")
+                .or_else(|| state.vault.get(&secret_key(&id, kind)).ok().flatten())
+        })
         .flatten()
     {
         stored
@@ -611,7 +621,7 @@ pub async fn connect_saved_direct(state: &AppState, id: &str) -> Result<Connecti
             .hosts
             .iter()
             .find(|h| h.id == id)
-            .cloned()
+            .map(|h| effective_host(&data, h))
             .ok_or("host no longer exists")?;
         let trusted = data
             .known_hosts
@@ -647,7 +657,7 @@ pub async fn connect_saved(
             .hosts
             .iter()
             .find(|h| h.id == id)
-            .cloned()
+            .map(|h| effective_host(&data, h))
             .ok_or("host no longer exists")?;
         let trusted = data
             .known_hosts
@@ -676,7 +686,58 @@ pub async fn connect_saved(
     Ok((conn, Some(jump)))
 }
 
+/// The host as it connects: with its identity's user, auth kind and key
+/// when it uses one.
+pub(crate) fn effective_host(data: &Data, host: &SavedHost) -> SavedHost {
+    let mut h = host.clone();
+    if let Some(identity) = host
+        .identity_id
+        .as_ref()
+        .and_then(|i| data.identities.iter().find(|x| &x.id == i))
+    {
+        h.profile.user = identity.user.clone();
+        h.auth_kind = identity.auth_kind.clone();
+        h.key_id = if identity.auth_kind == "key" {
+            identity.key_id.clone()
+        } else {
+            None
+        };
+        h.key_path = None;
+    }
+    h
+}
+
+/// The identity's password, when the host uses a password identity.
+fn identity_password(state: &AppState, host: &SavedHost) -> Option<String> {
+    let id = host.identity_id.as_deref()?;
+    (host.auth_kind == "password")
+        .then(|| state.vault.get(&store::identity_secret(id)).ok().flatten())
+        .flatten()
+}
+
+/// The private key (and passphrase) of the app key the host uses.
+fn app_key_secret(state: &AppState, host: &SavedHost) -> Option<(String, Option<String>)> {
+    let k = host.key_id.as_deref().filter(|_| host.auth_kind == "key")?;
+    let private = state
+        .vault
+        .get(&store::key_secret(k, "private"))
+        .ok()
+        .flatten()?;
+    let passphrase = state
+        .vault
+        .get(&store::key_secret(k, "passphrase"))
+        .ok()
+        .flatten();
+    Some((private, passphrase))
+}
+
 fn saved_credential(state: &AppState, host: &SavedHost) -> Option<Credential> {
+    if let Some((key, passphrase)) = app_key_secret(state, host) {
+        return Some(Credential::PrivateKey { key, passphrase });
+    }
+    if let Some(password) = identity_password(state, host) {
+        return Some(Credential::Password(password));
+    }
     let kind = host.auth_kind.as_str();
     let secret = state
         .vault
