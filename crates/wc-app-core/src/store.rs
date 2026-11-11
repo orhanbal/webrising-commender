@@ -30,6 +30,40 @@ pub struct SavedHost {
     /// A key from the app's key list (its private half is in the keyring).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key_id: Option<String>,
+    /// Typed into the terminal right after it opens (e.g. `cd /srv && ls`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub startup_command: Option<String>,
+    /// Environment variables sent when the terminal opens (the server's
+    /// `AcceptEnv` decides which it keeps).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub env: std::collections::BTreeMap<String, String>,
+    /// Lets this server use this computer's SSH agent (`ssh -A`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub agent_forwarding: bool,
+    /// A saved identity (user + key or password) used instead of the
+    /// host's own user and credential.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_id: Option<String>,
+}
+
+/// A user name with a credential, shared by many hosts ("deploy with the
+/// team key"). A password lives in the keyring under
+/// `identity/<id>/password`; a key is one of the app keys.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Identity {
+    pub id: String,
+    pub label: String,
+    pub user: String,
+    /// "key" or "password".
+    pub auth_kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_id: Option<String>,
+}
+
+/// Keyring entry of an identity's password.
+pub fn identity_secret(identity_id: &str) -> String {
+    format!("identity/{identity_id}/password")
 }
 
 /// A key pair made or imported in the app. The private key is in the OS
@@ -69,9 +103,29 @@ pub struct HistoryEntry {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SavedTunnel {
+    /// `local` (ssh -L), `remote` (ssh -R) or `dynamic` (ssh -D, SOCKS5).
+    #[serde(default = "local_kind", skip_serializing_if = "is_local_kind")]
+    pub kind: String,
+    /// local/dynamic: the port on this computer. remote: the port of the
+    /// service on this computer that the server reaches.
     pub local_port: u16,
+    /// remote only: the host on this side the server reaches (default
+    /// 127.0.0.1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_host: Option<String>,
+    /// local: the target host as seen from the server. remote: the address
+    /// the server listens on. dynamic: unused.
     pub remote_host: String,
+    /// local: the target port. remote: the port the server listens on.
     pub remote_port: u16,
+}
+
+fn local_kind() -> String {
+    "local".into()
+}
+
+fn is_local_kind(kind: &String) -> bool {
+    kind == "local"
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq)]
@@ -86,6 +140,8 @@ pub struct Data {
     pub history: Vec<HistoryEntry>,
     #[serde(default)]
     pub keys: Vec<KeyMeta>,
+    #[serde(default)]
+    pub identities: Vec<Identity>,
 }
 
 pub struct Store {
@@ -154,6 +210,10 @@ mod tests {
             tunnels: Vec::new(),
             group: None,
             key_id: None,
+            startup_command: None,
+            env: Default::default(),
+            agent_forwarding: false,
+            identity_id: None,
         });
         data.known_hosts
             .insert("srv.example.com:22".into(), "SHA256:x".into());

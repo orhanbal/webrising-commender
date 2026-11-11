@@ -175,9 +175,8 @@ struct Rename {
 #[serde(rename_all = "camelCase")]
 struct ForwardStart {
     session_id: String,
-    local_port: u16,
-    remote_host: String,
-    remote_port: u16,
+    #[serde(flatten)]
+    spec: core::TunnelSpec,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -189,9 +188,43 @@ struct ForwardStop {
 #[serde(rename_all = "camelCase")]
 struct TunnelSave {
     host_id: String,
-    local_port: u16,
-    remote_host: String,
-    remote_port: u16,
+    #[serde(flatten)]
+    spec: core::TunnelSpec,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HostOptions {
+    id: String,
+    #[serde(default)]
+    startup_command: Option<String>,
+    #[serde(default)]
+    env: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    agent_forwarding: bool,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IdentitySave {
+    #[serde(default)]
+    id: Option<String>,
+    label: String,
+    user: String,
+    auth_kind: String,
+    #[serde(default)]
+    key_id: Option<String>,
+    #[serde(default)]
+    password: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HostIdentity {
+    id: String,
+    #[serde(default)]
+    identity_id: Option<String>,
+}
+#[derive(Deserialize)]
+struct ImportArg {
+    json: String,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -276,14 +309,7 @@ async fn dispatch(
         }
         "forward.start" => {
             let f: ForwardStart = p(params)?;
-            ok(core::forward_start(
-                state,
-                f.session_id,
-                f.local_port,
-                f.remote_host,
-                f.remote_port,
-            )
-            .await?)
+            ok(core::forward_start(state, f.session_id, f.spec).await?)
         }
         "forward.list" => ok(core::forward_list(state, p::<Session>(params)?.session_id)?),
         "forward.stop" => {
@@ -293,13 +319,7 @@ async fn dispatch(
         "tunnels.saved" => ok(core::saved_tunnels(state)),
         "tunnels.save" => {
             let t: TunnelSave = p(params)?;
-            ok(core::tunnel_save(
-                state,
-                t.host_id,
-                t.local_port,
-                t.remote_host,
-                t.remote_port,
-            )?)
+            ok(core::tunnel_save(state, t.host_id, t.spec)?)
         }
         "tunnels.delete" => {
             let t: TunnelRef = p(params)?;
@@ -354,6 +374,45 @@ async fn dispatch(
         "hosts.setKey" => {
             let h: HostKey = p(params)?;
             ok(core::library::host_set_key(state, h.id, h.key_id)?)
+        }
+        "hosts.setOptions" => {
+            let h: HostOptions = p(params)?;
+            ok(core::library::host_set_options(
+                state,
+                h.id,
+                h.startup_command,
+                h.env,
+                h.agent_forwarding,
+            )?)
+        }
+        "identities.list" => ok(core::library::identities_list(state)?),
+        "identities.save" => {
+            let i: IdentitySave = p(params)?;
+            ok(core::library::identity_save(
+                state,
+                i.id,
+                i.label,
+                i.user,
+                i.auth_kind,
+                i.key_id,
+                i.password,
+            )?)
+        }
+        "identities.delete" => ok(core::library::identity_delete(state, p::<Id>(params)?.id)?),
+        "hosts.setIdentity" => {
+            let h: HostIdentity = p(params)?;
+            ok(core::library::host_set_identity(
+                state,
+                h.id,
+                h.identity_id,
+            )?)
+        }
+        "library.export" => {
+            ok(serde_json::json!({ "json": core::library::library_export(state)? }))
+        }
+        "library.import" => {
+            let a: ImportArg = p(params)?;
+            ok(core::library::library_import(state, a.json)?)
         }
         "history.list" => ok(core::library::history_list(state)?),
         "history.clear" => ok(core::library::history_clear(state)?),

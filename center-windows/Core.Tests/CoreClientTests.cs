@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Wecommander.Center.Core;
 using Xunit;
@@ -94,6 +95,54 @@ public class CoreClientTests
 
             Assert.Empty(await core.CallAsync<List<KnownHost>>("known.list"));
             Assert.Empty(await core.CallAsync<List<HistoryEntry>>("history.list"));
+            Assert.Empty(await core.CallAsync<List<Identity>>("identities.list"));
+
+            // Terminal options of a host.
+            hosts = await core.CallAsync<List<CoreHost>>("hosts.setOptions", new
+            {
+                id = web.Id, startupCommand = "cd /srv", env = new Dictionary<string, string> { ["LANG"] = "tr_TR.UTF-8" }, agentForwarding = true,
+            });
+            Assert.Equal(("cd /srv", "tr_TR.UTF-8", true), (hosts[0].StartupCommand, hosts[0].Env!["LANG"], hosts[0].AgentForwarding));
+            await Assert.ThrowsAsync<CoreException>(() => core.CallAsync("hosts.setOptions", new
+            {
+                id = web.Id, env = new Dictionary<string, string> { ["BAD NAME"] = "x" },
+            }));
+
+            // Saved tunnels of every kind.
+            var tunnels = await core.CallAsync<List<SavedTunnel>>("tunnels.save", new { hostId = web.Id, kind = "dynamic", localPort = 1080 });
+            Assert.Equal(("dynamic", "127.0.0.1:1080", "SOCKS5"), (tunnels[0].Kind, tunnels[0].Local, tunnels[0].Remote));
+            tunnels = await core.CallAsync<List<SavedTunnel>>("tunnels.save", new { hostId = web.Id, kind = "remote", localPort = 3000, remotePort = 8080 });
+            Assert.Equal(("remote", "localhost:8080 (sunucu)", "127.0.0.1:3000"), (tunnels[1].Kind, tunnels[1].Local, tunnels[1].Remote));
+            await Assert.ThrowsAsync<CoreException>(() => core.CallAsync("tunnels.save", new { hostId = web.Id, kind = "local", localPort = 1080, remoteHost = "db", remotePort = 5432 }));
+
+            // Identities: a password identity used by the host.
+            var ids = await core.CallAsync<List<Identity>>("identities.save", new { label = "Team", user = "deploy", authKind = "password", password = "pw" });
+            var team = Assert.Single(ids);
+            hosts = await core.CallAsync<List<CoreHost>>("hosts.setIdentity", new { id = web.Id, identityId = team.Id });
+            Assert.Equal((team.Id, "deploy", "password", true), (hosts[0].IdentityId, hosts[0].User, hosts[0].AuthKind, hosts[0].SavedSecret));
+            await Assert.ThrowsAsync<CoreException>(() => core.CallAsync("identities.save", new { label = "K", user = "x", authKind = "key" }));
+
+            // Backup: export, then import into a fresh library.
+            var json = (await core.CallAsync<JsonElement>("library.export")).GetProperty("json").GetString()!;
+            Assert.Contains("wecommander-library", json);
+            var dir2 = Path.Combine(Path.GetTempPath(), "wc-core-" + Guid.NewGuid());
+            try
+            {
+                using var other = CoreClient.Start(Bin, dir2, "app.wecommander.test2");
+                var summary = await other.CallAsync<ImportSummary>("library.import", new { json });
+                Assert.Equal(1, summary.Hosts);
+                var imported = Assert.Single(await other.CallAsync<List<CoreHost>>("hosts.list"));
+                Assert.Equal(("Web 1", "cd /srv"), (imported.Label, imported.StartupCommand));
+                Assert.Equal(team.Id, imported.IdentityId);
+                Assert.False(imported.SavedSecret); // passwords never travel in a backup
+                Assert.Equal(2, (await other.CallAsync<List<SavedTunnel>>("tunnels.saved")).Count);
+                Assert.Equal(0, (await other.CallAsync<ImportSummary>("library.import", new { json })).Hosts);
+                await Assert.ThrowsAsync<CoreException>(() => other.CallAsync("library.import", new { json = "{}" }));
+            }
+            finally
+            {
+                try { Directory.Delete(dir2, true); } catch (Exception) { }
+            }
         }
         finally
         {

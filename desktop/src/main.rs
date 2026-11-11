@@ -457,6 +457,7 @@ async fn connect_host(
             "xterm-256color",
             cols.unwrap_or(80).clamp(10, 1000),
             rows.unwrap_or(24).clamp(4, 500),
+            &[],
         )
         .await
         .map_err(|e| e.to_string())?;

@@ -10,6 +10,7 @@
 use crate::HostProfile;
 use russh::client;
 use russh::keys::{HashAlg, PrivateKeyWithHashAlg};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -108,6 +109,10 @@ pub struct ConnectOptions {
     pub timeout: Duration,
     /// Fingerprint (`SHA256:...`) the caller trusts for this host, if any.
     pub trusted_fingerprint: Option<String>,
+    /// Lets the server use this computer's SSH agent (like `ssh -A`). Off
+    /// by default: anyone with root on the server could use the agent's
+    /// keys while the connection is open.
+    pub agent_forwarding: bool,
 }
 
 impl Default for ConnectOptions {
@@ -115,13 +120,19 @@ impl Default for ConnectOptions {
         Self {
             timeout: Duration::from_secs(15),
             trusted_fingerprint: None,
+            agent_forwarding: false,
         }
     }
 }
 
+/// Remote forwards (`ssh -R`) of one connection: server port -> local target.
+type RemoteRoutes = Arc<Mutex<HashMap<u32, (String, u16)>>>;
+
 struct Handler {
     trusted: Option<String>,
     presented: Arc<Mutex<Option<HostKey>>>,
+    routes: RemoteRoutes,
+    agent_forwarding: bool,
 }
 
 impl client::Handler for Handler {
@@ -147,12 +158,62 @@ impl client::Handler for Handler {
         }
         Ok(ok)
     }
+
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: russh::Channel<client::Msg>,
+        _connected_address: &str,
+        connected_port: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        reply: client::ChannelOpenHandle,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        // Only ports this app asked the server to forward are accepted.
+        let target = self
+            .routes
+            .lock()
+            .ok()
+            .and_then(|routes| routes.get(&connected_port).cloned());
+        let Some((host, port)) = target else {
+            drop(reply);
+            return Ok(());
+        };
+        reply.accept().await;
+        tokio::spawn(async move {
+            if let Ok(mut socket) = tokio::net::TcpStream::connect((host.as_str(), port)).await {
+                let mut stream = channel.into_stream();
+                let _ = tokio::io::copy_bidirectional(&mut socket, &mut stream).await;
+            }
+        });
+        Ok(())
+    }
+
+    async fn server_channel_open_agent_forward(
+        &mut self,
+        channel: russh::Channel<client::Msg>,
+        reply: client::ChannelOpenHandle,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        if !self.agent_forwarding {
+            drop(reply);
+            return Ok(());
+        }
+        reply.accept().await;
+        tokio::spawn(async move {
+            let mut stream = channel.into_stream();
+            let _ = crate::agent::bridge(&mut stream).await;
+        });
+        Ok(())
+    }
 }
 
 /// An authenticated SSH connection.
 pub struct Connection {
     handle: client::Handle<Handler>,
     host_key: HostKey,
+    routes: RemoteRoutes,
+    agent_forwarding: bool,
 }
 
 /// Connects, verifies the host key against `options.trusted_fingerprint`
@@ -210,9 +271,12 @@ async fn connect_inner(
     };
 
     let presented = Arc::new(Mutex::new(None));
+    let routes: RemoteRoutes = Arc::default();
     let handler = Handler {
         trusted: options.trusted_fingerprint.clone(),
         presented: presented.clone(),
+        routes: routes.clone(),
+        agent_forwarding: options.agent_forwarding,
     };
     let config = Arc::new(client::Config {
         // Keepalives detect dead links; A08 makes this configurable.
@@ -284,7 +348,12 @@ async fn connect_inner(
         (Credential::PrivateKey { .. }, None) => unreachable!("key decoded above"),
     };
     match result {
-        russh::client::AuthResult::Success => Ok(Connection { handle, host_key }),
+        russh::client::AuthResult::Success => Ok(Connection {
+            handle,
+            host_key,
+            routes,
+            agent_forwarding: options.agent_forwarding,
+        }),
         russh::client::AuthResult::Failure {
             remaining_methods, ..
         } => Err(SshError::AuthFailed {
@@ -339,12 +408,29 @@ impl Connection {
 
     /// Opens an interactive login shell on a pseudo-terminal of `cols` x
     /// `rows` with the given `TERM` (for example `xterm-256color`).
-    pub async fn open_shell(&self, term: &str, cols: u32, rows: u32) -> Result<Shell, SshError> {
+    /// `env` is sent as environment variables (the server's `AcceptEnv`
+    /// decides which it keeps).
+    pub async fn open_shell(
+        &self,
+        term: &str,
+        cols: u32,
+        rows: u32,
+        env: &[(String, String)],
+    ) -> Result<Shell, SshError> {
         let channel = self
             .handle
             .channel_open_session()
             .await
             .map_err(map_error)?;
+        if self.agent_forwarding {
+            // Best effort: a server that refuses still gives a shell.
+            let _ = channel.agent_forward(false).await;
+        }
+        for (name, value) in env {
+            // Servers only accept names their AcceptEnv allows; others are
+            // ignored, so this never blocks the shell.
+            let _ = channel.set_env(false, name.as_str(), value.as_str()).await;
+        }
         channel
             .request_pty(true, term, cols.max(1), rows.max(1), 0, 0, &[])
             .await
@@ -414,6 +500,77 @@ impl Connection {
         Ok(LocalForward { local, task })
     }
 
+    /// Dynamic forwarding (like `ssh -D`): a SOCKS5 proxy on `bind` that
+    /// opens each requested connection from the server. No SOCKS
+    /// authentication, so bind it to 127.0.0.1 only.
+    pub async fn forward_dynamic(
+        self: &std::sync::Arc<Self>,
+        bind: &str,
+    ) -> Result<LocalForward, SshError> {
+        let listener = tokio::net::TcpListener::bind(bind)
+            .await
+            .map_err(|e| SshError::Io(format!("cannot listen on {bind}: {e}")))?;
+        let local = listener
+            .local_addr()
+            .map_err(|e| SshError::Io(e.to_string()))?;
+        let conn = self.clone();
+        let task = tokio::spawn(async move {
+            while let Ok((socket, peer)) = listener.accept().await {
+                let conn = conn.clone();
+                tokio::spawn(async move {
+                    let _ = crate::socks::serve(socket, peer, |host, port| {
+                        let conn = conn.clone();
+                        async move {
+                            conn.handle
+                                .channel_open_direct_tcpip(
+                                    host,
+                                    u32::from(port),
+                                    peer.ip().to_string(),
+                                    u32::from(peer.port()),
+                                )
+                                .await
+                                .map(|c| c.into_stream())
+                                .map_err(|e| e.to_string())
+                        }
+                    })
+                    .await;
+                });
+            }
+        });
+        Ok(LocalForward { local, task })
+    }
+
+    /// Remote forwarding (like `ssh -R`): the server listens on
+    /// `remote_bind:remote_port` (0 = a free port it picks) and each
+    /// connection there is tunnelled to `local_host:local_port` as seen from
+    /// this computer. Dropping the returned value cancels it on the server.
+    pub async fn forward_remote(
+        self: &std::sync::Arc<Self>,
+        remote_bind: &str,
+        remote_port: u16,
+        local_host: &str,
+        local_port: u16,
+    ) -> Result<RemoteForward, SshError> {
+        let port = self
+            .handle
+            .tcpip_forward(remote_bind, u32::from(remote_port))
+            .await
+            .map_err(|e| SshError::Protocol(format!("server refused the remote forward: {e}")))?;
+        let port = if port == 0 {
+            u32::from(remote_port)
+        } else {
+            port
+        };
+        if let Ok(mut routes) = self.routes.lock() {
+            routes.insert(port, (local_host.to_owned(), local_port));
+        }
+        Ok(RemoteForward {
+            port,
+            bind: remote_bind.to_owned(),
+            conn: self.clone(),
+        })
+    }
+
     /// True once the server or the network closed the connection.
     pub fn is_closed(&self) -> bool {
         self.handle.is_closed()
@@ -436,6 +593,29 @@ pub struct LocalForward {
 impl Drop for LocalForward {
     fn drop(&mut self) {
         self.task.abort();
+    }
+}
+
+/// A running remote forward; dropping it asks the server to stop listening.
+pub struct RemoteForward {
+    /// The port the server listens on.
+    pub port: u32,
+    bind: String,
+    conn: std::sync::Arc<Connection>,
+}
+
+impl Drop for RemoteForward {
+    fn drop(&mut self) {
+        if let Ok(mut routes) = self.conn.routes.lock() {
+            routes.remove(&self.port);
+        }
+        if let Ok(rt) = tokio::runtime::Handle::try_current() {
+            let conn = self.conn.clone();
+            let (bind, port) = (std::mem::take(&mut self.bind), self.port);
+            rt.spawn(async move {
+                let _ = conn.handle.cancel_tcpip_forward(bind, port).await;
+            });
+        }
     }
 }
 

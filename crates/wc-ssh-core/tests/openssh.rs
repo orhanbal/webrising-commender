@@ -216,7 +216,7 @@ async fn openssh_host_key_auth_and_exec() {
     // 7. Interactive shell on a pty: output, resize, exit status.
     let conn = connect(&profile, &key(&ed, None), &trusted).await.unwrap();
     let mut shell = conn
-        .open_shell("xterm-256color", 80, 24)
+        .open_shell("xterm-256color", 80, 24, &[])
         .await
         .expect("shell");
     shell.writer.resize(120, 40).await.unwrap();
@@ -337,6 +337,56 @@ async fn openssh_host_key_auth_and_exec() {
         tokio::net::TcpStream::connect(local).await.is_err(),
         "forward stopped"
     );
+
+    // 10. Dynamic forwarding (ssh -D): a SOCKS5 CONNECT to the echo server.
+    {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let socks = jump.forward_dynamic("127.0.0.1:0").await.unwrap();
+        let mut c = tokio::net::TcpStream::connect(socks.local).await.unwrap();
+        c.write_all(&[5, 1, 0]).await.unwrap();
+        let mut greet = [0u8; 2];
+        c.read_exact(&mut greet).await.unwrap();
+        assert_eq!(greet, [5, 0]);
+        let mut req = vec![5, 1, 0, 3, 9];
+        req.extend_from_slice(b"127.0.0.1");
+        req.extend_from_slice(&echo_port.to_be_bytes());
+        c.write_all(&req).await.unwrap();
+        let mut reply = [0u8; 10];
+        c.read_exact(&mut reply).await.unwrap();
+        assert_eq!(reply[1], 0, "SOCKS CONNECT succeeded");
+        c.write_all(b"socks").await.unwrap();
+        let mut buf = [0u8; 5];
+        c.read_exact(&mut buf).await.unwrap();
+        assert_eq!(&buf, b"socks");
+    }
+
+    // 11. Remote forwarding (ssh -R): the server listens and tunnels back
+    // to the echo server on this side.
+    {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let remote = jump
+            .forward_remote("127.0.0.1", 0, "127.0.0.1", echo_port)
+            .await
+            .expect("remote forward");
+        assert!(remote.port > 0);
+        let mut c = tokio::net::TcpStream::connect(("127.0.0.1", remote.port as u16))
+            .await
+            .unwrap();
+        c.write_all(b"remote").await.unwrap();
+        let mut buf = [0u8; 6];
+        c.read_exact(&mut buf).await.unwrap();
+        assert_eq!(&buf, b"remote", "reverse-tunnelled echo");
+        let port = remote.port as u16;
+        drop(c);
+        drop(remote);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(
+            tokio::net::TcpStream::connect(("127.0.0.1", port))
+                .await
+                .is_err(),
+            "remote forward cancelled"
+        );
+    }
 
     let _ = std::fs::remove_dir_all(&keys);
 }
