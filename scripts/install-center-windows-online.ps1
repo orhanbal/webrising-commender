@@ -96,8 +96,12 @@ try {
   # whose path cannot be read (another session, elevated shell) is matched by
   # name; the old files stay locked until every copy has exited, so wait for
   # that and retry the removal instead of failing on the first locked DLL.
+  # The app runs the agent (webrising-commender.exe) and wecommander-core.exe
+  # from this folder; they hold their files too, so they are ended as well.
   $running=@(Get-Process -Name 'WecommanderCenter','wecommander-center' -ErrorAction SilentlyContinue |
     Where-Object { -not $_.Path -or $_.Path.StartsWith($dir, [StringComparison]::OrdinalIgnoreCase) })
+  $running+=@(Get-Process -Name 'webrising-commender','wecommander-core' -ErrorAction SilentlyContinue |
+    Where-Object { $_.Path -and $_.Path.StartsWith($dir, [StringComparison]::OrdinalIgnoreCase) })
   if($running.Count -gt 0){
     Write-Host 'Closing the running WECOMMANDER Center...'
     $refused=$false

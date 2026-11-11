@@ -69,6 +69,8 @@ public class EmbeddedAgentTests : IDisposable
         Assert.True(run.CreateNoWindow);
         Assert.False(run.UseShellExecute);
         Assert.Equal(["--config", Config, "run"], run.ArgumentList.ToArray());
+        // The agent exits with the app however the app ends.
+        Assert.Equal(Environment.ProcessId.ToString(), run.Environment[EmbeddedAgent.ParentEnv]);
         Assert.Equal(new AgentStatus(AgentRunState.Running, AgentMode.Embedded, true), agent.Status(true));
 
         agent.Stop();

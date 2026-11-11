@@ -181,6 +181,8 @@ if [ "$OS" = "Darwin" ]; then
   # Quit a running copy before replacing it.
   osascript -e 'tell application id "app.wecommander.center" to quit' >/dev/null 2>&1 || true
   pkill -x WecommanderCenter >/dev/null 2>&1 || true
+  # The agent and core the app runs from its bundle (left running after a kill).
+  pkill -f "$dest/Contents/MacOS/" >/dev/null 2>&1 || true
   sleep 1
   rm -rf "$dest"
   ditto "$src" "$dest"

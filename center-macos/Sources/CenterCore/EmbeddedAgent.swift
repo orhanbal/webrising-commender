@@ -39,6 +39,10 @@ public final class ChildProcessLauncher: AgentLaunching {
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         process.standardInput = FileHandle.nullDevice
+        // The agent watches the app and exits with it however the app ends.
+        var environment = ProcessInfo.processInfo.environment
+        environment[EmbeddedAgent.parentEnv] = String(getpid())
+        process.environment = environment
         try process.run()
         return Running(process)
     }
@@ -72,6 +76,8 @@ public final class ChildProcessLauncher: AgentLaunching {
 /// app opens at login.
 public final class EmbeddedAgent {
     public static let executableName = "webrising-commender"
+    /// The agent watches this process id and exits with the app.
+    public static let parentEnv = "WECOMMANDER_PARENT_PID"
 
     public let executable: String
     public let configPath: String

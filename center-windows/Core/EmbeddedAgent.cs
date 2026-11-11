@@ -114,7 +114,15 @@ public sealed class EmbeddedAgent : IDisposable
         return info;
     }
 
-    public ProcessStartInfo RunStartInfo() => HiddenStartInfo(AgentExe, ["--config", ConfigPath, "run"], capture: true);
+    /// <summary>The agent watches this process and exits with it (crash, Task Manager, an installer).</summary>
+    public const string ParentEnv = "WECOMMANDER_PARENT_PID";
+
+    public ProcessStartInfo RunStartInfo()
+    {
+        var info = HiddenStartInfo(AgentExe, ["--config", ConfigPath, "run"], capture: true);
+        info.Environment[ParentEnv] = Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return info;
+    }
 
     public ProcessStartInfo EnrollStartInfo(string server, string pairingCode, string allowedRoot) =>
         HiddenStartInfo(AgentExe, ["--config", ConfigPath, "enroll", "--control-url", server.TrimEnd('/'),
