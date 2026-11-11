@@ -1116,14 +1116,25 @@ public sealed class ServersWindow : Window
 
     // ---- files (SFTP) ----
 
+    // Two-pane mode: this computer's folder on the left, the server on the right.
+    private readonly Grid _localPane = new() { Visibility = Visibility.Collapsed };
+    private readonly ListView _localList = new() { SelectionMode = ListViewSelectionMode.Extended };
+    private readonly TextBox _localPath = new() { VerticalAlignment = VerticalAlignment.Center };
+    private readonly AppBarToggleButton _twoPane = new() { Label = "İki panel", Icon = new FontIcon { Glyph = "\uE89F" }, LabelPosition = CommandBarLabelPosition.Collapsed };
+    private string _localDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
     private void BuildFilesPane()
     {
         _filesPane.Background = (Brush)Application.Current.Resources["LayerFillColorDefaultBrush"];
         _filesPane.BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"];
         _filesPane.BorderThickness = new Thickness(1, 0, 0, 0);
-        _filesPane.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        _filesPane.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        _filesPane.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        _filesPane.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        _filesPane.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var remote = new Grid();
+        Grid.SetColumn(remote, 1);
+        remote.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        remote.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        remote.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var up = new Button { Content = new SymbolIcon(Symbol.Up) };
         ToolTipService.SetToolTip(up, "Üst klasör");
         up.Click += (_, _) => _ = LoadFiles(_listing?.Parent);
@@ -1135,14 +1146,17 @@ public sealed class ServersWindow : Window
         var mkdir = new Button { Content = new SymbolIcon(Symbol.NewFolder) };
         ToolTipService.SetToolTip(mkdir, "Yeni klasör");
         mkdir.Click += async (_, _) => await NewFolder();
+        ToolTipService.SetToolTip(_twoPane, "Bu bilgisayarı yanında göster (yerel ↔ sunucu)");
+        _twoPane.Click += (_, _) => SetTwoPane(_twoPane.IsChecked == true);
         var head = new Grid { Padding = new Thickness(8), ColumnSpacing = 6 };
-        for (var i = 0; i < 5; i++) head.ColumnDefinitions.Add(new ColumnDefinition { Width = i == 1 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto });
+        for (var i = 0; i < 6; i++) head.ColumnDefinitions.Add(new ColumnDefinition { Width = i == 1 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto });
         head.Children.Add(up);
         Grid.SetColumn(_filesPath, 1); head.Children.Add(_filesPath);
         Grid.SetColumn(refresh, 2); head.Children.Add(refresh);
         Grid.SetColumn(upload, 3); head.Children.Add(upload);
         Grid.SetColumn(mkdir, 4); head.Children.Add(mkdir);
-        _filesPane.Children.Add(head);
+        Grid.SetColumn(_twoPane, 5); head.Children.Add(_twoPane);
+        remote.Children.Add(head);
         Grid.SetRow(_fileList, 1);
         _fileList.DoubleTapped += (_, _) =>
         {
@@ -1152,13 +1166,147 @@ public sealed class ServersWindow : Window
         _fileList.DragOver += (_, e) => e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
         _fileList.Drop += async (_, e) =>
         {
+            // From the local pane: paths as text, one per line.
+            if (e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Text) && !e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
+            {
+                var text = await e.DataView.GetTextAsync();
+                foreach (var path in text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    if (File.Exists(path)) await Upload(path);
+                return;
+            }
             if (!e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems)) return;
             foreach (var item in await e.DataView.GetStorageItemsAsync())
                 if (item is Windows.Storage.StorageFile f) await Upload(f.Path);
         };
-        _filesPane.Children.Add(_fileList);
+        remote.Children.Add(_fileList);
         Grid.SetRow(_transfers, 2);
-        _filesPane.Children.Add(_transfers);
+        remote.Children.Add(_transfers);
+        _filesPane.Children.Add(remote);
+        BuildLocalPane();
+        _filesPane.Children.Add(_localPane);
+    }
+
+    private void BuildLocalPane()
+    {
+        _localPane.Width = 340;
+        _localPane.BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"];
+        _localPane.BorderThickness = new Thickness(0, 0, 1, 0);
+        _localPane.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        _localPane.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        _localPane.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var up = new Button { Content = new SymbolIcon(Symbol.Up) };
+        ToolTipService.SetToolTip(up, "Üst klasör");
+        up.Click += (_, _) => { if (Directory.GetParent(_localDir) is { } parent) LoadLocal(parent.FullName); };
+        _localPath.KeyDown += (_, e) => { if (e.Key == Windows.System.VirtualKey.Enter) LoadLocal(_localPath.Text.Trim()); };
+        var head = new Grid { Padding = new Thickness(8), ColumnSpacing = 6 };
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        head.Children.Add(up);
+        Grid.SetColumn(_localPath, 1); head.Children.Add(_localPath);
+        _localPane.Children.Add(head);
+        Grid.SetRow(_localList, 1);
+        _localList.DoubleTapped += (_, _) =>
+        {
+            if (_localList.SelectedItem is ListViewItem { Tag: FileSystemInfo { } info } && info is DirectoryInfo d) LoadLocal(d.FullName);
+        };
+        _localList.CanDragItems = true;
+        _localList.DragItemsStarting += (_, e) =>
+        {
+            var paths = e.Items.OfType<ListViewItem>().Select(i => i.Tag).OfType<FileInfo>().Select(f => f.FullName).ToList();
+            if (paths.Count == 0) { e.Cancel = true; return; }
+            e.Data.SetText(string.Join("\n", paths));
+            e.Data.RequestedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
+        };
+        _localList.AllowDrop = true;
+        _localList.DragOver += (_, e) =>
+        {
+            if (e.DataView.Properties.TryGetValue("wc-remote", out _)) e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
+        };
+        _localList.Drop += async (_, e) =>
+        {
+            if (Current is not { Closed: false } tab || !e.DataView.Properties.TryGetValue("wc-remote", out var value) || value is not string remotePaths) return;
+            foreach (var path in remotePaths.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                await DownloadHere(tab, path, path[(path.LastIndexOf('/') + 1)..]);
+        };
+        _localPane.Children.Add(_localList);
+        var send = new Button { Content = "Seçilenleri sunucuya yükle →", HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(8) };
+        send.Click += async (_, _) =>
+        {
+            foreach (var f in _localList.SelectedItems.OfType<ListViewItem>().Select(i => i.Tag).OfType<FileInfo>().ToList())
+                await Upload(f.FullName);
+        };
+        Grid.SetRow(send, 2);
+        _localPane.Children.Add(send);
+        _fileList.CanDragItems = true;
+        _fileList.SelectionMode = ListViewSelectionMode.Extended;
+        _fileList.DragItemsStarting += (_, e) =>
+        {
+            var paths = e.Items.OfType<ListViewItem>().Select(i => i.Tag).OfType<RemoteEntry>().Where(r => !r.IsFolder).Select(r => r.Path).ToList();
+            if (paths.Count == 0) { e.Cancel = true; return; }
+            e.Data.Properties["wc-remote"] = string.Join("\n", paths);
+            e.Data.RequestedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
+        };
+    }
+
+    private void SetTwoPane(bool on)
+    {
+        _twoPane.IsChecked = on;
+        _localPane.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        _filesPane.Width = on ? 720 : 340;
+        if (on) LoadLocal(_localDir);
+    }
+
+    private void LoadLocal(string dir)
+    {
+        _localList.Items.Clear();
+        try
+        {
+            var info = new DirectoryInfo(dir);
+            var entries = info.EnumerateFileSystemInfos()
+                .Where(e => !e.Attributes.HasFlag(FileAttributes.Hidden) && !e.Attributes.HasFlag(FileAttributes.System))
+                .OrderBy(e => e is FileInfo).ThenBy(e => e.Name, StringComparer.CurrentCultureIgnoreCase)
+                .Take(2000).ToList();
+            _localDir = info.FullName;
+            _localPath.Text = _localDir;
+            foreach (var e in entries)
+            {
+                var row = new Grid { ColumnSpacing = 8 };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.Children.Add(new FontIcon { Glyph = e is DirectoryInfo ? "\uE8B7" : "\uE8A5", FontSize = 16 });
+                var name = new TextBlock { Text = e.Name, TextTrimming = TextTrimming.CharacterEllipsis };
+                Grid.SetColumn(name, 1); row.Children.Add(name);
+                var size = new TextBlock { Text = e is FileInfo f ? Size((ulong)f.Length) : "", Foreground = Secondary, FontSize = 12 };
+                Grid.SetColumn(size, 2); row.Children.Add(size);
+                var item = new ListViewItem { Content = row, Tag = e };
+                if (e is FileInfo file)
+                {
+                    var menu = new MenuFlyout();
+                    menu.Items.Add(Item("Sunucuya yükle →", () => _ = Upload(file.FullName)));
+                    item.ContextFlyout = menu;
+                }
+                _localList.Items.Add(item);
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException or ArgumentException)
+        {
+            _localPath.Text = _localDir;
+            _localList.Items.Add(new ListViewItem { Content = new TextBlock { Text = "Klasör açılamadı: " + e.Message, TextWrapping = TextWrapping.Wrap }, IsEnabled = false });
+        }
+    }
+
+    /// <summary>Downloads a server file into the folder open in the local pane.</summary>
+    private async Task DownloadHere(TerminalTab tab, string remotePath, string name)
+    {
+        var target = Path.Combine(_localDir, name);
+        if (File.Exists(target))
+        {
+            var dialog = Dialog($"{name} zaten var", new TextBlock { Text = "Bu bilgisayardaki dosyanın üzerine yazılsın mı?" }, "Üzerine yaz");
+            if (await ShowDialog(dialog) != ContentDialogResult.Primary) return;
+        }
+        await Transfer($"⬇ {name}", id => _c.FilesAction(tab, "files.download", new { sessionId = tab.SessionId, remote = remotePath, local = target, transferId = id }));
+        LoadLocal(_localDir);
     }
 
     private async Task LoadFiles(string? path)
@@ -1193,6 +1341,7 @@ public sealed class ServersWindow : Window
         ToolTipService.SetToolTip(item, $"{e.Permissions}  {e.Path}");
         var menu = new MenuFlyout();
         if (!e.IsFolder) menu.Items.Add(Item("İndir…", () => _ = Download(tab, e)));
+        if (!e.IsFolder) menu.Items.Add(Item("← Açık yerel klasöre indir", () => { if (_localPane.Visibility != Visibility.Visible) SetTwoPane(true); _ = DownloadHere(tab, e.Path, e.Name); }));
         menu.Items.Add(Item("Yeniden adlandır…", () => _ = Rename(tab, e)));
         menu.Items.Add(Item("Sil", () => _ = Delete(tab, e)));
         item.ContextFlyout = menu;
