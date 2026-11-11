@@ -343,7 +343,7 @@ public sealed class ServersWindow : Window
     private async Task ConfirmDelete(CoreHost host)
     {
         var dialog = Dialog($"{host.Label} silinsin mi?", new TextBlock { Text = "Kasadaki giriş bilgisi de silinir." }, "Sil");
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary) await _c.DeleteHost(host);
+        if (await ShowDialog(dialog) == ContentDialogResult.Primary) await _c.DeleteHost(host);
     }
 
     private ContentDialog Dialog(string title, UIElement content, string primary, string close = "Vazgeç") => new()
@@ -431,7 +431,7 @@ public sealed class ServersWindow : Window
             del.Click += async (_, _) =>
             {
                 var dialog = Dialog($"{k.Label} silinsin mi?", new TextBlock { Text = used.Count > 0 ? "Bu anahtarı kullanan sunucular bir dahaki bağlantıda giriş bilgisi ister." : "Özel anahtar kasadan da silinir.", TextWrapping = TextWrapping.Wrap }, "Sil");
-                if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+                if (await ShowDialog(dialog) != ContentDialogResult.Primary) return;
                 await Guard(() => _c.DeleteKey(k));
                 await ShowKeys();
             };
@@ -447,7 +447,7 @@ public sealed class ServersWindow : Window
     {
         var label = new TextBox { Header = "Ad", Text = Environment.MachineName + " anahtarı", MinWidth = 360 };
         var dialog = Dialog("Yeni anahtar (Ed25519)", label, "Oluştur");
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (await ShowDialog(dialog) != ContentDialogResult.Primary) return;
         await Guard(async () =>
         {
             await _c.GenerateKey(label.Text);
@@ -483,7 +483,7 @@ public sealed class ServersWindow : Window
             catch (CoreException e) { error.Text = e.Message; args.Cancel = true; }
             finally { deferral.Complete(); }
         };
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary) await ShowKeys();
+        if (await ShowDialog(dialog) == ContentDialogResult.Primary) await ShowKeys();
     }
 
     // ---- snippets ----
@@ -535,7 +535,7 @@ public sealed class ServersWindow : Window
             catch (CoreException e) { error.Text = e.Message; args.Cancel = true; }
             finally { deferral.Complete(); }
         };
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary) await ShowSnippets();
+        if (await ShowDialog(dialog) == ContentDialogResult.Primary) await ShowSnippets();
     }
 
     private void SendSnippet(Snippet s)
@@ -683,13 +683,51 @@ public sealed class ServersWindow : Window
             }
             finally { deferral.Complete(); }
         };
-        await dialog.ShowAsync();
+        await ShowDialog(dialog);
         RenderHosts();
     }
 
     // ---- connect ----
 
+    /// <summary>
+    /// Windows allows one ContentDialog at a time; a second one (a double
+    /// click on a host, a dialog over a dialog) throws inside XAML and closes
+    /// the app. Every dialog goes through here and waits its turn.
+    /// </summary>
+    private readonly SemaphoreSlim _dialogGate = new(1, 1);
+    private readonly HashSet<string> _connecting = [];
+
+    private async Task<ContentDialogResult> ShowDialog(ContentDialog dialog)
+    {
+        await _dialogGate.WaitAsync();
+        try
+        {
+            dialog.XamlRoot ??= Content.XamlRoot;
+            return await dialog.ShowAsync();
+        }
+        catch (Exception e)
+        {
+            App.LogCrash(e);
+            Show("Pencere açılamadı: " + e.Message, InfoBarSeverity.Error);
+            return ContentDialogResult.None;
+        }
+        finally { _dialogGate.Release(); }
+    }
+
     public async Task OpenHost(CoreHost host)
+    {
+        // A second click while this host is still connecting does nothing.
+        if (!_connecting.Add(host.Id)) return;
+        try { await OpenHostOnce(host); }
+        catch (Exception e)
+        {
+            App.LogCrash(e);
+            Show($"{host.Label}: {e.Message}", InfoBarSeverity.Error);
+        }
+        finally { _connecting.Remove(host.Id); }
+    }
+
+    private async Task OpenHostOnce(CoreHost host)
     {
         if (host.CanConnectSilently)
         {
@@ -738,7 +776,7 @@ public sealed class ServersWindow : Window
         });
         panel.Children.Add(new TextBox { Text = result.Fingerprint ?? "", IsReadOnly = true, FontFamily = new FontFamily("Cascadia Mono, Consolas") });
         var dialog = Dialog($"{host.Label} · {host.Target}", panel, changed ? "Yeni anahtara yine de güven" : "Güven ve bağlan");
-        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+        return await ShowDialog(dialog) == ContentDialogResult.Primary;
     }
 
     private async Task AskCredentials(CoreHost host, string? message)
@@ -779,7 +817,7 @@ public sealed class ServersWindow : Window
         if (message is not null) panel.Children.Add(new InfoBar { IsOpen = true, IsClosable = false, Severity = InfoBarSeverity.Error, Message = message });
         foreach (var e in new UIElement[] { useKey, keyRow, key, passphrase, password, remember }) panel.Children.Add(e);
         var dialog = Dialog($"{host.Label} · {host.Target}", panel, "Bağlan");
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (await ShowDialog(dialog) != ContentDialogResult.Primary) return;
         object auth = useKey.SelectedIndex == 0
             ? new { kind = "key", secret = key.Text, passphrase = passphrase.Password, remember = remember.IsChecked == true, keyPath = string.IsNullOrEmpty(key.Text) ? keyPath : null }
             : new { kind = "password", secret = password.Password, passphrase = (string?)null, remember = remember.IsChecked == true, keyPath = (string?)null };
@@ -956,7 +994,7 @@ public sealed class ServersWindow : Window
     {
         var box = new TextBox { Text = value, MinWidth = 320 };
         var dialog = Dialog(title, box, "Tamam");
-        return await dialog.ShowAsync() == ContentDialogResult.Primary ? box.Text.Trim() : null;
+        return await ShowDialog(dialog) == ContentDialogResult.Primary ? box.Text.Trim() : null;
     }
 
     private async Task NewFolder()
@@ -980,7 +1018,7 @@ public sealed class ServersWindow : Window
     private async Task Delete(TerminalTab tab, RemoteEntry e)
     {
         var dialog = Dialog($"{e.Name} silinsin mi?", new TextBlock { Text = e.IsFolder ? "Yalnızca boş klasörler silinebilir." : "Bu işlem geri alınamaz." }, "Sil");
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (await ShowDialog(dialog) != ContentDialogResult.Primary) return;
         await Guard(() => _c.FilesAction(tab, "files.delete", new { sessionId = tab.SessionId, path = e.Path }));
         await LoadFiles(_listing?.Path);
     }
@@ -1081,7 +1119,7 @@ public sealed class ServersWindow : Window
             catch (CoreException e) { status.Text = e.Message; }
             finally { deferral.Complete(); }
         };
-        await dialog.ShowAsync();
+        await ShowDialog(dialog);
     }
 }
 
