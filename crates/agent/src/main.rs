@@ -5,6 +5,7 @@ mod fs_ops;
 mod image_ops;
 mod log_ops;
 mod ops;
+mod parent_watch;
 mod pdf_ops;
 mod policy;
 mod process_ops;
@@ -239,6 +240,9 @@ async fn agent_main() -> Result<()> {
             Ok(())
         }
         Command::Run => {
+            if let Some(parent) = parent_watch::parent_from_env() {
+                parent_watch::exit_with(parent);
+            }
             let config = AgentConfig::load(&config_path)?;
             run(config).await
         }
