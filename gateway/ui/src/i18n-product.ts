@@ -407,5 +407,18 @@ export const productEnglish:Record<string,string> = {
   "Kurulum dosyasını indir ve çift tıkla. Yönetici izni istemez; uygulama açılınca tarayıcıda hesabınla giriş yaparsın ve bu bilgisayar kendiliğinden bağlanır. İstersen yandaki tek satırı PowerShell'e yapıştırarak da kurabilirsin.": "Download the installer and double-click it. No administrator rights needed; when the app opens, sign in with your account in the browser and this computer connects by itself. You can also paste the one line on the right into PowerShell.",
   "Yandaki tek satırı Terminal'e yapıştır. Parola istemez; uygulama açılınca tarayıcıda hesabınla giriş yaparsın ve bu Mac kendiliğinden bağlanır.": "Paste the one line on the right into Terminal. No password needed; when the app opens, sign in with your account in the browser and this Mac connects by itself.",
   "WECOMMANDER'ı indir (Windows)": "Download WECOMMANDER (Windows)",
-  "Kurulum komutunu kopyala": "Copy the install command"
+  "Kurulum komutunu kopyala": "Copy the install command",
+  "Aşağıdaki düğmeyle kurulum dosyasını indir ve çift tıkla (Windows sorarsa “Yine de çalıştır”).": "Download the installer with the button below and double-click it (if Windows asks, choose “Run anyway”).",
+  "Uygulama açılır; tarayıcıda hesabınla giriş yap.": "The app opens; sign in with your account in the browser.",
+  "Bu bilgisayar kendiliğinden bağlanır, ajan arka planda çalışır. Yönetici izni gerekmez.": "This computer connects by itself and the agent runs in the background. No administrator rights needed.",
+  "Kurulum komutunu kopyala ve Terminal'e yapıştır.": "Copy the install command and paste it into Terminal.",
+  "Bu Mac kendiliğinden bağlanır, ajan arka planda çalışır. Parola gerekmez.": "This Mac connects by itself and the agent runs in the background. No password needed.",
+  "Sunucuda kurulum komutunu çalıştır.": "Run the install command on the server.",
+  "Komutun verdiği bağlantıyı tarayıcıda açıp cihazı onayla.": "Open the link the command prints in your browser and approve the device.",
+  "Ajan, root olmayan bir servis kullanıcısıyla arka planda çalışır.": "The agent runs in the background as a non-root service user.",
+  "KURULUM": "SETUP",
+  "Uygulamayı indir": "Download the app",
+  "Tek uygulama: kur, tarayıcıda giriş yap, gerisi arka planda. Ajan uygulamanın içinde gelir.": "One app: install it, sign in in the browser, the rest runs in the background. The agent comes inside the app.",
+  "Sunucu ajanı": "Server agent",
+  "Ya da PowerShell'e yapıştır": "Or paste into PowerShell"
 };
