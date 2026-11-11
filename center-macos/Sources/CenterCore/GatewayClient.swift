@@ -50,6 +50,10 @@ public struct GatewayClient: Sendable {
         self.transport = transport
     }
 
+    func sendJSON(_ method: String, _ path: String, token: String?, body: [String: Any]?) async throws -> Any? {
+        try await send(method, path, token: token, body: body)
+    }
+
     private func send(_ method: String, _ path: String, token: String?, body: [String: Any]?) async throws -> Any? {
         guard let url = URL(string: base + path) else {
             throw GatewayError(.network, 0, "bad_url", "Sunucu adresi geçersiz.")
@@ -167,5 +171,122 @@ public struct GatewayClient: Sendable {
 
     public func disconnect(token: String) async throws {
         _ = try await send("POST", "/api/center/disconnect", token: token, body: [:])
+    }
+}
+
+/// A20: the encrypted host library on the server and its revision (0 = nothing synced yet).
+public struct LibraryState: Equatable {
+    public let revision: Int64
+    public let envelope: String?
+    public init(revision: Int64, envelope: String?) {
+        self.revision = revision
+        self.envelope = envelope
+    }
+}
+
+extension GatewayClient {
+    public func library(token: String) async throws -> LibraryState {
+        let json = try await sendJSON("GET", "/api/center/library", token: token, body: nil) as? [String: Any]
+        return LibraryState(revision: (json?["revision"] as? NSNumber)?.int64Value ?? 0,
+                            envelope: json?["envelope"] as? String)
+    }
+
+    /// Uploads the library written on top of `baseRevision`. When another
+    /// computer wrote first (409), returns false with the server's newer
+    /// library to merge and try again.
+    public func putLibrary(token: String, baseRevision: Int64, envelope: String) async throws -> (accepted: Bool, state: LibraryState) {
+        do {
+            let json = try await sendJSON("PUT", "/api/center/library", token: token,
+                                          body: ["baseRevision": baseRevision, "envelope": envelope]) as? [String: Any]
+            return (true, LibraryState(revision: (json?["revision"] as? NSNumber)?.int64Value ?? baseRevision + 1, envelope: envelope))
+        } catch let error as GatewayError where error.status == 409 {
+            return (false, try await library(token: token))
+        }
+    }
+}
+
+
+/// A22: one app of a team member and whether it has the team key.
+public struct TeamMember: Decodable, Equatable, Hashable {
+    public let centerId: String
+    public let email: String
+    public let role: String
+    public let centerName: String
+    public let publicKey: String
+    public let hasKey: Bool
+}
+
+/// A22: the team as this app sees it.
+public struct TeamState: Decodable, Equatable {
+    public let organizationName: String?
+    public let role: String
+    public let myWrappedKey: String?
+    public let members: [TeamMember]
+    public let revision: Int64
+    public let envelope: String?
+    public var canEdit: Bool { ["operator", "admin", "owner"].contains(role) }
+}
+
+extension GatewayClient {
+    public func team(token: String) async throws -> TeamState {
+        let json = try await sendJSON("GET", "/api/center/team", token: token, body: nil)
+        guard let json, let data = try? JSONSerialization.data(withJSONObject: json),
+              let state = try? JSONDecoder().decode(TeamState.self, from: data) else {
+            throw GatewayError(.network, 0, "bad_response", "Sunucudan beklenmeyen yanıt.")
+        }
+        return state
+    }
+
+    public func putTeamKey(token: String, publicKey: String) async throws {
+        _ = try await sendJSON("PUT", "/api/center/team/key", token: token, body: ["publicKey": publicKey])
+    }
+
+    public func putWrappedKey(token: String, centerId: String, wrappedKey: String) async throws {
+        _ = try await sendJSON("PUT", "/api/center/team/wrapped-key", token: token, body: ["centerId": centerId, "wrappedKey": wrappedKey])
+    }
+
+    public func putTeamLibrary(token: String, baseRevision: Int64, envelope: String) async throws -> (accepted: Bool, state: LibraryState) {
+        do {
+            let json = try await sendJSON("PUT", "/api/center/team/library", token: token,
+                                          body: ["baseRevision": baseRevision, "envelope": envelope]) as? [String: Any]
+            return (true, LibraryState(revision: (json?["revision"] as? NSNumber)?.int64Value ?? baseRevision + 1, envelope: envelope))
+        } catch let error as GatewayError where error.status == 409 {
+            let now = try await team(token: token)
+            return (false, LibraryState(revision: now.revision, envelope: now.envelope))
+        }
+    }
+}
+
+
+/// A27: a shared terminal of the workspace.
+public struct ShareInfo: Decodable, Identifiable, Equatable, Hashable {
+    public let id: String
+    public let title: String
+    public let hostEmail: String
+    public let guests: Int
+}
+
+extension GatewayClient {
+    public func shares(token: String) async throws -> [ShareInfo] {
+        let json = try await sendJSON("GET", "/api/center/shares", token: token, body: nil) as? [String: Any]
+        guard let items = json?["items"], let data = try? JSONSerialization.data(withJSONObject: items),
+              let list = try? JSONDecoder().decode([ShareInfo].self, from: data) else { return [] }
+        return list
+    }
+
+    public func createShare(token: String, title: String) async throws -> String {
+        let json = try await sendJSON("POST", "/api/center/shares", token: token, body: ["title": title]) as? [String: Any]
+        guard let id = json?["id"] as? String else { throw GatewayError(.network, 0, "bad_response", "Sunucudan beklenmeyen yanıt.") }
+        return id
+    }
+
+    public func endShare(token: String, id: String) async {
+        _ = try? await sendJSON("DELETE", "/api/center/shares/" + id, token: token, body: nil)
+    }
+
+    /// The relay socket of a shared terminal.
+    public func shareSocketURL(id: String, role: String) -> URL? {
+        let ws = base.hasPrefix("https://") ? "wss://" + base.dropFirst(8) : "ws://" + base.replacingOccurrences(of: "http://", with: "")
+        return URL(string: "\(ws)/center/share?id=\(id)&role=\(role)")
     }
 }

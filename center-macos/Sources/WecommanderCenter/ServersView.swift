@@ -43,10 +43,12 @@ struct ServersView: View {
             Section {
                 Label("Sunucular", systemImage: "server.rack").tag(Optional(Self.hostsPage))
                 Label("Anahtarlar", systemImage: "key").tag(Optional("page:keys"))
+                Label("Kimlikler", systemImage: "person.crop.circle.badge.checkmark").tag(Optional("page:identities"))
                 Label("Parçacıklar", systemImage: "text.badge.plus").tag(Optional("page:snippets"))
                 Label("Tüneller", systemImage: "point.3.connected.trianglepath.dotted").tag(Optional("page:tunnels"))
                 Label("Bilinen sunucular", systemImage: "checkmark.shield").tag(Optional("page:known"))
                 Label("Geçmiş", systemImage: "clock.arrow.circlepath").tag(Optional("page:history"))
+                Label("Ayarlar", systemImage: "gearshape").tag(Optional("page:settings"))
             }
             if !model.sessions.isEmpty {
                 Section("Açık terminaller") {
@@ -79,9 +81,16 @@ struct ServersView: View {
         if let error = model.coreError {
             ContentUnavailableCompat(title: "Uygulama çekirdeği çalışmıyor", systemImage: "exclamationmark.triangle", text: error)
         } else if let session = model.selectedSession {
+            let primary = model.primaryId(of: session.id)
+            let group = model.group(primary)
             HStack(spacing: 0) {
-                TerminalHost(model: model, session: session)
-                    .id(session.id)
+                if group.count > 1 {
+                    SplitTerminals(model: model, group: group, vertical: model.splitVertical.contains(primary))
+                        .id("split-" + primary)
+                } else {
+                    TerminalHost(model: model, session: session)
+                        .id(session.id)
+                }
                 if showFiles {
                     Divider()
                     FilesPane(model: model, session: session)
@@ -89,10 +98,49 @@ struct ServersView: View {
                         .id("files-" + session.id)
                 }
             }
-            .navigationTitle(session.host.label)
+            .navigationTitle(group.count > 1 ? group.map(\.host.label).joined(separator: " | ") : session.host.label)
             .navigationSubtitle(session.host.target)
             .toolbar {
                 ToolbarItemGroup {
+                    Menu {
+                        ForEach([false, true], id: \.self) { vertical in
+                            Menu(vertical ? "Alt alta" : "Yan yana") {
+                                Button("Aynı sunucu (\(session.host.label))") { model.split(primary, vertical: vertical, host: session.host) }
+                                Divider()
+                                ForEach(model.hosts) { h in
+                                    Button(h.label) { model.split(primary, vertical: vertical, host: h) }
+                                }
+                            }
+                        }
+                    } label: { Label("Böl", systemImage: "rectangle.split.2x1") }
+                        .help("Bu terminalin yanına ya da altına ikinci bir terminal aç (en fazla 4)")
+                        .disabled(group.count >= 4)
+                    Toggle(isOn: Binding(get: { model.broadcast.contains(primary) },
+                                         set: { on in if on { model.broadcast.insert(primary) } else { model.broadcast.remove(primary) } })) {
+                        Label("Tümüne yaz", systemImage: "dot.radiowaves.left.and.right")
+                    }
+                    .help("Yazdığın her şey bu bölmedeki tüm terminallere gider")
+                    .disabled(group.count < 2)
+                    if model.watching[session.id] == nil {
+                        Menu {
+                            if let share = model.hosting[session.id] {
+                                Toggle("Misafirler yazabilsin", isOn: Binding(get: { share.allowInput }, set: { share.allowInput = $0 }))
+                                Divider()
+                                if share.guests.isEmpty { Text("Henüz izleyen yok") }
+                                ForEach(Array(share.guests.keys), id: \.self) { g in
+                                    Button("Çıkar: \(share.guests[g] ?? "")") { share.kick(g) }
+                                }
+                                Divider()
+                                Button("Paylaşmayı durdur") { model.stopSharing(session) }
+                            } else {
+                                Button("Paylaş: yalnız izlesinler") { Task { await model.startSharing(session, allowInput: false) } }
+                                Button("Paylaş: yazabilsinler de") { Task { await model.startSharing(session, allowInput: true) } }
+                            }
+                        } label: {
+                            Label(model.hosting[session.id] != nil ? "Paylaşılıyor" : "Ekiple paylaş", systemImage: "person.2.wave.2")
+                        }
+                        .disabled(session.closed)
+                    }
                     SnippetMenu(model: model, session: session)
                     Button { showTunnels = true } label: { Label("Tüneller", systemImage: "point.3.connected.trianglepath.dotted") }
                         .disabled(session.closed)
@@ -105,6 +153,8 @@ struct ServersView: View {
             switch model.selection ?? "" {
             case "page:snippets": SnippetsPage(model: model)
             case "page:keys": KeysPage(model: model)
+            case "page:identities": IdentitiesPage(model: model)
+            case "page:settings": SettingsPage(model: model)
             case "page:tunnels": TunnelsPage(model: model)
             case "page:known": KnownHostsPage(model: model)
             case "page:history": HistoryPage(model: model)
@@ -126,6 +176,7 @@ struct HostsPage: View {
     @ObservedObject var model: ServersModel
     let edit: (CoreHost?) -> Void
     @State private var query = ""
+    @State private var showShares = false
 
     private var filtered: [CoreHost] {
         let q = query.trimmingCharacters(in: .whitespaces)
@@ -166,6 +217,9 @@ struct HostsPage: View {
                                 .contextMenu {
                                     Button("Bağlan") { model.open(host) }
                                     Button("Düzenle…") { edit(host) }
+                                    Button(host.team == true ? "Ekipten çıkar (yalnız bende kalsın)" : "Ekiple paylaş") {
+                                        Task { await model.setTeam(kind: "host", id: host.id, team: host.team != true) }
+                                    }
                                     if host.savedSecret {
                                         Button("Kayıtlı giriş bilgisini unut") { Task { await model.forgetSecret(host) } }
                                     }
@@ -179,10 +233,12 @@ struct HostsPage: View {
             .padding(24)
         }
         .navigationTitle("Sunucular")
+        .sheet(isPresented: $showShares) { SharesSheet(model: model) }
         .searchable(text: $query, prompt: "Sunucu ara ya da kullanıcı@adres")
         .onSubmit(of: .search) { Task { await quickConnect() } }
         .toolbar {
             ToolbarItemGroup {
+                Button { showShares = true } label: { Label("Ortak terminaller", systemImage: "person.2") }
                 Button { Task { await model.importSSHConfig() } } label: { Label("İçe aktar", systemImage: "square.and.arrow.down") }
                 Button { edit(nil) } label: { Label("Yeni sunucu", systemImage: "plus") }
             }
@@ -209,6 +265,37 @@ struct HostsPage: View {
         } catch {
             model.notice = error.localizedDescription
         }
+    }
+}
+
+/// A27: teammates' shared terminals; joining opens it here.
+struct SharesSheet: View {
+    @ObservedObject var model: ServersModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var shares: [ShareInfo] = []
+    @State private var loaded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Ortak terminaller").font(.headline)
+            if loaded && shares.isEmpty {
+                Text("Şu an ekipte paylaşılan terminal yok. Bir terminalde \"Ekiple paylaş\" ile başlatılır.").foregroundStyle(.secondary)
+            }
+            ForEach(shares) { s in
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(s.title).fontWeight(.semibold)
+                        Text("\(s.hostEmail) · \(s.guests) izleyen").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Katıl") { model.join(s); dismiss() }
+                }
+            }
+            HStack { Spacer(); Button("Kapat") { dismiss() }.keyboardShortcut(.cancelAction) }
+        }
+        .padding(20)
+        .frame(width: 460)
+        .task { shares = await model.shares(); loaded = true }
     }
 }
 
@@ -272,6 +359,12 @@ struct SnippetsPage: View {
                 }
                 .contextMenu {
                     Button("Düzenle…") { editing = s }
+                    Button(s.team == true ? "Ekipten çıkar" : "Ekiple paylaş") {
+                        Task {
+                            await model.setTeam(kind: "snippet", id: s.id, team: s.team != true)
+                            snippets = await model.snippets()
+                        }
+                    }
                     Button("Sil", role: .destructive) { Task { snippets = await model.deleteSnippet(s) } }
                 }
             }
@@ -410,13 +503,13 @@ struct TunnelsPage: View {
     var body: some View {
         List {
             if model.savedTunnels.isEmpty {
-                Text("Kayıtlı tünel yok. Bir terminalde \"Tüneller\" ile açıp \"kaydet\"i işaretle.").foregroundStyle(.secondary)
+                Text("Kayıtlı tünel yok. Bir terminalde \"Tüneller\" ile açıp \"kaydet\"i işaretle. Yerel (ssh -L), uzak (ssh -R) ve SOCKS (ssh -D) tünelleri kaydedilebilir.").foregroundStyle(.secondary)
             }
             ForEach(model.savedTunnels) { tunnel in
                 Toggle(isOn: Binding(get: { tunnel.running }, set: { _ in Task { await model.toggleTunnel(tunnel) } })) {
                     VStack(alignment: .leading) {
                         Text(tunnel.hostLabel)
-                        Text("\(tunnel.local) → \(tunnel.remote)").font(.caption.monospaced()).foregroundStyle(.secondary)
+                        Text("\(tunnelKindLabel(tunnel.kind))   \(tunnel.local) → \(tunnel.remote)").font(.caption.monospaced()).foregroundStyle(.secondary)
                     }
                 }
                 .toggleStyle(.switch)
@@ -507,6 +600,277 @@ struct HostRow: View {
     }
 }
 
+// MARK: - split view
+
+/// Up to four terminals side by side (or one above the other), each with a
+/// small header to close it.
+struct SplitTerminals: View {
+    @ObservedObject var model: ServersModel
+    let group: [TerminalSession]
+    let vertical: Bool
+
+    var body: some View {
+        if vertical {
+            VSplitView { panes }
+        } else {
+            HSplitView { panes }
+        }
+    }
+
+    @ViewBuilder private var panes: some View {
+        ForEach(group) { session in
+            VStack(spacing: 0) {
+                HStack {
+                    Text(session.host.label + (session.closed ? " (kapandı)" : "")).font(.caption).lineLimit(1)
+                    Spacer()
+                    Button { model.close(session) } label: { Image(systemName: "xmark") }
+                        .buttonStyle(.borderless)
+                        .help("Bu bölmeyi kapat")
+                }
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(.bar)
+                TerminalHost(model: model, session: session).id(session.id)
+            }
+            .frame(minWidth: 200, minHeight: 120)
+        }
+    }
+}
+
+// MARK: - identities
+
+struct IdentitiesPage: View {
+    @ObservedObject var model: ServersModel
+    @State private var identities: [Identity] = []
+    @State private var keys: [KeyMeta] = []
+    @State private var editing: IdentityEdit?
+
+    var body: some View {
+        List {
+            if identities.isEmpty {
+                Text("Kimlik, bir kullanıcı adı ile anahtarı ya da parolasıdır; birçok sunucuda kullanılır (örneğin \"deploy + ekip anahtarı\"). Bir kez oluştur, sunucuyu düzenlerken seç.")
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(identities) { i in
+                let used = model.hosts.filter { $0.identityId == i.id }.map(\.label)
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(i.label).font(.body.weight(.semibold))
+                        Text(i.user + "  ·  " + (i.authKind == "password" ? "Parola" : "Anahtar: " + (keys.first { $0.id == i.keyId }?.label ?? "seçilmemiş")))
+                            .foregroundStyle(.secondary)
+                        Text(used.isEmpty ? "Henüz bir sunucuda kullanılmıyor" : "Kullanan: " + used.joined(separator: ", "))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Düzenle") { editing = IdentityEdit(identity: i) }
+                    Button(role: .destructive) { Task { identities = await model.deleteIdentity(i) } } label: { Image(systemName: "trash") }
+                }
+            }
+        }
+        .navigationTitle("Kimlikler")
+        .toolbar { Button { editing = IdentityEdit(identity: nil) } label: { Label("Yeni kimlik", systemImage: "plus") } }
+        .sheet(item: $editing) { e in
+            IdentitySheet(model: model, identity: e.identity, keys: keys) { identities = $0 }
+        }
+        .task { identities = await model.identities(); keys = await model.keys() }
+    }
+}
+
+struct IdentityEdit: Identifiable {
+    let id = UUID()
+    let identity: Identity?
+}
+
+struct IdentitySheet: View {
+    @ObservedObject var model: ServersModel
+    let identity: Identity?
+    let keys: [KeyMeta]
+    let saved: ([Identity]) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var label = ""
+    @State private var user = ""
+    @State private var authKind = "key"
+    @State private var keyId = ""
+    @State private var password = ""
+    @State private var error: String?
+
+    var body: some View {
+        Form {
+            TextField("Ad", text: $label, prompt: Text("Ekip deploy"))
+            TextField("Kullanıcı", text: $user)
+            Picker("Giriş", selection: $authKind) {
+                Text("Anahtar").tag("key")
+                Text("Parola").tag("password")
+            }
+            if authKind == "key" {
+                Picker("Anahtar", selection: $keyId) {
+                    Text(keys.isEmpty ? "Önce Anahtarlar'dan bir anahtar oluştur" : "Seç").tag("")
+                    ForEach(keys) { Text($0.label).tag($0.id) }
+                }
+            } else {
+                SecureField(identity == nil ? "Parola" : "Parola (boşsa kayıtlı parola kalır)", text: $password)
+            }
+            if let error { Text(error).foregroundStyle(.red).font(.callout) }
+        }
+        .formStyle(.grouped)
+        .frame(width: 420)
+        .onAppear {
+            guard let identity else { return }
+            label = identity.label
+            user = identity.user
+            authKind = identity.authKind
+            keyId = identity.keyId ?? ""
+        }
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button("Vazgeç") { dismiss() } }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Kaydet") {
+                    Task {
+                        do {
+                            saved(try await model.saveIdentity(id: identity?.id, label: label, user: user, authKind: authKind,
+                                                               keyId: keyId.isEmpty ? nil : keyId,
+                                                               password: authKind == "password" ? password : nil))
+                            dismiss()
+                        } catch {
+                            self.error = error.localizedDescription
+                        }
+                    }
+                }
+                .disabled(user.isEmpty)
+            }
+        }
+    }
+}
+
+// MARK: - settings (terminal, backup)
+
+struct SettingsPage: View {
+    @ObservedObject var model: ServersModel
+    @AppStorage("terminalFontSize") private var fontSize = 13.0
+    @State private var status: String?
+
+    var body: some View {
+        Form {
+            Section("Terminal") {
+                Stepper(value: $fontSize, in: 8...32, step: 1) { Text("Yazı boyutu: \(Int(fontSize))") }
+                Text("Yeni açılan terminallerde geçerli olur.").font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Eşitleme (bilgisayarların arasında)") {
+                SyncSection(model: model)
+            }
+            Section("Ekip") {
+                TeamSection(model: model)
+            }
+            Section("Yedekleme") {
+                Text("Sunucular, gruplar, tüneller, parçacıklar, kimlikler ve güvenilen sunucu anahtarları tek bir dosyaya yazılır. Parolalar ve özel anahtarlar dosyaya girmez; yeni bilgisayarda ilk bağlantıda bir kez sorulur. İçe aktarma var olanları değiştirmez, yalnız yenileri ekler.")
+                    .font(.callout).foregroundStyle(.secondary)
+                HStack {
+                    Button("Dışa aktar…") { Task { await exportBackup() } }
+                    Button("İçe aktar…") { Task { await importBackup() } }
+                }
+                if let status { Text(status).font(.callout) }
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Ayarlar")
+        .task { await model.refreshSyncStatus() }
+    }
+
+    private func exportBackup() async {
+        do {
+            let json = try await model.exportLibrary()
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [.json]
+            let day = ISO8601DateFormatter().string(from: Date()).prefix(10)
+            panel.nameFieldStringValue = "wecommander-yedek-\(day).json"
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+            try json.write(to: url, atomically: true, encoding: .utf8)
+            status = "Yedek kaydedildi: \(url.path)"
+        } catch {
+            status = "Yedek kaydedilemedi: \(error.localizedDescription)"
+        }
+    }
+
+    private func importBackup() async {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let s = try await model.importLibrary(try String(contentsOf: url, encoding: .utf8))
+            status = "İçe aktarıldı: \(s.hosts) sunucu, \(s.snippets) parçacık, \(s.knownHosts) sunucu anahtarı"
+                + (s.skipped > 0 ? " (\(s.skipped) sunucu zaten vardı, atlandı)." : ".")
+        } catch {
+            status = "Yedek içe aktarılamadı: \(error.localizedDescription)"
+        }
+    }
+}
+
+struct TeamSection: View {
+    @ObservedObject var model: ServersModel
+
+    var body: some View {
+        Text("Bir sunucuya ya da parçacığa sağ tıklayıp \"Ekiple paylaş\" dersen çalışma alanındaki herkesin uygulamasında görünür (kayıtlı parolasıyla). Ekip kütüphanesi ekip anahtarıyla uçtan uca şifrelenir. Üye eklemek ve rolleri değiştirmek panelde: Yönetim → Ekip. İzleyiciler ortak sunucuları kullanır ama değiştiremez.")
+            .font(.callout).foregroundStyle(.secondary)
+        if let name = model.teamName {
+            Text("Çalışma alanı: \(name) · rolün: \(roleName(model.teamRole))")
+            if model.teamWaiting {
+                Text("Ekip anahtarı bekleniyor: ekipten operatör ya da üstü biri uygulamasını açtığında bu Mac'e verilir.").foregroundStyle(.orange)
+            }
+            ForEach(model.teamMembers, id: \.centerId) { m in
+                Text("\(m.hasKey ? "●" : "○") \(m.email) · \(m.centerName)\(m.hasKey ? "" : " (anahtar bekliyor)")")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        if let e = model.teamError { Text(e).foregroundStyle(.red).font(.callout) }
+        Button("Şimdi eşitle") { Task { await model.syncAll() } }
+    }
+
+    private func roleName(_ role: String?) -> String {
+        switch role {
+        case "owner": return "sahip"
+        case "admin": return "yönetici"
+        case "operator": return "operatör"
+        default: return "izleyici"
+        }
+    }
+}
+
+struct SyncSection: View {
+    @ObservedObject var model: ServersModel
+    @State private var passphrase = ""
+    @State private var again = ""
+    @State private var error: String?
+    @State private var busy = false
+
+    var body: some View {
+        Text("Sunucular, gruplar, tüneller, parçacıklar, kimlikler, anahtarlar ve kayıtlı parolalar aynı hesapla oturum açtığın tüm bilgisayarlarda aynı olur. Her şey bu Mac'te, yalnız senin bildiğin eşitleme parolasıyla şifrelenir; WECOMMANDER sunucusu içeriği göremez. Parolayı unutursan eşitlenen kopya açılamaz.")
+            .font(.callout).foregroundStyle(.secondary)
+        if model.syncConfigured {
+            Text("● Eşitleme açık. " + (model.lastLibrarySync.map { "Son eşitleme: \($0.formatted(date: .omitted, time: .shortened))" } ?? "Henüz eşitlenmedi"))
+            if let e = model.librarySyncError { Text(e).foregroundStyle(.red).font(.callout) }
+            HStack {
+                Button("Şimdi eşitle") { Task { await model.syncLibrary() } }
+                Button("Bu Mac'te kapat") { Task { await model.forgetSync() } }
+            }
+        } else {
+            SecureField("Eşitleme parolası (en az 8 karakter)", text: $passphrase)
+            SecureField("Parolayı tekrar yaz", text: $again)
+            Text("Başka bir bilgisayarda eşitlemeyi zaten açtıysan oradaki parolayı gir.").font(.caption).foregroundStyle(.secondary)
+            if let error { Text(error).foregroundStyle(.red).font(.callout) }
+            Button("Eşitlemeyi aç") {
+                guard passphrase == again else { error = "Parolalar aynı değil."; return }
+                busy = true
+                Task {
+                    do { try await model.setupSync(passphrase: passphrase); error = nil; passphrase = ""; again = "" }
+                    catch { self.error = error.localizedDescription }
+                    busy = false
+                }
+            }
+            .disabled(busy || passphrase.count < 8)
+        }
+    }
+}
+
 // MARK: - terminal (SwiftTerm)
 
 struct TerminalHost: NSViewRepresentable {
@@ -518,7 +882,8 @@ struct TerminalHost: NSViewRepresentable {
     func makeNSView(context: Context) -> TerminalView {
         let view = TerminalView(frame: .zero)
         view.terminalDelegate = context.coordinator
-        view.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        let size = UserDefaults.standard.double(forKey: "terminalFontSize")
+        view.font = NSFont.monospacedSystemFont(ofSize: size >= 8 ? size : 13, weight: .regular)
         view.nativeBackgroundColor = NSColor(red: 0.07, green: 0.07, blue: 0.075, alpha: 1)
         view.nativeForegroundColor = NSColor(white: 0.9, alpha: 1)
         session.feed = { [weak view] bytes in view?.feed(byteArray: bytes[...]) }
@@ -582,32 +947,56 @@ struct EditHostSheet: View {
     @State private var jumpId = ""
     @State private var keyId = ""
     @State private var keys: [KeyMeta] = []
+    @State private var identities: [Identity] = []
+    @State private var identityId = ""
+    @State private var startup = ""
+    @State private var envText = ""
+    @State private var agentForwarding = false
     @State private var error: String?
 
     var body: some View {
         Form {
             TextField("Ad", text: $label, prompt: Text("Prod web"))
             TextField("Adres", text: $address, prompt: Text("sunucu.ornek.com"))
-            TextField("Kullanıcı", text: $user)
+            Picker("Kimlik", selection: $identityId) {
+                Text("Yok (bu sunucunun kendi kullanıcısı ve giriş bilgisi)").tag("")
+                ForEach(identities) { Text("\($0.label) (\($0.user))").tag($0.id) }
+            }
+            .onChange(of: identityId) { id in
+                if let i = identities.first(where: { $0.id == id }) { user = i.user }
+            }
+            TextField("Kullanıcı", text: $user).disabled(!identityId.isEmpty)
             TextField("Port", text: $port)
             TextField("Grup (isteğe bağlı)", text: $group, prompt: Text("Production"))
-            Picker("Giriş", selection: $authKind) {
-                Text("Özel anahtar").tag("key")
-                Text("Parola").tag("password")
-            }
-            Picker("Anahtar", selection: $keyId) {
-                Text("Bağlanırken sor / anahtar dosyası").tag("")
-                ForEach(keys) { Text($0.label).tag($0.id) }
+            if identityId.isEmpty {
+                Picker("Giriş", selection: $authKind) {
+                    Text("Özel anahtar").tag("key")
+                    Text("Parola").tag("password")
+                }
+                Picker("Anahtar", selection: $keyId) {
+                    Text("Bağlanırken sor / anahtar dosyası").tag("")
+                    ForEach(keys) { Text($0.label).tag($0.id) }
+                }
             }
             Picker("Atlama sunucusu", selection: $jumpId) {
                 Text("Doğrudan bağlan").tag("")
                 ForEach(model.hosts.filter { $0.id != host?.id }) { Text($0.label).tag($0.id) }
             }
+            Section("Terminal seçenekleri") {
+                TextField("Bağlanınca çalışacak komut", text: $startup, prompt: Text("cd /var/www && git status"))
+                    .font(.body.monospaced())
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Ortam değişkenleri (her satıra AD=değer)").font(.callout)
+                    TextEditor(text: $envText).font(.body.monospaced()).frame(height: 60)
+                }
+                Toggle("SSH agent yönlendirme (ssh -A)", isOn: $agentForwarding)
+                    .help("Yalnız güvendiğin sunucularda aç: sunucuda yönetici yetkisi olan biri, bağlantı açıkken agent'taki anahtarlarını kullanabilir.")
+            }
             if let error { Text(error).foregroundStyle(.red).font(.callout) }
         }
         .formStyle(.grouped)
-        .frame(width: 440)
-        .task { keys = await model.keys() }
+        .frame(width: 480)
+        .task { keys = await model.keys(); identities = await model.identities() }
         .onAppear {
             guard let host else { return }
             keyId = host.keyId ?? ""
@@ -618,6 +1007,10 @@ struct EditHostSheet: View {
             group = host.group ?? ""
             authKind = host.authKind
             jumpId = host.jumpId ?? ""
+            identityId = host.identityId ?? ""
+            startup = host.startupCommand ?? ""
+            envText = (host.env ?? [:]).sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "\n")
+            agentForwarding = host.agentForwarding ?? false
         }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Vazgeç") { dismiss() } }
@@ -640,8 +1033,24 @@ struct EditHostSheet: View {
                                 }
                             }
                             let chosen = keyId.isEmpty ? nil : keyId
-                            let saved = host.flatMap { h in model.hosts.first { $0.id == h.id } } ?? model.hosts.last
-                            if let saved, saved.keyId != chosen { try await model.setKey(saved, keyId: chosen) }
+                            var saved = host.flatMap { h in model.hosts.first { $0.id == h.id } } ?? model.hosts.last
+                            let identity = identityId.isEmpty ? nil : identityId
+                            if identity == nil, let s = saved, s.keyId != chosen { try await model.setKey(s, keyId: chosen) }
+                            if let s = saved, s.identityId != identity { try await model.setIdentity(s, identityId: identity) }
+                            saved = saved.flatMap { h in model.hosts.first { $0.id == h.id } }
+                            var env: [String: String] = [:]
+                            for line in envText.split(whereSeparator: \.isNewline) {
+                                let t = line.trimmingCharacters(in: .whitespaces)
+                                if t.isEmpty || t.hasPrefix("#") { continue }
+                                guard let eq = t.firstIndex(of: "="), eq != t.startIndex else {
+                                    throw CoreClient.Failure.core("Ortam değişkeni AD=değer biçiminde olmalı: \(t)")
+                                }
+                                env[String(t[..<eq]).trimmingCharacters(in: .whitespaces)] = String(t[t.index(after: eq)...])
+                            }
+                            let command = startup.trimmingCharacters(in: .whitespaces)
+                            if let s = saved, (s.startupCommand ?? "") != command || (s.env ?? [:]) != env || (s.agentForwarding ?? false) != agentForwarding {
+                                try await model.setOptions(s, startupCommand: command, env: env, agentForwarding: agentForwarding)
+                            }
                             dismiss()
                         } catch {
                             self.error = error.localizedDescription
@@ -941,36 +1350,85 @@ struct FilesPane: View {
 
 // MARK: - tunnels
 
+func tunnelKindLabel(_ kind: String?) -> String {
+    switch kind {
+    case "remote": return "Uzak (-R)"
+    case "dynamic": return "SOCKS (-D)"
+    default: return "Yerel (-L)"
+    }
+}
+
 struct TunnelsSheet: View {
     @ObservedObject var model: ServersModel
     @ObservedObject var session: TerminalSession
     @Environment(\.dismiss) private var dismiss
     @State private var forwards: [ForwardInfo] = []
+    @State private var kind = "local"
     @State private var localPort = ""
+    @State private var localHost = "127.0.0.1"
     @State private var remoteHost = "127.0.0.1"
     @State private var remotePort = ""
     @State private var save = false
     @State private var status: String?
 
+    private var help: String {
+        switch kind {
+        case "remote": return "Sunucu bir port açar; oraya gelen bağlantılar bu Mac'teki bir servise gelir (ssh -R). Sunucu varsayılan olarak yalnız kendi içinden (localhost) dinler."
+        case "dynamic": return "Bu Mac'te bir SOCKS5 proxy açar; tarayıcını bu proxy'ye yönlendirirsen trafik sunucunun ağından çıkar (ssh -D). Yalnızca bu Mac'ten erişilebilir."
+        default: return "Bu Mac'teki bir portu sunucunun erişebildiği bir adrese bağlar (ssh -L). Yalnızca bu Mac'ten (127.0.0.1) erişilebilir."
+        }
+    }
+
+    private var ready: Bool {
+        switch kind {
+        case "remote": return Int(localPort) ?? 0 > 0
+        case "dynamic": return true
+        default: return Int(remotePort) ?? 0 > 0
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Tüneller · \(session.host.label)").font(.headline)
-            Text("Bu Mac'teki bir portu sunucunun erişebildiği bir adrese bağlar (ssh -L). Yalnızca bu Mac'ten (127.0.0.1) erişilebilir.")
-                .font(.callout).foregroundStyle(.secondary)
-            ForEach(forwards, id: \.local) { f in
+            ForEach(forwards, id: \.stopId) { f in
                 HStack {
-                    Text("\(f.local) → \(f.remote)").font(.callout.monospaced())
+                    Text(tunnelKindLabel(f.kind)).foregroundStyle(.secondary)
+                    Text("\(f.local) → \(f.remote)").font(.callout.monospaced()).textSelection(.enabled)
                     Spacer()
-                    Button("Kapat") { Task { forwards = await model.stopForward(session, local: f.local) } }
+                    Button("Kapat") { Task { forwards = await model.stopForward(session, local: f.stopId) } }
                 }
             }
-            HStack {
-                TextField("Yerel port (0 = boş)", text: $localPort).frame(width: 140)
-                Image(systemName: "arrow.right")
-                TextField("Uzak adres", text: $remoteHost)
-                TextField("Port", text: $remotePort).frame(width: 70)
+            Picker("Tür", selection: $kind) {
+                Text("Yerel (-L)").tag("local")
+                Text("Uzak (-R)").tag("remote")
+                Text("SOCKS (-D)").tag("dynamic")
             }
-            Toggle("Bu tüneli kaydet (menü çubuğundan da açılır)", isOn: $save)
+            .pickerStyle(.segmented)
+            .onChange(of: kind) { k in
+                if k == "remote", remoteHost == "127.0.0.1" { remoteHost = "localhost" }
+                if k == "local", remoteHost == "localhost" { remoteHost = "127.0.0.1" }
+            }
+            Text(help).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            switch kind {
+            case "remote":
+                HStack {
+                    TextField("Sunucu adresi", text: $remoteHost)
+                    TextField("Sunucu portu (0 = seçsin)", text: $remotePort).frame(width: 170)
+                    Image(systemName: "arrow.right")
+                    TextField("Bu Mac'teki adres", text: $localHost)
+                    TextField("Port", text: $localPort).frame(width: 70)
+                }
+            case "dynamic":
+                TextField("Proxy portu (0 = boş)", text: $localPort).frame(width: 180)
+            default:
+                HStack {
+                    TextField("Yerel port (0 = boş)", text: $localPort).frame(width: 140)
+                    Image(systemName: "arrow.right")
+                    TextField("Uzak adres", text: $remoteHost)
+                    TextField("Port", text: $remotePort).frame(width: 70)
+                }
+            }
+            Toggle("Bu tüneli kaydet (Tüneller sayfasından ve menü çubuğundan açılır)", isOn: $save)
             if let status { Text(status).font(.callout).foregroundStyle(.secondary) }
             HStack {
                 Spacer()
@@ -978,20 +1436,28 @@ struct TunnelsSheet: View {
                 Button("Tünel aç") {
                     Task {
                         do {
-                            forwards = try await model.startForward(session, localPort: Int(localPort) ?? 0,
-                                                                    remoteHost: remoteHost, remotePort: Int(remotePort) ?? 0, save: save)
-                            status = forwards.last.map { "Açıldı: \($0.local) adresine bağlan." }
+                            forwards = try await model.startForward(
+                                session, kind: kind, localPort: Int(localPort) ?? 0,
+                                localHost: kind == "remote" ? localHost : nil,
+                                remoteHost: kind == "dynamic" ? "" : remoteHost, remotePort: Int(remotePort) ?? 0, save: save)
+                            status = forwards.last.map { f in
+                                switch kind {
+                                case "remote": return "Açıldı: sunucuda \(f.local) → bu Mac'te \(f.remote)."
+                                case "dynamic": return "Açıldı: uygulamanda SOCKS5 proxy olarak \(f.local) adresini kullan."
+                                default: return "Açıldı: \(f.local) adresine bağlan."
+                                }
+                            }
                         } catch {
                             status = error.localizedDescription
                         }
                     }
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(Int(remotePort) == nil)
+                .disabled(!ready)
             }
         }
         .padding(20)
-        .frame(width: 520)
+        .frame(width: 600)
         .task { forwards = await model.forwards(session) }
     }
 }

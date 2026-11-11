@@ -153,6 +153,7 @@ pub fn snippet_save(
                 id: uuid::Uuid::new_v4().to_string(),
                 label,
                 command,
+                team: false,
             }),
         }
         state.save(&data)?;
@@ -326,6 +327,33 @@ pub fn host_set_key(
     }
     state.changed();
     host_views(state)
+}
+
+/// Shares a host or snippet with the team (A22), or takes it back.
+pub fn set_team(state: &Arc<AppState>, kind: String, id: String, team: bool) -> Result<(), String> {
+    {
+        let mut data = state.data.lock().map_err(|_| "busy")?;
+        match kind.as_str() {
+            "host" => {
+                data.hosts
+                    .iter_mut()
+                    .find(|h| h.id == id)
+                    .ok_or("host not found")?
+                    .team = team
+            }
+            "snippet" => {
+                data.snippets
+                    .iter_mut()
+                    .find(|s| s.id == id)
+                    .ok_or("snippet not found")?
+                    .team = team
+            }
+            _ => return Err("kind must be host or snippet".into()),
+        }
+        state.save(&data)?;
+    }
+    state.changed();
+    Ok(())
 }
 
 pub fn identities_list(state: &Arc<AppState>) -> Result<Vec<Identity>, String> {
@@ -674,6 +702,7 @@ mod tests {
             env: Default::default(),
             agent_forwarding: false,
             identity_id: None,
+            team: false,
         }
     }
 
@@ -718,6 +747,7 @@ mod tests {
             id: "s".into(),
             label: "up".into(),
             command: "uptime".into(),
+            team: false,
         });
         src.known_hosts.insert("h:22".into(), "SHA256:x".into());
         let json = serde_json::to_string(&backup_of(&src)).unwrap();

@@ -10,6 +10,7 @@ import type { SecureVersion } from "node:tls";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
+import { attach as attachShare, createShare, endShare, listShares } from "./terminal-share.js";
 import { z } from "zod";
 import type { PoolClient } from "pg";
 import { consumeApproval } from "./approvals.js";
@@ -3728,6 +3729,180 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       await auditControl(principal!, null, "center.pairing_code", "medium", "success", "{}");
       return void json(res, 201, { pairingCode: code, expiresInSeconds: 300 });
     }
+    if (url.pathname === "/api/center/library" && (req.method === "GET" || req.method === "PUT")) {
+      // A20 sync: the envelope is encrypted by the app with a key derived
+      // from the user's sync passphrase; the server only stores it. A write
+      // names the revision it was based on, so a concurrent write from
+      // another computer is answered with 409 and the newer envelope.
+      if (principal!.authKind !== "center") return void json(res, 403, { error: "center_token_required" });
+      if (!principal!.userId) return void json(res, 403, { error: "user_required" });
+      if (req.method === "GET") {
+        const row = await db.query<{ revision: string; envelope: string }>(
+          "select revision,envelope from library_sync where user_id=$1", [principal!.userId],
+        );
+        const r = row.rows[0];
+        return void json(res, 200, { revision: r ? Number(r.revision) : 0, envelope: r?.envelope ?? null });
+      }
+      const body = z.object({
+        baseRevision: z.number().int().min(0),
+        envelope: z.string().min(16).max(1_900_000),
+      }).parse(await readJson(req));
+      try {
+        const parsed = JSON.parse(body.envelope) as { format?: unknown };
+        if (parsed?.format !== "wecommander-sync") return void json(res, 400, { error: "invalid_envelope" });
+      } catch {
+        return void json(res, 400, { error: "invalid_envelope" });
+      }
+      const written = body.baseRevision === 0
+        ? await db.query<{ revision: string }>(
+          `insert into library_sync(user_id,organization_id,revision,envelope) values($1,$2,1,$3)
+           on conflict (user_id) do nothing returning revision`,
+          [principal!.userId, principal!.organizationId, body.envelope],
+        )
+        : await db.query<{ revision: string }>(
+          `update library_sync set envelope=$3,revision=revision+1,updated_at=now(),organization_id=$4
+            where user_id=$1 and revision=$2 returning revision`,
+          [principal!.userId, body.baseRevision, body.envelope, principal!.organizationId],
+        );
+      if (!written.rowCount) {
+        const now = await db.query<{ revision: string; envelope: string }>(
+          "select revision,envelope from library_sync where user_id=$1", [principal!.userId],
+        );
+        const r = now.rows[0];
+        return void json(res, 409, { error: "conflict", revision: r ? Number(r.revision) : 0, envelope: r?.envelope ?? null });
+      }
+      return void json(res, 200, { revision: Number(written.rows[0]!.revision) });
+    }
+    if (url.pathname === "/api/center/shares" || url.pathname.startsWith("/api/center/shares/")) {
+      // A27: shared terminals of this workspace.
+      if (principal!.authKind !== "center") return void json(res, 403, { error: "center_token_required" });
+      if (req.method === "GET" && url.pathname === "/api/center/shares") {
+        return void json(res, 200, { items: listShares(principal!.organizationId) });
+      }
+      if (req.method === "POST" && url.pathname === "/api/center/shares") {
+        if (!requireRole(principal!, "operator", res)) return;
+        const body = z.object({ title: z.string().min(1).max(120) }).parse(await readJson(req));
+        const id = createShare(principal!.organizationId, principal!.centerId!, principal!.email ?? "", body.title);
+        if (!id) return void json(res, 429, { error: "too_many_shares" });
+        await auditControl(principal!, null, "terminal.share", "medium", "success", JSON.stringify({ title: body.title }));
+        return void json(res, 201, { id });
+      }
+      const end = url.pathname.match(/^\/api\/center\/shares\/([0-9a-f-]{36})$/i);
+      if (req.method === "DELETE" && end) {
+        return void json(res, endShare(principal!.organizationId, principal!.centerId!, end[1]!) ? 200 : 404, {});
+      }
+    }
+    if (url.pathname === "/api/center/team" || url.pathname.startsWith("/api/center/team/")) {
+      if (principal!.authKind !== "center") return void json(res, 403, { error: "center_token_required" });
+      // A22 team library. Members see it; operators and above change it.
+      // Membership is checked on every call (removed members lose access at
+      // once; their apps' keys go with the membership).
+      const orgId = principal!.organizationId;
+      const member = await db.query<{ role: string }>(
+        "select role from organization_members where organization_id=$1 and user_id=$2",
+        [orgId, principal!.userId],
+      );
+      if (!member.rowCount) return void json(res, 403, { error: "not_a_member" });
+      await db.query(
+        `delete from team_member_keys k where k.organization_id=$1
+          and not exists(select 1 from organization_members m where m.organization_id=k.organization_id and m.user_id=k.user_id)`,
+        [orgId],
+      );
+      if (req.method === "GET" && url.pathname === "/api/center/team") {
+        const [org, keys, lib, mine] = await Promise.all([
+          db.query<{ name: string }>("select name from organizations where id=$1", [orgId]),
+          db.query<{ center_id: string; email: string; role: string; public_key: string; has_key: boolean; center_name: string }>(
+            `select k.center_id,u.email,m.role,k.public_key,(k.wrapped_key is not null) as has_key,c.name as center_name
+               from team_member_keys k
+               join users u on u.id=k.user_id
+               join organization_members m on m.organization_id=k.organization_id and m.user_id=k.user_id
+               join management_centers c on c.id=k.center_id and c.revoked_at is null
+              where k.organization_id=$1 order by u.email,c.name`,
+            [orgId],
+          ),
+          db.query<{ revision: string; envelope: string }>("select revision,envelope from team_library where organization_id=$1", [orgId]),
+          db.query<{ wrapped_key: string | null }>("select wrapped_key from team_member_keys where center_id=$1", [principal!.centerId]),
+        ]);
+        return void json(res, 200, {
+          organizationName: org.rows[0]?.name ?? null,
+          role: member.rows[0]!.role,
+          myWrappedKey: mine.rows[0]?.wrapped_key ?? null,
+          members: keys.rows.map(k => ({
+            centerId: k.center_id, email: k.email, role: k.role, centerName: k.center_name,
+            publicKey: k.public_key, hasKey: k.has_key,
+          })),
+          revision: lib.rows[0] ? Number(lib.rows[0].revision) : 0,
+          envelope: lib.rows[0]?.envelope ?? null,
+        });
+      }
+      if (req.method === "PUT" && url.pathname === "/api/center/team/key") {
+        // This app's public key; a new key drops the old wrapped team key.
+        const body = z.object({ publicKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/) }).parse(await readJson(req));
+        await db.query(
+          `insert into team_member_keys(center_id,organization_id,user_id,public_key) values($1,$2,$3,$4)
+           on conflict (center_id) do update set public_key=excluded.public_key,
+             wrapped_key=case when team_member_keys.public_key=excluded.public_key then team_member_keys.wrapped_key end,
+             organization_id=excluded.organization_id,user_id=excluded.user_id,updated_at=now()`,
+          [principal!.centerId, orgId, principal!.userId, body.publicKey],
+        );
+        return void json(res, 200, { ok: true });
+      }
+      if (req.method === "PUT" && url.pathname === "/api/center/team/wrapped-key") {
+        // Gives the team key (wrapped for that app's public key) to another
+        // app in this team. Only an app that has the team key may do it,
+        // except for the very first key of a team (its creator wraps it for
+        // itself).
+        if (!requireRole(principal!, "operator", res)) return;
+        const body = z.object({
+          centerId: z.string().uuid(),
+          wrappedKey: z.string().min(40).max(400),
+        }).parse(await readJson(req));
+        const anyKey = await db.query("select 1 from team_member_keys where organization_id=$1 and wrapped_key is not null", [orgId]);
+        const mine = await db.query<{ wrapped_key: string | null }>("select wrapped_key from team_member_keys where center_id=$1", [principal!.centerId]);
+        const bootstrap = !anyKey.rowCount && body.centerId === principal!.centerId;
+        if (!bootstrap && !mine.rows[0]?.wrapped_key) return void json(res, 403, { error: "no_team_key" });
+        const updated = await db.query(
+          "update team_member_keys set wrapped_key=$3,updated_at=now() where center_id=$1 and organization_id=$2",
+          [body.centerId, orgId, body.wrappedKey],
+        );
+        if (!updated.rowCount) return void json(res, 404, { error: "not_found" });
+        await auditControl(principal!, null, "team.key_shared", "medium", "success", JSON.stringify({ centerId: body.centerId }));
+        return void json(res, 200, { ok: true });
+      }
+      if (req.method === "PUT" && url.pathname === "/api/center/team/library") {
+        if (!requireRole(principal!, "operator", res)) return;
+        const body = z.object({
+          baseRevision: z.number().int().min(0),
+          envelope: z.string().min(16).max(1_900_000),
+        }).parse(await readJson(req));
+        try {
+          if ((JSON.parse(body.envelope) as { format?: unknown })?.format !== "wecommander-sync") {
+            return void json(res, 400, { error: "invalid_envelope" });
+          }
+        } catch {
+          return void json(res, 400, { error: "invalid_envelope" });
+        }
+        const written = body.baseRevision === 0
+          ? await db.query<{ revision: string }>(
+            `insert into team_library(organization_id,revision,envelope) values($1,1,$2)
+             on conflict (organization_id) do nothing returning revision`,
+            [orgId, body.envelope],
+          )
+          : await db.query<{ revision: string }>(
+            `update team_library set envelope=$3,revision=revision+1,updated_at=now()
+              where organization_id=$1 and revision=$2 returning revision`,
+            [orgId, body.baseRevision, body.envelope],
+          );
+        if (!written.rowCount) {
+          const now = await db.query<{ revision: string; envelope: string }>(
+            "select revision,envelope from team_library where organization_id=$1", [orgId],
+          );
+          const r = now.rows[0];
+          return void json(res, 409, { error: "conflict", revision: r ? Number(r.revision) : 0, envelope: r?.envelope ?? null });
+        }
+        return void json(res, 200, { revision: Number(written.rows[0]!.revision) });
+      }
+    }
     if (req.method === "POST" && url.pathname === "/api/center/disconnect") {
       if (principal!.authKind !== "center") return void json(res, 403, { error: "center_token_required" });
       await db.query("update management_centers set revoked_at=coalesce(revoked_at,now()) where id=$1", [principal!.centerId]);
@@ -4308,6 +4483,22 @@ const wss = new WebSocketServer({ noServer: true, maxPayload: 2 * 1024 * 1024 })
 server.on("upgrade", async (req, socket, head) => {
   try {
     const url = new URL(req.url || "/", publicBaseUrl);
+    if (url.pathname === "/center/share") {
+      // A27: an app joins a shared terminal (as its host or as a guest).
+      const principal = await authenticateRequest(req.headers.authorization, undefined);
+      const id = url.searchParams.get("id") || "";
+      const role = url.searchParams.get("role");
+      if (!principal || principal.authKind !== "center" || !principal.centerId || !/^[0-9a-f-]{36}$/i.test(id) ||
+          (role !== "host" && role !== "guest")) {
+        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        attachShare(ws, id, role, { organizationId: principal.organizationId, centerId: principal.centerId!, email: principal.email ?? "" });
+      });
+      return;
+    }
     if (url.pathname !== "/agent") {
       socket.destroy();
       return;

@@ -1060,6 +1060,84 @@ assert.equal(centerPairingBody.expiresInSeconds, 300);
 assert.equal((await acceptanceDb.query(
   "select 1 from audit_logs where tool='center.pairing_code'",
 )).rowCount, 1, "center pairing codes are audited");
+// A20: the encrypted host library, with revision checks.
+const envelope = (n) => JSON.stringify({ format: "wecommander-sync", v: 1, salt: "c2FsdA==", nonce: "bm9uY2U=", data: "x".repeat(n) });
+assert.deepEqual(await jsonFetch("/api/center/library", { headers: centerHeaders }), { revision: 0, envelope: null });
+const libFirst = await fetch(base + "/api/center/library", { method: "PUT", headers: centerHeaders, body: JSON.stringify({ baseRevision: 0, envelope: envelope(10) }) });
+assert.equal(libFirst.status, 200);
+assert.equal((await libFirst.json()).revision, 1);
+const libStale = await fetch(base + "/api/center/library", { method: "PUT", headers: centerHeaders, body: JSON.stringify({ baseRevision: 0, envelope: envelope(20) }) });
+assert.equal(libStale.status, 409, "a write based on an old revision is refused");
+const libStaleBody = await libStale.json();
+assert.equal(libStaleBody.revision, 1);
+assert.equal(libStaleBody.envelope, envelope(10), "the conflict answer carries the newer library");
+const libNext = await fetch(base + "/api/center/library", { method: "PUT", headers: centerHeaders, body: JSON.stringify({ baseRevision: 1, envelope: envelope(30) }) });
+assert.equal((await libNext.json()).revision, 2);
+assert.equal((await jsonFetch("/api/center/library", { headers: centerHeaders })).envelope, envelope(30));
+const libBad = await fetch(base + "/api/center/library", { method: "PUT", headers: centerHeaders, body: JSON.stringify({ baseRevision: 2, envelope: "plain text library, not encrypted" }) });
+assert.equal(libBad.status, 400, "only encrypted envelopes are stored");
+await libBad.text();
+const libBrowser = await fetch(base + "/api/center/library", { headers: browserCenterHeaders });
+assert.equal(libBrowser.status, 403, "only the app (Center token) reads the library");
+await libBrowser.text();
+// A22: the team library and its key exchange.
+const team0 = await jsonFetch("/api/center/team", { headers: centerHeaders });
+assert.deepEqual([team0.members.length, team0.myWrappedKey, team0.revision, team0.envelope], [0, null, 0, null]);
+const teamPub = "A".repeat(43) + "=";
+const putTeam = (path, body) => fetch(base + path, { method: "PUT", headers: centerHeaders, body: JSON.stringify(body) });
+assert.equal((await putTeam("/api/center/team/key", { publicKey: "not a key" })).status, 400);
+assert.equal((await putTeam("/api/center/team/key", { publicKey: teamPub })).status, 200);
+const wrapped = "w".repeat(80);
+assert.equal((await putTeam("/api/center/team/wrapped-key", { centerId: centerRedeemed.centerId, wrappedKey: wrapped })).status, 200,
+  "the first app of a team keeps its own new team key");
+const team1 = await jsonFetch("/api/center/team", { headers: centerHeaders });
+assert.equal(team1.myWrappedKey, wrapped);
+assert.equal(team1.members.length, 1);
+assert.equal(team1.members[0].hasKey, true);
+assert.equal((await putTeam("/api/center/team/library", { baseRevision: 0, envelope: envelope(5) })).status, 200);
+assert.equal((await putTeam("/api/center/team/library", { baseRevision: 0, envelope: envelope(6) })).status, 409);
+assert.equal((await jsonFetch("/api/center/team", { headers: centerHeaders })).revision, 1);
+// Re-registering the same public key keeps the team key; a new one drops it.
+await putTeam("/api/center/team/key", { publicKey: teamPub });
+assert.equal((await jsonFetch("/api/center/team", { headers: centerHeaders })).myWrappedKey, wrapped);
+await putTeam("/api/center/team/key", { publicKey: "B".repeat(43) + "=" });
+assert.equal((await jsonFetch("/api/center/team", { headers: centerHeaders })).myWrappedKey, null);
+assert.equal((await fetch(base + "/api/center/team", { headers: browserCenterHeaders })).status, 403);
+// A27: a shared terminal relayed between a host app and a guest app.
+const shareCreated = await fetch(base + "/api/center/shares", { method: "POST", headers: centerHeaders, body: JSON.stringify({ title: "web-1" }) });
+assert.equal(shareCreated.status, 201);
+const shareId = (await shareCreated.json()).id;
+assert.deepEqual((await jsonFetch("/api/center/shares", { headers: centerHeaders })).items, [], "a share without a connected host is not listed");
+const wsBase = base.replace(/^http/, "ws");
+const openWs = (role) => new Promise((resolve, reject) => {
+  const ws = new WebSocket(`${wsBase}/center/share?id=${shareId}&role=${role}`, { headers: { Authorization: centerHeaders.Authorization } });
+  ws.once("open", () => resolve(ws));
+  ws.once("error", reject);
+});
+const nextFrame = (ws) => new Promise((resolve) => ws.once("message", (m) => resolve(JSON.parse(m.toString()))));
+const hostWs = await openWs("host");
+assert.equal((await jsonFetch("/api/center/shares", { headers: centerHeaders })).items[0].title, "web-1");
+const hostJoin = nextFrame(hostWs);
+const guestWs = await openWs("guest");
+assert.equal((await hostJoin).t, "join");
+const guestData = nextFrame(guestWs);
+hostWs.send(JSON.stringify({ t: "data", d: "sealed-output" }));
+assert.deepEqual(await guestData, { t: "data", d: "sealed-output" });
+const hostInput = nextFrame(hostWs);
+guestWs.send(JSON.stringify({ t: "input", d: "sealed-keys" }));
+const input = await hostInput;
+assert.equal(input.t, "input");
+assert.equal(input.d, "sealed-keys");
+const guestClosed = new Promise((resolve) => guestWs.once("close", (code) => resolve(code)));
+assert.equal((await fetch(base + "/api/center/shares/" + shareId, { method: "DELETE", headers: centerHeaders })).status, 200);
+assert.equal(await guestClosed, 4000, "guests leave when the host ends the share");
+hostWs.close();
+const badShare = await new Promise((resolve) => {
+  const ws = new WebSocket(`${wsBase}/center/share?id=${shareId}&role=guest`);
+  ws.once("error", () => resolve("refused"));
+  ws.once("open", () => resolve("opened"));
+});
+assert.equal(badShare, "refused", "a share socket needs an app token");
 const browserPairingCode = await fetch(base + "/api/center/pairing-code", { method: "POST", headers: browserCenterHeaders, body: "{}" });
 assert.equal(browserPairingCode.status, 403, "only a Center token gets a Center pairing code");
 await browserPairingCode.text();

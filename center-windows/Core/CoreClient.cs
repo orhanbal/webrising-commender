@@ -183,6 +183,14 @@ public static class CoreText
         if (text.Contains("made by a newer version")) return "Bu yedek daha yeni bir sürümle alınmış; önce uygulamayı güncelle.";
         if (text.Contains("backup file is too large")) return "Yedek dosyası çok büyük.";
         if (text == "terminal closed") return "Terminal kapalı.";
+        if (text == "wrong sync passphrase") return "Eşitleme parolası yanlış (diğer bilgisayarda belirlediğin parolayı gir).";
+        if (text.Contains("sync passphrase needs at least 8")) return "Eşitleme parolası en az 8 karakter olmalı.";
+        if (text.Contains("sync passphrase was changed on another computer")) return "Eşitleme parolası başka bir bilgisayarda değiştirildi; yeni parolayı gir.";
+        if (text.Contains("sync is not set up")) return "Bu bilgisayarda eşitleme açık değil.";
+        if (text.Contains("synced by a newer version")) return "Kütüphane daha yeni bir sürümle eşitlenmiş; önce uygulamayı güncelle.";
+        if (text.StartsWith("sync conflict")) return "Eşitleme çakıştı; birazdan yeniden denenecek.";
+        if (text.Contains("does not have the team key yet")) return "Bu uygulamada ekip anahtarı henüz yok; ekipten biri uygulamasını açınca gelir.";
+        if (text.Contains("sealed for another app")) return "Ekip anahtarı bu uygulama için değil; ekipten birinin uygulamasını açmasını bekle.";
         if (text.Contains("identity needs a valid user name")) return "Kimlik için geçerli bir kullanıcı adı gir.";
         if (text.Contains("choose a key for this identity")) return "Bu kimlik için bir anahtar seç (Anahtarlar sayfasından oluşturabilirsin).";
         return text;
@@ -194,7 +202,7 @@ public static class CoreText
 public sealed record CoreHost(string Id, string Label, string Target, string AuthKind, bool SavedSecret,
     string? KeyPath, string? JumpId, string? TrustedKey, string? Group = null, string User = "", string Host = "", int Port = 22,
     string? KeyId = null, string? StartupCommand = null, Dictionary<string, string>? Env = null,
-    bool AgentForwarding = false, string? IdentityId = null)
+    bool AgentForwarding = false, string? IdentityId = null, bool Team = false)
 {
     /// <summary>Hosts without a group are listed under this name.</summary>
     public const string NoGroup = "Gruplanmamış";
@@ -237,7 +245,7 @@ public sealed record ImportResult(int Added, int Skipped, List<CoreHost> Hosts);
 
 public sealed record KnownHost(string Target, string Fingerprint, List<string> Labels);
 
-public sealed record Snippet(string Id, string Label, string Command);
+public sealed record Snippet(string Id, string Label, string Command, bool Team = false);
 
 /// <summary>A key made or imported in the app; the private half is in the OS keyring.</summary>
 public sealed record KeyMeta(string Id, string Label, string Algorithm, string Fingerprint, string PublicKey, long Created);

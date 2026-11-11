@@ -166,6 +166,11 @@ public struct CoreHost: Decodable, Identifiable, Equatable, Hashable {
     public let host: String?
     public let port: Int?
     public let keyId: String?
+    public let startupCommand: String?
+    public let env: [String: String]?
+    public let agentForwarding: Bool?
+    public let identityId: String?
+    public let team: Bool?
 
     /// Hosts without a group are listed under this name.
     public static let noGroup = "Gruplanmamış"
@@ -196,6 +201,7 @@ public struct Snippet: Decodable, Identifiable, Equatable, Hashable {
     public let id: String
     public let label: String
     public let command: String
+    public let team: Bool?
 }
 
 public struct HistoryEntry: Decodable, Identifiable, Equatable, Hashable {
@@ -238,6 +244,28 @@ public struct RemoteListing: Decodable, Equatable {
 public struct ForwardInfo: Decodable, Equatable, Hashable {
     public let local: String
     public let remote: String
+    /// What `forward.stop` takes (older cores: the local address).
+    public let id: String?
+    /// local (ssh -L), remote (ssh -R) or dynamic (ssh -D, SOCKS5).
+    public let kind: String?
+    public var stopId: String { id ?? local }
+}
+
+/// A user name with a key or password, shared by many hosts.
+public struct Identity: Decodable, Identifiable, Equatable, Hashable {
+    public let id: String
+    public let label: String
+    public let user: String
+    public let authKind: String
+    public let keyId: String?
+}
+
+/// Counts from a backup import.
+public struct ImportSummary: Decodable, Equatable {
+    public let hosts: Int
+    public let snippets: Int
+    public let knownHosts: Int
+    public let skipped: Int
 }
 
 public struct SavedTunnel: Decodable, Identifiable, Equatable, Hashable {
@@ -247,6 +275,7 @@ public struct SavedTunnel: Decodable, Identifiable, Equatable, Hashable {
     public let local: String
     public let remote: String
     public let running: Bool
+    public let kind: String?
     public var id: String { "\(hostId)#\(index)" }
 }
 
@@ -268,6 +297,23 @@ public enum CoreText {
         if text.hasPrefix("jump host ") { return "Atlama sunucusu: " + text.dropFirst("jump host ".count) }
         if text.hasPrefix("cannot listen on") { return "Port dinlenemiyor: " + text.dropFirst("cannot listen on".count) }
         if text.hasPrefix("connection failed: ") { return "Bağlanılamadı: " + text.dropFirst("connection failed: ".count) }
+        if text.hasPrefix("ssh error: server refused the remote forward") { return "Sunucu uzak tüneli reddetti (sshd_config içinde AllowTcpForwarding açık olmalı; port kullanımda olabilir)." }
+        if text.contains("a saved tunnel needs a fixed local port") { return "Kaydedilen tünel için sabit bir yerel port gir." }
+        if text.contains("a saved tunnel needs a fixed server port") { return "Kaydedilen uzak tünel için sabit bir sunucu portu gir." }
+        if text.contains("the port on this computer is required") { return "Bu Mac'teki servis portunu gir." }
+        if text.contains("remote host and port are required") { return "Uzak adres ve port gerekli." }
+        if text.contains("is already used by a saved tunnel") { return "Bu yerel port başka bir kayıtlı tünelde kullanılıyor." }
+        if text.hasPrefix("invalid variable name: ") { return "Geçersiz ortam değişkeni adı: " + text.dropFirst("invalid variable name: ".count) }
+        if text.contains("not a WECOMMANDER backup file") { return "Bu dosya bir WECOMMANDER yedeği değil." }
+        if text.contains("made by a newer version") { return "Bu yedek daha yeni bir sürümle alınmış; önce uygulamayı güncelle." }
+        if text.contains("identity needs a valid user name") { return "Kimlik için geçerli bir kullanıcı adı gir." }
+        if text.contains("choose a key for this identity") { return "Bu kimlik için bir anahtar seç (Anahtarlar sayfasından oluşturabilirsin)." }
+        if text == "terminal closed" { return "Terminal kapalı." }
+        if text.contains("does not have the team key yet") { return "Bu uygulamada ekip anahtarı henüz yok; ekipten biri uygulamasını açınca gelir." }
+        if text == "wrong sync passphrase" { return "Eşitleme parolası yanlış (diğer bilgisayarda belirlediğin parolayı gir)." }
+        if text.contains("sync passphrase needs at least 8") { return "Eşitleme parolası en az 8 karakter olmalı." }
+        if text.contains("sync passphrase was changed on another computer") { return "Eşitleme parolası başka bir bilgisayarda değiştirildi; yeni parolayı gir." }
+        if text.contains("synced by a newer version") { return "Kütüphane daha yeni bir sürümle eşitlenmiş; önce uygulamayı güncelle." }
         return text
     }
 }

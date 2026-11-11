@@ -62,8 +62,10 @@ public sealed class ServersController : IDisposable
                 var sid = (string?)data?["sessionId"];
                 if (sid is not null && _tabs.TryGetValue(sid, out var t))
                 {
-                    var json = JsonSerializer.Serialize(new { type = "output", data = (string?)data?["data"] ?? "" });
+                    var b64 = (string?)data?["data"] ?? "";
+                    var json = JsonSerializer.Serialize(new { type = "output", data = b64 });
                     t.Ui.TryEnqueue(() => t.Tab.Post(json));
+                    if (t.Tab.Hosting is { } share) _ = share.SendOutputAsync(b64);
                 }
                 break;
             }
@@ -147,18 +149,21 @@ public sealed class ServersController : IDisposable
 
     public void Write(TerminalTab tab, string data)
     {
+        if (tab.Guest is { } guest) { _ = guest.SendInputAsync(data); return; }
         if (tab.Closed) return;
         _ = Core.CallAsync("terminal.write", new { sessionId = tab.SessionId, data }).ContinueWith(_ => { });
     }
 
     public void Resize(TerminalTab tab, int cols, int rows)
     {
-        if (tab.Closed) return;
+        if (tab.Closed || tab.Guest is not null) return;
         _ = Core.CallAsync("terminal.resize", new { sessionId = tab.SessionId, cols, rows }).ContinueWith(_ => { });
     }
 
     public void Close(TerminalTab tab)
     {
+        if (tab.Guest is { } guest) { tab.Guest = null; tab.Closed = true; _ = guest.DisposeAsync().AsTask(); return; }
+        if (tab.Hosting is not null) _ = StopSharing(tab);
         _tabs.TryRemove(tab.SessionId, out _);
         if (!tab.Closed) _ = Core.CallAsync("terminal.close", new { sessionId = tab.SessionId }).ContinueWith(_ => { });
         tab.Closed = true;
@@ -197,6 +202,123 @@ public sealed class ServersController : IDisposable
             Changed?.Invoke();
         }
         return list;
+    }
+
+    // ---- A20 sync ----
+
+    public async Task<SyncStatus> SyncStatus()
+    {
+        try { return await Core.CallAsync<SyncStatus>("sync.status"); }
+        catch (CoreException) { return new SyncStatus(false, false); }
+    }
+
+    /// <summary>Turns sync on with the passphrase (checked against the server's library when there is one).</summary>
+    public async Task SetupSync(GatewayClient gateway, string token, string passphrase)
+    {
+        var remote = await gateway.LibraryAsync(token);
+        await Core.CallAsync<SyncStatus>("sync.setup", new { passphrase, remote = remote.Envelope });
+        await SyncLibrary(gateway, token);
+    }
+
+    public Task ForgetSync() => Core.CallAsync("sync.forget");
+
+    private readonly SemaphoreSlim _syncGate = new(1, 1);
+    public DateTime? LastLibrarySync { get; private set; }
+
+    /// <summary>One sync round; does nothing when sync is off on this computer.</summary>
+    public async Task SyncLibrary(GatewayClient gateway, string token)
+    {
+        if (!await _syncGate.WaitAsync(0)) return;
+        try
+        {
+            if (!(await SyncStatus()).Configured) return;
+            var changed = await LibrarySync.RunAsync(Core, () => gateway.LibraryAsync(token), (rev, env) => gateway.PutLibraryAsync(token, rev, env));
+            LastLibrarySync = DateTime.Now;
+            if (changed) await Reload();
+        }
+        finally { _syncGate.Release(); }
+    }
+
+    // ---- A27 shared terminals ----
+
+    /// <summary>Shares this terminal with the team; guests see it live (and type when allowed).</summary>
+    public async Task StartSharing(TerminalTab tab, bool allowInput)
+    {
+        if (App.Current.Credentials() is not { } c) throw new CoreException("Önce oturum aç.");
+        if (!(await Core.CallAsync<TeamKeyStatus>("team.status")).HasKey)
+            throw new CoreException("Paylaşmak için ekip anahtarı gerekli: Ayarlar → Ekip'te eşitlemenin tamamlanmasını bekle.");
+        var id = await c.Gateway.CreateShareAsync(c.Token, tab.Host.Label);
+        var share = await TerminalShare.ConnectAsync(Core, c.Gateway.ShareSocketUri(id, "host"), c.Token, id, host: true);
+        share.AllowInput = allowInput;
+        share.Input += keys => Write(tab, keys);
+        tab.Hosting = share;
+    }
+
+    public async Task StopSharing(TerminalTab tab)
+    {
+        if (tab.Hosting is not { } share) return;
+        tab.Hosting = null;
+        if (App.Current.Credentials() is { } c) await c.Gateway.EndShareAsync(c.Token, share.Id);
+        await share.DisposeAsync();
+    }
+
+    public async Task<List<ShareInfo>> Shares() =>
+        App.Current.Credentials() is { } c ? await c.Gateway.SharesAsync(c.Token) : [];
+
+    public async Task<TerminalShare> JoinShare(ShareInfo info)
+    {
+        if (App.Current.Credentials() is not { } c) throw new CoreException("Önce oturum aç.");
+        return await TerminalShare.ConnectAsync(Core, c.Gateway.ShareSocketUri(info.Id, "guest"), c.Token, info.Id, host: false);
+    }
+
+    // ---- A22 team ----
+
+    /// <summary>Last team round, shown in Settings.</summary>
+    public string? TeamName { get; private set; }
+    public string? TeamRole { get; private set; }
+    public List<TeamMember> TeamMembers { get; private set; } = [];
+    public TeamSyncState? TeamState { get; private set; }
+
+    private sealed class TeamServer(GatewayClient g, string token) : ITeamServer
+    {
+        public Task<TeamState> GetAsync() => g.TeamAsync(token);
+        public Task PutKeyAsync(string publicKey) => g.PutTeamKeyAsync(token, publicKey);
+        public Task PutWrappedKeyAsync(string centerId, string wrappedKey) => g.PutWrappedKeyAsync(token, centerId, wrappedKey);
+        public Task<(bool Accepted, LibraryState State)> PutLibraryAsync(long baseRevision, string envelope) => g.PutTeamLibraryAsync(token, baseRevision, envelope);
+    }
+
+    private readonly SemaphoreSlim _teamGate = new(1, 1);
+
+    /// <summary>One team round (key exchange + shared library).</summary>
+    public async Task SyncTeam(GatewayClient gateway, string token)
+    {
+        if (!await _teamGate.WaitAsync(0)) return;
+        try
+        {
+            var server = new TeamServer(gateway, token);
+            try
+            {
+                var (state, changed) = await TeamSync.RunAsync(Core, server);
+                TeamState = state;
+                var info = await gateway.TeamAsync(token);
+                (TeamName, TeamRole, TeamMembers) = (info.OrganizationName, info.Role, info.Members);
+                if (changed) await Reload();
+            }
+            catch (GatewayException e) when (e.Code == "not_a_member")
+            {
+                await Core.CallAsync("team.leave");
+                (TeamName, TeamRole, TeamMembers, TeamState) = (null, null, [], null);
+                await Reload();
+            }
+        }
+        finally { _teamGate.Release(); }
+    }
+
+    /// <summary>Shares a host or snippet with the team (or takes it back).</summary>
+    public async Task SetTeam(string kind, string id, bool team)
+    {
+        Hosts = await Core.CallAsync<List<CoreHost>>("library.setTeam", new { kind, id, team });
+        Changed?.Invoke();
     }
 
     public Task<List<Identity>> Identities() => Core.CallAsync<List<Identity>>("identities.list");

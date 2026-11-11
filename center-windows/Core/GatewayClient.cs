@@ -120,4 +120,86 @@ public sealed class GatewayClient(HttpClient http, string baseUrl)
 
     public async Task DisconnectAsync(string token, CancellationToken ct = default) =>
         await SendAsync(HttpMethod.Post, "/api/center/disconnect", token, new { }, ct).ConfigureAwait(false);
+
+    /// <summary>A20: the encrypted host library and its revision (0 = nothing synced yet).</summary>
+    public async Task<LibraryState> LibraryAsync(string token, CancellationToken ct = default)
+    {
+        var node = await SendAsync(HttpMethod.Get, "/api/center/library", token, null, ct).ConfigureAwait(false);
+        return new LibraryState(node?["revision"]?.GetValue<long>() ?? 0, node?["envelope"]?.GetValueKind() == JsonValueKind.String ? node["envelope"]!.GetValue<string>() : null);
+    }
+
+    /// <summary>
+    /// Uploads the library written on top of <paramref name="baseRevision"/>. When another
+    /// computer wrote first the server answers 409 with its newer library: returned as
+    /// Accepted = false with that state, to merge and try again.
+    /// </summary>
+    public async Task<(bool Accepted, LibraryState State)> PutLibraryAsync(string token, long baseRevision, string envelope, CancellationToken ct = default)
+    {
+        try
+        {
+            var node = await SendAsync(HttpMethod.Put, "/api/center/library", token, new { baseRevision, envelope }, ct).ConfigureAwait(false);
+            return (true, new LibraryState(node?["revision"]?.GetValue<long>() ?? baseRevision + 1, envelope));
+        }
+        catch (GatewayException e) when (e.Status == 409)
+        {
+            return (false, await LibraryAsync(token, ct).ConfigureAwait(false));
+        }
+    }
+
+    public async Task<TeamState> TeamAsync(string token, CancellationToken ct = default) =>
+        Read<TeamState>(await SendAsync(HttpMethod.Get, "/api/center/team", token, null, ct).ConfigureAwait(false));
+
+    public async Task PutTeamKeyAsync(string token, string publicKey, CancellationToken ct = default) =>
+        await SendAsync(HttpMethod.Put, "/api/center/team/key", token, new { publicKey }, ct).ConfigureAwait(false);
+
+    public async Task PutWrappedKeyAsync(string token, string centerId, string wrappedKey, CancellationToken ct = default) =>
+        await SendAsync(HttpMethod.Put, "/api/center/team/wrapped-key", token, new { centerId, wrappedKey }, ct).ConfigureAwait(false);
+
+    public async Task<(bool Accepted, LibraryState State)> PutTeamLibraryAsync(string token, long baseRevision, string envelope, CancellationToken ct = default)
+    {
+        try
+        {
+            var node = await SendAsync(HttpMethod.Put, "/api/center/team/library", token, new { baseRevision, envelope }, ct).ConfigureAwait(false);
+            return (true, new LibraryState(node?["revision"]?.GetValue<long>() ?? baseRevision + 1, envelope));
+        }
+        catch (GatewayException e) when (e.Status == 409)
+        {
+            var team = await TeamAsync(token, ct).ConfigureAwait(false);
+            return (false, new LibraryState(team.Revision, team.Envelope));
+        }
+    }
+
+    // ---- A27 shared terminals ----
+
+    public Task<List<ShareInfo>> SharesAsync(string token, CancellationToken ct = default) =>
+        ItemsAsync<ShareInfo>("/api/center/shares", token, ct);
+
+    public async Task<string> CreateShareAsync(string token, string title, CancellationToken ct = default) =>
+        (await SendAsync(HttpMethod.Post, "/api/center/shares", token, new { title }, ct).ConfigureAwait(false))?["id"]?.GetValue<string>()
+        ?? throw new GatewayException(GatewayErrorKind.Network, 0, "bad_response", "Sunucudan beklenmeyen yanıt.");
+
+    public async Task EndShareAsync(string token, string id, CancellationToken ct = default)
+    {
+        try { await SendAsync(HttpMethod.Delete, "/api/center/shares/" + id, token, null, ct).ConfigureAwait(false); }
+        catch (GatewayException e) when (e.Status == 404) { }
+    }
+
+    /// <summary>The relay socket of a shared terminal.</summary>
+    public Uri ShareSocketUri(string id, string role) =>
+        new((_base.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ? "wss://" + _base[8..] : "ws://" + _base.Replace("http://", "")) +
+            $"/center/share?id={Uri.EscapeDataString(id)}&role={role}");
+}
+
+public sealed record LibraryState(long Revision, string? Envelope);
+
+/// <summary>A27: a shared terminal of the workspace.</summary>
+public sealed record ShareInfo(string Id, string Title, string HostEmail, int Guests, string CreatedAt);
+
+/// <summary>A22: one app (Management Center) of a team member and whether it has the team key.</summary>
+public sealed record TeamMember(string CenterId, string Email, string Role, string CenterName, string PublicKey, bool HasKey);
+
+/// <summary>A22: the team as this app sees it.</summary>
+public sealed record TeamState(string? OrganizationName, string Role, string? MyWrappedKey, List<TeamMember> Members, long Revision, string? Envelope)
+{
+    public bool CanEdit => Role is "operator" or "admin" or "owner";
 }

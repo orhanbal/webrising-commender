@@ -39,6 +39,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         model.showPanel = { [weak self] in self?.showPanel() }
         model.start()
         servers.start()
+        servers.credentials = { [weak self] in
+            guard let self, let token = self.model.token else { return nil }
+            return (self.model.gateway, token)
+        }
+        servers.startLibrarySync()
 
         DistributedNotificationCenter.default().addObserver(
             forName: Self.showPanelNotification, object: nil, queue: .main) { [weak self] _ in

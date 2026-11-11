@@ -48,6 +48,14 @@ final class ServersModel: ObservableObject {
     @Published private(set) var transfers: [String: (label: String, done: UInt64, total: UInt64)] = [:]
     @Published private(set) var vaultLabel = ""
     @Published private(set) var coreError: String?
+    /// Split view: a terminal and the ones shown next to it.
+    @Published var splits: [String: [String]] = [:]
+    /// Split groups laid out one above the other (else side by side).
+    @Published var splitVertical: Set<String> = []
+    /// Split groups where typing goes to every terminal.
+    @Published var broadcast: Set<String> = []
+    /// Set while connecting a host for a split: it joins this terminal.
+    private var splitTarget: (primary: String, vertical: Bool)?
 
     var onChange: (() -> Void)?
     private var core: CoreClient?
@@ -76,6 +84,27 @@ final class ServersModel: ObservableObject {
 
     func stop() { core?.stop() }
 
+    private var syncTimer: Timer?
+    private var soonSync: Task<Void, Never>?
+
+    /// A change here goes to the other computers a few seconds later.
+    func scheduleLibrarySync() {
+        soonSync?.cancel()
+        soonSync = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            if !Task.isCancelled { await self?.syncAll() }
+        }
+    }
+
+    /// Every 5 minutes, plus right away.
+    func startLibrarySync() {
+        guard syncTimer == nil else { return }
+        syncTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+            Task { @MainActor in await self?.syncAll() }
+        }
+        Task { await syncAll() }
+    }
+
     private func event(_ name: String, _ data: Any?) {
         let object = data as? [String: Any] ?? [:]
         switch name {
@@ -86,6 +115,7 @@ final class ServersModel: ObservableObject {
                   let b64 = object["data"] as? String,
                   let bytes = Data(base64Encoded: b64) else { return }
             sessions.first { $0.id == sid }?.receive([UInt8](bytes))
+            hosting[sid]?.sendOutput(b64)
         case "terminal-exit":
             guard let sid = object["sessionId"] as? String, let s = sessions.first(where: { $0.id == sid }) else { return }
             s.closed = true
@@ -100,6 +130,7 @@ final class ServersModel: ObservableObject {
             transfers[id] = t
         case "changed", "tunnels-changed":
             Task { await reload() }
+            scheduleLibrarySync()
         default:
             break
         }
@@ -177,7 +208,14 @@ final class ServersModel: ObservableObject {
             if let sid = result.sessionId {
                 let session = TerminalSession(id: sid, host: host)
                 sessions.append(session)
-                selection = sid
+                if let target = splitTarget, sessions.contains(where: { $0.id == target.primary }) {
+                    splits[target.primary, default: []].append(sid)
+                    if target.vertical { splitVertical.insert(target.primary) } else { splitVertical.remove(target.primary) }
+                    selection = target.primary
+                } else {
+                    selection = sid
+                }
+                splitTarget = nil
             }
             await reload()
         } catch {
@@ -194,21 +232,64 @@ final class ServersModel: ObservableObject {
     // MARK: terminal
 
     func write(_ session: TerminalSession, _ bytes: ArraySlice<UInt8>) {
-        guard !session.closed, let core else { return }
+        if let guest = watching[session.id] {
+            guest.sendInput(String(decoding: bytes, as: UTF8.self))
+            return
+        }
+        let primary = primaryId(of: session.id)
+        let targets = broadcast.contains(primary) ? group(primary) : [session]
         let text = String(decoding: bytes, as: UTF8.self)
-        Task { try? await core.call("terminal.write", ["sessionId": session.id, "data": text]) }
+        for t in targets where !t.closed {
+            guard let core else { return }
+            Task { try? await core.call("terminal.write", ["sessionId": t.id, "data": text]) }
+        }
+    }
+
+    // MARK: split view
+
+    /// The terminal a split pane belongs to (itself when it is not a pane).
+    func primaryId(of id: String) -> String {
+        splits.first { $0.value.contains(id) }?.key ?? id
+    }
+
+    /// A terminal with the panes shown next to it, in order.
+    func group(_ primary: String) -> [TerminalSession] {
+        let ids = [primary] + (splits[primary] ?? [])
+        return ids.compactMap { id in sessions.first { $0.id == id } }
+    }
+
+    /// Opens `host` in a new terminal next to `primary`.
+    func split(_ primary: String, vertical: Bool, host: CoreHost) {
+        guard group(primary).count < 4 else { return }
+        splitTarget = (primary, vertical)
+        open(host)
     }
 
     func resize(_ session: TerminalSession, cols: Int, rows: Int) {
-        guard !session.closed, let core else { return }
+        guard !session.closed, watching[session.id] == nil, let core else { return }
         Task { try? await core.call("terminal.resize", ["sessionId": session.id, "cols": cols, "rows": rows]) }
     }
 
     func close(_ session: TerminalSession) {
+        if let guest = watching.removeValue(forKey: session.id) {
+            guest.close()
+            session.closed = true
+        }
+        if hosting[session.id] != nil { stopSharing(session) }
         if !session.closed, let core {
             Task { try? await core.call("terminal.close", ["sessionId": session.id]) }
         }
         sessions.removeAll { $0.id == session.id }
+        // A pane leaves its group; a group whose main terminal closes keeps
+        // its next pane as the main one.
+        for (key, panes) in splits { splits[key] = panes.filter { $0 != session.id } }
+        if let panes = splits.removeValue(forKey: session.id), let next = panes.first {
+            splits[next] = Array(panes.dropFirst())
+            if splitVertical.remove(session.id) != nil { splitVertical.insert(next) }
+            if broadcast.remove(session.id) != nil { broadcast.insert(next) }
+            if selection == session.id { selection = next }
+        }
+        splits = splits.filter { !$0.value.isEmpty }
         if selection == session.id { selection = sessions.last?.id }
     }
 
@@ -246,15 +327,27 @@ final class ServersModel: ObservableObject {
         return (try? await core.call("forward.list", ["sessionId": session.id], as: [ForwardInfo].self)) ?? []
     }
 
-    func startForward(_ session: TerminalSession, localPort: Int, remoteHost: String, remotePort: Int, save: Bool) async throws -> [ForwardInfo] {
+    /// `kind`: local (ssh -L), remote (ssh -R) or dynamic (ssh -D, SOCKS5).
+    func startForward(_ session: TerminalSession, kind: String = "local", localPort: Int, localHost: String? = nil,
+                      remoteHost: String, remotePort: Int, save: Bool) async throws -> [ForwardInfo] {
         guard let core else { throw CoreClient.Failure.stopped }
-        let list = try await core.call("forward.start", [
-            "sessionId": session.id, "localPort": localPort, "remoteHost": remoteHost, "remotePort": remotePort,
-        ], as: [ForwardInfo].self)
-        if save, let opened = list.last, let port = Int(opened.local.split(separator: ":").last ?? "") {
-            savedTunnels = try await core.call("tunnels.save", [
-                "hostId": session.host.id, "localPort": port, "remoteHost": remoteHost, "remotePort": remotePort,
-            ], as: [SavedTunnel].self)
+        var params: [String: Any] = [
+            "sessionId": session.id, "kind": kind, "localPort": localPort, "remoteHost": remoteHost, "remotePort": remotePort,
+        ]
+        if let localHost { params["localHost"] = localHost }
+        let list = try await core.call("forward.start", params, as: [ForwardInfo].self)
+        if save, let opened = list.last {
+            var local = localPort
+            var remote = remotePort
+            // A port the system picked is saved as that port.
+            if kind != "remote", local == 0, let p = Int(opened.local.split(separator: ":").last ?? "") { local = p }
+            if kind == "remote", remote == 0,
+               let p = Int(opened.local.split(separator: " ").first?.split(separator: ":").last ?? "") { remote = p }
+            var saveParams: [String: Any] = [
+                "hostId": session.host.id, "kind": kind, "localPort": local, "remoteHost": remoteHost, "remotePort": remote,
+            ]
+            if let localHost { saveParams["localHost"] = localHost }
+            savedTunnels = try await core.call("tunnels.save", saveParams, as: [SavedTunnel].self)
         }
         return list
     }
@@ -370,5 +463,285 @@ final class ServersModel: ObservableObject {
         if let keyId { params["keyId"] = keyId }
         hosts = try await core.call("hosts.setKey", params, as: [CoreHost].self)
         onChange?()
+    }
+
+    // MARK: identities, terminal options, backup
+
+    func identities() async -> [Identity] {
+        guard let core else { return [] }
+        return (try? await core.call("identities.list", as: [Identity].self)) ?? []
+    }
+
+    func saveIdentity(id: String?, label: String, user: String, authKind: String, keyId: String?, password: String?) async throws -> [Identity] {
+        guard let core else { throw CoreClient.Failure.stopped }
+        var params: [String: Any] = ["label": label, "user": user, "authKind": authKind]
+        if let id { params["id"] = id }
+        if let keyId { params["keyId"] = keyId }
+        if let password, !password.isEmpty { params["password"] = password }
+        let list = try await core.call("identities.save", params, as: [Identity].self)
+        await reload()
+        return list
+    }
+
+    func deleteIdentity(_ identity: Identity) async -> [Identity] {
+        guard let core else { return [] }
+        let list = (try? await core.call("identities.delete", ["id": identity.id], as: [Identity].self)) ?? []
+        await reload()
+        return list
+    }
+
+    func setIdentity(_ host: CoreHost, identityId: String?) async throws {
+        guard let core else { throw CoreClient.Failure.stopped }
+        var params: [String: Any] = ["id": host.id]
+        if let identityId { params["identityId"] = identityId }
+        hosts = try await core.call("hosts.setIdentity", params, as: [CoreHost].self)
+        onChange?()
+    }
+
+    func setOptions(_ host: CoreHost, startupCommand: String?, env: [String: String], agentForwarding: Bool) async throws {
+        guard let core else { throw CoreClient.Failure.stopped }
+        var params: [String: Any] = ["id": host.id, "env": env, "agentForwarding": agentForwarding]
+        if let startupCommand, !startupCommand.isEmpty { params["startupCommand"] = startupCommand }
+        hosts = try await core.call("hosts.setOptions", params, as: [CoreHost].self)
+        onChange?()
+    }
+
+    /// The library as JSON (hosts, groups, tunnels, snippets, identities, trusted keys; no secrets).
+    func exportLibrary() async throws -> String {
+        guard let core else { throw CoreClient.Failure.stopped }
+        let reply = try await core.call("library.export") as? [String: Any]
+        return reply?["json"] as? String ?? "{}"
+    }
+
+    func importLibrary(_ json: String) async throws -> ImportSummary {
+        guard let core else { throw CoreClient.Failure.stopped }
+        let summary = try await core.call("library.import", ["json": json], as: ImportSummary.self)
+        await reload()
+        return summary
+    }
+
+    // MARK: A20 sync between the user's computers
+
+    /// The gateway and the signed-in token, set by the app delegate.
+    var credentials: (() -> (GatewayClient, String)?)?
+    @Published private(set) var syncConfigured = false
+    @Published private(set) var syncPersistent = true
+    @Published private(set) var lastLibrarySync: Date?
+    @Published var librarySyncError: String?
+    private var syncing = false
+
+    func refreshSyncStatus() async {
+        guard let core, let reply = try? await core.call("sync.status") as? [String: Any] else { return }
+        syncConfigured = reply["configured"] as? Bool ?? false
+        syncPersistent = reply["persistent"] as? Bool ?? true
+    }
+
+    /// Turns sync on with the passphrase (checked against the server's library when there is one).
+    func setupSync(passphrase: String) async throws {
+        guard let core else { throw CoreClient.Failure.stopped }
+        guard let creds = credentials?() else { throw CoreClient.Failure.core("Önce oturum aç.") }
+        let (gateway, token) = creds
+        let remote = try await gateway.library(token: token)
+        var params: [String: Any] = ["passphrase": passphrase]
+        if let envelope = remote.envelope { params["remote"] = envelope }
+        _ = try await core.call("sync.setup", params)
+        await refreshSyncStatus()
+        await syncLibrary()
+        if let error = librarySyncError { throw CoreClient.Failure.core(error) }
+    }
+
+    func forgetSync() async {
+        guard let core else { return }
+        _ = try? await core.call("sync.forget")
+        await refreshSyncStatus()
+    }
+
+    /// One sync round: merge the server's library here, upload the result;
+    /// when another computer uploaded in between, merge again.
+    func syncLibrary() async {
+        guard !syncing, let core, let creds = credentials?() else { return }
+        let (gateway, token) = creds
+        await refreshSyncStatus()
+        guard syncConfigured else { return }
+        syncing = true
+        defer { syncing = false }
+        do {
+            var state = try await gateway.library(token: token)
+            var changed = false
+            for _ in 0..<4 {
+                var params: [String: Any] = [:]
+                if let envelope = state.envelope { params["remote"] = envelope }
+                let merge = try await core.call("sync.merge", params) as? [String: Any] ?? [:]
+                changed = changed || (merge["changedHere"] as? Bool ?? false)
+                guard let upload = merge["envelope"] as? String else { break }
+                let put = try await gateway.putLibrary(token: token, baseRevision: state.revision, envelope: upload)
+                if put.accepted {
+                    _ = try await core.call("sync.committed")
+                    break
+                }
+                state = put.state
+            }
+            lastLibrarySync = Date()
+            librarySyncError = nil
+            if changed { await reload() }
+        } catch {
+            librarySyncError = error.localizedDescription
+        }
+    }
+
+    /// Personal library (when set up) and the team library.
+    func syncAll() async {
+        await syncLibrary()
+        await syncTeam()
+    }
+
+    // MARK: A22 team
+
+    @Published private(set) var teamName: String?
+    @Published private(set) var teamRole: String?
+    @Published private(set) var teamMembers: [TeamMember] = []
+    @Published private(set) var teamWaiting = false
+    @Published var teamError: String?
+    private var teamSyncing = false
+
+    func setTeam(kind: String, id: String, team: Bool) async {
+        guard let core else { return }
+        do {
+            hosts = try await core.call("library.setTeam", ["kind": kind, "id": id, "team": team], as: [CoreHost].self)
+            onChange?()
+            scheduleLibrarySync()
+        } catch {
+            notice = error.localizedDescription
+        }
+    }
+
+    /// One team round: publish this app's public key, get (or make) the team
+    /// key, give it to team apps without it, merge the shared library.
+    func syncTeam() async {
+        guard !teamSyncing, let core, let creds = credentials?() else { return }
+        let (gateway, token) = creds
+        teamSyncing = true
+        defer { teamSyncing = false }
+        do {
+            var me = try await core.call("team.status") as? [String: Any] ?? [:]
+            let myPub = me["publicKey"] as? String ?? ""
+            var hasKey = me["hasKey"] as? Bool ?? false
+            var team = try await gateway.team(token: token)
+            if !team.members.contains(where: { $0.publicKey == myPub }) {
+                try await gateway.putTeamKey(token: token, publicKey: myPub)
+                team = try await gateway.team(token: token)
+            }
+            teamName = team.organizationName
+            teamRole = team.role
+            teamMembers = team.members
+            let mine = team.members.first { $0.publicKey == myPub }
+            if let sealed = team.myWrappedKey {
+                me = try await core.call("team.accept", ["sealed": sealed]) as? [String: Any] ?? [:]
+                hasKey = me["hasKey"] as? Bool ?? true
+            } else if hasKey, let mine, team.canEdit, team.members.contains(where: { $0.hasKey }) {
+                let again = try await core.call("team.share", ["publicKey": myPub]) as? [String: Any]
+                if let s = again?["sealed"] as? String { try await gateway.putWrappedKey(token: token, centerId: mine.centerId, wrappedKey: s) }
+            } else if !team.members.contains(where: { $0.hasKey }), team.canEdit, let mine {
+                let created = try await core.call("team.create") as? [String: Any]
+                if let s = created?["sealed"] as? String { try await gateway.putWrappedKey(token: token, centerId: mine.centerId, wrappedKey: s) }
+                hasKey = true
+            } else if !hasKey {
+                teamWaiting = true
+                return
+            }
+            teamWaiting = false
+            if team.canEdit {
+                for m in team.members where !m.hasKey && m.publicKey != myPub {
+                    let shared = try await core.call("team.share", ["publicKey": m.publicKey]) as? [String: Any]
+                    if let s = shared?["sealed"] as? String { try await gateway.putWrappedKey(token: token, centerId: m.centerId, wrappedKey: s) }
+                }
+            }
+            var state = LibraryState(revision: team.revision, envelope: team.envelope)
+            var changed = false
+            for _ in 0..<4 {
+                var params: [String: Any] = [:]
+                if let envelope = state.envelope { params["remote"] = envelope }
+                let merge = try await core.call("team.merge", params) as? [String: Any] ?? [:]
+                changed = changed || (merge["changedHere"] as? Bool ?? false)
+                guard let upload = merge["envelope"] as? String, team.canEdit else { break }
+                let put = try await gateway.putTeamLibrary(token: token, baseRevision: state.revision, envelope: upload)
+                if put.accepted {
+                    _ = try await core.call("team.committed")
+                    break
+                }
+                state = put.state
+            }
+            teamError = nil
+            if changed { await reload() }
+        } catch let error as GatewayError where error.code == "not_a_member" {
+            _ = try? await core.call("team.leave")
+            teamName = nil; teamRole = nil; teamMembers = []
+            await reload()
+        } catch {
+            teamError = error.localizedDescription
+        }
+    }
+
+    // MARK: A27 shared terminals
+
+    /// Terminals of this app shared with the team, by session id.
+    @Published private(set) var hosting: [String: ShareConnection] = [:]
+    /// Teammates' terminals watched here, by (local) session id.
+    @Published private(set) var watching: [String: ShareConnection] = [:]
+
+    func startSharing(_ session: TerminalSession, allowInput: Bool) async {
+        guard let core, let creds = credentials?() else { notice = "Önce oturum aç."; return }
+        let (gateway, token) = creds
+        do {
+            let status = try await core.call("team.status") as? [String: Any]
+            guard status?["hasKey"] as? Bool == true else {
+                notice = "Paylaşmak için ekip anahtarı gerekli: Ayarlar → Ekip'te eşitlemenin tamamlanmasını bekle."
+                return
+            }
+            let id = try await gateway.createShare(token: token, title: session.host.label)
+            guard let url = gateway.shareSocketURL(id: id, role: "host") else { return }
+            let share = ShareConnection(core: core, url: url, token: token, id: id, host: true)
+            share.allowInput = allowInput
+            share.onInput = { [weak self, weak session] keys in
+                guard let self, let session, !session.closed, let core = self.core else { return }
+                Task { try? await core.call("terminal.write", ["sessionId": session.id, "data": keys]) }
+            }
+            hosting[session.id] = share
+            notice = "Terminal ekiple paylaşılıyor. Ekiptekiler Sunucular → \"Ortak terminaller\"den katılabilir."
+        } catch {
+            notice = "Paylaşılamadı: \(error.localizedDescription)"
+        }
+    }
+
+    func stopSharing(_ session: TerminalSession) {
+        guard let share = hosting.removeValue(forKey: session.id) else { return }
+        share.close()
+        if let creds = credentials?() { Task { await creds.0.endShare(token: creds.1, id: share.id) } }
+    }
+
+    func shares() async -> [ShareInfo] {
+        guard let creds = credentials?() else { return [] }
+        return (try? await creds.0.shares(token: creds.1)) ?? []
+    }
+
+    func join(_ info: ShareInfo) {
+        guard let core, let creds = credentials?(), let url = creds.0.shareSocketURL(id: info.id, role: "guest") else { return }
+        let json: [String: Any] = ["id": "share:" + info.id, "label": "\(info.title) · \(info.hostEmail)", "target": info.hostEmail,
+                                   "authKind": "key", "savedSecret": false]
+        guard let data = try? JSONSerialization.data(withJSONObject: json),
+              let host = try? JSONDecoder().decode(CoreHost.self, from: data) else { return }
+        let sid = "share:" + info.id + ":" + UUID().uuidString
+        let session = TerminalSession(id: sid, host: host)
+        let share = ShareConnection(core: core, url: url, token: creds.1, id: info.id, host: false)
+        share.onOutput = { [weak session] b64 in
+            if let bytes = Data(base64Encoded: b64) { session?.receive([UInt8](bytes)) }
+        }
+        share.onEnded = { [weak session] reason in
+            session?.closed = true
+            session?.receive(Array("\r\n\u{1b}[90m[\(reason)]\u{1b}[0m\r\n".utf8))
+        }
+        watching[sid] = share
+        sessions.append(session)
+        selection = sid
     }
 }
