@@ -18,8 +18,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use store::{secret_key, Data, SavedHost, Store};
 use wc_ssh_core::client::{
-    connect, connect_via, ConnectOptions, Connection, Credential, LocalForward, ShellEvent,
-    ShellWriter, SshError,
+    connect, connect_via, ConnectOptions, Connection, Credential, LocalForward, RemoteForward,
+    ShellEvent, ShellWriter, SshError,
 };
 use wc_ssh_core::sftp::{self as sftp_path, Entry, Sftp};
 use wc_ssh_core::HostProfile;
@@ -74,7 +74,7 @@ pub struct Terminal {
     pub connection: Arc<Connection>,
     pub sftp: Arc<tokio::sync::Mutex<Option<Arc<Sftp>>>>,
     /// Local port forwards on this connection (A10); dropped with the tab.
-    pub forwards: Arc<Mutex<Vec<(LocalForward, String)>>>,
+    pub forwards: Arc<Mutex<Vec<ActiveForward>>>,
     /// Keeps the jump host connection alive while this terminal uses it.
     pub _jump: Option<Arc<Connection>>,
 }
@@ -134,6 +134,9 @@ pub struct HostView {
     pub user: String,
     pub host: String,
     pub port: u16,
+    pub startup_command: Option<String>,
+    pub env: std::collections::BTreeMap<String, String>,
+    pub agent_forwarding: bool,
 }
 
 pub(crate) fn host_views(state: &AppState) -> Result<Vec<HostView>, String> {
@@ -164,6 +167,9 @@ pub(crate) fn host_views(state: &AppState) -> Result<Vec<HostView>, String> {
             user: h.profile.user.clone(),
             host: h.profile.host.clone(),
             port: h.profile.port,
+            startup_command: h.startup_command.clone(),
+            env: h.env.clone(),
+            agent_forwarding: h.agent_forwarding,
         })
         .collect())
 }
@@ -200,6 +206,9 @@ pub fn add_host(
             tunnels: Vec::new(),
             group: None,
             key_id: None,
+            startup_command: None,
+            env: Default::default(),
+            agent_forwarding: false,
         });
         state.save(&data)?;
     }
@@ -251,6 +260,9 @@ pub fn import_ssh_config(state: &Arc<AppState>) -> Result<ImportResult, String> 
                 tunnels: Vec::new(),
                 group: None,
                 key_id: None,
+                startup_command: None,
+                env: Default::default(),
+                agent_forwarding: false,
             });
             added += 1;
         }
@@ -442,6 +454,7 @@ pub async fn connect_host(
         // A just-approved key wins over the stored one (the person saw the
         // "key changed" warning before approving).
         trusted_fingerprint: accept_fingerprint.or(trusted),
+        agent_forwarding: saved.agent_forwarding,
         ..Default::default()
     };
     // A10: reach the host through its jump host with the jump host's own
@@ -513,16 +526,27 @@ pub async fn connect_host(
         });
     }
 
+    let env: Vec<(String, String)> = saved.env.clone().into_iter().collect();
     let shell = conn
         .open_shell(
             "xterm-256color",
             cols.unwrap_or(80).clamp(10, 1000),
             rows.unwrap_or(24).clamp(4, 500),
+            &env,
         )
         .await
         .map_err(|e| e.to_string())?;
     let session_id = uuid::Uuid::new_v4().to_string();
     let writer = Arc::new(shell.writer);
+    if let Some(command) = saved
+        .startup_command
+        .as_deref()
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+    {
+        // The shell reads it once its prompt is up, like a typed command.
+        let _ = writer.write(format!("{command}\r").as_bytes()).await;
+    }
     state.terminals.lock().map_err(|_| "busy")?.insert(
         session_id.clone(),
         Terminal {
@@ -682,52 +706,192 @@ fn saved_credential(state: &AppState, host: &SavedHost) -> Option<Credential> {
     })
 }
 
-#[derive(Clone, Serialize)]
+/// Keeps a forward running; dropping it stops the forward.
+pub enum ForwardGuard {
+    /// Local (`ssh -L`) or dynamic (`ssh -D`): a listener on this computer.
+    Listener(LocalForward),
+    /// Remote (`ssh -R`): the server listens.
+    Remote(RemoteForward),
+}
+
+/// A forward on a terminal's connection.
+pub struct ActiveForward {
+    pub view: ForwardView,
+    pub _guard: ForwardGuard,
+}
+
+#[derive(Clone, Serialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ForwardView {
+    /// Stops this forward (`forward.stop`).
+    pub id: String,
+    /// `local`, `remote` or `dynamic`.
+    pub kind: String,
+    /// Where it listens: on this computer (local, dynamic) or on the
+    /// server (remote).
     pub local: String,
+    /// Where connections go: `host:port` from the server (local), from this
+    /// computer (remote), or `SOCKS5` (dynamic).
     pub remote: String,
 }
 
-fn forward_views(list: &[(LocalForward, String)]) -> Vec<ForwardView> {
-    list.iter()
-        .map(|(f, remote)| ForwardView {
-            local: f.local.to_string(),
-            remote: remote.clone(),
-        })
-        .collect()
+fn forward_views(list: &[ActiveForward]) -> Vec<ForwardView> {
+    list.iter().map(|f| f.view.clone()).collect()
 }
 
-/// Starts `ssh -L`-style forwarding on terminal `session_id`'s connection:
-/// 127.0.0.1:`local_port` (0 = any free port) -> `remote_host:remote_port`
-/// as seen from the server.
+/// What a tunnel does, as given by the person.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TunnelSpec {
+    #[serde(default = "default_kind")]
+    pub kind: String,
+    #[serde(default)]
+    pub local_port: u16,
+    #[serde(default)]
+    pub local_host: Option<String>,
+    #[serde(default)]
+    pub remote_host: String,
+    #[serde(default)]
+    pub remote_port: u16,
+}
+
+fn default_kind() -> String {
+    "local".into()
+}
+
+impl TunnelSpec {
+    /// Checks the fields the kind needs and fills defaults.
+    pub fn validated(mut self, fixed_port: bool) -> Result<Self, String> {
+        self.remote_host = self.remote_host.trim().to_owned();
+        let bad_host =
+            |h: &str| h.len() > 253 || h.chars().any(|c| c.is_whitespace() || c.is_control());
+        match self.kind.as_str() {
+            "local" => {
+                if self.remote_host.is_empty()
+                    || bad_host(&self.remote_host)
+                    || self.remote_port == 0
+                {
+                    return Err("remote host and port are required".into());
+                }
+                if fixed_port && self.local_port == 0 {
+                    return Err("a saved tunnel needs a fixed local port".into());
+                }
+                self.local_host = None;
+            }
+            "dynamic" => {
+                if fixed_port && self.local_port == 0 {
+                    return Err("a saved tunnel needs a fixed local port".into());
+                }
+                self.remote_host = String::new();
+                self.remote_port = 0;
+                self.local_host = None;
+            }
+            "remote" => {
+                if self.local_port == 0 {
+                    return Err("the port on this computer is required".into());
+                }
+                if fixed_port && self.remote_port == 0 {
+                    return Err("a saved tunnel needs a fixed server port".into());
+                }
+                if self.remote_host.is_empty() {
+                    // Like ssh -R: only the server itself can connect.
+                    self.remote_host = "localhost".into();
+                }
+                let lh = self
+                    .local_host
+                    .take()
+                    .map(|h| h.trim().to_owned())
+                    .filter(|h| !h.is_empty())
+                    .unwrap_or_else(|| "127.0.0.1".into());
+                if bad_host(&self.remote_host) || bad_host(&lh) {
+                    return Err("invalid host name".into());
+                }
+                self.local_host = Some(lh);
+            }
+            _ => return Err("tunnel kind must be local, remote or dynamic".into()),
+        }
+        Ok(self)
+    }
+
+    /// Starts it on `conn`.
+    pub async fn start(&self, conn: &Arc<Connection>) -> Result<ActiveForward, String> {
+        // Listeners are only on this computer: never on other interfaces.
+        let bind = format!("127.0.0.1:{}", self.local_port);
+        match self.kind.as_str() {
+            "dynamic" => {
+                let f = conn
+                    .forward_dynamic(&bind)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let local = f.local.to_string();
+                Ok(ActiveForward {
+                    view: ForwardView {
+                        id: local.clone(),
+                        kind: "dynamic".into(),
+                        local,
+                        remote: "SOCKS5".into(),
+                    },
+                    _guard: ForwardGuard::Listener(f),
+                })
+            }
+            "remote" => {
+                let lh = self
+                    .local_host
+                    .clone()
+                    .unwrap_or_else(|| "127.0.0.1".into());
+                let f = conn
+                    .forward_remote(&self.remote_host, self.remote_port, &lh, self.local_port)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(ActiveForward {
+                    view: ForwardView {
+                        id: format!("remote:{}:{}", self.remote_host, f.port),
+                        kind: "remote".into(),
+                        local: format!("{}:{} (sunucu)", self.remote_host, f.port),
+                        remote: format!("{lh}:{}", self.local_port),
+                    },
+                    _guard: ForwardGuard::Remote(f),
+                })
+            }
+            _ => {
+                let f = conn
+                    .forward_local(&bind, &self.remote_host, self.remote_port)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let local = f.local.to_string();
+                Ok(ActiveForward {
+                    view: ForwardView {
+                        id: local.clone(),
+                        kind: "local".into(),
+                        local,
+                        remote: format!("{}:{}", self.remote_host, self.remote_port),
+                    },
+                    _guard: ForwardGuard::Listener(f),
+                })
+            }
+        }
+    }
+}
+
+/// Starts a forward on terminal `session_id`'s connection: `local`
+/// (127.0.0.1:`local_port`, 0 = any free port -> `remote_host:remote_port`
+/// from the server), `dynamic` (a SOCKS5 proxy on 127.0.0.1:`local_port`)
+/// or `remote` (the server listens on `remote_host:remote_port` and
+/// connections go to `local_host:local_port` on this computer).
 pub async fn forward_start(
     state: &Arc<AppState>,
     session_id: String,
-    local_port: u16,
-    remote_host: String,
-    remote_port: u16,
+    spec: TunnelSpec,
 ) -> Result<Vec<ForwardView>, String> {
-    let remote_host = remote_host.trim().to_owned();
-    if remote_host.is_empty() || remote_host.len() > 253 || remote_port == 0 {
-        return Err("remote host and port are required".into());
-    }
+    let spec = spec.validated(false)?;
     let (connection, forwards) = {
         let terminals = state.terminals.lock().map_err(|_| "busy")?;
         let t = terminals.get(&session_id).ok_or("terminal closed")?;
         (t.connection.clone(), t.forwards.clone())
     };
-    // Only on this computer: never listen on other interfaces.
-    let forward = connection
-        .forward_local(
-            &format!("127.0.0.1:{local_port}"),
-            &remote_host,
-            remote_port,
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+    let forward = spec.start(&connection).await?;
     let mut list = forwards.lock().map_err(|_| "busy")?;
-    list.push((forward, format!("{remote_host}:{remote_port}")));
+    list.push(forward);
     Ok(forward_views(&list))
 }
 
@@ -758,7 +922,7 @@ pub fn forward_stop(
             .clone()
     };
     let mut list = forwards.lock().map_err(|_| "busy")?;
-    list.retain(|(f, _)| f.local.to_string() != local);
+    list.retain(|f| f.view.id != local);
     Ok(forward_views(&list))
 }
 
@@ -952,7 +1116,7 @@ pub async fn files_delete(
 // ---- saved tunnels (run in the background, also from the tray) ----------
 
 pub struct Running {
-    pub _forward: LocalForward,
+    pub _forward: ForwardGuard,
     pub _connection: Arc<Connection>,
     pub _jump: Option<Arc<Connection>>,
 }
@@ -973,6 +1137,7 @@ pub struct SavedTunnelView {
     pub host_id: String,
     pub host_label: String,
     pub index: usize,
+    pub kind: String,
     pub local: String,
     pub remote: String,
     pub running: bool,
@@ -991,13 +1156,31 @@ fn views(state: &AppState) -> Vec<SavedTunnelView> {
     data.hosts
         .iter()
         .flat_map(|h| {
-            h.tunnels.iter().enumerate().map(|(i, t)| SavedTunnelView {
-                host_id: h.id.clone(),
-                host_label: h.profile.label.clone(),
-                index: i,
-                local: format!("127.0.0.1:{}", t.local_port),
-                remote: format!("{}:{}", t.remote_host, t.remote_port),
-                running: running.contains(&key(&h.id, i)),
+            h.tunnels.iter().enumerate().map(|(i, t)| {
+                let (local, remote) = match t.kind.as_str() {
+                    "dynamic" => (format!("127.0.0.1:{}", t.local_port), "SOCKS5".to_owned()),
+                    "remote" => (
+                        format!("{}:{} (sunucu)", t.remote_host, t.remote_port),
+                        format!(
+                            "{}:{}",
+                            t.local_host.as_deref().unwrap_or("127.0.0.1"),
+                            t.local_port
+                        ),
+                    ),
+                    _ => (
+                        format!("127.0.0.1:{}", t.local_port),
+                        format!("{}:{}", t.remote_host, t.remote_port),
+                    ),
+                };
+                SavedTunnelView {
+                    host_id: h.id.clone(),
+                    host_label: h.profile.label.clone(),
+                    index: i,
+                    kind: t.kind.clone(),
+                    local,
+                    remote,
+                    running: running.contains(&key(&h.id, i)),
+                }
             })
         })
         .collect()
@@ -1010,24 +1193,22 @@ pub fn saved_tunnels(state: &Arc<AppState>) -> Vec<SavedTunnelView> {
 pub fn tunnel_save(
     state: &Arc<AppState>,
     host_id: String,
-    local_port: u16,
-    remote_host: String,
-    remote_port: u16,
+    spec: TunnelSpec,
 ) -> Result<Vec<SavedTunnelView>, String> {
-    let remote_host = remote_host.trim().to_owned();
-    if local_port == 0 || remote_port == 0 || remote_host.is_empty() || remote_host.len() > 253 {
-        return Err("a saved tunnel needs a fixed local port, a remote host and a port".into());
-    }
+    let spec = spec.validated(true)?;
     {
         let mut data = state.data.lock().map_err(|_| "busy")?;
-        let taken = data
-            .hosts
-            .iter()
-            .flat_map(|h| h.tunnels.iter())
-            .any(|t| t.local_port == local_port);
+        // Two saved listeners on this computer cannot share a port.
+        let taken = spec.kind != "remote"
+            && data
+                .hosts
+                .iter()
+                .flat_map(|h| h.tunnels.iter())
+                .any(|t| t.kind != "remote" && t.local_port == spec.local_port);
         if taken {
             return Err(format!(
-                "local port {local_port} is already used by a saved tunnel"
+                "local port {} is already used by a saved tunnel",
+                spec.local_port
             ));
         }
         let host = data
@@ -1036,9 +1217,11 @@ pub fn tunnel_save(
             .find(|h| h.id == host_id)
             .ok_or("host not found")?;
         host.tunnels.push(crate::store::SavedTunnel {
-            local_port,
-            remote_host,
-            remote_port,
+            kind: spec.kind,
+            local_port: spec.local_port,
+            local_host: spec.local_host,
+            remote_host: spec.remote_host,
+            remote_port: spec.remote_port,
         });
         state.save(&data)?;
     }
@@ -1102,16 +1285,17 @@ pub async fn toggle(state: &Arc<AppState>, host_id: &str, index: usize) -> Resul
                 .and_then(|h| h.tunnels.get(index).cloned())
                 .ok_or("tunnel not found")?
         };
+        let spec = TunnelSpec {
+            kind: tunnel.kind.clone(),
+            local_port: tunnel.local_port,
+            local_host: tunnel.local_host.clone(),
+            remote_host: tunnel.remote_host.clone(),
+            remote_port: tunnel.remote_port,
+        }
+        .validated(true)?;
         let (conn, jump) = connect_saved(state, host_id).await?;
         let conn = Arc::new(conn);
-        let forward = conn
-            .forward_local(
-                &format!("127.0.0.1:{}", tunnel.local_port),
-                &tunnel.remote_host,
-                tunnel.remote_port,
-            )
-            .await
-            .map_err(|e| e.to_string())?;
+        let forward = spec.start(&conn).await?._guard;
         state.background.running.lock().map_err(|_| "busy")?.insert(
             k,
             Running {

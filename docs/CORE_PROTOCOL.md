@@ -40,11 +40,11 @@ connection.
 | `files.upload` | `sessionId, local, remoteDir, transferId` | bytes |
 | `files.mkdir` / `files.delete` | `sessionId, path` | `null` |
 | `files.rename` | `sessionId, from, to` | `null` |
-| `forward.start` | `sessionId, localPort (0 = free), remoteHost, remotePort` | `[{local, remote}]` |
+| `forward.start` | `sessionId, kind? (local\|remote\|dynamic, default local), localPort (0 = free), localHost? (remote only, default 127.0.0.1), remoteHost, remotePort` | `[{id, kind, local, remote}]`; local = `ssh -L`, remote = `ssh -R` (server listens on remoteHost:remotePort, 0 = server picks), dynamic = `ssh -D` SOCKS5 on 127.0.0.1 |
 | `forward.list` | `sessionId` | `[{local, remote}]` |
-| `forward.stop` | `sessionId, local` | `[{local, remote}]` |
-| `tunnels.saved` | – | `[{hostId, hostLabel, index, local, remote, running}]` |
-| `tunnels.save` | `hostId, localPort, remoteHost, remotePort` | same list |
+| `forward.stop` | `sessionId, local` (the forward's `id`) | `[{local, remote}]` |
+| `tunnels.saved` | – | `[{hostId, hostLabel, index, kind, local, remote, running}]` |
+| `tunnels.save` | `hostId, kind?, localPort, localHost?, remoteHost, remotePort` (same fields as `forward.start`; ports fixed) | same list |
 | `tunnels.delete` / `tunnels.toggle` | `hostId, index` | same list |
 | `hosts.update` | `id, label, host, port, user, authKind, jumpId?, group?` | `[Host]` (a host is never its own jump host; loops are dropped) |
 | `known.list` | – | `[{target ("host:port"), fingerprint, labels}]` trusted host keys |
@@ -58,6 +58,9 @@ connection.
 | `keys.import` | `label, private, passphrase?` | same list; the key is checked first |
 | `keys.delete` | `id` | same list; hosts using it forget it |
 | `hosts.setKey` | `id, keyId?` | `[Host]`; connect then uses that key (Host has `keyId`) |
+| `hosts.setOptions` | `id, startupCommand?, env? ({NAME: value}), agentForwarding` | `[Host]`; the terminal sends `env` (server `AcceptEnv` decides), types `startupCommand` once it opens, and with `agentForwarding` lets the server use this computer's ssh-agent (`ssh -A`) |
+| `library.export` | – | `{json}`: hosts (groups, tunnels, terminal options), snippets, trusted host keys; no passwords, no private keys, no key files |
+| `library.import` | `json` | `{hosts, snippets, knownHosts, skipped}`; only adds what is new |
 
 `Host` = `{id, label, target, authKind, savedSecret, keyPath, jumpId, trustedKey}`.
 

@@ -78,7 +78,7 @@ public sealed class ServersController : IDisposable
                     {
                         t.Tab.Closed = true;
                         t.Tab.Post(json);
-                        if (t.Tab.Item is not null) t.Tab.Item.Header = t.Tab.Host.Label + " (kapandı)";
+                        t.Tab.Exited?.Invoke();
                     });
                 }
                 break;
@@ -175,15 +175,46 @@ public sealed class ServersController : IDisposable
         catch (CoreException) { return []; }
     }
 
-    public async Task<List<ForwardInfo>> StartForward(TerminalTab tab, int localPort, string remoteHost, int remotePort, bool save)
+    public async Task<List<ForwardInfo>> StartForward(TerminalTab tab, TunnelRequest t, bool save)
     {
-        var list = await Core.CallAsync<List<ForwardInfo>>("forward.start", new { sessionId = tab.SessionId, localPort, remoteHost, remotePort });
-        if (save && list.Count > 0 && int.TryParse(list[^1].Local.Split(':')[^1], out var port))
+        var list = await Core.CallAsync<List<ForwardInfo>>("forward.start", new
         {
-            SavedTunnels = await Core.CallAsync<List<SavedTunnel>>("tunnels.save", new { hostId = tab.Host.Id, localPort = port, remoteHost, remotePort });
+            sessionId = tab.SessionId, kind = t.Kind, localPort = t.LocalPort, localHost = t.LocalHost,
+            remoteHost = t.RemoteHost, remotePort = t.RemotePort,
+        });
+        if (save && list.Count > 0)
+        {
+            var started = list[^1];
+            var localPort = t.LocalPort;
+            var remotePort = t.RemotePort;
+            // A free port picked by the system is saved as that port.
+            if (t.Kind != "remote" && localPort == 0 && int.TryParse(started.Local.Split(':')[^1], out var lp)) localPort = lp;
+            if (t.Kind == "remote" && remotePort == 0 && int.TryParse(started.Local.Split(' ')[0].Split(':')[^1], out var rp)) remotePort = rp;
+            SavedTunnels = await Core.CallAsync<List<SavedTunnel>>("tunnels.save", new
+            {
+                hostId = tab.Host.Id, kind = t.Kind, localPort, localHost = t.LocalHost, remoteHost = t.RemoteHost, remotePort,
+            });
             Changed?.Invoke();
         }
         return list;
+    }
+
+    /// <summary>Terminal options of a host: startup command, environment variables, agent forwarding.</summary>
+    public async Task SetHostOptions(CoreHost host, string? startupCommand, Dictionary<string, string> env, bool agentForwarding)
+    {
+        Hosts = await Core.CallAsync<List<CoreHost>>("hosts.setOptions", new { id = host.Id, startupCommand, env, agentForwarding });
+        Changed?.Invoke();
+    }
+
+    /// <summary>The library as JSON (hosts, groups, tunnels, snippets, trusted keys; no secrets).</summary>
+    public async Task<string> ExportLibrary() =>
+        (await Core.CallAsync<JsonElement>("library.export")).GetProperty("json").GetString() ?? "{}";
+
+    public async Task<ImportSummary> ImportLibrary(string json)
+    {
+        var summary = await Core.CallAsync<ImportSummary>("library.import", new { json });
+        await Reload();
+        return summary;
     }
 
     public async Task<List<ForwardInfo>> StopForward(TerminalTab tab, string local)

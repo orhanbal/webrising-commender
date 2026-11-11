@@ -32,6 +32,8 @@ public sealed class ServersWindow : Window
     private readonly AppBarToggleButton _filesButton = new() { Label = "Dosyalar", Icon = new SymbolIcon(Symbol.Folder) };
     private readonly AppBarButton _tunnelsButton = new() { Label = "Tüneller", Icon = new FontIcon { Glyph = "\uE8AF" } };
     private readonly AppBarButton _snippetButton = new() { Label = "Parçacık", Icon = new FontIcon { Glyph = "\uE943" } };
+    private readonly AppBarButton _splitButton = new() { Label = "Böl", Icon = new FontIcon { Glyph = "\uE70D" } };
+    private readonly AppBarToggleButton _broadcastButton = new() { Label = "Tümüne yaz", Icon = new FontIcon { Glyph = "\uE789" } };
     private readonly StackPanel _empty = new() { Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
     private readonly Grid _terminals = new();
     private readonly AutoSuggestBox _search = new() { PlaceholderText = "Sunucu ara ya da hızlı bağlan (kullanıcı@adres)", QueryIcon = new SymbolIcon(Symbol.Find), MinWidth = 360 };
@@ -72,7 +74,7 @@ public sealed class ServersWindow : Window
         _tabs.IsAddTabButtonVisible = true;
         _tabs.AddTabButtonClick += (_, _) => Navigate("hosts");
         _tabs.TabWidthMode = TabViewWidthMode.SizeToContent;
-        _tabs.TabCloseRequested += (_, e) => { if (e.Tab.Tag is TerminalTab t) CloseTab(t); };
+        _tabs.TabCloseRequested += (_, e) => { if (e.Tab.Tag is TabPage page) ClosePage(page); };
         _tabs.SelectionChanged += (_, _) => { SyncCommands(); if (_filesPane.Visibility == Visibility.Visible) _ = LoadFiles(null); };
 
         _filesButton.Click += (_, _) =>
@@ -84,7 +86,13 @@ public sealed class ServersWindow : Window
         _snippetButton.Click += async (_, _) => await PickSnippet();
         var closeButton = new AppBarButton { Label = "Terminali kapat", Icon = new SymbolIcon(Symbol.Cancel) };
         closeButton.Click += (_, _) => { if (Current is { } t) CloseTab(t); };
+        _splitButton.Flyout = SplitMenu();
+        ToolTipService.SetToolTip(_splitButton, "Bu sekmeye yan yana ya da alt alta ikinci bir terminal ekle");
+        _broadcastButton.Click += (_, _) => { if (CurrentPage is { } page) page.Broadcast = _broadcastButton.IsChecked == true; };
+        ToolTipService.SetToolTip(_broadcastButton, "Yazdığın her şey bu sekmedeki tüm terminallere gider");
         var bar = new CommandBar { DefaultLabelPosition = CommandBarDefaultLabelPosition.Right, IsOpen = false };
+        bar.PrimaryCommands.Add(_splitButton);
+        bar.PrimaryCommands.Add(_broadcastButton);
         bar.PrimaryCommands.Add(_snippetButton);
         bar.PrimaryCommands.Add(_tunnelsButton);
         bar.PrimaryCommands.Add(_filesButton);
@@ -124,7 +132,8 @@ public sealed class ServersWindow : Window
 
     private static Brush Secondary => (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
 
-    private TerminalTab? Current => (_tabs.SelectedItem as TabViewItem)?.Tag as TerminalTab;
+    private TabPage? CurrentPage => (_tabs.SelectedItem as TabViewItem)?.Tag as TabPage;
+    private TerminalTab? Current => CurrentPage?.Focused ?? CurrentPage?.Panes.FirstOrDefault();
 
     public void ShowWindow()
     {
@@ -146,6 +155,10 @@ public sealed class ServersWindow : Window
         _filesButton.IsEnabled = live;
         _tunnelsButton.IsEnabled = live;
         _snippetButton.IsEnabled = live;
+        var page = CurrentPage;
+        _splitButton.IsEnabled = page is not null && page.Panes.Count < TabPage.MaxPanes;
+        _broadcastButton.IsEnabled = page is { Panes.Count: > 1 };
+        _broadcastButton.IsChecked = page?.Broadcast == true;
         _empty.Visibility = _tabs.TabItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         _terminalsBadge.Value = _tabs.TabItems.Count;
         _terminalsBadge.Visibility = _tabs.TabItems.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -370,7 +383,8 @@ public sealed class ServersWindow : Window
         App.Current.SaveSettings();
         var json = TerminalSettingsJson();
         foreach (var item in _tabs.TabItems.OfType<TabViewItem>())
-            if (item.Tag is TerminalTab t) t.Post(json);
+            if (item.Tag is TabPage page)
+                foreach (var t in page.Panes) t.Post(json);
     }
 
     private void ShowSettings()
@@ -393,9 +407,58 @@ public sealed class ServersWindow : Window
         };
         var center = new HyperlinkButton { Content = "Bildirimler, otonom mod ve bu bilgisayarın ajanı: Yönetim Merkezi panelini aç" };
         center.Click += (_, _) => App.Current.ShowPanel();
+        var backupTitle = new TextBlock { Text = "Yedekleme", Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], Margin = new Thickness(0, 8, 0, 0) };
+        var backupHelp = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Secondary,
+            Text = "Sunucular, gruplar, tüneller, parçacıklar ve güvenilen sunucu anahtarları tek bir dosyaya yazılır. Parolalar ve özel anahtarlar dosyaya girmez; yeni bilgisayarda ilk bağlantıda bir kez sorulur. İçe aktarma var olanları değiştirmez, yalnız yenileri ekler.",
+        };
+        var backupRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        backupRow.Children.Add(ActionButton("Dışa aktar…", Symbol.Save, () => _ = ExportBackup()));
+        backupRow.Children.Add(ActionButton("İçe aktar…", Symbol.OpenFile, () => _ = ImportBackup()));
         var body = new StackPanel { Spacing = 18, MaxWidth = 640, HorizontalAlignment = HorizontalAlignment.Left };
-        foreach (var e in new UIElement[] { font, theme, keys, center }) body.Children.Add(e);
+        foreach (var e in new UIElement[] { font, theme, keys, backupTitle, backupHelp, backupRow, center }) body.Children.Add(e);
         _nav.Content = Page("Ayarlar", "Terminal görünümü; değişiklikler açık terminallere hemen uygulanır.", new ScrollViewer { Content = body });
+    }
+
+    private async Task ExportBackup()
+    {
+        try
+        {
+            var json = await _c.ExportLibrary();
+            var picker = new FileSavePicker { SuggestedFileName = $"wecommander-yedek-{DateTime.Now:yyyy-MM-dd}", SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
+            picker.FileTypeChoices.Add("WECOMMANDER yedeği", [".json"]);
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+            var file = await picker.PickSaveFileAsync();
+            if (file is null) return;
+            await File.WriteAllTextAsync(file.Path, json);
+            Show($"Yedek kaydedildi: {file.Path}", InfoBarSeverity.Success);
+        }
+        catch (Exception e) when (e is CoreException or IOException or UnauthorizedAccessException)
+        {
+            Show("Yedek kaydedilemedi: " + e.Message, InfoBarSeverity.Error);
+        }
+    }
+
+    private async Task ImportBackup()
+    {
+        try
+        {
+            var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
+            picker.FileTypeFilter.Add(".json");
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+            var file = await picker.PickSingleFileAsync();
+            if (file is null) return;
+            var summary = await _c.ImportLibrary(await File.ReadAllTextAsync(file.Path));
+            Show($"İçe aktarıldı: {summary.Hosts} sunucu, {summary.Snippets} parçacık, {summary.KnownHosts} sunucu anahtarı"
+                + (summary.Skipped > 0 ? $" ({summary.Skipped} sunucu zaten vardı, atlandı)." : "."), InfoBarSeverity.Success);
+            RenderHosts();
+        }
+        catch (Exception e) when (e is CoreException or IOException or UnauthorizedAccessException)
+        {
+            Show("Yedek içe aktarılamadı: " + e.Message, InfoBarSeverity.Error);
+        }
     }
 
     // ---- keys ----
@@ -541,7 +604,11 @@ public sealed class ServersWindow : Window
     private void SendSnippet(Snippet s)
     {
         if (Current is not { Closed: false } tab) return;
-        _c.Write(tab, s.Command.Replace("\r\n", "\r").Replace('\n', '\r') + "\r");
+        var text = s.Command.Replace("\r\n", "\r").Replace('\n', '\r') + "\r";
+        if (tab.Page is { Broadcast: true } page)
+            foreach (var pane in page.Panes) _c.Write(pane, text);
+        else
+            _c.Write(tab, text);
     }
 
     private async Task PickSnippet()
@@ -568,7 +635,7 @@ public sealed class ServersWindow : Window
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var text = new StackPanel { Spacing = 2 };
             text.Children.Add(new TextBlock { Text = $"{(t.Running ? "● " : "○ ")}{t.HostLabel}", Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"] });
-            text.Children.Add(new TextBlock { Text = $"{t.Local}  →  {t.Remote}", FontFamily = new FontFamily("Cascadia Mono, Consolas"), Foreground = Secondary });
+            text.Children.Add(new TextBlock { Text = $"{KindLabel(t.Kind)}   {t.Local}  →  {t.Remote}", FontFamily = new FontFamily("Cascadia Mono, Consolas"), Foreground = Secondary });
             row.Children.Add(text);
             var toggle = new ToggleSwitch { IsOn = t.Running, OnContent = "Açık", OffContent = "Kapalı" };
             toggle.Toggled += async (_, _) => { await _c.ToggleTunnel(t); ShowTunnelsPage(); };
@@ -578,7 +645,7 @@ public sealed class ServersWindow : Window
             Grid.SetColumn(del, 2); row.Children.Add(del);
             list.Children.Add(row);
         }
-        _nav.Content = Page("Tüneller", "Kayıtlı yerel tüneller (ssh -L). Uygulama açıkken arka planda çalışır.", new ScrollViewer { Content = list });
+        _nav.Content = Page("Tüneller", "Kayıtlı tüneller: yerel (ssh -L), uzak (ssh -R) ve SOCKS proxy (ssh -D). Uygulama açıkken arka planda çalışır.", new ScrollViewer { Content = list });
     }
 
     private async Task ShowKnown()
@@ -649,9 +716,29 @@ public sealed class ServersWindow : Window
         keyNames.AddRange(appKeys.Select(k => k.Label));
         var keyIndex = existing?.KeyId is { } kid ? appKeys.FindIndex(k => k.Id == kid) + 1 : 0;
         var keyChoice = new ComboBox { Header = "Anahtar", ItemsSource = keyNames, SelectedIndex = Math.Max(0, keyIndex), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var startup = new TextBox { Header = "Bağlanınca çalışacak komut (isteğe bağlı)", Text = existing?.StartupCommand ?? "", PlaceholderText = "cd /var/www && git status", FontFamily = new FontFamily("Cascadia Mono, Consolas") };
+        var envText = new TextBox
+        {
+            Header = "Ortam değişkenleri (her satıra AD=değer)",
+            Text = existing?.Env is { Count: > 0 } env ? string.Join("\r", env.Select(kv => $"{kv.Key}={kv.Value}")) : "",
+            PlaceholderText = "LANG=tr_TR.UTF-8",
+            AcceptsReturn = true, Height = 80, FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+        };
+        var agent = new CheckBox { Content = "SSH agent yönlendirme (ssh -A): sunucu, bu bilgisayardaki ssh-agent anahtarlarını kullanabilsin", IsChecked = existing?.AgentForwarding == true };
+        ToolTipService.SetToolTip(agent, "Yalnız güvendiğin sunucularda aç: sunucuda yönetici yetkisi olan biri, bağlantı açıkken agent'taki anahtarlarını kullanabilir.");
+        var terminalOptions = new Expander
+        {
+            Header = "Terminal seçenekleri",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            IsExpanded = !string.IsNullOrEmpty(existing?.StartupCommand) || existing?.Env is { Count: > 0 } || existing?.AgentForwarding == true,
+        };
+        var optionsPanel = new StackPanel { Spacing = 10 };
+        foreach (var e in new UIElement[] { startup, envText, agent }) optionsPanel.Children.Add(e);
+        terminalOptions.Content = optionsPanel;
         var error = new TextBlock { Foreground = new SolidColorBrush(Microsoft.UI.Colors.IndianRed), TextWrapping = TextWrapping.Wrap };
         var panel = new StackPanel { Spacing = 10, MinWidth = 400 };
-        foreach (var e in new UIElement[] { label, host, user, port, group, kind, keyChoice, jump, error }) panel.Children.Add(e);
+        foreach (var e in new UIElement[] { label, host, user, port, group, kind, keyChoice, jump, terminalOptions, error }) panel.Children.Add(e);
         var dialog = Dialog(existing is null ? "Yeni sunucu" : "Sunucuyu düzenle", new ScrollViewer { Content = panel, MaxHeight = 560 }, "Kaydet");
         dialog.PrimaryButtonClick += async (d, args) =>
         {
@@ -675,6 +762,23 @@ public sealed class ServersWindow : Window
                 }
                 var saved = existing is null ? _c.Hosts.LastOrDefault() : _c.Hosts.FirstOrDefault(h => h.Id == existing.Id);
                 if (saved is not null && saved.KeyId != keyId) await _c.SetHostKey(saved, keyId);
+                if (saved is not null)
+                {
+                    var vars = new Dictionary<string, string>();
+                    foreach (var line in envText.Text.Split('\r', '\n'))
+                    {
+                        var t = line.Trim();
+                        if (t.Length == 0 || t.StartsWith('#')) continue;
+                        var eq = t.IndexOf('=');
+                        if (eq <= 0) throw new CoreException($"Ortam değişkeni AD=değer biçiminde olmalı: {t}");
+                        vars[t[..eq].Trim()] = t[(eq + 1)..];
+                    }
+                    var cmd = startup.Text.Trim();
+                    var old = saved.Env ?? new Dictionary<string, string>();
+                    var changed = (saved.StartupCommand ?? "") != cmd || saved.AgentForwarding != (agent.IsChecked == true)
+                        || old.Count != vars.Count || old.Any(kv => !vars.TryGetValue(kv.Key, out var v) || v != kv.Value);
+                    if (changed) await _c.SetHostOptions(saved, cmd.Length == 0 ? null : cmd, vars, agent.IsChecked == true);
+                }
             }
             catch (CoreException e)
             {
@@ -826,24 +930,116 @@ public sealed class ServersWindow : Window
 
     // ---- terminals ----
 
+    /// <summary>Set while picking a host for a split: the next terminal opens in this tab.</summary>
+    private (TabPage Page, bool Vertical)? _splitTarget;
+
     private void AddTab(CoreHost host, string sessionId)
     {
         var view = new Microsoft.UI.Xaml.Controls.WebView2();
         var tab = new TerminalTab(sessionId, host, view);
-        var item = new TabViewItem
-        {
-            Header = host.Label,
-            Content = view,
-            Tag = tab,
-            IconSource = new FontIconSource { Glyph = "" },
-        };
-        tab.Item = item;
+        tab.Exited = () => { tab.Caption.Text = host.Label + " (kapandı)"; if (tab.Page is { } p && p.Item is not null) p.Item.Header = p.Title; SyncCommands(); };
+        view.GotFocus += (_, _) => { if (tab.Page is { } p) { p.Focused = tab; SyncCommands(); } };
         _c.Register(tab, DispatcherQueue);
-        _tabs.TabItems.Add(item);
-        _tabs.SelectedItem = item;
+        if (_splitTarget is { } target && _tabs.TabItems.Contains(target.Page.Item) && target.Page.Panes.Count < TabPage.MaxPanes)
+        {
+            _splitTarget = null;
+            target.Page.Vertical = target.Vertical;
+            AddPane(target.Page, tab);
+            _tabs.SelectedItem = target.Page.Item;
+        }
+        else
+        {
+            _splitTarget = null;
+            var page = new TabPage();
+            var item = new TabViewItem
+            {
+                Header = host.Label,
+                Content = page.Root,
+                Tag = page,
+                IconSource = new FontIconSource { Glyph = "\uE756" },
+            };
+            page.Item = item;
+            AddPane(page, tab);
+            _tabs.TabItems.Add(item);
+            _tabs.SelectedItem = item;
+        }
         Navigate("terminals");
         SyncCommands();
         _ = InitTerminal(tab);
+    }
+
+    private void AddPane(TabPage page, TerminalTab tab)
+    {
+        tab.Page = page;
+        tab.Item = page.Item;
+        page.Panes.Add(tab);
+        page.Focused = tab;
+        LayoutPage(page);
+    }
+
+    /// <summary>Lays the panes out side by side (or one above the other), each with a small header when split.</summary>
+    private void LayoutPage(TabPage page)
+    {
+        var root = page.Root;
+        foreach (var child in root.Children.OfType<Grid>()) child.Children.Clear();
+        root.Children.Clear();
+        root.RowDefinitions.Clear();
+        root.ColumnDefinitions.Clear();
+        var split = page.Panes.Count > 1;
+        for (var i = 0; i < page.Panes.Count; i++)
+        {
+            var pane = page.Panes[i];
+            if (page.Vertical) root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            else root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            var cell = new Grid { Margin = split ? new Thickness(i == 0 || page.Vertical ? 0 : 2, i == 0 || !page.Vertical ? 0 : 2, 0, 0) : new Thickness(0) };
+            cell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            cell.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            if (split)
+            {
+                var head = new Grid { Padding = new Thickness(8, 2, 2, 2), ColumnSpacing = 4, Background = (Brush)Application.Current.Resources["LayerFillColorDefaultBrush"] };
+                head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                head.Children.Add(pane.Caption);
+                var close = new Button { Content = new SymbolIcon(Symbol.Cancel), Padding = new Thickness(4), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0) };
+                ToolTipService.SetToolTip(close, "Bu bölmeyi kapat");
+                close.Click += (_, _) => CloseTab(pane);
+                Grid.SetColumn(close, 1); head.Children.Add(close);
+                cell.Children.Add(head);
+            }
+            if (pane.View.Parent is Panel old) old.Children.Remove(pane.View);
+            Grid.SetRow(pane.View, 1);
+            cell.Children.Add(pane.View);
+            if (page.Vertical) Grid.SetRow(cell, i); else Grid.SetColumn(cell, i);
+            root.Children.Add(cell);
+        }
+        if (page.Item is not null) page.Item.Header = page.Title;
+    }
+
+    private MenuFlyout SplitMenu()
+    {
+        var menu = new MenuFlyout();
+        menu.Opening += (_, _) =>
+        {
+            menu.Items.Clear();
+            if (CurrentPage is not { } page) return;
+            foreach (var (vertical, title) in new[] { (false, "Yan yana"), (true, "Alt alta") })
+            {
+                var sub = new MenuFlyoutSubItem { Text = title };
+                if (Current is { } cur) sub.Items.Add(Item($"Aynı sunucu ({cur.Host.Label})", () => Split(page, vertical, cur.Host)));
+                if (sub.Items.Count > 0) sub.Items.Add(new MenuFlyoutSeparator());
+                foreach (var h in _c.Hosts.OrderBy(h => h.Label, StringComparer.CurrentCultureIgnoreCase).Take(30))
+                    sub.Items.Add(Item(h.Label, () => Split(page, vertical, h)));
+                menu.Items.Add(sub);
+            }
+        };
+        return menu;
+    }
+
+    private void Split(TabPage page, bool vertical, CoreHost host)
+    {
+        if (page.Panes.Count >= TabPage.MaxPanes) return;
+        _splitTarget = (page, vertical);
+        _ = OpenHost(host).ContinueWith(_ => DispatcherQueue.TryEnqueue(() => _splitTarget = null));
     }
 
     private async Task InitTerminal(TerminalTab tab)
@@ -872,7 +1068,11 @@ public sealed class ServersWindow : Window
                     tab.Flush();
                     break;
                 case "input":
-                    _c.Write(tab, (string?)m!["data"] ?? "");
+                    var input = (string?)m!["data"] ?? "";
+                    if (tab.Page is { Broadcast: true } bp)
+                        foreach (var pane in bp.Panes) _c.Write(pane, input);
+                    else
+                        _c.Write(tab, input);
                     break;
                 case "resize":
                     _c.Resize(tab, (int?)m!["cols"] ?? 100, (int?)m["rows"] ?? 30);
@@ -887,12 +1087,31 @@ public sealed class ServersWindow : Window
         core.Navigate("https://wecommander.terminal/index.html");
     }
 
+    /// <summary>Closes one terminal; the tab goes when its last pane does.</summary>
     private void CloseTab(TerminalTab tab)
     {
         _c.Close(tab);
-        if (tab.Item is not null) _tabs.TabItems.Remove(tab.Item);
+        if (tab.Page is { } page)
+        {
+            page.Panes.Remove(tab);
+            if (page.Focused == tab) page.Focused = page.Panes.FirstOrDefault();
+            if (page.Panes.Count == 0)
+            {
+                if (page.Item is not null) _tabs.TabItems.Remove(page.Item);
+            }
+            else
+            {
+                if (page.Panes.Count == 1) page.Broadcast = false;
+                LayoutPage(page);
+            }
+        }
         tab.View.Close();
         SyncCommands();
+    }
+
+    private void ClosePage(TabPage page)
+    {
+        foreach (var pane in page.Panes.ToList()) CloseTab(pane);
     }
 
     // ---- files (SFTP) ----
@@ -1076,6 +1295,13 @@ public sealed class ServersWindow : Window
 
     // ---- tunnels ----
 
+    private static string KindLabel(string kind) => kind switch
+    {
+        "remote" => "Uzak (-R)",
+        "dynamic" => "SOCKS (-D)",
+        _ => "Yerel (-L)",
+    };
+
     private async Task ShowTunnels()
     {
         if (Current is not { Closed: false } tab) return;
@@ -1085,42 +1311,88 @@ public sealed class ServersWindow : Window
             list.Children.Clear();
             foreach (var f in forwards)
             {
-                var row = new Grid();
+                var row = new Grid { ColumnSpacing = 8 };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                row.Children.Add(new TextBlock { Text = $"{f.Local}  →  {f.Remote}", FontFamily = new FontFamily("Cascadia Mono, Consolas"), VerticalAlignment = VerticalAlignment.Center });
+                row.Children.Add(new TextBlock { Text = KindLabel(f.Kind), Foreground = Secondary, VerticalAlignment = VerticalAlignment.Center });
+                var text = new TextBlock { Text = $"{f.Local}  →  {f.Remote}", FontFamily = new FontFamily("Cascadia Mono, Consolas"), VerticalAlignment = VerticalAlignment.Center, IsTextSelectionEnabled = true };
+                Grid.SetColumn(text, 1); row.Children.Add(text);
                 var stop = new Button { Content = "Kapat" };
-                stop.Click += async (_, _) => await Render(await _c.StopForward(tab, f.Local));
-                Grid.SetColumn(stop, 1); row.Children.Add(stop);
+                stop.Click += async (_, _) => await Render(await _c.StopForward(tab, f.StopId));
+                Grid.SetColumn(stop, 2); row.Children.Add(stop);
                 list.Children.Add(row);
             }
             await Task.CompletedTask;
         }
         await Render(await _c.Forwards(tab));
-        var local = new NumberBox { Header = "Yerel port (0 = boş port)", Value = 0, Minimum = 0, Maximum = 65535 };
-        var remoteHost = new TextBox { Header = "Uzak adres", Text = "127.0.0.1" };
-        var remotePort = new NumberBox { Header = "Uzak port", Minimum = 1, Maximum = 65535 };
-        var save = new CheckBox { Content = "Bu tüneli kaydet (tepsi simgesinden de açılır)" };
+        var kind = new RadioButtons { Header = "Tünel türü", ItemsSource = new[] { "Yerel (-L)", "Uzak (-R)", "SOCKS proxy (-D)" }, SelectedIndex = 0, MaxColumns = 3 };
+        var help = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Secondary };
+        var local = new NumberBox { Header = "Bu bilgisayardaki port (0 = boş port)", Value = 0, Minimum = 0, Maximum = 65535 };
+        var localHost = new TextBox { Header = "Bu taraftaki adres", Text = "127.0.0.1" };
+        var remoteHost = new TextBox { Header = "Uzak adres (sunucudan görüldüğü gibi)", Text = "127.0.0.1" };
+        var remotePort = new NumberBox { Header = "Uzak port", Minimum = 0, Maximum = 65535 };
+        var save = new CheckBox { Content = "Bu tüneli kaydet (Tüneller sayfasından ve tepsi simgesinden açılır)" };
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap };
-        var panel = new StackPanel { Spacing = 10, MinWidth = 440 };
-        panel.Children.Add(new TextBlock { Text = "Bu bilgisayardaki bir portu, sunucunun erişebildiği bir adrese bağlar (ssh -L). Yalnızca bu bilgisayardan (127.0.0.1) erişilebilir.", TextWrapping = TextWrapping.Wrap, Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] });
-        foreach (var e in new UIElement[] { list, local, remoteHost, remotePort, save, status }) panel.Children.Add(e);
-        var dialog = Dialog($"Tüneller · {tab.Host.Label}", panel, "Tünel aç", "Kapat");
+        void Sync()
+        {
+            switch (kind.SelectedIndex)
+            {
+                case 1:
+                    help.Text = "Sunucu bir port açar; oraya gelen bağlantılar bu bilgisayardaki bir servise (örneğin yerel web sunucun) gelir (ssh -R). Sunucu varsayılan olarak yalnız kendi içinden (localhost) dinler.";
+                    local.Header = "Bu bilgisayardaki servis portu";
+                    remoteHost.Header = "Sunucunun dinleyeceği adres";
+                    remoteHost.Text = remoteHost.Text is "127.0.0.1" or "" ? "localhost" : remoteHost.Text;
+                    remotePort.Header = "Sunucunun dinleyeceği port (0 = sunucu seçsin)";
+                    localHost.Visibility = Visibility.Visible;
+                    remoteHost.Visibility = remotePort.Visibility = Visibility.Visible;
+                    break;
+                case 2:
+                    help.Text = "Bu bilgisayarda bir SOCKS5 proxy açar; tarayıcını ya da bir uygulamayı bu proxy'ye yönlendirirsen trafik sunucunun ağından çıkar (ssh -D). Yalnızca bu bilgisayardan (127.0.0.1) erişilebilir.";
+                    local.Header = "Proxy portu (0 = boş port)";
+                    localHost.Visibility = remoteHost.Visibility = remotePort.Visibility = Visibility.Collapsed;
+                    break;
+                default:
+                    help.Text = "Bu bilgisayardaki bir portu, sunucunun erişebildiği bir adrese bağlar (ssh -L). Yalnızca bu bilgisayardan (127.0.0.1) erişilebilir.";
+                    local.Header = "Bu bilgisayardaki port (0 = boş port)";
+                    remoteHost.Header = "Uzak adres (sunucudan görüldüğü gibi)";
+                    remoteHost.Text = remoteHost.Text is "localhost" or "" ? "127.0.0.1" : remoteHost.Text;
+                    remotePort.Header = "Uzak port";
+                    localHost.Visibility = Visibility.Collapsed;
+                    remoteHost.Visibility = remotePort.Visibility = Visibility.Visible;
+                    break;
+            }
+        }
+        kind.SelectionChanged += (_, _) => Sync();
+        Sync();
+        var panel = new StackPanel { Spacing = 10, MinWidth = 460 };
+        foreach (var e in new UIElement[] { list, kind, help, local, localHost, remoteHost, remotePort, save, status }) panel.Children.Add(e);
+        var dialog = Dialog($"Tüneller · {tab.Host.Label}", new ScrollViewer { Content = panel, MaxHeight = 600 }, "Tünel aç", "Kapat");
         dialog.PrimaryButtonClick += async (_, args) =>
         {
             args.Cancel = true; // stay open to show the list
             var deferral = args.GetDeferral();
             try
             {
-                var forwards = await _c.StartForward(tab, (int)local.Value, remoteHost.Text.Trim(), (int)remotePort.Value, save.IsChecked == true);
+                var k = kind.SelectedIndex switch { 1 => "remote", 2 => "dynamic", _ => "local" };
+                var request = new TunnelRequest(k, (int)Num(local), remoteHost.Text.Trim(), (int)Num(remotePort), k == "remote" ? localHost.Text.Trim() : null);
+                var forwards = await _c.StartForward(tab, request, save.IsChecked == true);
                 await Render(forwards);
-                status.Text = forwards.Count > 0 ? $"Açıldı: {forwards[^1].Local} adresine bağlan." : "";
+                var last = forwards.Count > 0 ? forwards[^1] : null;
+                status.Text = last is null ? "" : k switch
+                {
+                    "remote" => $"Açıldı: sunucuda {last.Local} → bu bilgisayarda {last.Remote}.",
+                    "dynamic" => $"Açıldı: uygulamanda SOCKS5 proxy olarak {last.Local} adresini kullan.",
+                    _ => $"Açıldı: {last.Local} adresine bağlan.",
+                };
             }
             catch (CoreException e) { status.Text = e.Message; }
             finally { deferral.Complete(); }
         };
         await ShowDialog(dialog);
     }
+
+    private static double Num(NumberBox box) => double.IsNaN(box.Value) ? 0 : box.Value;
 }
 
 /// <summary>One terminal tab; output before the page is ready is buffered.</summary>
@@ -1130,6 +1402,12 @@ public sealed class TerminalTab(string sessionId, CoreHost host, Microsoft.UI.Xa
     public CoreHost Host { get; } = host;
     public Microsoft.UI.Xaml.Controls.WebView2 View { get; } = view;
     public TabViewItem? Item { get; set; }
+    /// <summary>The tab page this terminal is a pane of.</summary>
+    public TabPage? Page { get; set; }
+    /// <summary>Pane header (host name) shown when a tab is split.</summary>
+    public TextBlock Caption { get; } = new() { Text = host.Label, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+    /// <summary>Set by the window: runs on the UI thread when the connection closes.</summary>
+    public Action? Exited { get; set; }
     public bool Ready { get; set; }
     public bool Closed { get; set; }
     private readonly List<string> _pending = [];
@@ -1145,4 +1423,26 @@ public sealed class TerminalTab(string sessionId, CoreHost host, Microsoft.UI.Xa
         foreach (var json in _pending) View.CoreWebView2?.PostWebMessageAsString(json);
         _pending.Clear();
     }
+}
+
+/// <summary>
+/// One tab of the Terminaller section: one terminal, or up to four side by
+/// side / one above the other (split view). Typing can go to every pane at
+/// once (broadcast).
+/// </summary>
+public sealed class TabPage
+{
+    public const int MaxPanes = 4;
+    public List<TerminalTab> Panes { get; } = [];
+    public TerminalTab? Focused { get; set; }
+    public bool Vertical { get; set; }
+    public bool Broadcast { get; set; }
+    public Grid Root { get; } = new();
+    public TabViewItem? Item { get; set; }
+    public string Title => Panes.Count switch
+    {
+        0 => "",
+        1 => Panes[0].Host.Label + (Panes[0].Closed ? " (kapandı)" : ""),
+        _ => string.Join(" | ", Panes.Select(p => p.Host.Label)),
+    };
 }

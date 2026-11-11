@@ -321,6 +321,192 @@ pub fn host_set_key(
     host_views(state)
 }
 
+/// Terminal options of a host: a command typed when the terminal opens,
+/// environment variables, and SSH agent forwarding.
+pub fn host_set_options(
+    state: &Arc<AppState>,
+    host_id: String,
+    startup_command: Option<String>,
+    env: std::collections::BTreeMap<String, String>,
+    agent_forwarding: bool,
+) -> Result<Vec<HostView>, String> {
+    let startup_command = startup_command
+        .map(|c| {
+            c.trim()
+                .chars()
+                .filter(|c| *c != '\r' && *c != '\n')
+                .take(2000)
+                .collect::<String>()
+        })
+        .filter(|c| !c.is_empty());
+    let mut clean = std::collections::BTreeMap::new();
+    for (name, value) in env {
+        let name = name.trim().to_owned();
+        if name.is_empty() {
+            continue;
+        }
+        if name.len() > 128
+            || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            || name.starts_with(|c: char| c.is_ascii_digit())
+        {
+            return Err(format!("invalid variable name: {name}"));
+        }
+        if value.len() > 4096 || value.chars().any(|c| c == '\0') {
+            return Err(format!("value of {name} is too long"));
+        }
+        clean.insert(name, value);
+    }
+    if clean.len() > 64 {
+        return Err("at most 64 variables".into());
+    }
+    {
+        let mut data = state.data.lock().map_err(|_| "busy")?;
+        let h = data
+            .hosts
+            .iter_mut()
+            .find(|h| h.id == host_id)
+            .ok_or("host not found")?;
+        h.startup_command = startup_command;
+        h.env = clean;
+        h.agent_forwarding = agent_forwarding;
+        state.save(&data)?;
+    }
+    state.changed();
+    host_views(state)
+}
+
+/// Backup file format version written by [`library_export`].
+pub const BACKUP_VERSION: u32 = 1;
+
+/// What a backup holds: hosts (with groups, tunnels and terminal options),
+/// saved commands, trusted host keys and the public part of app keys. No
+/// passwords and no private keys: those stay in this computer's keyring.
+#[derive(Serialize, serde::Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Backup {
+    pub format: String,
+    pub version: u32,
+    #[serde(default)]
+    pub hosts: Vec<SavedHost>,
+    #[serde(default)]
+    pub snippets: Vec<Snippet>,
+    #[serde(default)]
+    pub known_hosts: std::collections::BTreeMap<String, String>,
+}
+
+const BACKUP_FORMAT: &str = "wecommander-library";
+
+pub fn backup_of(data: &Data) -> Backup {
+    Backup {
+        format: BACKUP_FORMAT.into(),
+        version: BACKUP_VERSION,
+        hosts: data
+            .hosts
+            .iter()
+            .cloned()
+            .map(|mut h| {
+                // A key file path or app key belongs to this computer.
+                h.key_path = None;
+                h.key_id = None;
+                h
+            })
+            .collect(),
+        snippets: data.snippets.clone(),
+        known_hosts: data.known_hosts.clone().into_iter().collect(),
+    }
+}
+
+/// The library as JSON for a backup file.
+pub fn library_export(state: &Arc<AppState>) -> Result<String, String> {
+    let data = state.data.lock().map_err(|_| "busy")?;
+    serde_json::to_string_pretty(&backup_of(&data)).map_err(|e| e.to_string())
+}
+
+#[derive(Serialize, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSummary {
+    pub hosts: usize,
+    pub snippets: usize,
+    pub known_hosts: usize,
+    pub skipped: usize,
+}
+
+/// Adds what is new in `backup` to `data`; nothing already here is changed.
+/// A host already here (same id, or same address and user) is skipped.
+pub fn merge_backup(data: &mut Data, backup: Backup) -> Result<ImportSummary, String> {
+    if backup.format != BACKUP_FORMAT {
+        return Err("this is not a WECOMMANDER backup file".into());
+    }
+    if backup.version > BACKUP_VERSION {
+        return Err("this backup was made by a newer version; update the app first".into());
+    }
+    let mut summary = ImportSummary::default();
+    let incoming_ids: Vec<String> = backup.hosts.iter().map(|h| h.id.clone()).collect();
+    for mut h in backup.hosts {
+        let exists = data.hosts.iter().any(|e| {
+            e.id == h.id
+                || (e.profile.host == h.profile.host
+                    && e.profile.port == h.profile.port
+                    && e.profile.user == h.profile.user)
+        });
+        if exists || h.profile.validate().is_err() {
+            summary.skipped += 1;
+            continue;
+        }
+        h.key_path = None;
+        h.key_id = None;
+        h.group = clean_group(h.group);
+        data.hosts.push(h);
+        summary.hosts += 1;
+    }
+    // Jump hosts must point at a host that is here.
+    let ids: Vec<String> = data.hosts.iter().map(|h| h.id.clone()).collect();
+    for h in data
+        .hosts
+        .iter_mut()
+        .filter(|h| incoming_ids.contains(&h.id))
+    {
+        if h.jump_id.as_ref().is_some_and(|j| !ids.contains(j)) {
+            h.jump_id = None;
+        }
+    }
+    for s in backup.snippets {
+        if data
+            .snippets
+            .iter()
+            .any(|e| e.id == s.id || (e.label == s.label && e.command == s.command))
+        {
+            continue;
+        }
+        data.snippets.push(s);
+        summary.snippets += 1;
+    }
+    for (target, fp) in backup.known_hosts {
+        if let std::collections::hash_map::Entry::Vacant(slot) = data.known_hosts.entry(target) {
+            slot.insert(fp);
+            summary.known_hosts += 1;
+        }
+    }
+    Ok(summary)
+}
+
+/// Reads a backup made by [`library_export`] and adds what is new.
+pub fn library_import(state: &Arc<AppState>, json: String) -> Result<ImportSummary, String> {
+    if json.len() > 20 * 1024 * 1024 {
+        return Err("backup file is too large".into());
+    }
+    let backup: Backup = serde_json::from_str(&json)
+        .map_err(|_| "this is not a WECOMMANDER backup file".to_string())?;
+    let summary = {
+        let mut data = state.data.lock().map_err(|_| "busy")?;
+        let summary = merge_backup(&mut data, backup)?;
+        state.save(&data)?;
+        summary
+    };
+    state.changed();
+    Ok(summary)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -335,6 +521,9 @@ mod tests {
             tunnels: Vec::new(),
             group: None,
             key_id: None,
+            startup_command: None,
+            env: Default::default(),
+            agent_forwarding: false,
         }
     }
 
@@ -363,5 +552,57 @@ mod tests {
         assert_eq!(clean_group(Some("  Prod  ".into())), Some("Prod".into()));
         assert_eq!(clean_group(Some("   ".into())), None);
         assert_eq!(clean_group(None), None);
+    }
+
+    #[test]
+    fn backup_round_trip_adds_only_new_entries_and_no_secrets() {
+        let mut src = Data::default();
+        let mut a = host("a", Some("b"));
+        a.profile = HostProfile::new("a", "a.example.com", 22, "deploy").unwrap();
+        a.key_id = Some("k1".into());
+        a.key_path = Some("/home/me/.ssh/id".into());
+        a.startup_command = Some("cd /srv".into());
+        src.hosts.push(a);
+        src.hosts.push(host("b", None));
+        src.snippets.push(Snippet {
+            id: "s".into(),
+            label: "up".into(),
+            command: "uptime".into(),
+        });
+        src.known_hosts.insert("h:22".into(), "SHA256:x".into());
+        let json = serde_json::to_string(&backup_of(&src)).unwrap();
+        assert!(!json.contains("/home/me") && !json.contains("k1"));
+
+        let mut dst = Data::default();
+        dst.hosts.push(host("b", None));
+        let backup: Backup = serde_json::from_str(&json).unwrap();
+        let sum = merge_backup(&mut dst, backup).unwrap();
+        assert_eq!(
+            sum,
+            ImportSummary {
+                hosts: 1,
+                snippets: 1,
+                known_hosts: 1,
+                skipped: 1
+            }
+        );
+        let a = dst.hosts.iter().find(|h| h.id == "a").unwrap();
+        assert_eq!(a.jump_id.as_deref(), Some("b"));
+        assert_eq!(a.startup_command.as_deref(), Some("cd /srv"));
+        assert_eq!(a.key_id, None);
+
+        // Importing again changes nothing.
+        let backup: Backup = serde_json::from_str(&json).unwrap();
+        let sum = merge_backup(&mut dst, backup).unwrap();
+        assert_eq!((sum.hosts, sum.snippets, sum.known_hosts), (0, 0, 0));
+
+        let bad = Backup {
+            format: "other".into(),
+            version: 1,
+            hosts: vec![],
+            snippets: vec![],
+            known_hosts: Default::default(),
+        };
+        assert!(merge_backup(&mut dst, bad).is_err());
     }
 }

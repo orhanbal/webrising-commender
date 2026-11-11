@@ -172,6 +172,17 @@ public static class CoreText
         if (text.StartsWith("jump host ")) return "Atlama sunucusu: " + text["jump host ".Length..];
         if (text.StartsWith("cannot listen on")) return "Port dinlenemiyor:" + text["cannot listen on".Length..];
         if (text.StartsWith("connection failed: ")) return "Bağlanılamadı: " + text["connection failed: ".Length..];
+        if (text.StartsWith("ssh error: server refused the remote forward")) return "Sunucu uzak tüneli reddetti (sshd_config içinde AllowTcpForwarding açık olmalı; port kullanımda olabilir).";
+        if (text.Contains("a saved tunnel needs a fixed local port")) return "Kaydedilen tünel için sabit bir yerel port gir.";
+        if (text.Contains("a saved tunnel needs a fixed server port")) return "Kaydedilen uzak tünel için sabit bir sunucu portu gir.";
+        if (text.Contains("the port on this computer is required")) return "Bu bilgisayardaki servis portunu gir.";
+        if (text.Contains("remote host and port are required")) return "Uzak adres ve port gerekli.";
+        if (text.Contains("is already used by a saved tunnel")) return "Bu yerel port başka bir kayıtlı tünelde kullanılıyor.";
+        if (text.StartsWith("invalid variable name: ")) return "Geçersiz ortam değişkeni adı: " + text["invalid variable name: ".Length..];
+        if (text.Contains("not a WECOMMANDER backup file")) return "Bu dosya bir WECOMMANDER yedeği değil.";
+        if (text.Contains("made by a newer version")) return "Bu yedek daha yeni bir sürümle alınmış; önce uygulamayı güncelle.";
+        if (text.Contains("backup file is too large")) return "Yedek dosyası çok büyük.";
+        if (text == "terminal closed") return "Terminal kapalı.";
         return text;
     }
 }
@@ -180,7 +191,8 @@ public static class CoreText
 
 public sealed record CoreHost(string Id, string Label, string Target, string AuthKind, bool SavedSecret,
     string? KeyPath, string? JumpId, string? TrustedKey, string? Group = null, string User = "", string Host = "", int Port = 22,
-    string? KeyId = null)
+    string? KeyId = null, string? StartupCommand = null, Dictionary<string, string>? Env = null,
+    bool AgentForwarding = false)
 {
     /// <summary>Hosts without a group are listed under this name.</summary>
     public const string NoGroup = "Gruplanmamış";
@@ -202,9 +214,19 @@ public sealed record RemoteEntry(string Name, string Path, string Kind, ulong Si
 
 public sealed record RemoteListing(string Path, string Parent, List<RemoteEntry> Entries);
 
-public sealed record ForwardInfo(string Local, string Remote);
+/// <summary>A running forward; Kind is local (ssh -L), remote (ssh -R) or dynamic (ssh -D, SOCKS5).</summary>
+public sealed record ForwardInfo(string Local, string Remote, string Id = "", string Kind = "local")
+{
+    public string StopId => string.IsNullOrEmpty(Id) ? Local : Id;
+}
 
-public sealed record SavedTunnel(string HostId, string HostLabel, int Index, string Local, string Remote, bool Running);
+/// <summary>What a new tunnel does, as typed in the tunnel dialog.</summary>
+public sealed record TunnelRequest(string Kind, int LocalPort, string RemoteHost, int RemotePort, string? LocalHost = null);
+
+/// <summary>Counts from a backup import.</summary>
+public sealed record ImportSummary(int Hosts, int Snippets, int KnownHosts, int Skipped);
+
+public sealed record SavedTunnel(string HostId, string HostLabel, int Index, string Local, string Remote, bool Running, string Kind = "local");
 
 public sealed record ImportResult(int Added, int Skipped, List<CoreHost> Hosts);
 
