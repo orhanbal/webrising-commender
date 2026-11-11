@@ -691,6 +691,9 @@ struct SettingsPage: View {
                 Stepper(value: $fontSize, in: 8...32, step: 1) { Text("Yazı boyutu: \(Int(fontSize))") }
                 Text("Yeni açılan terminallerde geçerli olur.").font(.caption).foregroundStyle(.secondary)
             }
+            Section("Eşitleme (bilgisayarların arasında)") {
+                SyncSection(model: model)
+            }
             Section("Yedekleme") {
                 Text("Sunucular, gruplar, tüneller, parçacıklar, kimlikler ve güvenilen sunucu anahtarları tek bir dosyaya yazılır. Parolalar ve özel anahtarlar dosyaya girmez; yeni bilgisayarda ilk bağlantıda bir kez sorulur. İçe aktarma var olanları değiştirmez, yalnız yenileri ekler.")
                     .font(.callout).foregroundStyle(.secondary)
@@ -703,6 +706,7 @@ struct SettingsPage: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Ayarlar")
+        .task { await model.refreshSyncStatus() }
     }
 
     private func exportBackup() async {
@@ -731,6 +735,42 @@ struct SettingsPage: View {
                 + (s.skipped > 0 ? " (\(s.skipped) sunucu zaten vardı, atlandı)." : ".")
         } catch {
             status = "Yedek içe aktarılamadı: \(error.localizedDescription)"
+        }
+    }
+}
+
+struct SyncSection: View {
+    @ObservedObject var model: ServersModel
+    @State private var passphrase = ""
+    @State private var again = ""
+    @State private var error: String?
+    @State private var busy = false
+
+    var body: some View {
+        Text("Sunucular, gruplar, tüneller, parçacıklar, kimlikler, anahtarlar ve kayıtlı parolalar aynı hesapla oturum açtığın tüm bilgisayarlarda aynı olur. Her şey bu Mac'te, yalnız senin bildiğin eşitleme parolasıyla şifrelenir; WECOMMANDER sunucusu içeriği göremez. Parolayı unutursan eşitlenen kopya açılamaz.")
+            .font(.callout).foregroundStyle(.secondary)
+        if model.syncConfigured {
+            Text("● Eşitleme açık. " + (model.lastLibrarySync.map { "Son eşitleme: \($0.formatted(date: .omitted, time: .shortened))" } ?? "Henüz eşitlenmedi"))
+            if let e = model.librarySyncError { Text(e).foregroundStyle(.red).font(.callout) }
+            HStack {
+                Button("Şimdi eşitle") { Task { await model.syncLibrary() } }
+                Button("Bu Mac'te kapat") { Task { await model.forgetSync() } }
+            }
+        } else {
+            SecureField("Eşitleme parolası (en az 8 karakter)", text: $passphrase)
+            SecureField("Parolayı tekrar yaz", text: $again)
+            Text("Başka bir bilgisayarda eşitlemeyi zaten açtıysan oradaki parolayı gir.").font(.caption).foregroundStyle(.secondary)
+            if let error { Text(error).foregroundStyle(.red).font(.callout) }
+            Button("Eşitlemeyi aç") {
+                guard passphrase == again else { error = "Parolalar aynı değil."; return }
+                busy = true
+                Task {
+                    do { try await model.setupSync(passphrase: passphrase); error = nil; passphrase = ""; again = "" }
+                    catch { self.error = error.localizedDescription }
+                    busy = false
+                }
+            }
+            .disabled(busy || passphrase.count < 8)
         }
     }
 }

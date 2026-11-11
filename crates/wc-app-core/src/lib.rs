@@ -10,6 +10,7 @@
 
 pub mod library;
 pub mod store;
+pub mod sync;
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -63,6 +64,7 @@ pub fn open(data_dir: &Path, keyring_service: &str, events: Arc<dyn EventSink>) 
         vault_persistent,
         terminals: Mutex::new(HashMap::new()),
         background: Background::default(),
+        sync_pending: sync::Pending::default(),
         events,
     })
 }
@@ -88,6 +90,8 @@ pub struct AppState {
     pub(crate) vault_persistent: bool,
     pub terminals: Mutex<HashMap<String, Terminal>>,
     pub background: Background,
+    /// A20: the merged library waiting for the server to accept it.
+    pub sync_pending: sync::Pending,
     events: Arc<dyn EventSink>,
 }
 

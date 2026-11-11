@@ -183,6 +183,12 @@ public static class CoreText
         if (text.Contains("made by a newer version")) return "Bu yedek daha yeni bir sürümle alınmış; önce uygulamayı güncelle.";
         if (text.Contains("backup file is too large")) return "Yedek dosyası çok büyük.";
         if (text == "terminal closed") return "Terminal kapalı.";
+        if (text == "wrong sync passphrase") return "Eşitleme parolası yanlış (diğer bilgisayarda belirlediğin parolayı gir).";
+        if (text.Contains("sync passphrase needs at least 8")) return "Eşitleme parolası en az 8 karakter olmalı.";
+        if (text.Contains("sync passphrase was changed on another computer")) return "Eşitleme parolası başka bir bilgisayarda değiştirildi; yeni parolayı gir.";
+        if (text.Contains("sync is not set up")) return "Bu bilgisayarda eşitleme açık değil.";
+        if (text.Contains("synced by a newer version")) return "Kütüphane daha yeni bir sürümle eşitlenmiş; önce uygulamayı güncelle.";
+        if (text.StartsWith("sync conflict")) return "Eşitleme çakıştı; birazdan yeniden denenecek.";
         if (text.Contains("identity needs a valid user name")) return "Kimlik için geçerli bir kullanıcı adı gir.";
         if (text.Contains("choose a key for this identity")) return "Bu kimlik için bir anahtar seç (Anahtarlar sayfasından oluşturabilirsin).";
         return text;

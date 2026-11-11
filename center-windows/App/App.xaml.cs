@@ -237,7 +237,7 @@ public partial class App : Application
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WECOMMANDER", "WebView2"));
         _window = new MainWindow();
         BuildTray();
-        Servers.Changed += () => _ui.TryEnqueue(UpdateServersMenu);
+        Servers.Changed += () => _ui.TryEnqueue(() => { UpdateServersMenu(); RequestLibrarySync(); });
         Servers.Start();
         StartEmbeddedAgent();
 
@@ -418,8 +418,47 @@ public partial class App : Application
             if (_link is not null) await PollLinkAsync();
             else if (Token is not null && DateTime.UtcNow - _lastSync >= SyncEvery) await SyncAsync();
             if (DateTime.UtcNow - _lastAgentCheck >= TimeSpan.FromSeconds(10)) await CheckAgentAsync();
+            if (Token is not null && DateTime.UtcNow - _lastLibrarySync >= LibrarySyncEvery) await LibrarySyncAsync();
         }
         finally { _syncing = false; }
+    }
+
+    // ---- A20: host library sync between the user's computers ----
+
+    private static readonly TimeSpan LibrarySyncEvery = TimeSpan.FromMinutes(5);
+    private DateTime _lastLibrarySync = DateTime.MinValue;
+
+    /// <summary>The last sync problem, shown in Settings (null when the last round worked).</summary>
+    public string? LibrarySyncError { get; private set; }
+
+    /// <summary>A change here goes to the other computers a few seconds later.</summary>
+    public void RequestLibrarySync()
+    {
+        var soon = DateTime.UtcNow - LibrarySyncEvery + TimeSpan.FromSeconds(5);
+        if (soon < _lastLibrarySync) _lastLibrarySync = soon;
+    }
+
+    public async Task LibrarySyncAsync()
+    {
+        _lastLibrarySync = DateTime.UtcNow;
+        if (Token is not { } token) return;
+        try
+        {
+            await Servers.SyncLibrary(Gateway, token);
+            LibrarySyncError = null;
+        }
+        catch (Exception e) when (e is CoreException or GatewayException)
+        {
+            LibrarySyncError = e.Message;
+        }
+    }
+
+    public async Task SetupLibrarySync(string passphrase)
+    {
+        if (Token is not { } token) throw new GatewayException(GatewayErrorKind.Unauthorized, 401, "", "Önce oturum aç.");
+        await Servers.SetupSync(Gateway, token, passphrase);
+        _lastLibrarySync = DateTime.UtcNow;
+        LibrarySyncError = null;
     }
 
     public void RequestSync() => _lastSync = DateTime.MinValue;

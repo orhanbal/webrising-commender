@@ -3728,6 +3728,50 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       await auditControl(principal!, null, "center.pairing_code", "medium", "success", "{}");
       return void json(res, 201, { pairingCode: code, expiresInSeconds: 300 });
     }
+    if (url.pathname === "/api/center/library" && (req.method === "GET" || req.method === "PUT")) {
+      // A20 sync: the envelope is encrypted by the app with a key derived
+      // from the user's sync passphrase; the server only stores it. A write
+      // names the revision it was based on, so a concurrent write from
+      // another computer is answered with 409 and the newer envelope.
+      if (principal!.authKind !== "center") return void json(res, 403, { error: "center_token_required" });
+      if (!principal!.userId) return void json(res, 403, { error: "user_required" });
+      if (req.method === "GET") {
+        const row = await db.query<{ revision: string; envelope: string }>(
+          "select revision,envelope from library_sync where user_id=$1", [principal!.userId],
+        );
+        const r = row.rows[0];
+        return void json(res, 200, { revision: r ? Number(r.revision) : 0, envelope: r?.envelope ?? null });
+      }
+      const body = z.object({
+        baseRevision: z.number().int().min(0),
+        envelope: z.string().min(16).max(1_900_000),
+      }).parse(await readJson(req));
+      try {
+        const parsed = JSON.parse(body.envelope) as { format?: unknown };
+        if (parsed?.format !== "wecommander-sync") return void json(res, 400, { error: "invalid_envelope" });
+      } catch {
+        return void json(res, 400, { error: "invalid_envelope" });
+      }
+      const written = body.baseRevision === 0
+        ? await db.query<{ revision: string }>(
+          `insert into library_sync(user_id,organization_id,revision,envelope) values($1,$2,1,$3)
+           on conflict (user_id) do nothing returning revision`,
+          [principal!.userId, principal!.organizationId, body.envelope],
+        )
+        : await db.query<{ revision: string }>(
+          `update library_sync set envelope=$3,revision=revision+1,updated_at=now(),organization_id=$4
+            where user_id=$1 and revision=$2 returning revision`,
+          [principal!.userId, body.baseRevision, body.envelope, principal!.organizationId],
+        );
+      if (!written.rowCount) {
+        const now = await db.query<{ revision: string; envelope: string }>(
+          "select revision,envelope from library_sync where user_id=$1", [principal!.userId],
+        );
+        const r = now.rows[0];
+        return void json(res, 409, { error: "conflict", revision: r ? Number(r.revision) : 0, envelope: r?.envelope ?? null });
+      }
+      return void json(res, 200, { revision: Number(written.rows[0]!.revision) });
+    }
     if (req.method === "POST" && url.pathname === "/api/center/disconnect") {
       if (principal!.authKind !== "center") return void json(res, 403, { error: "center_token_required" });
       await db.query("update management_centers set revoked_at=coalesce(revoked_at,now()) where id=$1", [principal!.centerId]);

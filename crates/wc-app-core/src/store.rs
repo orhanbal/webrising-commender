@@ -155,6 +155,11 @@ impl Store {
         }
     }
 
+    /// The app data folder.
+    pub fn dir(&self) -> &Path {
+        self.path.parent().unwrap_or(Path::new("."))
+    }
+
     pub fn load(&self) -> Data {
         std::fs::read(&self.path)
             .ok()

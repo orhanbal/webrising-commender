@@ -572,6 +572,17 @@ export async function migrate() {
     -- Monthly tool-call quota: counted per workspace on every MCP call.
     create index if not exists audit_logs_org_created_idx on audit_logs(organization_id,created_at desc);
 
+    -- A20: each user's host library for the apps, end-to-end encrypted on
+    -- the device (the server keeps an opaque envelope and a revision used to
+    -- detect concurrent writes; it can never read the library).
+    create table if not exists library_sync (
+      user_id uuid primary key references users(id) on delete cascade,
+      organization_id uuid not null references organizations(id) on delete cascade,
+      revision bigint not null default 0,
+      envelope text not null,
+      updated_at timestamptz not null default now()
+    );
+
     insert into organizations(name)
       select 'Self Hosted'
       where not exists(select 1 from organizations);

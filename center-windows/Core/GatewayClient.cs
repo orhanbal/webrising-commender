@@ -120,4 +120,31 @@ public sealed class GatewayClient(HttpClient http, string baseUrl)
 
     public async Task DisconnectAsync(string token, CancellationToken ct = default) =>
         await SendAsync(HttpMethod.Post, "/api/center/disconnect", token, new { }, ct).ConfigureAwait(false);
+
+    /// <summary>A20: the encrypted host library and its revision (0 = nothing synced yet).</summary>
+    public async Task<LibraryState> LibraryAsync(string token, CancellationToken ct = default)
+    {
+        var node = await SendAsync(HttpMethod.Get, "/api/center/library", token, null, ct).ConfigureAwait(false);
+        return new LibraryState(node?["revision"]?.GetValue<long>() ?? 0, node?["envelope"]?.GetValueKind() == JsonValueKind.String ? node["envelope"]!.GetValue<string>() : null);
+    }
+
+    /// <summary>
+    /// Uploads the library written on top of <paramref name="baseRevision"/>. When another
+    /// computer wrote first the server answers 409 with its newer library: returned as
+    /// Accepted = false with that state, to merge and try again.
+    /// </summary>
+    public async Task<(bool Accepted, LibraryState State)> PutLibraryAsync(string token, long baseRevision, string envelope, CancellationToken ct = default)
+    {
+        try
+        {
+            var node = await SendAsync(HttpMethod.Put, "/api/center/library", token, new { baseRevision, envelope }, ct).ConfigureAwait(false);
+            return (true, new LibraryState(node?["revision"]?.GetValue<long>() ?? baseRevision + 1, envelope));
+        }
+        catch (GatewayException e) when (e.Status == 409)
+        {
+            return (false, await LibraryAsync(token, ct).ConfigureAwait(false));
+        }
+    }
 }
+
+public sealed record LibraryState(long Revision, string? Envelope);

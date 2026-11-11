@@ -223,6 +223,17 @@ struct HostIdentity {
     identity_id: Option<String>,
 }
 #[derive(Deserialize)]
+struct SyncSetup {
+    passphrase: String,
+    #[serde(default)]
+    remote: Option<String>,
+}
+#[derive(Deserialize)]
+struct SyncMerge {
+    #[serde(default)]
+    remote: Option<String>,
+}
+#[derive(Deserialize)]
 struct ImportArg {
     json: String,
 }
@@ -407,6 +418,20 @@ async fn dispatch(
                 h.identity_id,
             )?)
         }
+        "sync.status" => ok(core::sync::status(state)),
+        "sync.setup" => {
+            let a: SyncSetup = p(params)?;
+            ok(core::sync::setup(state, a.passphrase, a.remote)?)
+        }
+        "sync.merge" => {
+            let a: SyncMerge = p(params)?;
+            ok(core::sync::merge(state, &state.sync_pending, a.remote)?)
+        }
+        "sync.committed" => {
+            core::sync::committed(state, &state.sync_pending)?;
+            ok(serde_json::json!({ "ok": true }))
+        }
+        "sync.forget" => ok(core::sync::forget(state)),
         "library.export" => {
             ok(serde_json::json!({ "json": core::library::library_export(state)? }))
         }

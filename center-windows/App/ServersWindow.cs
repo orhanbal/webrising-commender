@@ -419,9 +419,66 @@ public sealed class ServersWindow : Window
         var backupRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         backupRow.Children.Add(ActionButton("Dışa aktar…", Symbol.Save, () => _ = ExportBackup()));
         backupRow.Children.Add(ActionButton("İçe aktar…", Symbol.OpenFile, () => _ = ImportBackup()));
+        var syncTitle = new TextBlock { Text = "Eşitleme (bilgisayarların arasında)", Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], Margin = new Thickness(0, 8, 0, 0) };
+        var syncPanel = new StackPanel { Spacing = 8 };
+        _ = RenderSync(syncPanel);
         var body = new StackPanel { Spacing = 18, MaxWidth = 640, HorizontalAlignment = HorizontalAlignment.Left };
-        foreach (var e in new UIElement[] { font, theme, keys, backupTitle, backupHelp, backupRow, center }) body.Children.Add(e);
+        foreach (var e in new UIElement[] { font, theme, keys, syncTitle, syncPanel, backupTitle, backupHelp, backupRow, center }) body.Children.Add(e);
         _nav.Content = Page("Ayarlar", "Terminal görünümü; değişiklikler açık terminallere hemen uygulanır.", new ScrollViewer { Content = body });
+    }
+
+    private async Task RenderSync(StackPanel panel)
+    {
+        panel.Children.Clear();
+        var status = await _c.SyncStatus();
+        var help = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Secondary,
+            Text = "Sunucular, gruplar, tüneller, parçacıklar, kimlikler, anahtarlar ve kayıtlı parolalar aynı hesapla oturum açtığın tüm bilgisayarlarda aynı olur. "
+                + "Her şey bu bilgisayarda, yalnız senin bildiğin eşitleme parolasıyla şifrelenir; WECOMMANDER sunucusu içeriği göremez. Parolayı unutursan eşitlenen kopya açılamaz.",
+        };
+        panel.Children.Add(help);
+        var error = new TextBlock { Foreground = new SolidColorBrush(Microsoft.UI.Colors.IndianRed), TextWrapping = TextWrapping.Wrap };
+        if (!status.Configured)
+        {
+            var pass = new PasswordBox { Header = "Eşitleme parolası (en az 8 karakter)", Width = 320, HorizontalAlignment = HorizontalAlignment.Left };
+            var again = new PasswordBox { Header = "Parolayı tekrar yaz", Width = 320, HorizontalAlignment = HorizontalAlignment.Left };
+            var note = new TextBlock { Text = "Başka bir bilgisayarda eşitlemeyi zaten açtıysan oradaki parolayı gir.", Foreground = Secondary, TextWrapping = TextWrapping.Wrap };
+            var start = ActionButton("Eşitlemeyi aç", Symbol.Sync, async () =>
+            {
+                error.Text = "";
+                if (pass.Password != again.Password) { error.Text = "Parolalar aynı değil."; return; }
+                try
+                {
+                    await App.Current.SetupLibrarySync(pass.Password);
+                    Show("Eşitleme açıldı.", InfoBarSeverity.Success);
+                    await RenderSync(panel);
+                }
+                catch (Exception e) when (e is CoreException or GatewayException) { error.Text = e.Message; }
+            }, accent: true);
+            foreach (var e in new UIElement[] { pass, again, note, start, error }) panel.Children.Add(e);
+            return;
+        }
+        var last = _c.LastLibrarySync is { } t ? $"Son eşitleme: {t:HH:mm}" : "Henüz eşitlenmedi";
+        panel.Children.Add(new TextBlock { Text = "● Eşitleme açık. " + last + (status.Persistent ? "" : " (anahtar zinciri yok: eşitleme anahtarı uygulama kapanınca unutulur)") });
+        if (App.Current.LibrarySyncError is { } problem) error.Text = problem;
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        row.Children.Add(ActionButton("Şimdi eşitle", Symbol.Sync, async () =>
+        {
+            await App.Current.LibrarySyncAsync();
+            await RenderSync(panel);
+            if (App.Current.LibrarySyncError is null) Show("Eşitlendi.", InfoBarSeverity.Success);
+        }));
+        row.Children.Add(ActionButton("Bu bilgisayarda kapat", Symbol.Cancel, async () =>
+        {
+            var dialog = Dialog("Eşitleme bu bilgisayarda kapatılsın mı?", new TextBlock { Text = "Buradaki sunucular silinmez; yalnız artık diğer bilgisayarlarla eşitlenmez. Sunucudaki şifreli kopya kalır.", TextWrapping = TextWrapping.Wrap }, "Kapat");
+            if (await ShowDialog(dialog) != ContentDialogResult.Primary) return;
+            await Guard(() => _c.ForgetSync());
+            await RenderSync(panel);
+        }));
+        panel.Children.Add(row);
+        panel.Children.Add(error);
     }
 
     private async Task ExportBackup()

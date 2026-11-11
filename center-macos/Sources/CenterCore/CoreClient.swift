@@ -307,6 +307,10 @@ public enum CoreText {
         if text.contains("identity needs a valid user name") { return "Kimlik için geçerli bir kullanıcı adı gir." }
         if text.contains("choose a key for this identity") { return "Bu kimlik için bir anahtar seç (Anahtarlar sayfasından oluşturabilirsin)." }
         if text == "terminal closed" { return "Terminal kapalı." }
+        if text == "wrong sync passphrase" { return "Eşitleme parolası yanlış (diğer bilgisayarda belirlediğin parolayı gir)." }
+        if text.contains("sync passphrase needs at least 8") { return "Eşitleme parolası en az 8 karakter olmalı." }
+        if text.contains("sync passphrase was changed on another computer") { return "Eşitleme parolası başka bir bilgisayarda değiştirildi; yeni parolayı gir." }
+        if text.contains("synced by a newer version") { return "Kütüphane daha yeni bir sürümle eşitlenmiş; önce uygulamayı güncelle." }
         return text
     }
 }

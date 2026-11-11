@@ -84,6 +84,27 @@ final class ServersModel: ObservableObject {
 
     func stop() { core?.stop() }
 
+    private var syncTimer: Timer?
+    private var soonSync: Task<Void, Never>?
+
+    /// A change here goes to the other computers a few seconds later.
+    func scheduleLibrarySync() {
+        soonSync?.cancel()
+        soonSync = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            if !Task.isCancelled { await self?.syncLibrary() }
+        }
+    }
+
+    /// Every 5 minutes, plus right away.
+    func startLibrarySync() {
+        guard syncTimer == nil else { return }
+        syncTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+            Task { @MainActor in await self?.syncLibrary() }
+        }
+        Task { await syncLibrary() }
+    }
+
     private func event(_ name: String, _ data: Any?) {
         let object = data as? [String: Any] ?? [:]
         switch name {
@@ -108,6 +129,7 @@ final class ServersModel: ObservableObject {
             transfers[id] = t
         case "changed", "tunnels-changed":
             Task { await reload() }
+            scheduleLibrarySync()
         default:
             break
         }
@@ -486,5 +508,74 @@ final class ServersModel: ObservableObject {
         let summary = try await core.call("library.import", ["json": json], as: ImportSummary.self)
         await reload()
         return summary
+    }
+
+    // MARK: A20 sync between the user's computers
+
+    /// The gateway and the signed-in token, set by the app delegate.
+    var credentials: (() -> (GatewayClient, String)?)?
+    @Published private(set) var syncConfigured = false
+    @Published private(set) var syncPersistent = true
+    @Published private(set) var lastLibrarySync: Date?
+    @Published var librarySyncError: String?
+    private var syncing = false
+
+    func refreshSyncStatus() async {
+        guard let core, let reply = try? await core.call("sync.status") as? [String: Any] else { return }
+        syncConfigured = reply["configured"] as? Bool ?? false
+        syncPersistent = reply["persistent"] as? Bool ?? true
+    }
+
+    /// Turns sync on with the passphrase (checked against the server's library when there is one).
+    func setupSync(passphrase: String) async throws {
+        guard let core else { throw CoreClient.Failure.stopped }
+        guard let creds = credentials?() else { throw CoreClient.Failure.core("Önce oturum aç.") }
+        let (gateway, token) = creds
+        let remote = try await gateway.library(token: token)
+        var params: [String: Any] = ["passphrase": passphrase]
+        if let envelope = remote.envelope { params["remote"] = envelope }
+        _ = try await core.call("sync.setup", params)
+        await refreshSyncStatus()
+        await syncLibrary()
+        if let error = librarySyncError { throw CoreClient.Failure.core(error) }
+    }
+
+    func forgetSync() async {
+        guard let core else { return }
+        _ = try? await core.call("sync.forget")
+        await refreshSyncStatus()
+    }
+
+    /// One sync round: merge the server's library here, upload the result;
+    /// when another computer uploaded in between, merge again.
+    func syncLibrary() async {
+        guard !syncing, let core, let creds = credentials?() else { return }
+        let (gateway, token) = creds
+        await refreshSyncStatus()
+        guard syncConfigured else { return }
+        syncing = true
+        defer { syncing = false }
+        do {
+            var state = try await gateway.library(token: token)
+            var changed = false
+            for _ in 0..<4 {
+                var params: [String: Any] = [:]
+                if let envelope = state.envelope { params["remote"] = envelope }
+                let merge = try await core.call("sync.merge", params) as? [String: Any] ?? [:]
+                changed = changed || (merge["changedHere"] as? Bool ?? false)
+                guard let upload = merge["envelope"] as? String else { break }
+                let put = try await gateway.putLibrary(token: token, baseRevision: state.revision, envelope: upload)
+                if put.accepted {
+                    _ = try await core.call("sync.committed")
+                    break
+                }
+                state = put.state
+            }
+            lastLibrarySync = Date()
+            librarySyncError = nil
+            if changed { await reload() }
+        } catch {
+            librarySyncError = error.localizedDescription
+        }
     }
 }

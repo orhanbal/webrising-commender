@@ -150,6 +150,58 @@ public class CoreClientTests
         }
     }
 
+    /// <summary>A20: two computers sync through a stand-in for /api/center/library.</summary>
+    [Fact]
+    public async Task LibrarySyncsBetweenTwoComputers()
+    {
+        if (Bin is null) return;
+        var dirA = Path.Combine(Path.GetTempPath(), "wc-core-" + Guid.NewGuid());
+        var dirB = Path.Combine(Path.GetTempPath(), "wc-core-" + Guid.NewGuid());
+        var server = new LibraryState(0, null);
+        Task<LibraryState> Get() => Task.FromResult(server);
+        Task<(bool, LibraryState)> Put(long rev, string env)
+        {
+            if (rev != server.Revision) return Task.FromResult((false, server));
+            Assert.DoesNotContain("web.example.com", env); // the server never sees the library
+            server = new LibraryState(rev + 1, env);
+            return Task.FromResult((true, server));
+        }
+        try
+        {
+            using var a = CoreClient.Start(Bin, dirA, "app.wecommander.sync-a");
+            using var b = CoreClient.Start(Bin, dirB, "app.wecommander.sync-b");
+            Assert.False((await a.CallAsync<SyncStatus>("sync.status")).Configured);
+            await a.CallAsync<SyncStatus>("sync.setup", new { passphrase = "correct horse battery" });
+            var hosts = await a.CallAsync<List<CoreHost>>("hosts.add", new { label = "Web", host = "web.example.com", port = 22, user = "deploy", authKind = "key" });
+            await LibrarySync.RunAsync(a, Get, Put);
+            Assert.Equal(1, server.Revision);
+
+            // The second computer needs the same passphrase.
+            await Assert.ThrowsAsync<CoreException>(() => b.CallAsync("sync.setup", new { passphrase = "wrong passphrase", remote = server.Envelope }));
+            await b.CallAsync("snippets.save", new { label = "Disk", command = "df -h" });
+            await b.CallAsync<SyncStatus>("sync.setup", new { passphrase = "correct horse battery", remote = server.Envelope });
+            Assert.True(await LibrarySync.RunAsync(b, Get, Put));
+            Assert.Equal("Web", Assert.Single(await b.CallAsync<List<CoreHost>>("hosts.list")).Label);
+
+            // A gets B's snippet; then a deletion on A reaches B.
+            Assert.True(await LibrarySync.RunAsync(a, Get, Put));
+            Assert.Equal("Disk", Assert.Single(await a.CallAsync<List<Snippet>>("snippets.list")).Label);
+            await a.CallAsync("hosts.delete", new { id = hosts[0].Id });
+            await LibrarySync.RunAsync(a, Get, Put);
+            await LibrarySync.RunAsync(b, Get, Put);
+            Assert.Empty(await b.CallAsync<List<CoreHost>>("hosts.list"));
+            Assert.Single(await b.CallAsync<List<Snippet>>("snippets.list"));
+            // Nothing new: no upload.
+            var rev = server.Revision;
+            Assert.False(await LibrarySync.RunAsync(b, Get, Put));
+            Assert.Equal(rev, server.Revision);
+        }
+        finally
+        {
+            foreach (var d in new[] { dirA, dirB }) try { Directory.Delete(d, true); } catch (Exception) { }
+        }
+    }
+
     [Fact]
     public void HandlesRepliesAndEventsLine()
     {

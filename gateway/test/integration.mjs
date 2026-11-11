@@ -1060,6 +1060,26 @@ assert.equal(centerPairingBody.expiresInSeconds, 300);
 assert.equal((await acceptanceDb.query(
   "select 1 from audit_logs where tool='center.pairing_code'",
 )).rowCount, 1, "center pairing codes are audited");
+// A20: the encrypted host library, with revision checks.
+const envelope = (n) => JSON.stringify({ format: "wecommander-sync", v: 1, salt: "c2FsdA==", nonce: "bm9uY2U=", data: "x".repeat(n) });
+assert.deepEqual(await jsonFetch("/api/center/library", { headers: centerHeaders }), { revision: 0, envelope: null });
+const libFirst = await fetch(base + "/api/center/library", { method: "PUT", headers: centerHeaders, body: JSON.stringify({ baseRevision: 0, envelope: envelope(10) }) });
+assert.equal(libFirst.status, 200);
+assert.equal((await libFirst.json()).revision, 1);
+const libStale = await fetch(base + "/api/center/library", { method: "PUT", headers: centerHeaders, body: JSON.stringify({ baseRevision: 0, envelope: envelope(20) }) });
+assert.equal(libStale.status, 409, "a write based on an old revision is refused");
+const libStaleBody = await libStale.json();
+assert.equal(libStaleBody.revision, 1);
+assert.equal(libStaleBody.envelope, envelope(10), "the conflict answer carries the newer library");
+const libNext = await fetch(base + "/api/center/library", { method: "PUT", headers: centerHeaders, body: JSON.stringify({ baseRevision: 1, envelope: envelope(30) }) });
+assert.equal((await libNext.json()).revision, 2);
+assert.equal((await jsonFetch("/api/center/library", { headers: centerHeaders })).envelope, envelope(30));
+const libBad = await fetch(base + "/api/center/library", { method: "PUT", headers: centerHeaders, body: JSON.stringify({ baseRevision: 2, envelope: "plain text library, not encrypted" }) });
+assert.equal(libBad.status, 400, "only encrypted envelopes are stored");
+await libBad.text();
+const libBrowser = await fetch(base + "/api/center/library", { headers: browserCenterHeaders });
+assert.equal(libBrowser.status, 403, "only the app (Center token) reads the library");
+await libBrowser.text();
 const browserPairingCode = await fetch(base + "/api/center/pairing-code", { method: "POST", headers: browserCenterHeaders, body: "{}" });
 assert.equal(browserPairingCode.status, 403, "only a Center token gets a Center pairing code");
 await browserPairingCode.text();

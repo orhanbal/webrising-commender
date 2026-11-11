@@ -50,6 +50,10 @@ public struct GatewayClient: Sendable {
         self.transport = transport
     }
 
+    func sendJSON(_ method: String, _ path: String, token: String?, body: [String: Any]?) async throws -> Any? {
+        try await send(method, path, token: token, body: body)
+    }
+
     private func send(_ method: String, _ path: String, token: String?, body: [String: Any]?) async throws -> Any? {
         guard let url = URL(string: base + path) else {
             throw GatewayError(.network, 0, "bad_url", "Sunucu adresi geçersiz.")
@@ -167,5 +171,36 @@ public struct GatewayClient: Sendable {
 
     public func disconnect(token: String) async throws {
         _ = try await send("POST", "/api/center/disconnect", token: token, body: [:])
+    }
+}
+
+/// A20: the encrypted host library on the server and its revision (0 = nothing synced yet).
+public struct LibraryState: Equatable {
+    public let revision: Int64
+    public let envelope: String?
+    public init(revision: Int64, envelope: String?) {
+        self.revision = revision
+        self.envelope = envelope
+    }
+}
+
+extension GatewayClient {
+    public func library(token: String) async throws -> LibraryState {
+        let json = try await sendJSON("GET", "/api/center/library", token: token, body: nil) as? [String: Any]
+        return LibraryState(revision: (json?["revision"] as? NSNumber)?.int64Value ?? 0,
+                            envelope: json?["envelope"] as? String)
+    }
+
+    /// Uploads the library written on top of `baseRevision`. When another
+    /// computer wrote first (409), returns false with the server's newer
+    /// library to merge and try again.
+    public func putLibrary(token: String, baseRevision: Int64, envelope: String) async throws -> (accepted: Bool, state: LibraryState) {
+        do {
+            let json = try await sendJSON("PUT", "/api/center/library", token: token,
+                                          body: ["baseRevision": baseRevision, "envelope": envelope]) as? [String: Any]
+            return (true, LibraryState(revision: (json?["revision"] as? NSNumber)?.int64Value ?? baseRevision + 1, envelope: envelope))
+        } catch let error as GatewayError where error.status == 409 {
+            return (false, try await library(token: token))
+        }
     }
 }

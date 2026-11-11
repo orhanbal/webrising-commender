@@ -199,6 +199,41 @@ public sealed class ServersController : IDisposable
         return list;
     }
 
+    // ---- A20 sync ----
+
+    public async Task<SyncStatus> SyncStatus()
+    {
+        try { return await Core.CallAsync<SyncStatus>("sync.status"); }
+        catch (CoreException) { return new SyncStatus(false, false); }
+    }
+
+    /// <summary>Turns sync on with the passphrase (checked against the server's library when there is one).</summary>
+    public async Task SetupSync(GatewayClient gateway, string token, string passphrase)
+    {
+        var remote = await gateway.LibraryAsync(token);
+        await Core.CallAsync<SyncStatus>("sync.setup", new { passphrase, remote = remote.Envelope });
+        await SyncLibrary(gateway, token);
+    }
+
+    public Task ForgetSync() => Core.CallAsync("sync.forget");
+
+    private readonly SemaphoreSlim _syncGate = new(1, 1);
+    public DateTime? LastLibrarySync { get; private set; }
+
+    /// <summary>One sync round; does nothing when sync is off on this computer.</summary>
+    public async Task SyncLibrary(GatewayClient gateway, string token)
+    {
+        if (!await _syncGate.WaitAsync(0)) return;
+        try
+        {
+            if (!(await SyncStatus()).Configured) return;
+            var changed = await LibrarySync.RunAsync(Core, () => gateway.LibraryAsync(token), (rev, env) => gateway.PutLibraryAsync(token, rev, env));
+            LastLibrarySync = DateTime.Now;
+            if (changed) await Reload();
+        }
+        finally { _syncGate.Release(); }
+    }
+
     public Task<List<Identity>> Identities() => Core.CallAsync<List<Identity>>("identities.list");
 
     public Task<List<Identity>> SaveIdentity(string? id, string label, string user, string authKind, string? keyId, string? password) =>
