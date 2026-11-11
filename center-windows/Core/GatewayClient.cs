@@ -145,6 +145,38 @@ public sealed class GatewayClient(HttpClient http, string baseUrl)
             return (false, await LibraryAsync(token, ct).ConfigureAwait(false));
         }
     }
+
+    public async Task<TeamState> TeamAsync(string token, CancellationToken ct = default) =>
+        Read<TeamState>(await SendAsync(HttpMethod.Get, "/api/center/team", token, null, ct).ConfigureAwait(false));
+
+    public async Task PutTeamKeyAsync(string token, string publicKey, CancellationToken ct = default) =>
+        await SendAsync(HttpMethod.Put, "/api/center/team/key", token, new { publicKey }, ct).ConfigureAwait(false);
+
+    public async Task PutWrappedKeyAsync(string token, string centerId, string wrappedKey, CancellationToken ct = default) =>
+        await SendAsync(HttpMethod.Put, "/api/center/team/wrapped-key", token, new { centerId, wrappedKey }, ct).ConfigureAwait(false);
+
+    public async Task<(bool Accepted, LibraryState State)> PutTeamLibraryAsync(string token, long baseRevision, string envelope, CancellationToken ct = default)
+    {
+        try
+        {
+            var node = await SendAsync(HttpMethod.Put, "/api/center/team/library", token, new { baseRevision, envelope }, ct).ConfigureAwait(false);
+            return (true, new LibraryState(node?["revision"]?.GetValue<long>() ?? baseRevision + 1, envelope));
+        }
+        catch (GatewayException e) when (e.Status == 409)
+        {
+            var team = await TeamAsync(token, ct).ConfigureAwait(false);
+            return (false, new LibraryState(team.Revision, team.Envelope));
+        }
+    }
 }
 
 public sealed record LibraryState(long Revision, string? Envelope);
+
+/// <summary>A22: one app (Management Center) of a team member and whether it has the team key.</summary>
+public sealed record TeamMember(string CenterId, string Email, string Role, string CenterName, string PublicKey, bool HasKey);
+
+/// <summary>A22: the team as this app sees it.</summary>
+public sealed record TeamState(string? OrganizationName, string Role, string? MyWrappedKey, List<TeamMember> Members, long Revision, string? Envelope)
+{
+    public bool CanEdit => Role is "operator" or "admin" or "owner";
+}

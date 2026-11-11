@@ -204,3 +204,55 @@ extension GatewayClient {
         }
     }
 }
+
+
+/// A22: one app of a team member and whether it has the team key.
+public struct TeamMember: Decodable, Equatable, Hashable {
+    public let centerId: String
+    public let email: String
+    public let role: String
+    public let centerName: String
+    public let publicKey: String
+    public let hasKey: Bool
+}
+
+/// A22: the team as this app sees it.
+public struct TeamState: Decodable, Equatable {
+    public let organizationName: String?
+    public let role: String
+    public let myWrappedKey: String?
+    public let members: [TeamMember]
+    public let revision: Int64
+    public let envelope: String?
+    public var canEdit: Bool { ["operator", "admin", "owner"].contains(role) }
+}
+
+extension GatewayClient {
+    public func team(token: String) async throws -> TeamState {
+        let json = try await sendJSON("GET", "/api/center/team", token: token, body: nil)
+        guard let json, let data = try? JSONSerialization.data(withJSONObject: json),
+              let state = try? JSONDecoder().decode(TeamState.self, from: data) else {
+            throw GatewayError(.network, 0, "bad_response", "Sunucudan beklenmeyen yanıt.")
+        }
+        return state
+    }
+
+    public func putTeamKey(token: String, publicKey: String) async throws {
+        _ = try await sendJSON("PUT", "/api/center/team/key", token: token, body: ["publicKey": publicKey])
+    }
+
+    public func putWrappedKey(token: String, centerId: String, wrappedKey: String) async throws {
+        _ = try await sendJSON("PUT", "/api/center/team/wrapped-key", token: token, body: ["centerId": centerId, "wrappedKey": wrappedKey])
+    }
+
+    public func putTeamLibrary(token: String, baseRevision: Int64, envelope: String) async throws -> (accepted: Bool, state: LibraryState) {
+        do {
+            let json = try await sendJSON("PUT", "/api/center/team/library", token: token,
+                                          body: ["baseRevision": baseRevision, "envelope": envelope]) as? [String: Any]
+            return (true, LibraryState(revision: (json?["revision"] as? NSNumber)?.int64Value ?? baseRevision + 1, envelope: envelope))
+        } catch let error as GatewayError where error.status == 409 {
+            let now = try await team(token: token)
+            return (false, LibraryState(revision: now.revision, envelope: now.envelope))
+        }
+    }
+}

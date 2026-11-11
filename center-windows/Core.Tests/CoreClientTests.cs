@@ -202,6 +202,75 @@ public class CoreClientTests
         }
     }
 
+    /// <summary>A22: a stand-in for /api/center/team shared by two apps.</summary>
+    private sealed class FakeTeam
+    {
+        public readonly Dictionary<string, (string Pub, string? Wrapped)> Keys = [];
+        public LibraryState Library = new(0, null);
+        public Server For(string centerId, string role) => new(this, centerId, role);
+
+        public sealed class Server(FakeTeam t, string centerId, string role) : ITeamServer
+        {
+            public Task<TeamState> GetAsync() => Task.FromResult(new TeamState("Acme", role,
+                t.Keys.TryGetValue(centerId, out var mine) ? mine.Wrapped : null,
+                t.Keys.Select(k => new TeamMember(k.Key, k.Key + "@x", "operator", k.Key, k.Value.Pub, k.Value.Wrapped is not null)).ToList(),
+                t.Library.Revision, t.Library.Envelope));
+            public Task PutKeyAsync(string publicKey) { t.Keys[centerId] = (publicKey, null); return Task.CompletedTask; }
+            public Task PutWrappedKeyAsync(string id, string wrapped) { t.Keys[id] = (t.Keys[id].Pub, wrapped); return Task.CompletedTask; }
+            public Task<(bool, LibraryState)> PutLibraryAsync(long rev, string env)
+            {
+                if (rev != t.Library.Revision) return Task.FromResult((false, t.Library));
+                Assert.DoesNotContain("db.example.com", env);
+                t.Library = new LibraryState(rev + 1, env);
+                return Task.FromResult((true, t.Library));
+            }
+        }
+    }
+
+    [Fact]
+    public async Task TeamSharesHostsEndToEnd()
+    {
+        if (Bin is null) return;
+        var dirA = Path.Combine(Path.GetTempPath(), "wc-core-" + Guid.NewGuid());
+        var dirB = Path.Combine(Path.GetTempPath(), "wc-core-" + Guid.NewGuid());
+        var team = new FakeTeam();
+        try
+        {
+            using var a = CoreClient.Start(Bin, dirA, "app.wecommander.team-a");
+            using var b = CoreClient.Start(Bin, dirB, "app.wecommander.team-b");
+            var hosts = await a.CallAsync<List<CoreHost>>("hosts.add", new { label = "DB", host = "db.example.com", port = 22, user = "ops", authKind = "password" });
+            await a.CallAsync("hosts.add", new { label = "Mine", host = "me.example.com", port = 22, user = "me", authKind = "key" });
+            hosts = await a.CallAsync<List<CoreHost>>("library.setTeam", new { kind = "host", id = hosts[0].Id, team = true });
+            Assert.True(hosts.Single(h => h.Label == "DB").Team);
+
+            Assert.Equal(TeamSyncState.Ok, (await TeamSync.RunAsync(a, team.For("A", "admin"))).State);
+            Assert.Equal(TeamSyncState.WaitingForKey, (await TeamSync.RunAsync(b, team.For("B", "operator"))).State);
+            await TeamSync.RunAsync(a, team.For("A", "admin")); // gives B the key
+            var (state, changed) = await TeamSync.RunAsync(b, team.For("B", "operator"));
+            Assert.Equal((TeamSyncState.Ok, true), (state, changed));
+            var shared = Assert.Single(await b.CallAsync<List<CoreHost>>("hosts.list"));
+            Assert.Equal(("DB", true), (shared.Label, shared.Team)); // only the shared host
+
+            // B renames it; A gets the change. A viewer never uploads.
+            await b.CallAsync("hosts.update", new { id = shared.Id, label = "DB prod", host = "db.example.com", port = 22, user = "ops", authKind = "password", group = "Ekip" });
+            await TeamSync.RunAsync(b, team.For("B", "operator"));
+            await TeamSync.RunAsync(a, team.For("A", "admin"));
+            Assert.Contains(await a.CallAsync<List<CoreHost>>("hosts.list"), h => h.Label == "DB prod");
+            var rev = team.Library.Revision;
+            await b.CallAsync("hosts.update", new { id = shared.Id, label = "viewer edit", host = "db.example.com", port = 22, user = "ops", authKind = "password" });
+            await TeamSync.RunAsync(b, team.For("B", "viewer"));
+            Assert.Equal(rev, team.Library.Revision);
+
+            // Leaving the team removes the shared hosts only.
+            await a.CallAsync("team.leave");
+            Assert.Equal("Mine", Assert.Single(await a.CallAsync<List<CoreHost>>("hosts.list")).Label);
+        }
+        finally
+        {
+            foreach (var d in new[] { dirA, dirB }) try { Directory.Delete(d, true); } catch (Exception) { }
+        }
+    }
+
     [Fact]
     public void HandlesRepliesAndEventsLine()
     {

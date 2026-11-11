@@ -234,6 +234,56 @@ public sealed class ServersController : IDisposable
         finally { _syncGate.Release(); }
     }
 
+    // ---- A22 team ----
+
+    /// <summary>Last team round, shown in Settings.</summary>
+    public string? TeamName { get; private set; }
+    public string? TeamRole { get; private set; }
+    public List<TeamMember> TeamMembers { get; private set; } = [];
+    public TeamSyncState? TeamState { get; private set; }
+
+    private sealed class TeamServer(GatewayClient g, string token) : ITeamServer
+    {
+        public Task<TeamState> GetAsync() => g.TeamAsync(token);
+        public Task PutKeyAsync(string publicKey) => g.PutTeamKeyAsync(token, publicKey);
+        public Task PutWrappedKeyAsync(string centerId, string wrappedKey) => g.PutWrappedKeyAsync(token, centerId, wrappedKey);
+        public Task<(bool Accepted, LibraryState State)> PutLibraryAsync(long baseRevision, string envelope) => g.PutTeamLibraryAsync(token, baseRevision, envelope);
+    }
+
+    private readonly SemaphoreSlim _teamGate = new(1, 1);
+
+    /// <summary>One team round (key exchange + shared library).</summary>
+    public async Task SyncTeam(GatewayClient gateway, string token)
+    {
+        if (!await _teamGate.WaitAsync(0)) return;
+        try
+        {
+            var server = new TeamServer(gateway, token);
+            try
+            {
+                var (state, changed) = await TeamSync.RunAsync(Core, server);
+                TeamState = state;
+                var info = await gateway.TeamAsync(token);
+                (TeamName, TeamRole, TeamMembers) = (info.OrganizationName, info.Role, info.Members);
+                if (changed) await Reload();
+            }
+            catch (GatewayException e) when (e.Code == "not_a_member")
+            {
+                await Core.CallAsync("team.leave");
+                (TeamName, TeamRole, TeamMembers, TeamState) = (null, null, [], null);
+                await Reload();
+            }
+        }
+        finally { _teamGate.Release(); }
+    }
+
+    /// <summary>Shares a host or snippet with the team (or takes it back).</summary>
+    public async Task SetTeam(string kind, string id, bool team)
+    {
+        Hosts = await Core.CallAsync<List<CoreHost>>("library.setTeam", new { kind, id, team });
+        Changed?.Invoke();
+    }
+
     public Task<List<Identity>> Identities() => Core.CallAsync<List<Identity>>("identities.list");
 
     public Task<List<Identity>> SaveIdentity(string? id, string label, string user, string authKind, string? keyId, string? password) =>

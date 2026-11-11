@@ -170,6 +170,7 @@ public struct CoreHost: Decodable, Identifiable, Equatable, Hashable {
     public let env: [String: String]?
     public let agentForwarding: Bool?
     public let identityId: String?
+    public let team: Bool?
 
     /// Hosts without a group are listed under this name.
     public static let noGroup = "Gruplanmamış"
@@ -200,6 +201,7 @@ public struct Snippet: Decodable, Identifiable, Equatable, Hashable {
     public let id: String
     public let label: String
     public let command: String
+    public let team: Bool?
 }
 
 public struct HistoryEntry: Decodable, Identifiable, Equatable, Hashable {
@@ -307,6 +309,7 @@ public enum CoreText {
         if text.contains("identity needs a valid user name") { return "Kimlik için geçerli bir kullanıcı adı gir." }
         if text.contains("choose a key for this identity") { return "Bu kimlik için bir anahtar seç (Anahtarlar sayfasından oluşturabilirsin)." }
         if text == "terminal closed" { return "Terminal kapalı." }
+        if text.contains("does not have the team key yet") { return "Bu uygulamada ekip anahtarı henüz yok; ekipten biri uygulamasını açınca gelir." }
         if text == "wrong sync passphrase" { return "Eşitleme parolası yanlış (diğer bilgisayarda belirlediğin parolayı gir)." }
         if text.contains("sync passphrase needs at least 8") { return "Eşitleme parolası en az 8 karakter olmalı." }
         if text.contains("sync passphrase was changed on another computer") { return "Eşitleme parolası başka bir bilgisayarda değiştirildi; yeni parolayı gir." }

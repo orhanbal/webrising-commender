@@ -68,6 +68,13 @@ connection.
 | `sync.merge` | `remote?` (envelope from `GET /api/center/library`) | `{envelope?, changedHere}`; decrypts, merges three-way per item (hosts, snippets, identities, keys, trusted keys, keyring secrets), applies here, returns the AES-256-GCM envelope to `PUT` (none when the server already has it) |
 | `sync.committed` | – | after the server accepted the `PUT`: the merged library becomes the base of the next merge |
 | `sync.forget` | – | turns sync off on this computer |
+| `team.status` | – | `{publicKey, hasKey}` (A22; this app's X25519 public key, made on first use) |
+| `team.create` | – | `{sealed}`: a new team key sealed for this app (first app of a team) |
+| `team.accept` | `sealed` | `{publicKey, hasKey}`: takes the team key another app sealed for this one |
+| `team.share` | `publicKey` | `{sealed}`: the team key sealed for another team app |
+| `team.merge` / `team.committed` | `remote?` / – | like `sync.merge` / `sync.committed`, for the hosts and snippets shared with the team (with their saved passwords); key files, app keys, identities and personal jump hosts stay with each computer |
+| `team.leave` | – | removed from the team: the team key and the shared items go |
+| `library.setTeam` | `kind (host\|snippet), id, team` | `[Host]`; shares the item with the team or takes it back (Host and Snippet have `team`) |
 | `library.export` | – | `{json}`: hosts (groups, tunnels, terminal options), snippets, trusted host keys; no passwords, no private keys, no key files |
 | `library.import` | `json` | `{hosts, snippets, knownHosts, skipped}`; only adds what is new |
 

@@ -304,7 +304,7 @@ public sealed class ServersWindow : Window
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 2 };
         text.Children.Add(new TextBlock { Text = host.Label, Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], TextTrimming = TextTrimming.CharacterEllipsis });
         text.Children.Add(new TextBlock { Text = host.Target + (via is null ? "" : $" ↪ {via}"), Foreground = Secondary, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis });
-        text.Children.Add(new TextBlock { Text = host.CanConnectSilently ? (host.AuthKind == "password" ? "Parola kayıtlı" : "Anahtar hazır") : "Giriş bilgisi sorulacak", Foreground = Secondary, FontSize = 11 });
+        text.Children.Add(new TextBlock { Text = (host.Team ? "👥 Ekip · " : "") + (host.CanConnectSilently ? (host.AuthKind == "password" ? "Parola kayıtlı" : "Anahtar hazır") : "Giriş bilgisi sorulacak"), Foreground = Secondary, FontSize = 11 });
         Grid.SetColumn(text, 1);
         grid.Children.Add(text);
         var card = new Button
@@ -321,6 +321,7 @@ public sealed class ServersWindow : Window
         var flyout = new MenuFlyout();
         flyout.Items.Add(Item("Bağlan", () => _ = OpenHost(host)));
         flyout.Items.Add(Item("Düzenle…", () => _ = EditHost(host)));
+        flyout.Items.Add(Item(host.Team ? "Ekipten çıkar (yalnız bende kalsın)" : "Ekiple paylaş", () => _ = ShareWithTeam("host", host.Id, !host.Team)));
         if (host.SavedSecret) flyout.Items.Add(Item("Kayıtlı giriş bilgisini unut", () => _ = _c.ForgetSecret(host)));
         flyout.Items.Add(new MenuFlyoutSeparator());
         flyout.Items.Add(Item("Sil", () => _ = ConfirmDelete(host)));
@@ -346,6 +347,16 @@ public sealed class ServersWindow : Window
             if (added is not null) await OpenHost(added);
         }
         catch (CoreException e) { Show(e.Message, InfoBarSeverity.Error); }
+    }
+
+    private async Task ShareWithTeam(string kind, string id, bool team)
+    {
+        await Guard(() => _c.SetTeam(kind, id, team));
+        App.Current.RequestLibrarySync();
+        Show(team
+            ? "Ekiple paylaşıldı. Ekipteki herkesin uygulamasına birkaç saniye içinde gelir; kayıtlı parolası da şifreli olarak paylaşılır."
+            : "Artık yalnız sende. Ekipteki diğer uygulamalardan kaldırılır.", InfoBarSeverity.Success);
+        if (kind == "snippet") await ShowSnippets();
     }
 
     private static MenuFlyoutItem Item(string text, Action action)
@@ -422,8 +433,11 @@ public sealed class ServersWindow : Window
         var syncTitle = new TextBlock { Text = "Eşitleme (bilgisayarların arasında)", Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], Margin = new Thickness(0, 8, 0, 0) };
         var syncPanel = new StackPanel { Spacing = 8 };
         _ = RenderSync(syncPanel);
+        var teamTitle = new TextBlock { Text = "Ekip", Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], Margin = new Thickness(0, 8, 0, 0) };
+        var teamPanel = new StackPanel { Spacing = 8 };
+        RenderTeam(teamPanel);
         var body = new StackPanel { Spacing = 18, MaxWidth = 640, HorizontalAlignment = HorizontalAlignment.Left };
-        foreach (var e in new UIElement[] { font, theme, keys, syncTitle, syncPanel, backupTitle, backupHelp, backupRow, center }) body.Children.Add(e);
+        foreach (var e in new UIElement[] { font, theme, keys, syncTitle, syncPanel, teamTitle, teamPanel, backupTitle, backupHelp, backupRow, center }) body.Children.Add(e);
         _nav.Content = Page("Ayarlar", "Terminal görünümü; değişiklikler açık terminallere hemen uygulanır.", new ScrollViewer { Content = body });
     }
 
@@ -479,6 +493,31 @@ public sealed class ServersWindow : Window
         }));
         panel.Children.Add(row);
         panel.Children.Add(error);
+    }
+
+    private void RenderTeam(StackPanel panel)
+    {
+        panel.Children.Clear();
+        panel.Children.Add(new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Secondary,
+            Text = "Bir sunucuya ya da parçacığa sağ tıklayıp \"Ekiple paylaş\" dersen, çalışma alanındaki herkesin uygulamasında görünür (kayıtlı parolasıyla). "
+                + "Ekip kütüphanesi ekip anahtarıyla uçtan uca şifrelenir; anahtar yalnız ekip üyelerinin uygulamalarına, onların açık anahtarıyla şifrelenerek verilir. "
+                + "Üye eklemek ve rolleri değiştirmek panelde: Yönetim → Ekip. İzleyiciler ortak sunucuları kullanır ama değiştiremez.",
+        });
+        if (_c.TeamName is { } name)
+        {
+            var role = _c.TeamRole switch { "owner" => "sahip", "admin" => "yönetici", "operator" => "operatör", _ => "izleyici" };
+            panel.Children.Add(new TextBlock { Text = $"Çalışma alanı: {name} · rolün: {role}" });
+            if (_c.TeamState == TeamSyncState.WaitingForKey)
+                panel.Children.Add(new TextBlock { Text = "Ekip anahtarı bekleniyor: ekipten operatör ya da üstü biri uygulamasını açtığında bu bilgisayara verilir.", TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(Microsoft.UI.Colors.DarkOrange) });
+            foreach (var m in _c.TeamMembers)
+                panel.Children.Add(new TextBlock { Text = $"{(m.HasKey ? "●" : "○")} {m.Email} · {m.CenterName}" + (m.HasKey ? "" : " (anahtar bekliyor)"), Foreground = Secondary, FontSize = 12 });
+        }
+        if (App.Current.TeamSyncError is { } problem)
+            panel.Children.Add(new TextBlock { Text = problem, Foreground = new SolidColorBrush(Microsoft.UI.Colors.IndianRed), TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(ActionButton("Şimdi eşitle", Symbol.Sync, async () => { await App.Current.LibrarySyncAsync(); RenderTeam(panel); }));
     }
 
     private async Task ExportBackup()
@@ -706,8 +745,13 @@ public sealed class ServersWindow : Window
             var run = new Button { Content = "Terminale gönder", IsEnabled = Current is { Closed: false } };
             run.Click += (_, _) => { SendSnippet(s); Navigate("terminals"); };
             Grid.SetColumn(run, 1); row.Children.Add(run);
+            text.Children.Add(new TextBlock { Text = s.Team ? "👥 Ekiple paylaşılıyor" : "", Foreground = Secondary, FontSize = 11, Visibility = s.Team ? Visibility.Visible : Visibility.Collapsed });
             var edit = new Button { Content = new SymbolIcon(Symbol.Edit) };
             edit.Click += async (_, _) => { await EditSnippet(s); };
+            var shareMenu = new MenuFlyout();
+            shareMenu.Items.Add(Item(s.Team ? "Ekipten çıkar" : "Ekiple paylaş", () => _ = ShareWithTeam("snippet", s.Id, !s.Team)));
+            edit.ContextFlyout = shareMenu;
+            ToolTipService.SetToolTip(edit, "Düzenle (sağ tık: ekiple paylaş)");
             Grid.SetColumn(edit, 2); row.Children.Add(edit);
             var del = new Button { Content = new SymbolIcon(Symbol.Delete) };
             del.Click += async (_, _) => { await Guard(async () => _snippets = await _c.DeleteSnippet(s)); await ShowSnippets(); };

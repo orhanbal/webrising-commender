@@ -92,7 +92,7 @@ final class ServersModel: ObservableObject {
         soonSync?.cancel()
         soonSync = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 5_000_000_000)
-            if !Task.isCancelled { await self?.syncLibrary() }
+            if !Task.isCancelled { await self?.syncAll() }
         }
     }
 
@@ -100,9 +100,9 @@ final class ServersModel: ObservableObject {
     func startLibrarySync() {
         guard syncTimer == nil else { return }
         syncTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
-            Task { @MainActor in await self?.syncLibrary() }
+            Task { @MainActor in await self?.syncAll() }
         }
-        Task { await syncLibrary() }
+        Task { await syncAll() }
     }
 
     private func event(_ name: String, _ data: Any?) {
@@ -576,6 +576,99 @@ final class ServersModel: ObservableObject {
             if changed { await reload() }
         } catch {
             librarySyncError = error.localizedDescription
+        }
+    }
+
+    /// Personal library (when set up) and the team library.
+    func syncAll() async {
+        await syncLibrary()
+        await syncTeam()
+    }
+
+    // MARK: A22 team
+
+    @Published private(set) var teamName: String?
+    @Published private(set) var teamRole: String?
+    @Published private(set) var teamMembers: [TeamMember] = []
+    @Published private(set) var teamWaiting = false
+    @Published var teamError: String?
+    private var teamSyncing = false
+
+    func setTeam(kind: String, id: String, team: Bool) async {
+        guard let core else { return }
+        do {
+            hosts = try await core.call("library.setTeam", ["kind": kind, "id": id, "team": team], as: [CoreHost].self)
+            onChange?()
+            scheduleLibrarySync()
+        } catch {
+            notice = error.localizedDescription
+        }
+    }
+
+    /// One team round: publish this app's public key, get (or make) the team
+    /// key, give it to team apps without it, merge the shared library.
+    func syncTeam() async {
+        guard !teamSyncing, let core, let creds = credentials?() else { return }
+        let (gateway, token) = creds
+        teamSyncing = true
+        defer { teamSyncing = false }
+        do {
+            var me = try await core.call("team.status") as? [String: Any] ?? [:]
+            let myPub = me["publicKey"] as? String ?? ""
+            var hasKey = me["hasKey"] as? Bool ?? false
+            var team = try await gateway.team(token: token)
+            if !team.members.contains(where: { $0.publicKey == myPub }) {
+                try await gateway.putTeamKey(token: token, publicKey: myPub)
+                team = try await gateway.team(token: token)
+            }
+            teamName = team.organizationName
+            teamRole = team.role
+            teamMembers = team.members
+            let mine = team.members.first { $0.publicKey == myPub }
+            if let sealed = team.myWrappedKey {
+                me = try await core.call("team.accept", ["sealed": sealed]) as? [String: Any] ?? [:]
+                hasKey = me["hasKey"] as? Bool ?? true
+            } else if hasKey, let mine, team.canEdit, team.members.contains(where: { $0.hasKey }) {
+                let again = try await core.call("team.share", ["publicKey": myPub]) as? [String: Any]
+                if let s = again?["sealed"] as? String { try await gateway.putWrappedKey(token: token, centerId: mine.centerId, wrappedKey: s) }
+            } else if !team.members.contains(where: { $0.hasKey }), team.canEdit, let mine {
+                let created = try await core.call("team.create") as? [String: Any]
+                if let s = created?["sealed"] as? String { try await gateway.putWrappedKey(token: token, centerId: mine.centerId, wrappedKey: s) }
+                hasKey = true
+            } else if !hasKey {
+                teamWaiting = true
+                return
+            }
+            teamWaiting = false
+            if team.canEdit {
+                for m in team.members where !m.hasKey && m.publicKey != myPub {
+                    let shared = try await core.call("team.share", ["publicKey": m.publicKey]) as? [String: Any]
+                    if let s = shared?["sealed"] as? String { try await gateway.putWrappedKey(token: token, centerId: m.centerId, wrappedKey: s) }
+                }
+            }
+            var state = LibraryState(revision: team.revision, envelope: team.envelope)
+            var changed = false
+            for _ in 0..<4 {
+                var params: [String: Any] = [:]
+                if let envelope = state.envelope { params["remote"] = envelope }
+                let merge = try await core.call("team.merge", params) as? [String: Any] ?? [:]
+                changed = changed || (merge["changedHere"] as? Bool ?? false)
+                guard let upload = merge["envelope"] as? String, team.canEdit else { break }
+                let put = try await gateway.putTeamLibrary(token: token, baseRevision: state.revision, envelope: upload)
+                if put.accepted {
+                    _ = try await core.call("team.committed")
+                    break
+                }
+                state = put.state
+            }
+            teamError = nil
+            if changed { await reload() }
+        } catch let error as GatewayError where error.code == "not_a_member" {
+            _ = try? await core.call("team.leave")
+            teamName = nil; teamRole = nil; teamMembers = []
+            await reload()
+        } catch {
+            teamError = error.localizedDescription
         }
     }
 }

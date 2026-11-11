@@ -32,6 +32,23 @@ const KEY_ENTRY: &str = "sync/key";
 const SALT_ENTRY: &str = "sync/salt";
 const B64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
 
+/// Which library: this user's own (passphrase key) or the team's (A22,
+/// team key exchanged between the team's apps).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Scope {
+    Personal,
+    Team,
+}
+
+impl Scope {
+    fn base_file(self) -> &'static str {
+        match self {
+            Scope::Personal => "sync-base.json",
+            Scope::Team => "team-base.json",
+        }
+    }
+}
+
 /// What the server stores.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Envelope {
@@ -93,38 +110,79 @@ fn secret_names(data: &Data) -> Vec<String> {
     names
 }
 
-/// This computer's library as a sync document. Key files are local paths
-/// and are not synced.
-pub fn local_doc(state: &AppState, data: &Data) -> Doc {
+/// This computer's library as a sync document. Key files, app keys and
+/// identities are this computer's (or this user's) own: they are not in the
+/// team library, and key files are never synced.
+pub fn local_doc(state: &AppState, data: &Data, scope: Scope) -> Doc {
+    let team = scope == Scope::Team;
+    let team_ids: BTreeSet<&String> = data
+        .hosts
+        .iter()
+        .filter(|h| h.team)
+        .map(|h| &h.id)
+        .collect();
     let mut doc = Doc {
         hosts: data
             .hosts
             .iter()
+            .filter(|h| h.team == team)
             .map(|h| {
                 let mut h = h.clone();
                 h.key_path = None;
+                if team {
+                    h.key_id = None;
+                    h.identity_id = None;
+                    h.jump_id = h.jump_id.filter(|j| team_ids.contains(j));
+                }
                 (h.id.clone(), h)
             })
             .collect(),
         snippets: data
             .snippets
             .iter()
+            .filter(|s| s.team == team)
             .map(|s| (s.id.clone(), s.clone()))
             .collect(),
-        identities: data
+        ..Default::default()
+    };
+    if team {
+        let targets: BTreeSet<String> = doc
+            .hosts
+            .values()
+            .map(|h| format!("{}:{}", h.profile.host, h.profile.port))
+            .collect();
+        doc.known_hosts = data
+            .known_hosts
+            .iter()
+            .filter(|(k, _)| targets.contains(*k))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+    } else {
+        doc.identities = data
             .identities
             .iter()
             .map(|i| (i.id.clone(), i.clone()))
-            .collect(),
-        keys: data
+            .collect();
+        doc.keys = data
             .keys
             .iter()
             .map(|k| (k.id.clone(), k.clone()))
-            .collect(),
-        known_hosts: data.known_hosts.clone().into_iter().collect(),
-        secrets: BTreeMap::new(),
-    };
-    for name in secret_names(data) {
+            .collect();
+        doc.known_hosts = data.known_hosts.clone().into_iter().collect();
+    }
+    let mut names: Vec<String> = doc
+        .hosts
+        .keys()
+        .flat_map(|id| ["password", "key", "passphrase"].map(|part| store::secret_key(id, part)))
+        .collect();
+    if !team {
+        names.extend(
+            secret_names(data)
+                .into_iter()
+                .filter(|n| !n.starts_with("host/")),
+        );
+    }
+    for name in names {
         if let Ok(Some(value)) = state.vault.get(&name) {
             doc.secrets.insert(name, value);
         }
@@ -274,12 +332,12 @@ fn parse(envelope: &str) -> Result<Envelope, String> {
 
 // ---- state ----
 
-fn base_path(state: &AppState) -> std::path::PathBuf {
-    state.store.dir().join("sync-base.json")
+fn base_path(state: &AppState, scope: Scope) -> std::path::PathBuf {
+    state.store.dir().join(scope.base_file())
 }
 
-fn load_base(state: &AppState) -> Base {
-    std::fs::read(base_path(state))
+fn load_base(state: &AppState, scope: Scope) -> Base {
+    std::fs::read(base_path(state, scope))
         .ok()
         .and_then(|b| serde_json::from_slice(&b).ok())
         .unwrap_or_default()
@@ -338,7 +396,7 @@ pub fn setup(
         .and_then(|_| state.vault.put(SALT_ENTRY, &B64.encode(&salt)))
         .map_err(|e| format!("could not store the sync key: {e:?}"))?;
     // A new key starts from a clean base: the first merge keeps both sides.
-    let _ = std::fs::remove_file(base_path(state));
+    let _ = std::fs::remove_file(base_path(state, Scope::Personal));
     Ok(status(state))
 }
 
@@ -346,7 +404,7 @@ pub fn setup(
 pub fn forget(state: &Arc<AppState>) -> Status {
     let _ = state.vault.delete(KEY_ENTRY);
     let _ = state.vault.delete(SALT_ENTRY);
-    let _ = std::fs::remove_file(base_path(state));
+    let _ = std::fs::remove_file(base_path(state, Scope::Personal));
     status(state)
 }
 
@@ -367,22 +425,32 @@ pub fn merge(
     remote: Option<String>,
 ) -> Result<MergeResult, String> {
     let (key, salt) = stored_key(state).ok_or("sync is not set up on this computer")?;
-    let remote_doc = match remote.filter(|r| !r.is_empty()) {
-        Some(r) => {
-            let envelope = parse(&r)?;
-            if B64.decode(&envelope.salt).ok().as_deref() != Some(salt.as_slice()) {
-                return Err(
-                    "the sync passphrase was changed on another computer; enter it again".into(),
-                );
-            }
-            Some(open(&key, &envelope)?)
+    if let Some(r) = remote.as_deref().filter(|r| !r.is_empty()) {
+        if B64.decode(&parse(r)?.salt).ok().as_deref() != Some(salt.as_slice()) {
+            return Err(
+                "the sync passphrase was changed on another computer; enter it again".into(),
+            );
         }
+    }
+    merge_scope(state, pending, remote, Scope::Personal, &key, &salt)
+}
+
+pub(crate) fn merge_scope(
+    state: &Arc<AppState>,
+    pending: &Pending,
+    remote: Option<String>,
+    scope: Scope,
+    key: &[u8],
+    salt: &[u8],
+) -> Result<MergeResult, String> {
+    let remote_doc = match remote.filter(|r| !r.is_empty()) {
+        Some(r) => Some(open(key, &parse(&r)?)?),
         None => None,
     };
-    let base = load_base(state);
+    let base = load_base(state, scope);
     let (merged, local) = {
         let data = state.data.lock().map_err(|_| "busy")?;
-        let local = local_doc(state, &data);
+        let local = local_doc(state, &data, scope);
         let merged = match &remote_doc {
             Some(r) => merge_docs(&local, r, &base),
             None => local.clone(),
@@ -391,17 +459,17 @@ pub fn merge(
     };
     let changed_here = merged != local;
     if changed_here {
-        apply(state, &local, &merged)?;
+        apply(state, &local, &merged, scope)?;
     }
     let upload = remote_doc.as_ref() != Some(&merged);
     let envelope = if upload {
-        Some(serde_json::to_string(&seal(&key, &salt, &merged)?).map_err(|e| e.to_string())?)
+        Some(serde_json::to_string(&seal(key, salt, &merged)?).map_err(|e| e.to_string())?)
     } else {
         None
     };
     *pending.0.lock().map_err(|_| "busy")? = Some(base_of(&merged));
     if !upload {
-        committed(state, pending)?;
+        committed_scope(state, pending, scope)?;
     }
     Ok(MergeResult {
         envelope,
@@ -411,46 +479,120 @@ pub fn merge(
 
 /// The server accepted the upload: the merged library is the new base.
 pub fn committed(state: &Arc<AppState>, pending: &Pending) -> Result<(), String> {
+    committed_scope(state, pending, Scope::Personal)
+}
+
+pub(crate) fn committed_scope(
+    state: &Arc<AppState>,
+    pending: &Pending,
+    scope: Scope,
+) -> Result<(), String> {
     let Some(base) = pending.0.lock().map_err(|_| "busy")?.take() else {
         return Ok(());
     };
-    let path = base_path(state);
+    let path = base_path(state, scope);
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, serde_json::to_vec(&base).map_err(|e| e.to_string())?)
         .and_then(|_| std::fs::rename(&tmp, &path))
         .map_err(|e| format!("could not save the sync state: {e}"))
 }
 
-/// Writes the merged library here: hosts.json and the keyring.
-fn apply(state: &Arc<AppState>, local: &Doc, merged: &Doc) -> Result<(), String> {
+/// Forgets the team merge base (team key replaced or left the team).
+pub(crate) fn forget_base(state: &AppState, scope: Scope) {
+    let _ = std::fs::remove_file(base_path(state, scope));
+}
+
+/// Writes the merged library here: hosts.json and the keyring. Only the
+/// items of `scope` are replaced; the other scope's items stay as they are.
+fn apply(state: &Arc<AppState>, local: &Doc, merged: &Doc, scope: Scope) -> Result<(), String> {
+    let team = scope == Scope::Team;
     {
         let mut data = state.data.lock().map_err(|_| "busy")?;
-        // Key files stay with this computer's hosts.
-        let key_paths: BTreeMap<String, String> = data
+        let current: BTreeMap<String, SavedHost> = data
             .hosts
             .iter()
-            .filter_map(|h| h.key_path.clone().map(|p| (h.id.clone(), p)))
+            .map(|h| (h.id.clone(), h.clone()))
             .collect();
         // Keep this computer's order; new items go to the end.
-        let mut hosts: Vec<SavedHost> = data
-            .hosts
-            .iter()
-            .filter_map(|h| merged.hosts.get(&h.id).cloned())
-            .collect();
+        let mut hosts: Vec<SavedHost> = Vec::new();
+        for h in &data.hosts {
+            if h.team != team {
+                hosts.push(h.clone());
+            } else if let Some(m) = merged.hosts.get(&h.id) {
+                hosts.push(m.clone());
+            }
+        }
         for (id, h) in &merged.hosts {
             if !hosts.iter().any(|x| &x.id == id) {
                 hosts.push(h.clone());
             }
         }
-        for h in hosts.iter_mut() {
-            h.key_path = key_paths.get(&h.id).cloned();
+        for h in hosts.iter_mut().filter(|h| h.team == team) {
+            // This computer's own fields: key file, and for team hosts the
+            // app key, identity and a personal jump host.
+            if let Some(c) = current.get(&h.id) {
+                h.key_path = c.key_path.clone();
+                if team {
+                    h.key_id = c.key_id.clone();
+                    h.identity_id = c.identity_id.clone();
+                    if h.jump_id.is_none() {
+                        h.jump_id = c.jump_id.clone();
+                    }
+                }
+            } else {
+                h.key_path = None;
+            }
         }
         hosts.retain(|h| h.profile.validate().is_ok());
         data.hosts = hosts;
-        data.snippets = ordered(&data.snippets, &merged.snippets, |s| &s.id);
-        data.identities = ordered(&data.identities, &merged.identities, |i| &i.id);
-        data.keys = ordered(&data.keys, &merged.keys, |k| &k.id);
-        data.known_hosts = merged.known_hosts.clone().into_iter().collect();
+        let mut snippets: Vec<Snippet> = data
+            .snippets
+            .iter()
+            .filter_map(|s| {
+                if s.team != team {
+                    Some(s.clone())
+                } else {
+                    merged.snippets.get(&s.id).cloned()
+                }
+            })
+            .collect();
+        for (id, s) in &merged.snippets {
+            if !snippets.iter().any(|x| &x.id == id) {
+                snippets.push(s.clone());
+            }
+        }
+        data.snippets = snippets;
+        if team {
+            for k in local.known_hosts.keys() {
+                if !merged.known_hosts.contains_key(k) {
+                    data.known_hosts.remove(k);
+                }
+            }
+            for (k, v) in &merged.known_hosts {
+                data.known_hosts.insert(k.clone(), v.clone());
+            }
+        } else {
+            data.identities = ordered(&data.identities, &merged.identities, |i| &i.id);
+            data.keys = ordered(&data.keys, &merged.keys, |k| &k.id);
+            // Team hosts' trusted keys stay even when the personal library
+            // does not have them yet.
+            let team_targets: BTreeSet<String> = data
+                .hosts
+                .iter()
+                .filter(|h| h.team)
+                .map(|h| format!("{}:{}", h.profile.host, h.profile.port))
+                .collect();
+            let mut known: std::collections::HashMap<String, String> =
+                merged.known_hosts.clone().into_iter().collect();
+            for (k, v) in data
+                .known_hosts
+                .iter()
+                .filter(|(k, _)| team_targets.contains(*k))
+            {
+                known.entry(k.clone()).or_insert_with(|| v.clone());
+            }
+            data.known_hosts = known;
+        }
         state.save(&data)?;
     }
     for (name, value) in &merged.secrets {
@@ -503,6 +645,7 @@ mod tests {
             env: Default::default(),
             agent_forwarding: false,
             identity_id: None,
+            team: false,
         }
     }
 

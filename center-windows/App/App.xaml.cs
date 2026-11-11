@@ -451,7 +451,19 @@ public partial class App : Application
         {
             LibrarySyncError = e.Message;
         }
+        try
+        {
+            await Servers.SyncTeam(Gateway, token);
+            TeamSyncError = null;
+        }
+        catch (Exception e) when (e is CoreException or GatewayException)
+        {
+            TeamSyncError = e.Message;
+        }
     }
+
+    /// <summary>The last team sync problem, shown in Settings.</summary>
+    public string? TeamSyncError { get; private set; }
 
     public async Task SetupLibrarySync(string passphrase)
     {

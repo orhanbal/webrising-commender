@@ -196,6 +196,9 @@ struct HostsPage: View {
                                 .contextMenu {
                                     Button("Bağlan") { model.open(host) }
                                     Button("Düzenle…") { edit(host) }
+                                    Button(host.team == true ? "Ekipten çıkar (yalnız bende kalsın)" : "Ekiple paylaş") {
+                                        Task { await model.setTeam(kind: "host", id: host.id, team: host.team != true) }
+                                    }
                                     if host.savedSecret {
                                         Button("Kayıtlı giriş bilgisini unut") { Task { await model.forgetSecret(host) } }
                                     }
@@ -302,6 +305,12 @@ struct SnippetsPage: View {
                 }
                 .contextMenu {
                     Button("Düzenle…") { editing = s }
+                    Button(s.team == true ? "Ekipten çıkar" : "Ekiple paylaş") {
+                        Task {
+                            await model.setTeam(kind: "snippet", id: s.id, team: s.team != true)
+                            snippets = await model.snippets()
+                        }
+                    }
                     Button("Sil", role: .destructive) { Task { snippets = await model.deleteSnippet(s) } }
                 }
             }
@@ -694,6 +703,9 @@ struct SettingsPage: View {
             Section("Eşitleme (bilgisayarların arasında)") {
                 SyncSection(model: model)
             }
+            Section("Ekip") {
+                TeamSection(model: model)
+            }
             Section("Yedekleme") {
                 Text("Sunucular, gruplar, tüneller, parçacıklar, kimlikler ve güvenilen sunucu anahtarları tek bir dosyaya yazılır. Parolalar ve özel anahtarlar dosyaya girmez; yeni bilgisayarda ilk bağlantıda bir kez sorulur. İçe aktarma var olanları değiştirmez, yalnız yenileri ekler.")
                     .font(.callout).foregroundStyle(.secondary)
@@ -735,6 +747,36 @@ struct SettingsPage: View {
                 + (s.skipped > 0 ? " (\(s.skipped) sunucu zaten vardı, atlandı)." : ".")
         } catch {
             status = "Yedek içe aktarılamadı: \(error.localizedDescription)"
+        }
+    }
+}
+
+struct TeamSection: View {
+    @ObservedObject var model: ServersModel
+
+    var body: some View {
+        Text("Bir sunucuya ya da parçacığa sağ tıklayıp \"Ekiple paylaş\" dersen çalışma alanındaki herkesin uygulamasında görünür (kayıtlı parolasıyla). Ekip kütüphanesi ekip anahtarıyla uçtan uca şifrelenir. Üye eklemek ve rolleri değiştirmek panelde: Yönetim → Ekip. İzleyiciler ortak sunucuları kullanır ama değiştiremez.")
+            .font(.callout).foregroundStyle(.secondary)
+        if let name = model.teamName {
+            Text("Çalışma alanı: \(name) · rolün: \(roleName(model.teamRole))")
+            if model.teamWaiting {
+                Text("Ekip anahtarı bekleniyor: ekipten operatör ya da üstü biri uygulamasını açtığında bu Mac'e verilir.").foregroundStyle(.orange)
+            }
+            ForEach(model.teamMembers, id: \.centerId) { m in
+                Text("\(m.hasKey ? "●" : "○") \(m.email) · \(m.centerName)\(m.hasKey ? "" : " (anahtar bekliyor)")")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        if let e = model.teamError { Text(e).foregroundStyle(.red).font(.callout) }
+        Button("Şimdi eşitle") { Task { await model.syncAll() } }
+    }
+
+    private func roleName(_ role: String?) -> String {
+        switch role {
+        case "owner": return "sahip"
+        case "admin": return "yönetici"
+        case "operator": return "operatör"
+        default: return "izleyici"
         }
     }
 }

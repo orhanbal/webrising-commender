@@ -234,6 +234,21 @@ struct SyncMerge {
     remote: Option<String>,
 }
 #[derive(Deserialize)]
+struct Sealed {
+    sealed: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PublicKey {
+    public_key: String,
+}
+#[derive(Deserialize)]
+struct SetTeam {
+    kind: String,
+    id: String,
+    team: bool,
+}
+#[derive(Deserialize)]
 struct ImportArg {
     json: String,
 }
@@ -432,6 +447,30 @@ async fn dispatch(
             ok(serde_json::json!({ "ok": true }))
         }
         "sync.forget" => ok(core::sync::forget(state)),
+        "team.status" => ok(core::team::status(state)?),
+        "team.create" => ok(serde_json::json!({ "sealed": core::team::create(state)? })),
+        "team.accept" => ok(core::team::accept(state, p::<Sealed>(params)?.sealed)?),
+        "team.share" => {
+            let k: PublicKey = p(params)?;
+            ok(serde_json::json!({ "sealed": core::team::share(state, k.public_key)? }))
+        }
+        "team.leave" => {
+            core::team::leave(state)?;
+            ok(serde_json::json!({ "ok": true }))
+        }
+        "team.merge" => {
+            let a: SyncMerge = p(params)?;
+            ok(core::team::merge(state, &state.team_pending, a.remote)?)
+        }
+        "team.committed" => {
+            core::team::committed(state, &state.team_pending)?;
+            ok(serde_json::json!({ "ok": true }))
+        }
+        "library.setTeam" => {
+            let t: SetTeam = p(params)?;
+            core::library::set_team(state, t.kind, t.id, t.team)?;
+            ok(core::host_views(state)?)
+        }
         "library.export" => {
             ok(serde_json::json!({ "json": core::library::library_export(state)? }))
         }

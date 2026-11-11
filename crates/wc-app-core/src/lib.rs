@@ -11,6 +11,7 @@
 pub mod library;
 pub mod store;
 pub mod sync;
+pub mod team;
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -65,6 +66,7 @@ pub fn open(data_dir: &Path, keyring_service: &str, events: Arc<dyn EventSink>) 
         terminals: Mutex::new(HashMap::new()),
         background: Background::default(),
         sync_pending: sync::Pending::default(),
+        team_pending: team::TeamPending::default(),
         events,
     })
 }
@@ -92,6 +94,8 @@ pub struct AppState {
     pub background: Background,
     /// A20: the merged library waiting for the server to accept it.
     pub sync_pending: sync::Pending,
+    /// A22: the merged team library waiting for the server.
+    pub team_pending: team::TeamPending,
     events: Arc<dyn EventSink>,
 }
 
@@ -142,9 +146,11 @@ pub struct HostView {
     pub env: std::collections::BTreeMap<String, String>,
     pub agent_forwarding: bool,
     pub identity_id: Option<String>,
+    /// Shared with the team (A22).
+    pub team: bool,
 }
 
-pub(crate) fn host_views(state: &AppState) -> Result<Vec<HostView>, String> {
+pub fn host_views(state: &AppState) -> Result<Vec<HostView>, String> {
     let data = state.data.lock().map_err(|_| "busy")?;
     Ok(data
         .hosts
@@ -152,6 +158,7 @@ pub(crate) fn host_views(state: &AppState) -> Result<Vec<HostView>, String> {
         .map(|own| (own, effective_host(&data, own)))
         .map(|(own, h)| HostView {
             identity_id: own.identity_id.clone(),
+            team: own.team,
             id: h.id.clone(),
             label: h.profile.label.clone(),
             target: h.profile.display_target(),
@@ -218,6 +225,7 @@ pub fn add_host(
             env: Default::default(),
             agent_forwarding: false,
             identity_id: None,
+            team: false,
         });
         state.save(&data)?;
     }
@@ -273,6 +281,7 @@ pub fn import_ssh_config(state: &Arc<AppState>) -> Result<ImportResult, String> 
                 env: Default::default(),
                 agent_forwarding: false,
                 identity_id: None,
+                team: false,
             });
             added += 1;
         }

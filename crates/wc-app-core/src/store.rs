@@ -44,6 +44,9 @@ pub struct SavedHost {
     /// host's own user and credential.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity_id: Option<String>,
+    /// Shared with the team (A22): synced through the team library.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub team: bool,
 }
 
 /// A user name with a credential, shared by many hosts ("deploy with the
@@ -87,6 +90,9 @@ pub struct Snippet {
     pub id: String,
     pub label: String,
     pub command: String,
+    /// Shared with the team (A22).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub team: bool,
 }
 
 /// One connection, newest first in the history view.
@@ -219,6 +225,7 @@ mod tests {
             env: Default::default(),
             agent_forwarding: false,
             identity_id: None,
+            team: false,
         });
         data.known_hosts
             .insert("srv.example.com:22".into(), "SHA256:x".into());
