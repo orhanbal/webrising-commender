@@ -121,6 +121,26 @@ struct ServersView: View {
                     }
                     .help("Yazdığın her şey bu bölmedeki tüm terminallere gider")
                     .disabled(group.count < 2)
+                    if model.watching[session.id] == nil {
+                        Menu {
+                            if let share = model.hosting[session.id] {
+                                Toggle("Misafirler yazabilsin", isOn: Binding(get: { share.allowInput }, set: { share.allowInput = $0 }))
+                                Divider()
+                                if share.guests.isEmpty { Text("Henüz izleyen yok") }
+                                ForEach(Array(share.guests.keys), id: \.self) { g in
+                                    Button("Çıkar: \(share.guests[g] ?? "")") { share.kick(g) }
+                                }
+                                Divider()
+                                Button("Paylaşmayı durdur") { model.stopSharing(session) }
+                            } else {
+                                Button("Paylaş: yalnız izlesinler") { Task { await model.startSharing(session, allowInput: false) } }
+                                Button("Paylaş: yazabilsinler de") { Task { await model.startSharing(session, allowInput: true) } }
+                            }
+                        } label: {
+                            Label(model.hosting[session.id] != nil ? "Paylaşılıyor" : "Ekiple paylaş", systemImage: "person.2.wave.2")
+                        }
+                        .disabled(session.closed)
+                    }
                     SnippetMenu(model: model, session: session)
                     Button { showTunnels = true } label: { Label("Tüneller", systemImage: "point.3.connected.trianglepath.dotted") }
                         .disabled(session.closed)
@@ -156,6 +176,7 @@ struct HostsPage: View {
     @ObservedObject var model: ServersModel
     let edit: (CoreHost?) -> Void
     @State private var query = ""
+    @State private var showShares = false
 
     private var filtered: [CoreHost] {
         let q = query.trimmingCharacters(in: .whitespaces)
@@ -212,10 +233,12 @@ struct HostsPage: View {
             .padding(24)
         }
         .navigationTitle("Sunucular")
+        .sheet(isPresented: $showShares) { SharesSheet(model: model) }
         .searchable(text: $query, prompt: "Sunucu ara ya da kullanıcı@adres")
         .onSubmit(of: .search) { Task { await quickConnect() } }
         .toolbar {
             ToolbarItemGroup {
+                Button { showShares = true } label: { Label("Ortak terminaller", systemImage: "person.2") }
                 Button { Task { await model.importSSHConfig() } } label: { Label("İçe aktar", systemImage: "square.and.arrow.down") }
                 Button { edit(nil) } label: { Label("Yeni sunucu", systemImage: "plus") }
             }
@@ -242,6 +265,37 @@ struct HostsPage: View {
         } catch {
             model.notice = error.localizedDescription
         }
+    }
+}
+
+/// A27: teammates' shared terminals; joining opens it here.
+struct SharesSheet: View {
+    @ObservedObject var model: ServersModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var shares: [ShareInfo] = []
+    @State private var loaded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Ortak terminaller").font(.headline)
+            if loaded && shares.isEmpty {
+                Text("Şu an ekipte paylaşılan terminal yok. Bir terminalde \"Ekiple paylaş\" ile başlatılır.").foregroundStyle(.secondary)
+            }
+            ForEach(shares) { s in
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text(s.title).fontWeight(.semibold)
+                        Text("\(s.hostEmail) · \(s.guests) izleyen").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Katıl") { model.join(s); dismiss() }
+                }
+            }
+            HStack { Spacer(); Button("Kapat") { dismiss() }.keyboardShortcut(.cancelAction) }
+        }
+        .padding(20)
+        .frame(width: 460)
+        .task { shares = await model.shares(); loaded = true }
     }
 }
 

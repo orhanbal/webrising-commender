@@ -115,6 +115,7 @@ final class ServersModel: ObservableObject {
                   let b64 = object["data"] as? String,
                   let bytes = Data(base64Encoded: b64) else { return }
             sessions.first { $0.id == sid }?.receive([UInt8](bytes))
+            hosting[sid]?.sendOutput(b64)
         case "terminal-exit":
             guard let sid = object["sessionId"] as? String, let s = sessions.first(where: { $0.id == sid }) else { return }
             s.closed = true
@@ -231,6 +232,10 @@ final class ServersModel: ObservableObject {
     // MARK: terminal
 
     func write(_ session: TerminalSession, _ bytes: ArraySlice<UInt8>) {
+        if let guest = watching[session.id] {
+            guest.sendInput(String(decoding: bytes, as: UTF8.self))
+            return
+        }
         let primary = primaryId(of: session.id)
         let targets = broadcast.contains(primary) ? group(primary) : [session]
         let text = String(decoding: bytes, as: UTF8.self)
@@ -261,11 +266,16 @@ final class ServersModel: ObservableObject {
     }
 
     func resize(_ session: TerminalSession, cols: Int, rows: Int) {
-        guard !session.closed, let core else { return }
+        guard !session.closed, watching[session.id] == nil, let core else { return }
         Task { try? await core.call("terminal.resize", ["sessionId": session.id, "cols": cols, "rows": rows]) }
     }
 
     func close(_ session: TerminalSession) {
+        if let guest = watching.removeValue(forKey: session.id) {
+            guest.close()
+            session.closed = true
+        }
+        if hosting[session.id] != nil { stopSharing(session) }
         if !session.closed, let core {
             Task { try? await core.call("terminal.close", ["sessionId": session.id]) }
         }
@@ -670,5 +680,68 @@ final class ServersModel: ObservableObject {
         } catch {
             teamError = error.localizedDescription
         }
+    }
+
+    // MARK: A27 shared terminals
+
+    /// Terminals of this app shared with the team, by session id.
+    @Published private(set) var hosting: [String: ShareConnection] = [:]
+    /// Teammates' terminals watched here, by (local) session id.
+    @Published private(set) var watching: [String: ShareConnection] = [:]
+
+    func startSharing(_ session: TerminalSession, allowInput: Bool) async {
+        guard let core, let creds = credentials?() else { notice = "Önce oturum aç."; return }
+        let (gateway, token) = creds
+        do {
+            let status = try await core.call("team.status") as? [String: Any]
+            guard status?["hasKey"] as? Bool == true else {
+                notice = "Paylaşmak için ekip anahtarı gerekli: Ayarlar → Ekip'te eşitlemenin tamamlanmasını bekle."
+                return
+            }
+            let id = try await gateway.createShare(token: token, title: session.host.label)
+            guard let url = gateway.shareSocketURL(id: id, role: "host") else { return }
+            let share = ShareConnection(core: core, url: url, token: token, id: id, host: true)
+            share.allowInput = allowInput
+            share.onInput = { [weak self, weak session] keys in
+                guard let self, let session, !session.closed, let core = self.core else { return }
+                Task { try? await core.call("terminal.write", ["sessionId": session.id, "data": keys]) }
+            }
+            hosting[session.id] = share
+            notice = "Terminal ekiple paylaşılıyor. Ekiptekiler Sunucular → \"Ortak terminaller\"den katılabilir."
+        } catch {
+            notice = "Paylaşılamadı: \(error.localizedDescription)"
+        }
+    }
+
+    func stopSharing(_ session: TerminalSession) {
+        guard let share = hosting.removeValue(forKey: session.id) else { return }
+        share.close()
+        if let creds = credentials?() { Task { await creds.0.endShare(token: creds.1, id: share.id) } }
+    }
+
+    func shares() async -> [ShareInfo] {
+        guard let creds = credentials?() else { return [] }
+        return (try? await creds.0.shares(token: creds.1)) ?? []
+    }
+
+    func join(_ info: ShareInfo) {
+        guard let core, let creds = credentials?(), let url = creds.0.shareSocketURL(id: info.id, role: "guest") else { return }
+        let json: [String: Any] = ["id": "share:" + info.id, "label": "\(info.title) · \(info.hostEmail)", "target": info.hostEmail,
+                                   "authKind": "key", "savedSecret": false]
+        guard let data = try? JSONSerialization.data(withJSONObject: json),
+              let host = try? JSONDecoder().decode(CoreHost.self, from: data) else { return }
+        let sid = "share:" + info.id + ":" + UUID().uuidString
+        let session = TerminalSession(id: sid, host: host)
+        let share = ShareConnection(core: core, url: url, token: creds.1, id: info.id, host: false)
+        share.onOutput = { [weak session] b64 in
+            if let bytes = Data(base64Encoded: b64) { session?.receive([UInt8](bytes)) }
+        }
+        share.onEnded = { [weak session] reason in
+            session?.closed = true
+            session?.receive(Array("\r\n\u{1b}[90m[\(reason)]\u{1b}[0m\r\n".utf8))
+        }
+        watching[sid] = share
+        sessions.append(session)
+        selection = sid
     }
 }

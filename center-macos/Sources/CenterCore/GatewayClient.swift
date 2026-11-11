@@ -256,3 +256,37 @@ extension GatewayClient {
         }
     }
 }
+
+
+/// A27: a shared terminal of the workspace.
+public struct ShareInfo: Decodable, Identifiable, Equatable, Hashable {
+    public let id: String
+    public let title: String
+    public let hostEmail: String
+    public let guests: Int
+}
+
+extension GatewayClient {
+    public func shares(token: String) async throws -> [ShareInfo] {
+        let json = try await sendJSON("GET", "/api/center/shares", token: token, body: nil) as? [String: Any]
+        guard let items = json?["items"], let data = try? JSONSerialization.data(withJSONObject: items),
+              let list = try? JSONDecoder().decode([ShareInfo].self, from: data) else { return [] }
+        return list
+    }
+
+    public func createShare(token: String, title: String) async throws -> String {
+        let json = try await sendJSON("POST", "/api/center/shares", token: token, body: ["title": title]) as? [String: Any]
+        guard let id = json?["id"] as? String else { throw GatewayError(.network, 0, "bad_response", "Sunucudan beklenmeyen yanıt.") }
+        return id
+    }
+
+    public func endShare(token: String, id: String) async {
+        _ = try? await sendJSON("DELETE", "/api/center/shares/" + id, token: token, body: nil)
+    }
+
+    /// The relay socket of a shared terminal.
+    public func shareSocketURL(id: String, role: String) -> URL? {
+        let ws = base.hasPrefix("https://") ? "wss://" + base.dropFirst(8) : "ws://" + base.replacingOccurrences(of: "http://", with: "")
+        return URL(string: "\(ws)/center/share?id=\(id)&role=\(role)")
+    }
+}
