@@ -12,8 +12,8 @@ set -uo pipefail
 # (no per-mirror retries: a stalled mirror costs one 15 s timeout per file).
 mirrors=/etc/apt/apt-mirrors.txt
 printf '%s\tpriority:%s\n' \
-  http://azure.archive.ubuntu.com/ubuntu/ 1 \
-  http://mirrors.edge.kernel.org/ubuntu/ 2 \
+  http://mirrors.edge.kernel.org/ubuntu/ 1 \
+  http://azure.archive.ubuntu.com/ubuntu/ 2 \
   http://archive.ubuntu.com/ubuntu/ 3 \
   http://mirror.math.princeton.edu/pub/ubuntu/ 4 | sudo tee "$mirrors" >/dev/null
 for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list; do
