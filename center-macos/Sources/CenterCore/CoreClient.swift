@@ -161,6 +161,39 @@ public struct CoreHost: Decodable, Identifiable, Equatable, Hashable {
     public let keyPath: String?
     public let jumpId: String?
     public let trustedKey: String?
+    public let group: String?
+    public let user: String?
+    public let host: String?
+    public let port: Int?
+
+    /// Hosts without a group are listed under this name.
+    public static let noGroup = "Gruplanmamış"
+    public var groupName: String {
+        let g = (group ?? "").trimmingCharacters(in: .whitespaces)
+        return g.isEmpty ? CoreHost.noGroup : g
+    }
+}
+
+public struct KnownHost: Decodable, Identifiable, Equatable, Hashable {
+    public let target: String
+    public let fingerprint: String
+    public let labels: [String]
+    public var id: String { target }
+}
+
+public struct Snippet: Decodable, Identifiable, Equatable, Hashable {
+    public let id: String
+    public let label: String
+    public let command: String
+}
+
+public struct HistoryEntry: Decodable, Identifiable, Equatable, Hashable {
+    public let hostId: String
+    public let label: String
+    public let target: String
+    public let at: Int64
+    public var id: String { "\(hostId)@\(at)" }
+    public var date: Date { Date(timeIntervalSince1970: TimeInterval(at)) }
 }
 
 public struct ConnectResult: Decodable, Equatable {

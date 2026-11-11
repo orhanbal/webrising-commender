@@ -420,5 +420,7 @@ export const productEnglish:Record<string,string> = {
   "Uygulamayı indir": "Download the app",
   "Tek uygulama: kur, tarayıcıda giriş yap, gerisi arka planda. Ajan uygulamanın içinde gelir.": "One app: install it, sign in in the browser, the rest runs in the background. The agent comes inside the app.",
   "Sunucu ajanı": "Server agent",
-  "Ya da PowerShell'e yapıştır": "Or paste into PowerShell"
+  "Ya da PowerShell'e yapıştır": "Or paste into PowerShell",
+  "Yapay zekâ": "AI",
+  "Yönetim": "Administration"
 };

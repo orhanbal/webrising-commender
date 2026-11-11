@@ -24,6 +24,29 @@ pub struct SavedHost {
     /// Saved local forwards, started from the tray (A10).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tunnels: Vec<SavedTunnel>,
+    /// Group shown in the host list ("Production", "Customers/Acme").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
+}
+
+/// A saved command (A14), sent to a terminal or several at once.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Snippet {
+    pub id: String,
+    pub label: String,
+    pub command: String,
+}
+
+/// One connection, newest first in the history view.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryEntry {
+    pub host_id: String,
+    pub label: String,
+    pub target: String,
+    /// Unix seconds.
+    pub at: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -40,6 +63,10 @@ pub struct Data {
     pub hosts: Vec<SavedHost>,
     /// `host:port` -> trusted `SHA256:` fingerprint.
     pub known_hosts: HashMap<String, String>,
+    #[serde(default)]
+    pub snippets: Vec<Snippet>,
+    #[serde(default)]
+    pub history: Vec<HistoryEntry>,
 }
 
 pub struct Store {
@@ -101,6 +128,7 @@ mod tests {
             key_path: None,
             jump_id: None,
             tunnels: Vec::new(),
+            group: None,
         });
         data.known_hosts
             .insert("srv.example.com:22".into(), "SHA256:x".into());

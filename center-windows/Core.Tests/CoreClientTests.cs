@@ -52,6 +52,45 @@ public class CoreClientTests
     }
 
     [Fact]
+    public async Task HostLibraryRoundTrips()
+    {
+        if (Bin is null) return; // not built in this run
+        var dir = Path.Combine(Path.GetTempPath(), "wc-core-" + Guid.NewGuid());
+        try
+        {
+            using var core = CoreClient.Start(Bin, dir, "app.wecommander.test");
+            var hosts = await core.CallAsync<List<CoreHost>>("hosts.add",
+                new { label = "Web", host = "web.example.com", port = 22, user = "deploy", authKind = "key" });
+            var web = Assert.Single(hosts);
+            Assert.Equal(CoreHost.NoGroup, web.GroupName);
+            Assert.Equal(("deploy", "web.example.com", 22), (web.User, web.Host, web.Port));
+
+            hosts = await core.CallAsync<List<CoreHost>>("hosts.update", new
+            {
+                id = web.Id, label = "Web 1", host = "web1.example.com", port = 2222, user = "ops",
+                authKind = "password", jumpId = web.Id, group = "  Production ",
+            });
+            web = Assert.Single(hosts);
+            Assert.Equal(("Web 1", "ops@web1.example.com:2222", "password", "Production"), (web.Label, web.Target, web.AuthKind, web.Group));
+            Assert.Null(web.JumpId); // a host is never its own jump host
+
+            var snippets = await core.CallAsync<List<Snippet>>("snippets.save", new { label = "Disk", command = "df -h" });
+            var disk = Assert.Single(snippets);
+            snippets = await core.CallAsync<List<Snippet>>("snippets.save", new { id = disk.Id, label = "Disk", command = "df -h /" });
+            Assert.Equal("df -h /", Assert.Single(snippets).Command);
+            await Assert.ThrowsAsync<CoreException>(() => core.CallAsync("snippets.save", new { label = "", command = "x" }));
+            Assert.Empty(await core.CallAsync<List<Snippet>>("snippets.delete", new { id = disk.Id }));
+
+            Assert.Empty(await core.CallAsync<List<KnownHost>>("known.list"));
+            Assert.Empty(await core.CallAsync<List<HistoryEntry>>("history.list"));
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch (Exception) { }
+        }
+    }
+
+    [Fact]
     public void HandlesRepliesAndEventsLine()
     {
         Assert.Equal("Giriş reddedildi. Anahtarı veya parolayı kontrol et.", CoreText.Turkish("authentication failed"));

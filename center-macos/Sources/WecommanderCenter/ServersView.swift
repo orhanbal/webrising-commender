@@ -4,22 +4,27 @@ import SwiftTerm
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The Servers window: a native sidebar of saved hosts and terminal tabs
-/// (SwiftTerm), with Files and Tunnels as inspector sheets.
+/// The main window (Termius-class): a sidebar with Sunucular (host cards
+/// in groups, search, quick connect), Parçacıklar, Tüneller, Bilinen
+/// sunucular and Geçmiş, then the open terminals (SwiftTerm), with Files and
+/// Tunnels for the selected terminal. Onaylar opens the menu bar panel.
 struct ServersView: View {
     @ObservedObject var model: ServersModel
-    @State private var addingHost = false
+    @State private var editing: EditRequest?
     @State private var showFiles = false
     @State private var showTunnels = false
+    var showPanel: () -> Void = {}
+
+    static let hostsPage = "page:hosts"
 
     var body: some View {
         NavigationSplitView {
             sidebar
-                .navigationSplitViewColumnWidth(min: 220, ideal: 260)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 240)
         } detail: {
             detail
         }
-        .sheet(isPresented: $addingHost) { AddHostSheet(model: model) }
+        .sheet(item: $editing) { request in EditHostSheet(model: model, host: request.host) }
         .sheet(item: $model.connect) { request in ConnectSheet(model: model, request: request) }
         .sheet(isPresented: $showTunnels) {
             if let s = model.selectedSession { TunnelsSheet(model: model, session: s) }
@@ -29,29 +34,18 @@ struct ServersView: View {
         } message: {
             Text(model.notice ?? "")
         }
-        .frame(minWidth: 820, minHeight: 480)
+        .frame(minWidth: 900, minHeight: 540)
+        .onAppear { if model.selection == nil { model.selection = Self.hostsPage } }
     }
 
     private var sidebar: some View {
         List(selection: Binding(get: { model.selection }, set: { model.selection = $0 })) {
-            Section("Sunucular") {
-                ForEach(model.hosts) { host in
-                    HostRow(host: host, via: model.hosts.first { $0.id == host.jumpId }?.label)
-                        .contentShape(Rectangle())
-                        .onTapGesture(count: 2) { model.open(host) }
-                        .contextMenu {
-                            Button("Terminal aç") { model.open(host) }
-                            if host.savedSecret {
-                                Button("Kayıtlı giriş bilgisini unut") { Task { await model.forgetSecret(host) } }
-                            }
-                            Divider()
-                            Button("Sunucuyu sil", role: .destructive) { Task { await model.deleteHost(host) } }
-                        }
-                }
-                if model.hosts.isEmpty {
-                    Text("Henüz sunucu yok. + ile ekle ya da ~/.ssh/config'den içe aktar.")
-                        .font(.callout).foregroundStyle(.secondary)
-                }
+            Section {
+                Label("Sunucular", systemImage: "server.rack").tag(Optional(Self.hostsPage))
+                Label("Parçacıklar", systemImage: "text.badge.plus").tag(Optional("page:snippets"))
+                Label("Tüneller", systemImage: "point.3.connected.trianglepath.dotted").tag(Optional("page:tunnels"))
+                Label("Bilinen sunucular", systemImage: "checkmark.shield").tag(Optional("page:known"))
+                Label("Geçmiş", systemImage: "clock.arrow.circlepath").tag(Optional("page:history"))
             }
             if !model.sessions.isEmpty {
                 Section("Açık terminaller") {
@@ -59,38 +53,23 @@ struct ServersView: View {
                         Label(session.host.label, systemImage: session.closed ? "terminal" : "terminal.fill")
                             .foregroundStyle(session.closed ? .secondary : .primary)
                             .tag(Optional(session.id))
-                    }
-                }
-            }
-            if !model.savedTunnels.isEmpty {
-                Section("Tüneller") {
-                    ForEach(model.savedTunnels) { tunnel in
-                        Toggle(isOn: Binding(get: { tunnel.running }, set: { _ in Task { await model.toggleTunnel(tunnel) } })) {
-                            VStack(alignment: .leading) {
-                                Text(tunnel.hostLabel)
-                                Text("\(tunnel.local) → \(tunnel.remote)").font(.caption.monospaced()).foregroundStyle(.secondary)
-                            }
-                        }
-                        .toggleStyle(.switch)
-                        .contextMenu { Button("Tüneli sil", role: .destructive) { Task { await model.deleteTunnel(tunnel) } } }
+                            .contextMenu { Button("Terminali kapat") { model.close(session) } }
                     }
                 }
             }
         }
         .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom) {
-            if !model.vaultLabel.isEmpty {
-                Label("Giriş bilgileri: \(model.vaultLabel)", systemImage: "key")
-                    .font(.caption).foregroundStyle(.secondary).padding(8)
+            VStack(alignment: .leading, spacing: 6) {
+                Button { showPanel() } label: { Label("Onaylar ve bu Mac", systemImage: "checkmark.seal") }
+                    .buttonStyle(.borderless)
+                if !model.vaultLabel.isEmpty {
+                    Label("Giriş bilgileri: \(model.vaultLabel)", systemImage: "key")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
-        }
-        .toolbar {
-            ToolbarItem {
-                Menu {
-                    Button("Sunucu ekle…") { addingHost = true }
-                    Button("~/.ssh/config'den içe aktar") { Task { await model.importSSHConfig() } }
-                } label: { Label("Ekle", systemImage: "plus") }
-            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -113,6 +92,7 @@ struct ServersView: View {
             .navigationSubtitle(session.host.target)
             .toolbar {
                 ToolbarItemGroup {
+                    SnippetMenu(model: model, session: session)
                     Button { showTunnels = true } label: { Label("Tüneller", systemImage: "point.3.connected.trianglepath.dotted") }
                         .disabled(session.closed)
                     Toggle(isOn: $showFiles) { Label("Dosyalar", systemImage: "folder") }
@@ -121,11 +101,284 @@ struct ServersView: View {
                 }
             }
         } else {
-            ContentUnavailableCompat(
-                title: "Bir sunucu seç",
-                systemImage: "terminal",
-                text: "Soldaki listeden bir sunucuya çift tıkla; terminal burada açılır.")
+            switch model.selection ?? "" {
+            case "page:snippets": SnippetsPage(model: model)
+            case "page:tunnels": TunnelsPage(model: model)
+            case "page:known": KnownHostsPage(model: model)
+            case "page:history": HistoryPage(model: model)
+            default: HostsPage(model: model, edit: { editing = EditRequest(host: $0) })
+            }
         }
+    }
+}
+
+struct EditRequest: Identifiable {
+    let id = UUID()
+    /// nil: a new host.
+    let host: CoreHost?
+}
+
+// MARK: - hosts
+
+struct HostsPage: View {
+    @ObservedObject var model: ServersModel
+    let edit: (CoreHost?) -> Void
+    @State private var query = ""
+
+    private var filtered: [CoreHost] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return model.hosts }
+        return model.hosts.filter {
+            $0.label.localizedCaseInsensitiveContains(q) || $0.target.localizedCaseInsensitiveContains(q)
+                || ($0.group ?? "").localizedCaseInsensitiveContains(q)
+        }
+    }
+
+    private var groups: [(String, [CoreHost])] {
+        Dictionary(grouping: filtered, by: \.groupName)
+            .map { ($0.key, $0.value.sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }) }
+            .sorted { a, b in
+                if a.0 == CoreHost.noGroup { return false }
+                if b.0 == CoreHost.noGroup { return true }
+                return a.0.localizedCaseInsensitiveCompare(b.0) == .orderedAscending
+            }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                if model.hosts.isEmpty {
+                    ContentUnavailableCompat(title: "Henüz sunucu yok", systemImage: "server.rack",
+                                             text: "\"Yeni sunucu\" ile ekle ya da ~/.ssh/config dosyandan içe aktar.")
+                        .frame(maxWidth: .infinity).padding(.top, 60)
+                } else if filtered.isEmpty {
+                    Text(query.contains("@") ? "Eşleşen sunucu yok. Return'e basarsan bu adrese hızlı bağlanırım." : "Eşleşen sunucu yok.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(groups, id: \.0) { group in
+                    Text("\(group.0)  ·  \(group.1.count)").font(.headline)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 10)], spacing: 10) {
+                        ForEach(group.1) { host in
+                            HostCard(host: host, via: model.hosts.first { $0.id == host.jumpId }?.label)
+                                .onTapGesture { model.open(host) }
+                                .contextMenu {
+                                    Button("Bağlan") { model.open(host) }
+                                    Button("Düzenle…") { edit(host) }
+                                    if host.savedSecret {
+                                        Button("Kayıtlı giriş bilgisini unut") { Task { await model.forgetSecret(host) } }
+                                    }
+                                    Divider()
+                                    Button("Sil", role: .destructive) { Task { await model.deleteHost(host) } }
+                                }
+                        }
+                    }
+                }
+            }
+            .padding(24)
+        }
+        .navigationTitle("Sunucular")
+        .searchable(text: $query, prompt: "Sunucu ara ya da kullanıcı@adres")
+        .onSubmit(of: .search) { Task { await quickConnect() } }
+        .toolbar {
+            ToolbarItemGroup {
+                Button { Task { await model.importSSHConfig() } } label: { Label("İçe aktar", systemImage: "square.and.arrow.down") }
+                Button { edit(nil) } label: { Label("Yeni sunucu", systemImage: "plus") }
+            }
+        }
+    }
+
+    /// "user@host[:port]": saved as a host, then connected.
+    private func quickConnect() async {
+        let text = query.trimmingCharacters(in: .whitespaces)
+        if let match = model.hosts.first(where: { $0.label.caseInsensitiveCompare(text) == .orderedSame || $0.target == text }) {
+            model.open(match)
+            return
+        }
+        let parts = text.split(separator: "@", maxSplits: 1).map(String.init)
+        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return }
+        let hostPort = parts[1].split(separator: ":", maxSplits: 1).map(String.init)
+        let port = hostPort.count == 2 ? Int(hostPort[1]) ?? 22 : 22
+        do {
+            try await model.addHost(label: hostPort[0], host: hostPort[0], port: port, user: parts[0], authKind: "key", jumpId: nil)
+            query = ""
+            if let added = model.hosts.last(where: { $0.host == hostPort[0] && $0.user == parts[0] && ($0.port ?? 22) == port }) {
+                model.open(added)
+            }
+        } catch {
+            model.notice = error.localizedDescription
+        }
+    }
+}
+
+struct HostCard: View {
+    let host: CoreHost
+    let via: String?
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "server.rack")
+                .font(.system(size: 17))
+                .foregroundStyle(.white)
+                .frame(width: 38, height: 38)
+                .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(host.label).font(.body.weight(.semibold)).lineLimit(1)
+                Text(host.target + (via.map { " ↪ \($0)" } ?? "")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(host.savedSecret || (host.authKind == "key" && host.keyPath != nil)
+                     ? (host.authKind == "password" ? "Parola kayıtlı" : "Anahtar hazır") : "Giriş bilgisi sorulacak")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+        .contentShape(RoundedRectangle(cornerRadius: 10))
+        .help(host.target + (host.trustedKey.map { "\nSunucu anahtarı: \($0)" } ?? ""))
+    }
+}
+
+// MARK: - snippets, tunnels, trusted keys, history
+
+struct SnippetMenu: View {
+    @ObservedObject var model: ServersModel
+    let session: TerminalSession
+    @State private var snippets: [Snippet] = []
+    var body: some View {
+        Menu {
+            if snippets.isEmpty { Text("Kayıtlı parçacık yok") }
+            ForEach(snippets) { s in Button(s.label) { model.send(s, to: session) } }
+        } label: { Label("Parçacık", systemImage: "text.badge.plus") }
+        .disabled(session.closed)
+        .task { snippets = await model.snippets() }
+    }
+}
+
+struct SnippetsPage: View {
+    @ObservedObject var model: ServersModel
+    @State private var snippets: [Snippet] = []
+    @State private var editing: Snippet?
+    @State private var adding = false
+    var body: some View {
+        List {
+            if snippets.isEmpty {
+                Text("Sık kullandığın komutları burada sakla; açık terminalin araç çubuğundaki \"Parçacık\" ile gönder.")
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(snippets) { s in
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(s.label).font(.body.weight(.semibold))
+                    Text(s.command).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(2)
+                }
+                .contextMenu {
+                    Button("Düzenle…") { editing = s }
+                    Button("Sil", role: .destructive) { Task { snippets = await model.deleteSnippet(s) } }
+                }
+            }
+        }
+        .navigationTitle("Parçacıklar")
+        .toolbar { Button { adding = true } label: { Label("Yeni parçacık", systemImage: "plus") } }
+        .sheet(item: $editing) { s in SnippetSheet(model: model, snippet: s) { snippets = $0 } }
+        .sheet(isPresented: $adding) { SnippetSheet(model: model, snippet: nil) { snippets = $0 } }
+        .task { snippets = await model.snippets() }
+    }
+}
+
+struct SnippetSheet: View {
+    @ObservedObject var model: ServersModel
+    let snippet: Snippet?
+    let saved: ([Snippet]) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var label = ""
+    @State private var command = ""
+    @State private var error: String?
+    var body: some View {
+        Form {
+            TextField("Ad", text: $label, prompt: Text("Disk kullanımı"))
+            TextEditor(text: $command).font(.body.monospaced()).frame(height: 110)
+            if let error { Text(error).foregroundStyle(.red).font(.callout) }
+        }
+        .formStyle(.grouped)
+        .frame(width: 440)
+        .onAppear { label = snippet?.label ?? ""; command = snippet?.command ?? "" }
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button("Vazgeç") { dismiss() } }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Kaydet") {
+                    Task {
+                        do { saved(try await model.saveSnippet(id: snippet?.id, label: label, command: command)); dismiss() }
+                        catch { self.error = error.localizedDescription }
+                    }
+                }
+                .disabled(label.isEmpty || command.isEmpty)
+            }
+        }
+    }
+}
+
+struct TunnelsPage: View {
+    @ObservedObject var model: ServersModel
+    var body: some View {
+        List {
+            if model.savedTunnels.isEmpty {
+                Text("Kayıtlı tünel yok. Bir terminalde \"Tüneller\" ile açıp \"kaydet\"i işaretle.").foregroundStyle(.secondary)
+            }
+            ForEach(model.savedTunnels) { tunnel in
+                Toggle(isOn: Binding(get: { tunnel.running }, set: { _ in Task { await model.toggleTunnel(tunnel) } })) {
+                    VStack(alignment: .leading) {
+                        Text(tunnel.hostLabel)
+                        Text("\(tunnel.local) → \(tunnel.remote)").font(.caption.monospaced()).foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.switch)
+                .contextMenu { Button("Tüneli sil", role: .destructive) { Task { await model.deleteTunnel(tunnel) } } }
+            }
+        }
+        .navigationTitle("Tüneller")
+    }
+}
+
+struct KnownHostsPage: View {
+    @ObservedObject var model: ServersModel
+    @State private var known: [KnownHost] = []
+    var body: some View {
+        List {
+            if known.isEmpty { Text("Henüz güvenilen sunucu anahtarı yok.").foregroundStyle(.secondary) }
+            ForEach(known) { k in
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(k.target + (k.labels.isEmpty ? "" : "  ·  " + k.labels.joined(separator: ", "))).font(.body.weight(.semibold))
+                        Text(k.fingerprint).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                    }
+                    Spacer()
+                    Button("Unut") { Task { known = await model.forgetKnownHost(k) } }
+                        .help("Bir sonraki bağlantıda anahtar yeniden sorulur.")
+                }
+            }
+        }
+        .navigationTitle("Bilinen sunucular")
+        .task { known = await model.knownHosts() }
+    }
+}
+
+struct HistoryPage: View {
+    @ObservedObject var model: ServersModel
+    @State private var history: [HistoryEntry] = []
+    var body: some View {
+        List {
+            if history.isEmpty { Text("Henüz bağlantı yok.").foregroundStyle(.secondary) }
+            ForEach(history) { h in
+                HStack {
+                    Text("\(h.label)  ·  \(h.target)").lineLimit(1)
+                    Spacer()
+                    Text(h.date, format: .dateTime.day().month().year().hour().minute()).foregroundStyle(.secondary)
+                    if let host = model.hosts.first(where: { $0.id == h.hostId }) {
+                        Button("Bağlan") { model.open(host) }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Geçmiş")
+        .toolbar { Button { Task { await model.clearHistory(); history = [] } } label: { Label("Temizle", systemImage: "trash") } }
+        .task { history = await model.history() }
     }
 }
 
@@ -224,13 +477,16 @@ struct TerminalHost: NSViewRepresentable {
 
 // MARK: - add host
 
-struct AddHostSheet: View {
+struct EditHostSheet: View {
     @ObservedObject var model: ServersModel
+    /// nil: a new host.
+    let host: CoreHost?
     @Environment(\.dismiss) private var dismiss
     @State private var label = ""
-    @State private var host = ""
+    @State private var address = ""
     @State private var user = ""
     @State private var port = "22"
+    @State private var group = ""
     @State private var authKind = "key"
     @State private var jumpId = ""
     @State private var error: String?
@@ -238,36 +494,59 @@ struct AddHostSheet: View {
     var body: some View {
         Form {
             TextField("Ad", text: $label, prompt: Text("Prod web"))
-            TextField("Adres", text: $host, prompt: Text("sunucu.ornek.com"))
+            TextField("Adres", text: $address, prompt: Text("sunucu.ornek.com"))
             TextField("Kullanıcı", text: $user)
             TextField("Port", text: $port)
+            TextField("Grup (isteğe bağlı)", text: $group, prompt: Text("Production"))
             Picker("Giriş", selection: $authKind) {
                 Text("Özel anahtar").tag("key")
                 Text("Parola").tag("password")
             }
             Picker("Atlama sunucusu", selection: $jumpId) {
                 Text("Doğrudan bağlan").tag("")
-                ForEach(model.hosts) { Text($0.label).tag($0.id) }
+                ForEach(model.hosts.filter { $0.id != host?.id }) { Text($0.label).tag($0.id) }
             }
             if let error { Text(error).foregroundStyle(.red).font(.callout) }
         }
         .formStyle(.grouped)
-        .frame(width: 420)
+        .frame(width: 440)
+        .onAppear {
+            guard let host else { return }
+            label = host.label
+            address = host.host ?? ""
+            user = host.user ?? ""
+            port = String(host.port ?? 22)
+            group = host.group ?? ""
+            authKind = host.authKind
+            jumpId = host.jumpId ?? ""
+        }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Vazgeç") { dismiss() } }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Kaydet") {
                     Task {
                         do {
-                            try await model.addHost(label: label, host: host, port: Int(port) ?? 0, user: user,
-                                                    authKind: authKind, jumpId: jumpId.isEmpty ? nil : jumpId)
+                            let jump = jumpId.isEmpty ? nil : jumpId
+                            let portNumber = Int(port) ?? 0
+                            if let host {
+                                try await model.updateHost(host, label: label, address: address, port: portNumber, user: user,
+                                                           authKind: authKind, jumpId: jump, group: group)
+                            } else {
+                                try await model.addHost(label: label, host: address, port: portNumber, user: user,
+                                                        authKind: authKind, jumpId: jump)
+                                if !group.trimmingCharacters(in: .whitespaces).isEmpty, let added = model.hosts.last {
+                                    try await model.updateHost(added, label: added.label, address: added.host ?? address,
+                                                               port: added.port ?? portNumber, user: added.user ?? user,
+                                                               authKind: added.authKind, jumpId: added.jumpId, group: group)
+                                }
+                            }
                             dismiss()
                         } catch {
                             self.error = error.localizedDescription
                         }
                     }
                 }
-                .disabled(label.isEmpty || host.isEmpty || user.isEmpty)
+                .disabled(label.isEmpty || address.isEmpty || user.isEmpty)
             }
         }
     }

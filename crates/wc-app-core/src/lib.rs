@@ -8,6 +8,7 @@
 //! transfer progress, changes) go to an [`EventSink`].
 #![allow(clippy::too_many_arguments)]
 
+pub mod library;
 pub mod store;
 
 use base64::Engine;
@@ -91,7 +92,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    fn save(&self, data: &Data) -> Result<(), String> {
+    pub(crate) fn save(&self, data: &Data) -> Result<(), String> {
         self.store
             .save(data)
             .map_err(|e| format!("could not save hosts: {e}"))
@@ -128,9 +129,13 @@ pub struct HostView {
     pub key_path: Option<String>,
     pub jump_id: Option<String>,
     pub trusted_key: Option<String>,
+    pub group: Option<String>,
+    pub user: String,
+    pub host: String,
+    pub port: u16,
 }
 
-fn host_views(state: &AppState) -> Result<Vec<HostView>, String> {
+pub(crate) fn host_views(state: &AppState) -> Result<Vec<HostView>, String> {
     let data = state.data.lock().map_err(|_| "busy")?;
     Ok(data
         .hosts
@@ -152,6 +157,10 @@ fn host_views(state: &AppState) -> Result<Vec<HostView>, String> {
                 .known_hosts
                 .get(&format!("{}:{}", h.profile.host, h.profile.port))
                 .cloned(),
+            group: h.group.clone(),
+            user: h.profile.user.clone(),
+            host: h.profile.host.clone(),
+            port: h.profile.port,
         })
         .collect())
 }
@@ -186,6 +195,7 @@ pub fn add_host(
             key_path: None,
             jump_id,
             tunnels: Vec::new(),
+            group: None,
         });
         state.save(&data)?;
     }
@@ -235,6 +245,7 @@ pub fn import_ssh_config(state: &Arc<AppState>) -> Result<ImportResult, String> 
                 key_path: host.identity_file,
                 jump_id: None,
                 tunnels: Vec::new(),
+                group: None,
             });
             added += 1;
         }
@@ -440,6 +451,7 @@ pub async fn connect_host(
     {
         let mut data = state.data.lock().map_err(|_| "busy")?;
         data.known_hosts.insert(host_id, fingerprint.clone());
+        library::record_connection(&mut data, &saved);
         if let Some(h) = data.hosts.iter_mut().find(|h| h.id == id) {
             h.auth_kind = kind.into();
             if from_file {

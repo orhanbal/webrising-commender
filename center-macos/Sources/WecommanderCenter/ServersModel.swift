@@ -279,4 +279,62 @@ final class ServersModel: ObservableObject {
         savedTunnels = (try? await core.call("tunnels.delete", ["hostId": tunnel.hostId, "index": tunnel.index], as: [SavedTunnel].self)) ?? savedTunnels
         onChange?()
     }
+
+    // MARK: host library (edit, groups, trusted keys, snippets, history)
+
+    func updateHost(_ host: CoreHost, label: String, address: String, port: Int, user: String,
+                    authKind: String, jumpId: String?, group: String?) async throws {
+        guard let core else { throw CoreClient.Failure.stopped }
+        var params: [String: Any] = ["id": host.id, "label": label, "host": address, "port": port,
+                                     "user": user, "authKind": authKind]
+        if let jumpId { params["jumpId"] = jumpId }
+        if let group { params["group"] = group }
+        hosts = try await core.call("hosts.update", params, as: [CoreHost].self)
+        onChange?()
+    }
+
+    func knownHosts() async -> [KnownHost] {
+        guard let core else { return [] }
+        return (try? await core.call("known.list", as: [KnownHost].self)) ?? []
+    }
+
+    func forgetKnownHost(_ known: KnownHost) async -> [KnownHost] {
+        guard let core else { return [] }
+        let list = (try? await core.call("known.forget", ["target": known.target], as: [KnownHost].self)) ?? []
+        await reload()
+        return list
+    }
+
+    func snippets() async -> [Snippet] {
+        guard let core else { return [] }
+        return (try? await core.call("snippets.list", as: [Snippet].self)) ?? []
+    }
+
+    func saveSnippet(id: String?, label: String, command: String) async throws -> [Snippet] {
+        guard let core else { throw CoreClient.Failure.stopped }
+        var params: [String: Any] = ["label": label, "command": command]
+        if let id { params["id"] = id }
+        return try await core.call("snippets.save", params, as: [Snippet].self)
+    }
+
+    func deleteSnippet(_ snippet: Snippet) async -> [Snippet] {
+        guard let core else { return [] }
+        return (try? await core.call("snippets.delete", ["id": snippet.id], as: [Snippet].self)) ?? []
+    }
+
+    /// Sends a saved command to the open terminal and runs it.
+    func send(_ snippet: Snippet, to session: TerminalSession) {
+        let text = snippet.command.replacingOccurrences(of: "\r\n", with: "\r").replacingOccurrences(of: "\n", with: "\r") + "\r"
+        write(session, ArraySlice(Array(text.utf8)))
+    }
+
+    func history() async -> [HistoryEntry] {
+        guard let core else { return [] }
+        return (try? await core.call("history.list", as: [HistoryEntry].self)) ?? []
+    }
+
+    func clearHistory() async {
+        guard let core else { return }
+        _ = try? await core.call("history.clear")
+    }
 }

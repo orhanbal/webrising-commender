@@ -201,8 +201,10 @@ public partial class App : Application
 
         var activation = AppInstance.GetCurrent().GetActivatedEventArgs();
         var hidden = Environment.GetCommandLineArgs().Contains("--hidden");
-        if (!hidden || Token is null)
-            _window.ShowPanel();
+        // Opened by the person: the main window (hosts and terminals); not
+        // signed in yet: the sign-in panel. At login (--hidden) only the tray.
+        if (Token is null) _window.ShowPanel();
+        else if (!hidden) ShowServers();
 
         _timer = _ui.CreateTimer();
         _timer.Interval = TimeSpan.FromSeconds(2);
@@ -212,7 +214,15 @@ public partial class App : Application
         Publish();
     }
 
-    private void HandleActivation(AppActivationArguments e) => _window?.ShowPanel();
+    /// <summary>Started again (Start menu, shortcut): the main window; signed out: the sign-in panel.</summary>
+    private void HandleActivation(AppActivationArguments e)
+    {
+        if (Token is null) _window?.ShowPanel();
+        else ShowServers();
+    }
+
+    /// <summary>The Management Center panel (approvals, autonomous mode, this computer, settings).</summary>
+    public void ShowPanel() => _window?.ShowPanel();
 
     /// <summary>
     /// Registers app.wecommander.center (name and icon shown on the
@@ -773,8 +783,8 @@ public partial class App : Application
             }),
         };
         var menu = new MenuFlyout();
-        menu.Items.Add(new MenuFlyoutItem { Text = "Yönetim Merkezini aç", Command = new RelayCommand(() => _window?.ShowPanel()) });
-        menu.Items.Add(new MenuFlyoutItem { Text = "Sunucular ve terminaller…", Command = new RelayCommand(ShowServers) });
+        menu.Items.Add(new MenuFlyoutItem { Text = "WECOMMANDER'ı aç", Command = new RelayCommand(ShowServers) });
+        menu.Items.Add(new MenuFlyoutItem { Text = "Onaylar ve otonom mod", Command = new RelayCommand(() => _window?.ShowPanel()) });
         _connectMenu = new MenuFlyoutSubItem { Text = "Bağlan", IsEnabled = false };
         _tunnelMenu = new MenuFlyoutSubItem { Text = "Tüneller", IsEnabled = false };
         menu.Items.Add(_connectMenu);
