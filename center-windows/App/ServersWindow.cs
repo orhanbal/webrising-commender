@@ -74,7 +74,11 @@ public sealed class ServersWindow : Window
         _nav.ItemInvoked += (_, e) => OnNavInvoked(e.InvokedItemContainer?.Tag);
 
         _tabs.IsAddTabButtonVisible = true;
-        _tabs.AddTabButtonClick += (_, _) => Navigate("hosts");
+        _tabs.AddTabButtonClick += (_, _) =>
+        {
+            Navigate("hosts");
+            DispatcherQueue.TryEnqueue(() => Show("Yeni terminal için bir sunucuya tıkla (ya da arama kutusuna kullanıcı@adres yazıp Enter'a bas).", InfoBarSeverity.Informational));
+        };
         _tabs.TabWidthMode = TabViewWidthMode.SizeToContent;
         _tabs.TabCloseRequested += (_, e) => { if (e.Tab.Tag is TabPage page) ClosePage(page); };
         _tabs.SelectionChanged += (_, _) => { SyncCommands(); if (_filesPane.Visibility == Visibility.Visible) _ = LoadFiles(null); };
@@ -216,7 +220,21 @@ public sealed class ServersWindow : Window
         return b;
     }
 
+    /// <summary>
+    /// Switches the section after the current event finishes: a click inside the
+    /// terminals view (the tab strip's "+", a snippet's button) must not pull its
+    /// own control out of the window while WinUI is still handling it.
+    /// </summary>
     private void Navigate(string section)
+    {
+        if (!DispatcherQueue.TryEnqueue(() =>
+        {
+            try { NavigateNow(section); }
+            catch (Exception e) { App.LogCrash(e); Show("Sayfa açılamadı: " + e.Message, InfoBarSeverity.Error); }
+        })) NavigateNow(section);
+    }
+
+    private void NavigateNow(string section)
     {
         foreach (var item in _nav.MenuItems.OfType<NavigationViewItem>())
             if (item.Tag as string == section) _nav.SelectedItem = item;
