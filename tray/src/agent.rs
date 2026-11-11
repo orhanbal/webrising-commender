@@ -180,6 +180,28 @@ pub fn open_update_terminal(server: &str, pairing_code_file: Option<&str>) -> Re
     ))
 }
 
+/// The app carries the agent: updating means reinstalling the app with the
+/// per-user installer (no password). It runs in the background, ends this
+/// app and starts the new one; no terminal window.
+pub fn app_update_command(server: &str) -> String {
+    format!(
+        "curl -fsSL {}/install/center.sh | sh",
+        server.trim_end_matches('/')
+    )
+}
+
+pub fn open_app_update_terminal(server: &str) -> Result<(), String> {
+    std::process::Command::new("sh")
+        .arg("-c")
+        .arg(app_update_command(server))
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Güncelleme başlatılamadı: {e}"))
+}
+
 #[cfg(not(target_os = "linux"))]
 pub fn open_update_terminal(server: &str, _pairing_code_file: Option<&str>) -> Result<(), String> {
     Err(format!(

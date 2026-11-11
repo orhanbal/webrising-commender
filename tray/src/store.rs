@@ -16,6 +16,8 @@ pub struct Settings {
     pub notifications: bool,
     /// Bring the window to the front when a new request arrives.
     pub open_on_request: bool,
+    /// "Ajan çalışsın" for the agent inside the app (Linux desktop).
+    pub agent_keep_running: bool,
 }
 
 impl Default for Settings {
@@ -24,6 +26,7 @@ impl Default for Settings {
             server: DEFAULT_SERVER.to_owned(),
             notifications: true,
             open_on_request: true,
+            agent_keep_running: true,
         }
     }
 }

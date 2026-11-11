@@ -7,6 +7,7 @@
 
 mod agent;
 mod api;
+mod embedded;
 mod store;
 
 use api::{Api, ApiError, AutonomyItem, Device, Me};
@@ -79,6 +80,8 @@ struct Menus {
 
 struct AppState {
     dir: PathBuf,
+    /// The agent inside the app (Linux desktop without the systemd service).
+    embedded: Mutex<Option<embedded::Embedded>>,
     inner: Mutex<Inner>,
     tray: Mutex<Option<TrayIcon>>,
     menus: Mutex<Option<Menus>>,
@@ -735,6 +738,7 @@ async fn poll_link(app: &AppHandle) {
                 inner.error = saved.err().map(|e| format!("Bağlandı, ancak anahtar kaydedilemedi ({e}); yeniden açılışta tekrar bağlanman gerekir."));
             }
             notify(app, "WECOMMANDER", "Yönetim Merkezi hesabına bağlandı.");
+            ensure_paired(app, true).await;
             show_main(app);
             sync(app).await;
         }
@@ -757,6 +761,10 @@ async fn poll_link(app: &AppHandle) {
 /// once (systemd restarts crashes itself, and starting it needs a password).
 async fn check_agent(app: &AppHandle) {
     if app.state::<AppState>().inner.lock().unwrap().agent_busy {
+        return;
+    }
+    if app.state::<AppState>().embedded.lock().unwrap().is_some() {
+        check_embedded(app).await;
         return;
     }
     let Ok(Some(view)) = tauri::async_runtime::spawn_blocking(agent::status).await else {
@@ -803,11 +811,204 @@ async fn check_agent(app: &AppHandle) {
     }
 }
 
+// ---- the agent inside the app (Linux desktop) ----
+
+fn embedded_view(e: &mut embedded::Embedded, keep: bool) -> agent::AgentView {
+    let state = e.state();
+    agent::AgentView {
+        state,
+        enabled: keep,
+        label: match state {
+            "notInstalled" => "Bu bilgisayar henüz bağlı değil",
+            other => agent::label(other, keep),
+        },
+    }
+}
+
+/// Signed in and not paired yet: pair this computer with a one-time code,
+/// then start the agent.
+async fn ensure_paired(app: &AppHandle, force: bool) {
+    // Retried at most every five minutes, unless the person just signed in.
+    static LAST_TRY: Mutex<Option<Instant>> = Mutex::new(None);
+    {
+        let mut last = LAST_TRY.lock().unwrap();
+        if !force && last.is_some_and(|t| t.elapsed() < Duration::from_secs(300)) {
+            return;
+        }
+        *last = Some(Instant::now());
+    }
+    let needed = {
+        let state = app.state::<AppState>();
+        let mut guard = state.embedded.lock().unwrap();
+        guard.as_mut().is_some_and(|e| !e.paired())
+    };
+    if !needed {
+        return;
+    }
+    let Ok((api, token)) = session(app) else {
+        return;
+    };
+    let server = app
+        .state::<AppState>()
+        .inner
+        .lock()
+        .unwrap()
+        .settings
+        .server
+        .clone();
+    let code = match api.pairing_code(&token).await {
+        Ok(code) => code,
+        Err(e) => {
+            app.state::<AppState>().inner.lock().unwrap().error =
+                Some(format!("Bu bilgisayar hesaba bağlanamadı: {}", e.message()));
+            publish(app);
+            return;
+        }
+    };
+    let handle = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let state = handle.state::<AppState>();
+        let mut guard = state.embedded.lock().unwrap();
+        let Some(e) = guard.as_mut() else {
+            return Ok(());
+        };
+        let root = embedded::Embedded::default_root().ok_or("HOME yok")?;
+        e.pair(&server, &code, &root)?;
+        e.start();
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())
+    .and_then(|r| r);
+    match result {
+        Ok(()) => notify(
+            app,
+            "WECOMMANDER",
+            "Bu bilgisayar hesabına bağlandı. Ajan arka planda çalışıyor.",
+        ),
+        Err(e) => app.state::<AppState>().inner.lock().unwrap().error = Some(e),
+    }
+    publish(app);
+}
+
+async fn check_embedded(app: &AppHandle) {
+    let keep = app
+        .state::<AppState>()
+        .inner
+        .lock()
+        .unwrap()
+        .settings
+        .agent_keep_running;
+    let (view, tick, why, version) = {
+        let state = app.state::<AppState>();
+        let mut guard = state.embedded.lock().unwrap();
+        let Some(e) = guard.as_mut() else {
+            return;
+        };
+        let before = e.state();
+        let tick = e.tick(keep, Instant::now());
+        let restarted = tick == embedded::Tick::Started && before == "stopped" && e.running();
+        let version_due = state
+            .inner
+            .lock()
+            .unwrap()
+            .agent_version_checked
+            .is_none_or(|t| t.elapsed() >= Duration::from_secs(3600));
+        let version = version_due.then(|| e.version());
+        (
+            embedded_view(e, keep),
+            (tick, restarted),
+            e.last_error.clone(),
+            version,
+        )
+    };
+    match tick {
+        (_, true) => notify(
+            app,
+            "WECOMMANDER",
+            "Bu bilgisayardaki ajan durmuştu; yeniden başlatıldı.",
+        ),
+        (embedded::Tick::GaveUp, _) => notify(
+            app,
+            "WECOMMANDER",
+            &format!(
+                "Bu bilgisayardaki ajan durdu ve yeniden başlatılamadı.{}",
+                why.map(|w| format!(" ({w})")).unwrap_or_default()
+            ),
+        ),
+        _ => {}
+    }
+    let changed = {
+        let state = app.state::<AppState>();
+        let mut inner = state.inner.lock().unwrap();
+        if let Some(version) = version {
+            inner.agent_version_checked = Some(Instant::now());
+            inner.agent_version = version;
+        }
+        inner.agent.replace(view.clone()).as_ref() != Some(&view)
+    };
+    let unpaired = view.state == "notInstalled";
+    if unpaired
+        && app
+            .state::<AppState>()
+            .inner
+            .lock()
+            .unwrap()
+            .token
+            .is_some()
+    {
+        ensure_paired(app, false).await;
+    }
+    if changed {
+        publish(app);
+    }
+}
+
+async fn set_embedded(app: &AppHandle, on: bool) {
+    {
+        let state = app.state::<AppState>();
+        let mut inner = state.inner.lock().unwrap();
+        inner.settings.agent_keep_running = on;
+        let _ = store::save_settings(&state.dir, &inner.settings);
+    }
+    let view = {
+        let state = app.state::<AppState>();
+        let mut guard = state.embedded.lock().unwrap();
+        let Some(e) = guard.as_mut() else {
+            return;
+        };
+        e.reset();
+        if on {
+            e.start();
+        } else {
+            e.stop();
+        }
+        embedded_view(e, on)
+    };
+    app.state::<AppState>().inner.lock().unwrap().agent = Some(view);
+    if on {
+        ensure_paired(app, true).await;
+    }
+    publish(app);
+}
+
 /// "Ajanı güncelle": the official installer in a terminal window.
 /// With no agent yet and a signed-in Center, the installer gets a one-time
 /// pairing code (in a private file) and pairs without a browser sign-in.
 #[tauri::command]
 async fn update_agent(app: AppHandle) -> Result<(), String> {
+    if app.state::<AppState>().embedded.lock().unwrap().is_some() {
+        // The agent comes with the app: update the app with the one-line installer.
+        let server = app
+            .state::<AppState>()
+            .inner
+            .lock()
+            .unwrap()
+            .settings
+            .server
+            .clone();
+        return agent::open_app_update_terminal(&server);
+    }
     let (server, not_installed) = {
         let state = app.state::<AppState>();
         let mut inner = state.inner.lock().unwrap();
@@ -842,6 +1043,10 @@ async fn update_agent(app: AppHandle) -> Result<(), String> {
 /// "Ajan çalışsın" in the panel and the tray menu.
 #[tauri::command]
 async fn set_agent(app: AppHandle, enabled: bool) -> Result<Snapshot, String> {
+    if app.state::<AppState>().embedded.lock().unwrap().is_some() {
+        set_embedded(&app, enabled).await;
+        return Ok(snapshot(&app));
+    }
     {
         let state = app.state::<AppState>();
         let mut inner = state.inner.lock().unwrap();
@@ -1311,7 +1516,12 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
                     });
                 }
             }
-            "quit" => app.exit(0),
+            "quit" => {
+                if let Some(e) = app.state::<AppState>().embedded.lock().unwrap().as_mut() {
+                    e.stop();
+                }
+                app.exit(0)
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -1368,8 +1578,18 @@ fn main() {
                 let _ = app.autolaunch().enable();
             }
             let signed_in = token.is_some();
+            // Linux desktop: the agent inside the app, unless this computer
+            // runs the systemd service (servers keep that).
+            let embedded = if cfg!(target_os = "linux") {
+                embedded::Embedded::for_this_app().filter(|e| {
+                    e.available() && agent::status().is_none_or(|v| v.state == "notInstalled")
+                })
+            } else {
+                None
+            };
             app.manage(AppState {
                 dir,
+                embedded: Mutex::new(embedded),
                 inner: Mutex::new(Inner {
                     settings,
                     token,
