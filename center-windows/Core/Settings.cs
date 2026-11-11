@@ -35,6 +35,10 @@ public sealed class Settings
     /// (scheduled task, service, Program Files setup) was already shown.
     /// </summary>
     [JsonPropertyName("legacyCleanupPrompted")] public bool LegacyCleanupPrompted { get; set; }
+    /// <summary>Terminal text size in points (8–32).</summary>
+    [JsonPropertyName("terminalFontSize")] public int TerminalFontSize { get; set; } = 13;
+    /// <summary>"dark" or "light".</summary>
+    [JsonPropertyName("terminalTheme")] public string TerminalTheme { get; set; } = "dark";
 }
 
 public sealed class SettingsStore(string directory)

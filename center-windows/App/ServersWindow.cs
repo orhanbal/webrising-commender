@@ -66,7 +66,7 @@ public sealed class ServersWindow : Window
         _nav.MenuItems.Add(new NavigationViewItem { Content = "Geçmiş", Tag = "history", Icon = new FontIcon { Glyph = "\uE81C" } });
         _nav.FooterMenuItems.Add(new NavigationViewItem { Content = "Onaylar ve otonom mod", Tag = "approvals", SelectsOnInvoked = false, Icon = new FontIcon { Glyph = "\uE8FB" } });
         _nav.FooterMenuItems.Add(new NavigationViewItem { Content = "Bu bilgisayar (ajan)", Tag = "agent", SelectsOnInvoked = false, Icon = new FontIcon { Glyph = "\uE7F4" } });
-        _nav.FooterMenuItems.Add(new NavigationViewItem { Content = "Ayarlar", Tag = "settings", SelectsOnInvoked = false, Icon = new SymbolIcon(Symbol.Setting) });
+        _nav.FooterMenuItems.Add(new NavigationViewItem { Content = "Ayarlar", Tag = "settings", Icon = new SymbolIcon(Symbol.Setting) });
         _nav.ItemInvoked += (_, e) => OnNavInvoked(e.InvokedItemContainer?.Tag);
 
         _tabs.IsAddTabButtonVisible = true;
@@ -230,8 +230,10 @@ public sealed class ServersWindow : Window
         {
             case "approvals":
             case "agent":
-            case "settings":
                 App.Current.ShowPanel();
+                break;
+            case "settings":
+                ShowSettings();
                 break;
             case string section: Navigate(section); break;
         }
@@ -341,7 +343,7 @@ public sealed class ServersWindow : Window
     private async Task ConfirmDelete(CoreHost host)
     {
         var dialog = Dialog($"{host.Label} silinsin mi?", new TextBlock { Text = "Kasadaki giriş bilgisi de silinir." }, "Sil");
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary) await _c.DeleteHost(host);
+        if (await ShowDialog(dialog) == ContentDialogResult.Primary) await _c.DeleteHost(host);
     }
 
     private ContentDialog Dialog(string title, UIElement content, string primary, string close = "Vazgeç") => new()
@@ -353,6 +355,48 @@ public sealed class ServersWindow : Window
         DefaultButton = ContentDialogButton.Primary,
         XamlRoot = Content.XamlRoot,
     };
+
+    // ---- settings ----
+
+    private string TerminalSettingsJson() => JsonSerializer.Serialize(new
+    {
+        type = "settings",
+        fontSize = App.Current.Settings.TerminalFontSize,
+        theme = App.Current.Settings.TerminalTheme,
+    });
+
+    private void ApplyTerminalSettings()
+    {
+        App.Current.SaveSettings();
+        var json = TerminalSettingsJson();
+        foreach (var item in _tabs.TabItems.OfType<TabViewItem>())
+            if (item.Tag is TerminalTab t) t.Post(json);
+    }
+
+    private void ShowSettings()
+    {
+        var settings = App.Current.Settings;
+        var font = new NumberBox { Header = "Terminal yazı boyutu", Value = settings.TerminalFontSize, Minimum = 8, Maximum = 32, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, Width = 220, HorizontalAlignment = HorizontalAlignment.Left };
+        font.ValueChanged += (_, e) =>
+        {
+            if (double.IsNaN(e.NewValue)) return;
+            settings.TerminalFontSize = (int)Math.Clamp(e.NewValue, 8, 32);
+            ApplyTerminalSettings();
+        };
+        var theme = new RadioButtons { Header = "Terminal teması", ItemsSource = new[] { "Koyu", "Açık" }, SelectedIndex = settings.TerminalTheme == "light" ? 1 : 0 };
+        theme.SelectionChanged += (_, _) => { settings.TerminalTheme = theme.SelectedIndex == 1 ? "light" : "dark"; ApplyTerminalSettings(); };
+        var keys = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Secondary,
+            Text = "Terminal kısayolları: Ctrl+F ara · Ctrl+= / Ctrl+- yazı boyutu · Ctrl+0 varsayılan boyut · seçiliyken Ctrl+C kopyala · Ctrl+V yapıştır.",
+        };
+        var center = new HyperlinkButton { Content = "Bildirimler, otonom mod ve bu bilgisayarın ajanı: Yönetim Merkezi panelini aç" };
+        center.Click += (_, _) => App.Current.ShowPanel();
+        var body = new StackPanel { Spacing = 18, MaxWidth = 640, HorizontalAlignment = HorizontalAlignment.Left };
+        foreach (var e in new UIElement[] { font, theme, keys, center }) body.Children.Add(e);
+        _nav.Content = Page("Ayarlar", "Terminal görünümü; değişiklikler açık terminallere hemen uygulanır.", new ScrollViewer { Content = body });
+    }
 
     // ---- keys ----
 
@@ -387,7 +431,7 @@ public sealed class ServersWindow : Window
             del.Click += async (_, _) =>
             {
                 var dialog = Dialog($"{k.Label} silinsin mi?", new TextBlock { Text = used.Count > 0 ? "Bu anahtarı kullanan sunucular bir dahaki bağlantıda giriş bilgisi ister." : "Özel anahtar kasadan da silinir.", TextWrapping = TextWrapping.Wrap }, "Sil");
-                if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+                if (await ShowDialog(dialog) != ContentDialogResult.Primary) return;
                 await Guard(() => _c.DeleteKey(k));
                 await ShowKeys();
             };
@@ -403,7 +447,7 @@ public sealed class ServersWindow : Window
     {
         var label = new TextBox { Header = "Ad", Text = Environment.MachineName + " anahtarı", MinWidth = 360 };
         var dialog = Dialog("Yeni anahtar (Ed25519)", label, "Oluştur");
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (await ShowDialog(dialog) != ContentDialogResult.Primary) return;
         await Guard(async () =>
         {
             await _c.GenerateKey(label.Text);
@@ -439,7 +483,7 @@ public sealed class ServersWindow : Window
             catch (CoreException e) { error.Text = e.Message; args.Cancel = true; }
             finally { deferral.Complete(); }
         };
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary) await ShowKeys();
+        if (await ShowDialog(dialog) == ContentDialogResult.Primary) await ShowKeys();
     }
 
     // ---- snippets ----
@@ -491,7 +535,7 @@ public sealed class ServersWindow : Window
             catch (CoreException e) { error.Text = e.Message; args.Cancel = true; }
             finally { deferral.Complete(); }
         };
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary) await ShowSnippets();
+        if (await ShowDialog(dialog) == ContentDialogResult.Primary) await ShowSnippets();
     }
 
     private void SendSnippet(Snippet s)
@@ -639,13 +683,51 @@ public sealed class ServersWindow : Window
             }
             finally { deferral.Complete(); }
         };
-        await dialog.ShowAsync();
+        await ShowDialog(dialog);
         RenderHosts();
     }
 
     // ---- connect ----
 
+    /// <summary>
+    /// Windows allows one ContentDialog at a time; a second one (a double
+    /// click on a host, a dialog over a dialog) throws inside XAML and closes
+    /// the app. Every dialog goes through here and waits its turn.
+    /// </summary>
+    private readonly SemaphoreSlim _dialogGate = new(1, 1);
+    private readonly HashSet<string> _connecting = [];
+
+    private async Task<ContentDialogResult> ShowDialog(ContentDialog dialog)
+    {
+        await _dialogGate.WaitAsync();
+        try
+        {
+            dialog.XamlRoot ??= Content.XamlRoot;
+            return await dialog.ShowAsync();
+        }
+        catch (Exception e)
+        {
+            App.LogCrash(e);
+            Show("Pencere açılamadı: " + e.Message, InfoBarSeverity.Error);
+            return ContentDialogResult.None;
+        }
+        finally { _dialogGate.Release(); }
+    }
+
     public async Task OpenHost(CoreHost host)
+    {
+        // A second click while this host is still connecting does nothing.
+        if (!_connecting.Add(host.Id)) return;
+        try { await OpenHostOnce(host); }
+        catch (Exception e)
+        {
+            App.LogCrash(e);
+            Show($"{host.Label}: {e.Message}", InfoBarSeverity.Error);
+        }
+        finally { _connecting.Remove(host.Id); }
+    }
+
+    private async Task OpenHostOnce(CoreHost host)
     {
         if (host.CanConnectSilently)
         {
@@ -694,7 +776,7 @@ public sealed class ServersWindow : Window
         });
         panel.Children.Add(new TextBox { Text = result.Fingerprint ?? "", IsReadOnly = true, FontFamily = new FontFamily("Cascadia Mono, Consolas") });
         var dialog = Dialog($"{host.Label} · {host.Target}", panel, changed ? "Yeni anahtara yine de güven" : "Güven ve bağlan");
-        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+        return await ShowDialog(dialog) == ContentDialogResult.Primary;
     }
 
     private async Task AskCredentials(CoreHost host, string? message)
@@ -735,7 +817,7 @@ public sealed class ServersWindow : Window
         if (message is not null) panel.Children.Add(new InfoBar { IsOpen = true, IsClosable = false, Severity = InfoBarSeverity.Error, Message = message });
         foreach (var e in new UIElement[] { useKey, keyRow, key, passphrase, password, remember }) panel.Children.Add(e);
         var dialog = Dialog($"{host.Label} · {host.Target}", panel, "Bağlan");
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (await ShowDialog(dialog) != ContentDialogResult.Primary) return;
         object auth = useKey.SelectedIndex == 0
             ? new { kind = "key", secret = key.Text, passphrase = passphrase.Password, remember = remember.IsChecked == true, keyPath = string.IsNullOrEmpty(key.Text) ? keyPath : null }
             : new { kind = "password", secret = password.Password, passphrase = (string?)null, remember = remember.IsChecked == true, keyPath = (string?)null };
@@ -785,6 +867,7 @@ public sealed class ServersWindow : Window
             {
                 case "ready":
                     tab.Ready = true;
+                    tab.Post(TerminalSettingsJson());
                     _c.Resize(tab, (int?)m!["cols"] ?? 100, (int?)m["rows"] ?? 30);
                     tab.Flush();
                     break;
@@ -793,6 +876,11 @@ public sealed class ServersWindow : Window
                     break;
                 case "resize":
                     _c.Resize(tab, (int?)m!["cols"] ?? 100, (int?)m["rows"] ?? 30);
+                    break;
+                case "fontSize":
+                    // Ctrl+= / Ctrl+- in a terminal: remembered for the next ones.
+                    var size = (int?)m!["size"] ?? 13;
+                    DispatcherQueue.TryEnqueue(() => { App.Current.Settings.TerminalFontSize = size; App.Current.SaveSettings(); });
                     break;
             }
         };
@@ -906,7 +994,7 @@ public sealed class ServersWindow : Window
     {
         var box = new TextBox { Text = value, MinWidth = 320 };
         var dialog = Dialog(title, box, "Tamam");
-        return await dialog.ShowAsync() == ContentDialogResult.Primary ? box.Text.Trim() : null;
+        return await ShowDialog(dialog) == ContentDialogResult.Primary ? box.Text.Trim() : null;
     }
 
     private async Task NewFolder()
@@ -930,7 +1018,7 @@ public sealed class ServersWindow : Window
     private async Task Delete(TerminalTab tab, RemoteEntry e)
     {
         var dialog = Dialog($"{e.Name} silinsin mi?", new TextBlock { Text = e.IsFolder ? "Yalnızca boş klasörler silinebilir." : "Bu işlem geri alınamaz." }, "Sil");
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (await ShowDialog(dialog) != ContentDialogResult.Primary) return;
         await Guard(() => _c.FilesAction(tab, "files.delete", new { sessionId = tab.SessionId, path = e.Path }));
         await LoadFiles(_listing?.Path);
     }
@@ -1031,7 +1119,7 @@ public sealed class ServersWindow : Window
             catch (CoreException e) { status.Text = e.Message; }
             finally { deferral.Complete(); }
         };
-        await dialog.ShowAsync();
+        await ShowDialog(dialog);
     }
 }
 
