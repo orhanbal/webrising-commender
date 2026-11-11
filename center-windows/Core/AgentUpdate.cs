@@ -133,23 +133,30 @@ public static partial class AppUpdate
     /// <summary>
     /// The hidden helper (PowerShell, no window) that waits for the app to
     /// quit, swaps the new files in (keeping the old copy until the new one is
-    /// in place) and starts the app again.
+    /// in place) and starts the app again. It runs from the temp folder: a
+    /// process whose current folder is inside the app folder would stop the
+    /// swap (Windows does not rename a folder in use). When the swap does not
+    /// happen, the reason goes to <paramref name="failFile"/>; the app shows
+    /// it at its next start.
     /// </summary>
-    public static string SwapScript(string appDir, string newDir, int appPid, string exeName = "WecommanderCenter.exe")
+    public static string SwapScript(string appDir, string newDir, int appPid, string failFile, string exeName = "WecommanderCenter.exe")
     {
         static string Q(string s) => "'" + s.Replace("'", "''") + "'";
         var old = appDir.TrimEnd('\\') + ".old";
         return string.Join("\n",
             "$ErrorActionPreference='Stop'",
-            $"$app={Q(appDir.TrimEnd('\\'))}; $new={Q(newDir)}; $old={Q(old)}",
+            "Set-Location -LiteralPath ([IO.Path]::GetTempPath())",
+            $"$app={Q(appDir.TrimEnd('\\'))}; $new={Q(newDir)}; $old={Q(old)}; $fail={Q(failFile)}",
             $"try {{ Wait-Process -Id {appPid} -Timeout 30 -ErrorAction SilentlyContinue }} catch {{}}",
-            "Get-Process -Name 'webrising-commender','wecommander-core' -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($app,[StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force -ErrorAction SilentlyContinue",
-            "Start-Sleep -Milliseconds 500",
+            // Everything still running from the app folder (agent, core, a second copy).
+            "Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($app + '\\',[StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force -ErrorAction SilentlyContinue",
+            "Start-Sleep -Milliseconds 800",
             "if(Test-Path -LiteralPath $old){ Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue }",
-            "$moved=$false",
-            "for($i=0;$i -lt 20 -and -not $moved;$i++){ try { Rename-Item -LiteralPath $app -NewName (Split-Path $old -Leaf); $moved=$true } catch { Start-Sleep -Seconds 1 } }",
-            "if($moved){ try { Move-Item -LiteralPath $new -Destination $app } catch { Rename-Item -LiteralPath $old -NewName (Split-Path $app -Leaf) } }",
-            $"Start-Process -FilePath (Join-Path $app {Q(exeName)}) -ArgumentList '--hidden','--updated'",
+            "$moved=$false; $why=''",
+            "for($i=0;$i -lt 30 -and -not $moved;$i++){ try { Rename-Item -LiteralPath $app -NewName (Split-Path $old -Leaf); $moved=$true } catch { $why=$_.Exception.Message; Start-Sleep -Seconds 1 } }",
+            "if($moved){ try { Move-Item -LiteralPath $new -Destination $app; Remove-Item -LiteralPath $fail -Force -ErrorAction SilentlyContinue } catch { $why=$_.Exception.Message; Rename-Item -LiteralPath $old -NewName (Split-Path $app -Leaf); $moved=$false } }",
+            "if(-not $moved){ New-Item -ItemType Directory -Force -Path (Split-Path $fail) | Out-Null; Set-Content -LiteralPath $fail -Value $why -Encoding UTF8 }",
+            $"Start-Process -FilePath (Join-Path $app {Q(exeName)}) -WorkingDirectory $app -ArgumentList '--updated'",
             "if($moved){ Start-Sleep -Seconds 5; Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue }");
     }
 }

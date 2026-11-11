@@ -193,6 +193,10 @@ public partial class App : Application
         // A second start is redirected here (see Program).
         AppInstance.GetCurrent().Activated += (_, e) => _ui.TryEnqueue(() => HandleActivation(e));
 
+        // WebView2 keeps its profile outside the app folder, so its helper
+        // processes never hold files that an update has to replace.
+        Environment.SetEnvironmentVariable("WEBVIEW2_USER_DATA_FOLDER",
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WECOMMANDER", "WebView2"));
         _window = new MainWindow();
         BuildTray();
         Servers.Changed += () => _ui.TryEnqueue(UpdateServersMenu);

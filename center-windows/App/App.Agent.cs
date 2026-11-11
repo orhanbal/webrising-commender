@@ -29,9 +29,32 @@ public partial class App
     public bool AppUpdateAvailable => Core.AppUpdate.IsNewer(_latestApp, AppBuild);
     public int? LatestAppBuild => _latestApp?.Build;
 
+    /// <summary>Written by the update helper when the new version could not be put in place.</summary>
+    private static string UpdateFailFile => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WECOMMANDER", "update-failed.txt");
+
+    /// <summary>After an update: say whether it worked (the helper leaves a note when it did not).</summary>
+    private void ReportUpdateResult()
+    {
+        if (!Environment.GetCommandLineArgs().Contains("--updated")) return;
+        try
+        {
+            if (File.Exists(UpdateFailFile))
+            {
+                var why = File.ReadAllText(UpdateFailFile).Trim();
+                File.Delete(UpdateFailFile);
+                Error = "Güncelleme tamamlanamadı: " + (why.Length > 0 ? why : "dosyalar değiştirilemedi") + ". Paneldeki indirme dosyasıyla yeniden kurabilirsin.";
+                Toast("Güncelleme tamamlanamadı; ayrıntı panelde.");
+            }
+            else if (AppBuild is { } b) Toast($"WECOMMANDER 0.1.{b} sürümüne güncellendi.");
+        }
+        catch (Exception) { }
+    }
+
     /// <summary>At launch: end what an earlier copy left, remove the old install once, start.</summary>
     private async void StartEmbeddedAgent()
     {
+        ReportUpdateResult();
         if (!Embedded) return;
         KillStrayEmbeddedAgents();
         await CleanupLegacyAgentAsync();
@@ -233,12 +256,14 @@ public partial class App
                     throw new InvalidOperationException($"Pakette {needed} yok; güncelleme durduruldu.");
 
             var script = Path.Combine(Path.GetTempPath(), "wecommander-swap-" + Guid.NewGuid().ToString("N") + ".ps1");
-            await File.WriteAllTextAsync(script, Core.AppUpdate.SwapScript(appDir, staged, Environment.ProcessId));
+            await File.WriteAllTextAsync(script, Core.AppUpdate.SwapScript(appDir, staged, Environment.ProcessId, UpdateFailFile));
             var info = new ProcessStartInfo("powershell.exe")
             {
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 WindowStyle = ProcessWindowStyle.Hidden,
+                // Not the app folder: a process in it would block the swap.
+                WorkingDirectory = Path.GetTempPath(),
             };
             foreach (var a in new[] { "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File", script })
                 info.ArgumentList.Add(a);
