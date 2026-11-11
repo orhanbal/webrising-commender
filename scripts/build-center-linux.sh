@@ -19,6 +19,11 @@ test -x "$BIN"
 PKG="$WORK/wecommander-center"
 mkdir -p "$PKG"
 install -m 0755 "$BIN" "$PKG/wecommander-center"
+# The agent the app pairs and runs itself (same version): target/release.
+AGENT_BIN="${AGENT_BIN:-$ROOT/target/release/webrising-commender}"
+test -x "$AGENT_BIN" || { echo "agent missing at $AGENT_BIN" >&2; exit 1; }
+"$AGENT_BIN" --version | grep -q "${VERSION}$" || { echo "agent version is not ${VERSION}" >&2; exit 1; }
+install -m 0755 "$AGENT_BIN" "$PKG/webrising-commender"
 install -m 0644 "$ROOT/tray/icons/icon.png" "$PKG/wecommander-center.png"
 cat > "$PKG/wecommander-center.desktop" <<DESKTOP
 [Desktop Entry]

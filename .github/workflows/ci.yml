@@ -962,6 +962,10 @@ jobs:
         env:
           WECOMMANDER_VERSION: 0.1.${{ github.run_number }}
         run: cargo build --release --locked
+      - name: Build the agent the app carries and runs itself
+        env:
+          WECOMMANDER_VERSION: 0.1.${{ github.run_number }}
+        run: cargo build --release --locked -p webrising-commender-agent
       - name: Package
         run: bash scripts/build-center-linux.sh "0.1.${{ github.run_number }}" tray/dist
       - name: Install and start from the package (headless desktop session)
@@ -971,6 +975,7 @@ jobs:
           cmp scripts/install-center-macos-online.sh gateway/public/install/center-macos.sh
           mkdir -p /tmp/center-home && tar -xzf tray/dist/WECOMMANDER-Center-linux-x86_64.tar.gz -C /tmp/center-home
           test -x /tmp/center-home/wecommander-center/wecommander-center
+          /tmp/center-home/wecommander-center/webrising-commender --version | grep -q "0.1.${{ github.run_number }}$"
           grep -q '^Exec=wecommander-center$' /tmp/center-home/wecommander-center/wecommander-center.desktop
           # The app must start and keep running under a real X display and
           # session bus (tray, webview, notification plugin) for a few seconds.

@@ -204,6 +204,8 @@ test -x "$src/wecommander-center"
 data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
 dest="$data_home/wecommander-center"
 pkill -x wecommander-center >/dev/null 2>&1 || true
+# The agent the app runs from its folder (it also exits with the app).
+pkill -f "$dest/webrising-commender" >/dev/null 2>&1 || true
 sleep 1
 rm -rf "$dest"
 mkdir -p "$dest" "$HOME/.local/bin" "$data_home/applications" "$data_home/icons/hicolor/256x256/apps"
