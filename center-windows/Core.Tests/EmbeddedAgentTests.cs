@@ -233,11 +233,33 @@ public class EmbeddedAgentTests : IDisposable
     [Fact]
     public void SwapScriptKeepsTheOldCopyUntilTheNewOneIsIn()
     {
-        var script = AppUpdate.SwapScript(@"C:\Users\o'b\AppData\Local\Programs\WECOMMANDER Center\", @"C:\Temp\new", 42);
+        var script = AppUpdate.SwapScript(@"C:\Users\o'b\AppData\Local\Programs\WECOMMANDER Center\", @"C:\Temp\new", 42, @"C:\Users\o'b\AppData\Local\WECOMMANDER\update-failed.txt");
         Assert.Contains("Wait-Process -Id 42", script);
         Assert.Contains("$app='C:\\Users\\o''b\\AppData\\Local\\Programs\\WECOMMANDER Center'", script);
         Assert.Contains("$old='C:\\Users\\o''b\\AppData\\Local\\Programs\\WECOMMANDER Center.old'", script);
         Assert.Contains("Rename-Item -LiteralPath $old -NewName", script);
-        Assert.Contains("'--hidden','--updated'", script);
+        Assert.Contains("-ArgumentList '--updated'", script);
+        // The helper must not sit in the folder it renames.
+        Assert.StartsWith("$ErrorActionPreference='Stop'\nSet-Location -LiteralPath ([IO.Path]::GetTempPath())", script);
+        Assert.Contains("Set-Content -LiteralPath $fail", script);
+
+        // On Windows (CI), the helper must parse as PowerShell.
+        if (OperatingSystem.IsWindows())
+        {
+            var file = Path.Combine(_dir, "swap.ps1");
+            File.WriteAllText(file, script);
+            var check = new System.Diagnostics.ProcessStartInfo("powershell.exe")
+            {
+                UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true,
+            };
+            var quoted = "'" + file.Replace("'", "''") + "'";
+            foreach (var arg in new[] { "-NoProfile", "-NonInteractive", "-Command",
+                "$e=$null; [void][System.Management.Automation.Language.Parser]::ParseFile(" + quoted + ",[ref]$null,[ref]$e); if($e.Count){ $e | ForEach-Object { $_.Message }; exit 1 }" })
+                check.ArgumentList.Add(arg);
+            using var p = System.Diagnostics.Process.Start(check)!;
+            var output = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+            p.WaitForExit();
+            Assert.True(p.ExitCode == 0, output);
+        }
     }
 }
