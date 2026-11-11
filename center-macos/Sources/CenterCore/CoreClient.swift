@@ -289,7 +289,14 @@ public struct ImportResult: Decodable, Equatable {
 public enum CoreText {
     public static func turkish(_ text: String) -> String {
         if text.contains("no saved credential") { return "Bu sunucu için kayıtlı giriş bilgisi yok; bir kez gir." }
-        if text.contains("authentication failed") { return "Giriş reddedildi. Anahtarı veya parolayı kontrol et." }
+        if text.contains("authentication failed") {
+            guard let r = text.range(of: "server accepts:") else { return "Giriş reddedildi. Anahtarı veya parolayı kontrol et." }
+            let methods = text[r.upperBound...].trimmingCharacters(in: CharacterSet(charactersIn: " )")).split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            if methods.contains("publickey"), !methods.contains("password"), !methods.contains("keyboard-interactive") {
+                return "Giriş reddedildi. Bu sunucu parolayla girişi kabul etmiyor, yalnız SSH anahtarı kabul ediyor. Anahtarlar'dan bir anahtar oluştur, genel anahtarını sunucudaki ~/.ssh/authorized_keys dosyasına ekle, sonra sunucuyu düzenleyip o anahtarı seç. (root için Ubuntu varsayılan olarak parolayla girişi kapatır.)"
+            }
+            return "Giriş reddedildi; kullanıcı adı, parola ya da anahtar yanlış. Sunucunun kabul ettiği yöntemler: " + methods.joined(separator: ", ") + "."
+        }
         if text.contains("private key could not be used") { return "Özel anahtar okunamadı (biçim veya anahtar parolası yanlış)." }
         if text.contains("timed out") { return "Sunucu yanıt vermedi (zaman aşımı)." }
         if text.contains("did not start SFTP") { return "Bu sunucu SFTP'yi açmadı (sshd_config içinde 'Subsystem sftp' olmalı)." }

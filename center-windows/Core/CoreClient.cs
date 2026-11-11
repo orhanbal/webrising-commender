@@ -160,11 +160,29 @@ public sealed class CoreException(string raw) : Exception(CoreText.Turkish(raw))
 /// <summary>Turkish texts for the core's English error prefixes.</summary>
 public static class CoreText
 {
+    /// <summary>
+    /// "authentication failed (server accepts: publickey)": say what the server
+    /// takes, so a refused password is not mistaken for a typo.
+    /// </summary>
+    public static string AuthFailed(string text)
+    {
+        var i = text.IndexOf("server accepts:", StringComparison.Ordinal);
+        if (i < 0) return "Giriş reddedildi. Anahtarı veya parolayı kontrol et.";
+        var methods = text[(i + "server accepts:".Length)..].Trim().TrimEnd(')').Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var password = methods.Contains("password") || methods.Contains("keyboard-interactive");
+        var key = methods.Contains("publickey");
+        if (key && !password)
+            return "Giriş reddedildi. Bu sunucu parolayla girişi kabul etmiyor, yalnız SSH anahtarı kabul ediyor. "
+                + "Anahtarlar'dan bir anahtar oluştur, genel anahtarını sunucudaki ~/.ssh/authorized_keys dosyasına ekle, sonra sunucuyu düzenleyip o anahtarı seç. "
+                + "(root için Ubuntu varsayılan olarak parolayla girişi kapatır.)";
+        return "Giriş reddedildi; kullanıcı adı, parola ya da anahtar yanlış. Sunucunun kabul ettiği yöntemler: " + string.Join(", ", methods) + ".";
+    }
+
     public static string Turkish(string text)
     {
         if (text == CoreException.Stopped) return "Uygulama çekirdeği çalışmıyor.";
         if (text.Contains("no saved credential")) return "Bu sunucu için kayıtlı giriş bilgisi yok; bir kez gir.";
-        if (text.Contains("authentication failed")) return "Giriş reddedildi. Anahtarı veya parolayı kontrol et.";
+        if (text.Contains("authentication failed")) return AuthFailed(text);
         if (text.Contains("private key could not be used")) return "Özel anahtar okunamadı (biçim veya anahtar parolası yanlış).";
         if (text.Contains("timed out")) return "Sunucu yanıt vermedi (zaman aşımı).";
         if (text.Contains("did not start SFTP")) return "Bu sunucu SFTP'yi açmadı (sshd_config içinde 'Subsystem sftp' olmalı).";

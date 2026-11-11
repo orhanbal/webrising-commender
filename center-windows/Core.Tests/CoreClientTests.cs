@@ -280,6 +280,8 @@ public class CoreClientTests
     public void HandlesRepliesAndEventsLine()
     {
         Assert.Equal("Giriş reddedildi. Anahtarı veya parolayı kontrol et.", CoreText.Turkish("authentication failed"));
+        Assert.Contains("yalnız SSH anahtarı", CoreText.Turkish("authentication failed (server accepts: publickey)"));
+        Assert.Contains("password, publickey", CoreText.Turkish("authentication failed (server accepts: password, publickey)"));
         Assert.Equal("Atlama sunucusu: Bastion: no route", CoreText.Turkish("jump host Bastion: no route"));
         Assert.Equal("other", CoreText.Turkish("other"));
     }
