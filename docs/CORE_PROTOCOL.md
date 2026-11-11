@@ -53,6 +53,11 @@ connection.
 | `snippets.save` | `id?, label, command` | same list (no `id`: new) |
 | `snippets.delete` | `id` | same list |
 | `history.list` / `history.clear` | – | `[{hostId, label, target, at}]`, newest first, at most 200 |
+| `keys.list` | – | `[{id, label, algorithm, fingerprint, publicKey, created}]`; private keys stay in the OS keyring (`key/<id>/private`) |
+| `keys.generate` | `label` | same list; a new Ed25519 key |
+| `keys.import` | `label, private, passphrase?` | same list; the key is checked first |
+| `keys.delete` | `id` | same list; hosts using it forget it |
+| `hosts.setKey` | `id, keyId?` | `[Host]`; connect then uses that key (Host has `keyId`) |
 
 `Host` = `{id, label, target, authKind, savedSecret, keyPath, jumpId, trustedKey}`.
 

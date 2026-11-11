@@ -243,6 +243,30 @@ public sealed class ServersController : IDisposable
 
     public Task<List<HistoryEntry>> ClearHistory() => Core.CallAsync<List<HistoryEntry>>("history.clear");
 
+    public async Task<List<KeyMeta>> Keys()
+    {
+        try { return await Core.CallAsync<List<KeyMeta>>("keys.list"); }
+        catch (CoreException e) { Notice?.Invoke(e.Message); return []; }
+    }
+
+    public Task<List<KeyMeta>> GenerateKey(string label) => Core.CallAsync<List<KeyMeta>>("keys.generate", new { label });
+
+    public Task<List<KeyMeta>> ImportKey(string label, string privateKey, string? passphrase) =>
+        Core.CallAsync<List<KeyMeta>>("keys.import", new { label, @private = privateKey, passphrase });
+
+    public async Task<List<KeyMeta>> DeleteKey(KeyMeta key)
+    {
+        var list = await Core.CallAsync<List<KeyMeta>>("keys.delete", new { id = key.Id });
+        await Reload();
+        return list;
+    }
+
+    public async Task SetHostKey(CoreHost host, string? keyId)
+    {
+        Hosts = await Core.CallAsync<List<CoreHost>>("hosts.setKey", new { id = host.Id, keyId });
+        Changed?.Invoke();
+    }
+
     public async Task DeleteTunnel(SavedTunnel tunnel)
     {
         try

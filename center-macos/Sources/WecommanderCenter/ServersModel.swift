@@ -337,4 +337,38 @@ final class ServersModel: ObservableObject {
         guard let core else { return }
         _ = try? await core.call("history.clear")
     }
+
+    // MARK: keys
+
+    func keys() async -> [KeyMeta] {
+        guard let core else { return [] }
+        return (try? await core.call("keys.list", as: [KeyMeta].self)) ?? []
+    }
+
+    func generateKey(label: String) async throws -> [KeyMeta] {
+        guard let core else { throw CoreClient.Failure.stopped }
+        return try await core.call("keys.generate", ["label": label], as: [KeyMeta].self)
+    }
+
+    func importKey(label: String, privateKey: String, passphrase: String?) async throws -> [KeyMeta] {
+        guard let core else { throw CoreClient.Failure.stopped }
+        var params: [String: Any] = ["label": label, "private": privateKey]
+        if let passphrase, !passphrase.isEmpty { params["passphrase"] = passphrase }
+        return try await core.call("keys.import", params, as: [KeyMeta].self)
+    }
+
+    func deleteKey(_ key: KeyMeta) async -> [KeyMeta] {
+        guard let core else { return [] }
+        let list = (try? await core.call("keys.delete", ["id": key.id], as: [KeyMeta].self)) ?? []
+        await reload()
+        return list
+    }
+
+    func setKey(_ host: CoreHost, keyId: String?) async throws {
+        guard let core else { throw CoreClient.Failure.stopped }
+        var params: [String: Any] = ["id": host.id]
+        if let keyId { params["keyId"] = keyId }
+        hosts = try await core.call("hosts.setKey", params, as: [CoreHost].self)
+        onChange?()
+    }
 }

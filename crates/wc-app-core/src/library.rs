@@ -1,7 +1,7 @@
 //! The host library around the terminals: editing hosts and their groups
 //! (A07), trusted host keys (A06), saved commands (A14) and the connection
 //! history. Plain data in hosts.json; no secrets.
-use crate::store::{Data, HistoryEntry, SavedHost, Snippet};
+use crate::store::{key_secret, Data, HistoryEntry, KeyMeta, SavedHost, Snippet};
 use crate::{host_views, AppState, HostView};
 use serde::Serialize;
 use std::sync::Arc;
@@ -200,6 +200,127 @@ pub(crate) fn record_connection(data: &mut Data, host: &SavedHost) {
     data.history.truncate(HISTORY_LIMIT);
 }
 
+// ---- keys (A05): made or imported here, private half in the keyring ----
+
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn clean_label(label: &str, fallback: &str) -> String {
+    let l: String = label
+        .trim()
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(80)
+        .collect();
+    if l.is_empty() {
+        fallback.into()
+    } else {
+        l
+    }
+}
+
+pub fn keys_list(state: &Arc<AppState>) -> Result<Vec<KeyMeta>, String> {
+    Ok(state.data.lock().map_err(|_| "busy")?.keys.clone())
+}
+
+fn add_key(
+    state: &Arc<AppState>,
+    label: String,
+    private: &str,
+    passphrase: Option<&str>,
+    info: wc_ssh_core::keys::KeyInfo,
+) -> Result<Vec<KeyMeta>, String> {
+    let id = uuid::Uuid::new_v4().to_string();
+    state
+        .vault
+        .put(&key_secret(&id, "private"), private)
+        .map_err(|e| format!("could not save the key in the keyring: {e:?}"))?;
+    if let Some(p) = passphrase.filter(|p| !p.is_empty()) {
+        let _ = state.vault.put(&key_secret(&id, "passphrase"), p);
+    }
+    {
+        let mut data = state.data.lock().map_err(|_| "busy")?;
+        data.keys.push(KeyMeta {
+            id,
+            label,
+            algorithm: info.algorithm,
+            fingerprint: info.fingerprint,
+            public_key: info.public_openssh,
+            created: now(),
+        });
+        state.save(&data)?;
+    }
+    state.changed();
+    keys_list(state)
+}
+
+/// A new Ed25519 key; its public key line goes into the server's
+/// `~/.ssh/authorized_keys`.
+pub fn key_generate(state: &Arc<AppState>, label: String) -> Result<Vec<KeyMeta>, String> {
+    let label = clean_label(&label, "WECOMMANDER anahtarı");
+    let made = wc_ssh_core::keys::generate_ed25519(&label)?;
+    add_key(state, label, &made.private_openssh, None, made.info)
+}
+
+/// An existing private key (pasted or read from a file), checked first.
+pub fn key_import(
+    state: &Arc<AppState>,
+    label: String,
+    private: String,
+    passphrase: Option<String>,
+) -> Result<Vec<KeyMeta>, String> {
+    let info = wc_ssh_core::keys::inspect(&private, passphrase.as_deref())?;
+    let label = clean_label(&label, &info.fingerprint);
+    add_key(state, label, &private, passphrase.as_deref(), info)
+}
+
+/// Deletes a key; hosts that used it ask for a credential again.
+pub fn key_delete(state: &Arc<AppState>, id: String) -> Result<Vec<KeyMeta>, String> {
+    {
+        let mut data = state.data.lock().map_err(|_| "busy")?;
+        data.keys.retain(|k| k.id != id);
+        for h in data.hosts.iter_mut() {
+            if h.key_id.as_deref() == Some(id.as_str()) {
+                h.key_id = None;
+            }
+        }
+        state.save(&data)?;
+    }
+    for part in ["private", "passphrase"] {
+        let _ = state.vault.delete(&key_secret(&id, part));
+    }
+    state.changed();
+    keys_list(state)
+}
+
+/// Uses an app key for a host (or none).
+pub fn host_set_key(
+    state: &Arc<AppState>,
+    host_id: String,
+    key_id: Option<String>,
+) -> Result<Vec<HostView>, String> {
+    {
+        let mut data = state.data.lock().map_err(|_| "busy")?;
+        let key_id = key_id.filter(|k| data.keys.iter().any(|m| &m.id == k));
+        let h = data
+            .hosts
+            .iter_mut()
+            .find(|h| h.id == host_id)
+            .ok_or("host not found")?;
+        if key_id.is_some() {
+            h.auth_kind = "key".into();
+        }
+        h.key_id = key_id;
+        state.save(&data)?;
+    }
+    state.changed();
+    host_views(state)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,6 +334,7 @@ mod tests {
             jump_id: jump.map(Into::into),
             tunnels: Vec::new(),
             group: None,
+            key_id: None,
         }
     }
 

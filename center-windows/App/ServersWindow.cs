@@ -59,6 +59,7 @@ public sealed class ServersWindow : Window
         _terminalsItem.InfoBadge = _terminalsBadge;
         _nav.MenuItems.Add(_hostsItem);
         _nav.MenuItems.Add(_terminalsItem);
+        _nav.MenuItems.Add(new NavigationViewItem { Content = "Anahtarlar", Tag = "keys", Icon = new FontIcon { Glyph = "\uE8D7" } });
         _nav.MenuItems.Add(new NavigationViewItem { Content = "Parçacıklar", Tag = "snippets", Icon = new FontIcon { Glyph = "\uE943" } });
         _nav.MenuItems.Add(new NavigationViewItem { Content = "Tüneller", Tag = "tunnels", Icon = new FontIcon { Glyph = "\uE8AF" } });
         _nav.MenuItems.Add(new NavigationViewItem { Content = "Bilinen sunucular", Tag = "known", Icon = new FontIcon { Glyph = "\uE72E" } });
@@ -114,6 +115,8 @@ public sealed class ServersWindow : Window
         _c.Changed += () => DispatcherQueue.TryEnqueue(() => { RenderHosts(); });
         _c.Notice += text => DispatcherQueue.TryEnqueue(() => Show(text, InfoBarSeverity.Warning));
         Closed += (_, e) => { e.Handled = true; AppWindow.Hide(); };
+        // The window shows the navigation (menu + current section).
+        Content = _nav;
         RenderHosts();
         Navigate("hosts");
         SyncCommands();
@@ -204,6 +207,7 @@ public sealed class ServersWindow : Window
                 _nav.Content = _terminals;
                 break;
             case "snippets": _ = ShowSnippets(); break;
+            case "keys": _ = ShowKeys(); break;
             case "tunnels": ShowTunnelsPage(); break;
             case "known": _ = ShowKnown(); break;
             case "history": _ = ShowHistory(); break;
@@ -349,6 +353,94 @@ public sealed class ServersWindow : Window
         DefaultButton = ContentDialogButton.Primary,
         XamlRoot = Content.XamlRoot,
     };
+
+    // ---- keys ----
+
+    private async Task ShowKeys()
+    {
+        var keys = await _c.Keys();
+        var list = new StackPanel { Spacing = 8 };
+        if (keys.Count == 0)
+            list.Children.Add(new TextBlock { Text = "Henüz anahtar yok. \"Yeni anahtar\" ile oluştur; genel anahtarını sunucunun ~/.ssh/authorized_keys dosyasına ekle, sonra sunucuyu düzenleyip bu anahtarı seç.", Foreground = Secondary, TextWrapping = TextWrapping.Wrap });
+        foreach (var k in keys)
+        {
+            var row = new Grid { ColumnSpacing = 8, Padding = new Thickness(12), CornerRadius = new CornerRadius(6), Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"] };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var used = _c.Hosts.Where(h => h.KeyId == k.Id).Select(h => h.Label).ToList();
+            var text = new StackPanel { Spacing = 2 };
+            text.Children.Add(new TextBlock { Text = k.Label, Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"] });
+            text.Children.Add(new TextBlock { Text = $"{k.Algorithm}  ·  {k.Fingerprint}", FontFamily = new FontFamily("Cascadia Mono, Consolas"), Foreground = Secondary, IsTextSelectionEnabled = true, TextTrimming = TextTrimming.CharacterEllipsis });
+            text.Children.Add(new TextBlock { Text = used.Count > 0 ? "Kullanan: " + string.Join(", ", used) : "Henüz bir sunucuda kullanılmıyor", Foreground = Secondary, FontSize = 12 });
+            row.Children.Add(text);
+            var copy = new Button { Content = "Genel anahtarı kopyala" };
+            copy.Click += (_, _) =>
+            {
+                var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+                package.SetText(k.PublicKey);
+                Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+                Show("Genel anahtar kopyalandı. Sunucuda ~/.ssh/authorized_keys dosyasına ekle.", InfoBarSeverity.Success);
+            };
+            Grid.SetColumn(copy, 1); row.Children.Add(copy);
+            var del = new Button { Content = new SymbolIcon(Symbol.Delete) };
+            del.Click += async (_, _) =>
+            {
+                var dialog = Dialog($"{k.Label} silinsin mi?", new TextBlock { Text = used.Count > 0 ? "Bu anahtarı kullanan sunucular bir dahaki bağlantıda giriş bilgisi ister." : "Özel anahtar kasadan da silinir.", TextWrapping = TextWrapping.Wrap }, "Sil");
+                if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+                await Guard(() => _c.DeleteKey(k));
+                await ShowKeys();
+            };
+            Grid.SetColumn(del, 2); row.Children.Add(del);
+            list.Children.Add(row);
+        }
+        _nav.Content = Page("Anahtarlar", "SSH anahtarların. Özel anahtar Windows Kimlik Bilgisi Yöneticisi'nde saklanır; burada yalnız genel anahtar görünür.", new ScrollViewer { Content = list },
+            ActionButton("İçe aktar", Symbol.Import, () => _ = ImportKey()),
+            ActionButton("Yeni anahtar", Symbol.Add, () => _ = GenerateKey(), accent: true));
+    }
+
+    private async Task GenerateKey()
+    {
+        var label = new TextBox { Header = "Ad", Text = Environment.MachineName + " anahtarı", MinWidth = 360 };
+        var dialog = Dialog("Yeni anahtar (Ed25519)", label, "Oluştur");
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        await Guard(async () =>
+        {
+            await _c.GenerateKey(label.Text);
+            Show("Anahtar oluşturuldu. \"Genel anahtarı kopyala\" ile sunucuya ekle.", InfoBarSeverity.Success);
+        });
+        await ShowKeys();
+    }
+
+    private async Task ImportKey()
+    {
+        var label = new TextBox { Header = "Ad", PlaceholderText = "İş dizüstü anahtarı" };
+        var pick = new Button { Content = "Dosyadan seç…" };
+        var key = new TextBox { Header = "Özel anahtar", AcceptsReturn = true, Height = 130, FontFamily = new FontFamily("Cascadia Mono, Consolas"), PlaceholderText = "-----BEGIN OPENSSH PRIVATE KEY-----", TextWrapping = TextWrapping.NoWrap };
+        var passphrase = new PasswordBox { Header = "Anahtar parolası (varsa)" };
+        var error = new TextBlock { Foreground = new SolidColorBrush(Microsoft.UI.Colors.IndianRed), TextWrapping = TextWrapping.Wrap };
+        pick.Click += async (_, _) =>
+        {
+            var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
+            picker.FileTypeFilter.Add("*");
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+            var file = await picker.PickSingleFileAsync();
+            if (file is null) return;
+            key.Text = await File.ReadAllTextAsync(file.Path);
+            if (string.IsNullOrWhiteSpace(label.Text)) label.Text = file.Name;
+        };
+        var panel = new StackPanel { Spacing = 10, MinWidth = 460 };
+        foreach (var e in new UIElement[] { label, pick, key, passphrase, error }) panel.Children.Add(e);
+        var dialog = Dialog("Anahtarı içe aktar", panel, "İçe aktar");
+        dialog.PrimaryButtonClick += async (_, args) =>
+        {
+            var deferral = args.GetDeferral();
+            try { await _c.ImportKey(label.Text, key.Text, string.IsNullOrEmpty(passphrase.Password) ? null : passphrase.Password); }
+            catch (CoreException e) { error.Text = e.Message; args.Cancel = true; }
+            finally { deferral.Complete(); }
+        };
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary) await ShowKeys();
+    }
 
     // ---- snippets ----
 
@@ -508,9 +600,14 @@ public sealed class ServersWindow : Window
         jumpNames.AddRange(candidates.Select(h => h.Label + " üzerinden"));
         var jumpIndex = existing?.JumpId is { } j ? candidates.FindIndex(h => h.Id == j) + 1 : 0;
         var jump = new ComboBox { Header = "Atlama sunucusu", ItemsSource = jumpNames, SelectedIndex = Math.Max(0, jumpIndex), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var appKeys = await _c.Keys();
+        var keyNames = new List<string> { "Bağlanırken sor / anahtar dosyası" };
+        keyNames.AddRange(appKeys.Select(k => k.Label));
+        var keyIndex = existing?.KeyId is { } kid ? appKeys.FindIndex(k => k.Id == kid) + 1 : 0;
+        var keyChoice = new ComboBox { Header = "Anahtar", ItemsSource = keyNames, SelectedIndex = Math.Max(0, keyIndex), HorizontalAlignment = HorizontalAlignment.Stretch };
         var error = new TextBlock { Foreground = new SolidColorBrush(Microsoft.UI.Colors.IndianRed), TextWrapping = TextWrapping.Wrap };
         var panel = new StackPanel { Spacing = 10, MinWidth = 400 };
-        foreach (var e in new UIElement[] { label, host, user, port, group, kind, jump, error }) panel.Children.Add(e);
+        foreach (var e in new UIElement[] { label, host, user, port, group, kind, keyChoice, jump, error }) panel.Children.Add(e);
         var dialog = Dialog(existing is null ? "Yeni sunucu" : "Sunucuyu düzenle", new ScrollViewer { Content = panel, MaxHeight = 560 }, "Kaydet");
         dialog.PrimaryButtonClick += async (d, args) =>
         {
@@ -518,7 +615,8 @@ public sealed class ServersWindow : Window
             try
             {
                 var jumpId = jump.SelectedIndex > 0 ? candidates[jump.SelectedIndex - 1].Id : null;
-                var authKind = kind.SelectedIndex == 1 ? "password" : "key";
+                var keyId = keyChoice.SelectedIndex > 0 ? appKeys[keyChoice.SelectedIndex - 1].Id : null;
+                var authKind = keyId is not null ? "key" : kind.SelectedIndex == 1 ? "password" : "key";
                 if (existing is null)
                 {
                     await _c.AddHost(label.Text.Trim(), host.Text.Trim(), (int)port.Value, user.Text.Trim(), authKind, jumpId);
@@ -531,6 +629,8 @@ public sealed class ServersWindow : Window
                 {
                     await _c.UpdateHost(existing, label.Text.Trim(), host.Text.Trim(), (int)port.Value, user.Text.Trim(), authKind, jumpId, group.Text.Trim());
                 }
+                var saved = existing is null ? _c.Hosts.LastOrDefault() : _c.Hosts.FirstOrDefault(h => h.Id == existing.Id);
+                if (saved is not null && saved.KeyId != keyId) await _c.SetHostKey(saved, keyId);
             }
             catch (CoreException e)
             {

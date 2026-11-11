@@ -27,6 +27,23 @@ pub struct SavedHost {
     /// Group shown in the host list ("Production", "Customers/Acme").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
+    /// A key from the app's key list (its private half is in the keyring).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_id: Option<String>,
+}
+
+/// A key pair made or imported in the app. The private key is in the OS
+/// keyring under `key/<id>/private`; this is what may be shown.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyMeta {
+    pub id: String,
+    pub label: String,
+    pub algorithm: String,
+    pub fingerprint: String,
+    pub public_key: String,
+    /// Unix seconds.
+    pub created: u64,
 }
 
 /// A saved command (A14), sent to a terminal or several at once.
@@ -67,6 +84,8 @@ pub struct Data {
     pub snippets: Vec<Snippet>,
     #[serde(default)]
     pub history: Vec<HistoryEntry>,
+    #[serde(default)]
+    pub keys: Vec<KeyMeta>,
 }
 
 pub struct Store {
@@ -111,6 +130,11 @@ pub fn secret_key(host_id: &str, part: &str) -> String {
     format!("host/{host_id}/{part}")
 }
 
+/// Keyring entry of an app key: `private` or `passphrase`.
+pub fn key_secret(key_id: &str, part: &str) -> String {
+    format!("key/{key_id}/{part}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -129,6 +153,7 @@ mod tests {
             jump_id: None,
             tunnels: Vec::new(),
             group: None,
+            key_id: None,
         });
         data.known_hosts
             .insert("srv.example.com:22".into(), "SHA256:x".into());

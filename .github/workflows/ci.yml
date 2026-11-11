@@ -1018,6 +1018,32 @@ jobs:
           Copy-Item target\release\webrising-commender.exe center-windows\publish\webrising-commender.exe
           # The app compares this build with the newest release for in-app updates.
           Set-Content -Path center-windows\publish\build.txt -Value "${{ github.run_number }}" -NoNewline -Encoding ascii
+      - name: Smoke test (the main window opens with its sections)
+        shell: powershell
+        run: |
+          # Smoke test: the main window opens and shows its sections (an empty
+          # window got through once). UI Automation reads the real WinUI tree.
+          $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'smoke-localappdata'
+          New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA | Out-Null
+          $app = Start-Process -FilePath "center-windows\publish\WecommanderCenter.exe" -ArgumentList '--open-main' -PassThru
+          Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+          $root = [System.Windows.Automation.AutomationElement]::RootElement
+          $found = @()
+          for ($i = 0; $i -lt 40 -and $found.Count -lt 2; $i++) {
+            Start-Sleep -Milliseconds 750
+            $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children,
+              (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $app.Id)))
+            foreach ($window in $windows) {
+              $names = @('Sunucular', 'Yeni sunucu' | Where-Object {
+                $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
+                  (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $_))) })
+              if ($names.Count -gt $found.Count) { $found = $names }
+            }
+          }
+          if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force }
+          Get-Process -Name 'wecommander-core','webrising-commender' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          if ($found.Count -lt 2) { throw "Main window did not show its sections (found: $($found -join ', '))" }
+          Write-Host "Main window shows: $($found -join ', ')"
       - name: Package
         shell: pwsh
         run: |

@@ -24,5 +24,7 @@ final class HostLibraryTests: XCTestCase {
         let history = try JSONDecoder().decode([HistoryEntry].self, from: Data(#"[{"hostId":"a","label":"Web","target":"web","at":1800000000}]"#.utf8))
         XCTAssertEqual(history[0].date, Date(timeIntervalSince1970: 1_800_000_000))
         XCTAssertEqual(history[0].id, "a@1800000000")
+        let keys = try JSONDecoder().decode([KeyMeta].self, from: Data(#"[{"id":"k","label":"Mac","algorithm":"ssh-ed25519","fingerprint":"SHA256:x","publicKey":"ssh-ed25519 AAAA Mac","created":1800000000}]"#.utf8))
+        XCTAssertEqual(keys[0].publicKey, "ssh-ed25519 AAAA Mac")
     }
 }

@@ -165,6 +165,7 @@ public struct CoreHost: Decodable, Identifiable, Equatable, Hashable {
     public let user: String?
     public let host: String?
     public let port: Int?
+    public let keyId: String?
 
     /// Hosts without a group are listed under this name.
     public static let noGroup = "Gruplanmamış"
@@ -179,6 +180,16 @@ public struct KnownHost: Decodable, Identifiable, Equatable, Hashable {
     public let fingerprint: String
     public let labels: [String]
     public var id: String { target }
+}
+
+/// A key made or imported in the app; the private half is in the Keychain.
+public struct KeyMeta: Decodable, Identifiable, Equatable, Hashable {
+    public let id: String
+    public let label: String
+    public let algorithm: String
+    public let fingerprint: String
+    public let publicKey: String
+    public let created: Int64
 }
 
 public struct Snippet: Decodable, Identifiable, Equatable, Hashable {

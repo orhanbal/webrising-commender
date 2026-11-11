@@ -130,6 +130,7 @@ pub struct HostView {
     pub jump_id: Option<String>,
     pub trusted_key: Option<String>,
     pub group: Option<String>,
+    pub key_id: Option<String>,
     pub user: String,
     pub host: String,
     pub port: u16,
@@ -150,7 +151,8 @@ pub(crate) fn host_views(state: &AppState) -> Result<Vec<HostView>, String> {
                 .get(&secret_key(&h.id, &h.auth_kind))
                 .ok()
                 .flatten()
-                .is_some(),
+                .is_some()
+                || (h.auth_kind == "key" && h.key_id.is_some()),
             key_path: h.key_path.clone(),
             jump_id: h.jump_id.clone(),
             trusted_key: data
@@ -158,6 +160,7 @@ pub(crate) fn host_views(state: &AppState) -> Result<Vec<HostView>, String> {
                 .get(&format!("{}:{}", h.profile.host, h.profile.port))
                 .cloned(),
             group: h.group.clone(),
+            key_id: h.key_id.clone(),
             user: h.profile.user.clone(),
             host: h.profile.host.clone(),
             port: h.profile.port,
@@ -196,6 +199,7 @@ pub fn add_host(
             jump_id,
             tunnels: Vec::new(),
             group: None,
+            key_id: None,
         });
         state.save(&data)?;
     }
@@ -246,6 +250,7 @@ pub fn import_ssh_config(state: &Arc<AppState>) -> Result<ImportResult, String> 
                 jump_id: None,
                 tunnels: Vec::new(),
                 group: None,
+                key_id: None,
             });
             added += 1;
         }
@@ -383,8 +388,27 @@ pub async fn connect_host(
     let typed = !auth.secret.is_empty();
     let from_file =
         kind == "key" && !typed && auth.key_path.as_deref().is_some_and(|p| !p.is_empty());
+    // A key from the app's key list, chosen for this host.
+    let app_key = (kind == "key" && !typed && !from_file)
+        .then(|| saved.key_id.clone())
+        .flatten()
+        .and_then(|k| {
+            let private = state
+                .vault
+                .get(&store::key_secret(&k, "private"))
+                .ok()
+                .flatten()?;
+            let passphrase = state
+                .vault
+                .get(&store::key_secret(&k, "passphrase"))
+                .ok()
+                .flatten();
+            Some((private, passphrase))
+        });
     let secret = if typed {
         auth.secret.clone()
+    } else if let Some((private, _)) = &app_key {
+        private.clone()
     } else if let Some(stored) = (!from_file)
         .then(|| state.vault.get(&secret_key(&id, kind)).ok().flatten())
         .flatten()
@@ -395,7 +419,9 @@ pub async fn connect_host(
     } else {
         return Err("no saved credential for this host; enter it once".into());
     };
-    let passphrase = if typed || from_file {
+    let passphrase = if let Some((_, p)) = app_key.as_ref().filter(|_| !typed) {
+        p.clone()
+    } else if typed || from_file {
         auth.passphrase.clone().filter(|p| !p.is_empty())
     } else {
         state

@@ -207,7 +207,8 @@ public partial class App : Application
         var hidden = Environment.GetCommandLineArgs().Contains("--hidden");
         // Opened by the person: the main window (hosts and terminals); not
         // signed in yet: the sign-in panel. At login (--hidden) only the tray.
-        if (Token is null) _window.ShowPanel();
+        if (Environment.GetCommandLineArgs().Contains("--open-main")) ShowServers(); // CI smoke test
+        else if (Token is null) _window.ShowPanel();
         else if (!hidden) ShowServers();
 
         _timer = _ui.CreateTimer();
