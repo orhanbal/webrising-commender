@@ -115,6 +115,8 @@ public sealed class ServersWindow : Window
         _c.Changed += () => DispatcherQueue.TryEnqueue(() => { RenderHosts(); });
         _c.Notice += text => DispatcherQueue.TryEnqueue(() => Show(text, InfoBarSeverity.Warning));
         Closed += (_, e) => { e.Handled = true; AppWindow.Hide(); };
+        // The window shows the navigation (menu + current section).
+        Content = _nav;
         RenderHosts();
         Navigate("hosts");
         SyncCommands();
