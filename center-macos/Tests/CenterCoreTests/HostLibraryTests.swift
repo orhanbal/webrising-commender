@@ -27,4 +27,20 @@ final class HostLibraryTests: XCTestCase {
         let keys = try JSONDecoder().decode([KeyMeta].self, from: Data(#"[{"id":"k","label":"Mac","algorithm":"ssh-ed25519","fingerprint":"SHA256:x","publicKey":"ssh-ed25519 AAAA Mac","created":1800000000}]"#.utf8))
         XCTAssertEqual(keys[0].publicKey, "ssh-ed25519 AAAA Mac")
     }
+
+    func testParityModelsDecode() throws {
+        let host = try JSONDecoder().decode(CoreHost.self, from: Data(#"{"id":"a","label":"Web","target":"t","authKind":"key","savedSecret":true,"startupCommand":"cd /srv","env":{"LANG":"tr_TR.UTF-8"},"agentForwarding":true,"identityId":"i"}"#.utf8))
+        XCTAssertEqual(host.startupCommand, "cd /srv")
+        XCTAssertEqual(host.env?["LANG"], "tr_TR.UTF-8")
+        XCTAssertEqual(host.agentForwarding, true)
+        XCTAssertEqual(host.identityId, "i")
+        let forwards = try JSONDecoder().decode([ForwardInfo].self, from: Data(#"[{"id":"remote:localhost:8080","kind":"remote","local":"localhost:8080 (sunucu)","remote":"127.0.0.1:3000"},{"local":"127.0.0.1:5000","remote":"db:5432"}]"#.utf8))
+        XCTAssertEqual(forwards[0].stopId, "remote:localhost:8080")
+        XCTAssertEqual(forwards[1].stopId, "127.0.0.1:5000") // older core: no id
+        let ids = try JSONDecoder().decode([Identity].self, from: Data(#"[{"id":"i","label":"Team","user":"deploy","authKind":"password"}]"#.utf8))
+        XCTAssertNil(ids[0].keyId)
+        let summary = try JSONDecoder().decode(ImportSummary.self, from: Data(#"{"hosts":1,"snippets":2,"knownHosts":3,"skipped":0}"#.utf8))
+        XCTAssertEqual(summary.snippets, 2)
+        XCTAssertEqual(CoreText.turkish("not a WECOMMANDER backup file"), "Bu dosya bir WECOMMANDER yedeği değil.")
+    }
 }

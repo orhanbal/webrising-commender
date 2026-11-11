@@ -48,6 +48,14 @@ final class ServersModel: ObservableObject {
     @Published private(set) var transfers: [String: (label: String, done: UInt64, total: UInt64)] = [:]
     @Published private(set) var vaultLabel = ""
     @Published private(set) var coreError: String?
+    /// Split view: a terminal and the ones shown next to it.
+    @Published var splits: [String: [String]] = [:]
+    /// Split groups laid out one above the other (else side by side).
+    @Published var splitVertical: Set<String> = []
+    /// Split groups where typing goes to every terminal.
+    @Published var broadcast: Set<String> = []
+    /// Set while connecting a host for a split: it joins this terminal.
+    private var splitTarget: (primary: String, vertical: Bool)?
 
     var onChange: (() -> Void)?
     private var core: CoreClient?
@@ -177,7 +185,14 @@ final class ServersModel: ObservableObject {
             if let sid = result.sessionId {
                 let session = TerminalSession(id: sid, host: host)
                 sessions.append(session)
-                selection = sid
+                if let target = splitTarget, sessions.contains(where: { $0.id == target.primary }) {
+                    splits[target.primary, default: []].append(sid)
+                    if target.vertical { splitVertical.insert(target.primary) } else { splitVertical.remove(target.primary) }
+                    selection = target.primary
+                } else {
+                    selection = sid
+                }
+                splitTarget = nil
             }
             await reload()
         } catch {
@@ -194,9 +209,33 @@ final class ServersModel: ObservableObject {
     // MARK: terminal
 
     func write(_ session: TerminalSession, _ bytes: ArraySlice<UInt8>) {
-        guard !session.closed, let core else { return }
+        let primary = primaryId(of: session.id)
+        let targets = broadcast.contains(primary) ? group(primary) : [session]
         let text = String(decoding: bytes, as: UTF8.self)
-        Task { try? await core.call("terminal.write", ["sessionId": session.id, "data": text]) }
+        for t in targets where !t.closed {
+            guard let core else { return }
+            Task { try? await core.call("terminal.write", ["sessionId": t.id, "data": text]) }
+        }
+    }
+
+    // MARK: split view
+
+    /// The terminal a split pane belongs to (itself when it is not a pane).
+    func primaryId(of id: String) -> String {
+        splits.first { $0.value.contains(id) }?.key ?? id
+    }
+
+    /// A terminal with the panes shown next to it, in order.
+    func group(_ primary: String) -> [TerminalSession] {
+        let ids = [primary] + (splits[primary] ?? [])
+        return ids.compactMap { id in sessions.first { $0.id == id } }
+    }
+
+    /// Opens `host` in a new terminal next to `primary`.
+    func split(_ primary: String, vertical: Bool, host: CoreHost) {
+        guard group(primary).count < 4 else { return }
+        splitTarget = (primary, vertical)
+        open(host)
     }
 
     func resize(_ session: TerminalSession, cols: Int, rows: Int) {
@@ -209,6 +248,16 @@ final class ServersModel: ObservableObject {
             Task { try? await core.call("terminal.close", ["sessionId": session.id]) }
         }
         sessions.removeAll { $0.id == session.id }
+        // A pane leaves its group; a group whose main terminal closes keeps
+        // its next pane as the main one.
+        for (key, panes) in splits { splits[key] = panes.filter { $0 != session.id } }
+        if let panes = splits.removeValue(forKey: session.id), let next = panes.first {
+            splits[next] = Array(panes.dropFirst())
+            if splitVertical.remove(session.id) != nil { splitVertical.insert(next) }
+            if broadcast.remove(session.id) != nil { broadcast.insert(next) }
+            if selection == session.id { selection = next }
+        }
+        splits = splits.filter { !$0.value.isEmpty }
         if selection == session.id { selection = sessions.last?.id }
     }
 
@@ -246,15 +295,27 @@ final class ServersModel: ObservableObject {
         return (try? await core.call("forward.list", ["sessionId": session.id], as: [ForwardInfo].self)) ?? []
     }
 
-    func startForward(_ session: TerminalSession, localPort: Int, remoteHost: String, remotePort: Int, save: Bool) async throws -> [ForwardInfo] {
+    /// `kind`: local (ssh -L), remote (ssh -R) or dynamic (ssh -D, SOCKS5).
+    func startForward(_ session: TerminalSession, kind: String = "local", localPort: Int, localHost: String? = nil,
+                      remoteHost: String, remotePort: Int, save: Bool) async throws -> [ForwardInfo] {
         guard let core else { throw CoreClient.Failure.stopped }
-        let list = try await core.call("forward.start", [
-            "sessionId": session.id, "localPort": localPort, "remoteHost": remoteHost, "remotePort": remotePort,
-        ], as: [ForwardInfo].self)
-        if save, let opened = list.last, let port = Int(opened.local.split(separator: ":").last ?? "") {
-            savedTunnels = try await core.call("tunnels.save", [
-                "hostId": session.host.id, "localPort": port, "remoteHost": remoteHost, "remotePort": remotePort,
-            ], as: [SavedTunnel].self)
+        var params: [String: Any] = [
+            "sessionId": session.id, "kind": kind, "localPort": localPort, "remoteHost": remoteHost, "remotePort": remotePort,
+        ]
+        if let localHost { params["localHost"] = localHost }
+        let list = try await core.call("forward.start", params, as: [ForwardInfo].self)
+        if save, let opened = list.last {
+            var local = localPort
+            var remote = remotePort
+            // A port the system picked is saved as that port.
+            if kind != "remote", local == 0, let p = Int(opened.local.split(separator: ":").last ?? "") { local = p }
+            if kind == "remote", remote == 0,
+               let p = Int(opened.local.split(separator: " ").first?.split(separator: ":").last ?? "") { remote = p }
+            var saveParams: [String: Any] = [
+                "hostId": session.host.id, "kind": kind, "localPort": local, "remoteHost": remoteHost, "remotePort": remote,
+            ]
+            if let localHost { saveParams["localHost"] = localHost }
+            savedTunnels = try await core.call("tunnels.save", saveParams, as: [SavedTunnel].self)
         }
         return list
     }
@@ -370,5 +431,60 @@ final class ServersModel: ObservableObject {
         if let keyId { params["keyId"] = keyId }
         hosts = try await core.call("hosts.setKey", params, as: [CoreHost].self)
         onChange?()
+    }
+
+    // MARK: identities, terminal options, backup
+
+    func identities() async -> [Identity] {
+        guard let core else { return [] }
+        return (try? await core.call("identities.list", as: [Identity].self)) ?? []
+    }
+
+    func saveIdentity(id: String?, label: String, user: String, authKind: String, keyId: String?, password: String?) async throws -> [Identity] {
+        guard let core else { throw CoreClient.Failure.stopped }
+        var params: [String: Any] = ["label": label, "user": user, "authKind": authKind]
+        if let id { params["id"] = id }
+        if let keyId { params["keyId"] = keyId }
+        if let password, !password.isEmpty { params["password"] = password }
+        let list = try await core.call("identities.save", params, as: [Identity].self)
+        await reload()
+        return list
+    }
+
+    func deleteIdentity(_ identity: Identity) async -> [Identity] {
+        guard let core else { return [] }
+        let list = (try? await core.call("identities.delete", ["id": identity.id], as: [Identity].self)) ?? []
+        await reload()
+        return list
+    }
+
+    func setIdentity(_ host: CoreHost, identityId: String?) async throws {
+        guard let core else { throw CoreClient.Failure.stopped }
+        var params: [String: Any] = ["id": host.id]
+        if let identityId { params["identityId"] = identityId }
+        hosts = try await core.call("hosts.setIdentity", params, as: [CoreHost].self)
+        onChange?()
+    }
+
+    func setOptions(_ host: CoreHost, startupCommand: String?, env: [String: String], agentForwarding: Bool) async throws {
+        guard let core else { throw CoreClient.Failure.stopped }
+        var params: [String: Any] = ["id": host.id, "env": env, "agentForwarding": agentForwarding]
+        if let startupCommand, !startupCommand.isEmpty { params["startupCommand"] = startupCommand }
+        hosts = try await core.call("hosts.setOptions", params, as: [CoreHost].self)
+        onChange?()
+    }
+
+    /// The library as JSON (hosts, groups, tunnels, snippets, identities, trusted keys; no secrets).
+    func exportLibrary() async throws -> String {
+        guard let core else { throw CoreClient.Failure.stopped }
+        let reply = try await core.call("library.export") as? [String: Any]
+        return reply?["json"] as? String ?? "{}"
+    }
+
+    func importLibrary(_ json: String) async throws -> ImportSummary {
+        guard let core else { throw CoreClient.Failure.stopped }
+        let summary = try await core.call("library.import", ["json": json], as: ImportSummary.self)
+        await reload()
+        return summary
     }
 }
