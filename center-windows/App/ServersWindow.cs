@@ -1534,7 +1534,7 @@ public sealed class ServersWindow : Window
         {
             if (e.PermissionKind == CoreWebView2PermissionKind.ClipboardRead) e.State = CoreWebView2PermissionState.Allow;
         };
-        core.WebMessageReceived += (_, e) =>
+        core.WebMessageReceived += (sender, e) =>
         {
             JsonObject? m;
             try { m = JsonNode.Parse(e.TryGetWebMessageAsString()) as JsonObject; } catch (JsonException) { return; }
