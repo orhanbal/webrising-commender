@@ -1079,6 +1079,13 @@ jobs:
             Press $item
             Start-Sleep -Milliseconds 900
             if ($app.HasExited) { throw "the app closed after opening $section" }
+            # Diagnostics: is this section's own content drawn?
+            $probe = @{ 'Terminaller' = "A${c}${i}k terminal yok"; 'Sunucular' = 'Yeni sunucu'; 'Anahtarlar' = 'Yeni anahtar' }[$section]
+            if ($probe) {
+              $e = Find-ByName $probe
+              if ($e) { Write-Host ("{0}: '{1}' offscreen={2} rect={3}" -f $section, $probe, $e.Current.IsOffscreen, $e.Current.BoundingRectangle) }
+              else { Write-Host ("{0}: '{1}' not in the tree" -f $section, $probe) }
+            }
             if ($section -eq 'Sunucular' -and -not (Find-Visible 'Yeni sunucu')) { throw "Sunucular opened blank (its page is not on screen)" }
           }
           $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children,
