@@ -59,8 +59,9 @@ connection.
 | `keys.delete` | `id` | same list; hosts using it forget it |
 | `connect` auth extras | `installKey` (password logins) | after the login, this computer's app key ("WECOMMANDER <computer>", made once) is appended to the server's `~/.ssh/authorized_keys` and the host switches to it. With no saved credential a key host also tries `~/.ssh/id_ed25519`, `id_ecdsa`, `id_rsa` (unencrypted) and remembers the one that works |
 | `hosts.setKey` | `id, keyId?` | `[Host]`; connect then uses that key (Host has `keyId`) |
-| `hosts.setOptions` | `id, startupCommand?, env? ({NAME: value}), agentForwarding` | `[Host]`; the terminal sends `env` (server `AcceptEnv` decides), types `startupCommand` once it opens, and with `agentForwarding` lets the server use this computer's ssh-agent (`ssh -A`) |
+| `hosts.setOptions` | `id, startupCommand?, env? ({NAME: value}), agentForwarding, sessionLog?` | `[Host]`; the terminal sends `env` (server `AcceptEnv` decides), types `startupCommand` once it opens, and with `agentForwarding` lets the server use this computer's ssh-agent (`ssh -A`) |
 | `hosts.setConnection` | `id, protocol (ssh\|telnet\|serial\|mosh), serial? ({device, baud, dataBits, parity none\|even\|odd, stopBits, flow none\|hardware\|software})` | `[Host]` (Host has `protocol` and `serial`; `target` reads `telnet://host[:port]` or `COM3 · 9600 8N1`). Non-SSH hosts open with `connect` straight away (no auth, no host key); files and tunnels answer `files and tunnels work only on SSH terminals` |
+| `logs.dir` | – | the session log folder (`<data dir>/logs`); a host with `sessionLog` writes each terminal to `<host>-<UTC date>.log` with colours and cursor moves removed |
 | `serial.ports` | – | `["COM3", ...]`: this computer's serial ports (no libudev on Linux, so the list can be short there) |
 | `identities.list` | – | `[{id, label, user, authKind, keyId?}]` |
 | `identities.save` | `id?, label, user, authKind (key\|password), keyId? (key), password? (password; empty keeps the stored one)` | same list; the password goes to the keyring (`identity/<id>/password`) |

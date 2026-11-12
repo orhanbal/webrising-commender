@@ -504,6 +504,12 @@ final class ServersModel: ObservableObject {
         onChange?()
     }
 
+    /// The folder session logs are written to.
+    func logsFolder() async -> URL? {
+        guard let core, let path = try? await core.call("logs.dir", [:], as: String.self) else { return nil }
+        return URL(fileURLWithPath: path, isDirectory: true)
+    }
+
     /// This Mac's serial ports (/dev/cu.usbserial-1410 ...).
     func serialPorts() async -> [String] {
         guard let core else { return [] }
@@ -522,9 +528,9 @@ final class ServersModel: ObservableObject {
         onChange?()
     }
 
-    func setOptions(_ host: CoreHost, startupCommand: String?, env: [String: String], agentForwarding: Bool) async throws {
+    func setOptions(_ host: CoreHost, startupCommand: String?, env: [String: String], agentForwarding: Bool, sessionLog: Bool) async throws {
         guard let core else { throw CoreClient.Failure.stopped }
-        var params: [String: Any] = ["id": host.id, "env": env, "agentForwarding": agentForwarding]
+        var params: [String: Any] = ["id": host.id, "env": env, "agentForwarding": agentForwarding, "sessionLog": sessionLog]
         if let startupCommand, !startupCommand.isEmpty { params["startupCommand"] = startupCommand }
         hosts = try await core.call("hosts.setOptions", params, as: [CoreHost].self)
         onChange?()

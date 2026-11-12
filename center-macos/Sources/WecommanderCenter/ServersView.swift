@@ -746,12 +746,23 @@ struct IdentitySheet: View {
 struct SettingsPage: View {
     @ObservedObject var model: ServersModel
     @AppStorage("terminalFontSize") private var fontSize = 13.0
+    @AppStorage("terminalTheme") private var terminalTheme = "dark"
     @State private var status: String?
 
     var body: some View {
         Form {
             Section("Terminal") {
                 Stepper(value: $fontSize, in: 8...32, step: 1) { Text("Yazı boyutu: \(Int(fontSize))") }
+                Picker("Terminal teması", selection: $terminalTheme) {
+                    ForEach(TerminalTheme.all) { Text($0.name).tag($0.id) }
+                }
+                Button("Oturum kayıtları klasörünü aç") {
+                    Task {
+                        guard let folder = await model.logsFolder() else { return }
+                        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                        NSWorkspace.shared.open(folder)
+                    }
+                }
                 Text("Yeni açılan terminallerde geçerli olur. Terminal kısayolları: ⌘F ara · ⌘G / ⇧⌘G sonraki / önceki · ⌘= / ⌘- yazı boyutu · ⌘0 varsayılan boyut.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Eşitleme (bilgisayarların arasında)") {
@@ -885,8 +896,7 @@ struct TerminalHost: NSViewRepresentable {
         view.terminalDelegate = context.coordinator
         let size = UserDefaults.standard.double(forKey: "terminalFontSize")
         view.font = NSFont.monospacedSystemFont(ofSize: size >= 8 ? size : 13, weight: .regular)
-        view.nativeBackgroundColor = NSColor(red: 0.07, green: 0.07, blue: 0.075, alpha: 1)
-        view.nativeForegroundColor = NSColor(white: 0.9, alpha: 1)
+        TerminalTheme.named(UserDefaults.standard.string(forKey: "terminalTheme") ?? "dark").apply(to: view)
         session.feed = { [weak view] bytes in view?.feed(byteArray: bytes[...]) }
         DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
         return view
@@ -1008,6 +1018,7 @@ struct EditHostSheet: View {
     @State private var envText = ""
     @State private var agentForwarding = false
     @State private var kind = "ssh"
+    @State private var sessionLog = false
     @State private var serialPorts: [String] = []
     @State private var serialDevice = ""
     @State private var baud = "9600"
@@ -1089,6 +1100,8 @@ struct EditHostSheet: View {
                     .help("Yalnız güvendiğin sunucularda aç: sunucuda yönetici yetkisi olan biri, bağlantı açıkken agent'taki anahtarlarını kullanabilir.")
             }
             }
+            Toggle("Oturumu kaydet", isOn: $sessionLog)
+                .help("Terminalde görünenler bir metin dosyasına yazılır (Ayarlar → Oturum kayıtları).")
             if let error { Text(error).foregroundStyle(.red).font(.callout) }
         }
         .formStyle(.grouped)
@@ -1109,6 +1122,7 @@ struct EditHostSheet: View {
             envText = (host.env ?? [:]).sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "\n")
             agentForwarding = host.agentForwarding ?? false
             kind = host.`protocol` ?? "ssh"
+            sessionLog = host.sessionLog ?? false
             if let serial = host.serial {
                 serialDevice = serial.device; baud = String(serial.baud); dataBits = serial.dataBits
                 parity = serial.parity; stopBits = serial.stopBits; flow = serial.flow
@@ -1165,8 +1179,9 @@ struct EditHostSheet: View {
                                 env[String(t[..<eq]).trimmingCharacters(in: .whitespaces)] = String(t[t.index(after: eq)...])
                             }
                             let command = startup.trimmingCharacters(in: .whitespaces)
-                            if let s = saved, (s.startupCommand ?? "") != command || (s.env ?? [:]) != env || (s.agentForwarding ?? false) != agentForwarding {
-                                try await model.setOptions(s, startupCommand: command, env: env, agentForwarding: agentForwarding)
+                            if let s = saved, (s.startupCommand ?? "") != command || (s.env ?? [:]) != env || (s.agentForwarding ?? false) != agentForwarding
+                                || (s.sessionLog ?? false) != sessionLog {
+                                try await model.setOptions(s, startupCommand: command, env: env, agentForwarding: agentForwarding, sessionLog: sessionLog)
                             }
                             dismiss()
                         } catch {

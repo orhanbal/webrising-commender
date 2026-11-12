@@ -174,6 +174,8 @@ public struct CoreHost: Decodable, Identifiable, Equatable, Hashable {
     /// "ssh", "telnet", "serial" or "mosh".
     public let `protocol`: String?
     public let serial: SerialSettings?
+    /// Terminals of this host are written to the logs folder.
+    public let sessionLog: Bool?
 
     /// SSH hosts log in; Telnet, serial and Mosh hosts open straight away.
     public var isSsh: Bool { (`protocol` ?? "ssh") == "ssh" }

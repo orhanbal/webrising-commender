@@ -469,8 +469,11 @@ public sealed class ServersWindow : Window
             settings.TerminalFontSize = (int)Math.Clamp(e.NewValue, 8, 32);
             ApplyTerminalSettings();
         };
-        var theme = new RadioButtons { Header = "Terminal teması", ItemsSource = new[] { "Koyu", "Açık" }, SelectedIndex = settings.TerminalTheme == "light" ? 1 : 0 };
-        theme.SelectionChanged += (_, _) => { settings.TerminalTheme = theme.SelectedIndex == 1 ? "light" : "dark"; ApplyTerminalSettings(); };
+        var themes = new[] { ("dark", "Koyu"), ("light", "Açık"), ("solarized-dark", "Solarized koyu"), ("solarized-light", "Solarized açık"),
+            ("nord", "Nord"), ("gruvbox", "Gruvbox"), ("monokai", "Monokai"), ("dracula", "Dracula") };
+        var theme = new ComboBox { Header = "Terminal teması", ItemsSource = themes.Select(t => t.Item2).ToList(), MinWidth = 220,
+            SelectedIndex = Math.Max(0, Array.FindIndex(themes, t => t.Item1 == settings.TerminalTheme)) };
+        theme.SelectionChanged += (_, _) => { settings.TerminalTheme = themes[Math.Max(0, theme.SelectedIndex)].Item1; ApplyTerminalSettings(); };
         var keys = new TextBlock
         {
             TextWrapping = TextWrapping.Wrap,
@@ -496,7 +499,13 @@ public sealed class ServersWindow : Window
         var teamPanel = new StackPanel { Spacing = 8 };
         RenderTeam(teamPanel);
         var body = new StackPanel { Spacing = 18, MaxWidth = 640, HorizontalAlignment = HorizontalAlignment.Left };
-        foreach (var e in new UIElement[] { font, theme, keys, syncTitle, syncPanel, teamTitle, teamPanel, backupTitle, backupHelp, backupRow, center }) body.Children.Add(e);
+        var logsButton = ActionButton("Oturum kayıtları klasörünü aç", Symbol.Folder, async () =>
+        {
+            if (await _c.LogsFolder() is not { } folder) { Show("Kayıt klasörü bulunamadı.", InfoBarSeverity.Warning); return; }
+            Directory.CreateDirectory(folder);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", "\"" + folder + "\"") { UseShellExecute = true });
+        });
+        foreach (var e in new UIElement[] { font, theme, keys, logsButton, syncTitle, syncPanel, teamTitle, teamPanel, backupTitle, backupHelp, backupRow, center }) body.Children.Add(e);
         SetPage(Page("Ayarlar", "Terminal görünümü; değişiklikler açık terminallere hemen uygulanır.", new ScrollViewer { Content = body }));
     }
 
@@ -987,15 +996,16 @@ public sealed class ServersWindow : Window
         };
         var agent = new CheckBox { Content = "SSH agent yönlendirme (ssh -A): sunucu, bu bilgisayardaki ssh-agent anahtarlarını kullanabilsin", IsChecked = existing?.AgentForwarding == true };
         ToolTipService.SetToolTip(agent, "Yalnız güvendiğin sunucularda aç: sunucuda yönetici yetkisi olan biri, bağlantı açıkken agent'taki anahtarlarını kullanabilir.");
+        var sessionLog = new CheckBox { Content = "Oturumu kaydet: terminalde görünenler bir metin dosyasına yazılır (Ayarlar → Oturum kayıtları)", IsChecked = existing?.SessionLog == true };
         var terminalOptions = new Expander
         {
             Header = "Terminal seçenekleri",
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
-            IsExpanded = !string.IsNullOrEmpty(existing?.StartupCommand) || existing?.Env is { Count: > 0 } || existing?.AgentForwarding == true,
+            IsExpanded = !string.IsNullOrEmpty(existing?.StartupCommand) || existing?.Env is { Count: > 0 } || existing?.AgentForwarding == true || existing?.SessionLog == true,
         };
         var optionsPanel = new StackPanel { Spacing = 10 };
-        foreach (var e in new UIElement[] { startup, envText, agent }) optionsPanel.Children.Add(e);
+        foreach (var e in new UIElement[] { startup, envText, agent, sessionLog }) optionsPanel.Children.Add(e);
         terminalOptions.Content = optionsPanel;
         var error = new TextBlock { Foreground = new SolidColorBrush(Microsoft.UI.Colors.IndianRed), TextWrapping = TextWrapping.Wrap };
         // Serial line settings.
@@ -1017,7 +1027,7 @@ public sealed class ServersWindow : Window
             var chosenKind = protocols[Math.Max(0, protocol.SelectedIndex)].Item1;
             var ssh = chosenKind == "ssh";
             var isSerial = chosenKind == "serial";
-            foreach (var e in new UIElement[] { user, identity, kind, keyChoice, jump, terminalOptions })
+            foreach (var e in new UIElement[] { user, identity, kind, keyChoice, jump, startup, envText, agent })
                 e.Visibility = ssh ? Visibility.Visible : Visibility.Collapsed;
             host.Visibility = port.Visibility = isSerial ? Visibility.Collapsed : Visibility.Visible;
             serialPanel.Visibility = isSerial ? Visibility.Visible : Visibility.Collapsed;
@@ -1087,8 +1097,9 @@ public sealed class ServersWindow : Window
                     var cmd = startup.Text.Trim();
                     var old = saved.Env ?? new Dictionary<string, string>();
                     var changed = (saved.StartupCommand ?? "") != cmd || saved.AgentForwarding != (agent.IsChecked == true)
+                        || saved.SessionLog != (sessionLog.IsChecked == true)
                         || old.Count != vars.Count || old.Any(kv => !vars.TryGetValue(kv.Key, out var v) || v != kv.Value);
-                    if (changed) await _c.SetHostOptions(saved, cmd.Length == 0 ? null : cmd, vars, agent.IsChecked == true);
+                    if (changed) await _c.SetHostOptions(saved, cmd.Length == 0 ? null : cmd, vars, agent.IsChecked == true, sessionLog.IsChecked == true);
                 }
             }
             catch (CoreException e)

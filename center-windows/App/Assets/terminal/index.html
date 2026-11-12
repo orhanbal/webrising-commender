@@ -19,6 +19,27 @@
 // window). The app sends {type:"output", data:base64} and {type:"focus"};
 // the page sends {type:"ready"|"input"|"resize"}.
 const host = window.chrome.webview;
+// Terminal colour themes (same names as the macOS app). The 16 ANSI colours
+// follow each theme's published palette.
+const ansi = (c) => ({ black: c[0], red: c[1], green: c[2], yellow: c[3], blue: c[4], magenta: c[5], cyan: c[6], white: c[7],
+  brightBlack: c[8], brightRed: c[9], brightGreen: c[10], brightYellow: c[11], brightBlue: c[12], brightMagenta: c[13], brightCyan: c[14], brightWhite: c[15] });
+const THEMES = {
+  dark: { background: "#0c0c0c", foreground: "#cccccc", cursor: "#60cdff", selectionBackground: "#264f78" },
+  light: { background: "#fafafa", foreground: "#1e1e1e", cursor: "#005fb8", selectionBackground: "#add6ff",
+    ...ansi(["#000000","#cd3131","#107c10","#949800","#0451a5","#bc05bc","#0598bc","#555555","#666666","#cd3131","#14ce14","#b5ba00","#0451a5","#bc05bc","#0598bc","#a5a5a5"]) },
+  "solarized-dark": { background: "#002b36", foreground: "#839496", cursor: "#93a1a1", selectionBackground: "#073642",
+    ...ansi(["#073642","#dc322f","#859900","#b58900","#268bd2","#d33682","#2aa198","#eee8d5","#002b36","#cb4b16","#586e75","#657b83","#839496","#6c71c4","#93a1a1","#fdf6e3"]) },
+  "solarized-light": { background: "#fdf6e3", foreground: "#657b83", cursor: "#586e75", selectionBackground: "#eee8d5",
+    ...ansi(["#073642","#dc322f","#859900","#b58900","#268bd2","#d33682","#2aa198","#eee8d5","#002b36","#cb4b16","#586e75","#657b83","#839496","#6c71c4","#93a1a1","#fdf6e3"]) },
+  nord: { background: "#2e3440", foreground: "#d8dee9", cursor: "#d8dee9", selectionBackground: "#434c5e",
+    ...ansi(["#3b4252","#bf616a","#a3be8c","#ebcb8b","#81a1c1","#b48ead","#88c0d0","#e5e9f0","#4c566a","#bf616a","#a3be8c","#ebcb8b","#81a1c1","#b48ead","#8fbcbb","#eceff4"]) },
+  gruvbox: { background: "#282828", foreground: "#ebdbb2", cursor: "#ebdbb2", selectionBackground: "#504945",
+    ...ansi(["#282828","#cc241d","#98971a","#d79921","#458588","#b16286","#689d6a","#a89984","#928374","#fb4934","#b8bb26","#fabd2f","#83a598","#d3869b","#8ec07c","#ebdbb2"]) },
+  monokai: { background: "#272822", foreground: "#f8f8f2", cursor: "#f8f8f0", selectionBackground: "#49483e",
+    ...ansi(["#272822","#f92672","#a6e22e","#f4bf75","#66d9ef","#ae81ff","#a1efe4","#f8f8f2","#75715e","#f92672","#a6e22e","#f4bf75","#66d9ef","#ae81ff","#a1efe4","#f9f8f5"]) },
+  dracula: { background: "#282a36", foreground: "#f8f8f2", cursor: "#f8f8f2", selectionBackground: "#44475a",
+    ...ansi(["#21222c","#ff5555","#50fa7b","#f1fa8c","#bd93f9","#ff79c6","#8be9fd","#f8f8f2","#6272a4","#ff6e6e","#69ff94","#ffffa5","#d6acff","#ff92df","#a4ffff","#ffffff"]) },
+};
 const term = new Terminal({
   cursorBlink: true, allowProposedApi: true, fontFamily: '"Cascadia Mono", Consolas, monospace', fontSize: 13, scrollback: 10000,
   theme: { background: "#0c0c0c", foreground: "#cccccc", cursor: "#60cdff", selectionBackground: "#264f78" },
@@ -80,13 +101,9 @@ host.addEventListener("message", (e) => {
   else if (m.type === "focus") term.focus();
   else if (m.type === "settings") {
     if (m.fontSize) { term.options.fontSize = m.fontSize; try { fit.fit(); } catch {} }
-    if (m.theme === "light") {
-      term.options.theme = { background: "#fafafa", foreground: "#1e1e1e", cursor: "#005fb8", selectionBackground: "#add6ff" };
-      document.body.style.background = "#fafafa";
-    } else {
-      term.options.theme = { background: "#0c0c0c", foreground: "#cccccc", cursor: "#60cdff", selectionBackground: "#264f78" };
-      document.body.style.background = "#0c0c0c";
-    }
+    const theme = THEMES[m.theme] || THEMES.dark;
+    term.options.theme = theme;
+    document.body.style.background = theme.background;
   }
 });
 fit.fit();

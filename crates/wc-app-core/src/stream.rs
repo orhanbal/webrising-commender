@@ -75,12 +75,16 @@ impl TermWriter {
 pub struct StreamEvents {
     pub(crate) state: Arc<AppState>,
     pub(crate) session_id: String,
+    pub(crate) log: Option<Arc<crate::session_log::SessionLog>>,
 }
 
 impl StreamEvents {
     pub fn output(&self, bytes: &[u8]) {
         if bytes.is_empty() {
             return;
+        }
+        if let Some(log) = &self.log {
+            log.write(bytes);
         }
         self.state.emit(
             "terminal-output",

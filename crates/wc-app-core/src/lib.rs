@@ -10,6 +10,7 @@
 
 pub mod library;
 pub mod serial;
+pub mod session_log;
 pub mod store;
 pub mod stream;
 pub mod sync;
@@ -155,6 +156,8 @@ pub struct HostView {
     /// "ssh", "telnet", "serial" or "mosh".
     pub protocol: String,
     pub serial: Option<store::SerialSettings>,
+    /// Terminals of this host are written to the logs folder.
+    pub session_log: bool,
 }
 
 /// What the host list shows under the name.
@@ -191,6 +194,7 @@ pub fn host_views(state: &AppState) -> Result<Vec<HostView>, String> {
             label: h.profile.label.clone(),
             target: link_target(&h),
             protocol: h.link.kind().to_owned(),
+            session_log: h.session_log,
             serial: h.link.serial.clone(),
             auth_kind: h.auth_kind.clone(),
             saved_secret: state
@@ -257,6 +261,7 @@ pub fn add_host(
             identity_id: None,
             team: false,
             link: Default::default(),
+            session_log: false,
         });
         state.save(&data)?;
     }
@@ -314,6 +319,7 @@ pub fn import_ssh_config(state: &Arc<AppState>) -> Result<ImportResult, String> 
                 identity_id: None,
                 team: false,
                 link: Default::default(),
+                session_log: false,
             });
             added += 1;
         }
@@ -772,11 +778,18 @@ async fn connect_host_once(
     let mut reader = shell.reader;
     let sid = session_id.clone();
     let st = state.clone();
+    let log = saved
+        .session_log
+        .then(|| session_log::SessionLog::start(state.store.dir(), &saved.profile.label))
+        .flatten();
     tokio::spawn(async move {
         let engine = base64::engine::general_purpose::STANDARD;
         while let Some(event) = reader.next().await {
             match event {
                 ShellEvent::Output(bytes) => {
+                    if let Some(log) = &log {
+                        log.write(&bytes);
+                    }
                     st.emit(
                         "terminal-output",
                         TerminalOutput {
@@ -868,11 +881,17 @@ async fn connect_stream_host(
             _jump: None,
         },
     );
+    let log = saved
+        .session_log
+        .then(|| session_log::SessionLog::start(state.store.dir(), &saved.profile.label))
+        .flatten()
+        .map(Arc::new);
     start(
         rx,
         stream::StreamEvents {
             state: state.clone(),
             session_id: session_id.clone(),
+            log,
         },
     );
     Ok(ConnectOutcome::TerminalOpened {

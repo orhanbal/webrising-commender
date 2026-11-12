@@ -75,6 +75,13 @@ async fn telnet_host_opens_a_terminal() {
     let ConnectOutcome::TerminalOpened { session_id, .. } = outcome else {
         panic!("no terminal")
     };
+    // Type only once the prompt is on screen, like a person would.
+    for _ in 0..100 {
+        if !output_of(&events).is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
     wc_app_core::terminal_write(&state, session_id.clone(), "admin\r".into())
         .await
         .unwrap();
@@ -94,23 +101,27 @@ async fn telnet_host_opens_a_terminal() {
     let mut output = Vec::new();
     for _ in 0..50 {
         tokio::time::sleep(Duration::from_millis(50)).await;
-        output = events
-            .0
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|(name, _)| name == "terminal-output")
-            .flat_map(|(_, v)| {
-                use base64::Engine;
-                base64::engine::general_purpose::STANDARD
-                    .decode(v["data"].as_str().unwrap())
-                    .unwrap()
-            })
-            .collect();
+        output = output_of(&events);
         if output.ends_with(b"welcome\r\n") {
             break;
         }
     }
     assert_eq!(output, b"login: \r\nwelcome\r\n");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn output_of(events: &Events) -> Vec<u8> {
+    use base64::Engine;
+    events
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(name, _)| name == "terminal-output")
+        .flat_map(|(_, v)| {
+            base64::engine::general_purpose::STANDARD
+                .decode(v["data"].as_str().unwrap())
+                .unwrap()
+        })
+        .collect()
 }

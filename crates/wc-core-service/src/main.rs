@@ -210,6 +210,8 @@ struct HostOptions {
     env: std::collections::BTreeMap<String, String>,
     #[serde(default)]
     agent_forwarding: bool,
+    #[serde(default)]
+    session_log: bool,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -422,9 +424,13 @@ async fn dispatch(
                 h.startup_command,
                 h.env,
                 h.agent_forwarding,
+                h.session_log,
             )?)
         }
         "serial.ports" => ok(core::serial::ports()),
+        "logs.dir" => ok(core::session_log::dir(state.store.dir())
+            .to_string_lossy()
+            .into_owned()),
         "hosts.setConnection" => {
             let h: HostConnection = p(params)?;
             ok(core::library::host_set_connection(

@@ -228,7 +228,7 @@ public sealed record CoreHost(string Id, string Label, string Target, string Aut
     string? KeyPath, string? JumpId, string? TrustedKey, string? Group = null, string User = "", string Host = "", int Port = 22,
     string? KeyId = null, string? StartupCommand = null, Dictionary<string, string>? Env = null,
     bool AgentForwarding = false, string? IdentityId = null, bool Team = false,
-    string Protocol = "ssh", SerialSettings? Serial = null)
+    string Protocol = "ssh", SerialSettings? Serial = null, bool SessionLog = false)
 {
     /// <summary>SSH hosts log in; Telnet, serial and Mosh hosts open straight away.</summary>
     public bool IsSsh => Protocol is "ssh" or "" or null;

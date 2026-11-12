@@ -50,6 +50,9 @@ pub struct SavedHost {
     /// How the app reaches the host: SSH unless it says otherwise.
     #[serde(flatten)]
     pub link: Link,
+    /// Keep what this host's terminals show in a text file (logs folder).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub session_log: bool,
 }
 
 /// The connection kind of a host: SSH (empty), "telnet", "serial" or "mosh".
@@ -280,6 +283,7 @@ mod tests {
             identity_id: None,
             team: false,
             link: Default::default(),
+            session_log: false,
         });
         data.known_hosts
             .insert("srv.example.com:22".into(), "SHA256:x".into());

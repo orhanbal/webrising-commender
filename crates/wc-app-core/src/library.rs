@@ -541,6 +541,7 @@ pub fn host_set_options(
     startup_command: Option<String>,
     env: std::collections::BTreeMap<String, String>,
     agent_forwarding: bool,
+    session_log: bool,
 ) -> Result<Vec<HostView>, String> {
     let startup_command = startup_command
         .map(|c| {
@@ -581,6 +582,7 @@ pub fn host_set_options(
         h.startup_command = startup_command;
         h.env = clean;
         h.agent_forwarding = agent_forwarding;
+        h.session_log = session_log;
         state.save(&data)?;
     }
     state.changed();
@@ -762,6 +764,7 @@ mod tests {
             identity_id: None,
             team: false,
             link: Default::default(),
+            session_log: false,
         }
     }
 

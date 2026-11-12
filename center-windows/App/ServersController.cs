@@ -340,6 +340,13 @@ public sealed class ServersController : IDisposable
     }
 
     /// <summary>Terminal options of a host: startup command, environment variables, agent forwarding.</summary>
+    /// <summary>The folder session logs are written to.</summary>
+    public async Task<string?> LogsFolder()
+    {
+        try { return await Core.CallAsync<string>("logs.dir"); }
+        catch (CoreException) { return null; }
+    }
+
     /// <summary>This computer's serial ports (COM3 ...).</summary>
     public async Task<List<string>> SerialPorts()
     {
@@ -354,9 +361,9 @@ public sealed class ServersController : IDisposable
         Changed?.Invoke();
     }
 
-    public async Task SetHostOptions(CoreHost host, string? startupCommand, Dictionary<string, string> env, bool agentForwarding)
+    public async Task SetHostOptions(CoreHost host, string? startupCommand, Dictionary<string, string> env, bool agentForwarding, bool sessionLog)
     {
-        Hosts = await Core.CallAsync<List<CoreHost>>("hosts.setOptions", new { id = host.Id, startupCommand, env, agentForwarding });
+        Hosts = await Core.CallAsync<List<CoreHost>>("hosts.setOptions", new { id = host.Id, startupCommand, env, agentForwarding, sessionLog });
         Changed?.Invoke();
     }
 
