@@ -39,6 +39,8 @@ public sealed class ServersWindow : Window
     private readonly Grid _terminals = new();
     private readonly AutoSuggestBox _search = new() { PlaceholderText = "Sunucu ara ya da hızlı bağlan (kullanıcı@adres)", QueryIcon = new SymbolIcon(Symbol.Find), MinWidth = 360 };
     private readonly StackPanel _hostGroups = new() { Spacing = 18 };
+    /// <summary>The Sunucular page, made the first time it is shown.</summary>
+    private Grid? _hostsPage;
     private readonly NavigationViewItem _hostsItem = new() { Content = "Sunucular", Tag = "hosts", Icon = new FontIcon { Glyph = "\uE968" } };
     private readonly NavigationViewItem _terminalsItem = new() { Content = "Terminaller", Tag = "terminals", Icon = new FontIcon { Glyph = "\uE756" } };
     private readonly InfoBadge _terminalsBadge = new() { Visibility = Visibility.Collapsed };
@@ -260,15 +262,26 @@ public sealed class ServersWindow : Window
             case "known": _ = ShowKnown(); break;
             case "history": _ = ShowHistory(); break;
             default:
-                // The search box and the host list move into the new page.
-                if (_search.Parent is Panel searchParent) searchParent.Children.Remove(_search);
-                if (_hostGroups.Parent is ScrollViewer oldScroll) oldScroll.Content = null;
-                var scroll = new ScrollViewer { Content = _hostGroups };
-                _nav.Content = Page("Sunucular", "Bir sunucuya tıkla, terminal yeni sekmede açılsın. Sağ tık: düzenle, sil.", scroll,
-                    _search,
-                    ActionButton("Ortak terminaller", Symbol.People, () => _ = ShowShares()),
-                    ActionButton("İçe aktar", Symbol.Import, async () => Show(await _c.ImportSshConfig(), InfoBarSeverity.Informational)),
-                    ActionButton("Yeni sunucu", Symbol.Add, () => _ = EditHost(null), accent: true));
+                // Built once: the search box and the host list never move to
+                // another parent (WinUI may still hold them in the old one).
+                if (_hostsPage is null)
+                {
+                    _hostsPage = (Grid)Page("Sunucular", "Bir sunucuya tıkla, terminal yeni sekmede açılsın. Sağ tık: düzenle, sil.",
+                        new ScrollViewer { Content = _hostGroups },
+                        _search,
+                        ActionButton("Ortak terminaller", Symbol.People, () => _ = ShowShares()),
+                        ActionButton("İçe aktar", Symbol.Import, async () => Show(await _c.ImportSshConfig(), InfoBarSeverity.Informational)),
+                        ActionButton("Yeni sunucu", Symbol.Add, () => _ = EditHost(null), accent: true));
+                }
+                else if (_info.Parent != _hostsPage)
+                {
+                    if (_info.Parent is Panel old) old.Children.Remove(_info);
+                    Grid.SetRow(_info, 1);
+                    Grid.SetColumnSpan(_info, 1);
+                    _info.VerticalAlignment = VerticalAlignment.Stretch;
+                    _hostsPage.Children.Add(_info);
+                }
+                _nav.Content = _hostsPage;
                 break;
         }
     }
