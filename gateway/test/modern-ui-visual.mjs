@@ -253,7 +253,7 @@ try{
  assert.ok(await evalJs("document.body.textContent.includes('Landing media library')"),"Landing CMS must expose uploaded-media management");
  await evalJs("(()=>{const s=[...document.querySelectorAll('select')].find(el=>[...el.options].some(o=>o.value==='FAQ'));if(!s)throw new Error('FAQ section selector missing');s.value='FAQ';s.dispatchEvent(new Event('change',{bubbles:true}))})()");
  await sleep(100);
- assert.equal(await evalJs("document.querySelectorAll('fieldset').length"),6,"CMS must show six correctly paired FAQ editor cards");
+ assert.equal(await evalJs("document.querySelectorAll('fieldset').length"),10,"CMS must show ten correctly paired FAQ editor cards");
  assert.ok(await evalJs("[...document.querySelectorAll('fieldset')].every(f=>f.querySelectorAll('textarea').length===2)"),"Every FAQ editor card must have a question and answer");
 
  await visit("/console/system","System status","modern-console-system");
