@@ -44,7 +44,7 @@ public sealed class ServersWindow : Window
     private Grid? _hostsPage;
 
     private static AutoSuggestBox NewSearchBox() =>
-        new() { PlaceholderText = "Sunucu ara ya da hızlı bağlan (kullanıcı@adres)", QueryIcon = new SymbolIcon(Symbol.Find), MinWidth = 360 };
+        new() { PlaceholderText = "Sunucu ara ya da hızlı bağlan (kullanıcı@adres)", QueryIcon = new SymbolIcon(Symbol.Find), MinWidth = 220 };
     private readonly NavigationViewItem _hostsItem = new() { Content = "Sunucular", Tag = "hosts", Icon = new FontIcon { Glyph = "\uE968" } };
     private readonly NavigationViewItem _terminalsItem = new() { Content = "Terminaller", Tag = "terminals", Icon = new FontIcon { Glyph = "\uE756" } };
     private readonly InfoBadge _terminalsBadge = new() { Visibility = Visibility.Collapsed };
@@ -252,19 +252,30 @@ public sealed class ServersWindow : Window
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        var head = new Grid { ColumnSpacing = 8 };
-        head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        // Title on top, actions on their own row below it: side by side, wide
+        // actions (Sunucular's search + three buttons) left the title column
+        // no width, the subtitle wrapped one letter per line and the page grew
+        // taller than the window with its top off screen (a blank page).
+        var head = new StackPanel { Spacing = 12 };
         var titles = new StackPanel { Spacing = 2 };
         titles.Children.Add(new TextBlock { Text = title, Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] });
         titles.Children.Add(new TextBlock { Text = subtitle, Foreground = Secondary, TextWrapping = TextWrapping.Wrap });
         head.Children.Add(titles);
-        var i = 1;
-        foreach (var a in actions)
+        if (actions.Length > 0)
         {
-            head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            if (a is FrameworkElement fe) fe.VerticalAlignment = VerticalAlignment.Center;
-            Grid.SetColumn((FrameworkElement)a, i++);
-            head.Children.Add(a);
+            var row = new Grid { ColumnSpacing = 8 };
+            var i = 0;
+            foreach (var a in actions)
+            {
+                var stretch = a is AutoSuggestBox;
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = stretch ? new GridLength(1, GridUnitType.Star) : GridLength.Auto });
+                if (a is FrameworkElement fe) fe.VerticalAlignment = VerticalAlignment.Center;
+                Grid.SetColumn((FrameworkElement)a, i++);
+                row.Children.Add(a);
+            }
+            if (!actions.Any(a => a is AutoSuggestBox))
+                row.HorizontalAlignment = HorizontalAlignment.Left;
+            head.Children.Add(row);
         }
         grid.Children.Add(head);
         Grid.SetRow((FrameworkElement)body, 2);
