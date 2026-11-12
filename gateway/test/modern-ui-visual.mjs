@@ -299,7 +299,7 @@ try{
 
 
  await visit("/features","Real power for your AI.","modern-features-scroll");
- assert.equal(await evalJs("document.querySelectorAll('.features-grid .feature-card').length"),6,"Landing content cards must be present");
+ assert.equal(await evalJs("document.querySelectorAll('.features-grid .feature-card').length"),12,"Landing content cards must be present");
  assert.ok(await evalJs("([...document.querySelectorAll('.features-grid .feature-card')].every(el=>{const css=getComputedStyle(el);return css.opacity==='1'&&css.display!=='none'&&css.visibility!=='hidden'}))"),"Landing cards must never be hidden by reveal effects");
  assert.equal(await evalJs("location.hash"),"","Landing section URLs must have no hash");
  // Landing v1.1: one-line install, comparison and FAQ are present and real.
