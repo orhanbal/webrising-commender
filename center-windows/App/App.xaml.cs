@@ -195,6 +195,33 @@ public partial class App : Application
             File.AppendAllText(ErrorLogPath, $"--- {DateTimeOffset.Now:O} {AppUpdate.CurrentBuild()}\n{error}\n");
         }
         catch (Exception) { }
+        SendErrorReport(error);
+    }
+
+    private static DateTime _lastErrorReport = DateTime.MinValue;
+    private static string? _lastErrorText;
+
+    /// <summary>S3: the error also goes to the server (at most one a minute,
+    /// never the same one twice in a row), so it can be fixed without asking
+    /// the user for errors.log. Sending never throws and never logs.</summary>
+    private static void SendErrorReport(Exception error)
+    {
+        try
+        {
+            if (Application.Current is not App app || app.Token is not { } token) return;
+            var text = error.ToString();
+            if (text == _lastErrorText || DateTime.UtcNow - _lastErrorReport < TimeSpan.FromMinutes(1)) return;
+            _lastErrorText = text;
+            _lastErrorReport = DateTime.UtcNow;
+            var gateway = app.Gateway;
+            var build = AppUpdate.CurrentBuild()?.ToString() ?? "dev";
+            _ = Task.Run(async () =>
+            {
+                try { await gateway.ReportErrorAsync(token, build, error.GetType().Name + ": " + error.Message, text); }
+                catch (Exception) { }
+            });
+        }
+        catch (Exception) { }
     }
 
     private void ReportError(Exception error)

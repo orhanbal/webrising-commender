@@ -1060,6 +1060,20 @@ assert.equal(centerPairingBody.expiresInSeconds, 300);
 assert.equal((await acceptanceDb.query(
   "select 1 from audit_logs where tool='center.pairing_code'",
 )).rowCount, 1, "center pairing codes are audited");
+// S3: the app reports its own errors; the user's folder name is removed.
+const errorReport = await fetch(base + "/api/center/errors", { method: "POST", headers: centerHeaders, body: JSON.stringify({
+  platform: "windows", build: "1835", message: "Value cannot be null.",
+  detail: "at TeamSync.RunAsync() in C:\\Users\\orhan\\AppData\\Local\\x.cs:line 35",
+}) });
+assert.equal(errorReport.status, 202, "a center can report an app error");
+const browserErrorReport = await fetch(base + "/api/center/errors", { method: "POST", headers: authHeaders, body: "{}" });
+assert.equal(browserErrorReport.status, 403, "only an app (center token) reports app errors");
+const reportedErrors = toolText(await rpc(279, "tools/call", { name: "app_errors", arguments: { limit: 5 } }));
+assert.equal(reportedErrors.length, 1);
+assert.equal(reportedErrors[0].platform, "windows");
+assert.equal(reportedErrors[0].center_name, "Ofis-PC");
+assert.ok(reportedErrors[0].detail.includes("C:\\Users\\…\\AppData"), reportedErrors[0].detail);
+assert.ok(!reportedErrors[0].detail.includes("orhan"), "user folder names never reach the server");
 // A20: the encrypted host library, with revision checks.
 const envelope = (n) => JSON.stringify({ format: "wecommander-sync", v: 1, salt: "c2FsdA==", nonce: "bm9uY2U=", data: "x".repeat(n) });
 assert.deepEqual(await jsonFetch("/api/center/library", { headers: centerHeaders }), { revision: 0, envelope: null });
@@ -1675,7 +1689,7 @@ for (const advertised of advertisedTools) {
   if (dcCompatible.includes(advertised.name)) {
     assert.ok(!required.includes("device_id"), advertised.name);
     assert.equal(schema.properties.device_id.type, "string", advertised.name);
-  } else if (advertised.name !== "devices_list") {
+  } else if (advertised.name !== "devices_list" && advertised.name !== "app_errors") {
     assert.ok(required.includes("device_id"), `Device routing not required: ${advertised.name}`);
     assert.equal(schema.properties.device_id.type, "string", advertised.name);
   }

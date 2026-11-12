@@ -173,6 +173,18 @@ public sealed class GatewayClient(HttpClient http, string baseUrl)
         }
     }
 
+    // ---- S3 error reports ----
+
+    /// <summary>Sends an error this app hit; the user's folder name is removed first.</summary>
+    public async Task ReportErrorAsync(string token, string build, string message, string detail, CancellationToken ct = default) =>
+        await SendAsync(HttpMethod.Post, "/api/center/errors", token, new
+        {
+            platform = "windows",
+            build,
+            message = ErrorText.Scrub(message, 2000),
+            detail = ErrorText.Scrub(detail, 20000),
+        }, ct).ConfigureAwait(false);
+
     // ---- A27 shared terminals ----
 
     public Task<List<ShareInfo>> SharesAsync(string token, CancellationToken ct = default) =>
@@ -208,4 +220,17 @@ public sealed record TeamState(string? OrganizationName, string Role, string? My
     /// <summary>Never null, whatever the server sent.</summary>
     public List<TeamMember> Members { get; init; } = Members ?? [];
     public bool CanEdit => Role is "operator" or "admin" or "owner";
+}
+
+/// <summary>Removes the user's folder name from error text before it leaves the computer.</summary>
+public static class ErrorText
+{
+    public static string Scrub(string text, int max)
+    {
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var name = Environment.UserName;
+        if (!string.IsNullOrEmpty(profile)) text = text.Replace(profile, Path.Combine(Path.GetDirectoryName(profile) ?? "", "…"), StringComparison.OrdinalIgnoreCase);
+        if (name.Length >= 3) text = text.Replace("\\" + name + "\\", "\\…\\", StringComparison.OrdinalIgnoreCase);
+        return text.Length <= max ? text : text[..max];
+    }
 }

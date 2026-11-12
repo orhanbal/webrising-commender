@@ -603,6 +603,21 @@ export async function migrate() {
       updated_at timestamptz not null default now()
     );
 
+    -- S3: errors the apps hit, reported by the app itself (message and
+    -- stack only, user folder names removed on the device and again here),
+    -- so problems are seen and fixed without asking the user for logs.
+    create table if not exists app_error_reports (
+      id bigserial primary key,
+      organization_id uuid not null references organizations(id) on delete cascade,
+      center_id uuid references management_centers(id) on delete set null,
+      platform text not null,
+      build text not null,
+      message text not null,
+      detail text not null,
+      created_at timestamptz not null default now()
+    );
+    create index if not exists app_error_reports_org_idx on app_error_reports(organization_id,created_at desc);
+
     insert into organizations(name)
       select 'Self Hosted'
       where not exists(select 1 from organizations);
