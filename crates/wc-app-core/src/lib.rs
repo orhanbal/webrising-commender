@@ -418,6 +418,7 @@ pub async fn connect_host(
         state,
         id.clone(),
         auth,
+        Vec::new(),
         accept_fingerprint.clone(),
         mode.clone(),
         cols,
@@ -425,35 +426,35 @@ pub async fn connect_host(
     )
     .await;
     match first {
-        // Nothing saved for this host: try this computer's own SSH keys
-        // (~/.ssh), like the ssh command does; the one that works is kept.
+        // Nothing saved for this host: offer this computer's own SSH keys
+        // (~/.ssh) like the ssh command does, all in ONE connection (one
+        // connection per key looks like an attack to fail2ban, which then
+        // bans this computer). The key that works is kept.
         Err(e) if wants_key && e.starts_with("no saved credential") => {
-            for path in default_key_files() {
-                let attempt = AuthInput {
-                    kind: "key".into(),
-                    secret: String::new(),
-                    passphrase: None,
-                    remember: true,
-                    key_path: Some(path),
-                    install_key: false,
-                };
-                match connect_host_once(
-                    state,
-                    id.clone(),
-                    attempt,
-                    accept_fingerprint.clone(),
-                    mode.clone(),
-                    cols,
-                    rows,
-                )
-                .await
-                {
-                    Ok(outcome) => return Ok(outcome),
-                    Err(err) if err.contains("authentication failed") => continue,
-                    Err(err) => return Err(err),
-                }
+            let mut files = default_key_files();
+            if files.is_empty() {
+                return Err(e);
             }
-            Err(e)
+            let first_file = files.remove(0);
+            let attempt = AuthInput {
+                kind: "key".into(),
+                secret: String::new(),
+                passphrase: None,
+                remember: true,
+                key_path: Some(first_file),
+                install_key: false,
+            };
+            connect_host_once(
+                state,
+                id,
+                attempt,
+                files,
+                accept_fingerprint,
+                mode,
+                cols,
+                rows,
+            )
+            .await
         }
         other => other,
     }
@@ -493,6 +494,7 @@ async fn connect_host_once(
     state: &Arc<AppState>,
     id: String,
     auth: AuthInput,
+    extra_key_files: Vec<String>,
     accept_fingerprint: Option<String>,
     mode: String,
     cols: Option<u32>,
@@ -586,6 +588,10 @@ async fn connect_host_once(
         // "key changed" warning before approving).
         trusted_fingerprint: accept_fingerprint.or(trusted),
         agent_forwarding: saved.agent_forwarding,
+        extra_keys: extra_key_files
+            .iter()
+            .filter_map(|p| std::fs::read_to_string(p).ok())
+            .collect(),
         ..Default::default()
     };
     // A10: reach the host through its jump host with the jump host's own
@@ -625,7 +631,15 @@ async fn connect_host_once(
         if let Some(h) = data.hosts.iter_mut().find(|h| h.id == id) {
             h.auth_kind = kind.into();
             if from_file {
-                h.key_path = auth.key_path.clone();
+                // One of the other ~/.ssh keys may be the one that logged in.
+                h.key_path = match conn.used_extra_key() {
+                    Some(i) => extra_key_files
+                        .iter()
+                        .filter(|p| std::fs::read_to_string(p).is_ok())
+                        .nth(i)
+                        .cloned(),
+                    None => auth.key_path.clone(),
+                };
             }
         }
         state.save(&data)?;
