@@ -1153,12 +1153,60 @@ public sealed class ServersWindow : Window
         var panel = new StackPanel { Spacing = 10, MinWidth = 440 };
         if (message is not null) panel.Children.Add(new InfoBar { IsOpen = true, IsClosable = false, Severity = InfoBarSeverity.Error, Message = message });
         foreach (var e in new UIElement[] { useKey, keyRow, key, passphrase, password, installKey, remember }) panel.Children.Add(e);
+        // A server that takes keys only: this computer's key and the one line
+        // that puts it on the server (the hosting panel's web console works too).
+        var keyOnly = message is not null && message.Contains("yalnız SSH anahtarı");
+        KeyMeta? appKey = null;
+        if (keyOnly)
+        {
+            try { appKey = await AppKey(); }
+            catch (CoreException e) { Show(e.Message, InfoBarSeverity.Error); }
+        }
+        if (appKey is not null)
+        {
+            var line = $"mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '{appKey.PublicKey.Trim()}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys";
+            var steps = new StackPanel { Spacing = 8 };
+            steps.Children.Add(new TextBlock
+            {
+                TextWrapping = TextWrapping.Wrap,
+                Text = "Bir kez yapılır: aşağıdaki satırı sunucuda çalıştır (sunucu sağlayıcının web konsolundan ya da sunucuya girebilen başka bir kullanıcıyla), sonra \"Bu bilgisayarın anahtarıyla bağlan\"a bas.",
+            });
+            steps.Children.Add(new TextBox { Text = line, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, FontFamily = new FontFamily("Cascadia Mono, Consolas") });
+            var copy = new Button { Content = "Satırı kopyala" };
+            copy.Click += (_, _) =>
+            {
+                var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+                package.SetText(line);
+                Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+                copy.Content = "Kopyalandı";
+            };
+            steps.Children.Add(copy);
+            panel.Children.Insert(1, new Expander { Header = "Bu bilgisayarın anahtarını sunucuya ekle", Content = steps, IsExpanded = true, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch });
+            useKey.SelectedIndex = 0;
+        }
         var dialog = Dialog($"{host.Label} · {host.Target}", panel, "Bağlan");
-        if (await ShowDialog(dialog) != ContentDialogResult.Primary) return;
+        if (appKey is not null) dialog.SecondaryButtonText = "Bu bilgisayarın anahtarıyla bağlan";
+        var choice = await ShowDialog(dialog);
+        if (choice == ContentDialogResult.Secondary && appKey is not null)
+        {
+            await _c.SetHostKey(host, appKey.Id);
+            var keyed = _c.Hosts.FirstOrDefault(h => h.Id == host.Id) ?? host;
+            await Connect(keyed, new { kind = "key", secret = "", remember = false }, null, askOnCredentialError: true);
+            return;
+        }
+        if (choice != ContentDialogResult.Primary) return;
         object auth = useKey.SelectedIndex == 0
             ? new { kind = "key", secret = key.Text, passphrase = passphrase.Password, remember = remember.IsChecked == true, keyPath = string.IsNullOrEmpty(key.Text) ? keyPath : null }
             : new { kind = "password", secret = password.Password, passphrase = (string?)null, remember = remember.IsChecked == true, keyPath = (string?)null, installKey = installKey.IsChecked == true };
         await Connect(host, auth, null, askOnCredentialError: true);
+    }
+
+    /// <summary>This computer's own key ("WECOMMANDER &lt;computer&gt;"), made the first time.</summary>
+    private async Task<KeyMeta> AppKey()
+    {
+        var label = "WECOMMANDER " + Environment.MachineName;
+        var found = (await _c.Keys()).FirstOrDefault(k => k.Label == label);
+        return found ?? (await _c.GenerateKey(label)).First(k => k.Label == label);
     }
 
     // ---- terminals ----

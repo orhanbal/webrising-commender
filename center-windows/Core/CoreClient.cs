@@ -173,7 +173,7 @@ public static class CoreText
         var key = methods.Contains("publickey");
         if (key && !password)
             return "Giriş reddedildi. Bu sunucu parolayla girişi kabul etmiyor, yalnız SSH anahtarı kabul ediyor. "
-                + "Anahtarlar'dan bir anahtar oluştur, genel anahtarını sunucudaki ~/.ssh/authorized_keys dosyasına ekle, sonra sunucuyu düzenleyip o anahtarı seç. "
+                + "Bu bilgisayarın anahtarını sunucuya bir kez ekle; aşağıdaki satır bunu yapar. "
                 + "(root için Ubuntu varsayılan olarak parolayla girişi kapatır.)";
         return "Giriş reddedildi; kullanıcı adı, parola ya da anahtar yanlış. Sunucunun kabul ettiği yöntemler: " + string.Join(", ", methods) + ".";
     }
