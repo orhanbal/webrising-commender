@@ -470,16 +470,17 @@ pub async fn connect_host(
         // bans this computer). The key that works is kept.
         Err(e) if wants_key && e.starts_with("no saved credential") => {
             let mut files = default_key_files();
-            if files.is_empty() {
+            // No key file either: the SSH agent's keys alone.
+            let first_file = (!files.is_empty()).then(|| files.remove(0));
+            if first_file.is_none() && wc_ssh_core::agent::local_agent_path().is_none() {
                 return Err(e);
             }
-            let first_file = files.remove(0);
             let attempt = AuthInput {
-                kind: "key".into(),
+                kind: if first_file.is_some() { "key" } else { "agent" }.into(),
                 secret: String::new(),
                 passphrase: None,
                 remember: true,
-                key_path: Some(first_file),
+                key_path: first_file,
                 install_key: false,
             };
             connect_host_once(
@@ -587,7 +588,11 @@ async fn connect_host_once(
                 .flatten();
             Some((private, passphrase))
         });
-    let secret = if typed {
+    // Only this computer's SSH agent (nothing saved and no ~/.ssh key file).
+    let agent_only = auth.kind == "agent";
+    let secret = if agent_only {
+        String::new()
+    } else if typed {
         auth.secret.clone()
     } else if let Some((private, _)) = &app_key {
         private.clone()
@@ -616,7 +621,9 @@ async fn connect_host_once(
             .ok()
             .flatten()
     };
-    let credential = if kind == "password" {
+    let credential = if agent_only {
+        Credential::Agent
+    } else if kind == "password" {
         Credential::Password(secret.clone())
     } else {
         Credential::PrivateKey {
@@ -629,6 +636,8 @@ async fn connect_host_once(
         // "key changed" warning before approving).
         trusted_fingerprint: accept_fingerprint.or(trusted),
         agent_forwarding: saved.agent_forwarding,
+        // Key logins also offer the agent's keys (hardware keys sign there).
+        use_agent: kind == "key",
         extra_keys: extra_key_files
             .iter()
             .filter_map(|p| std::fs::read_to_string(p).ok())

@@ -18,6 +18,46 @@ pub fn local_agent_path() -> Option<String> {
     }
 }
 
+/// Logs in with the keys of this computer's agent, one after another, on
+/// an open session. None when there is no agent or it has no keys.
+pub(crate) async fn authenticate<H: russh::client::Handler>(
+    handle: &mut russh::client::Handle<H>,
+    user: &str,
+) -> Option<russh::client::AuthResult> {
+    let path = local_agent_path()?;
+    #[cfg(unix)]
+    let mut agent = russh::keys::agent::client::AgentClient::connect_uds(&path)
+        .await
+        .ok()?;
+    #[cfg(windows)]
+    let mut agent = russh::keys::agent::client::AgentClient::connect_named_pipe(&path)
+        .await
+        .ok()?;
+    let identities = agent.request_identities().await.ok()?;
+    let hash = handle
+        .best_supported_rsa_hash()
+        .await
+        .ok()
+        .flatten()
+        .flatten();
+    let mut last = None;
+    // Like ssh: at most a handful of keys, so MaxAuthTries is not exceeded.
+    for identity in identities.into_iter().take(5) {
+        let key = identity.public_key().into_owned();
+        match handle
+            .authenticate_publickey_with(user, key, hash, &mut agent)
+            .await
+        {
+            Ok(russh::client::AuthResult::Success) => {
+                return Some(russh::client::AuthResult::Success)
+            }
+            Ok(failure) => last = Some(failure),
+            Err(_) => break,
+        }
+    }
+    last
+}
+
 /// Copies bytes between `channel` and the local agent until either closes.
 pub async fn bridge<C: AsyncRead + AsyncWrite + Unpin>(channel: &mut C) -> std::io::Result<()> {
     let path = local_agent_path().ok_or_else(|| {

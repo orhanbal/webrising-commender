@@ -390,3 +390,74 @@ async fn openssh_host_key_auth_and_exec() {
 
     let _ = std::fs::remove_dir_all(&keys);
 }
+
+/// Logs in with the keys of a real ssh-agent: alone, and after the
+/// configured key is refused (same session).
+#[tokio::test(flavor = "multi_thread")]
+async fn openssh_login_through_ssh_agent() {
+    let Some(sshd) = sshd_path() else {
+        eprintln!("sshd not installed; skipping OpenSSH agent test");
+        return;
+    };
+    if Command::new("ssh-agent").arg("-h").output().is_err() {
+        eprintln!("ssh-agent not installed; skipping");
+        return;
+    }
+    let keys = std::env::temp_dir().join(format!("wc-agent-keys-{}", rand_suffix()));
+    std::fs::create_dir_all(&keys).unwrap();
+    let in_agent = keys.join("id_agent");
+    let stranger = keys.join("id_stranger");
+    keygen(&in_agent, "ed25519", "");
+    keygen(&stranger, "ed25519", "");
+    let server = start(&sshd, &[&in_agent]);
+
+    // A private agent for this test only.
+    let sock = keys.join("agent.sock");
+    let mut agent = Command::new("ssh-agent")
+        .args(["-D", "-a"])
+        .arg(&sock)
+        .stdout(Stdio::null())
+        .spawn()
+        .expect("ssh-agent");
+    for _ in 0..100 {
+        if sock.exists() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let added = Command::new("ssh-add")
+        .arg(&in_agent)
+        .env("SSH_AUTH_SOCK", &sock)
+        .output()
+        .expect("ssh-add");
+    assert!(added.status.success(), "ssh-add failed");
+    std::env::set_var("SSH_AUTH_SOCK", &sock);
+
+    let profile = HostProfile::new("local", "127.0.0.1", server.port, &whoami()).unwrap();
+    let options = ConnectOptions {
+        trusted_fingerprint: Some(fingerprint(&server.dir.join("host_ed25519.pub"))),
+        use_agent: true,
+        ..Default::default()
+    };
+    // Only the agent.
+    let conn = connect(&profile, &Credential::Agent, &options)
+        .await
+        .expect("agent login");
+    let out = conn.exec("echo agent-ok", 4096).await.unwrap();
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "agent-ok");
+    // A refused key first, then the agent's key in the same session.
+    connect(&profile, &key(&stranger, None), &options)
+        .await
+        .expect("agent after a refused key");
+    // Without use_agent the refused key stays refused.
+    let no_agent = ConnectOptions {
+        use_agent: false,
+        ..options.clone()
+    };
+    assert!(matches!(
+        connect(&profile, &key(&stranger, None), &no_agent).await,
+        Err(SshError::AuthFailed { .. })
+    ));
+    let _ = agent.kill();
+    let _ = agent.wait();
+}

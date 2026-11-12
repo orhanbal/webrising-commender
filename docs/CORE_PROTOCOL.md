@@ -61,6 +61,7 @@ connection.
 | `hosts.setKey` | `id, keyId?` | `[Host]`; connect then uses that key (Host has `keyId`) |
 | `hosts.setOptions` | `id, startupCommand?, env? ({NAME: value}), agentForwarding, sessionLog?` | `[Host]`; the terminal sends `env` (server `AcceptEnv` decides), types `startupCommand` once it opens, and with `agentForwarding` lets the server use this computer's ssh-agent (`ssh -A`) |
 | `hosts.setConnection` | `id, protocol (ssh\|telnet\|serial\|mosh), serial? ({device, baud, dataBits, parity none\|even\|odd, stopBits, flow none\|hardware\|software})` | `[Host]` (Host has `protocol` and `serial`; `target` reads `telnet://host[:port]` or `COM3 · 9600 8N1`). Non-SSH hosts open with `connect` straight away (no auth, no host key); files and tunnels answer `files and tunnels work only on SSH terminals` |
+| (SSH agent) | – | key logins also offer the keys of this computer's SSH agent in the same session after the host's own key is refused (Windows OpenSSH agent pipe, else `SSH_AUTH_SOCK`); hardware keys (FIDO2) sign there. A key host with nothing saved and no `~/.ssh` key file logs in with the agent alone (`auth.kind` `agent`) |
 | `logs.dir` | – | the session log folder (`<data dir>/logs`); a host with `sessionLog` writes each terminal to `<host>-<UTC date>.log` with colours and cursor moves removed |
 | `serial.ports` | – | `["COM3", ...]`: this computer's serial ports (no libudev on Linux, so the list can be short there) |
 | `identities.list` | – | `[{id, label, user, authKind, keyId?}]` |

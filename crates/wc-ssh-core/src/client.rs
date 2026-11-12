@@ -23,6 +23,9 @@ pub enum Credential {
         key: String,
         passphrase: Option<String>,
     },
+    /// Only the keys of this computer's SSH agent (OpenSSH agent, Pageant
+    /// through SSH_AUTH_SOCK, a hardware key's agent).
+    Agent,
 }
 
 impl std::fmt::Debug for Credential {
@@ -31,6 +34,7 @@ impl std::fmt::Debug for Credential {
         match self {
             Credential::Password(_) => f.write_str("Password(..)"),
             Credential::PrivateKey { .. } => f.write_str("PrivateKey(..)"),
+            Credential::Agent => f.write_str("Agent"),
         }
     }
 }
@@ -118,6 +122,9 @@ pub struct ConnectOptions {
     /// session means one entry in the server's failed-login count, so
     /// fail2ban does not ban this computer for trying its keys.
     pub extra_keys: Vec<String>,
+    /// After the keys above are refused, offer the keys of this computer's
+    /// SSH agent in the same session (hardware keys sign through it).
+    pub use_agent: bool,
 }
 
 impl Default for ConnectOptions {
@@ -127,6 +134,7 @@ impl Default for ConnectOptions {
             trusted_fingerprint: None,
             agent_forwarding: false,
             extra_keys: Vec::new(),
+            use_agent: false,
         }
     }
 }
@@ -274,7 +282,7 @@ async fn connect_inner(
             russh::keys::decode_secret_key(key, passphrase.as_deref())
                 .map_err(|e| SshError::BadKey(e.to_string()))?,
         )),
-        Credential::Password(_) => None,
+        Credential::Password(_) | Credential::Agent => None,
     };
 
     let presented = Arc::new(Mutex::new(None));
@@ -336,10 +344,14 @@ async fn connect_inner(
         .ok_or_else(|| SshError::Protocol("server sent no host key".into()))?;
 
     let result = match (credential, key) {
-        (Credential::Password(password), _) => handle
-            .authenticate_password(profile.user.clone(), password.clone())
-            .await
-            .map_err(map_error)?,
+        // Nothing to offer before the agent's keys.
+        (Credential::Agent, _) => None,
+        (Credential::Password(password), _) => Some(
+            handle
+                .authenticate_password(profile.user.clone(), password.clone())
+                .await
+                .map_err(map_error)?,
+        ),
         (Credential::PrivateKey { .. }, Some(key)) => {
             // RSA keys sign with rsa-sha2-256/512 when the server supports it.
             let hash = handle
@@ -347,26 +359,22 @@ async fn connect_inner(
                 .await
                 .map_err(map_error)?
                 .flatten();
-            handle
-                .authenticate_publickey(profile.user.clone(), PrivateKeyWithHashAlg::new(key, hash))
-                .await
-                .map_err(map_error)?
+            Some(
+                handle
+                    .authenticate_publickey(
+                        profile.user.clone(),
+                        PrivateKeyWithHashAlg::new(key, hash),
+                    )
+                    .await
+                    .map_err(map_error)?,
+            )
         }
         (Credential::PrivateKey { .. }, None) => unreachable!("key decoded above"),
     };
     let mut result = result;
     let mut used_extra_key = None;
     for (index, text) in options.extra_keys.iter().enumerate() {
-        let russh::client::AuthResult::Failure {
-            remaining_methods, ..
-        } = &result
-        else {
-            break;
-        };
-        if !remaining_methods
-            .iter()
-            .any(|m| <&str>::from(m) == "publickey")
-        {
+        if !wants_publickey(&result) {
             break;
         }
         let Ok(extra) = russh::keys::decode_secret_key(text, None) else {
@@ -377,18 +385,27 @@ async fn connect_inner(
             .await
             .map_err(map_error)?
             .flatten();
-        result = handle
-            .authenticate_publickey(
-                profile.user.clone(),
-                PrivateKeyWithHashAlg::new(Arc::new(extra), hash),
-            )
-            .await
-            .map_err(map_error)?;
-        if matches!(result, russh::client::AuthResult::Success) {
+        result = Some(
+            handle
+                .authenticate_publickey(
+                    profile.user.clone(),
+                    PrivateKeyWithHashAlg::new(Arc::new(extra), hash),
+                )
+                .await
+                .map_err(map_error)?,
+        );
+        if matches!(result, Some(russh::client::AuthResult::Success)) {
             used_extra_key = Some(index);
         }
     }
-    match result {
+    if options.use_agent && wants_publickey(&result) {
+        if let Some(agent_result) = crate::agent::authenticate(&mut handle, &profile.user).await {
+            result = Some(agent_result);
+        }
+    }
+    match result.ok_or(SshError::AuthFailed {
+        remaining: vec!["publickey".into()],
+    })? {
         russh::client::AuthResult::Success => Ok(Connection {
             handle,
             host_key,
@@ -407,7 +424,20 @@ async fn connect_inner(
     }
 }
 
-fn map_error(err: russh::Error) -> SshError {
+/// Nothing tried yet, or refused with public keys still allowed.
+fn wants_publickey(result: &Option<russh::client::AuthResult>) -> bool {
+    match result {
+        None => true,
+        Some(russh::client::AuthResult::Failure {
+            remaining_methods, ..
+        }) => remaining_methods
+            .iter()
+            .any(|m| <&str>::from(m) == "publickey"),
+        Some(_) => false,
+    }
+}
+
+pub(crate) fn map_error(err: russh::Error) -> SshError {
     match err {
         russh::Error::IO(e) => SshError::Io(e.to_string()),
         russh::Error::ConnectionTimeout | russh::Error::InactivityTimeout => SshError::Timeout,
