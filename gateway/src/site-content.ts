@@ -47,14 +47,24 @@ export const publicPages: PublicPage[] = [
   {
     path: "/",
     section: "Product",
-    title: "WECOMMANDER · Your AI, on every machine",
+    title: "WECOMMANDER · SSH client and AI access for your servers",
     description:
-      "Connect Claude, ChatGPT or any MCP client to the terminals and files of your Windows, macOS and Linux machines through one MCP URL, with human approvals, a non-root agent and a full audit trail.",
-    heading: "Your AI, on every machine",
+      "One app for Windows and Mac: SSH, Mosh, Telnet and serial terminals, SFTP, tunnels, keys and end-to-end encrypted sync. The same app connects Claude, ChatGPT or any MCP client to your machines, with human approvals and a full audit trail.",
+    heading: "One app for your servers. For you and your AI.",
     intro: productSummary,
     blocks: [
       { h2: "What it does" },
       { ul: facts },
+      { h2: "The app" },
+      {
+        ul: [
+          "SSH, Mosh, Telnet and serial terminals with tabs, split panes and typing into several terminals at once.",
+          "Two-pane SFTP file manager; local, remote and SOCKS tunnels.",
+          "Keys and identities, login through your SSH agent and hardware keys; secrets stay in the operating system's keychain.",
+          "Autocomplete from your command history and snippets, session logs and terminal themes.",
+          "End-to-end encrypted sync between your computers; a shared team library and shared terminals on the Team plan.",
+        ],
+      },
       { h2: "Who it is for" },
       {
         ul: [
