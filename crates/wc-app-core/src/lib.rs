@@ -10,8 +10,10 @@
 
 pub mod library;
 pub mod store;
+pub mod stream;
 pub mod sync;
 pub mod team;
+pub mod telnet;
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -21,7 +23,7 @@ use std::sync::{Arc, Mutex};
 use store::{secret_key, Data, SavedHost, Store};
 use wc_ssh_core::client::{
     connect, connect_via, ConnectOptions, Connection, Credential, LocalForward, RemoteForward,
-    ShellEvent, ShellWriter, SshError,
+    ShellEvent, SshError,
 };
 use wc_ssh_core::sftp::{self as sftp_path, Entry, Sftp};
 use wc_ssh_core::HostProfile;
@@ -72,10 +74,11 @@ pub fn open(data_dir: &Path, keyring_service: &str, events: Arc<dyn EventSink>) 
 }
 
 pub struct Terminal {
-    pub writer: Arc<ShellWriter>,
+    pub writer: stream::TermWriter,
     // Keeps the SSH connection open while the terminal is; the file
-    // manager (A09) opens its SFTP session on the same connection.
-    pub connection: Arc<Connection>,
+    // manager (A09) opens its SFTP session on the same connection. None for
+    // Telnet, serial and Mosh terminals (no files or tunnels there).
+    pub connection: Option<Arc<Connection>>,
     pub sftp: Arc<tokio::sync::Mutex<Option<Arc<Sftp>>>>,
     /// Local port forwards on this connection (A10); dropped with the tab.
     pub forwards: Arc<Mutex<Vec<ActiveForward>>>,
@@ -148,6 +151,30 @@ pub struct HostView {
     pub identity_id: Option<String>,
     /// Shared with the team (A22).
     pub team: bool,
+    /// "ssh", "telnet", "serial" or "mosh".
+    pub protocol: String,
+    pub serial: Option<store::SerialSettings>,
+}
+
+/// What the host list shows under the name.
+fn link_target(h: &SavedHost) -> String {
+    match h.link.kind() {
+        "telnet" if h.profile.port == 23 => format!("telnet://{}", h.profile.host),
+        "telnet" => format!("telnet://{}:{}", h.profile.host, h.profile.port),
+        "serial" => match &h.link.serial {
+            Some(s) => format!(
+                "{} · {} {}{}{}",
+                s.device,
+                s.baud,
+                s.data_bits,
+                s.parity.chars().next().unwrap_or('n').to_ascii_uppercase(),
+                s.stop_bits
+            ),
+            None => "serial".into(),
+        },
+        "mosh" => format!("mosh {}", h.profile.display_target()),
+        _ => h.profile.display_target(),
+    }
 }
 
 pub fn host_views(state: &AppState) -> Result<Vec<HostView>, String> {
@@ -161,7 +188,9 @@ pub fn host_views(state: &AppState) -> Result<Vec<HostView>, String> {
             team: own.team,
             id: h.id.clone(),
             label: h.profile.label.clone(),
-            target: h.profile.display_target(),
+            target: link_target(&h),
+            protocol: h.link.kind().to_owned(),
+            serial: h.link.serial.clone(),
             auth_kind: h.auth_kind.clone(),
             saved_secret: state
                 .vault
@@ -226,6 +255,7 @@ pub fn add_host(
             agent_forwarding: false,
             identity_id: None,
             team: false,
+            link: Default::default(),
         });
         state.save(&data)?;
     }
@@ -282,6 +312,7 @@ pub fn import_ssh_config(state: &Arc<AppState>) -> Result<ImportResult, String> 
                 agent_forwarding: false,
                 identity_id: None,
                 team: false,
+                link: Default::default(),
             });
             added += 1;
         }
@@ -514,6 +545,9 @@ async fn connect_host_once(
             .cloned();
         (saved, trusted)
     };
+    if saved.link.kind() != "ssh" {
+        return connect_stream_host(state, &saved, &mode, cols, rows).await;
+    }
     let host_id = format!("{}:{}", saved.profile.host, saved.profile.port);
     let kind = if auth.kind == "password" {
         "password"
@@ -714,7 +748,7 @@ async fn connect_host_once(
         .await
         .map_err(|e| e.to_string())?;
     let session_id = uuid::Uuid::new_v4().to_string();
-    let writer = Arc::new(shell.writer);
+    let writer = stream::TermWriter::Ssh(Arc::new(shell.writer));
     if let Some(command) = saved
         .startup_command
         .as_deref()
@@ -728,7 +762,7 @@ async fn connect_host_once(
         session_id.clone(),
         Terminal {
             writer,
-            connection: Arc::new(conn),
+            connection: Some(Arc::new(conn)),
             sftp: Arc::new(tokio::sync::Mutex::new(None)),
             forwards: Arc::new(Mutex::new(Vec::new())),
             _jump: jump_conn,
@@ -767,6 +801,70 @@ async fn connect_host_once(
     });
     Ok(ConnectOutcome::TerminalOpened {
         fingerprint,
+        session_id,
+    })
+}
+
+/// Telnet, serial and Mosh hosts: no host key and no SSH login; the
+/// terminal talks to the connection through a stream task.
+async fn connect_stream_host(
+    state: &Arc<AppState>,
+    saved: &SavedHost,
+    mode: &str,
+    cols: Option<u32>,
+    rows: Option<u32>,
+) -> Result<ConnectOutcome, String> {
+    let cols = cols.unwrap_or(80).clamp(10, 1000) as u16;
+    let rows = rows.unwrap_or(24).clamp(4, 500) as u16;
+    let start: Box<
+        dyn FnOnce(tokio::sync::mpsc::UnboundedReceiver<stream::StreamCmd>, stream::StreamEvents)
+            + Send,
+    > = match saved.link.kind() {
+        "telnet" => {
+            let tcp = telnet::connect(&saved.profile.host, saved.profile.port).await?;
+            Box::new(move |rx, events| {
+                tokio::spawn(telnet::run(tcp, cols, rows, rx, events));
+            })
+        }
+        other => {
+            return Err(format!(
+                "{other} connections are not available in this version"
+            ))
+        }
+    };
+    {
+        let mut data = state.data.lock().map_err(|_| "busy")?;
+        library::record_connection(&mut data, saved);
+        state.save(&data)?;
+    }
+    if mode != "terminal" {
+        // A test connect: reaching the host is the whole check.
+        return Ok(ConnectOutcome::Connected {
+            fingerprint: String::new(),
+            output: String::new(),
+        });
+    }
+    let (writer, rx) = stream::StreamWriter::new();
+    let session_id = uuid::Uuid::new_v4().to_string();
+    state.terminals.lock().map_err(|_| "busy")?.insert(
+        session_id.clone(),
+        Terminal {
+            writer: stream::TermWriter::Stream(Arc::new(writer)),
+            connection: None,
+            sftp: Arc::new(tokio::sync::Mutex::new(None)),
+            forwards: Arc::new(Mutex::new(Vec::new())),
+            _jump: None,
+        },
+    );
+    start(
+        rx,
+        stream::StreamEvents {
+            state: state.clone(),
+            session_id: session_id.clone(),
+        },
+    );
+    Ok(ConnectOutcome::TerminalOpened {
+        fingerprint: String::new(),
         session_id,
     })
 }
@@ -1117,6 +1215,7 @@ pub async fn forward_start(
         let t = terminals.get(&session_id).ok_or("terminal closed")?;
         (t.connection.clone(), t.forwards.clone())
     };
+    let connection = connection.ok_or(NOT_SSH)?;
     let forward = spec.start(&connection).await?;
     let mut list = forwards.lock().map_err(|_| "busy")?;
     list.push(forward);
@@ -1154,7 +1253,10 @@ pub fn forward_stop(
     Ok(forward_views(&list))
 }
 
-fn terminal_writer(state: &AppState, session_id: &str) -> Result<Arc<ShellWriter>, String> {
+/// Files and tunnels need an SSH connection.
+const NOT_SSH: &str = "files and tunnels work only on SSH terminals";
+
+fn terminal_writer(state: &AppState, session_id: &str) -> Result<stream::TermWriter, String> {
     state
         .terminals
         .lock()
@@ -1170,10 +1272,7 @@ pub async fn terminal_write(
     data: String,
 ) -> Result<(), String> {
     let writer = terminal_writer(state, &session_id)?;
-    writer
-        .write(data.as_bytes())
-        .await
-        .map_err(|e| e.to_string())
+    writer.write(data.as_bytes()).await
 }
 
 pub async fn terminal_resize(
@@ -1186,7 +1285,6 @@ pub async fn terminal_resize(
     writer
         .resize(cols.clamp(10, 1000), rows.clamp(4, 500))
         .await
-        .map_err(|e| e.to_string())
 }
 
 pub async fn terminal_close(state: &Arc<AppState>, session_id: String) -> Result<(), String> {
@@ -1209,6 +1307,7 @@ async fn sftp_for(state: &AppState, session_id: &str) -> Result<Arc<Sftp>, Strin
         let t = terminals.get(session_id).ok_or("terminal closed")?;
         (t.connection.clone(), t.sftp.clone())
     };
+    let connection = connection.ok_or(NOT_SSH)?;
     let mut slot = slot.lock().await;
     if let Some(sftp) = slot.as_ref() {
         return Ok(sftp.clone());

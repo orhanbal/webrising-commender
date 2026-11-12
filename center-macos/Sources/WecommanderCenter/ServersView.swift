@@ -1007,12 +1007,22 @@ struct EditHostSheet: View {
     @State private var startup = ""
     @State private var envText = ""
     @State private var agentForwarding = false
+    @State private var kind = "ssh"
     @State private var error: String?
 
     var body: some View {
         Form {
+            Picker("Bağlantı türü", selection: $kind) {
+                Text("SSH").tag("ssh")
+                Text("Telnet").tag("telnet")
+            }
+            .onChange(of: kind) { k in
+                if k != "ssh", port == "22" { port = "23" }
+                if k == "ssh", port == "23" { port = "22" }
+            }
             TextField("Ad", text: $label, prompt: Text("Prod web"))
             TextField("Adres", text: $address, prompt: Text("sunucu.ornek.com"))
+            if kind == "ssh" {
             Picker("Kimlik", selection: $identityId) {
                 Text("Yok (bu sunucunun kendi kullanıcısı ve giriş bilgisi)").tag("")
                 ForEach(identities) { Text("\($0.label) (\($0.user))").tag($0.id) }
@@ -1021,8 +1031,10 @@ struct EditHostSheet: View {
                 if let i = identities.first(where: { $0.id == id }) { user = i.user }
             }
             TextField("Kullanıcı", text: $user).disabled(!identityId.isEmpty)
+            }
             TextField("Port", text: $port)
             TextField("Grup (isteğe bağlı)", text: $group, prompt: Text("Production"))
+            if kind == "ssh" {
             if identityId.isEmpty {
                 Picker("Giriş", selection: $authKind) {
                     Text("Özel anahtar").tag("key")
@@ -1047,6 +1059,7 @@ struct EditHostSheet: View {
                 Toggle("SSH agent yönlendirme (ssh -A)", isOn: $agentForwarding)
                     .help("Yalnız güvendiğin sunucularda aç: sunucuda yönetici yetkisi olan biri, bağlantı açıkken agent'taki anahtarlarını kullanabilir.")
             }
+            }
             if let error { Text(error).foregroundStyle(.red).font(.callout) }
         }
         .formStyle(.grouped)
@@ -1066,6 +1079,7 @@ struct EditHostSheet: View {
             startup = host.startupCommand ?? ""
             envText = (host.env ?? [:]).sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "\n")
             agentForwarding = host.agentForwarding ?? false
+            kind = host.`protocol` ?? "ssh"
         }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Vazgeç") { dismiss() } }
@@ -1073,7 +1087,8 @@ struct EditHostSheet: View {
                 Button("Kaydet") {
                     Task {
                         do {
-                            let jump = jumpId.isEmpty ? nil : jumpId
+                            if kind != "ssh", user.trimmingCharacters(in: .whitespaces).isEmpty { user = kind }
+                            let jump = jumpId.isEmpty || kind != "ssh" ? nil : jumpId
                             let portNumber = Int(port) ?? 0
                             if let host {
                                 try await model.updateHost(host, label: label, address: address, port: portNumber, user: user,
@@ -1093,6 +1108,10 @@ struct EditHostSheet: View {
                             if identity == nil, let s = saved, s.keyId != chosen { try await model.setKey(s, keyId: chosen) }
                             if let s = saved, s.identityId != identity { try await model.setIdentity(s, identityId: identity) }
                             saved = saved.flatMap { h in model.hosts.first { $0.id == h.id } }
+                            if let s = saved, (s.`protocol` ?? "ssh") != kind {
+                                try await model.setConnection(s, protocol: kind)
+                                saved = model.hosts.first { $0.id == s.id }
+                            }
                             var env: [String: String] = [:]
                             for line in envText.split(whereSeparator: \.isNewline) {
                                 let t = line.trimmingCharacters(in: .whitespaces)

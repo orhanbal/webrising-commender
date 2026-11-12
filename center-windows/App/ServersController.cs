@@ -340,6 +340,13 @@ public sealed class ServersController : IDisposable
     }
 
     /// <summary>Terminal options of a host: startup command, environment variables, agent forwarding.</summary>
+    /// <summary>"ssh", "telnet", "serial" (with its settings) or "mosh".</summary>
+    public async Task SetHostConnection(CoreHost host, string protocol, SerialSettings? serial = null)
+    {
+        Hosts = await Core.CallAsync<List<CoreHost>>("hosts.setConnection", new { id = host.Id, protocol, serial });
+        Changed?.Invoke();
+    }
+
     public async Task SetHostOptions(CoreHost host, string? startupCommand, Dictionary<string, string> env, bool agentForwarding)
     {
         Hosts = await Core.CallAsync<List<CoreHost>>("hosts.setOptions", new { id = host.Id, startupCommand, env, agentForwarding });

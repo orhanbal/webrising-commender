@@ -187,6 +187,11 @@ final class ServersModel: ObservableObject {
 
     /// Uses the saved credential or key file when there is one, else asks.
     func open(_ host: CoreHost) {
+        // Telnet, serial and Mosh hosts have no SSH login to ask for.
+        if !host.isSsh {
+            Task { await run(host, auth: ["kind": "password", "secret": "", "remember": false], accept: nil) }
+            return
+        }
         // Key hosts are tried first: the core also tries this Mac's ~/.ssh keys.
         if host.savedSecret || host.authKind == "key" {
             Task { await run(host, auth: ["kind": host.authKind, "secret": "", "remember": false], accept: nil) }
@@ -496,6 +501,18 @@ final class ServersModel: ObservableObject {
         var params: [String: Any] = ["id": host.id]
         if let identityId { params["identityId"] = identityId }
         hosts = try await core.call("hosts.setIdentity", params, as: [CoreHost].self)
+        onChange?()
+    }
+
+    /// "ssh", "telnet", "serial" (with its settings) or "mosh".
+    func setConnection(_ host: CoreHost, protocol kind: String, serial: SerialSettings? = nil) async throws {
+        guard let core else { throw CoreClient.Failure.stopped }
+        var params: [String: Any] = ["id": host.id, "protocol": kind]
+        if let serial {
+            params["serial"] = ["device": serial.device, "baud": serial.baud, "dataBits": serial.dataBits,
+                                "parity": serial.parity, "stopBits": serial.stopBits, "flow": serial.flow]
+        }
+        hosts = try await core.call("hosts.setConnection", params, as: [CoreHost].self)
         onChange?()
     }
 

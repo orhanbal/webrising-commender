@@ -193,6 +193,15 @@ struct TunnelSave {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct HostConnection {
+    id: String,
+    #[serde(default)]
+    protocol: String,
+    #[serde(default)]
+    serial: Option<core::store::SerialSettings>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct HostOptions {
     id: String,
     #[serde(default)]
@@ -413,6 +422,12 @@ async fn dispatch(
                 h.startup_command,
                 h.env,
                 h.agent_forwarding,
+            )?)
+        }
+        "hosts.setConnection" => {
+            let h: HostConnection = p(params)?;
+            ok(core::library::host_set_connection(
+                state, h.id, h.protocol, h.serial,
             )?)
         }
         "identities.list" => ok(core::library::identities_list(state)?),

@@ -937,6 +937,14 @@ public sealed class ServersWindow : Window
 
     private async Task EditHost(CoreHost? existing)
     {
+        var protocols = new[] { ("ssh", "SSH"), ("telnet", "Telnet") };
+        var protocol = new ComboBox
+        {
+            Header = "Bağlantı türü",
+            ItemsSource = protocols.Select(p => p.Item2).ToList(),
+            SelectedIndex = Math.Max(0, Array.FindIndex(protocols, p => p.Item1 == (existing?.Protocol ?? "ssh"))),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
         var label = new TextBox { Header = "Ad", PlaceholderText = "Prod web", Text = existing?.Label ?? "" };
         var host = new TextBox { Header = "Adres", PlaceholderText = "sunucu.ornek.com", Text = existing?.Host ?? "" };
         var user = new TextBox { Header = "Kullanıcı", Text = existing?.User ?? "" };
@@ -990,15 +998,29 @@ public sealed class ServersWindow : Window
         foreach (var e in new UIElement[] { startup, envText, agent }) optionsPanel.Children.Add(e);
         terminalOptions.Content = optionsPanel;
         var error = new TextBlock { Foreground = new SolidColorBrush(Microsoft.UI.Colors.IndianRed), TextWrapping = TextWrapping.Wrap };
+        // Telnet logs in inside the terminal: no user, key, identity or jump host here.
+        void SyncProtocol()
+        {
+            var ssh = protocol.SelectedIndex <= 0;
+            foreach (var e in new UIElement[] { user, identity, kind, keyChoice, jump, terminalOptions })
+                e.Visibility = ssh ? Visibility.Visible : Visibility.Collapsed;
+            if (!ssh && port.Value == 22) port.Value = 23;
+            if (ssh && port.Value == 23) port.Value = 22;
+        }
+        protocol.SelectionChanged += (_, _) => SyncProtocol();
+        SyncProtocol();
         var panel = new StackPanel { Spacing = 10, MinWidth = 400 };
-        foreach (var e in new UIElement[] { label, host, user, port, group, identity, kind, keyChoice, jump, terminalOptions, error }) panel.Children.Add(e);
+        foreach (var e in new UIElement[] { protocol, label, host, user, port, group, identity, kind, keyChoice, jump, terminalOptions, error }) panel.Children.Add(e);
         var dialog = Dialog(existing is null ? "Yeni sunucu" : "Sunucuyu düzenle", new ScrollViewer { Content = panel, MaxHeight = 560 }, "Kaydet");
         dialog.PrimaryButtonClick += async (d, args) =>
         {
             var deferral = args.GetDeferral();
             try
             {
-                var jumpId = jump.SelectedIndex > 0 ? candidates[jump.SelectedIndex - 1].Id : null;
+                var chosen = protocols[Math.Max(0, protocol.SelectedIndex)].Item1;
+                var ssh = chosen == "ssh";
+                if (!ssh && string.IsNullOrWhiteSpace(user.Text)) user.Text = chosen;
+                var jumpId = ssh && jump.SelectedIndex > 0 ? candidates[jump.SelectedIndex - 1].Id : null;
                 var keyId = keyChoice.SelectedIndex > 0 ? appKeys[keyChoice.SelectedIndex - 1].Id : null;
                 var authKind = keyId is not null ? "key" : kind.SelectedIndex == 1 ? "password" : "key";
                 if (existing is null)
@@ -1014,6 +1036,11 @@ public sealed class ServersWindow : Window
                     await _c.UpdateHost(existing, label.Text.Trim(), host.Text.Trim(), (int)port.Value, user.Text.Trim(), authKind, jumpId, group.Text.Trim());
                 }
                 var saved = existing is null ? _c.Hosts.LastOrDefault() : _c.Hosts.FirstOrDefault(h => h.Id == existing.Id);
+                if (saved is not null && (saved.Protocol ?? "ssh") != chosen)
+                {
+                    await _c.SetHostConnection(saved, chosen);
+                    saved = _c.Hosts.FirstOrDefault(h => h.Id == saved.Id) ?? saved;
+                }
                 var identityId = identity.SelectedIndex > 0 ? identities[identity.SelectedIndex - 1].Id : null;
                 if (identityId is null && saved is not null && saved.KeyId != keyId) await _c.SetHostKey(saved, keyId);
                 if (saved is not null && saved.IdentityId != identityId) await _c.SetHostIdentity(saved, identityId);
@@ -1088,6 +1115,12 @@ public sealed class ServersWindow : Window
 
     private async Task OpenHostOnce(CoreHost host)
     {
+        // Telnet, serial and Mosh hosts have no SSH login to ask for.
+        if (!host.IsSsh)
+        {
+            await Connect(host, new { kind = "password", secret = "", remember = false }, null, askOnCredentialError: false);
+            return;
+        }
         // Key hosts are tried first: the core also tries this computer's ~/.ssh keys.
         if (host.CanConnectSilently || host.AuthKind == "key")
         {

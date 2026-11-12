@@ -47,6 +47,59 @@ pub struct SavedHost {
     /// Shared with the team (A22): synced through the team library.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub team: bool,
+    /// How the app reaches the host: SSH unless it says otherwise.
+    #[serde(flatten)]
+    pub link: Link,
+}
+
+/// The connection kind of a host: SSH (empty), "telnet", "serial" or "mosh".
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Link {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub protocol: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub serial: Option<SerialSettings>,
+}
+
+impl Link {
+    /// "ssh", "telnet", "serial" or "mosh".
+    pub fn kind(&self) -> &str {
+        if self.protocol.is_empty() {
+            "ssh"
+        } else {
+            &self.protocol
+        }
+    }
+}
+
+/// A serial port and its line settings.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SerialSettings {
+    /// COM3, /dev/ttyUSB0, /dev/cu.usbserial-1410 ...
+    pub device: String,
+    pub baud: u32,
+    #[serde(default = "eight")]
+    pub data_bits: u8,
+    /// "none", "even" or "odd".
+    #[serde(default = "none")]
+    pub parity: String,
+    #[serde(default = "one")]
+    pub stop_bits: u8,
+    /// "none", "hardware" (RTS/CTS) or "software" (XON/XOFF).
+    #[serde(default = "none")]
+    pub flow: String,
+}
+
+fn eight() -> u8 {
+    8
+}
+fn one() -> u8 {
+    1
+}
+fn none() -> String {
+    "none".into()
 }
 
 /// A user name with a credential, shared by many hosts ("deploy with the
@@ -226,6 +279,7 @@ mod tests {
             agent_forwarding: false,
             identity_id: None,
             team: false,
+            link: Default::default(),
         });
         data.known_hosts
             .insert("srv.example.com:22".into(), "SHA256:x".into());

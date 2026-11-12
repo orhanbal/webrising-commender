@@ -28,6 +28,15 @@ final class HostLibraryTests: XCTestCase {
         XCTAssertEqual(keys[0].publicKey, "ssh-ed25519 AAAA Mac")
     }
 
+    func testConnectionTypesDecode() throws {
+        let ssh = try JSONDecoder().decode(CoreHost.self, from: Data(#"{"id":"a","label":"Web","target":"t","authKind":"key","savedSecret":false}"#.utf8))
+        XCTAssertTrue(ssh.isSsh)
+        let telnet = try JSONDecoder().decode(CoreHost.self, from: Data(#"{"id":"b","label":"Router","target":"telnet://10.0.0.1","authKind":"password","savedSecret":false,"protocol":"telnet"}"#.utf8))
+        XCTAssertFalse(telnet.isSsh)
+        let serial = try JSONDecoder().decode(CoreHost.self, from: Data(#"{"id":"c","label":"Switch","target":"COM3","authKind":"password","savedSecret":false,"protocol":"serial","serial":{"device":"COM3","baud":9600,"dataBits":8,"parity":"none","stopBits":1,"flow":"none"}}"#.utf8))
+        XCTAssertEqual(serial.serial?.baud, 9600)
+    }
+
     func testParityModelsDecode() throws {
         let host = try JSONDecoder().decode(CoreHost.self, from: Data(#"{"id":"a","label":"Web","target":"t","authKind":"key","savedSecret":true,"startupCommand":"cd /srv","env":{"LANG":"tr_TR.UTF-8"},"agentForwarding":true,"identityId":"i"}"#.utf8))
         XCTAssertEqual(host.startupCommand, "cd /srv")
