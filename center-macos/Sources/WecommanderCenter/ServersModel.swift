@@ -187,6 +187,11 @@ final class ServersModel: ObservableObject {
 
     /// Uses the saved credential or key file when there is one, else asks.
     func open(_ host: CoreHost) {
+        // Telnet, serial and Mosh hosts have no SSH login to ask for.
+        if !host.isSsh {
+            Task { await run(host, auth: ["kind": "password", "secret": "", "remember": false], accept: nil) }
+            return
+        }
         // Key hosts are tried first: the core also tries this Mac's ~/.ssh keys.
         if host.savedSecret || host.authKind == "key" {
             Task { await run(host, auth: ["kind": host.authKind, "secret": "", "remember": false], accept: nil) }
@@ -499,9 +504,45 @@ final class ServersModel: ObservableObject {
         onChange?()
     }
 
-    func setOptions(_ host: CoreHost, startupCommand: String?, env: [String: String], agentForwarding: Bool) async throws {
+    /// Commands typed in this host's terminals (autocomplete), newest last.
+    func commands(hostId: String) async -> [String] {
+        guard let core else { return [] }
+        return (try? await core.call("commands.list", ["hostId": hostId], as: [String].self)) ?? []
+    }
+
+    /// Keeps a typed command; the core skips answers to password prompts.
+    func addCommand(hostId: String, command: String, prompt: String) {
+        guard let core else { return }
+        Task { _ = try? await core.call("commands.add", ["hostId": hostId, "command": command, "prompt": prompt], as: EmptyReply.self) }
+    }
+
+    /// The folder session logs are written to.
+    func logsFolder() async -> URL? {
+        guard let core, let path = try? await core.call("logs.dir", [:], as: String.self) else { return nil }
+        return URL(fileURLWithPath: path, isDirectory: true)
+    }
+
+    /// This Mac's serial ports (/dev/cu.usbserial-1410 ...).
+    func serialPorts() async -> [String] {
+        guard let core else { return [] }
+        return (try? await core.call("serial.ports", [:], as: [String].self)) ?? []
+    }
+
+    /// "ssh", "telnet", "serial" (with its settings) or "mosh".
+    func setConnection(_ host: CoreHost, protocol kind: String, serial: SerialSettings? = nil) async throws {
         guard let core else { throw CoreClient.Failure.stopped }
-        var params: [String: Any] = ["id": host.id, "env": env, "agentForwarding": agentForwarding]
+        var params: [String: Any] = ["id": host.id, "protocol": kind]
+        if let serial {
+            params["serial"] = ["device": serial.device, "baud": serial.baud, "dataBits": serial.dataBits,
+                                "parity": serial.parity, "stopBits": serial.stopBits, "flow": serial.flow]
+        }
+        hosts = try await core.call("hosts.setConnection", params, as: [CoreHost].self)
+        onChange?()
+    }
+
+    func setOptions(_ host: CoreHost, startupCommand: String?, env: [String: String], agentForwarding: Bool, sessionLog: Bool) async throws {
+        guard let core else { throw CoreClient.Failure.stopped }
+        var params: [String: Any] = ["id": host.id, "env": env, "agentForwarding": agentForwarding, "sessionLog": sessionLog]
         if let startupCommand, !startupCommand.isEmpty { params["startupCommand"] = startupCommand }
         hosts = try await core.call("hosts.setOptions", params, as: [CoreHost].self)
         onChange?()
@@ -745,4 +786,10 @@ final class ServersModel: ObservableObject {
         sessions.append(session)
         selection = sid
     }
+}
+
+
+/// A core reply with no content worth reading.
+struct EmptyReply: Decodable {
+    init(from decoder: Decoder) throws {}
 }

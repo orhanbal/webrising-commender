@@ -184,6 +184,17 @@ public static class CoreText
         if (text.Contains("no saved credential")) return "Bu sunucu için kayıtlı giriş bilgisi yok; bir kez gir.";
         if (text.Contains("authentication failed")) return AuthFailed(text);
         if (text.Contains("private key could not be used")) return "Özel anahtar okunamadı (biçim veya anahtar parolası yanlış).";
+        if (text.Contains("work only on SSH terminals")) return "Dosyalar ve tüneller yalnız SSH bağlantılarında kullanılabilir.";
+        if (text.StartsWith("telnet: could not connect")) return "Telnet bağlantısı kurulamadı; adresi ve portu kontrol et.";
+        if (text.Contains("not available in this version")) return "Bu bağlantı türü bu sürümde henüz yok.";
+        if (text.Contains("mosh-server is not installed")) return "Sunucuda mosh-server kurulu değil. Ubuntu/Debian'da: sudo apt install mosh";
+        if (text.Contains("mosh does not work through a jump host")) return "Mosh atlama sunucusu üzerinden çalışmaz; bu sunucu için SSH kullan.";
+        if (text.StartsWith("mosh-server did not start")) return "Sunucuda mosh-server başlatılamadı: " + text["mosh-server did not start:".Length..].Trim();
+        if (text.StartsWith("mosh: ")) return "Mosh için sunucuya UDP ile ulaşılamadı. Güvenlik duvarında UDP 60000-61000 açık olmalı.";
+        if (text.StartsWith("serial: could not open"))
+            return "Seri port açılamadı. Kablonun takılı olduğunu ve portu başka bir programın kullanmadığını kontrol et.";
+        if (text.Contains("invalid serial line settings")) return "Seri port ayarları geçersiz (hız, veri bitleri, eşlik ya da durdurma bitleri).";
+        if (text.Contains("invalid serial port") || text.Contains("serial port settings are missing")) return "Seri portu seç ya da yaz (ör. COM3).";
         if (text.Contains("timed out")) return "Sunucuya ulaşılamadı (zaman aşımı). Sunucu kapalı olabilir ya da kısa sürede çok sayıda başarısız giriş yüzünden bu bilgisayarı geçici olarak engellemiş olabilir (ör. fail2ban); birkaç dakika sonra tekrar dene.";
         if (text.Contains("did not start SFTP")) return "Bu sunucu SFTP'yi açmadı (sshd_config içinde 'Subsystem sftp' olmalı).";
         if (text.StartsWith("key file ")) return "Anahtar dosyası okunamadı: " + text["key file ".Length..];
@@ -220,8 +231,11 @@ public static class CoreText
 public sealed record CoreHost(string Id, string Label, string Target, string AuthKind, bool SavedSecret,
     string? KeyPath, string? JumpId, string? TrustedKey, string? Group = null, string User = "", string Host = "", int Port = 22,
     string? KeyId = null, string? StartupCommand = null, Dictionary<string, string>? Env = null,
-    bool AgentForwarding = false, string? IdentityId = null, bool Team = false)
+    bool AgentForwarding = false, string? IdentityId = null, bool Team = false,
+    string Protocol = "ssh", SerialSettings? Serial = null, bool SessionLog = false)
 {
+    /// <summary>Logs in with SSH (SSH and Mosh hosts); Telnet and serial hosts open straight away.</summary>
+    public bool IsSsh => Protocol is "ssh" or "mosh" or "" or null;
     /// <summary>Hosts without a group are listed under this name.</summary>
     public const string NoGroup = "Gruplanmamış";
     public string GroupName => string.IsNullOrWhiteSpace(Group) ? NoGroup : Group!;
@@ -266,6 +280,9 @@ public sealed record KnownHost(string Target, string Fingerprint, List<string> L
 public sealed record Snippet(string Id, string Label, string Command, bool Team = false);
 
 /// <summary>A key made or imported in the app; the private half is in the OS keyring.</summary>
+/// <summary>A serial port and its line settings.</summary>
+public sealed record SerialSettings(string Device, int Baud, int DataBits = 8, string Parity = "none", int StopBits = 1, string Flow = "none");
+
 public sealed record KeyMeta(string Id, string Label, string Algorithm, string Fingerprint, string PublicKey, long Created);
 
 public sealed record HistoryEntry(string HostId, string Label, string Target, long At)

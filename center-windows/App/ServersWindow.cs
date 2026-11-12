@@ -469,8 +469,11 @@ public sealed class ServersWindow : Window
             settings.TerminalFontSize = (int)Math.Clamp(e.NewValue, 8, 32);
             ApplyTerminalSettings();
         };
-        var theme = new RadioButtons { Header = "Terminal teması", ItemsSource = new[] { "Koyu", "Açık" }, SelectedIndex = settings.TerminalTheme == "light" ? 1 : 0 };
-        theme.SelectionChanged += (_, _) => { settings.TerminalTheme = theme.SelectedIndex == 1 ? "light" : "dark"; ApplyTerminalSettings(); };
+        var themes = new[] { ("dark", "Koyu"), ("light", "Açık"), ("solarized-dark", "Solarized koyu"), ("solarized-light", "Solarized açık"),
+            ("nord", "Nord"), ("gruvbox", "Gruvbox"), ("monokai", "Monokai"), ("dracula", "Dracula") };
+        var theme = new ComboBox { Header = "Terminal teması", ItemsSource = themes.Select(t => t.Item2).ToList(), MinWidth = 220,
+            SelectedIndex = Math.Max(0, Array.FindIndex(themes, t => t.Item1 == settings.TerminalTheme)) };
+        theme.SelectionChanged += (_, _) => { settings.TerminalTheme = themes[Math.Max(0, theme.SelectedIndex)].Item1; ApplyTerminalSettings(); };
         var keys = new TextBlock
         {
             TextWrapping = TextWrapping.Wrap,
@@ -496,7 +499,13 @@ public sealed class ServersWindow : Window
         var teamPanel = new StackPanel { Spacing = 8 };
         RenderTeam(teamPanel);
         var body = new StackPanel { Spacing = 18, MaxWidth = 640, HorizontalAlignment = HorizontalAlignment.Left };
-        foreach (var e in new UIElement[] { font, theme, keys, syncTitle, syncPanel, teamTitle, teamPanel, backupTitle, backupHelp, backupRow, center }) body.Children.Add(e);
+        var logsButton = ActionButton("Oturum kayıtları klasörünü aç", Symbol.Folder, async () =>
+        {
+            if (await _c.LogsFolder() is not { } folder) { Show("Kayıt klasörü bulunamadı.", InfoBarSeverity.Warning); return; }
+            Directory.CreateDirectory(folder);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", "\"" + folder + "\"") { UseShellExecute = true });
+        });
+        foreach (var e in new UIElement[] { font, theme, keys, logsButton, syncTitle, syncPanel, teamTitle, teamPanel, backupTitle, backupHelp, backupRow, center }) body.Children.Add(e);
         SetPage(Page("Ayarlar", "Terminal görünümü; değişiklikler açık terminallere hemen uygulanır.", new ScrollViewer { Content = body }));
     }
 
@@ -937,6 +946,14 @@ public sealed class ServersWindow : Window
 
     private async Task EditHost(CoreHost? existing)
     {
+        var protocols = new[] { ("ssh", "SSH"), ("mosh", "Mosh (SSH ile giriş, UDP ile kesintisiz)"), ("telnet", "Telnet"), ("serial", "Seri port") };
+        var protocol = new ComboBox
+        {
+            Header = "Bağlantı türü",
+            ItemsSource = protocols.Select(p => p.Item2).ToList(),
+            SelectedIndex = Math.Max(0, Array.FindIndex(protocols, p => p.Item1 == (existing?.Protocol ?? "ssh"))),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
         var label = new TextBox { Header = "Ad", PlaceholderText = "Prod web", Text = existing?.Label ?? "" };
         var host = new TextBox { Header = "Adres", PlaceholderText = "sunucu.ornek.com", Text = existing?.Host ?? "" };
         var user = new TextBox { Header = "Kullanıcı", Text = existing?.User ?? "" };
@@ -979,26 +996,72 @@ public sealed class ServersWindow : Window
         };
         var agent = new CheckBox { Content = "SSH agent yönlendirme (ssh -A): sunucu, bu bilgisayardaki ssh-agent anahtarlarını kullanabilsin", IsChecked = existing?.AgentForwarding == true };
         ToolTipService.SetToolTip(agent, "Yalnız güvendiğin sunucularda aç: sunucuda yönetici yetkisi olan biri, bağlantı açıkken agent'taki anahtarlarını kullanabilir.");
+        var sessionLog = new CheckBox { Content = "Oturumu kaydet: terminalde görünenler bir metin dosyasına yazılır (Ayarlar → Oturum kayıtları)", IsChecked = existing?.SessionLog == true };
         var terminalOptions = new Expander
         {
             Header = "Terminal seçenekleri",
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
-            IsExpanded = !string.IsNullOrEmpty(existing?.StartupCommand) || existing?.Env is { Count: > 0 } || existing?.AgentForwarding == true,
+            IsExpanded = !string.IsNullOrEmpty(existing?.StartupCommand) || existing?.Env is { Count: > 0 } || existing?.AgentForwarding == true || existing?.SessionLog == true,
         };
         var optionsPanel = new StackPanel { Spacing = 10 };
-        foreach (var e in new UIElement[] { startup, envText, agent }) optionsPanel.Children.Add(e);
+        foreach (var e in new UIElement[] { startup, envText, agent, sessionLog }) optionsPanel.Children.Add(e);
         terminalOptions.Content = optionsPanel;
         var error = new TextBlock { Foreground = new SolidColorBrush(Microsoft.UI.Colors.IndianRed), TextWrapping = TextWrapping.Wrap };
+        // Serial line settings.
+        var serialNow = existing?.Serial;
+        var serialDevice = new ComboBox { Header = "Seri port", IsEditable = true, ItemsSource = await _c.SerialPorts(), Text = serialNow?.Device ?? "", PlaceholderText = "COM3", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var bauds = new List<string> { "1200", "2400", "4800", "9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600" };
+        var baud = new ComboBox { Header = "Hız (baud)", IsEditable = true, ItemsSource = bauds, Text = (serialNow?.Baud ?? 9600).ToString(), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var dataBits = new ComboBox { Header = "Veri bitleri", ItemsSource = new[] { "8", "7", "6", "5" }, SelectedItem = (serialNow?.DataBits ?? 8).ToString(), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var parities = new[] { ("none", "Yok"), ("even", "Çift"), ("odd", "Tek") };
+        var parity = new ComboBox { Header = "Eşlik", ItemsSource = parities.Select(x => x.Item2).ToList(), SelectedIndex = Math.Max(0, Array.FindIndex(parities, x => x.Item1 == (serialNow?.Parity ?? "none"))), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var stopBits = new ComboBox { Header = "Durdurma bitleri", ItemsSource = new[] { "1", "2" }, SelectedItem = (serialNow?.StopBits ?? 1).ToString(), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var flows = new[] { ("none", "Yok"), ("hardware", "Donanım (RTS/CTS)"), ("software", "Yazılım (XON/XOFF)") };
+        var flow = new ComboBox { Header = "Akış denetimi", ItemsSource = flows.Select(x => x.Item2).ToList(), SelectedIndex = Math.Max(0, Array.FindIndex(flows, x => x.Item1 == (serialNow?.Flow ?? "none"))), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var serialPanel = new StackPanel { Spacing = 10 };
+        foreach (var e in new UIElement[] { serialDevice, baud, dataBits, parity, stopBits, flow }) serialPanel.Children.Add(e);
+        // Telnet logs in inside the terminal; a serial port has no address at all.
+        void SyncProtocol()
+        {
+            var chosenKind = protocols[Math.Max(0, protocol.SelectedIndex)].Item1;
+            // Mosh logs in with SSH, so it keeps the login fields (not the jump host: UDP cannot go through it).
+            var ssh = chosenKind is "ssh" or "mosh";
+            var isSerial = chosenKind == "serial";
+            foreach (var e in new UIElement[] { user, identity, kind, keyChoice, startup, envText, agent })
+                e.Visibility = ssh ? Visibility.Visible : Visibility.Collapsed;
+            jump.Visibility = chosenKind == "ssh" ? Visibility.Visible : Visibility.Collapsed;
+            host.Visibility = port.Visibility = isSerial ? Visibility.Collapsed : Visibility.Visible;
+            serialPanel.Visibility = isSerial ? Visibility.Visible : Visibility.Collapsed;
+            if (chosenKind == "telnet" && port.Value == 22) port.Value = 23;
+            if (ssh && port.Value == 23) port.Value = 22;
+        }
+        protocol.SelectionChanged += (_, _) => SyncProtocol();
+        SyncProtocol();
         var panel = new StackPanel { Spacing = 10, MinWidth = 400 };
-        foreach (var e in new UIElement[] { label, host, user, port, group, identity, kind, keyChoice, jump, terminalOptions, error }) panel.Children.Add(e);
+        foreach (var e in new UIElement[] { protocol, label, host, serialPanel, user, port, group, identity, kind, keyChoice, jump, terminalOptions, error }) panel.Children.Add(e);
         var dialog = Dialog(existing is null ? "Yeni sunucu" : "Sunucuyu düzenle", new ScrollViewer { Content = panel, MaxHeight = 560 }, "Kaydet");
         dialog.PrimaryButtonClick += async (d, args) =>
         {
             var deferral = args.GetDeferral();
             try
             {
-                var jumpId = jump.SelectedIndex > 0 ? candidates[jump.SelectedIndex - 1].Id : null;
+                var chosen = protocols[Math.Max(0, protocol.SelectedIndex)].Item1;
+                var ssh = chosen is "ssh" or "mosh";
+                if (!ssh && string.IsNullOrWhiteSpace(user.Text)) user.Text = chosen;
+                SerialSettings? serialSettings = null;
+                if (chosen == "serial")
+                {
+                    var device = (serialDevice.Text ?? serialDevice.SelectedItem as string ?? "").Trim();
+                    if (device.Length == 0) throw new CoreException("Seri portu seç ya da yaz (ör. COM3).");
+                    if (!int.TryParse((baud.Text ?? baud.SelectedItem as string ?? "").Trim(), out var baudValue)) throw new CoreException("Hız (baud) bir sayı olmalı.");
+                    serialSettings = new SerialSettings(device, baudValue, int.Parse((string)dataBits.SelectedItem), parities[Math.Max(0, parity.SelectedIndex)].Item1,
+                        int.Parse((string)stopBits.SelectedItem), flows[Math.Max(0, flow.SelectedIndex)].Item1);
+                    // The profile still needs an address; the port is the real target.
+                    host.Text = "serial";
+                    port.Value = 1;
+                }
+                var jumpId = chosen == "ssh" && jump.SelectedIndex > 0 ? candidates[jump.SelectedIndex - 1].Id : null;
                 var keyId = keyChoice.SelectedIndex > 0 ? appKeys[keyChoice.SelectedIndex - 1].Id : null;
                 var authKind = keyId is not null ? "key" : kind.SelectedIndex == 1 ? "password" : "key";
                 if (existing is null)
@@ -1014,6 +1077,11 @@ public sealed class ServersWindow : Window
                     await _c.UpdateHost(existing, label.Text.Trim(), host.Text.Trim(), (int)port.Value, user.Text.Trim(), authKind, jumpId, group.Text.Trim());
                 }
                 var saved = existing is null ? _c.Hosts.LastOrDefault() : _c.Hosts.FirstOrDefault(h => h.Id == existing.Id);
+                if (saved is not null && ((saved.Protocol ?? "ssh") != chosen || saved.Serial != serialSettings))
+                {
+                    await _c.SetHostConnection(saved, chosen, serialSettings);
+                    saved = _c.Hosts.FirstOrDefault(h => h.Id == saved.Id) ?? saved;
+                }
                 var identityId = identity.SelectedIndex > 0 ? identities[identity.SelectedIndex - 1].Id : null;
                 if (identityId is null && saved is not null && saved.KeyId != keyId) await _c.SetHostKey(saved, keyId);
                 if (saved is not null && saved.IdentityId != identityId) await _c.SetHostIdentity(saved, identityId);
@@ -1031,8 +1099,9 @@ public sealed class ServersWindow : Window
                     var cmd = startup.Text.Trim();
                     var old = saved.Env ?? new Dictionary<string, string>();
                     var changed = (saved.StartupCommand ?? "") != cmd || saved.AgentForwarding != (agent.IsChecked == true)
+                        || saved.SessionLog != (sessionLog.IsChecked == true)
                         || old.Count != vars.Count || old.Any(kv => !vars.TryGetValue(kv.Key, out var v) || v != kv.Value);
-                    if (changed) await _c.SetHostOptions(saved, cmd.Length == 0 ? null : cmd, vars, agent.IsChecked == true);
+                    if (changed) await _c.SetHostOptions(saved, cmd.Length == 0 ? null : cmd, vars, agent.IsChecked == true, sessionLog.IsChecked == true);
                 }
             }
             catch (CoreException e)
@@ -1088,6 +1157,12 @@ public sealed class ServersWindow : Window
 
     private async Task OpenHostOnce(CoreHost host)
     {
+        // Telnet, serial and Mosh hosts have no SSH login to ask for.
+        if (!host.IsSsh)
+        {
+            await Connect(host, new { kind = "password", secret = "", remember = false }, null, askOnCredentialError: false);
+            return;
+        }
         // Key hosts are tried first: the core also tries this computer's ~/.ssh keys.
         if (host.CanConnectSilently || host.AuthKind == "key")
         {
@@ -1459,7 +1534,7 @@ public sealed class ServersWindow : Window
         {
             if (e.PermissionKind == CoreWebView2PermissionKind.ClipboardRead) e.State = CoreWebView2PermissionState.Allow;
         };
-        core.WebMessageReceived += (_, e) =>
+        core.WebMessageReceived += (sender, e) =>
         {
             JsonObject? m;
             try { m = JsonNode.Parse(e.TryGetWebMessageAsString()) as JsonObject; } catch (JsonException) { return; }
@@ -1470,6 +1545,10 @@ public sealed class ServersWindow : Window
                     tab.Post(TerminalSettingsJson());
                     _c.Resize(tab, (int?)m!["cols"] ?? 100, (int?)m["rows"] ?? 30);
                     tab.Flush();
+                    _ = SendCommands(tab);
+                    break;
+                case "command":
+                    _ = _c.AddCommand(tab.Host.Id, (string?)m!["line"] ?? "", (string?)m["prompt"] ?? "");
                     break;
                 case "input":
                     var input = (string?)m!["data"] ?? "";
@@ -1489,6 +1568,15 @@ public sealed class ServersWindow : Window
             }
         };
         core.Navigate("https://wecommander.terminal/index.html");
+    }
+
+    /// <summary>Autocomplete: this host's commands and the snippets, for the terminal page.</summary>
+    private async Task SendCommands(TerminalTab tab)
+    {
+        if (tab.Guest is not null) return; // a teammate's terminal: not ours to remember
+        var list = await _c.Commands(tab.Host.Id);
+        var snippets = (await _c.Snippets()).Select(s => s.Command.Trim()).Where(c => c.Length > 0).ToList();
+        tab.Post(JsonSerializer.Serialize(new { type = "commands", list, snippets }));
     }
 
     /// <summary>Closes one terminal; the tab goes when its last pane does.</summary>

@@ -746,12 +746,23 @@ struct IdentitySheet: View {
 struct SettingsPage: View {
     @ObservedObject var model: ServersModel
     @AppStorage("terminalFontSize") private var fontSize = 13.0
+    @AppStorage("terminalTheme") private var terminalTheme = "dark"
     @State private var status: String?
 
     var body: some View {
         Form {
             Section("Terminal") {
                 Stepper(value: $fontSize, in: 8...32, step: 1) { Text("Yazı boyutu: \(Int(fontSize))") }
+                Picker("Terminal teması", selection: $terminalTheme) {
+                    ForEach(TerminalTheme.all) { Text($0.name).tag($0.id) }
+                }
+                Button("Oturum kayıtları klasörünü aç") {
+                    Task {
+                        guard let folder = await model.logsFolder() else { return }
+                        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                        NSWorkspace.shared.open(folder)
+                    }
+                }
                 Text("Yeni açılan terminallerde geçerli olur. Terminal kısayolları: ⌘F ara · ⌘G / ⇧⌘G sonraki / önceki · ⌘= / ⌘- yazı boyutu · ⌘0 varsayılan boyut.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Eşitleme (bilgisayarların arasında)") {
@@ -881,12 +892,21 @@ struct TerminalHost: NSViewRepresentable {
 
     func makeNSView(context: Context) -> TerminalView {
         let view = TerminalView(frame: .zero)
-        context.coordinator.shortcuts = TerminalShortcuts(view)
+        let suggest = Autosuggest(view: view)
+        context.coordinator.autosuggest = suggest
+        context.coordinator.shortcuts = TerminalShortcuts(view, onRightArrow: { [weak suggest] in suggest?.accept() ?? false })
+        let hostId = session.host.id
+        suggest.onCommand = { [weak model] command, prompt in model?.addCommand(hostId: hostId, command: command, prompt: prompt) }
+        Task { @MainActor [weak suggest] in
+            let history = await model.commands(hostId: hostId)
+            let snippets = await model.snippets().map { $0.command.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            suggest?.history = history
+            suggest?.snippets = snippets
+        }
         view.terminalDelegate = context.coordinator
         let size = UserDefaults.standard.double(forKey: "terminalFontSize")
         view.font = NSFont.monospacedSystemFont(ofSize: size >= 8 ? size : 13, weight: .regular)
-        view.nativeBackgroundColor = NSColor(red: 0.07, green: 0.07, blue: 0.075, alpha: 1)
-        view.nativeForegroundColor = NSColor(white: 0.9, alpha: 1)
+        TerminalTheme.named(UserDefaults.standard.string(forKey: "terminalTheme") ?? "dark").apply(to: view)
         session.feed = { [weak view] bytes in view?.feed(byteArray: bytes[...]) }
         DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
         return view
@@ -904,6 +924,7 @@ struct TerminalHost: NSViewRepresentable {
         let model: ServersModel
         let session: TerminalSession
         var shortcuts: TerminalShortcuts?
+        var autosuggest: Autosuggest?
         init(model: ServersModel, session: TerminalSession) {
             self.model = model
             self.session = session
@@ -915,6 +936,11 @@ struct TerminalHost: NSViewRepresentable {
         nonisolated func send(source: TerminalView, data: ArraySlice<UInt8>) {
             let bytes = Array(data)
             MainActor.assumeIsolated { model.write(session, bytes[...]) }
+            // Autocomplete follows the line on the next turn, outside this
+            // callback (SwiftTerm may hold the terminal lock here).
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated { self?.autosuggest?.typed(bytes) }
+            }
         }
         nonisolated func setTerminalTitle(source: TerminalView, title: String) {}
         nonisolated func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
@@ -942,12 +968,17 @@ struct TerminalHost: NSViewRepresentable {
 @MainActor
 final class TerminalShortcuts {
     private var monitor: Any?
+    private let onRightArrow: () -> Bool
 
-    init(_ view: TerminalView) {
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak view] event in
+    init(_ view: TerminalView, onRightArrow: @escaping () -> Bool = { false }) {
+        self.onRightArrow = onRightArrow
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak view, weak self] event in
             MainActor.assumeIsolated {
                 guard let view, event.window === view.window,
                       let focused = view.window?.firstResponder as? NSView, focused.isDescendant(of: view) else { return event }
+                // → with an autocomplete suggestion on screen accepts it.
+                let plain = event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty
+                if event.keyCode == 124, plain, self?.onRightArrow() == true { return nil }
                 return TerminalShortcuts.handle(event, in: view) ? nil : event
             }
         }
@@ -1007,12 +1038,53 @@ struct EditHostSheet: View {
     @State private var startup = ""
     @State private var envText = ""
     @State private var agentForwarding = false
+    @State private var kind = "ssh"
+    @State private var sessionLog = false
+    @State private var serialPorts: [String] = []
+    @State private var serialDevice = ""
+    @State private var baud = "9600"
+    @State private var dataBits = 8
+    @State private var parity = "none"
+    @State private var stopBits = 1
+    @State private var flow = "none"
     @State private var error: String?
 
     var body: some View {
         Form {
+            Picker("Bağlantı türü", selection: $kind) {
+                Text("SSH").tag("ssh")
+                Text("Mosh (SSH ile giriş, UDP ile kesintisiz)").tag("mosh")
+                Text("Telnet").tag("telnet")
+                Text("Seri port").tag("serial")
+            }
+            .onChange(of: kind) { k in
+                if k == "telnet", port == "22" { port = "23" }
+                if k == "ssh" || k == "mosh", port == "23" { port = "22" }
+            }
             TextField("Ad", text: $label, prompt: Text("Prod web"))
+            if kind == "serial" {
+                Section("Seri port") {
+                    HStack {
+                        TextField("Port", text: $serialDevice, prompt: Text("/dev/cu.usbserial-1410"))
+                        Menu("Seç") { ForEach(serialPorts, id: \.self) { p in Button(p) { serialDevice = p } } }
+                            .disabled(serialPorts.isEmpty).fixedSize()
+                    }
+                    Picker("Hız (baud)", selection: $baud) {
+                        ForEach(["1200", "2400", "4800", "9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600"], id: \.self) { Text($0).tag($0) }
+                    }
+                    Picker("Veri bitleri", selection: $dataBits) { ForEach([8, 7, 6, 5], id: \.self) { Text("\($0)").tag($0) } }
+                    Picker("Eşlik", selection: $parity) {
+                        Text("Yok").tag("none"); Text("Çift").tag("even"); Text("Tek").tag("odd")
+                    }
+                    Picker("Durdurma bitleri", selection: $stopBits) { Text("1").tag(1); Text("2").tag(2) }
+                    Picker("Akış denetimi", selection: $flow) {
+                        Text("Yok").tag("none"); Text("Donanım (RTS/CTS)").tag("hardware"); Text("Yazılım (XON/XOFF)").tag("software")
+                    }
+                }
+            } else {
             TextField("Adres", text: $address, prompt: Text("sunucu.ornek.com"))
+            }
+            if kind == "ssh" || kind == "mosh" {
             Picker("Kimlik", selection: $identityId) {
                 Text("Yok (bu sunucunun kendi kullanıcısı ve giriş bilgisi)").tag("")
                 ForEach(identities) { Text("\($0.label) (\($0.user))").tag($0.id) }
@@ -1021,8 +1093,10 @@ struct EditHostSheet: View {
                 if let i = identities.first(where: { $0.id == id }) { user = i.user }
             }
             TextField("Kullanıcı", text: $user).disabled(!identityId.isEmpty)
-            TextField("Port", text: $port)
+            }
+            if kind != "serial" { TextField("Port", text: $port) }
             TextField("Grup (isteğe bağlı)", text: $group, prompt: Text("Production"))
+            if kind == "ssh" || kind == "mosh" {
             if identityId.isEmpty {
                 Picker("Giriş", selection: $authKind) {
                     Text("Özel anahtar").tag("key")
@@ -1033,9 +1107,11 @@ struct EditHostSheet: View {
                     ForEach(keys) { Text($0.label).tag($0.id) }
                 }
             }
+            if kind == "ssh" {
             Picker("Atlama sunucusu", selection: $jumpId) {
                 Text("Doğrudan bağlan").tag("")
                 ForEach(model.hosts.filter { $0.id != host?.id }) { Text($0.label).tag($0.id) }
+            }
             }
             Section("Terminal seçenekleri") {
                 TextField("Bağlanınca çalışacak komut", text: $startup, prompt: Text("cd /var/www && git status"))
@@ -1047,11 +1123,14 @@ struct EditHostSheet: View {
                 Toggle("SSH agent yönlendirme (ssh -A)", isOn: $agentForwarding)
                     .help("Yalnız güvendiğin sunucularda aç: sunucuda yönetici yetkisi olan biri, bağlantı açıkken agent'taki anahtarlarını kullanabilir.")
             }
+            }
+            Toggle("Oturumu kaydet", isOn: $sessionLog)
+                .help("Terminalde görünenler bir metin dosyasına yazılır (Ayarlar → Oturum kayıtları).")
             if let error { Text(error).foregroundStyle(.red).font(.callout) }
         }
         .formStyle(.grouped)
         .frame(width: 480)
-        .task { keys = await model.keys(); identities = await model.identities() }
+        .task { keys = await model.keys(); identities = await model.identities(); serialPorts = await model.serialPorts() }
         .onAppear {
             guard let host else { return }
             keyId = host.keyId ?? ""
@@ -1066,6 +1145,12 @@ struct EditHostSheet: View {
             startup = host.startupCommand ?? ""
             envText = (host.env ?? [:]).sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "\n")
             agentForwarding = host.agentForwarding ?? false
+            kind = host.`protocol` ?? "ssh"
+            sessionLog = host.sessionLog ?? false
+            if let serial = host.serial {
+                serialDevice = serial.device; baud = String(serial.baud); dataBits = serial.dataBits
+                parity = serial.parity; stopBits = serial.stopBits; flow = serial.flow
+            }
         }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Vazgeç") { dismiss() } }
@@ -1073,7 +1158,18 @@ struct EditHostSheet: View {
                 Button("Kaydet") {
                     Task {
                         do {
-                            let jump = jumpId.isEmpty ? nil : jumpId
+                            if kind != "ssh", kind != "mosh", user.trimmingCharacters(in: .whitespaces).isEmpty { user = kind }
+                            var serialSettings: SerialSettings?
+                            if kind == "serial" {
+                                let device = serialDevice.trimmingCharacters(in: .whitespaces)
+                                guard !device.isEmpty else { throw CoreClient.Failure.core("Seri portu seç ya da yaz.") }
+                                serialSettings = SerialSettings(device: device, baud: Int(baud) ?? 9600, dataBits: dataBits,
+                                                                parity: parity, stopBits: stopBits, flow: flow)
+                                // The profile still needs an address; the port is the real target.
+                                address = "serial"
+                                port = "1"
+                            }
+                            let jump = jumpId.isEmpty || kind != "ssh" ? nil : jumpId
                             let portNumber = Int(port) ?? 0
                             if let host {
                                 try await model.updateHost(host, label: label, address: address, port: portNumber, user: user,
@@ -1093,6 +1189,10 @@ struct EditHostSheet: View {
                             if identity == nil, let s = saved, s.keyId != chosen { try await model.setKey(s, keyId: chosen) }
                             if let s = saved, s.identityId != identity { try await model.setIdentity(s, identityId: identity) }
                             saved = saved.flatMap { h in model.hosts.first { $0.id == h.id } }
+                            if let s = saved, (s.`protocol` ?? "ssh") != kind || s.serial != serialSettings {
+                                try await model.setConnection(s, protocol: kind, serial: serialSettings)
+                                saved = model.hosts.first { $0.id == s.id }
+                            }
                             var env: [String: String] = [:]
                             for line in envText.split(whereSeparator: \.isNewline) {
                                 let t = line.trimmingCharacters(in: .whitespaces)
@@ -1103,8 +1203,9 @@ struct EditHostSheet: View {
                                 env[String(t[..<eq]).trimmingCharacters(in: .whitespaces)] = String(t[t.index(after: eq)...])
                             }
                             let command = startup.trimmingCharacters(in: .whitespaces)
-                            if let s = saved, (s.startupCommand ?? "") != command || (s.env ?? [:]) != env || (s.agentForwarding ?? false) != agentForwarding {
-                                try await model.setOptions(s, startupCommand: command, env: env, agentForwarding: agentForwarding)
+                            if let s = saved, (s.startupCommand ?? "") != command || (s.env ?? [:]) != env || (s.agentForwarding ?? false) != agentForwarding
+                                || (s.sessionLog ?? false) != sessionLog {
+                                try await model.setOptions(s, startupCommand: command, env: env, agentForwarding: agentForwarding, sessionLog: sessionLog)
                             }
                             dismiss()
                         } catch {

@@ -193,6 +193,37 @@ struct TunnelSave {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct CommandAdd {
+    host_id: String,
+    command: String,
+    /// The screen text just before the command (password prompts are skipped).
+    #[serde(default)]
+    prompt: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CommandHost {
+    host_id: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CommandSuggest {
+    host_id: String,
+    prefix: String,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HostConnection {
+    id: String,
+    #[serde(default)]
+    protocol: String,
+    #[serde(default)]
+    serial: Option<core::store::SerialSettings>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct HostOptions {
     id: String,
     #[serde(default)]
@@ -201,6 +232,8 @@ struct HostOptions {
     env: std::collections::BTreeMap<String, String>,
     #[serde(default)]
     agent_forwarding: bool,
+    #[serde(default)]
+    session_log: bool,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -413,6 +446,17 @@ async fn dispatch(
                 h.startup_command,
                 h.env,
                 h.agent_forwarding,
+                h.session_log,
+            )?)
+        }
+        "serial.ports" => ok(core::serial::ports()),
+        "logs.dir" => ok(core::session_log::dir(state.store.dir())
+            .to_string_lossy()
+            .into_owned()),
+        "hosts.setConnection" => {
+            let h: HostConnection = p(params)?;
+            ok(core::library::host_set_connection(
+                state, h.id, h.protocol, h.serial,
             )?)
         }
         "identities.list" => ok(core::library::identities_list(state)?),
@@ -487,6 +531,29 @@ async fn dispatch(
         "library.import" => {
             let a: ImportArg = p(params)?;
             ok(core::library::library_import(state, a.json)?)
+        }
+        "commands.add" => {
+            let c: CommandAdd = p(params)?;
+            core::commands::add(state, &c.host_id, &c.command, &c.prompt)?;
+            ok(())
+        }
+        "commands.list" => {
+            let c: CommandHost = p(params)?;
+            ok(core::commands::list(state, &c.host_id)?)
+        }
+        "commands.suggest" => {
+            let c: CommandSuggest = p(params)?;
+            ok(core::commands::suggest(
+                state,
+                &c.host_id,
+                &c.prefix,
+                c.limit.unwrap_or(5),
+            )?)
+        }
+        "commands.clear" => {
+            let c: CommandHost = p(params)?;
+            core::commands::clear(state, &c.host_id)?;
+            ok(())
         }
         "history.list" => ok(core::library::history_list(state)?),
         "history.clear" => ok(core::library::history_clear(state)?),

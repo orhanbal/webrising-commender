@@ -487,12 +487,61 @@ pub fn host_set_identity(
 
 /// Terminal options of a host: a command typed when the terminal opens,
 /// environment variables, and SSH agent forwarding.
+/// Sets how host `host_id` is reached: "ssh", "telnet", "serial" (with
+/// its line settings) or "mosh".
+pub fn host_set_connection(
+    state: &Arc<AppState>,
+    host_id: String,
+    protocol: String,
+    serial: Option<crate::store::SerialSettings>,
+) -> Result<Vec<HostView>, String> {
+    let protocol = match protocol.as_str() {
+        "" | "ssh" => String::new(),
+        "telnet" | "serial" | "mosh" => protocol,
+        other => return Err(format!("unknown connection type: {other}")),
+    };
+    let serial = if protocol == "serial" {
+        let s = serial.ok_or("serial port settings are missing")?;
+        let device = s.device.trim().to_owned();
+        if device.is_empty() || device.len() > 200 || device.chars().any(|c| c.is_control()) {
+            return Err("invalid serial port".into());
+        }
+        if !(50..=4_000_000).contains(&s.baud)
+            || !(5..=8).contains(&s.data_bits)
+            || !(1..=2).contains(&s.stop_bits)
+        {
+            return Err("invalid serial line settings".into());
+        }
+        if !["none", "even", "odd"].contains(&s.parity.as_str())
+            || !["none", "hardware", "software"].contains(&s.flow.as_str())
+        {
+            return Err("invalid serial line settings".into());
+        }
+        Some(crate::store::SerialSettings { device, ..s })
+    } else {
+        None
+    };
+    {
+        let mut data = state.data.lock().map_err(|_| "busy")?;
+        let h = data
+            .hosts
+            .iter_mut()
+            .find(|h| h.id == host_id)
+            .ok_or("host not found")?;
+        h.link = crate::store::Link { protocol, serial };
+        state.save(&data)?;
+    }
+    state.changed();
+    host_views(state)
+}
+
 pub fn host_set_options(
     state: &Arc<AppState>,
     host_id: String,
     startup_command: Option<String>,
     env: std::collections::BTreeMap<String, String>,
     agent_forwarding: bool,
+    session_log: bool,
 ) -> Result<Vec<HostView>, String> {
     let startup_command = startup_command
         .map(|c| {
@@ -533,6 +582,7 @@ pub fn host_set_options(
         h.startup_command = startup_command;
         h.env = clean;
         h.agent_forwarding = agent_forwarding;
+        h.session_log = session_log;
         state.save(&data)?;
     }
     state.changed();
@@ -713,6 +763,8 @@ mod tests {
             agent_forwarding: false,
             identity_id: None,
             team: false,
+            link: Default::default(),
+            session_log: false,
         }
     }
 

@@ -13,7 +13,7 @@ let package = Package(
     ],
     dependencies: [
         // Native AppKit terminal view (MIT): the terminal of the Servers window.
-        .package(url: "https://github.com/migueldeicaza/SwiftTerm", from: "1.11.0"),
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm", from: "1.99.3"),
     ],
     targets: [
         .target(name: "CenterCore"),

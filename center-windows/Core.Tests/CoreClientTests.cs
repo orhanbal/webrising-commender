@@ -53,6 +53,53 @@ public class CoreClientTests
     }
 
     [Fact]
+    public async Task TypedCommandsAreSuggestedButPasswordsNeverKept()
+    {
+        if (Bin is null) return; // not built in this run
+        var dir = Path.Combine(Path.GetTempPath(), "wc-core-" + Guid.NewGuid());
+        try
+        {
+            using var core = CoreClient.Start(Bin, dir, "app.wecommander.test");
+            var host = Assert.Single(await core.CallAsync<List<CoreHost>>("hosts.add",
+                new { label = "Web", host = "web.example.com", port = 22, user = "deploy", authKind = "key" }));
+            await core.CallAsync<System.Text.Json.Nodes.JsonNode?>("commands.add", new { hostId = host.Id, command = "git status", prompt = "deploy@web:~$ " });
+            await core.CallAsync<System.Text.Json.Nodes.JsonNode?>("commands.add", new { hostId = host.Id, command = "hunter2", prompt = "[sudo] password for deploy: " });
+            await core.CallAsync<System.Text.Json.Nodes.JsonNode?>("commands.add", new { hostId = host.Id, command = "git stash pop", prompt = "deploy@web:~$ " });
+            var list = await core.CallAsync<List<string>>("commands.list", new { hostId = host.Id });
+            Assert.Equal(new[] { "git status", "git stash pop" }, list);
+            var suggested = await core.CallAsync<List<string>>("commands.suggest", new { hostId = host.Id, prefix = "git st" });
+            Assert.Equal(new[] { "git stash pop", "git status" }, suggested);
+            await core.CallAsync<List<CoreHost>>("hosts.delete", new { id = host.Id });
+            Assert.Empty(await core.CallAsync<List<string>>("commands.list", new { hostId = host.Id }));
+        }
+        finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
+    }
+
+    [Fact]
+    public async Task TelnetHostsKeepTheirConnectionType()
+    {
+        if (Bin is null) return; // not built in this run
+        var dir = Path.Combine(Path.GetTempPath(), "wc-core-" + Guid.NewGuid());
+        try
+        {
+            using var core = CoreClient.Start(Bin, dir, "app.wecommander.test");
+            var host = Assert.Single(await core.CallAsync<List<CoreHost>>("hosts.add",
+                new { label = "Router", host = "192.168.1.1", port = 23, user = "telnet", authKind = "password" }));
+            Assert.True(host.IsSsh);
+            var telnet = Assert.Single(await core.CallAsync<List<CoreHost>>("hosts.setConnection", new { id = host.Id, protocol = "telnet" }));
+            Assert.Equal("telnet", telnet.Protocol);
+            Assert.False(telnet.IsSsh);
+            Assert.Equal("telnet://192.168.1.1", telnet.Target);
+            var error = await Assert.ThrowsAsync<CoreException>(() =>
+                core.CallAsync<List<CoreHost>>("hosts.setConnection", new { id = host.Id, protocol = "rlogin" }));
+            Assert.Contains("unknown connection type", error.Raw);
+            var back = Assert.Single(await core.CallAsync<List<CoreHost>>("hosts.setConnection", new { id = host.Id, protocol = "ssh" }));
+            Assert.True(back.IsSsh);
+        }
+        finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
+    }
+
+    [Fact]
     public async Task HostLibraryRoundTrips()
     {
         if (Bin is null) return; // not built in this run

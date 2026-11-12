@@ -340,9 +340,44 @@ public sealed class ServersController : IDisposable
     }
 
     /// <summary>Terminal options of a host: startup command, environment variables, agent forwarding.</summary>
-    public async Task SetHostOptions(CoreHost host, string? startupCommand, Dictionary<string, string> env, bool agentForwarding)
+    /// <summary>Commands typed in this host's terminals (autocomplete), newest last.</summary>
+    public async Task<List<string>> Commands(string hostId)
     {
-        Hosts = await Core.CallAsync<List<CoreHost>>("hosts.setOptions", new { id = host.Id, startupCommand, env, agentForwarding });
+        try { return await Core.CallAsync<List<string>>("commands.list", new { hostId }); }
+        catch (CoreException) { return []; }
+    }
+
+    /// <summary>Keeps a typed command; the core skips answers to password prompts.</summary>
+    public async Task AddCommand(string hostId, string command, string prompt)
+    {
+        try { await Core.CallAsync<JsonNode?>("commands.add", new { hostId, command, prompt }); }
+        catch (CoreException) { }
+    }
+
+    /// <summary>The folder session logs are written to.</summary>
+    public async Task<string?> LogsFolder()
+    {
+        try { return await Core.CallAsync<string>("logs.dir"); }
+        catch (CoreException) { return null; }
+    }
+
+    /// <summary>This computer's serial ports (COM3 ...).</summary>
+    public async Task<List<string>> SerialPorts()
+    {
+        try { return await Core.CallAsync<List<string>>("serial.ports"); }
+        catch (CoreException) { return []; }
+    }
+
+    /// <summary>"ssh", "telnet", "serial" (with its settings) or "mosh".</summary>
+    public async Task SetHostConnection(CoreHost host, string protocol, SerialSettings? serial = null)
+    {
+        Hosts = await Core.CallAsync<List<CoreHost>>("hosts.setConnection", new { id = host.Id, protocol, serial });
+        Changed?.Invoke();
+    }
+
+    public async Task SetHostOptions(CoreHost host, string? startupCommand, Dictionary<string, string> env, bool agentForwarding, bool sessionLog)
+    {
+        Hosts = await Core.CallAsync<List<CoreHost>>("hosts.setOptions", new { id = host.Id, startupCommand, env, agentForwarding, sessionLog });
         Changed?.Invoke();
     }
 

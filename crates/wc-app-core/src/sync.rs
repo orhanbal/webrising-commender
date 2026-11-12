@@ -646,6 +646,8 @@ mod tests {
             agent_forwarding: false,
             identity_id: None,
             team: false,
+            link: Default::default(),
+            session_log: false,
         }
     }
 

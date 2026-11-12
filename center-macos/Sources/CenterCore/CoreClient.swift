@@ -171,12 +171,34 @@ public struct CoreHost: Decodable, Identifiable, Equatable, Hashable {
     public let agentForwarding: Bool?
     public let identityId: String?
     public let team: Bool?
+    /// "ssh", "telnet", "serial" or "mosh".
+    public let `protocol`: String?
+    public let serial: SerialSettings?
+    /// Terminals of this host are written to the logs folder.
+    public let sessionLog: Bool?
+
+    /// Logs in with SSH (SSH and Mosh hosts); Telnet and serial hosts open straight away.
+    public var isSsh: Bool { ["ssh", "mosh"].contains(`protocol` ?? "ssh") }
 
     /// Hosts without a group are listed under this name.
     public static let noGroup = "Gruplanmamış"
     public var groupName: String {
         let g = (group ?? "").trimmingCharacters(in: .whitespaces)
         return g.isEmpty ? CoreHost.noGroup : g
+    }
+}
+
+/// A serial port and its line settings.
+public struct SerialSettings: Codable, Equatable, Hashable {
+    public var device: String
+    public var baud: Int
+    public var dataBits: Int
+    public var parity: String
+    public var stopBits: Int
+    public var flow: String
+    public init(device: String, baud: Int, dataBits: Int = 8, parity: String = "none", stopBits: Int = 1, flow: String = "none") {
+        self.device = device; self.baud = baud; self.dataBits = dataBits
+        self.parity = parity; self.stopBits = stopBits; self.flow = flow
     }
 }
 
@@ -298,6 +320,16 @@ public enum CoreText {
             return "Giriş reddedildi; kullanıcı adı, parola ya da anahtar yanlış. Sunucunun kabul ettiği yöntemler: " + methods.joined(separator: ", ") + "."
         }
         if text.contains("private key could not be used") { return "Özel anahtar okunamadı (biçim veya anahtar parolası yanlış)." }
+        if text.contains("work only on SSH terminals") { return "Dosyalar ve tüneller yalnız SSH bağlantılarında kullanılabilir." }
+        if text.hasPrefix("telnet: could not connect") { return "Telnet bağlantısı kurulamadı; adresi ve portu kontrol et." }
+        if text.contains("not available in this version") { return "Bu bağlantı türü bu sürümde henüz yok." }
+        if text.contains("mosh-server is not installed") { return "Sunucuda mosh-server kurulu değil. Ubuntu/Debian'da: sudo apt install mosh" }
+        if text.contains("mosh does not work through a jump host") { return "Mosh atlama sunucusu üzerinden çalışmaz; bu sunucu için SSH kullan." }
+        if text.hasPrefix("mosh-server did not start") { return "Sunucuda mosh-server başlatılamadı: " + text.dropFirst("mosh-server did not start:".count).trimmingCharacters(in: .whitespaces) }
+        if text.hasPrefix("mosh: ") { return "Mosh için sunucuya UDP ile ulaşılamadı. Güvenlik duvarında UDP 60000-61000 açık olmalı." }
+        if text.hasPrefix("serial: could not open") { return "Seri port açılamadı. Kablonun takılı olduğunu ve portu başka bir programın kullanmadığını kontrol et." }
+        if text.contains("invalid serial line settings") { return "Seri port ayarları geçersiz (hız, veri bitleri, eşlik ya da durdurma bitleri)." }
+        if text.contains("invalid serial port") || text.contains("serial port settings are missing") { return "Seri portu seç ya da yaz (ör. /dev/cu.usbserial)." }
         if text.contains("timed out") { return "Sunucuya ulaşılamadı (zaman aşımı). Sunucu kapalı olabilir ya da kısa sürede çok sayıda başarısız giriş yüzünden bu bilgisayarı geçici olarak engellemiş olabilir (ör. fail2ban); birkaç dakika sonra tekrar dene." }
         if text.contains("did not start SFTP") { return "Bu sunucu SFTP'yi açmadı (sshd_config içinde 'Subsystem sftp' olmalı)." }
         if text.hasPrefix("key file ") { return "Anahtar dosyası okunamadı: " + text.dropFirst("key file ".count) }
