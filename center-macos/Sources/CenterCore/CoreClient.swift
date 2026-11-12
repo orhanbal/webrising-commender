@@ -177,8 +177,8 @@ public struct CoreHost: Decodable, Identifiable, Equatable, Hashable {
     /// Terminals of this host are written to the logs folder.
     public let sessionLog: Bool?
 
-    /// SSH hosts log in; Telnet, serial and Mosh hosts open straight away.
-    public var isSsh: Bool { (`protocol` ?? "ssh") == "ssh" }
+    /// Logs in with SSH (SSH and Mosh hosts); Telnet and serial hosts open straight away.
+    public var isSsh: Bool { ["ssh", "mosh"].contains(`protocol` ?? "ssh") }
 
     /// Hosts without a group are listed under this name.
     public static let noGroup = "Gruplanmamış"
@@ -323,6 +323,10 @@ public enum CoreText {
         if text.contains("work only on SSH terminals") { return "Dosyalar ve tüneller yalnız SSH bağlantılarında kullanılabilir." }
         if text.hasPrefix("telnet: could not connect") { return "Telnet bağlantısı kurulamadı; adresi ve portu kontrol et." }
         if text.contains("not available in this version") { return "Bu bağlantı türü bu sürümde henüz yok." }
+        if text.contains("mosh-server is not installed") { return "Sunucuda mosh-server kurulu değil. Ubuntu/Debian'da: sudo apt install mosh" }
+        if text.contains("mosh does not work through a jump host") { return "Mosh atlama sunucusu üzerinden çalışmaz; bu sunucu için SSH kullan." }
+        if text.hasPrefix("mosh-server did not start") { return "Sunucuda mosh-server başlatılamadı: " + text.dropFirst("mosh-server did not start:".count).trimmingCharacters(in: .whitespaces) }
+        if text.hasPrefix("mosh: ") { return "Mosh için sunucuya UDP ile ulaşılamadı. Güvenlik duvarında UDP 60000-61000 açık olmalı." }
         if text.hasPrefix("serial: could not open") { return "Seri port açılamadı. Kablonun takılı olduğunu ve portu başka bir programın kullanmadığını kontrol et." }
         if text.contains("invalid serial line settings") { return "Seri port ayarları geçersiz (hız, veri bitleri, eşlik ya da durdurma bitleri)." }
         if text.contains("invalid serial port") || text.contains("serial port settings are missing") { return "Seri portu seç ya da yaz (ör. /dev/cu.usbserial)." }

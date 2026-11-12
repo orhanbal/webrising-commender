@@ -66,6 +66,7 @@ connection.
 | `commands.list` / `commands.clear` | `hostId` | that host's commands, newest last / `null` |
 | `commands.suggest` | `hostId, prefix, limit?` | up to `limit` (5) completions: the host's own commands newest first, then snippets, then other hosts' |
 | `logs.dir` | – | the session log folder (`<data dir>/logs`); a host with `sessionLog` writes each terminal to `<host>-<UTC date>.log` with colours and cursor moves removed |
+| (Mosh) | – | a `mosh` host logs in with SSH (same credentials, no jump host), runs `mosh-server new -s -c 256 -l LANG=…` (en_US.UTF-8, then C.UTF-8), reads `MOSH CONNECT <port> <key>`, closes SSH and runs the terminal over UDP (SSP, AES-128-OCB). Closing the tab shuts `mosh-server` down; `exit` in the shell ends the terminal. With no UDP reply for 8 s the terminal prints a firewall hint (UDP 60000-61000) |
 | `serial.ports` | – | `["COM3", ...]`: this computer's serial ports (no libudev on Linux, so the list can be short there) |
 | `identities.list` | – | `[{id, label, user, authKind, keyId?}]` |
 | `identities.save` | `id?, label, user, authKind (key\|password), keyId? (key), password? (password; empty keeps the stored one)` | same list; the password goes to the keyring (`identity/<id>/password`) |

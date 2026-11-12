@@ -187,6 +187,10 @@ public static class CoreText
         if (text.Contains("work only on SSH terminals")) return "Dosyalar ve tüneller yalnız SSH bağlantılarında kullanılabilir.";
         if (text.StartsWith("telnet: could not connect")) return "Telnet bağlantısı kurulamadı; adresi ve portu kontrol et.";
         if (text.Contains("not available in this version")) return "Bu bağlantı türü bu sürümde henüz yok.";
+        if (text.Contains("mosh-server is not installed")) return "Sunucuda mosh-server kurulu değil. Ubuntu/Debian'da: sudo apt install mosh";
+        if (text.Contains("mosh does not work through a jump host")) return "Mosh atlama sunucusu üzerinden çalışmaz; bu sunucu için SSH kullan.";
+        if (text.StartsWith("mosh-server did not start")) return "Sunucuda mosh-server başlatılamadı: " + text["mosh-server did not start:".Length..].Trim();
+        if (text.StartsWith("mosh: ")) return "Mosh için sunucuya UDP ile ulaşılamadı. Güvenlik duvarında UDP 60000-61000 açık olmalı.";
         if (text.StartsWith("serial: could not open"))
             return "Seri port açılamadı. Kablonun takılı olduğunu ve portu başka bir programın kullanmadığını kontrol et.";
         if (text.Contains("invalid serial line settings")) return "Seri port ayarları geçersiz (hız, veri bitleri, eşlik ya da durdurma bitleri).";
@@ -230,8 +234,8 @@ public sealed record CoreHost(string Id, string Label, string Target, string Aut
     bool AgentForwarding = false, string? IdentityId = null, bool Team = false,
     string Protocol = "ssh", SerialSettings? Serial = null, bool SessionLog = false)
 {
-    /// <summary>SSH hosts log in; Telnet, serial and Mosh hosts open straight away.</summary>
-    public bool IsSsh => Protocol is "ssh" or "" or null;
+    /// <summary>Logs in with SSH (SSH and Mosh hosts); Telnet and serial hosts open straight away.</summary>
+    public bool IsSsh => Protocol is "ssh" or "mosh" or "" or null;
     /// <summary>Hosts without a group are listed under this name.</summary>
     public const string NoGroup = "Gruplanmamış";
     public string GroupName => string.IsNullOrWhiteSpace(Group) ? NoGroup : Group!;

@@ -1053,12 +1053,13 @@ struct EditHostSheet: View {
         Form {
             Picker("Bağlantı türü", selection: $kind) {
                 Text("SSH").tag("ssh")
+                Text("Mosh (SSH ile giriş, UDP ile kesintisiz)").tag("mosh")
                 Text("Telnet").tag("telnet")
                 Text("Seri port").tag("serial")
             }
             .onChange(of: kind) { k in
-                if k != "ssh", port == "22" { port = "23" }
-                if k == "ssh", port == "23" { port = "22" }
+                if k == "telnet", port == "22" { port = "23" }
+                if k == "ssh" || k == "mosh", port == "23" { port = "22" }
             }
             TextField("Ad", text: $label, prompt: Text("Prod web"))
             if kind == "serial" {
@@ -1083,7 +1084,7 @@ struct EditHostSheet: View {
             } else {
             TextField("Adres", text: $address, prompt: Text("sunucu.ornek.com"))
             }
-            if kind == "ssh" {
+            if kind == "ssh" || kind == "mosh" {
             Picker("Kimlik", selection: $identityId) {
                 Text("Yok (bu sunucunun kendi kullanıcısı ve giriş bilgisi)").tag("")
                 ForEach(identities) { Text("\($0.label) (\($0.user))").tag($0.id) }
@@ -1095,7 +1096,7 @@ struct EditHostSheet: View {
             }
             if kind != "serial" { TextField("Port", text: $port) }
             TextField("Grup (isteğe bağlı)", text: $group, prompt: Text("Production"))
-            if kind == "ssh" {
+            if kind == "ssh" || kind == "mosh" {
             if identityId.isEmpty {
                 Picker("Giriş", selection: $authKind) {
                     Text("Özel anahtar").tag("key")
@@ -1106,9 +1107,11 @@ struct EditHostSheet: View {
                     ForEach(keys) { Text($0.label).tag($0.id) }
                 }
             }
+            if kind == "ssh" {
             Picker("Atlama sunucusu", selection: $jumpId) {
                 Text("Doğrudan bağlan").tag("")
                 ForEach(model.hosts.filter { $0.id != host?.id }) { Text($0.label).tag($0.id) }
+            }
             }
             Section("Terminal seçenekleri") {
                 TextField("Bağlanınca çalışacak komut", text: $startup, prompt: Text("cd /var/www && git status"))
@@ -1155,7 +1158,7 @@ struct EditHostSheet: View {
                 Button("Kaydet") {
                     Task {
                         do {
-                            if kind != "ssh", user.trimmingCharacters(in: .whitespaces).isEmpty { user = kind }
+                            if kind != "ssh", kind != "mosh", user.trimmingCharacters(in: .whitespaces).isEmpty { user = kind }
                             var serialSettings: SerialSettings?
                             if kind == "serial" {
                                 let device = serialDevice.trimmingCharacters(in: .whitespaces)

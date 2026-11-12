@@ -10,6 +10,7 @@
 
 pub mod commands;
 pub mod library;
+pub mod mosh;
 pub mod serial;
 pub mod session_log;
 pub mod store;
@@ -555,7 +556,7 @@ async fn connect_host_once(
             .cloned();
         (saved, trusted)
     };
-    if saved.link.kind() != "ssh" {
+    if saved.link.kind() != "ssh" && saved.link.kind() != "mosh" {
         return connect_stream_host(state, &saved, &mode, cols, rows).await;
     }
     let host_id = format!("{}:{}", saved.profile.host, saved.profile.port);
@@ -755,6 +756,9 @@ async fn connect_host_once(
         });
     }
 
+    if saved.link.kind() == "mosh" {
+        return open_mosh(state, &saved, conn, fingerprint, cols, rows).await;
+    }
     let env: Vec<(String, String)> = saved.env.clone().into_iter().collect();
     let shell = conn
         .open_shell(
@@ -824,6 +828,76 @@ async fn connect_host_once(
             terminals.remove(&sid);
         }
     });
+    Ok(ConnectOutcome::TerminalOpened {
+        fingerprint,
+        session_id,
+    })
+}
+
+/// Mosh: the SSH session starts `mosh-server`, then the terminal runs over
+/// UDP with the key it printed; the SSH connection is closed.
+async fn open_mosh(
+    state: &Arc<AppState>,
+    saved: &SavedHost,
+    conn: Connection,
+    fingerprint: String,
+    cols: Option<u32>,
+    rows: Option<u32>,
+) -> Result<ConnectOutcome, String> {
+    if saved.jump_id.is_some() {
+        return Err("mosh does not work through a jump host".into());
+    }
+    let mut boot = None;
+    let mut said = String::new();
+    // mosh-server needs a UTF-8 locale; try the common names.
+    for lang in ["en_US.UTF-8", "C.UTF-8"] {
+        let out = conn
+            .exec(&mosh::server_command(lang), 64 * 1024)
+            .await
+            .map_err(|e| e.to_string())?;
+        said = String::from_utf8_lossy(&out.stdout).into_owned();
+        boot = mosh::parse_connect(&said);
+        if boot.is_some() {
+            break;
+        }
+    }
+    let _ = conn.close().await;
+    let boot = boot.ok_or_else(|| {
+        if said.contains("not found") {
+            "mosh-server is not installed on the server".to_string()
+        } else {
+            format!(
+                "mosh-server did not start: {}",
+                said.lines().next().unwrap_or("").trim()
+            )
+        }
+    })?;
+    let sock = mosh::connect(&saved.profile.host, boot.port).await?;
+    let cols = cols.unwrap_or(80).clamp(10, 1000) as u16;
+    let rows = rows.unwrap_or(24).clamp(4, 500) as u16;
+    let (writer, rx) = stream::StreamWriter::new();
+    let session_id = uuid::Uuid::new_v4().to_string();
+    state.terminals.lock().map_err(|_| "busy")?.insert(
+        session_id.clone(),
+        Terminal {
+            writer: stream::TermWriter::Stream(Arc::new(writer)),
+            connection: None,
+            sftp: Arc::new(tokio::sync::Mutex::new(None)),
+            forwards: Arc::new(Mutex::new(Vec::new())),
+            _jump: None,
+        },
+    );
+    let log = saved
+        .session_log
+        .then(|| session_log::SessionLog::start(state.store.dir(), &saved.profile.label))
+        .flatten()
+        .map(Arc::new);
+    let events = stream::StreamEvents {
+        state: state.clone(),
+        session_id: session_id.clone(),
+        log,
+    };
+    tokio::spawn(mosh::run(sock, boot.key, cols, rows, rx, events));
     Ok(ConnectOutcome::TerminalOpened {
         fingerprint,
         session_id,

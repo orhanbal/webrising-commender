@@ -9,6 +9,12 @@ description = "WECOMMANDER app core shared by the native apps (via wecommander-c
 [dependencies]
 # Serial ports; no libudev so Linux builds need no extra system library.
 tokio-serial = { version = "5.4", default-features = false }
+# Mosh: AES-128-OCB packets, zlib instructions, a terminal state per frame.
+ocb3 = "0.2"
+aes = "0.9"
+flate2 = "1"
+vt100 = "0.18"
+rand = "0.9"
 wc-ssh-core = { path = "../wc-ssh-core" }
 wc-vault = { path = "../wc-vault", features = ["os-keyring"] }
 serde = { version = "1", features = ["derive"] }

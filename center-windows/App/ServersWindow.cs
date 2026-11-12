@@ -946,7 +946,7 @@ public sealed class ServersWindow : Window
 
     private async Task EditHost(CoreHost? existing)
     {
-        var protocols = new[] { ("ssh", "SSH"), ("telnet", "Telnet"), ("serial", "Seri port") };
+        var protocols = new[] { ("ssh", "SSH"), ("mosh", "Mosh (SSH ile giriş, UDP ile kesintisiz)"), ("telnet", "Telnet"), ("serial", "Seri port") };
         var protocol = new ComboBox
         {
             Header = "Bağlantı türü",
@@ -1025,10 +1025,12 @@ public sealed class ServersWindow : Window
         void SyncProtocol()
         {
             var chosenKind = protocols[Math.Max(0, protocol.SelectedIndex)].Item1;
-            var ssh = chosenKind == "ssh";
+            // Mosh logs in with SSH, so it keeps the login fields (not the jump host: UDP cannot go through it).
+            var ssh = chosenKind is "ssh" or "mosh";
             var isSerial = chosenKind == "serial";
-            foreach (var e in new UIElement[] { user, identity, kind, keyChoice, jump, startup, envText, agent })
+            foreach (var e in new UIElement[] { user, identity, kind, keyChoice, startup, envText, agent })
                 e.Visibility = ssh ? Visibility.Visible : Visibility.Collapsed;
+            jump.Visibility = chosenKind == "ssh" ? Visibility.Visible : Visibility.Collapsed;
             host.Visibility = port.Visibility = isSerial ? Visibility.Collapsed : Visibility.Visible;
             serialPanel.Visibility = isSerial ? Visibility.Visible : Visibility.Collapsed;
             if (chosenKind == "telnet" && port.Value == 22) port.Value = 23;
@@ -1045,7 +1047,7 @@ public sealed class ServersWindow : Window
             try
             {
                 var chosen = protocols[Math.Max(0, protocol.SelectedIndex)].Item1;
-                var ssh = chosen == "ssh";
+                var ssh = chosen is "ssh" or "mosh";
                 if (!ssh && string.IsNullOrWhiteSpace(user.Text)) user.Text = chosen;
                 SerialSettings? serialSettings = null;
                 if (chosen == "serial")
@@ -1059,7 +1061,7 @@ public sealed class ServersWindow : Window
                     host.Text = "serial";
                     port.Value = 1;
                 }
-                var jumpId = ssh && jump.SelectedIndex > 0 ? candidates[jump.SelectedIndex - 1].Id : null;
+                var jumpId = chosen == "ssh" && jump.SelectedIndex > 0 ? candidates[jump.SelectedIndex - 1].Id : null;
                 var keyId = keyChoice.SelectedIndex > 0 ? appKeys[keyChoice.SelectedIndex - 1].Id : null;
                 var authKind = keyId is not null ? "key" : kind.SelectedIndex == 1 ? "password" : "key";
                 if (existing is null)
