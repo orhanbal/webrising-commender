@@ -451,6 +451,13 @@ public partial class App : Application
         {
             LibrarySyncError = e.Message;
         }
+        catch (Exception e)
+        {
+            // Background work never pops an error at the user: logged, and
+            // shown only in Settings.
+            LogCrash(e);
+            LibrarySyncError = "Eşitleme şu an yapılamadı; birazdan yeniden denenecek.";
+        }
         try
         {
             await Servers.SyncTeam(Gateway, token);
@@ -459,6 +466,11 @@ public partial class App : Application
         catch (Exception e) when (e is CoreException or GatewayException)
         {
             TeamSyncError = e.Message;
+        }
+        catch (Exception e)
+        {
+            LogCrash(e);
+            TeamSyncError = "Ekip eşitlemesi şu an yapılamadı; birazdan yeniden denenecek.";
         }
     }
 
@@ -913,6 +925,13 @@ public partial class App : Application
     }
 
     private void UpdateTray()
+    {
+        // While the app updates itself the tray icon is already gone.
+        try { UpdateTrayNow(); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private void UpdateTrayNow()
     {
         if (_tray is null) return;
         var signedIn = Token is not null;

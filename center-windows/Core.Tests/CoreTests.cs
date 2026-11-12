@@ -381,4 +381,35 @@ public class CoreTests
         Assert.Equal("https://wecommander.app", install.Environment["WECOMMANDER_SERVER"]);
         Assert.DoesNotContain("secret-code", install.Arguments);
     }
+
+    [Fact]
+    public async Task TeamAndSharesParseTheGatewaysCamelCase()
+    {
+        // Exactly what gateway/src/index.ts writes for GET /api/center/team and /shares.
+        var (client, _) = Client((req, _) => req.RequestUri!.AbsolutePath switch
+        {
+            "/api/center/team" => (HttpStatusCode.OK, """
+                {"organizationName":"WebRising","role":"owner","myWrappedKey":null,
+                 "members":[{"centerId":"c1","email":"a@example.com","role":"owner","centerName":"venture","publicKey":"pk","hasKey":true}],
+                 "revision":3,"envelope":null}
+                """),
+            _ => (HttpStatusCode.OK, """{"items":[{"id":"s1","title":"Ubuntu","hostEmail":"a@example.com","guests":2,"createdAt":"2026-11-12T10:00:00Z"}]}"""),
+        });
+        var team = await client.TeamAsync("t");
+        Assert.Equal("owner", team.Role);
+        Assert.Single(team.Members);
+        Assert.Equal("venture", team.Members[0].CenterName);
+        Assert.True(team.Members[0].HasKey);
+        Assert.Equal(3, team.Revision);
+        var shares = await client.SharesAsync("t");
+        Assert.Equal("Ubuntu", Assert.Single(shares).Title);
+        Assert.Equal(2, shares[0].Guests);
+    }
+
+    [Fact]
+    public async Task TeamWithoutMembersIsAnEmptyList()
+    {
+        var (client, _) = Client((_, _) => (HttpStatusCode.OK, """{"role":"viewer","revision":0}"""));
+        Assert.Empty((await client.TeamAsync("t")).Members);
+    }
 }
