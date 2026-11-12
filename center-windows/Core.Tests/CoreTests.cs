@@ -412,4 +412,20 @@ public class CoreTests
         var (client, _) = Client((_, _) => (HttpStatusCode.OK, """{"role":"viewer","revision":0}"""));
         Assert.Empty((await client.TeamAsync("t")).Members);
     }
+
+    [Fact]
+    public async Task ErrorReportsLeaveWithoutTheUserFolder()
+    {
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var (client, handler) = Client((_, _) => (HttpStatusCode.Accepted, """{"ok":true}"""));
+        await client.ReportErrorAsync("tok", "1835", "ArgumentNullException: x", "at A() in " + Path.Combine(profile, "AppData", "x.cs") + ":line 3");
+        var call = Assert.Single(handler.Calls);
+        Assert.Equal(HttpMethod.Post, call.Method);
+        Assert.EndsWith("/api/center/errors", call.Url);
+        using var body = JsonDocument.Parse(call.Body!);
+        Assert.Equal("windows", body.RootElement.GetProperty("platform").GetString());
+        var detail = body.RootElement.GetProperty("detail").GetString()!;
+        Assert.Contains("…", detail);
+        Assert.DoesNotContain(profile, detail);
+    }
 }

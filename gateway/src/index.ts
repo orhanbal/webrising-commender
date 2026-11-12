@@ -37,6 +37,7 @@ import {
 import { db, housekeeping, migrate, ready } from "./db.js";
 import { getPublicPlans, publicPaddleConfig, createPaddleCheckout, createPaddlePortal, consumePaddleWebhook, syncPlanCatalog } from "./paddle.js";
 import { getDownloads } from "./downloads.js";
+import { scrubUserPaths } from "./scrub.js";
 import { installRoute } from "./install-scripts.js";
 import { createDeviceLink, getDeviceLinkStatus, approveDeviceLink } from "./device-link.js";
 import { createCenterLink, getCenterLinkStatus, approveCenterLink, centerLinkName, centerMayAccess } from "./center-link.js";
@@ -121,6 +122,8 @@ const deviceRouter = new DeviceRouter(hub);
 const deviceLinkStartRateLimit = new FixedWindowRateLimiter();
 const deviceLinkPollRateLimit = new FixedWindowRateLimiter();
 const centerLinkStartRateLimit = new FixedWindowRateLimiter();
+const errorReportRateLimit = new FixedWindowRateLimiter();
+
 const centerLinkPollRateLimit = new FixedWindowRateLimiter();
 const enrollRateLimit = new FixedWindowRateLimiter();
 const agentRouteRateLimit = new FixedWindowRateLimiter();
@@ -3728,6 +3731,30 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       );
       await auditControl(principal!, null, "center.pairing_code", "medium", "success", "{}");
       return void json(res, 201, { pairingCode: code, expiresInSeconds: 300 });
+    }
+    if (url.pathname === "/api/center/errors" && req.method === "POST") {
+      // S3: an app reports an error it hit. Bounded and rate limited; the
+      // user's folder name is removed from paths before it is stored.
+      if (principal!.authKind !== "center") return void json(res, 403, { error: "center_token_required" });
+      const limit = errorReportRateLimit.hit(principal!.centerId ?? principal!.organizationId, 30, 60 * 60_000);
+      if (!limit.allowed) return void json(res, 202, { ok: true, dropped: true });
+      const body = z.object({
+        platform: z.enum(["windows", "macos", "linux"]),
+        build: z.string().max(40),
+        message: z.string().max(2000),
+        detail: z.string().max(20000),
+      }).parse(await readJson(req));
+      await db.query(
+        `insert into app_error_reports(organization_id,center_id,platform,build,message,detail) values($1,$2,$3,$4,$5,$6)`,
+        [principal!.organizationId, principal!.centerId ?? null, body.platform, scrubUserPaths(body.build),
+          scrubUserPaths(body.message).slice(0, 500), scrubUserPaths(body.detail).slice(0, 8000)],
+      );
+      await db.query(
+        `delete from app_error_reports where organization_id=$1 and id not in
+           (select id from app_error_reports where organization_id=$1 order by created_at desc limit 500)`,
+        [principal!.organizationId],
+      );
+      return void json(res, 202, { ok: true });
     }
     if (url.pathname === "/api/center/library" && (req.method === "GET" || req.method === "PUT")) {
       // A20 sync: the envelope is encrypted by the app with a key derived

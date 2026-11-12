@@ -25,6 +25,12 @@ export const tools = [
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     ...(process.env.MCP_OAUTH_ENABLED === "true" ? { securitySchemes: [{ type: "oauth2", scopes: ["mcp:tools"] }] } : {}),
   },
+  {
+    name: "app_errors",
+    description: "List recent errors the WECOMMANDER apps (Windows, macOS, Linux) of this workspace reported: newest first, with platform, build, message and stack. User folder names are removed. Read-only.",
+    inputSchema: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 100 } }, additionalProperties: false },
+    ...(process.env.MCP_OAUTH_ENABLED === "true" ? { securitySchemes: [{ type: "oauth2", scopes: ["mcp:tools"] }] } : {}),
+  },
   tool("system_info", "Read system information from a device.", {}),
   tool("health_snapshot", "Read-only health snapshot of a device: CPU usage and load, memory and swap, disks, network counters, and the top processes by CPU and memory. Includes observedAt and limitations.", { top: { type: "integer", minimum: 1, maximum: 20, description: "Processes per list (default 5)." } }),
   tool("log_query", "Read-only, bounded log search on a device, newest first. source 'journal' (Linux systemd journal: since_minutes window, unit, level) or 'file' (tail of a log file inside the allowed roots). Filters: level (error|warning|info|debug, default info), pattern (case-insensitive regex), limit (1-1000, default 100). Repeated messages are grouped; secrets are masked.", {
@@ -199,7 +205,7 @@ export const tools = [
     {},
   ),
 ].map((entry) => {
-  if (entry.name === "devices_list") return entry;
+  if (entry.name === "devices_list" || entry.name === "app_errors") return entry;
   return {
     ...entry,
     inputSchema: {
@@ -376,6 +382,18 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
       request.id,
       toolResult(result.rows.map((row) => ({ ...row, online: online.has(row.id) }))),
     );
+  }
+
+  if (name === "app_errors") {
+    if (!roleAtLeast(principal, "admin")) return ok(request.id, toolResult({ error: "forbidden" }, true));
+    const limit = Number.isInteger(args.limit) && args.limit >= 1 && args.limit <= 100 ? args.limit : 20;
+    const result = await db.query(
+      `select r.created_at,r.platform,r.build,r.message,r.detail,c.name as center_name
+         from app_error_reports r left join management_centers c on c.id=r.center_id
+        where r.organization_id=$1 order by r.created_at desc limit $2`,
+      [orgId, limit],
+    );
+    return ok(request.id, toolResult(result.rows));
   }
 
   const deviceId = String(args.device_id || "");

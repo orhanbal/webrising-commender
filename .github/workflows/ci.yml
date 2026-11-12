@@ -1070,6 +1070,7 @@ jobs:
             Press $item
             Start-Sleep -Milliseconds 900
             if ($app.HasExited) { throw "the app closed after opening $section" }
+            if ($section -eq 'Sunucular' -and -not (Find-ByName 'Yeni sunucu')) { throw "Sunucular opened blank" }
           }
           $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children,
             (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $app.Id)))
