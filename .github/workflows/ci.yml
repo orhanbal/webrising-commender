@@ -1064,7 +1064,7 @@ jobs:
           }
           # Windows PowerShell reads this script as ANSI: Turkish letters are spelled as code points.
           $c = [char]0x00E7; $i = [char]0x0131; $u = [char]0x00FC; $s = [char]0x015F
-          foreach ($section in @('Terminaller', 'Anahtarlar', 'Kimlikler', "Par${c}ac${i}klar", "T${u}neller", 'Bilinen sunucular', "Ge${c}mi${s}", 'Ayarlar', 'Terminaller')) {
+          foreach ($section in @('Terminaller', 'Sunucular', 'Anahtarlar', 'Kimlikler', "Par${c}ac${i}klar", "T${u}neller", 'Bilinen sunucular', "Ge${c}mi${s}", 'Ayarlar', 'Terminaller', 'Sunucular', 'Terminaller')) {
             $item = Find-ByName $section
             if (-not $item) { throw "menu item missing: $section" }
             Press $item
