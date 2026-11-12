@@ -219,6 +219,30 @@ public sealed class ServersWindow : Window
         foreach (var held in new UIElement?[] { _terminals, _transientPage })
             if (held is not null) held.Visibility = ReferenceEquals(held, page) ? Visibility.Visible : Visibility.Collapsed;
         page.Visibility = Visibility.Visible;
+        if (Environment.GetEnvironmentVariable("WECOMMANDER_DEBUG_LAYOUT") == "1")
+            DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () => _ = LogLayout(page));
+    }
+
+    /// <summary>CI only (WECOMMANDER_DEBUG_LAYOUT=1): where the page host and its pages are.</summary>
+    private async Task LogLayout(UIElement shown)
+    {
+        await Task.Delay(400);
+        try
+        {
+            var lines = new List<string> { $"--- shown={shown.GetType().Name} host={_pageHost.ActualWidth:0}x{_pageHost.ActualHeight:0} hostVis={_pageHost.Visibility} hostParent={(_pageHost.Parent as FrameworkElement)?.GetType().Name ?? _pageHost.Parent?.GetType().Name ?? "null"} navContentIsHost={ReferenceEquals(_nav.Content, _pageHost)}" };
+            var n = 0;
+            foreach (var child in _pageHost.Children)
+            {
+                var fe = child as FrameworkElement;
+                lines.Add($"  [{n++}] {child.GetType().Name} vis={child.Visibility} size={fe?.ActualWidth:0}x{fe?.ActualHeight:0} row={(fe is null ? -1 : Grid.GetRow(fe))} isShown={ReferenceEquals(child, shown)} isTerminals={ReferenceEquals(child, _terminals)}");
+            }
+            if (shown is FrameworkElement sf)
+                lines.Add($"  shown: size={sf.ActualWidth:0}x{sf.ActualHeight:0} parentIsHost={ReferenceEquals(sf.Parent, _pageHost)} parent={sf.Parent?.GetType().Name ?? "null"} desired={sf.DesiredSize.Width:0}x{sf.DesiredSize.Height:0}");
+            var file = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WECOMMANDER", "layout.log");
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            await File.AppendAllLinesAsync(file, lines);
+        }
+        catch (Exception e) { App.LogCrash(e); }
     }
 
     /// <summary>A section page: title, optional actions, content; the notice bar on top.</summary>

@@ -1024,6 +1024,7 @@ jobs:
           # window got through once). UI Automation reads the real WinUI tree.
           $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'smoke-localappdata'
           New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA | Out-Null
+          $env:WECOMMANDER_DEBUG_LAYOUT = '1'
           $app = Start-Process -FilePath "center-windows\publish\WecommanderCenter.exe" -ArgumentList '--open-main' -PassThru
           Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
           $root = [System.Windows.Automation.AutomationElement]::RootElement
@@ -1086,7 +1087,12 @@ jobs:
               if ($e) { Write-Host ("{0}: '{1}' offscreen={2} rect={3}" -f $section, $probe, $e.Current.IsOffscreen, $e.Current.BoundingRectangle) }
               else { Write-Host ("{0}: '{1}' not in the tree" -f $section, $probe) }
             }
-            if ($section -eq 'Sunucular' -and -not (Find-Visible 'Yeni sunucu')) { throw "Sunucular opened blank (its page is not on screen)" }
+            if ($section -eq 'Sunucular' -and -not (Find-Visible 'Yeni sunucu')) {
+              Start-Sleep -Milliseconds 800
+              $layout = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'WECOMMANDER\layout.log'
+              if (Test-Path $layout) { Write-Host '--- layout.log ---'; Get-Content $layout | ForEach-Object { Write-Host $_ } } else { Write-Host 'no layout.log' }
+              throw "Sunucular opened blank (its page is not on screen)"
+            }
           }
           $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children,
             (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $app.Id)))
