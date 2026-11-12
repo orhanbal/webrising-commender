@@ -187,7 +187,8 @@ final class ServersModel: ObservableObject {
 
     /// Uses the saved credential or key file when there is one, else asks.
     func open(_ host: CoreHost) {
-        if host.savedSecret || (host.authKind == "key" && host.keyPath != nil) {
+        // Key hosts are tried first: the core also tries this Mac's ~/.ssh keys.
+        if host.savedSecret || host.authKind == "key" {
             Task { await run(host, auth: ["kind": host.authKind, "secret": "", "remember": false], accept: nil) }
         } else {
             connect = ConnectRequest(host: host)

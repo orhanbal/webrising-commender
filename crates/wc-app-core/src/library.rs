@@ -269,6 +269,16 @@ pub fn key_generate(state: &Arc<AppState>, label: String) -> Result<Vec<KeyMeta>
     add_key(state, label, &made.private_openssh, None, made.info)
 }
 
+/// Saves a key the core just made (used by the install-key login).
+pub(crate) fn add_key_material(
+    state: &Arc<AppState>,
+    label: String,
+    private: &str,
+    info: wc_ssh_core::keys::KeyInfo,
+) -> Result<Vec<KeyMeta>, String> {
+    add_key(state, label, private, None, info)
+}
+
 /// An existing private key (pasted or read from a file), checked first.
 pub fn key_import(
     state: &Arc<AppState>,

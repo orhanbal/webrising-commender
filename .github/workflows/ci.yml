@@ -1017,7 +1017,7 @@ jobs:
           Copy-Item target\release\webrising-commender.exe center-windows\publish\webrising-commender.exe
           # The app compares this build with the newest release for in-app updates.
           Set-Content -Path center-windows\publish\build.txt -Value "${{ github.run_number }}" -NoNewline -Encoding ascii
-      - name: Smoke test (the main window opens with its sections)
+      - name: Smoke test (the main window opens; every section and + work)
         shell: powershell
         run: |
           # Smoke test: the main window opens and shows its sections (an empty
@@ -1039,10 +1039,59 @@ jobs:
               if ($names.Count -gt $found.Count) { $found = $names }
             }
           }
+          if ($found.Count -lt 2) {
+            if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force }
+            throw "Main window did not show its sections (found: $($found -join ', '))"
+          }
+          Write-Host "Main window shows: $($found -join ', ')"
+          # Walk every section and press the terminal tab strip's "+": an error
+          # there must never reach users (it once did).
+          function Find-ByName($name) {
+            $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children,
+              (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $app.Id)))
+            foreach ($w in $windows) {
+              $e = $w.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
+                (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $name)))
+              if ($e) { return $e }
+            }
+            return $null
+          }
+          function Press($element) {
+            $p = $null
+            if ($element.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$p)) { $p.Invoke(); return }
+            if ($element.TryGetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern, [ref]$p)) { $p.Select(); return }
+            throw "cannot press $($element.Current.Name)"
+          }
+          # Windows PowerShell reads this script as ANSI: Turkish letters are spelled as code points.
+          $c = [char]0x00E7; $i = [char]0x0131; $u = [char]0x00FC; $s = [char]0x015F
+          foreach ($section in @('Terminaller', 'Anahtarlar', 'Kimlikler', "Par${c}ac${i}klar", "T${u}neller", 'Bilinen sunucular', "Ge${c}mi${s}", 'Ayarlar', 'Terminaller')) {
+            $item = Find-ByName $section
+            if (-not $item) { throw "menu item missing: $section" }
+            Press $item
+            Start-Sleep -Milliseconds 900
+            if ($app.HasExited) { throw "the app closed after opening $section" }
+          }
+          $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children,
+            (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $app.Id)))
+          $add = $null
+          foreach ($w in $windows) {
+            $add = $w.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
+              (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::AutomationIdProperty, 'AddButton')))
+            if ($add) { break }
+          }
+          if (-not $add) { throw "the terminal tab strip's + button is missing" }
+          Press $add
+          Start-Sleep -Milliseconds 1500
+          if ($app.HasExited) { throw "the app closed after pressing +" }
+          if (-not (Find-ByName 'Yeni sunucu')) { throw "+ did not open the server list" }
+          $logs = @((Join-Path $env:LOCALAPPDATA 'WECOMMANDER\errors.log'),
+                    (Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'WECOMMANDER\errors.log'))
+          foreach ($log in $logs) {
+            if (Test-Path $log) { Get-Content $log; throw "the app logged an error while walking its sections" }
+          }
+          Write-Host "Every section opened; + opened the server list; no errors logged"
           if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force }
           Get-Process -Name 'wecommander-core','webrising-commender' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-          if ($found.Count -lt 2) { throw "Main window did not show its sections (found: $($found -join ', '))" }
-          Write-Host "Main window shows: $($found -join ', ')"
       - name: Package
         shell: pwsh
         run: |

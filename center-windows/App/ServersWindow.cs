@@ -74,7 +74,11 @@ public sealed class ServersWindow : Window
         _nav.ItemInvoked += (_, e) => OnNavInvoked(e.InvokedItemContainer?.Tag);
 
         _tabs.IsAddTabButtonVisible = true;
-        _tabs.AddTabButtonClick += (_, _) => Navigate("hosts");
+        _tabs.AddTabButtonClick += (_, _) =>
+        {
+            Navigate("hosts");
+            DispatcherQueue.TryEnqueue(() => Show("Yeni terminal için bir sunucuya tıkla (ya da arama kutusuna kullanıcı@adres yazıp Enter'a bas).", InfoBarSeverity.Informational));
+        };
         _tabs.TabWidthMode = TabViewWidthMode.SizeToContent;
         _tabs.TabCloseRequested += (_, e) => { if (e.Tab.Tag is TabPage page) ClosePage(page); };
         _tabs.SelectionChanged += (_, _) => { SyncCommands(); if (_filesPane.Visibility == Visibility.Visible) _ = LoadFiles(null); };
@@ -216,7 +220,21 @@ public sealed class ServersWindow : Window
         return b;
     }
 
+    /// <summary>
+    /// Switches the section after the current event finishes: a click inside the
+    /// terminals view (the tab strip's "+", a snippet's button) must not pull its
+    /// own control out of the window while WinUI is still handling it.
+    /// </summary>
     private void Navigate(string section)
+    {
+        if (!DispatcherQueue.TryEnqueue(() =>
+        {
+            try { NavigateNow(section); }
+            catch (Exception e) { App.LogCrash(e); Show("Sayfa açılamadı: " + e.Message, InfoBarSeverity.Error); }
+        })) NavigateNow(section);
+    }
+
+    private void NavigateNow(string section)
     {
         foreach (var item in _nav.MenuItems.OfType<NavigationViewItem>())
             if (item.Tag as string == section) _nav.SelectedItem = item;
@@ -1037,7 +1055,8 @@ public sealed class ServersWindow : Window
 
     private async Task OpenHostOnce(CoreHost host)
     {
-        if (host.CanConnectSilently)
+        // Key hosts are tried first: the core also tries this computer's ~/.ssh keys.
+        if (host.CanConnectSilently || host.AuthKind == "key")
         {
             await Connect(host, new { kind = host.AuthKind, secret = "", remember = false }, null, askOnCredentialError: true);
         }
@@ -1097,6 +1116,7 @@ public sealed class ServersWindow : Window
         var passphrase = new PasswordBox { PlaceholderText = "Anahtar parolası (varsa)" };
         var password = new PasswordBox { PlaceholderText = "Parola" };
         var remember = new CheckBox { Content = "Windows Kimlik Bilgisi Yöneticisi'nde sakla", IsChecked = true };
+        var installKey = new CheckBox { Content = "Bir dahaki sefere parola sorma (bu bilgisayarın anahtarını sunucuya ekle)", IsChecked = true };
         var keyRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
         keyRow.Children.Add(pick);
         keyRow.Children.Add(keyPathText);
@@ -1107,6 +1127,7 @@ public sealed class ServersWindow : Window
             key.Visibility = k && keyPath is null ? Visibility.Visible : Visibility.Collapsed;
             passphrase.Visibility = k ? Visibility.Visible : Visibility.Collapsed;
             password.Visibility = k ? Visibility.Collapsed : Visibility.Visible;
+            installKey.Visibility = k ? Visibility.Collapsed : Visibility.Visible;
         }
         useKey.SelectionChanged += (_, _) => Sync();
         pick.Click += async (_, _) =>
@@ -1123,12 +1144,12 @@ public sealed class ServersWindow : Window
         Sync();
         var panel = new StackPanel { Spacing = 10, MinWidth = 440 };
         if (message is not null) panel.Children.Add(new InfoBar { IsOpen = true, IsClosable = false, Severity = InfoBarSeverity.Error, Message = message });
-        foreach (var e in new UIElement[] { useKey, keyRow, key, passphrase, password, remember }) panel.Children.Add(e);
+        foreach (var e in new UIElement[] { useKey, keyRow, key, passphrase, password, installKey, remember }) panel.Children.Add(e);
         var dialog = Dialog($"{host.Label} · {host.Target}", panel, "Bağlan");
         if (await ShowDialog(dialog) != ContentDialogResult.Primary) return;
         object auth = useKey.SelectedIndex == 0
             ? new { kind = "key", secret = key.Text, passphrase = passphrase.Password, remember = remember.IsChecked == true, keyPath = string.IsNullOrEmpty(key.Text) ? keyPath : null }
-            : new { kind = "password", secret = password.Password, passphrase = (string?)null, remember = remember.IsChecked == true, keyPath = (string?)null };
+            : new { kind = "password", secret = password.Password, passphrase = (string?)null, remember = remember.IsChecked == true, keyPath = (string?)null, installKey = installKey.IsChecked == true };
         await Connect(host, auth, null, askOnCredentialError: true);
     }
 

@@ -334,6 +334,10 @@ pub struct AuthInput {
     pub remember: bool,
     /// Read the private key from this file instead (remembered per host).
     pub key_path: Option<String>,
+    /// After a password login: put this computer's app key on the server
+    /// (like `ssh-copy-id`) so the next logins need no password.
+    #[serde(default)]
+    pub install_key: bool,
 }
 
 #[derive(Serialize)]
@@ -380,8 +384,112 @@ pub struct TerminalExit {
 /// `whoami` (`mode` "test") or opens an interactive terminal of `cols` x
 /// `rows` (`mode` "terminal"). `accept_fingerprint` is the key the person
 /// just approved in the host key dialog.
+/// Private keys in `~/.ssh` that open without a passphrase, the ones
+/// OpenSSH tries by itself.
+pub fn default_key_files() -> Vec<String> {
+    let Some(dir) = home_dir().map(|h| h.join(".ssh")) else {
+        return Vec::new();
+    };
+    ["id_ed25519", "id_ecdsa", "id_rsa"]
+        .iter()
+        .map(|name| dir.join(name))
+        .filter_map(|p| {
+            let text = std::fs::read_to_string(&p).ok()?;
+            wc_ssh_core::keys::inspect(&text, None).ok()?;
+            Some(p.to_string_lossy().into_owned())
+        })
+        .collect()
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn connect_host(
+    state: &Arc<AppState>,
+    id: String,
+    auth: AuthInput,
+    accept_fingerprint: Option<String>,
+    mode: String,
+    cols: Option<u32>,
+    rows: Option<u32>,
+) -> Result<ConnectOutcome, String> {
+    let wants_key = auth.kind != "password"
+        && auth.secret.is_empty()
+        && auth.key_path.as_deref().unwrap_or("").is_empty();
+    let first = connect_host_once(
+        state,
+        id.clone(),
+        auth,
+        accept_fingerprint.clone(),
+        mode.clone(),
+        cols,
+        rows,
+    )
+    .await;
+    match first {
+        // Nothing saved for this host: try this computer's own SSH keys
+        // (~/.ssh), like the ssh command does; the one that works is kept.
+        Err(e) if wants_key && e.starts_with("no saved credential") => {
+            for path in default_key_files() {
+                let attempt = AuthInput {
+                    kind: "key".into(),
+                    secret: String::new(),
+                    passphrase: None,
+                    remember: true,
+                    key_path: Some(path),
+                    install_key: false,
+                };
+                match connect_host_once(
+                    state,
+                    id.clone(),
+                    attempt,
+                    accept_fingerprint.clone(),
+                    mode.clone(),
+                    cols,
+                    rows,
+                )
+                .await
+                {
+                    Ok(outcome) => return Ok(outcome),
+                    Err(err) if err.contains("authentication failed") => continue,
+                    Err(err) => return Err(err),
+                }
+            }
+            Err(e)
+        }
+        other => other,
+    }
+}
+
+/// The app key this computer puts on servers after a password login
+/// (made the first time it is needed).
+fn install_key_for(state: &Arc<AppState>) -> Result<(String, String), String> {
+    let name = std::env::var(if cfg!(windows) {
+        "COMPUTERNAME"
+    } else {
+        "HOSTNAME"
+    })
+    .unwrap_or_default();
+    let label = format!("WECOMMANDER {}", name.trim()).trim().to_owned();
+    if let Some(k) = state
+        .data
+        .lock()
+        .map_err(|_| "busy")?
+        .keys
+        .iter()
+        .find(|k| k.label == label)
+    {
+        return Ok((k.id.clone(), k.public_key.clone()));
+    }
+    let made = wc_ssh_core::keys::generate_ed25519("wecommander")?;
+    let list = library::add_key_material(state, label.clone(), &made.private_openssh, made.info)?;
+    let k = list
+        .iter()
+        .find(|k| k.label == label)
+        .ok_or("key not saved")?;
+    Ok((k.id.clone(), k.public_key.clone()))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn connect_host_once(
     state: &Arc<AppState>,
     id: String,
     auth: AuthInput,
@@ -521,6 +629,38 @@ pub async fn connect_host(
             }
         }
         state.save(&data)?;
+    }
+    if kind == "password" && auth.install_key {
+        // Like ssh-copy-id: the next logins use this computer's key. A
+        // failure here never blocks the terminal.
+        if let Ok((key_id, public)) = install_key_for(state) {
+            let line: String = public
+                .split_whitespace()
+                .take(2)
+                .collect::<Vec<_>>()
+                .join(" ")
+                + " wecommander";
+            if line
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || " +/=-_.@".contains(c))
+            {
+                let cmd = format!(
+                    "umask 077; mkdir -p ~/.ssh && touch ~/.ssh/authorized_keys && (grep -qF '{line}' ~/.ssh/authorized_keys || echo '{line}' >> ~/.ssh/authorized_keys) && echo WC_KEY_OK"
+                );
+                if let Ok(out) = conn.exec(&cmd, 4096).await {
+                    if String::from_utf8_lossy(&out.stdout).contains("WC_KEY_OK") {
+                        if let Ok(mut data) = state.data.lock() {
+                            if let Some(h) = data.hosts.iter_mut().find(|h| h.id == id) {
+                                h.key_id = Some(key_id);
+                                h.auth_kind = "key".into();
+                            }
+                            let _ = state.save(&data);
+                        }
+                        state.changed();
+                    }
+                }
+            }
+        }
     }
     if from_file && auth.remember {
         // The key stays in its file; only its passphrase goes to the keyring.

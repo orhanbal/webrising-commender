@@ -47,7 +47,8 @@ final class CoreClientTests: XCTestCase {
     }
 
     func testTurkishErrorTexts() {
-        XCTAssertEqual(CoreText.turkish("authentication failed (server accepts: publickey)"), "Giriş reddedildi. Anahtarı veya parolayı kontrol et.")
+        XCTAssertEqual(CoreText.turkish("authentication failed"), "Giriş reddedildi. Anahtarı veya parolayı kontrol et.")
+        XCTAssertTrue(CoreText.turkish("authentication failed (server accepts: publickey)").contains("yalnız SSH anahtarı kabul ediyor"))
         XCTAssertEqual(CoreText.turkish("jump host Bastion: no saved credential; connect to it once and save it"), "Bu sunucu için kayıtlı giriş bilgisi yok; bir kez gir.")
         XCTAssertEqual(CoreText.turkish("something new"), "something new")
     }
