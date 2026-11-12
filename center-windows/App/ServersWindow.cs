@@ -201,8 +201,10 @@ public sealed class ServersWindow : Window
             head.Children.Add(a);
         }
         grid.Children.Add(head);
-        Grid.SetRow(_info, 1);
         if (_info.Parent is Panel old) old.Children.Remove(_info);
+        Grid.SetRow(_info, 1);
+        Grid.SetColumnSpan(_info, 1);
+        _info.VerticalAlignment = VerticalAlignment.Stretch;
         grid.Children.Add(_info);
         Grid.SetRow((FrameworkElement)body, 2);
         grid.Children.Add(body);
@@ -241,8 +243,14 @@ public sealed class ServersWindow : Window
         switch (section)
         {
             case "terminals":
+                // The message bar floats over the top of the terminal area, so
+                // errors stay visible here too.
                 if (_info.Parent is Panel p) p.Children.Remove(_info);
-                Grid.SetRow(_info, 0);
+                Grid.SetRow(_info, 1);
+                Grid.SetColumnSpan(_info, 2);
+                _info.VerticalAlignment = VerticalAlignment.Top;
+                Canvas.SetZIndex(_info, 10);
+                _terminals.Children.Add(_info);
                 _nav.Content = _terminals;
                 break;
             case "snippets": _ = ShowSnippets(); break;
