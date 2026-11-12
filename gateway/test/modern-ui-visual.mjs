@@ -102,11 +102,11 @@ try{
   const image=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
   writeFileSync(join(artifacts,screenshot+".png"),Buffer.from(image.data,"base64"));
  }
- await visit("/","on every machine.","modern-landing-dark");
+ await visit("/","For you and your AI.","modern-landing-dark");
  // Reference acceptance: exactly one guest sign-in and one blue Install CTA.
  const signedIn=fixtures["/api/auth/me"];
  delete fixtures["/api/auth/me"];
- await visit("/","on every machine.","modern-landing-guest");
+ await visit("/","For you and your AI.","modern-landing-guest");
  const guestHeader=await evalJs("(()=>{const h=document.querySelector('.site-header');const buttons=[...h.querySelectorAll('button')];return {login:buttons.filter(b=>b.textContent.trim()==='Sign in').length,install:buttons.filter(b=>b.textContent.includes('Install')).length}})()");
  assert.equal(guestHeader.login,1,"Guest header must not render duplicate sign-in actions");
  assert.equal(guestHeader.install,1,"Header must show one Install CTA");
@@ -116,16 +116,16 @@ try{
  await evalJs("document.querySelector('.site-header .locale-option[role=menuitemradio]:last-of-type').click()");
  await sleep(120);
  assert.equal(await evalJs("document.documentElement.lang"),"tr","Switching to Turkish must update html lang");
- assert.ok(await evalJs("document.querySelector('h1')?.textContent.includes('tüm makinelerinde.')"),"Turkish landing translation was not applied");
+ assert.ok(await evalJs("document.querySelector('h1')?.textContent.includes('Senin ve yapay zekânın.')"),"Turkish landing translation was not applied");
  assert.equal(await evalJs("localStorage.getItem('wecommander-language')"),"tr","Locale selection must be persisted");
  const turkishImage=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
  writeFileSync(join(artifacts,"modern-landing-turkish.png"),Buffer.from(turkishImage.data,"base64"));
- await visit("/","tüm makinelerinde.","modern-landing-turkish-persisted");
+ await visit("/","Senin ve yapay zekânın.","modern-landing-turkish-persisted");
  assert.equal(await evalJs("document.querySelector('.site-header .locale-trigger')?.textContent.trim()==='TR'"),true,"Language must survive page navigation");
  await evalJs("document.querySelector('.site-header .locale-trigger').click()");
  await evalJs("document.querySelector('.site-header .locale-option[role=menuitemradio]:first-of-type').click()");
  await sleep(120);
- assert.ok(await evalJs("document.querySelector('h1')?.textContent.includes('on every machine.')"),"Reverting to English must restore native copy");
+ assert.ok(await evalJs("document.querySelector('h1')?.textContent.includes('For you and your AI.')"),"Reverting to English must restore native copy");
  assert.equal(await evalJs("localStorage.getItem('wecommander-language')"),"en");
 
  await evalJs("document.querySelector('.wc-nav-install').click()");
@@ -155,7 +155,7 @@ try{
  await sleep(90);
  assert.equal(await evalJs("document.documentElement.classList.contains('light')"),false);
  fixtures["/api/auth/me"]=signedIn;
- await visit("/","on every machine.","modern-landing-dark");
+ await visit("/","For you and your AI.","modern-landing-dark");
 
  await evalJs("document.querySelector('.theme-button').click()");
  await sleep(200);
@@ -303,7 +303,7 @@ try{
  assert.ok(await evalJs("([...document.querySelectorAll('.features-grid .feature-card')].every(el=>{const css=getComputedStyle(el);return css.opacity==='1'&&css.display!=='none'&&css.visibility!=='hidden'}))"),"Landing cards must never be hidden by reveal effects");
  assert.equal(await evalJs("location.hash"),"","Landing section URLs must have no hash");
  // Landing v1.1: one-line install, comparison and FAQ are present and real.
- await visit("/","on every machine.","modern-landing-sections");
+ await visit("/","For you and your AI.","modern-landing-sections");
  assert.ok(await evalJs("document.querySelector('.hero-install code')?.textContent===`curl -fsSL ${location.origin}/install.sh | sh`"),"Hero must show the one-line install command");
  assert.equal(await evalJs("document.querySelectorAll('.compare-table tbody tr').length"),6,"Comparison table must list six rows");
  assert.ok(await evalJs("document.querySelectorAll('#faq details').length>=6"),"FAQ must list the questions");
@@ -350,7 +350,7 @@ try{
  assert.equal(await evalJs("location.pathname"),"/app","legacy invitation links keep working");
  assert.ok(await evalJs("document.body.textContent.includes('Accept invitation')"),"legacy /app#invite= links open the invitation page");
  await call("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:1,mobile:true});
- await visit("/","on every machine.","modern-landing-mobile");
+ await visit("/","For you and your AI.","modern-landing-mobile");
  await visit("/dashboard","Welcome back","modern-dashboard-mobile");
  await visit("/devices","Connected machines","modern-devices-mobile");
  await visit("/install","Use it where you","modern-install-mobile");
@@ -362,7 +362,7 @@ try{
  // Smallest supported width (v1.1 item 5): no horizontal overflow on any shell.
  await call("Emulation.setDeviceMetricsOverride",{width:360,height:740,deviceScaleFactor:1,mobile:true});
  const clipped=()=>evalJs("(()=>{document.querySelectorAll('[data-reveal]').forEach(e=>e.classList.add('visible'));return [...document.querySelectorAll('.site-header *, .dash-topbar *, .hero-copy, .hero-copy *, .session-preview, .compare-wrap, .dash-content > *')].filter(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.right>innerWidth+1}).map(e=>e.tagName+'.'+String(e.className).slice(0,30)).slice(0,5)})()");
- for(const [page,keyword,shot] of [["/","on every machine.","modern-landing-360"],["/install","Use it where you","modern-install-360"],["/dashboard","Welcome back","modern-dashboard-360"],["/devices","Connected machines","modern-devices-360"],["/billing","Plans & billing","modern-billing-360"],["/approvals","Pending approvals","modern-approvals-360"],["/console/users","Search accounts","modern-console-users-360"],["/team","Manage members","modern-team-360"],["/audit","Audit log","modern-audit-360"]]){await visit(page,keyword,shot);assert.deepEqual(await clipped(),[],page+" has elements wider than 360 px");}
+ for(const [page,keyword,shot] of [["/","For you and your AI.","modern-landing-360"],["/install","Use it where you","modern-install-360"],["/dashboard","Welcome back","modern-dashboard-360"],["/devices","Connected machines","modern-devices-360"],["/billing","Plans & billing","modern-billing-360"],["/approvals","Pending approvals","modern-approvals-360"],["/console/users","Search accounts","modern-console-users-360"],["/team","Manage members","modern-team-360"],["/audit","Audit log","modern-audit-360"]]){await visit(page,keyword,shot);assert.deepEqual(await clipped(),[],page+" has elements wider than 360 px");}
  assert.equal(await evalJs("getComputedStyle(document.querySelector('.console-table thead')).display"),"none","Console tables collapse to cards on phones");
  assert.ok(await evalJs("[...document.querySelectorAll('.console-table td[data-label]')].length>0"),"Console card fields are labelled");
  await visit("/approvals","Pending approvals","modern-approvals-360-again");
@@ -376,7 +376,7 @@ try{
  await evalJs("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}))");
  await sleep(120);
  assert.equal(await evalJs("document.querySelector('.dashboard-sidebar').classList.contains('open')"),false,"Escape must close the mobile drawer");
- await visit("/","on every machine.","modern-landing-360-skip");
+ await visit("/","For you and your AI.","modern-landing-360-skip");
  assert.equal(await evalJs("document.querySelectorAll('main#main-content').length"),1,"Public pages need exactly one main landmark");
 
  console.log("PASS modern shadcn landing, account, device/workbench, usage, pricing, checkout and billing desktop/mobile");
