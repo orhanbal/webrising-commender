@@ -198,8 +198,12 @@ public sealed class ServersWindow : Window
     /// once and only shown or hidden; other pages replace the previous one.</summary>
     private void SetPage(UIElement page)
     {
-        var persistent = page == _terminals || page == _hostsPage;
-        if (_transientPage is not null && _transientPage != page)
+        // Visibility is set on the pages this window holds, never by walking
+        // _pageHost.Children: the collection can hand back a different
+        // wrapper for the same element, so "child == page" was false and the
+        // page itself was collapsed (a blank window, no error).
+        var persistent = ReferenceEquals(page, _terminals) || ReferenceEquals(page, _hostsPage);
+        if (_transientPage is not null && !ReferenceEquals(_transientPage, page))
         {
             _pageHost.Children.Remove(_transientPage);
             _transientPage = null;
@@ -210,8 +214,9 @@ public sealed class ServersWindow : Window
             Grid.SetRow((FrameworkElement)page, 1);
             _pageHost.Children.Add(page);
         }
-        foreach (var child in _pageHost.Children)
-            if (child != _info) child.Visibility = child == page ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var held in new UIElement?[] { _terminals, _hostsPage, _transientPage })
+            if (held is not null) held.Visibility = ReferenceEquals(held, page) ? Visibility.Visible : Visibility.Collapsed;
+        page.Visibility = Visibility.Visible;
     }
 
     /// <summary>A section page: title, optional actions, content; the notice bar on top.</summary>
