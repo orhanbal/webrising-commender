@@ -193,6 +193,28 @@ struct TunnelSave {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct CommandAdd {
+    host_id: String,
+    command: String,
+    /// The screen text just before the command (password prompts are skipped).
+    #[serde(default)]
+    prompt: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CommandHost {
+    host_id: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CommandSuggest {
+    host_id: String,
+    prefix: String,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct HostConnection {
     id: String,
     #[serde(default)]
@@ -509,6 +531,29 @@ async fn dispatch(
         "library.import" => {
             let a: ImportArg = p(params)?;
             ok(core::library::library_import(state, a.json)?)
+        }
+        "commands.add" => {
+            let c: CommandAdd = p(params)?;
+            core::commands::add(state, &c.host_id, &c.command, &c.prompt)?;
+            ok(())
+        }
+        "commands.list" => {
+            let c: CommandHost = p(params)?;
+            ok(core::commands::list(state, &c.host_id)?)
+        }
+        "commands.suggest" => {
+            let c: CommandSuggest = p(params)?;
+            ok(core::commands::suggest(
+                state,
+                &c.host_id,
+                &c.prefix,
+                c.limit.unwrap_or(5),
+            )?)
+        }
+        "commands.clear" => {
+            let c: CommandHost = p(params)?;
+            core::commands::clear(state, &c.host_id)?;
+            ok(())
         }
         "history.list" => ok(core::library::history_list(state)?),
         "history.clear" => ok(core::library::history_clear(state)?),

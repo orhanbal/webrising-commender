@@ -204,6 +204,10 @@ pub struct Data {
     pub keys: Vec<KeyMeta>,
     #[serde(default)]
     pub identities: Vec<Identity>,
+    /// Commands typed in each host's terminals, newest last (autocomplete).
+    /// Stays on this computer: not in backups or sync.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub commands: HashMap<String, Vec<String>>,
 }
 
 pub struct Store {

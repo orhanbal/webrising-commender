@@ -892,7 +892,17 @@ struct TerminalHost: NSViewRepresentable {
 
     func makeNSView(context: Context) -> TerminalView {
         let view = TerminalView(frame: .zero)
-        context.coordinator.shortcuts = TerminalShortcuts(view)
+        let suggest = Autosuggest(view: view)
+        context.coordinator.autosuggest = suggest
+        context.coordinator.shortcuts = TerminalShortcuts(view, onRightArrow: { [weak suggest] in suggest?.accept() ?? false })
+        let hostId = session.host.id
+        suggest.onCommand = { [weak model] command, prompt in model?.addCommand(hostId: hostId, command: command, prompt: prompt) }
+        Task { @MainActor [weak suggest] in
+            let history = await model.commands(hostId: hostId)
+            let snippets = await model.snippets().map { $0.command.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            suggest?.history = history
+            suggest?.snippets = snippets
+        }
         view.terminalDelegate = context.coordinator
         let size = UserDefaults.standard.double(forKey: "terminalFontSize")
         view.font = NSFont.monospacedSystemFont(ofSize: size >= 8 ? size : 13, weight: .regular)
@@ -914,6 +924,7 @@ struct TerminalHost: NSViewRepresentable {
         let model: ServersModel
         let session: TerminalSession
         var shortcuts: TerminalShortcuts?
+        var autosuggest: Autosuggest?
         init(model: ServersModel, session: TerminalSession) {
             self.model = model
             self.session = session
@@ -925,6 +936,11 @@ struct TerminalHost: NSViewRepresentable {
         nonisolated func send(source: TerminalView, data: ArraySlice<UInt8>) {
             let bytes = Array(data)
             MainActor.assumeIsolated { model.write(session, bytes[...]) }
+            // Autocomplete follows the line on the next turn, outside this
+            // callback (SwiftTerm may hold the terminal lock here).
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated { self?.autosuggest?.typed(bytes) }
+            }
         }
         nonisolated func setTerminalTitle(source: TerminalView, title: String) {}
         nonisolated func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
@@ -952,12 +968,17 @@ struct TerminalHost: NSViewRepresentable {
 @MainActor
 final class TerminalShortcuts {
     private var monitor: Any?
+    private let onRightArrow: () -> Bool
 
-    init(_ view: TerminalView) {
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak view] event in
+    init(_ view: TerminalView, onRightArrow: @escaping () -> Bool = { false }) {
+        self.onRightArrow = onRightArrow
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak view, weak self] event in
             MainActor.assumeIsolated {
                 guard let view, event.window === view.window,
                       let focused = view.window?.firstResponder as? NSView, focused.isDescendant(of: view) else { return event }
+                // → with an autocomplete suggestion on screen accepts it.
+                let plain = event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty
+                if event.keyCode == 124, plain, self?.onRightArrow() == true { return nil }
                 return TerminalShortcuts.handle(event, in: view) ? nil : event
             }
         }

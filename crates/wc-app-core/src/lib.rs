@@ -8,6 +8,7 @@
 //! transfer progress, changes) go to an [`EventSink`].
 #![allow(clippy::too_many_arguments)]
 
+pub mod commands;
 pub mod library;
 pub mod serial;
 pub mod session_log;
@@ -343,6 +344,7 @@ pub fn delete_host(state: &Arc<AppState>, id: String) -> Result<Vec<HostView>, S
     {
         let mut data = state.data.lock().map_err(|_| "busy")?;
         data.hosts.retain(|h| h.id != id);
+        data.commands.remove(&id);
         for h in data.hosts.iter_mut() {
             if h.jump_id.as_deref() == Some(id.as_str()) {
                 h.jump_id = None;

@@ -1543,6 +1543,10 @@ public sealed class ServersWindow : Window
                     tab.Post(TerminalSettingsJson());
                     _c.Resize(tab, (int?)m!["cols"] ?? 100, (int?)m["rows"] ?? 30);
                     tab.Flush();
+                    _ = SendCommands(tab);
+                    break;
+                case "command":
+                    _ = _c.AddCommand(tab.Host.Id, (string?)m!["line"] ?? "", (string?)m["prompt"] ?? "");
                     break;
                 case "input":
                     var input = (string?)m!["data"] ?? "";
@@ -1562,6 +1566,15 @@ public sealed class ServersWindow : Window
             }
         };
         core.Navigate("https://wecommander.terminal/index.html");
+    }
+
+    /// <summary>Autocomplete: this host's commands and the snippets, for the terminal page.</summary>
+    private async Task SendCommands(TerminalTab tab)
+    {
+        if (tab.Guest is not null) return; // a teammate's terminal: not ours to remember
+        var list = await _c.Commands(tab.Host.Id);
+        var snippets = (await _c.Snippets()).Select(s => s.Command.Trim()).Where(c => c.Length > 0).ToList();
+        tab.Post(JsonSerializer.Serialize(new { type = "commands", list, snippets }));
     }
 
     /// <summary>Closes one terminal; the tab goes when its last pane does.</summary>

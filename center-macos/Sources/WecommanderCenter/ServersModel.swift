@@ -504,6 +504,18 @@ final class ServersModel: ObservableObject {
         onChange?()
     }
 
+    /// Commands typed in this host's terminals (autocomplete), newest last.
+    func commands(hostId: String) async -> [String] {
+        guard let core else { return [] }
+        return (try? await core.call("commands.list", ["hostId": hostId], as: [String].self)) ?? []
+    }
+
+    /// Keeps a typed command; the core skips answers to password prompts.
+    func addCommand(hostId: String, command: String, prompt: String) {
+        guard let core else { return }
+        Task { _ = try? await core.call("commands.add", ["hostId": hostId, "command": command, "prompt": prompt], as: EmptyReply.self) }
+    }
+
     /// The folder session logs are written to.
     func logsFolder() async -> URL? {
         guard let core, let path = try? await core.call("logs.dir", [:], as: String.self) else { return nil }
@@ -774,4 +786,10 @@ final class ServersModel: ObservableObject {
         sessions.append(session)
         selection = sid
     }
+}
+
+
+/// A core reply with no content worth reading.
+struct EmptyReply: Decodable {
+    init(from decoder: Decoder) throws {}
 }
