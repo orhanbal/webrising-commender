@@ -59,11 +59,15 @@ public sealed class GatewayClient(HttpClient http, string baseUrl)
         }
     }
 
+    /// <summary>The gateway writes camelCase ("members"); records without
+    /// [JsonPropertyName] need case-insensitive names to be read at all.</summary>
+    private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
+
     private static T Read<T>(JsonNode? node) =>
-        node.Deserialize<T>() ?? throw new GatewayException(GatewayErrorKind.Network, 0, "bad_response", "Sunucudan beklenmeyen yanıt.");
+        node.Deserialize<T>(Web) ?? throw new GatewayException(GatewayErrorKind.Network, 0, "bad_response", "Sunucudan beklenmeyen yanıt.");
 
     private async Task<List<T>> ItemsAsync<T>(string path, string token, CancellationToken ct) =>
-        (await SendAsync(HttpMethod.Get, path, token, null, ct).ConfigureAwait(false))?["items"].Deserialize<List<T>>() ?? [];
+        (await SendAsync(HttpMethod.Get, path, token, null, ct).ConfigureAwait(false))?["items"].Deserialize<List<T>>(Web) ?? [];
 
     public async Task<LinkStart> LinkStartAsync(string name, CancellationToken ct = default) =>
         Read<LinkStart>(await SendAsync(HttpMethod.Post, "/api/center-link/start", null, new { name, platform = "windows" }, ct).ConfigureAwait(false));
@@ -199,7 +203,9 @@ public sealed record ShareInfo(string Id, string Title, string HostEmail, int Gu
 public sealed record TeamMember(string CenterId, string Email, string Role, string CenterName, string PublicKey, bool HasKey);
 
 /// <summary>A22: the team as this app sees it.</summary>
-public sealed record TeamState(string? OrganizationName, string Role, string? MyWrappedKey, List<TeamMember> Members, long Revision, string? Envelope)
+public sealed record TeamState(string? OrganizationName, string Role, string? MyWrappedKey, List<TeamMember>? Members, long Revision, string? Envelope)
 {
+    /// <summary>Never null, whatever the server sent.</summary>
+    public List<TeamMember> Members { get; init; } = Members ?? [];
     public bool CanEdit => Role is "operator" or "admin" or "owner";
 }
