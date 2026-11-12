@@ -880,7 +880,8 @@ struct TerminalHost: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(model: model, session: session) }
 
     func makeNSView(context: Context) -> TerminalView {
-        let view = ShortcutTerminalView(frame: .zero)
+        let view = TerminalView(frame: .zero)
+        context.coordinator.shortcuts = TerminalShortcuts(view)
         view.terminalDelegate = context.coordinator
         let size = UserDefaults.standard.double(forKey: "terminalFontSize")
         view.font = NSFont.monospacedSystemFont(ofSize: size >= 8 ? size : 13, weight: .regular)
@@ -895,12 +896,14 @@ struct TerminalHost: NSViewRepresentable {
 
     static func dismantleNSView(_ view: TerminalView, coordinator: Coordinator) {
         coordinator.session.feed = nil
+        coordinator.shortcuts?.stop()
     }
 
     @MainActor
     final class Coordinator: NSObject, TerminalViewDelegate {
         let model: ServersModel
         let session: TerminalSession
+        var shortcuts: TerminalShortcuts?
         init(model: ServersModel, session: TerminalSession) {
             self.model = model
             self.session = session
@@ -934,40 +937,51 @@ struct TerminalHost: NSViewRepresentable {
 /// The app lives in the menu bar and has no Edit menu, so the terminal
 /// handles its own shortcuts: ⌘F find, ⌘G / ⇧⌘G next and previous match,
 /// ⌘= / ⌘- / ⌘0 font size (remembered for the next terminals).
-final class ShortcutTerminalView: TerminalView {
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+/// SwiftTerm does not let its key handling be overridden, so the keys are
+/// read from the window's events while this terminal (or its find bar) has focus.
+@MainActor
+final class TerminalShortcuts {
+    private var monitor: Any?
+
+    init(_ view: TerminalView) {
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak view] event in
+            MainActor.assumeIsolated {
+                guard let view, event.window === view.window,
+                      let focused = view.window?.firstResponder as? NSView, focused.isDescendant(of: view) else { return event }
+                return TerminalShortcuts.handle(event, in: view) ? nil : event
+            }
+        }
+    }
+
+    func stop() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+    }
+
+    private static func handle(_ event: NSEvent, in view: TerminalView) -> Bool {
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         guard mods.contains(.command), !mods.contains(.control), !mods.contains(.option),
-              let key = event.charactersIgnoringModifiers?.lowercased() else {
-            return super.performKeyEquivalent(with: event)
-        }
-        let shift = mods.contains(.shift)
+              let key = event.charactersIgnoringModifiers?.lowercased() else { return false }
         switch key {
-        case "f":
-            find(.showFindPanel)
-        case "g":
-            find(shift ? .previous : .next)
-        case "=", "+":
-            setFontSize(font.pointSize + 1)
-        case "-":
-            setFontSize(font.pointSize - 1)
-        case "0":
-            setFontSize(13)
-        default:
-            return super.performKeyEquivalent(with: event)
+        case "f": find(.showFindPanel, view)
+        case "g": find(mods.contains(.shift) ? .previous : .next, view)
+        case "=", "+": setFontSize(view.font.pointSize + 1, view)
+        case "-": setFontSize(view.font.pointSize - 1, view)
+        case "0": setFontSize(13, view)
+        default: return false
         }
         return true
     }
 
-    private func find(_ action: NSFindPanelAction) {
+    private static func find(_ action: NSFindPanelAction, _ view: TerminalView) {
         let item = NSMenuItem()
         item.tag = Int(action.rawValue)
-        performFindPanelAction(item)
+        view.performFindPanelAction(item)
     }
 
-    private func setFontSize(_ size: CGFloat) {
+    private static func setFontSize(_ size: CGFloat, _ view: TerminalView) {
         let clamped = min(max(size, 8), 32)
-        font = NSFont.monospacedSystemFont(ofSize: clamped, weight: .regular)
+        view.font = NSFont.monospacedSystemFont(ofSize: clamped, weight: .regular)
         UserDefaults.standard.set(Double(clamped), forKey: "terminalFontSize")
     }
 }

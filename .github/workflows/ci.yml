@@ -1062,7 +1062,9 @@ jobs:
             if ($element.TryGetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern, [ref]$p)) { $p.Select(); return }
             throw "cannot press $($element.Current.Name)"
           }
-          foreach ($section in @('Terminaller', 'Anahtarlar', 'Kimlikler', 'Parçacıklar', 'Tüneller', 'Bilinen sunucular', 'Geçmiş', 'Ayarlar', 'Terminaller')) {
+          # Windows PowerShell reads this script as ANSI: Turkish letters are spelled as code points.
+          $c = [char]0x00E7; $i = [char]0x0131; $u = [char]0x00FC; $s = [char]0x015F
+          foreach ($section in @('Terminaller', 'Anahtarlar', 'Kimlikler', "Par${c}ac${i}klar", "T${u}neller", 'Bilinen sunucular', "Ge${c}mi${s}", 'Ayarlar', 'Terminaller')) {
             $item = Find-ByName $section
             if (-not $item) { throw "menu item missing: $section" }
             Press $item
