@@ -752,7 +752,7 @@ struct SettingsPage: View {
         Form {
             Section("Terminal") {
                 Stepper(value: $fontSize, in: 8...32, step: 1) { Text("Yazı boyutu: \(Int(fontSize))") }
-                Text("Yeni açılan terminallerde geçerli olur.").font(.caption).foregroundStyle(.secondary)
+                Text("Yeni açılan terminallerde geçerli olur. Terminal kısayolları: ⌘F ara · ⌘G / ⇧⌘G sonraki / önceki · ⌘= / ⌘- yazı boyutu · ⌘0 varsayılan boyut.").font(.caption).foregroundStyle(.secondary)
             }
             Section("Eşitleme (bilgisayarların arasında)") {
                 SyncSection(model: model)
@@ -880,7 +880,7 @@ struct TerminalHost: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(model: model, session: session) }
 
     func makeNSView(context: Context) -> TerminalView {
-        let view = TerminalView(frame: .zero)
+        let view = ShortcutTerminalView(frame: .zero)
         view.terminalDelegate = context.coordinator
         let size = UserDefaults.standard.double(forKey: "terminalFontSize")
         view.font = NSFont.monospacedSystemFont(ofSize: size >= 8 ? size : 13, weight: .regular)
@@ -928,6 +928,47 @@ struct TerminalHost: NSViewRepresentable {
         }
         nonisolated func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {}
         nonisolated func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
+    }
+}
+
+/// The app lives in the menu bar and has no Edit menu, so the terminal
+/// handles its own shortcuts: ⌘F find, ⌘G / ⇧⌘G next and previous match,
+/// ⌘= / ⌘- / ⌘0 font size (remembered for the next terminals).
+final class ShortcutTerminalView: TerminalView {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard mods.contains(.command), !mods.contains(.control), !mods.contains(.option),
+              let key = event.charactersIgnoringModifiers?.lowercased() else {
+            return super.performKeyEquivalent(with: event)
+        }
+        let shift = mods.contains(.shift)
+        switch key {
+        case "f":
+            find(.showFindPanel)
+        case "g":
+            find(shift ? .previous : .next)
+        case "=", "+":
+            setFontSize(font.pointSize + 1)
+        case "-":
+            setFontSize(font.pointSize - 1)
+        case "0":
+            setFontSize(13)
+        default:
+            return super.performKeyEquivalent(with: event)
+        }
+        return true
+    }
+
+    private func find(_ action: NSFindPanelAction) {
+        let item = NSMenuItem()
+        item.tag = Int(action.rawValue)
+        performFindPanelAction(item)
+    }
+
+    private func setFontSize(_ size: CGFloat) {
+        let clamped = min(max(size, 8), 32)
+        font = NSFont.monospacedSystemFont(ofSize: clamped, weight: .regular)
+        UserDefaults.standard.set(Double(clamped), forKey: "terminalFontSize")
     }
 }
 
