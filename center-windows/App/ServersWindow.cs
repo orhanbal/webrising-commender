@@ -135,6 +135,15 @@ public sealed class ServersWindow : Window
         _c.Notice += text => DispatcherQueue.TryEnqueue(() => Show(text, InfoBarSeverity.Warning));
         Closed += (_, e) => { e.Handled = true; AppWindow.Hide(); };
         // The window shows the navigation (menu + current section).
+        // Pages never move between parents (WinUI may still hold an element in
+        // its old parent: blank page or "already the child of another
+        // element"). The page host stays the navigation content; the message
+        // bar sits on top of every page.
+        _info.Margin = new Thickness(28, 12, 28, 0);
+        _pageHost.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        _pageHost.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        _pageHost.Children.Add(_info);
+        _nav.Content = _pageHost;
         Content = _nav;
         RenderHosts();
         Navigate("hosts");
@@ -181,6 +190,30 @@ public sealed class ServersWindow : Window
 
     // ---- sections ----
 
+    private readonly Grid _pageHost = new();
+    /// <summary>The section page built for this visit (Anahtarlar, Ayarlar, ...); replaced on the next one.</summary>
+    private UIElement? _transientPage;
+
+    /// <summary>Shows a page: the Sunucular and Terminaller pages are added
+    /// once and only shown or hidden; other pages replace the previous one.</summary>
+    private void SetPage(UIElement page)
+    {
+        var persistent = page == _terminals || page == _hostsPage;
+        if (_transientPage is not null && _transientPage != page)
+        {
+            _pageHost.Children.Remove(_transientPage);
+            _transientPage = null;
+        }
+        if (!persistent) _transientPage = page;
+        if (!_pageHost.Children.Contains(page))
+        {
+            Grid.SetRow((FrameworkElement)page, 1);
+            _pageHost.Children.Add(page);
+        }
+        foreach (var child in _pageHost.Children)
+            if (child != _info) child.Visibility = child == page ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     /// <summary>A section page: title, optional actions, content; the notice bar on top.</summary>
     private UIElement Page(string title, string subtitle, UIElement body, params UIElement[] actions)
     {
@@ -203,11 +236,6 @@ public sealed class ServersWindow : Window
             head.Children.Add(a);
         }
         grid.Children.Add(head);
-        if (_info.Parent is Panel old) old.Children.Remove(_info);
-        Grid.SetRow(_info, 1);
-        Grid.SetColumnSpan(_info, 1);
-        _info.VerticalAlignment = VerticalAlignment.Stretch;
-        grid.Children.Add(_info);
         Grid.SetRow((FrameworkElement)body, 2);
         grid.Children.Add(body);
         return grid;
@@ -245,15 +273,7 @@ public sealed class ServersWindow : Window
         switch (section)
         {
             case "terminals":
-                // The message bar floats over the top of the terminal area, so
-                // errors stay visible here too.
-                if (_info.Parent is Panel p) p.Children.Remove(_info);
-                Grid.SetRow(_info, 1);
-                Grid.SetColumnSpan(_info, 2);
-                _info.VerticalAlignment = VerticalAlignment.Top;
-                Canvas.SetZIndex(_info, 10);
-                _terminals.Children.Add(_info);
-                _nav.Content = _terminals;
+                SetPage(_terminals);
                 break;
             case "snippets": _ = ShowSnippets(); break;
             case "keys": _ = ShowKeys(); break;
@@ -273,15 +293,7 @@ public sealed class ServersWindow : Window
                         ActionButton("İçe aktar", Symbol.Import, async () => Show(await _c.ImportSshConfig(), InfoBarSeverity.Informational)),
                         ActionButton("Yeni sunucu", Symbol.Add, () => _ = EditHost(null), accent: true));
                 }
-                else if (_info.Parent != _hostsPage)
-                {
-                    if (_info.Parent is Panel old) old.Children.Remove(_info);
-                    Grid.SetRow(_info, 1);
-                    Grid.SetColumnSpan(_info, 1);
-                    _info.VerticalAlignment = VerticalAlignment.Stretch;
-                    _hostsPage.Children.Add(_info);
-                }
-                _nav.Content = _hostsPage;
+                SetPage(_hostsPage);
                 break;
         }
     }
@@ -485,7 +497,7 @@ public sealed class ServersWindow : Window
         RenderTeam(teamPanel);
         var body = new StackPanel { Spacing = 18, MaxWidth = 640, HorizontalAlignment = HorizontalAlignment.Left };
         foreach (var e in new UIElement[] { font, theme, keys, syncTitle, syncPanel, teamTitle, teamPanel, backupTitle, backupHelp, backupRow, center }) body.Children.Add(e);
-        _nav.Content = Page("Ayarlar", "Terminal görünümü; değişiklikler açık terminallere hemen uygulanır.", new ScrollViewer { Content = body });
+        SetPage(Page("Ayarlar", "Terminal görünümü; değişiklikler açık terminallere hemen uygulanır.", new ScrollViewer { Content = body }));
     }
 
     private async Task RenderSync(StackPanel panel)
@@ -646,9 +658,9 @@ public sealed class ServersWindow : Window
             Grid.SetColumn(del, 2); row.Children.Add(del);
             list.Children.Add(row);
         }
-        _nav.Content = Page("Anahtarlar", "SSH anahtarların. Özel anahtar Windows Kimlik Bilgisi Yöneticisi'nde saklanır; burada yalnız genel anahtar görünür.", new ScrollViewer { Content = list },
+        SetPage(Page("Anahtarlar", "SSH anahtarların. Özel anahtar Windows Kimlik Bilgisi Yöneticisi'nde saklanır; burada yalnız genel anahtar görünür.", new ScrollViewer { Content = list },
             ActionButton("İçe aktar", Symbol.Import, () => _ = ImportKey()),
-            ActionButton("Yeni anahtar", Symbol.Add, () => _ = GenerateKey(), accent: true));
+            ActionButton("Yeni anahtar", Symbol.Add, () => _ = GenerateKey(), accent: true)));
     }
 
     private async Task GenerateKey()
@@ -730,8 +742,8 @@ public sealed class ServersWindow : Window
             Grid.SetColumn(del, 2); row.Children.Add(del);
             list.Children.Add(row);
         }
-        _nav.Content = Page("Kimlikler", "Birçok sunucuda kullanılan kullanıcı + anahtar ya da parola. Parola Windows Kimlik Bilgisi Yöneticisi'nde saklanır.", new ScrollViewer { Content = list },
-            ActionButton("Yeni kimlik", Symbol.Add, () => _ = EditIdentity(null), accent: true));
+        SetPage(Page("Kimlikler", "Birçok sunucuda kullanılan kullanıcı + anahtar ya da parola. Parola Windows Kimlik Bilgisi Yöneticisi'nde saklanır.", new ScrollViewer { Content = list },
+            ActionButton("Yeni kimlik", Symbol.Add, () => _ = EditIdentity(null), accent: true)));
     }
 
     private async Task EditIdentity(Identity? existing)
@@ -805,8 +817,8 @@ public sealed class ServersWindow : Window
             Grid.SetColumn(del, 3); row.Children.Add(del);
             list.Children.Add(row);
         }
-        _nav.Content = Page("Parçacıklar", "Kayıtlı komutlar. Açık terminale gönderilir; Enter ile çalışır.", new ScrollViewer { Content = list },
-            ActionButton("Yeni parçacık", Symbol.Add, () => _ = EditSnippet(null), accent: true));
+        SetPage(Page("Parçacıklar", "Kayıtlı komutlar. Açık terminale gönderilir; Enter ile çalışır.", new ScrollViewer { Content = list },
+            ActionButton("Yeni parçacık", Symbol.Add, () => _ = EditSnippet(null), accent: true)));
     }
 
     private async Task EditSnippet(Snippet? snippet)
@@ -871,7 +883,7 @@ public sealed class ServersWindow : Window
             Grid.SetColumn(del, 2); row.Children.Add(del);
             list.Children.Add(row);
         }
-        _nav.Content = Page("Tüneller", "Kayıtlı tüneller: yerel (ssh -L), uzak (ssh -R) ve SOCKS proxy (ssh -D). Uygulama açıkken arka planda çalışır.", new ScrollViewer { Content = list });
+        SetPage(Page("Tüneller", "Kayıtlı tüneller: yerel (ssh -L), uzak (ssh -R) ve SOCKS proxy (ssh -D). Uygulama açıkken arka planda çalışır.", new ScrollViewer { Content = list }));
     }
 
     private async Task ShowKnown()
@@ -894,7 +906,7 @@ public sealed class ServersWindow : Window
             Grid.SetColumn(forget, 1); row.Children.Add(forget);
             list.Children.Add(row);
         }
-        _nav.Content = Page("Bilinen sunucular", "Güvendiğin sunucu anahtarları (known_hosts). Anahtar değişirse bağlanmadan önce uyarılırsın.", new ScrollViewer { Content = list });
+        SetPage(Page("Bilinen sunucular", "Güvendiğin sunucu anahtarları (known_hosts). Anahtar değişirse bağlanmadan önce uyarılırsın.", new ScrollViewer { Content = list }));
     }
 
     private async Task ShowHistory()
@@ -917,8 +929,8 @@ public sealed class ServersWindow : Window
             Grid.SetColumn(again, 2); row.Children.Add(again);
             list.Children.Add(row);
         }
-        _nav.Content = Page("Geçmiş", "Son bağlantıların (en yenisi üstte).", new ScrollViewer { Content = list },
-            ActionButton("Temizle", Symbol.Delete, async () => { await Guard(() => _c.ClearHistory()); await ShowHistory(); }));
+        SetPage(Page("Geçmiş", "Son bağlantıların (en yenisi üstte).", new ScrollViewer { Content = list },
+            ActionButton("Temizle", Symbol.Delete, async () => { await Guard(() => _c.ClearHistory()); await ShowHistory(); })));
     }
 
     // ---- add / edit host ----
