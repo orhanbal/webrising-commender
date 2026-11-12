@@ -113,6 +113,11 @@ pub struct ConnectOptions {
     /// by default: anyone with root on the server could use the agent's
     /// keys while the connection is open.
     pub agent_forwarding: bool,
+    /// More unencrypted private keys, tried in the same session after the
+    /// credential is refused (like `ssh` offering every key it has). One
+    /// session means one entry in the server's failed-login count, so
+    /// fail2ban does not ban this computer for trying its keys.
+    pub extra_keys: Vec<String>,
 }
 
 impl Default for ConnectOptions {
@@ -121,6 +126,7 @@ impl Default for ConnectOptions {
             timeout: Duration::from_secs(15),
             trusted_fingerprint: None,
             agent_forwarding: false,
+            extra_keys: Vec::new(),
         }
     }
 }
@@ -214,6 +220,7 @@ pub struct Connection {
     host_key: HostKey,
     routes: RemoteRoutes,
     agent_forwarding: bool,
+    used_extra_key: Option<usize>,
 }
 
 /// Connects, verifies the host key against `options.trusted_fingerprint`
@@ -347,12 +354,47 @@ async fn connect_inner(
         }
         (Credential::PrivateKey { .. }, None) => unreachable!("key decoded above"),
     };
+    let mut result = result;
+    let mut used_extra_key = None;
+    for (index, text) in options.extra_keys.iter().enumerate() {
+        let russh::client::AuthResult::Failure {
+            remaining_methods, ..
+        } = &result
+        else {
+            break;
+        };
+        if !remaining_methods
+            .iter()
+            .any(|m| <&str>::from(m) == "publickey")
+        {
+            break;
+        }
+        let Ok(extra) = russh::keys::decode_secret_key(text, None) else {
+            continue;
+        };
+        let hash = handle
+            .best_supported_rsa_hash()
+            .await
+            .map_err(map_error)?
+            .flatten();
+        result = handle
+            .authenticate_publickey(
+                profile.user.clone(),
+                PrivateKeyWithHashAlg::new(Arc::new(extra), hash),
+            )
+            .await
+            .map_err(map_error)?;
+        if matches!(result, russh::client::AuthResult::Success) {
+            used_extra_key = Some(index);
+        }
+    }
     match result {
         russh::client::AuthResult::Success => Ok(Connection {
             handle,
             host_key,
             routes,
             agent_forwarding: options.agent_forwarding,
+            used_extra_key,
         }),
         russh::client::AuthResult::Failure {
             remaining_methods, ..
@@ -374,6 +416,11 @@ fn map_error(err: russh::Error) -> SshError {
 }
 
 impl Connection {
+    /// Which of `ConnectOptions::extra_keys` logged in, if one did.
+    pub fn used_extra_key(&self) -> Option<usize> {
+        self.used_extra_key
+    }
+
     /// The host key this connection verified.
     pub fn host_key(&self) -> &HostKey {
         &self.host_key

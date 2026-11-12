@@ -298,7 +298,7 @@ public enum CoreText {
             return "Giriş reddedildi; kullanıcı adı, parola ya da anahtar yanlış. Sunucunun kabul ettiği yöntemler: " + methods.joined(separator: ", ") + "."
         }
         if text.contains("private key could not be used") { return "Özel anahtar okunamadı (biçim veya anahtar parolası yanlış)." }
-        if text.contains("timed out") { return "Sunucu yanıt vermedi (zaman aşımı)." }
+        if text.contains("timed out") { return "Sunucuya ulaşılamadı (zaman aşımı). Sunucu kapalı olabilir ya da kısa sürede çok sayıda başarısız giriş yüzünden bu bilgisayarı geçici olarak engellemiş olabilir (ör. fail2ban); birkaç dakika sonra tekrar dene." }
         if text.contains("did not start SFTP") { return "Bu sunucu SFTP'yi açmadı (sshd_config içinde 'Subsystem sftp' olmalı)." }
         if text.hasPrefix("key file ") { return "Anahtar dosyası okunamadı: " + text.dropFirst("key file ".count) }
         if text.hasPrefix("jump host ") { return "Atlama sunucusu: " + text.dropFirst("jump host ".count) }

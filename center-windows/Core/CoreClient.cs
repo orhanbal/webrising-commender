@@ -184,7 +184,7 @@ public static class CoreText
         if (text.Contains("no saved credential")) return "Bu sunucu için kayıtlı giriş bilgisi yok; bir kez gir.";
         if (text.Contains("authentication failed")) return AuthFailed(text);
         if (text.Contains("private key could not be used")) return "Özel anahtar okunamadı (biçim veya anahtar parolası yanlış).";
-        if (text.Contains("timed out")) return "Sunucu yanıt vermedi (zaman aşımı).";
+        if (text.Contains("timed out")) return "Sunucuya ulaşılamadı (zaman aşımı). Sunucu kapalı olabilir ya da kısa sürede çok sayıda başarısız giriş yüzünden bu bilgisayarı geçici olarak engellemiş olabilir (ör. fail2ban); birkaç dakika sonra tekrar dene.";
         if (text.Contains("did not start SFTP")) return "Bu sunucu SFTP'yi açmadı (sshd_config içinde 'Subsystem sftp' olmalı).";
         if (text.StartsWith("key file ")) return "Anahtar dosyası okunamadı: " + text["key file ".Length..];
         if (text.StartsWith("jump host ")) return "Atlama sunucusu: " + text["jump host ".Length..];
