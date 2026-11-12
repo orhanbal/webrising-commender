@@ -340,6 +340,13 @@ public sealed class ServersController : IDisposable
     }
 
     /// <summary>Terminal options of a host: startup command, environment variables, agent forwarding.</summary>
+    /// <summary>This computer's serial ports (COM3 ...).</summary>
+    public async Task<List<string>> SerialPorts()
+    {
+        try { return await Core.CallAsync<List<string>>("serial.ports"); }
+        catch (CoreException) { return []; }
+    }
+
     /// <summary>"ssh", "telnet", "serial" (with its settings) or "mosh".</summary>
     public async Task SetHostConnection(CoreHost host, string protocol, SerialSettings? serial = null)
     {

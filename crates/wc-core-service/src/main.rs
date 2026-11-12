@@ -424,6 +424,7 @@ async fn dispatch(
                 h.agent_forwarding,
             )?)
         }
+        "serial.ports" => ok(core::serial::ports()),
         "hosts.setConnection" => {
             let h: HostConnection = p(params)?;
             ok(core::library::host_set_connection(

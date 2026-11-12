@@ -1008,6 +1008,13 @@ struct EditHostSheet: View {
     @State private var envText = ""
     @State private var agentForwarding = false
     @State private var kind = "ssh"
+    @State private var serialPorts: [String] = []
+    @State private var serialDevice = ""
+    @State private var baud = "9600"
+    @State private var dataBits = 8
+    @State private var parity = "none"
+    @State private var stopBits = 1
+    @State private var flow = "none"
     @State private var error: String?
 
     var body: some View {
@@ -1015,13 +1022,35 @@ struct EditHostSheet: View {
             Picker("Bağlantı türü", selection: $kind) {
                 Text("SSH").tag("ssh")
                 Text("Telnet").tag("telnet")
+                Text("Seri port").tag("serial")
             }
             .onChange(of: kind) { k in
                 if k != "ssh", port == "22" { port = "23" }
                 if k == "ssh", port == "23" { port = "22" }
             }
             TextField("Ad", text: $label, prompt: Text("Prod web"))
+            if kind == "serial" {
+                Section("Seri port") {
+                    HStack {
+                        TextField("Port", text: $serialDevice, prompt: Text("/dev/cu.usbserial-1410"))
+                        Menu("Seç") { ForEach(serialPorts, id: \.self) { p in Button(p) { serialDevice = p } } }
+                            .disabled(serialPorts.isEmpty).fixedSize()
+                    }
+                    Picker("Hız (baud)", selection: $baud) {
+                        ForEach(["1200", "2400", "4800", "9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600"], id: \.self) { Text($0).tag($0) }
+                    }
+                    Picker("Veri bitleri", selection: $dataBits) { ForEach([8, 7, 6, 5], id: \.self) { Text("\($0)").tag($0) } }
+                    Picker("Eşlik", selection: $parity) {
+                        Text("Yok").tag("none"); Text("Çift").tag("even"); Text("Tek").tag("odd")
+                    }
+                    Picker("Durdurma bitleri", selection: $stopBits) { Text("1").tag(1); Text("2").tag(2) }
+                    Picker("Akış denetimi", selection: $flow) {
+                        Text("Yok").tag("none"); Text("Donanım (RTS/CTS)").tag("hardware"); Text("Yazılım (XON/XOFF)").tag("software")
+                    }
+                }
+            } else {
             TextField("Adres", text: $address, prompt: Text("sunucu.ornek.com"))
+            }
             if kind == "ssh" {
             Picker("Kimlik", selection: $identityId) {
                 Text("Yok (bu sunucunun kendi kullanıcısı ve giriş bilgisi)").tag("")
@@ -1032,7 +1061,7 @@ struct EditHostSheet: View {
             }
             TextField("Kullanıcı", text: $user).disabled(!identityId.isEmpty)
             }
-            TextField("Port", text: $port)
+            if kind != "serial" { TextField("Port", text: $port) }
             TextField("Grup (isteğe bağlı)", text: $group, prompt: Text("Production"))
             if kind == "ssh" {
             if identityId.isEmpty {
@@ -1064,7 +1093,7 @@ struct EditHostSheet: View {
         }
         .formStyle(.grouped)
         .frame(width: 480)
-        .task { keys = await model.keys(); identities = await model.identities() }
+        .task { keys = await model.keys(); identities = await model.identities(); serialPorts = await model.serialPorts() }
         .onAppear {
             guard let host else { return }
             keyId = host.keyId ?? ""
@@ -1080,6 +1109,10 @@ struct EditHostSheet: View {
             envText = (host.env ?? [:]).sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "\n")
             agentForwarding = host.agentForwarding ?? false
             kind = host.`protocol` ?? "ssh"
+            if let serial = host.serial {
+                serialDevice = serial.device; baud = String(serial.baud); dataBits = serial.dataBits
+                parity = serial.parity; stopBits = serial.stopBits; flow = serial.flow
+            }
         }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Vazgeç") { dismiss() } }
@@ -1088,6 +1121,16 @@ struct EditHostSheet: View {
                     Task {
                         do {
                             if kind != "ssh", user.trimmingCharacters(in: .whitespaces).isEmpty { user = kind }
+                            var serialSettings: SerialSettings?
+                            if kind == "serial" {
+                                let device = serialDevice.trimmingCharacters(in: .whitespaces)
+                                guard !device.isEmpty else { throw CoreClient.Failure.core("Seri portu seç ya da yaz.") }
+                                serialSettings = SerialSettings(device: device, baud: Int(baud) ?? 9600, dataBits: dataBits,
+                                                                parity: parity, stopBits: stopBits, flow: flow)
+                                // The profile still needs an address; the port is the real target.
+                                address = "serial"
+                                port = "1"
+                            }
                             let jump = jumpId.isEmpty || kind != "ssh" ? nil : jumpId
                             let portNumber = Int(port) ?? 0
                             if let host {
@@ -1108,8 +1151,8 @@ struct EditHostSheet: View {
                             if identity == nil, let s = saved, s.keyId != chosen { try await model.setKey(s, keyId: chosen) }
                             if let s = saved, s.identityId != identity { try await model.setIdentity(s, identityId: identity) }
                             saved = saved.flatMap { h in model.hosts.first { $0.id == h.id } }
-                            if let s = saved, (s.`protocol` ?? "ssh") != kind {
-                                try await model.setConnection(s, protocol: kind)
+                            if let s = saved, (s.`protocol` ?? "ssh") != kind || s.serial != serialSettings {
+                                try await model.setConnection(s, protocol: kind, serial: serialSettings)
                                 saved = model.hosts.first { $0.id == s.id }
                             }
                             var env: [String: String] = [:]

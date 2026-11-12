@@ -937,7 +937,7 @@ public sealed class ServersWindow : Window
 
     private async Task EditHost(CoreHost? existing)
     {
-        var protocols = new[] { ("ssh", "SSH"), ("telnet", "Telnet") };
+        var protocols = new[] { ("ssh", "SSH"), ("telnet", "Telnet"), ("serial", "Seri port") };
         var protocol = new ComboBox
         {
             Header = "Bağlantı türü",
@@ -998,19 +998,36 @@ public sealed class ServersWindow : Window
         foreach (var e in new UIElement[] { startup, envText, agent }) optionsPanel.Children.Add(e);
         terminalOptions.Content = optionsPanel;
         var error = new TextBlock { Foreground = new SolidColorBrush(Microsoft.UI.Colors.IndianRed), TextWrapping = TextWrapping.Wrap };
-        // Telnet logs in inside the terminal: no user, key, identity or jump host here.
+        // Serial line settings.
+        var serialNow = existing?.Serial;
+        var serialDevice = new ComboBox { Header = "Seri port", IsEditable = true, ItemsSource = await _c.SerialPorts(), Text = serialNow?.Device ?? "", PlaceholderText = "COM3", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var bauds = new List<string> { "1200", "2400", "4800", "9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600" };
+        var baud = new ComboBox { Header = "Hız (baud)", IsEditable = true, ItemsSource = bauds, Text = (serialNow?.Baud ?? 9600).ToString(), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var dataBits = new ComboBox { Header = "Veri bitleri", ItemsSource = new[] { "8", "7", "6", "5" }, SelectedItem = (serialNow?.DataBits ?? 8).ToString(), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var parities = new[] { ("none", "Yok"), ("even", "Çift"), ("odd", "Tek") };
+        var parity = new ComboBox { Header = "Eşlik", ItemsSource = parities.Select(x => x.Item2).ToList(), SelectedIndex = Math.Max(0, Array.FindIndex(parities, x => x.Item1 == (serialNow?.Parity ?? "none"))), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var stopBits = new ComboBox { Header = "Durdurma bitleri", ItemsSource = new[] { "1", "2" }, SelectedItem = (serialNow?.StopBits ?? 1).ToString(), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var flows = new[] { ("none", "Yok"), ("hardware", "Donanım (RTS/CTS)"), ("software", "Yazılım (XON/XOFF)") };
+        var flow = new ComboBox { Header = "Akış denetimi", ItemsSource = flows.Select(x => x.Item2).ToList(), SelectedIndex = Math.Max(0, Array.FindIndex(flows, x => x.Item1 == (serialNow?.Flow ?? "none"))), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var serialPanel = new StackPanel { Spacing = 10 };
+        foreach (var e in new UIElement[] { serialDevice, baud, dataBits, parity, stopBits, flow }) serialPanel.Children.Add(e);
+        // Telnet logs in inside the terminal; a serial port has no address at all.
         void SyncProtocol()
         {
-            var ssh = protocol.SelectedIndex <= 0;
+            var chosenKind = protocols[Math.Max(0, protocol.SelectedIndex)].Item1;
+            var ssh = chosenKind == "ssh";
+            var isSerial = chosenKind == "serial";
             foreach (var e in new UIElement[] { user, identity, kind, keyChoice, jump, terminalOptions })
                 e.Visibility = ssh ? Visibility.Visible : Visibility.Collapsed;
-            if (!ssh && port.Value == 22) port.Value = 23;
+            host.Visibility = port.Visibility = isSerial ? Visibility.Collapsed : Visibility.Visible;
+            serialPanel.Visibility = isSerial ? Visibility.Visible : Visibility.Collapsed;
+            if (chosenKind == "telnet" && port.Value == 22) port.Value = 23;
             if (ssh && port.Value == 23) port.Value = 22;
         }
         protocol.SelectionChanged += (_, _) => SyncProtocol();
         SyncProtocol();
         var panel = new StackPanel { Spacing = 10, MinWidth = 400 };
-        foreach (var e in new UIElement[] { protocol, label, host, user, port, group, identity, kind, keyChoice, jump, terminalOptions, error }) panel.Children.Add(e);
+        foreach (var e in new UIElement[] { protocol, label, host, serialPanel, user, port, group, identity, kind, keyChoice, jump, terminalOptions, error }) panel.Children.Add(e);
         var dialog = Dialog(existing is null ? "Yeni sunucu" : "Sunucuyu düzenle", new ScrollViewer { Content = panel, MaxHeight = 560 }, "Kaydet");
         dialog.PrimaryButtonClick += async (d, args) =>
         {
@@ -1020,6 +1037,18 @@ public sealed class ServersWindow : Window
                 var chosen = protocols[Math.Max(0, protocol.SelectedIndex)].Item1;
                 var ssh = chosen == "ssh";
                 if (!ssh && string.IsNullOrWhiteSpace(user.Text)) user.Text = chosen;
+                SerialSettings? serialSettings = null;
+                if (chosen == "serial")
+                {
+                    var device = (serialDevice.Text ?? serialDevice.SelectedItem as string ?? "").Trim();
+                    if (device.Length == 0) throw new CoreException("Seri portu seç ya da yaz (ör. COM3).");
+                    if (!int.TryParse((baud.Text ?? baud.SelectedItem as string ?? "").Trim(), out var baudValue)) throw new CoreException("Hız (baud) bir sayı olmalı.");
+                    serialSettings = new SerialSettings(device, baudValue, int.Parse((string)dataBits.SelectedItem), parities[Math.Max(0, parity.SelectedIndex)].Item1,
+                        int.Parse((string)stopBits.SelectedItem), flows[Math.Max(0, flow.SelectedIndex)].Item1);
+                    // The profile still needs an address; the port is the real target.
+                    host.Text = "serial";
+                    port.Value = 1;
+                }
                 var jumpId = ssh && jump.SelectedIndex > 0 ? candidates[jump.SelectedIndex - 1].Id : null;
                 var keyId = keyChoice.SelectedIndex > 0 ? appKeys[keyChoice.SelectedIndex - 1].Id : null;
                 var authKind = keyId is not null ? "key" : kind.SelectedIndex == 1 ? "password" : "key";
@@ -1036,9 +1065,9 @@ public sealed class ServersWindow : Window
                     await _c.UpdateHost(existing, label.Text.Trim(), host.Text.Trim(), (int)port.Value, user.Text.Trim(), authKind, jumpId, group.Text.Trim());
                 }
                 var saved = existing is null ? _c.Hosts.LastOrDefault() : _c.Hosts.FirstOrDefault(h => h.Id == existing.Id);
-                if (saved is not null && (saved.Protocol ?? "ssh") != chosen)
+                if (saved is not null && ((saved.Protocol ?? "ssh") != chosen || saved.Serial != serialSettings))
                 {
-                    await _c.SetHostConnection(saved, chosen);
+                    await _c.SetHostConnection(saved, chosen, serialSettings);
                     saved = _c.Hosts.FirstOrDefault(h => h.Id == saved.Id) ?? saved;
                 }
                 var identityId = identity.SelectedIndex > 0 ? identities[identity.SelectedIndex - 1].Id : null;

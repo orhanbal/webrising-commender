@@ -9,6 +9,7 @@
 #![allow(clippy::too_many_arguments)]
 
 pub mod library;
+pub mod serial;
 pub mod store;
 pub mod stream;
 pub mod sync;
@@ -824,6 +825,17 @@ async fn connect_stream_host(
             let tcp = telnet::connect(&saved.profile.host, saved.profile.port).await?;
             Box::new(move |rx, events| {
                 tokio::spawn(telnet::run(tcp, cols, rows, rx, events));
+            })
+        }
+        "serial" => {
+            let settings = saved
+                .link
+                .serial
+                .clone()
+                .ok_or("serial port settings are missing")?;
+            let port = serial::open(&settings)?;
+            Box::new(move |rx, events| {
+                tokio::spawn(serial::run(port, rx, events));
             })
         }
         other => {

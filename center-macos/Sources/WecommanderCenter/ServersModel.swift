@@ -504,6 +504,12 @@ final class ServersModel: ObservableObject {
         onChange?()
     }
 
+    /// This Mac's serial ports (/dev/cu.usbserial-1410 ...).
+    func serialPorts() async -> [String] {
+        guard let core else { return [] }
+        return (try? await core.call("serial.ports", [:], as: [String].self)) ?? []
+    }
+
     /// "ssh", "telnet", "serial" (with its settings) or "mosh".
     func setConnection(_ host: CoreHost, protocol kind: String, serial: SerialSettings? = nil) async throws {
         guard let core else { throw CoreClient.Failure.stopped }

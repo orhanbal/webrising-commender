@@ -7,6 +7,8 @@ authors.workspace = true
 description = "WECOMMANDER app core shared by the native apps (via wecommander-core) and the Linux app: saved hosts, credentials in the OS keyring, SSH terminals, SFTP, tunnels"
 
 [dependencies]
+# Serial ports; no libudev so Linux builds need no extra system library.
+tokio-serial = { version = "5.4", default-features = false }
 wc-ssh-core = { path = "../wc-ssh-core" }
 wc-vault = { path = "../wc-vault", features = ["os-keyring"] }
 serde = { version = "1", features = ["derive"] }

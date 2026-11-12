@@ -187,6 +187,10 @@ public static class CoreText
         if (text.Contains("work only on SSH terminals")) return "Dosyalar ve tüneller yalnız SSH bağlantılarında kullanılabilir.";
         if (text.StartsWith("telnet: could not connect")) return "Telnet bağlantısı kurulamadı; adresi ve portu kontrol et.";
         if (text.Contains("not available in this version")) return "Bu bağlantı türü bu sürümde henüz yok.";
+        if (text.StartsWith("serial: could not open"))
+            return "Seri port açılamadı. Kablonun takılı olduğunu ve portu başka bir programın kullanmadığını kontrol et.";
+        if (text.Contains("invalid serial line settings")) return "Seri port ayarları geçersiz (hız, veri bitleri, eşlik ya da durdurma bitleri).";
+        if (text.Contains("invalid serial port") || text.Contains("serial port settings are missing")) return "Seri portu seç ya da yaz (ör. COM3).";
         if (text.Contains("timed out")) return "Sunucuya ulaşılamadı (zaman aşımı). Sunucu kapalı olabilir ya da kısa sürede çok sayıda başarısız giriş yüzünden bu bilgisayarı geçici olarak engellemiş olabilir (ör. fail2ban); birkaç dakika sonra tekrar dene.";
         if (text.Contains("did not start SFTP")) return "Bu sunucu SFTP'yi açmadı (sshd_config içinde 'Subsystem sftp' olmalı).";
         if (text.StartsWith("key file ")) return "Anahtar dosyası okunamadı: " + text["key file ".Length..];
