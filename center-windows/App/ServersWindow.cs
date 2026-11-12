@@ -37,10 +37,14 @@ public sealed class ServersWindow : Window
     private readonly AppBarButton _shareButton = new() { Label = "Ekiple paylaş", Icon = new FontIcon { Glyph = "\uE72D" } };
     private readonly StackPanel _empty = new() { Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
     private readonly Grid _terminals = new();
-    private readonly AutoSuggestBox _search = new() { PlaceholderText = "Sunucu ara ya da hızlı bağlan (kullanıcı@adres)", QueryIcon = new SymbolIcon(Symbol.Find), MinWidth = 360 };
-    private readonly StackPanel _hostGroups = new() { Spacing = 18 };
-    /// <summary>The Sunucular page, made the first time it is shown.</summary>
+    // The Sunucular page is built on every visit, like the other pages, with
+    // its own search box and host list (nothing moves between parents).
+    private AutoSuggestBox _search = NewSearchBox();
+    private StackPanel _hostGroups = new() { Spacing = 18 };
     private Grid? _hostsPage;
+
+    private static AutoSuggestBox NewSearchBox() =>
+        new() { PlaceholderText = "Sunucu ara ya da hızlı bağlan (kullanıcı@adres)", QueryIcon = new SymbolIcon(Symbol.Find), MinWidth = 220 };
     private readonly NavigationViewItem _hostsItem = new() { Content = "Sunucular", Tag = "hosts", Icon = new FontIcon { Glyph = "\uE968" } };
     private readonly NavigationViewItem _terminalsItem = new() { Content = "Terminaller", Tag = "terminals", Icon = new FontIcon { Glyph = "\uE756" } };
     private readonly InfoBadge _terminalsBadge = new() { Visibility = Visibility.Collapsed };
@@ -128,8 +132,6 @@ public sealed class ServersWindow : Window
         Grid.SetRow(_filesPane, 1); Grid.SetColumn(_filesPane, 1);
         _terminals.Children.Add(_filesPane);
 
-        _search.TextChanged += (_, e) => { if (e.Reason == AutoSuggestionBoxTextChangeReason.UserInput) RenderHosts(); };
-        _search.QuerySubmitted += async (_, e) => await QuickConnect(e.QueryText);
 
         _c.Changed += () => DispatcherQueue.TryEnqueue(() => { RenderHosts(); });
         _c.Notice += text => DispatcherQueue.TryEnqueue(() => Show(text, InfoBarSeverity.Warning));
@@ -198,8 +200,12 @@ public sealed class ServersWindow : Window
     /// once and only shown or hidden; other pages replace the previous one.</summary>
     private void SetPage(UIElement page)
     {
-        var persistent = page == _terminals || page == _hostsPage;
-        if (_transientPage is not null && _transientPage != page)
+        // Visibility is set on the pages this window holds, never by walking
+        // _pageHost.Children: the collection can hand back a different
+        // wrapper for the same element, so "child == page" was false and the
+        // page itself was collapsed (a blank window, no error).
+        var persistent = ReferenceEquals(page, _terminals);
+        if (_transientPage is not null && !ReferenceEquals(_transientPage, page))
         {
             _pageHost.Children.Remove(_transientPage);
             _transientPage = null;
@@ -210,8 +216,33 @@ public sealed class ServersWindow : Window
             Grid.SetRow((FrameworkElement)page, 1);
             _pageHost.Children.Add(page);
         }
-        foreach (var child in _pageHost.Children)
-            if (child != _info) child.Visibility = child == page ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var held in new UIElement?[] { _terminals, _transientPage })
+            if (held is not null) held.Visibility = ReferenceEquals(held, page) ? Visibility.Visible : Visibility.Collapsed;
+        page.Visibility = Visibility.Visible;
+        if (Environment.GetEnvironmentVariable("WECOMMANDER_DEBUG_LAYOUT") == "1")
+            DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () => _ = LogLayout(page));
+    }
+
+    /// <summary>CI only (WECOMMANDER_DEBUG_LAYOUT=1): where the page host and its pages are.</summary>
+    private async Task LogLayout(UIElement shown)
+    {
+        await Task.Delay(400);
+        try
+        {
+            var lines = new List<string> { $"--- shown={shown.GetType().Name} host={_pageHost.ActualWidth:0}x{_pageHost.ActualHeight:0} hostVis={_pageHost.Visibility} hostParent={(_pageHost.Parent as FrameworkElement)?.GetType().Name ?? _pageHost.Parent?.GetType().Name ?? "null"} navContentIsHost={ReferenceEquals(_nav.Content, _pageHost)}" };
+            var n = 0;
+            foreach (var child in _pageHost.Children)
+            {
+                var fe = child as FrameworkElement;
+                lines.Add($"  [{n++}] {child.GetType().Name} vis={child.Visibility} size={fe?.ActualWidth:0}x{fe?.ActualHeight:0} row={(fe is null ? -1 : Grid.GetRow(fe))} isShown={ReferenceEquals(child, shown)} isTerminals={ReferenceEquals(child, _terminals)}");
+            }
+            if (shown is FrameworkElement sf)
+                lines.Add($"  shown: size={sf.ActualWidth:0}x{sf.ActualHeight:0} parentIsHost={ReferenceEquals(sf.Parent, _pageHost)} parent={sf.Parent?.GetType().Name ?? "null"} desired={sf.DesiredSize.Width:0}x{sf.DesiredSize.Height:0}");
+            var file = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WECOMMANDER", "layout.log");
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            await File.AppendAllLinesAsync(file, lines);
+        }
+        catch (Exception e) { App.LogCrash(e); }
     }
 
     /// <summary>A section page: title, optional actions, content; the notice bar on top.</summary>
@@ -221,19 +252,30 @@ public sealed class ServersWindow : Window
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        var head = new Grid { ColumnSpacing = 8 };
-        head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        // Title on top, actions on their own row below it: side by side, wide
+        // actions (Sunucular's search + three buttons) left the title column
+        // no width, the subtitle wrapped one letter per line and the page grew
+        // taller than the window with its top off screen (a blank page).
+        var head = new StackPanel { Spacing = 12 };
         var titles = new StackPanel { Spacing = 2 };
         titles.Children.Add(new TextBlock { Text = title, Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] });
         titles.Children.Add(new TextBlock { Text = subtitle, Foreground = Secondary, TextWrapping = TextWrapping.Wrap });
         head.Children.Add(titles);
-        var i = 1;
-        foreach (var a in actions)
+        if (actions.Length > 0)
         {
-            head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            if (a is FrameworkElement fe) fe.VerticalAlignment = VerticalAlignment.Center;
-            Grid.SetColumn((FrameworkElement)a, i++);
-            head.Children.Add(a);
+            var row = new Grid { ColumnSpacing = 8 };
+            var i = 0;
+            foreach (var a in actions)
+            {
+                var stretch = a is AutoSuggestBox;
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = stretch ? new GridLength(1, GridUnitType.Star) : GridLength.Auto });
+                if (a is FrameworkElement fe) fe.VerticalAlignment = VerticalAlignment.Center;
+                Grid.SetColumn((FrameworkElement)a, i++);
+                row.Children.Add(a);
+            }
+            if (!actions.Any(a => a is AutoSuggestBox))
+                row.HorizontalAlignment = HorizontalAlignment.Left;
+            head.Children.Add(row);
         }
         grid.Children.Add(head);
         Grid.SetRow((FrameworkElement)body, 2);
@@ -282,17 +324,21 @@ public sealed class ServersWindow : Window
             case "known": _ = ShowKnown(); break;
             case "history": _ = ShowHistory(); break;
             default:
-                // Built once: the search box and the host list never move to
-                // another parent (WinUI may still hold them in the old one).
-                if (_hostsPage is null)
-                {
-                    _hostsPage = (Grid)Page("Sunucular", "Bir sunucuya tıkla, terminal yeni sekmede açılsın. Sağ tık: düzenle, sil.",
-                        new ScrollViewer { Content = _hostGroups },
-                        _search,
-                        ActionButton("Ortak terminaller", Symbol.People, () => _ = ShowShares()),
-                        ActionButton("İçe aktar", Symbol.Import, async () => Show(await _c.ImportSshConfig(), InfoBarSeverity.Informational)),
-                        ActionButton("Yeni sunucu", Symbol.Add, () => _ = EditHost(null), accent: true));
-                }
+                // A fresh page each visit (a page built once, before the
+                // window was first shown, stayed collapsed with no size).
+                var query = _search.Text ?? "";
+                _search = NewSearchBox();
+                _search.Text = query;
+                _search.TextChanged += (_, e) => { if (e.Reason == AutoSuggestionBoxTextChangeReason.UserInput) RenderHosts(); };
+                _search.QuerySubmitted += async (_, e) => await QuickConnect(e.QueryText);
+                _hostGroups = new StackPanel { Spacing = 18 };
+                RenderHosts();
+                _hostsPage = (Grid)Page("Sunucular", "Bir sunucuya tıkla, terminal yeni sekmede açılsın. Sağ tık: düzenle, sil.",
+                    new ScrollViewer { Content = _hostGroups },
+                    _search,
+                    ActionButton("Ortak terminaller", Symbol.People, () => _ = ShowShares()),
+                    ActionButton("İçe aktar", Symbol.Import, async () => Show(await _c.ImportSshConfig(), InfoBarSeverity.Informational)),
+                    ActionButton("Yeni sunucu", Symbol.Add, () => _ = EditHost(null), accent: true));
                 SetPage(_hostsPage);
                 break;
         }

@@ -1024,6 +1024,7 @@ jobs:
           # window got through once). UI Automation reads the real WinUI tree.
           $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'smoke-localappdata'
           New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA | Out-Null
+          $env:WECOMMANDER_DEBUG_LAYOUT = '1'
           $app = Start-Process -FilePath "center-windows\publish\WecommanderCenter.exe" -ArgumentList '--open-main' -PassThru
           Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
           $root = [System.Windows.Automation.AutomationElement]::RootElement
@@ -1046,6 +1047,15 @@ jobs:
           Write-Host "Main window shows: $($found -join ', ')"
           # Walk every section and press the terminal tab strip's "+": an error
           # there must never reach users (it once did).
+          # Found AND drawn: a collapsed page still has its elements in the
+          # automation tree, only off-screen with an empty rectangle.
+          function Find-Visible($name) {
+            $e = Find-ByName $name
+            if (-not $e) { return $null }
+            $r = $e.Current.BoundingRectangle
+            if ($e.Current.IsOffscreen -or $r.IsEmpty -or $r.Width -le 0 -or $r.Height -le 0) { return $null }
+            return $e
+          }
           function Find-ByName($name) {
             $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children,
               (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $app.Id)))
@@ -1070,7 +1080,19 @@ jobs:
             Press $item
             Start-Sleep -Milliseconds 900
             if ($app.HasExited) { throw "the app closed after opening $section" }
-            if ($section -eq 'Sunucular' -and -not (Find-ByName 'Yeni sunucu')) { throw "Sunucular opened blank" }
+            # Diagnostics: is this section's own content drawn?
+            $probe = @{ 'Terminaller' = "A${c}${i}k terminal yok"; 'Sunucular' = 'Yeni sunucu'; 'Anahtarlar' = 'Yeni anahtar' }[$section]
+            if ($probe) {
+              $e = Find-ByName $probe
+              if ($e) { Write-Host ("{0}: '{1}' offscreen={2} rect={3}" -f $section, $probe, $e.Current.IsOffscreen, $e.Current.BoundingRectangle) }
+              else { Write-Host ("{0}: '{1}' not in the tree" -f $section, $probe) }
+            }
+            if ($section -eq 'Sunucular' -and -not (Find-Visible 'Yeni sunucu')) {
+              Start-Sleep -Milliseconds 800
+              $layout = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'WECOMMANDER\layout.log'
+              if (Test-Path $layout) { Write-Host '--- layout.log ---'; Get-Content $layout | ForEach-Object { Write-Host $_ } } else { Write-Host 'no layout.log' }
+              throw "Sunucular opened blank (its page is not on screen)"
+            }
           }
           $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children,
             (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $app.Id)))
@@ -1084,7 +1106,7 @@ jobs:
           Press $add
           Start-Sleep -Milliseconds 1500
           if ($app.HasExited) { throw "the app closed after pressing +" }
-          if (-not (Find-ByName 'Yeni sunucu')) { throw "+ did not open the server list" }
+          if (-not (Find-Visible 'Yeni sunucu')) { throw "+ did not open the server list (not on screen)" }
           $logs = @((Join-Path $env:LOCALAPPDATA 'WECOMMANDER\errors.log'),
                     (Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'WECOMMANDER\errors.log'))
           foreach ($log in $logs) {
