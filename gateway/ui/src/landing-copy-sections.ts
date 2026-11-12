@@ -5,10 +5,6 @@ export const landingCopySections = [
   {
     "name": "Hero & navigation",
     "keys": [
-      "Uzak MCP · Claude, ChatGPT ve her MCP istemcisi için",
-      "Yapay zekân,",
-      "tüm makinelerinde.",
-      "WECOMMANDER, kullandığın yapay zekâyı tek bir MCP adresiyle Windows, macOS ve Linux makinelerine bağlar. Terminal, dosya ve görevler; sunucu tarafı onaylar, root olmayan agent ve eksiksiz denetim kaydıyla.",
       "Giriş Yap",
       "Ücretsiz başla",
       "Kurulum rehberi",
@@ -17,7 +13,6 @@ export const landingCopySections = [
       "Kopyalandı",
       "Açık port gerekmez",
       "Root olmayan agent",
-      "Self-host seçeneği",
       "Örnek MCP oturumu: yapay zekâ bir sunucuda komut çalıştırıyor, yüksek riskli komut onay bekliyor.",
       "ubuntu-prod'da disk doluluğunu kontrol et ve 7 günden eski logları temizle.",
       "İzinli komut",
@@ -26,13 +21,41 @@ export const landingCopySections = [
       "Reddet",
       "Her çağrı denetim kaydına yazılır.",
       "Desteklenen yapay zekâ istemcileri",
-      "Her MCP istemcisi"
+      "Her MCP istemcisi",
+      "SSH istemcisi + yapay zekâ erişimi · Windows ve Mac",
+      "Sunucuların için tek uygulama.",
+      "Senin ve yapay zekânın.",
+      "WECOMMANDER; SSH, Mosh, Telnet ve seri port terminalini, SFTP'yi, tünelleri ve şifreli eşitlemeyi Windows ve Mac'te tek uygulamada toplar. Aynı uygulama, kullandığın yapay zekâyı (Claude, ChatGPT ve her MCP istemcisi) makinelerine onaylı ve denetimli şekilde bağlar.",
+      "Uygulamayı indir",
+      "Uçtan uca şifreli eşitleme",
+      "Windows ve Mac uygulaması"
+    ]
+  },
+  {
+    "name": "The app",
+    "keys": [
+      "UYGULAMA",
+      "Günlük SSH işin için",
+      "her şey tek pencerede.",
+      "Sunucularına bağlan, dosya taşı, tünel aç; listen her bilgisayarında hazır olsun.",
+      "SSH, Mosh, Telnet, seri port",
+      "Sekmeler, bölünmüş ekran ve aynı komutu birden çok terminale yazma. Mosh ile bağlantı kopsa da oturum sürer.",
+      "SFTP dosya yöneticisi",
+      "İki panelli dosya yöneticisiyle yükle, indir, taşı ve yeniden adlandır.",
+      "Tüneller",
+      "Yerel, uzak ve SOCKS port yönlendirme; uygulama açıkken arka planda çalışır.",
+      "Anahtarlar ve kimlikler",
+      "Anahtar oluştur ya da içe aktar; SSH ajanı ve donanım anahtarlarıyla gir. Parolalar ve özel anahtarlar işletim sisteminin anahtar zincirinde kalır.",
+      "Otomatik tamamlama ve parçacıklar",
+      "Komut geçmişinden ve kayıtlı parçacıklardan öneri. Parola istemlerine yazılanlar asla kaydedilmez.",
+      "Eşitleme ve ekip",
+      "Sunucu listen bilgisayarların arasında uçtan uca şifreli eşitlenir. Team planında ekip kitaplığı ve ortak terminal."
     ]
   },
   {
     "name": "Capabilities & cards",
     "keys": [
-      "YETENEKLER",
+      "YAPAY ZEKÂ ERİŞİMİ",
       "Yapay zekâya gerçek yetki.",
       "Sınırları sen çiz.",
       "Terminal ve dosyalara tam erişim; her adımda kimin, neyi, nerede yaptığı belli.",
@@ -147,11 +170,19 @@ export const landingCopySections = [
       "Yapay zekâ onaysız ne yapabilir?",
       "Okuma işlemleri onaysız çalışır. Komut çalıştırma, silme ve terminal gibi yüksek riskli işlemler cihazın güven seviyesine göre onay ister; izinli komut listesindekiler onaysız çalışır.",
       "Hangi işletim sistemleri destekleniyor?",
-      "Windows 10/11, macOS (Apple Silicon ve Intel) ve Linux (Ubuntu/Debian, amd64).",
       "Paket ücretini nerede ödeyeceğim?",
-      "Bulut aboneliği etkinleştirildiyse ödeme Paddle tarafından sunulan güvenli checkout ekranında tamamlanır.",
       "Self-hosted sürümü kullanabilir miyim?",
-      "Evet, kendi altyapınızda çalıştırma için dağıtım modu destekleniyor. Kurulum ve işletim sorumluluğu size ait olabilir."
+      "Evet, kendi altyapınızda çalıştırma için dağıtım modu destekleniyor. Kurulum ve işletim sorumluluğu size ait olabilir.",
+      "Termius gibi bir SSH istemcisi mi?",
+      "Evet: SSH, Mosh, Telnet ve seri port, SFTP, tüneller, anahtarlar, parçacıklar, otomatik tamamlama, oturum kaydı, şifreli eşitleme ve ekip paylaşımı tek uygulamada. Ayrıca yapay zekânı makinelerine onaylı ve denetimli şekilde bağlar.",
+      "Ücretsiz deneyebilir miyim?",
+      "Evet. Free plan kart istemez. Ücretli planlarda ilk ödemeden sonraki 14 gün içinde gerekçe göstermeden tam iade alabilirsin; aboneliği istediğin an iptal edebilirsin.",
+      "Sunucu bilgilerim ve parolalarım nerede saklanıyor?",
+      "Parolalar ve özel anahtarlar bilgisayarının anahtar zincirinde (Windows Kimlik Bilgisi Yöneticisi, macOS Anahtar Zinciri) kalır. Eşitleme açıksa sunucu listen senin parolanla şifrelenip gönderilir; biz içini göremeyiz.",
+      "Kurulumda Windows neden uyarı veriyor?",
+      "Uygulama henüz kod imzalı değil. Tek satırlık PowerShell komutuyla kurarsan uyarı çıkmaz; kurulum dosyasıyla kurarsan Windows bir kez “Yine de çalıştır” diye sorar. Paket, yayınlanan SHA-256 özetiyle doğrulanır.",
+      "Uygulama: Windows 10/11 ve macOS (Apple Silicon ve Intel). Linux sunucular için ajan (Ubuntu/Debian, amd64) ve tepsi uygulaması.",
+      "Ödeme, resmi satıcımız Paddle'ın güvenli ödeme ekranında yapılır; faturaları Paddle keser."
     ]
   },
   {
@@ -167,7 +198,7 @@ export const landingCopySections = [
   {
     "name": "Footer",
     "keys": [
-      "Yapay zekân için tüm makinelerinde güvenli terminal ve dosya erişimi.",
+      "Sunucuların için SSH istemcisi ve güvenli yapay zekâ erişimi.",
       "Ürün",
       "Özellikler",
       "Paketler",
