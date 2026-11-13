@@ -192,11 +192,13 @@ final class ServersModel: ObservableObject {
             Task { await run(host, auth: ["kind": "password", "secret": "", "remember": false], accept: nil) }
             return
         }
-        // Key hosts are tried first: the core also tries this Mac's ~/.ssh keys.
-        if host.savedSecret || host.authKind == "key" {
+        if host.savedSecret || (host.authKind == "key" && host.keyPath != nil) {
             Task { await run(host, auth: ["kind": host.authKind, "secret": "", "remember": false], accept: nil) }
         } else {
-            connect = ConnectRequest(host: host)
+            // Nothing saved: this Mac's own keys (~/.ssh, the SSH agent) are
+            // tried first, like the ssh command; the login is asked only when
+            // none of them opens the server.
+            Task { await run(host, auth: ["kind": "key", "secret": "", "remember": false], accept: nil) }
         }
     }
 
@@ -228,7 +230,11 @@ final class ServersModel: ObservableObject {
             let text = error.localizedDescription
             let needsCredential = text.contains("giriş bilgisi") || text.contains("reddedildi") || text.contains("Anahtar")
             if connect != nil || needsCredential {
-                connect = ConnectRequest(host: host, message: text)
+                // After the silent try of this Mac's keys only a key-only
+                // server's message is worth showing; else the form opens clean.
+                let silentTry = auth["kind"] as? String == "key" && !(host.authKind == "key" && host.keyPath != nil)
+                let shown = text.contains("kayıtlı giriş bilgisi yok") || (silentTry && !text.contains("yalnız SSH anahtarı")) ? nil : text
+                connect = ConnectRequest(host: host, message: shown)
             } else {
                 notice = "\(host.label): \(text)"
             }

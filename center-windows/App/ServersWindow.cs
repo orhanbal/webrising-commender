@@ -44,7 +44,7 @@ public sealed class ServersWindow : Window
     private Grid? _hostsPage;
 
     private static AutoSuggestBox NewSearchBox() =>
-        new() { PlaceholderText = "Sunucu ara ya da hızlı bağlan (kullanıcı@adres)", QueryIcon = new SymbolIcon(Symbol.Find), MinWidth = 220 };
+        new() { PlaceholderText = "Ara ya da kullanıcı@adres", QueryIcon = new SymbolIcon(Symbol.Find), MinWidth = 220 };
     private readonly NavigationViewItem _hostsItem = new() { Content = "Sunucular", Tag = "hosts", Icon = new FontIcon { Glyph = "\uE968" } };
     private readonly NavigationViewItem _terminalsItem = new() { Content = "Terminaller", Tag = "terminals", Icon = new FontIcon { Glyph = "\uE756" } };
     private readonly InfoBadge _terminalsBadge = new() { Visibility = Visibility.Collapsed };
@@ -1209,25 +1209,26 @@ public sealed class ServersWindow : Window
             await Connect(host, new { kind = "password", secret = "", remember = false }, null, askOnCredentialError: false);
             return;
         }
-        // Key hosts are tried first: the core also tries this computer's ~/.ssh keys.
-        if (host.CanConnectSilently || host.AuthKind == "key")
+        if (host.CanConnectSilently)
         {
             await Connect(host, new { kind = host.AuthKind, secret = "", remember = false }, null, askOnCredentialError: true);
+            return;
         }
-        else
-        {
-            await AskCredentials(host, null);
-        }
+        // Nothing saved: this computer's own keys (~/.ssh, the SSH agent) are
+        // tried first, like the ssh command; the login is asked only when
+        // none of them opens the server.
+        await Connect(host, new { kind = "key", secret = "", remember = false }, null, askOnCredentialError: true,
+            silentKeyTry: host.AuthKind == "password");
     }
 
-    private async Task Connect(CoreHost host, object auth, string? accept, bool askOnCredentialError)
+    private async Task Connect(CoreHost host, object auth, string? accept, bool askOnCredentialError, bool silentKeyTry = false)
     {
         try
         {
             var result = await _c.Connect(host, auth, accept);
             if (result.NeedsHostKeyApproval)
             {
-                if (await ApproveHostKey(host, result)) await Connect(host, auth, result.Fingerprint, askOnCredentialError);
+                if (await ApproveHostKey(host, result)) await Connect(host, auth, result.Fingerprint, askOnCredentialError, silentKeyTry);
                 return;
             }
             if (result.SessionId is { } sid) AddTab(host, sid);
@@ -1236,7 +1237,10 @@ public sealed class ServersWindow : Window
         {
             var credential = e.Raw.Contains("no saved credential") || e.Raw.Contains("authentication failed")
                 || e.Raw.Contains("private key could not be used") || e.Raw.StartsWith("key file ");
-            if (credential && askOnCredentialError) await AskCredentials(host, e.Message);
+            // After the silent try of this computer's keys only a key-only
+            // server's message is worth showing; else the login form opens clean.
+            var message = e.Raw.Contains("no saved credential") || (silentKeyTry && !e.Message.Contains("yalnız SSH anahtarı")) ? null : e.Message;
+            if (credential && askOnCredentialError) await AskCredentials(host, message);
             else Show($"{host.Label}: {e.Message}", InfoBarSeverity.Error);
         }
     }
