@@ -28,6 +28,8 @@ public partial class App
     public int? AppBuild { get; } = Core.AppUpdate.CurrentBuild();
     public bool AppUpdateAvailable => Core.AppUpdate.IsNewer(_latestApp, AppBuild);
     public int? LatestAppBuild => _latestApp?.Build;
+    /// <summary>When the releases were last read successfully (local time), for "güncel (21:45)".</summary>
+    public DateTime? LastReleaseRead { get; private set; }
 
     /// <summary>Written by the update helper when the new version could not be put in place.</summary>
     private static string UpdateFailFile => Path.Combine(
@@ -165,6 +167,7 @@ public partial class App
             {
                 var latest = Core.AppUpdate.Latest(await ReleasesJsonAsync());
                 if (latest?.Build != _latestApp?.Build) { _latestApp = latest; changed = true; }
+                LastReleaseRead = DateTime.Now; changed = true;
             }
             catch (Exception) { _lastReleaseCheck = DateTime.UtcNow - TimeSpan.FromMinutes(50); /* retry in ten minutes */ }
             if (AppUpdateAvailable && _announcedApp != _latestApp!.Build)
@@ -222,6 +225,7 @@ public partial class App
             var latest = Core.AppUpdate.Latest(await ReleasesJsonAsync())
                 ?? throw new InvalidOperationException("Yayımlanmış bir sürüm bulunamadı.");
             _latestApp = latest;
+            LastReleaseRead = DateTime.Now;
             if (AppBuild is { } current && latest.Build <= current)
             {
                 AddInstallerLine($"Uygulama güncel (0.1.{current}).");

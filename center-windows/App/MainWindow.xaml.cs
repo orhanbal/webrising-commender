@@ -196,7 +196,7 @@ public sealed partial class MainWindow : Window
         {
             // The agent ships with the app: one version, one update button.
             var current = Center.AppBuild is { } b ? "0.1." + b : Center.AgentVersion ?? "geliştirici sürümü";
-            AgentVersionText.Text = "Sürüm: " + current + (update ? $" · yeni sürüm: 0.1.{Center.LatestAppBuild}" : Center.LatestAppBuild is not null ? " · güncel" : "");
+            AgentVersionText.Text = "Sürüm: " + current + (update ? $" · yeni sürüm: 0.1.{Center.LatestAppBuild}" : Center.LatestAppBuild is not null ? " · güncel" + (Center.LastReleaseRead is { } read ? $" (son denetim {read:HH:mm})" : "") : "");
             AgentUpdateButton.Content = update ? "Yeni sürüm var — Uygulamayı güncelle" : "Güncellemeleri denetle";
         }
         else
