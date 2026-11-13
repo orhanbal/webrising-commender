@@ -425,19 +425,62 @@ pub struct TerminalExit {
 /// `whoami` (`mode` "test") or opens an interactive terminal of `cols` x
 /// `rows` (`mode` "terminal"). `accept_fingerprint` is the key the person
 /// just approved in the host key dialog.
-/// Private keys in `~/.ssh` that open without a passphrase, the ones
-/// OpenSSH tries by itself.
+/// Private keys in `~/.ssh` that open without a passphrase: OpenSSH's
+/// default names first, then every other key file there (people name keys
+/// after the server or project, `webrising_admin_ed25519`), each key once.
 pub fn default_key_files() -> Vec<String> {
-    let Some(dir) = home_dir().map(|h| h.join(".ssh")) else {
-        return Vec::new();
-    };
-    ["id_ed25519", "id_ecdsa", "id_rsa"]
-        .iter()
-        .map(|name| dir.join(name))
+    match home_dir() {
+        Some(home) => key_files_in(&home.join(".ssh")),
+        None => Vec::new(),
+    }
+}
+
+fn key_files_in(dir: &std::path::Path) -> Vec<String> {
+    const DEFAULTS: [&str; 3] = ["id_ed25519", "id_ecdsa", "id_rsa"];
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+                .filter_map(|e| e.file_name().into_string().ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    names.retain(|n| {
+        let lower = n.to_ascii_lowercase();
+        !(lower.ends_with(".pub")
+            || lower.ends_with(".ppk")
+            || lower.ends_with(".old")
+            || lower.ends_with(".bak")
+            || lower.starts_with("known_hosts")
+            || lower.starts_with("authorized_keys")
+            || lower == "config"
+            || lower.starts_with('.'))
+    });
+    names.sort_by_key(|n| {
+        (
+            DEFAULTS
+                .iter()
+                .position(|d| d == n)
+                .unwrap_or(DEFAULTS.len()),
+            n.clone(),
+        )
+    });
+    let mut seen = std::collections::HashSet::new();
+    names
+        .into_iter()
+        .map(|n| dir.join(n))
         .filter_map(|p| {
+            if std::fs::metadata(&p).ok()?.len() > 32 * 1024 {
+                return None;
+            }
             let text = std::fs::read_to_string(&p).ok()?;
-            wc_ssh_core::keys::inspect(&text, None).ok()?;
-            Some(p.to_string_lossy().into_owned())
+            if !text.contains("PRIVATE KEY") {
+                return None;
+            }
+            let info = wc_ssh_core::keys::inspect(&text, None).ok()?;
+            seen.insert(info.fingerprint)
+                .then(|| p.to_string_lossy().into_owned())
         })
         .collect()
 }
@@ -1751,4 +1794,46 @@ pub async fn toggle(state: &Arc<AppState>, host_id: &str, index: usize) -> Resul
     state.changed();
     state.emit("tunnels-changed", ());
     Ok(())
+}
+
+#[cfg(test)]
+mod key_file_tests {
+    use super::key_files_in;
+
+    #[test]
+    fn every_unencrypted_key_in_the_folder_is_found_once_defaults_first() {
+        let dir = std::env::temp_dir().join(format!("wc-keys-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let admin = wc_ssh_core::keys::generate_ed25519("admin").unwrap();
+        let other = wc_ssh_core::keys::generate_ed25519("other").unwrap();
+        std::fs::write(dir.join("webrising_admin_ed25519"), &admin.private_openssh).unwrap();
+        // The same key saved again under another name is offered once.
+        std::fs::write(
+            dir.join("webrising_admin_ed25519_lf"),
+            &admin.private_openssh,
+        )
+        .unwrap();
+        std::fs::write(dir.join("id_ed25519"), &other.private_openssh).unwrap();
+        std::fs::write(
+            dir.join("webrising_admin_ed25519.pub"),
+            &admin.info.public_openssh,
+        )
+        .unwrap();
+        std::fs::write(dir.join("known_hosts"), "example ssh-ed25519 AAAA\n").unwrap();
+        std::fs::write(dir.join("config"), "Host x\n").unwrap();
+        std::fs::write(dir.join("notes.txt"), "not a key").unwrap();
+        let names: Vec<String> = key_files_in(&dir)
+            .iter()
+            .map(|p| {
+                std::path::Path::new(p)
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        assert_eq!(names, ["id_ed25519", "webrising_admin_ed25519"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
