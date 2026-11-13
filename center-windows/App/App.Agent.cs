@@ -158,7 +158,7 @@ public partial class App
         }
         if (!_embedded.Paired && Token is not null && DateTime.UtcNow - _lastPairAttempt >= TimeSpan.FromMinutes(5))
             await EnsurePairedAsync();
-        if (DateTime.UtcNow - _lastReleaseCheck >= TimeSpan.FromHours(6))
+        if (DateTime.UtcNow - _lastReleaseCheck >= TimeSpan.FromHours(1))
         {
             _lastReleaseCheck = DateTime.UtcNow;
             try
@@ -166,7 +166,7 @@ public partial class App
                 var latest = Core.AppUpdate.Latest(await ReleasesJsonAsync());
                 if (latest?.Build != _latestApp?.Build) { _latestApp = latest; changed = true; }
             }
-            catch (Exception) { _lastReleaseCheck = DateTime.UtcNow - TimeSpan.FromHours(5); }
+            catch (Exception) { _lastReleaseCheck = DateTime.UtcNow - TimeSpan.FromMinutes(50); /* retry in ten minutes */ }
             if (AppUpdateAvailable && _announcedApp != _latestApp!.Build)
             {
                 _announcedApp = _latestApp.Build;
