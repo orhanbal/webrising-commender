@@ -212,6 +212,7 @@ public static class CoreText
         if (text.Contains("made by a newer version")) return "Bu yedek daha yeni bir sürümle alınmış; önce uygulamayı güncelle.";
         if (text.Contains("backup file is too large")) return "Yedek dosyası çok büyük.";
         if (text == "terminal closed") return "Terminal kapalı.";
+        if (text.Contains("server management works only on SSH")) return "Sunucu yönetimi yalnız SSH bağlantılarında çalışır.";
         if (text == "wrong sync passphrase") return "Eşitleme parolası yanlış (diğer bilgisayarda belirlediğin parolayı gir).";
         if (text.Contains("sync passphrase needs at least 8")) return "Eşitleme parolası en az 8 karakter olmalı.";
         if (text.Contains("sync passphrase was changed on another computer")) return "Eşitleme parolası başka bir bilgisayarda değiştirildi; yeni parolayı gir.";

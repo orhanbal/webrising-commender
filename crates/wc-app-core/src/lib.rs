@@ -12,6 +12,7 @@ pub mod commands;
 pub mod library;
 pub mod mosh;
 pub mod serial;
+pub mod server;
 pub mod session_log;
 pub mod store;
 pub mod stream;

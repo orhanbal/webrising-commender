@@ -429,3 +429,38 @@ public class CoreTests
         Assert.DoesNotContain(profile, detail);
     }
 }
+
+public class ServerManagementTests
+{
+    [Fact]
+    public void TheCoresServerJsonIsRead()
+    {
+        var o = JsonSerializer.Deserialize<ServerOverview>("""
+            {"hostname":"web1","os":"Ubuntu 24.04","kernel":"Linux 6.8","uptimeSecs":3672000,"load":[0.81,0.68,0.75],"cpus":8,"cpuPercent":12.5,
+             "memTotalKb":16000000,"memAvailableKb":9700000,"swapTotalKb":3200000,"swapFreeKb":1000000,
+             "disks":[{"device":"/dev/sda2","fsType":"ext4","mount":"/","sizeKb":144000000,"usedKb":124000000,"availKb":14000000}],
+             "rebootRequired":true,"updates":"31 updates can be applied immediately.","processes":819,"zombies":173,"privilege":"root","docker":true}
+            """, CoreClient.Json)!;
+        Assert.True(o.CanChange);
+        Assert.Equal(173u, o.Zombies);
+        Assert.Equal(89.9, o.Disks[0].UsedPercent);
+        var p = JsonSerializer.Deserialize<ProcessList>("""
+            {"processes":[{"pid":2849530,"ppid":1,"user":"1000","state":"Sl","cpu":3.2,"mem":4.0,"rssKb":650000,"elapsedSecs":86400,"name":"next-server (v","command":"next-server (v15)"}],
+             "zombies":[{"parent":{"pid":2849530,"ppid":1,"user":"1000","state":"Sl","cpu":3.2,"mem":4.0,"rssKb":650000,"elapsedSecs":86400,"name":"next-server (v","command":"next-server (v15)"},
+                         "count":172,"owner":{"kind":"container","id":"abc123abc123","name":"web"},"protected":""}],"privilege":"sudo"}
+            """, CoreClient.Json)!;
+        Assert.Equal(172u, p.Zombies[0].Count);
+        Assert.Equal("container", p.Zombies[0].Owner.Kind);
+        var c = JsonSerializer.Deserialize<CleanupScan>("""{"items":[{"id":"apt-cache","title":"t","detail":"d","kb":2048,"command":"apt-get clean","warning":""}],"privilege":""}""", CoreClient.Json)!;
+        Assert.Equal(2048ul, c.Items[0].Kb);
+    }
+
+    [Fact]
+    public void SizesReadLikePeopleSayThem()
+    {
+        Assert.Equal("118 GB", Sizes.Kb(118UL * 1024 * 1024));
+        Assert.Equal("1.5 MB", Sizes.Kb(1536).Replace(',', '.'));
+        Assert.Equal("42 gün 12 sa", Sizes.Duration(42 * 86400 + 12 * 3600 + 5));
+        Assert.Equal("40 sn", Sizes.Duration(40));
+    }
+}
