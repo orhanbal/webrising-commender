@@ -1,3 +1,4 @@
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -27,6 +28,8 @@ public sealed class ServerWindow : Window
     private string _processFilter = "";
     private ProcessList? _processes;
     private int _generation;
+    private DispatcherQueueTimer? _live;
+    private bool _sampling;
 
     private static Brush Secondary => (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
     private static readonly FontFamily Mono = new("Cascadia Mono, Consolas");
@@ -72,6 +75,7 @@ public sealed class ServerWindow : Window
         _nav.Content = root;
         Content = _nav;
         _nav.SelectedItem = _nav.MenuItems[0];
+        Closed += (_, _) => { _live?.Stop(); _generation++; };
         _ = Load();
     }
 
@@ -100,7 +104,9 @@ public sealed class ServerWindow : Window
     private async Task Load()
     {
         var generation = ++_generation;
+        _live?.Stop();
         _info.IsOpen = false;
+        if (_section == "disk") { await LoadDisk(generation); return; }
         _scroll.Content = Waiting(_section switch
         {
             "disk" => "Disk taranıyor. Büyük disklerde bir iki dakika sürebilir…",
@@ -124,6 +130,43 @@ public sealed class ServerWindow : Window
             if (generation != _generation) return;
             _scroll.Content = null;
             Show(Friendly(ex), InfoBarSeverity.Error);
+        }
+    }
+
+    /// <summary>The disk scan, with a bar and percentage while it runs.</summary>
+    private async Task LoadDisk(int generation)
+    {
+        var bar = new ProgressBar { Maximum = 100, Value = 0, IsIndeterminate = true, Width = 420, HorizontalAlignment = HorizontalAlignment.Left };
+        var percent = new TextBlock { Text = "%0", FontSize = 28, FontWeight = FontWeights.SemiBold };
+        var waiting = new StackPanel { Spacing = 10, Margin = new Thickness(0, 24, 0, 0) };
+        waiting.Children.Add(new TextBlock { Text = $"{_diskPath} taranıyor", Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"] });
+        waiting.Children.Add(percent);
+        waiting.Children.Add(bar);
+        waiting.Children.Add(Note("Klasörler tek tek ölçülüyor; büyük disklerde bir iki dakika sürebilir."));
+        _scroll.Content = waiting;
+        var id = Guid.NewGuid().ToString("N");
+        _c.Progress[id] = (done, total) => DispatcherQueue.TryEnqueue(() =>
+        {
+            if (total == 0) return;
+            var v = Math.Min(100, done * 100.0 / total);
+            bar.IsIndeterminate = false;
+            bar.Value = v;
+            percent.Text = $"%{v:0}";
+        });
+        try
+        {
+            var usage = await _c.Server<DiskUsage>("server.disk", new { sessionId = _sessionId, path = _diskPath, transferId = id });
+            if (generation == _generation) _scroll.Content = DiskPage(usage);
+        }
+        catch (Exception ex)
+        {
+            if (generation != _generation) return;
+            _scroll.Content = null;
+            Show(Friendly(ex), InfoBarSeverity.Error);
+        }
+        finally
+        {
+            _c.Progress.TryRemove(id, out _);
         }
     }
 
@@ -255,23 +298,50 @@ public sealed class ServerWindow : Window
         if (!o.CanChange)
             page.Children.Add(Banner("Yalnız görüntüleme", "Bu kullanıcı root değil ve parolasız sudo yok: bilgiler görünür ama temizlik ve süreç işlemleri yapılamaz.", InfoBarSeverity.Informational));
 
-        var cpu = new StackPanel { Spacing = 4 };
-        var cpuRow = new Grid();
-        cpuRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        cpuRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        cpuRow.Children.Add(new TextBlock { Text = $"İşlemci ({o.Cpus} çekirdek)", FontWeight = FontWeights.SemiBold });
-        var load = new TextBlock { Text = $"%{o.CpuPercent:0}  ·  yük {o.Load[0]:0.00} / {o.Load[1]:0.00} / {o.Load[2]:0.00}", Foreground = Secondary };
-        Grid.SetColumn(load, 1);
-        cpuRow.Children.Add(load);
-        cpu.Children.Add(cpuRow);
-        cpu.Children.Add(Bar(o.CpuPercent));
+        // Gauges: how full each resource is right now.
+        var gauges = new Grid { ColumnSpacing = 12 };
+        var rings = new List<FrameworkElement>
+        {
+            Charts.Ring(o.CpuPercent, $"İşlemci", $"{o.Cpus} çekirdek · yük {o.Load[0]:0.00}"),
+            Charts.Ring(o.MemTotalKb == 0 ? 0 : (o.MemTotalKb - o.MemAvailableKb) * 100.0 / o.MemTotalKb, "Bellek", $"{Sizes.Kb(o.MemTotalKb - o.MemAvailableKb)} / {Sizes.Kb(o.MemTotalKb)}"),
+        };
+        if (o.SwapTotalKb > 0)
+            rings.Add(Charts.Ring((o.SwapTotalKb - o.SwapFreeKb) * 100.0 / o.SwapTotalKb, "Takas (swap)", $"{Sizes.Kb(o.SwapTotalKb - o.SwapFreeKb)} / {Sizes.Kb(o.SwapTotalKb)}"));
+        if ((o.Disks.FirstOrDefault(d => d.Mount == "/") ?? o.Disks.FirstOrDefault()) is { } root)
+            rings.Add(Charts.Ring(root.UsedPercent, $"Disk {root.Mount}", $"{Sizes.Kb(root.UsedKb)} / {Sizes.Kb(root.UsedKb + root.AvailKb)}"));
+        for (var i = 0; i < rings.Count; i++)
+        {
+            gauges.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            Grid.SetColumn(rings[i], i);
+            gauges.Children.Add(rings[i]);
+        }
+        page.Children.Add(Card(gauges));
 
-        var resources = new StackPanel { Spacing = 16 };
-        resources.Children.Add(cpu);
-        resources.Children.Add(Meter("Bellek", o.MemTotalKb - o.MemAvailableKb, o.MemTotalKb));
-        if (o.SwapTotalKb > 0) resources.Children.Add(Meter("Takas alanı (swap)", o.SwapTotalKb - o.SwapFreeKb, o.SwapTotalKb));
-        resources.Children.Add(Note($"{o.Processes} süreç çalışıyor."));
-        page.Children.Add(Card(resources));
+        // Live: one column a sample, every two seconds.
+        var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 12, 0, 0) };
+        head.Children.Add(new TextBlock { Text = "Canlı", Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"] });
+        head.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse { Width = 8, Height = 8, Fill = new SolidColorBrush(Charts.Bad), VerticalAlignment = VerticalAlignment.Center });
+        head.Children.Add(new TextBlock { Text = $"2 saniyede bir · {o.Processes} süreç", Foreground = Secondary, VerticalAlignment = VerticalAlignment.Center });
+        page.Children.Add(head);
+        var cpuChart = new ColumnChart("İşlemci", Charts.Palette[0], v => $"%{v:0}", fixedMax: 100);
+        var memChart = new ColumnChart("Bellek", Charts.Palette[3], v => $"%{v:0}", fixedMax: 100);
+        var netChart = new ColumnChart("Ağ trafiği", Charts.Palette[1], v => Sizes.Rate(v));
+        var ioChart = new ColumnChart("Disk okuma + yazma", Charts.Palette[2], v => Sizes.Rate(v));
+        var live = new Grid { ColumnSpacing = 14, RowSpacing = 14 };
+        live.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        live.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        live.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        live.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var cells = new[] { cpuChart.Root, memChart.Root, netChart.Root, ioChart.Root };
+        for (var i = 0; i < cells.Length; i++)
+        {
+            var card = Card(cells[i]);
+            Grid.SetRow(card, i / 2);
+            Grid.SetColumn(card, i % 2);
+            live.Children.Add(card);
+        }
+        page.Children.Add(live);
+        StartLive(cpuChart, memChart, netChart, ioChart);
 
         page.Children.Add(Heading("Diskler"));
         var disks = new StackPanel { Spacing = 16 };
@@ -286,6 +356,53 @@ public sealed class ServerWindow : Window
         }
         page.Children.Add(Card(disks));
         return page;
+    }
+
+    private void StartLive(ColumnChart cpu, ColumnChart mem, ColumnChart net, ColumnChart io)
+    {
+        var generation = _generation;
+        ServerSample? last = null;
+        async Task Tick()
+        {
+            if (_sampling || generation != _generation) return;
+            _sampling = true;
+            try
+            {
+                var now = await _c.Server<ServerSample>("server.sample", new { sessionId = _sessionId });
+                if (generation != _generation) return;
+                var mp = now.MemTotalKb == 0 ? 0 : (now.MemTotalKb - now.MemAvailableKb) * 100.0 / now.MemTotalKb;
+                mem.Push(mp, $"{Sizes.Kb(now.MemTotalKb - now.MemAvailableKb)} kullanımda");
+                if (last is { } prev && now.Uptime > prev.Uptime)
+                {
+                    var secs = now.Uptime - prev.Uptime;
+                    var total = (double)(now.CpuTotal - prev.CpuTotal);
+                    var busy = total <= 0 ? 0 : (total - (now.CpuIdle - prev.CpuIdle)) * 100.0 / total;
+                    cpu.Push(busy, $"yük {now.Load1:0.00}");
+                    double Delta(ulong a, ulong b) => a >= b ? (a - b) / secs : 0;
+                    var rx = Delta(now.NetRxBytes, prev.NetRxBytes);
+                    var tx = Delta(now.NetTxBytes, prev.NetTxBytes);
+                    net.Push(rx + tx, $"↓ {Sizes.Rate(rx)}  ↑ {Sizes.Rate(tx)}");
+                    var rd = Delta(now.DiskReadBytes, prev.DiskReadBytes);
+                    var wr = Delta(now.DiskWriteBytes, prev.DiskWriteBytes);
+                    io.Push(rd + wr, $"okuma {Sizes.Rate(rd)}  yazma {Sizes.Rate(wr)}");
+                }
+                last = now;
+            }
+            catch (Exception)
+            {
+                // A missed sample is skipped; the next tick tries again.
+            }
+            finally
+            {
+                _sampling = false;
+            }
+        }
+        _live?.Stop();
+        _live = DispatcherQueue.CreateTimer();
+        _live.Interval = TimeSpan.FromSeconds(2);
+        _live.Tick += (_, _) => _ = Tick();
+        _live.Start();
+        _ = Tick();
     }
 
     private static Button ButtonFor(string text, Action run)
@@ -316,6 +433,13 @@ public sealed class ServerWindow : Window
         page.Children.Add(head);
         if (!u.Complete)
             page.Children.Add(Banner("Bazı klasörler okunamadı", "Bu kullanıcının erişemediği klasörler sayılmadı; boyutlar gerçekte daha büyük olabilir (root ile bağlan).", InfoBarSeverity.Informational));
+        if (u.Entries.Count > 0)
+        {
+            var top = u.Entries.Take(7).Select(e => (Name(u.Path, e.Path), (double)e.Kb, Sizes.Kb(e.Kb))).ToList();
+            var rest = u.TotalKb > (ulong)u.Entries.Take(7).Sum(e => (decimal)e.Kb) ? u.TotalKb - (ulong)u.Entries.Take(7).Sum(e => (decimal)e.Kb) : 0;
+            if (rest > 0) top.Add(("Diğer", rest, Sizes.Kb(rest)));
+            page.Children.Add(Card(Charts.Donut(top, Sizes.Kb(u.TotalKb))));
+        }
         page.Children.Add(Note("En çok yer kaplayanlar. Bir klasöre tıklayınca içine girer. Bu ekran yalnız ölçer; silme Temizlik'ten yapılır."));
 
         var list = new StackPanel { Spacing = 2 };
@@ -326,7 +450,7 @@ public sealed class ServerWindow : Window
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
-            var name = e.Path.Length > u.Path.Length && e.Path.StartsWith(u.Path) ? e.Path[u.Path.Length..].TrimStart('/') : e.Path;
+            var name = Name(u.Path, e.Path);
             row.Children.Add(new TextBlock { Text = name, FontFamily = Mono, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
             var bar = new ProgressBar { Value = e.Kb * 100.0 / max, Maximum = 100, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(bar, 1);
@@ -360,6 +484,9 @@ public sealed class ServerWindow : Window
         return page;
     }
 
+    private static string Name(string parent, string path) =>
+        path.Length > parent.Length && path.StartsWith(parent) ? path[parent.Length..].TrimStart('/') : path;
+
     // ---- cleanup ----
 
     private UIElement CleanupPage(CleanupScan scan)
@@ -371,12 +498,39 @@ public sealed class ServerWindow : Window
         if (!canChange)
             page.Children.Add(Banner("Temizlik için yetki yok", "Bu kullanıcı root değil ve parolasız sudo yok. Boyutlar eksik ölçülmüş olabilir; temizlik için root ile bağlan.", InfoBarSeverity.Warning));
 
-        var boxes = new List<(CheckBox Box, CleanupItem Item)>();
+        var boxes = new List<(CheckBox Box, CleanupItem Item, Windows.UI.Color Color)>();
         var total = new TextBlock { FontWeight = FontWeights.SemiBold };
-        void Sum() => total.Text = $"Seçilenler: {Sizes.Kb((ulong)boxes.Where(b => b.Box.IsChecked == true).Sum(b => (decimal)b.Item.Kb))}";
+        // The disk now and after the chosen cleanup: grey = stays, colours = freed.
+        var visual = new Border();
+        if (scan.Disk is { } disk) page.Children.Add(Card(visual));
+        void Sum()
+        {
+            var chosenKb = (ulong)boxes.Where(b => b.Box.IsChecked == true).Sum(b => (decimal)b.Item.Kb);
+            total.Text = $"Seçilenler: {Sizes.Kb(chosenKb)}";
+            if (scan.Disk is not { } d) return;
+            var size = (double)(d.UsedKb + d.AvailKb);
+            if (size <= 0) return;
+            var freed = Math.Min(chosenKb, d.UsedKb);
+            var before = d.UsedKb * 100.0 / size;
+            var after = (d.UsedKb - freed) * 100.0 / size;
+            var parts = new List<(double, Windows.UI.Color, string)> { (d.UsedKb - freed, Windows.UI.Color.FromArgb(255, 0x64, 0x74, 0x8B), $"Kalacak: {Sizes.Kb(d.UsedKb - freed)}") };
+            parts.AddRange(boxes.Where(b => b.Box.IsChecked == true && b.Item.Kb > 0).Select(b => ((double)Math.Min(b.Item.Kb, d.UsedKb), b.Color, $"{b.Item.Title}: {Sizes.Kb(b.Item.Kb)}")));
+            var v = new StackPanel { Spacing = 10 };
+            var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+            line.Children.Add(new TextBlock { Text = $"Disk {d.Mount}", FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+            line.Children.Add(new TextBlock { Text = $"%{before:0}", FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(Charts.Level(before)) });
+            line.Children.Add(new TextBlock { Text = "→", FontSize = 22, Foreground = Secondary });
+            line.Children.Add(new TextBlock { Text = $"%{after:0}", FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(Charts.Level(after)) });
+            line.Children.Add(new TextBlock { Text = $"temizlikten sonra boş: {Sizes.Kb(d.AvailKb + freed)}", Foreground = Secondary, VerticalAlignment = VerticalAlignment.Center });
+            v.Children.Add(line);
+            v.Children.Add(Charts.Stack(parts, size));
+            visual.Child = v;
+        }
         var list = new StackPanel { Spacing = 14 };
+        var colorIndex = 0;
         foreach (var item in scan.Items.OrderByDescending(i => i.Kb))
         {
+            var color = Charts.Palette[colorIndex++ % (Charts.Palette.Length - 1)];
             var row = new Grid { ColumnSpacing = 12 };
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -392,7 +546,10 @@ public sealed class ServerWindow : Window
             box.Unchecked += (_, _) => Sum();
             row.Children.Add(box);
             var text = new StackPanel { Spacing = 2 };
-            text.Children.Add(new TextBlock { Text = item.Title, FontWeight = FontWeights.SemiBold });
+            var titleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            titleRow.Children.Add(new Microsoft.UI.Xaml.Shapes.Rectangle { Width = 12, Height = 12, RadiusX = 3, RadiusY = 3, Fill = new SolidColorBrush(color), VerticalAlignment = VerticalAlignment.Center });
+            titleRow.Children.Add(new TextBlock { Text = item.Title, FontWeight = FontWeights.SemiBold });
+            text.Children.Add(titleRow);
             text.Children.Add(Note(item.Detail));
             if (!string.IsNullOrEmpty(item.Warning))
                 text.Children.Add(new TextBlock { Text = "Dikkat: " + item.Warning, TextWrapping = TextWrapping.Wrap, Foreground = (Brush)Application.Current.Resources["SystemFillColorCautionBrush"] });
@@ -403,7 +560,7 @@ public sealed class ServerWindow : Window
             Grid.SetColumn(size, 2);
             row.Children.Add(size);
             list.Children.Add(row);
-            boxes.Add((box, item));
+            boxes.Add((box, item, color));
         }
         page.Children.Add(Card(list));
         Sum();
@@ -475,6 +632,25 @@ public sealed class ServerWindow : Window
             page.Children.Add(Banner("Zombi süreç yok", "Bütün bitmiş süreçler toplanmış.", InfoBarSeverity.Success));
         }
 
+        // Who uses the machine: the ten heaviest by CPU and by memory.
+        var live = list.Processes.Where(p => !p.State.StartsWith('Z')).ToList();
+        var charts = new Grid { ColumnSpacing = 14, Margin = new Thickness(0, 12, 0, 0) };
+        charts.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        charts.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        FrameworkElement Top(string title, IEnumerable<ServerProcess> procs, Func<ServerProcess, double> value, Func<ServerProcess, string> text, Windows.UI.Color color)
+        {
+            var box = new StackPanel { Spacing = 10 };
+            box.Children.Add(new TextBlock { Text = title, FontWeight = FontWeights.SemiBold });
+            box.Children.Add(Charts.Bars(procs.Take(10).Select(p => ($"{p.Name} ({p.Pid})", value(p), text(p))).ToList(), color));
+            return Card(box);
+        }
+        var cpuTop = Top("En çok işlemci kullanan 10 süreç", live.OrderByDescending(p => p.Cpu), p => p.Cpu, p => $"%{p.Cpu:0.0}", Charts.Palette[0]);
+        var memTop = Top("En çok bellek kullanan 10 süreç", live.OrderByDescending(p => p.RssKb), p => p.RssKb, p => Sizes.Kb(p.RssKb), Charts.Palette[3]);
+        Grid.SetColumn(memTop, 1);
+        charts.Children.Add(cpuTop);
+        charts.Children.Add(memTop);
+        page.Children.Add(charts);
+
         page.Children.Add(Heading("Süreçler"));
         var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         var search = new TextBox { PlaceholderText = "Ara (ad, komut, kullanıcı, PID)", Width = 320, Text = _processFilter };
@@ -521,9 +697,11 @@ public sealed class ServerWindow : Window
         };
         if (owner.Length > 0) p.Children.Add(Note(owner + $"  ·  çalışma süresi {Sizes.Duration(z.Parent.ElapsedSecs)}"));
         if (z.Owner.Kind == "container")
-            p.Children.Add(Note("Kalıcı çözüm: bu konteyneri bir init süreciyle çalıştır (docker run --init ya da compose'da init: true). Coolify'da: uygulamanın Docker Compose ayarına init: true ekle."));
+            p.Children.Add(Note("Kalıcı çözüm: konteyner küçük bir init süreciyle (--init) çalışsın; o, bitmiş süreçleri kendiliğinden toplar. \"Öneriyi uygula\" bunu Coolify'daki ayarına ekleyip uygulamayı yeniden dağıtır."));
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        if (canChange && z.Owner.Kind == "container")
+            buttons.Children.Add(Action("Öneriyi uygula", () => ApplyInit(z, null), accent: true));
         if (canChange)
         {
             buttons.Children.Add(Action("Toplamasını iste", async () =>
@@ -565,6 +743,60 @@ public sealed class ServerWindow : Window
         if (z.Protected.Length > 0) p.Children.Add(Note(z.Protected));
         if (buttons.Children.Count > 0) p.Children.Add(buttons);
         return Card(p);
+    }
+
+    /// <summary>"Öneriyi uygula": --init in the app's Coolify settings, then a redeploy.</summary>
+    private async Task ApplyInit(ZombieGroup z, string? token)
+    {
+        if (token is null && !await Confirm("Öneriyi uygula",
+                $"{z.Owner.Name} konteynerinin uygulamasına Coolify'da --init seçeneği eklenir ve uygulama Coolify üzerinden yeniden dağıtılır. " +
+                "Dağıtım birkaç dakika sürer; eski konteyner yenisi hazır olunca kapanır. Ayar kalıcıdır; sonraki dağıtımlarda da geçerli olur.",
+                "Coolify API: custom_docker_run_options += \"--init\"\nCoolify API: deploy", "Uygula"))
+            return;
+        try
+        {
+            var r = await _c.Server<InitFix>("server.coolifyInit", new { sessionId = _sessionId, containerId = z.Owner.Id, token });
+            switch (r.Status)
+            {
+                case "needs-token":
+                    if (await AskToken(r.Message) is { } t) await ApplyInit(z, t);
+                    break;
+                case "applied":
+                case "already":
+                    Show($"{r.App}: --init {(r.Status == "already" ? "zaten açıktı" : "eklendi")}, yeniden dağıtım başladı. Birkaç dakika sonra Yenile'ye bas; zombiler gitmiş olmalı.", InfoBarSeverity.Success);
+                    break;
+                default:
+                    Show(r.Message, InfoBarSeverity.Informational);
+                    break;
+            }
+        }
+        catch (Exception ex) { Show(Friendly(ex), InfoBarSeverity.Error); }
+    }
+
+    /// <summary>Asks once for a Coolify API token (kept in this computer's keychain for this server).</summary>
+    private async Task<string?> AskToken(string why)
+    {
+        var body = new StackPanel { Spacing = 10, MaxWidth = 520 };
+        if (!string.IsNullOrEmpty(why)) body.Children.Add(new InfoBar { Message = why, Severity = InfoBarSeverity.Warning, IsOpen = true, IsClosable = false });
+        body.Children.Add(new TextBlock { TextWrapping = TextWrapping.Wrap, Text = "Bu ayarı Coolify'a yazmak için bir kez Coolify API anahtarı gerekiyor:" });
+        body.Children.Add(new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Secondary, Text = "1. Coolify'da Ayarlar > Gelişmiş > API erişimi açık olsun.\n2. Keys & Tokens > API tokens > yeni anahtar oluştur; \"write\" ve \"deploy\" yetkilerini seç.\n3. Anahtarı buraya yapıştır." });
+        var box = new PasswordBox { PlaceholderText = "Coolify API anahtarı" };
+        body.Children.Add(box);
+        body.Children.Add(new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Secondary, FontSize = 12, Text = "Anahtar bu bilgisayarın anahtar zincirinde saklanır. Coolify'a sunucunun kendi içinden bağlanılır; anahtar internete çıkmaz." });
+        var dialog = new ContentDialog
+        {
+            Title = "Coolify API anahtarı",
+            Content = body,
+            PrimaryButtonText = "Devam",
+            CloseButtonText = "Vazgeç",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = Content.XamlRoot,
+        };
+        try
+        {
+            return await dialog.ShowAsync() == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(box.Password) ? box.Password.Trim() : null;
+        }
+        catch (Exception) { return null; }
     }
 
     private UIElement ProcessRow(ServerProcess? p, bool canChange)

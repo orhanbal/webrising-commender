@@ -47,6 +47,24 @@ async fn run(conn: &Connection, script: &str, secs: u64) -> Result<String, Strin
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// Like [`run`], with `input` on the script's standard input (secrets).
+async fn run_input(
+    conn: &Connection,
+    script: &str,
+    input: &str,
+    secs: u64,
+) -> Result<String, String> {
+    let command = format!("sh -c {}", quote(&format!("{PRELUDE}{script}")));
+    let out = tokio::time::timeout(
+        Duration::from_secs(secs),
+        conn.exec_input(&command, input.as_bytes(), MAX_OUTPUT),
+    )
+    .await
+    .map_err(|_| "Sunucu zamanında yanıt vermedi.".to_owned())?
+    .map_err(|e| e.to_string())?;
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
 /// Splits `@@name` sections of a script's output.
 fn sections(text: &str) -> HashMap<String, Vec<String>> {
     let mut out: HashMap<String, Vec<String>> = HashMap::new();
@@ -296,54 +314,239 @@ fn parse_docker_df(lines: &[String]) -> Vec<DockerUsage> {
         .collect()
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScanProgress {
+    transfer_id: String,
+    done: u64,
+    total: u64,
+}
+
+/// Folders measured per command: about 30 commands for any folder.
+fn batches(dirs: &[String]) -> Vec<&[String]> {
+    let size = dirs.len().div_ceil(30).max(1);
+    dirs.chunks(size).collect()
+}
+
+/// The largest folders in `path` (never crossing into another disk).
+/// With `transfer_id`, `transfer-progress` events report how far it got:
+/// in KB of the disk's used space when `path` is the disk's root, else in
+/// folders.
 pub async fn disk_usage(
     state: &Arc<AppState>,
     session_id: String,
     path: Option<String>,
+    transfer_id: Option<String>,
 ) -> Result<DiskUsage, String> {
     let conn = connection(state, &session_id)?;
     let path = path
         .map(|p| p.trim().to_owned())
-        .filter(|p| p.starts_with('/'))
+        .filter(|p| p.starts_with('/') && !p.contains('\n'))
         .unwrap_or_else(|| "/".to_owned());
+    let p = quote(&path);
     let script = format!(
-        r#"echo @@du; r timeout 120 du -xk -d 1 -- {p} 2>/dev/null | sort -rn | head -41
-echo @@duerr; r timeout 5 du -xk -d 0 -- {p} 2>&1 >/dev/null | head -1
-echo @@docker; [ "$R" ] && command -v docker >/dev/null 2>&1 && r docker system df --format '{{{{.Type}}}}\t{{{{.TotalCount}}}}\t{{{{.Size}}}}\t{{{{.Reclaimable}}}}' 2>/dev/null
-"#,
-        p = quote(&path)
+        r#"echo @@dev; stat -c %d -- {p} 2>/dev/null
+echo @@kids; r find {p} -mindepth 1 -maxdepth 1 -type d -printf '%D\t%p\n' 2>/dev/null
+echo @@files; r find {p} -mindepth 1 -maxdepth 1 ! -type d -printf '%k\n' 2>/dev/null | awk '{{s+=$1}} END{{print s+0}}'
+echo @@df; df -Pk -- {p} 2>/dev/null | tail -1
+echo @@docker; [ "$R" ] && [ {p} = / ] && command -v docker >/dev/null 2>&1 && r docker system df --format '{{{{.Type}}}}\t{{{{.TotalCount}}}}\t{{{{.Size}}}}\t{{{{.Reclaimable}}}}' 2>/dev/null
+"#
     );
-    let s = sections(&run(&conn, &script, 150).await?);
-    let mut entries: Vec<UsageEntry> = s
-        .get("du")
+    let s = sections(&run(&conn, &script, 60).await?);
+    let device = first(&s, "dev").to_owned();
+    let dirs: Vec<String> = s
+        .get("kids")
         .into_iter()
         .flatten()
-        .filter_map(|l| {
-            let (kb, p) = l.split_once('\t')?;
-            Some(UsageEntry {
-                path: p.to_owned(),
-                kb: kb.trim().parse().ok()?,
-            })
-        })
+        .filter_map(|l| l.split_once('\t'))
+        .filter(|(d, _)| device.is_empty() || *d == device)
+        .map(|(_, p)| p.to_owned())
         .collect();
-    let total_kb = entries
-        .iter()
-        .position(|e| e.path == path || e.path.trim_end_matches('/') == path.trim_end_matches('/'))
-        .map(|i| entries.remove(i).kb)
-        .unwrap_or_else(|| entries.iter().map(|e| e.kb).sum());
-    entries.truncate(40);
-    let docker = if path == "/" {
-        parse_docker_df(s.get("docker").map(|v| v.as_slice()).unwrap_or(&[]))
-    } else {
-        Vec::new()
+    let files_kb: u64 = first(&s, "files").parse().unwrap_or(0);
+    // "used" of the disk when this folder is its root: progress in KB.
+    let df: Vec<&str> = first(&s, "df").split_whitespace().collect();
+    let disk_total = (df.len() >= 6 && df[5] == path)
+        .then(|| df[2].parse::<u64>().ok())
+        .flatten()
+        .filter(|kb| *kb > 0);
+    let (total, by_kb) = match disk_total {
+        Some(kb) => (kb, true),
+        None => (dirs.len().max(1) as u64, false),
     };
+    let report = |done: u64| {
+        if let Some(id) = &transfer_id {
+            state.emit(
+                "transfer-progress",
+                ScanProgress {
+                    transfer_id: id.clone(),
+                    done: done.min(total),
+                    total,
+                },
+            );
+        }
+    };
+    report(0);
+    let mut entries = Vec::new();
+    let mut complete = true;
+    let mut done_kb = files_kb;
+    let mut done_dirs = 0u64;
+    for batch in batches(&dirs) {
+        let list: Vec<String> = batch.iter().map(|d| quote(d)).collect();
+        let script = format!(
+            "echo @@du; r timeout 300 du -xsk -- {} 2>&1\n",
+            list.join(" ")
+        );
+        let out = sections(&run(&conn, &script, 330).await?);
+        let mut measured = 0;
+        for line in out.get("du").into_iter().flatten() {
+            if line.starts_with("du:") || line.starts_with("timeout:") {
+                complete = false;
+                continue;
+            }
+            if let Some((kb, p)) = line.split_once('\t') {
+                if let Ok(kb) = kb.trim().parse::<u64>() {
+                    measured += 1;
+                    done_kb += kb;
+                    entries.push(UsageEntry {
+                        path: p.to_owned(),
+                        kb,
+                    });
+                }
+            }
+        }
+        if measured < batch.len() {
+            complete = false;
+        }
+        done_dirs += batch.len() as u64;
+        report(if by_kb { done_kb } else { done_dirs });
+    }
+    report(total);
+    entries.sort_by_key(|e| std::cmp::Reverse(e.kb));
+    let total_kb = files_kb + entries.iter().map(|e| e.kb).sum::<u64>();
+    entries.truncate(40);
     Ok(DiskUsage {
         path,
         total_kb,
         entries,
-        docker,
-        complete: first(&s, "duerr").is_empty(),
+        docker: parse_docker_df(s.get("docker").map(|v| v.as_slice()).unwrap_or(&[])),
+        complete: complete && s.contains_key("kids"),
     })
+}
+
+// ---- live sample ----------------------------------------------------------
+
+/// Raw counters; the app turns two samples into rates.
+#[derive(Serialize, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Sample {
+    /// Seconds since boot, for the time between two samples.
+    pub uptime: f64,
+    pub cpu_total: u64,
+    pub cpu_idle: u64,
+    pub mem_total_kb: u64,
+    pub mem_available_kb: u64,
+    pub swap_total_kb: u64,
+    pub swap_free_kb: u64,
+    pub load1: f64,
+    /// Bytes through the network cards (not loopback, Docker bridges or veths).
+    pub net_rx_bytes: u64,
+    pub net_tx_bytes: u64,
+    /// Bytes read and written by the disks (whole disks only).
+    pub disk_read_bytes: u64,
+    pub disk_write_bytes: u64,
+}
+
+const SAMPLE: &str = "echo @@up; cat /proc/uptime
+echo @@stat; head -1 /proc/stat
+echo @@load; cat /proc/loadavg
+echo @@mem; grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo
+echo @@net; tail -n +3 /proc/net/dev
+echo @@io; cat /proc/diskstats
+";
+
+fn real_nic(name: &str) -> bool {
+    !(name == "lo"
+        || name.starts_with("veth")
+        || name.starts_with("docker")
+        || name.starts_with("br-")
+        || name.starts_with("virbr")
+        || name.starts_with("cni")
+        || name.starts_with("flannel"))
+}
+
+fn whole_disk(name: &str) -> bool {
+    let tail_digit = name.chars().last().is_some_and(|c| c.is_ascii_digit());
+    ((name.starts_with("sd")
+        || name.starts_with("vd")
+        || name.starts_with("xvd")
+        || name.starts_with("hd"))
+        && !tail_digit)
+        || (name.starts_with("nvme") && !name.contains('p'))
+        || (name.starts_with("mmcblk") && !name.contains('p'))
+}
+
+fn parse_sample(text: &str) -> Sample {
+    let s = sections(text);
+    let mut out = Sample {
+        uptime: first(&s, "up")
+            .split_whitespace()
+            .next()
+            .and_then(|x| x.parse().ok())
+            .unwrap_or(0.0),
+        load1: first(&s, "load")
+            .split_whitespace()
+            .next()
+            .and_then(|x| x.parse().ok())
+            .unwrap_or(0.0),
+        ..Default::default()
+    };
+    if let Some((t, i)) = cpu_times(first(&s, "stat")) {
+        out.cpu_total = t;
+        out.cpu_idle = i;
+    }
+    for line in s.get("mem").into_iter().flatten() {
+        let mut f = line.split_whitespace();
+        let (Some(k), Some(v)) = (f.next(), f.next()) else {
+            continue;
+        };
+        let v: u64 = v.parse().unwrap_or(0);
+        match k {
+            "MemTotal:" => out.mem_total_kb = v,
+            "MemAvailable:" => out.mem_available_kb = v,
+            "SwapTotal:" => out.swap_total_kb = v,
+            "SwapFree:" => out.swap_free_kb = v,
+            _ => {}
+        }
+    }
+    for line in s.get("net").into_iter().flatten() {
+        let Some((name, rest)) = line.split_once(':') else {
+            continue;
+        };
+        if !real_nic(name.trim()) {
+            continue;
+        }
+        let f: Vec<u64> = rest
+            .split_whitespace()
+            .filter_map(|x| x.parse().ok())
+            .collect();
+        if f.len() >= 9 {
+            out.net_rx_bytes += f[0];
+            out.net_tx_bytes += f[8];
+        }
+    }
+    for line in s.get("io").into_iter().flatten() {
+        let f: Vec<&str> = line.split_whitespace().collect();
+        if f.len() >= 10 && whole_disk(f[2]) {
+            out.disk_read_bytes += f[5].parse::<u64>().unwrap_or(0) * 512;
+            out.disk_write_bytes += f[9].parse::<u64>().unwrap_or(0) * 512;
+        }
+    }
+    out
+}
+
+pub async fn sample(state: &Arc<AppState>, session_id: String) -> Result<Sample, String> {
+    let conn = connection(state, &session_id)?;
+    Ok(parse_sample(&run(&conn, SAMPLE, 15).await?))
 }
 
 // ---- cleanup --------------------------------------------------------------
@@ -447,6 +650,8 @@ pub struct Cleanup {
 pub struct CleanupScan {
     pub items: Vec<Cleanup>,
     pub privilege: String,
+    /// The root disk, for "after cleanup" on the screen.
+    pub disk: Option<Disk>,
 }
 
 fn measure_script(c: &Category) -> String {
@@ -475,7 +680,7 @@ pub async fn cleanup_scan(
     session_id: String,
 ) -> Result<CleanupScan, String> {
     let conn = connection(state, &session_id)?;
-    let mut script = String::from("echo @@priv; echo \"$R\"\n");
+    let mut script = String::from("echo @@priv; echo \"$R\"\necho @@df; df -PkT / 2>/dev/null\n");
     for c in CATEGORIES {
         let m = measure_script(c);
         if !m.is_empty() {
@@ -522,6 +727,9 @@ fi\n",
     Ok(CleanupScan {
         items,
         privilege: first(&s, "priv").to_owned(),
+        disk: parse_df(s.get("df").map(|v| v.as_slice()).unwrap_or(&[]))
+            .into_iter()
+            .next(),
     })
 }
 
@@ -928,6 +1136,220 @@ pub async fn restart_owner(
     }
 }
 
+// ---- Coolify: the lasting zombie fix ---------------------------------------
+
+/// What "Öneriyi uygula" did.
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct InitFix {
+    /// `applied` (saved and redeploying), `already` (was on; redeploying),
+    /// `needs-token`, `compose` (a Docker Compose app: the user edits it),
+    /// `not-coolify` (a container Coolify does not manage).
+    pub status: String,
+    /// The app's name in Coolify.
+    pub app: String,
+    pub message: String,
+}
+
+fn fix(status: &str, app: &str, message: &str) -> InitFix {
+    InitFix {
+        status: status.into(),
+        app: app.into(),
+        message: message.into(),
+    }
+}
+
+/// Coolify names an app's container `<app uuid>-<deploy time>`.
+fn coolify_uuid(container_name: &str) -> Option<String> {
+    let name = container_name.trim_start_matches('/');
+    let (uuid, stamp) = name.rsplit_once('-')?;
+    (stamp.chars().all(|c| c.is_ascii_digit())
+        && !uuid.is_empty()
+        && uuid.len() <= 64
+        && uuid.chars().all(|c| c.is_ascii_alphanumeric()))
+    .then(|| uuid.to_owned())
+}
+
+fn token_key(conn: &Connection) -> String {
+    let fp: String = conn
+        .host_key()
+        .fingerprint
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
+    format!("coolify/{fp}")
+}
+
+/// `--init` added to Coolify's "custom Docker options" (once).
+fn with_init(options: &str) -> Option<String> {
+    let has = options.split_whitespace().any(|o| o == "--init");
+    (!has).then(|| format!("{} --init", options.trim()).trim().to_owned())
+}
+
+/// Calls Coolify's API on the server itself (curl to its local port), the
+/// token on standard input: it never leaves the server or shows in `ps`.
+async fn coolify_api(
+    conn: &Connection,
+    base: &str,
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+    token: &str,
+) -> Result<(u16, serde_json::Value), String> {
+    let data = body
+        .map(|b| {
+            format!(
+                "-H 'Content-Type: application/json' --data-binary {}",
+                quote(b)
+            )
+        })
+        .unwrap_or_default();
+    let script = format!(
+        "command -v curl >/dev/null 2>&1 || {{ echo @@nocurl; exit 0; }}\necho @@body; curl -sS -m 60 -X {method} -H @- -H 'Accept: application/json' {data} -w '\\n@@status\\n%{{http_code}}\\n' {} 2>&1\n",
+        quote(&format!("{base}{path}"))
+    );
+    let s = sections(
+        &run_input(
+            conn,
+            &script,
+            &format!("Authorization: Bearer {token}\n"),
+            90,
+        )
+        .await?,
+    );
+    if s.contains_key("nocurl") {
+        return Err("Sunucuda curl yok.".into());
+    }
+    let status: u16 = first(&s, "status").parse().unwrap_or(0);
+    if status == 0 {
+        return Err(format!(
+            "Coolify'a ulaşılamadı ({base}): {}",
+            s.get("body")
+                .map(|l| l.join(" "))
+                .unwrap_or_default()
+                .trim()
+        ));
+    }
+    let text = s.get("body").map(|l| l.join("\n")).unwrap_or_default();
+    Ok((
+        status,
+        serde_json::from_str(&text).unwrap_or(serde_json::Value::Null),
+    ))
+}
+
+/// Adds `--init` to the Coolify app that runs `container_id` and redeploys
+/// it: the app then starts under a small init that collects zombies.
+pub async fn coolify_init(
+    state: &Arc<AppState>,
+    session_id: String,
+    container_id: String,
+    token: Option<String>,
+) -> Result<InitFix, String> {
+    valid_owner("container", &container_id)?;
+    let conn = connection(state, &session_id)?;
+    let probe = format!(
+        "[ \"$R\" ] || {{ echo @@noroot; exit 0; }}\necho @@info; r docker inspect -f '{{{{.Name}}}}\t{{{{index .Config.Labels \"coolify.managed\"}}}}' {container_id} 2>/dev/null\necho @@port; r docker port coolify 8080/tcp 2>/dev/null | head -1\n"
+    );
+    let s = sections(&run(&conn, &probe, 30).await?);
+    if s.contains_key("noroot") {
+        return Err(NEEDS_ROOT.into());
+    }
+    let (name, managed) = first(&s, "info").split_once('\t').unwrap_or(("", ""));
+    let Some(uuid) = (managed.trim() == "true")
+        .then(|| coolify_uuid(name))
+        .flatten()
+    else {
+        return Ok(fix(
+            "not-coolify",
+            name.trim_start_matches('/'),
+            "Bu konteyneri Coolify yönetmiyor. Kalıcı çözüm, konteyneri nasıl başlattıysan orada: docker run'a --init ekle ya da docker-compose.yml'de servise init: true yaz, sonra konteyneri yeniden oluştur.",
+        ));
+    };
+    let port = first(&s, "port")
+        .rsplit(':')
+        .next()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(8000);
+    let base = format!("http://127.0.0.1:{port}");
+    let key = token_key(&conn);
+    let given = token.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
+    let Some(token) = given
+        .clone()
+        .or_else(|| state.vault.get(&key).ok().flatten())
+    else {
+        return Ok(fix("needs-token", "", ""));
+    };
+    let (code, app) = coolify_api(
+        &conn,
+        &base,
+        "GET",
+        &format!("/api/v1/applications/{uuid}"),
+        None,
+        &token,
+    )
+    .await?;
+    match code {
+        200 => {}
+        401 => {
+            let _ = state.vault.delete(&key);
+            return Ok(fix("needs-token", "", "Coolify bu anahtarı kabul etmedi; yeni bir anahtar gir."));
+        }
+        403 => return Err("Coolify API kapalı ya da anahtarın yetkisi yetmiyor. Coolify'da Ayarlar > API erişimini aç; anahtar \"write\" ve \"deploy\" yetkili olmalı.".into()),
+        404 => return Ok(fix("not-coolify", &uuid, "Coolify'da bu konteynerin uygulaması bulunamadı (bir servis ya da veritabanı olabilir). Coolify'da o kaynağın ayarlarına --init / init: true ekle.")),
+        c => return Err(format!("Coolify beklenmeyen bir yanıt verdi ({c}).")),
+    }
+    let app_name = app["name"].as_str().unwrap_or(&uuid).to_owned();
+    if given.is_some() {
+        let _ = state.vault.put(&key, &token);
+    }
+    if app["build_pack"].as_str() == Some("dockercompose") {
+        return Ok(fix(
+            "compose",
+            &app_name,
+            "Bu uygulama Docker Compose ile tanımlı. Coolify'da uygulamanın Compose dosyasında bu servise init: true satırını ekleyip yeniden dağıt.",
+        ));
+    }
+    let options = app["custom_docker_run_options"].as_str().unwrap_or("");
+    let status = match with_init(options) {
+        Some(new) => {
+            let body = serde_json::json!({ "custom_docker_run_options": new }).to_string();
+            let (code, reply) = coolify_api(
+                &conn,
+                &base,
+                "PATCH",
+                &format!("/api/v1/applications/{uuid}"),
+                Some(&body),
+                &token,
+            )
+            .await?;
+            if code != 200 && code != 201 {
+                return Err(format!(
+                    "Coolify ayarı kaydetmedi ({code}): {}",
+                    reply["message"].as_str().unwrap_or("")
+                ));
+            }
+            "applied"
+        }
+        None => "already",
+    };
+    let (code, reply) = coolify_api(
+        &conn,
+        &base,
+        "GET",
+        &format!("/api/v1/deploy?uuid={uuid}"),
+        None,
+        &token,
+    )
+    .await?;
+    if code != 200 && code != 201 {
+        return Err(format!(
+            "Ayar kaydedildi ama yeniden dağıtım başlamadı ({code}): {}. Coolify'dan Redeploy'a bas.",
+            reply["message"].as_str().unwrap_or("")
+        ));
+    }
+    Ok(fix(status, &app_name, ""))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1034,6 +1456,8 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn scripts_run_on_a_real_linux_shell() {
+        let sm = parse_sample(&local(SAMPLE));
+        assert!(sm.cpu_total > 0 && sm.mem_total_kb > 0, "{sm:?}");
         let o = parse_overview(&local(OVERVIEW));
         assert!(
             o.cpus >= 1 && o.mem_total_kb > 0 && o.uptime_secs > 0,
@@ -1057,6 +1481,34 @@ mod tests {
             let v = first(&s, id);
             assert!(v.is_empty() || v.parse::<u64>().is_ok(), "{id}: {v:?}");
         }
+    }
+
+    #[test]
+    fn coolify_apps_are_found_from_the_container_name() {
+        assert_eq!(
+            coolify_uuid("/sbniis4s6edpjklxoldkozem-174020068578").as_deref(),
+            Some("sbniis4s6edpjklxoldkozem")
+        );
+        assert_eq!(coolify_uuid("web-app"), None);
+        assert_eq!(coolify_uuid("a;b-123"), None);
+        assert_eq!(with_init("").as_deref(), Some("--init"));
+        assert_eq!(
+            with_init("--cap-add SYS_ADMIN").as_deref(),
+            Some("--cap-add SYS_ADMIN --init")
+        );
+        assert_eq!(with_init("--init --ulimit nofile=1024"), None);
+    }
+
+    #[test]
+    fn samples_count_real_cards_and_whole_disks() {
+        let text = "@@up\n100.5 300\n@@stat\ncpu  100 0 100 800 0 0 0 0 0 0\n@@load\n0.5 0.4 0.3 1/2 3\n@@mem\nMemTotal: 1000 kB\nMemAvailable: 400 kB\n@@net\n    lo: 999 1 0 0 0 0 0 0 999 1 0 0 0 0 0 0\n  eth0: 1000 10 0 0 0 0 0 0 2000 20 0 0 0 0 0 0\nveth1: 5 1 0 0 0 0 0 0 5 1 0 0 0 0 0 0\n@@io\n   8       0 sda 10 0 100 0 20 0 200 0 0 0 0\n   8       1 sda1 10 0 100 0 20 0 200 0 0 0 0\n 259 0 nvme0n1 1 0 8 0 1 0 8 0 0 0 0\n 259 1 nvme0n1p1 1 0 8 0 1 0 8 0 0 0 0\n";
+        let s = parse_sample(text);
+        assert_eq!((s.net_rx_bytes, s.net_tx_bytes), (1000, 2000));
+        assert_eq!(s.disk_read_bytes, (100 + 8) * 512);
+        assert_eq!(s.disk_write_bytes, (200 + 8) * 512);
+        assert_eq!(s.cpu_total, 1000);
+        assert_eq!(s.mem_available_kb, 400);
+        assert_eq!(s.uptime, 100.5);
     }
 
     #[test]

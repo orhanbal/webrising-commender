@@ -128,6 +128,7 @@ struct Session {
 struct DiskArg {
     session_id: String,
     path: Option<String>,
+    transfer_id: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -144,6 +145,13 @@ struct SignalArg {
     action: String,
     #[serde(default)]
     confirm_database: bool,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InitArg {
+    session_id: String,
+    container_id: String,
+    token: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -375,9 +383,10 @@ async fn dispatch(
         "server.overview" => {
             ok(core::server::overview(state, p::<Session>(params)?.session_id).await?)
         }
+        "server.sample" => ok(core::server::sample(state, p::<Session>(params)?.session_id).await?),
         "server.disk" => {
             let a: DiskArg = p(params)?;
-            ok(core::server::disk_usage(state, a.session_id, a.path).await?)
+            ok(core::server::disk_usage(state, a.session_id, a.path, a.transfer_id).await?)
         }
         "server.cleanupScan" => {
             ok(core::server::cleanup_scan(state, p::<Session>(params)?.session_id).await?)
@@ -400,6 +409,10 @@ async fn dispatch(
                 a.confirm_database,
             )
             .await?)
+        }
+        "server.coolifyInit" => {
+            let a: InitArg = p(params)?;
+            ok(core::server::coolify_init(state, a.session_id, a.container_id, a.token).await?)
         }
         "server.restartOwner" => {
             let a: OwnerArg = p(params)?;
