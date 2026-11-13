@@ -86,6 +86,10 @@ public sealed class ServersWindow : Window
             DispatcherQueue.TryEnqueue(() => Show("Yeni terminal için bir sunucuya tıkla (ya da arama kutusuna kullanıcı@adres yazıp Enter'a bas).", InfoBarSeverity.Informational));
         };
         _tabs.TabWidthMode = TabViewWidthMode.SizeToContent;
+        // The tab view sized itself to its tab strip (40 px), so the terminal
+        // under it got no height at all: a blank tab. It fills the page.
+        _tabs.VerticalAlignment = VerticalAlignment.Stretch;
+        _tabs.HorizontalAlignment = HorizontalAlignment.Stretch;
         _tabs.TabCloseRequested += (_, e) => { if (e.Tab.Tag is TabPage page) ClosePage(page); };
         _tabs.SelectionChanged += (_, _) => { SyncCommands(); if (_filesPane.Visibility == Visibility.Visible) _ = LoadFiles(null); };
 
@@ -150,6 +154,10 @@ public sealed class ServersWindow : Window
         RenderHosts();
         Navigate("hosts");
         SyncCommands();
+        // CI only: a terminal tab without a server, to check that it is laid out.
+        if (Environment.GetEnvironmentVariable("WECOMMANDER_DEBUG_TAB") == "1")
+            DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
+                AddTab(new CoreHost("debug", "Debug", "debug", "key", false, null, null, null), "debug-session"));
     }
 
     private static Brush Secondary => (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
@@ -220,21 +228,32 @@ public sealed class ServersWindow : Window
             if (held is not null) held.Visibility = ReferenceEquals(held, page) ? Visibility.Visible : Visibility.Collapsed;
         page.Visibility = Visibility.Visible;
         if (Environment.GetEnvironmentVariable("WECOMMANDER_DEBUG_LAYOUT") == "1")
-            DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () => _ = LogLayout(page));
+            foreach (var delay in new[] { 400, 2000, 5000 })
+                DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () => _ = LogLayout(page, delay));
     }
 
     /// <summary>CI only (WECOMMANDER_DEBUG_LAYOUT=1): where the page host and its pages are.</summary>
-    private async Task LogLayout(UIElement shown)
+    private async Task LogLayout(UIElement shown, int delay)
     {
-        await Task.Delay(400);
+        await Task.Delay(delay);
         try
         {
-            var lines = new List<string> { $"--- shown={shown.GetType().Name} host={_pageHost.ActualWidth:0}x{_pageHost.ActualHeight:0} hostVis={_pageHost.Visibility} hostParent={(_pageHost.Parent as FrameworkElement)?.GetType().Name ?? _pageHost.Parent?.GetType().Name ?? "null"} navContentIsHost={ReferenceEquals(_nav.Content, _pageHost)}" };
+            var lines = new List<string> { $"--- after {delay} ms shown={shown.GetType().Name} host={_pageHost.ActualWidth:0}x{_pageHost.ActualHeight:0} hostVis={_pageHost.Visibility} hostParent={(_pageHost.Parent as FrameworkElement)?.GetType().Name ?? _pageHost.Parent?.GetType().Name ?? "null"} navContentIsHost={ReferenceEquals(_nav.Content, _pageHost)}" };
             var n = 0;
             foreach (var child in _pageHost.Children)
             {
                 var fe = child as FrameworkElement;
                 lines.Add($"  [{n++}] {child.GetType().Name} vis={child.Visibility} size={fe?.ActualWidth:0}x{fe?.ActualHeight:0} row={(fe is null ? -1 : Grid.GetRow(fe))} isShown={ReferenceEquals(child, shown)} isTerminals={ReferenceEquals(child, _terminals)}");
+            }
+            if (ReferenceEquals(shown, _terminals))
+            {
+                lines.Add($"  tabs: size={_tabs.ActualWidth:0}x{_tabs.ActualHeight:0} valign={_tabs.VerticalAlignment} vis={_tabs.Visibility} items={_tabs.TabItems.Count} selected={_tabs.SelectedIndex} empty={_empty.Visibility}");
+                if (CurrentPage is { } cp)
+                {
+                    lines.Add($"  pageRoot: size={cp.Root.ActualWidth:0}x{cp.Root.ActualHeight:0} parent={cp.Root.Parent?.GetType().Name ?? "null"} itemContentIsRoot={ReferenceEquals(cp.Item?.Content, cp.Root)}");
+                    foreach (var pane in cp.Panes)
+                        lines.Add($"  webview: size={pane.View.ActualWidth:0}x{pane.View.ActualHeight:0} vis={pane.View.Visibility} parent={(pane.View.Parent as FrameworkElement)?.ActualWidth:0}x{(pane.View.Parent as FrameworkElement)?.ActualHeight:0}");
+                }
             }
             if (shown is FrameworkElement sf)
                 lines.Add($"  shown: size={sf.ActualWidth:0}x{sf.ActualHeight:0} parentIsHost={ReferenceEquals(sf.Parent, _pageHost)} parent={sf.Parent?.GetType().Name ?? "null"} desired={sf.DesiredSize.Width:0}x{sf.DesiredSize.Height:0}");
