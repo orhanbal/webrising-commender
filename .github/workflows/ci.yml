@@ -1115,6 +1115,23 @@ jobs:
           Write-Host "Every section opened; + opened the server list; no errors logged"
           if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force }
           Get-Process -Name 'wecommander-core','webrising-commender' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          # A terminal tab is laid out: its terminal view gets the page's size
+          # (a tab once opened with an empty, zero-size terminal).
+          Start-Sleep -Seconds 2
+          $layout = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'WECOMMANDER\layout.log'
+          Remove-Item $layout -ErrorAction SilentlyContinue
+          $env:WECOMMANDER_DEBUG_TAB = '1'
+          $app = Start-Process -FilePath "center-windows\publish\WecommanderCenter.exe" -ArgumentList '--open-main' -PassThru
+          $sized = $false
+          for ($i = 0; $i -lt 40 -and -not $sized; $i++) {
+            Start-Sleep -Milliseconds 500
+            if (Test-Path $layout) { $sized = [bool](Select-String -Path $layout -Pattern 'webview: size=([1-9][0-9]+)x([1-9][0-9]+)' -Quiet) }
+          }
+          if (Test-Path $layout) { Write-Host '--- layout.log ---'; Get-Content $layout | ForEach-Object { Write-Host $_ } } else { Write-Host 'no layout.log' }
+          if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force }
+          Get-Process -Name 'wecommander-core','webrising-commender' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          if (-not $sized) { throw "a terminal tab opened with a zero-size terminal" }
+          Write-Host "A terminal tab gets its full size"
       - name: Package
         shell: pwsh
         run: |
