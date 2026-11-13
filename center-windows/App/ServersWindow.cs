@@ -30,6 +30,8 @@ public sealed class ServersWindow : Window
     private readonly StackPanel _transfers = new() { Spacing = 4, Margin = new Thickness(8) };
     private readonly InfoBar _info = new() { IsClosable = true };
     private readonly AppBarToggleButton _filesButton = new() { Label = "Dosyalar", Icon = new SymbolIcon(Symbol.Folder) };
+    private readonly AppBarButton _serverButton = new() { Label = "Sunucu yönetimi", Icon = new FontIcon { Glyph = "\uE9D9" } };
+    private readonly Dictionary<string, ServerWindow> _serverWindows = [];
     private readonly AppBarButton _tunnelsButton = new() { Label = "Tüneller", Icon = new FontIcon { Glyph = "\uE8AF" } };
     private readonly AppBarButton _snippetButton = new() { Label = "Parçacık", Icon = new FontIcon { Glyph = "\uE943" } };
     private readonly AppBarButton _splitButton = new() { Label = "Böl", Icon = new FontIcon { Glyph = "\uE70D" } };
@@ -99,6 +101,8 @@ public sealed class ServersWindow : Window
             if (_filesButton.IsChecked == true) _ = LoadFiles(null);
         };
         _tunnelsButton.Click += async (_, _) => await ShowTunnels();
+        _serverButton.Click += (_, _) => OpenServerWindow();
+        ToolTipService.SetToolTip(_serverButton, "Bu sunucunun disk, bellek, süreç ve temizlik ekranı");
         _snippetButton.Click += async (_, _) => await PickSnippet();
         var closeButton = new AppBarButton { Label = "Terminali kapat", Icon = new SymbolIcon(Symbol.Cancel) };
         closeButton.Click += (_, _) => { if (Current is { } t) CloseTab(t); };
@@ -109,6 +113,7 @@ public sealed class ServersWindow : Window
         var bar = new CommandBar { DefaultLabelPosition = CommandBarDefaultLabelPosition.Right, IsOpen = false };
         _shareButton.Flyout = ShareMenu();
         ToolTipService.SetToolTip(_shareButton, "Bu terminali ekipten birine canlı göster (uçtan uca şifreli)");
+        bar.PrimaryCommands.Add(_serverButton);
         bar.PrimaryCommands.Add(_shareButton);
         bar.PrimaryCommands.Add(_splitButton);
         bar.PrimaryCommands.Add(_broadcastButton);
@@ -178,6 +183,19 @@ public sealed class ServersWindow : Window
         _info.IsOpen = true;
     }
 
+    /// <summary>Server management for the current terminal (one window per terminal).</summary>
+    private void OpenServerWindow()
+    {
+        if (Current is not { Closed: false, Guest: null } t) return;
+        if (!_serverWindows.TryGetValue(t.SessionId, out var window))
+        {
+            window = new ServerWindow(_c, t.SessionId, t.Host.Label);
+            window.Closed += (_, _) => _serverWindows.Remove(t.SessionId);
+            _serverWindows[t.SessionId] = window;
+        }
+        window.Bring();
+    }
+
     private void SyncCommands()
     {
         var t = Current;
@@ -185,6 +203,7 @@ public sealed class ServersWindow : Window
         var own = live && t!.Guest is null; // a teammate's shared terminal has no files or tunnels here
         _filesButton.IsEnabled = own;
         _tunnelsButton.IsEnabled = own;
+        _serverButton.IsEnabled = own;
         _snippetButton.IsEnabled = live;
         _shareButton.IsEnabled = live && t!.Guest is null;
         _shareButton.Label = t?.Hosting is { } hs ? $"Paylaşılıyor ({hs.Guests.Count})" : "Ekiple paylaş";

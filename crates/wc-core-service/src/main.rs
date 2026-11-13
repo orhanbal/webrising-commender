@@ -125,6 +125,35 @@ struct Session {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct DiskArg {
+    session_id: String,
+    path: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CleanupArg {
+    session_id: String,
+    ids: Vec<String>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SignalArg {
+    session_id: String,
+    pid: u32,
+    name: String,
+    action: String,
+    #[serde(default)]
+    confirm_database: bool,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OwnerArg {
+    session_id: String,
+    kind: String,
+    id: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Write_ {
     session_id: String,
     data: String,
@@ -342,6 +371,39 @@ async fn dispatch(
         }
         "terminal.close" => {
             ok(core::terminal_close(state, p::<Session>(params)?.session_id).await?)
+        }
+        "server.overview" => {
+            ok(core::server::overview(state, p::<Session>(params)?.session_id).await?)
+        }
+        "server.disk" => {
+            let a: DiskArg = p(params)?;
+            ok(core::server::disk_usage(state, a.session_id, a.path).await?)
+        }
+        "server.cleanupScan" => {
+            ok(core::server::cleanup_scan(state, p::<Session>(params)?.session_id).await?)
+        }
+        "server.cleanupRun" => {
+            let a: CleanupArg = p(params)?;
+            ok(core::server::cleanup_run(state, a.session_id, a.ids).await?)
+        }
+        "server.processes" => {
+            ok(core::server::processes(state, p::<Session>(params)?.session_id).await?)
+        }
+        "server.signal" => {
+            let a: SignalArg = p(params)?;
+            ok(core::server::process_signal(
+                state,
+                a.session_id,
+                a.pid,
+                a.name,
+                a.action,
+                a.confirm_database,
+            )
+            .await?)
+        }
+        "server.restartOwner" => {
+            let a: OwnerArg = p(params)?;
+            ok(core::server::restart_owner(state, a.session_id, a.kind, a.id).await?)
         }
         "files.list" => {
             let f: FilesList = p(params)?;

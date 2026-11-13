@@ -36,6 +36,13 @@ connection.
 | `terminal.resize` | `sessionId, cols, rows` | `null` |
 | `terminal.close` | `sessionId` | `null` |
 | `files.list` | `sessionId, path?` (home when empty) | `{path, parent, entries:[{name, path, kind, size, modified, permissions}]}` |
+| `server.overview` | `sessionId` | `{hostname, os, kernel, uptimeSecs, load, cpus, cpuPercent, memTotalKb, memAvailableKb, swapTotalKb, swapFreeKb, disks:[{device, fsType, mount, sizeKb, usedKb, availKb}], rebootRequired, updates, processes, zombies, privilege, docker}`; `privilege` is `root`, `sudo` or empty (no changes possible) |
+| `server.disk` | `sessionId, path?` (`/` when empty) | `{path, totalKb, entries:[{path, kb}], docker:[{kind, count, sizeBytes, reclaimableBytes}], complete}`; the 40 largest folders |
+| `server.cleanupScan` | `sessionId` | `{items:[{id, title, detail, kb, command, warning}], privilege}`; fixed safe categories only |
+| `server.cleanupRun` | `sessionId, ids` | `[{id, ok, message}]`; runs only the core's own command for each id |
+| `server.processes` | `sessionId` | `{processes:[{pid, ppid, user, state, cpu, mem, rssKb, elapsedSecs, name, command}], zombies:[{parent, count, owner:{kind, id, name}, protected}], privilege}` |
+| `server.signal` | `sessionId, pid, name, action` (`reap`, `term`, `kill`), `confirmDatabase?` | `""`; refused when `name` no longer matches, for system processes, and (error `database`) for databases until confirmed |
+| `server.restartOwner` | `sessionId, kind` (`container`, `service`), `id` | `""`; never sshd, Docker itself or the agent |
 | `files.download` | `sessionId, remote, local, transferId` | bytes |
 | `files.upload` | `sessionId, local, remoteDir, transferId` | bytes |
 | `files.mkdir` / `files.delete` | `sessionId, path` | `null` |

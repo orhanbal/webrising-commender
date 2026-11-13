@@ -169,6 +169,9 @@ public sealed class ServersController : IDisposable
         tab.Closed = true;
     }
 
+    /// <summary>Server management (server.* in the core) for an SSH terminal.</summary>
+    public Task<T> Server<T>(string method, object parameters) => Core.CallAsync<T>(method, parameters);
+
     public Task<RemoteListing> ListFiles(TerminalTab tab, string? path) =>
         Core.CallAsync<RemoteListing>("files.list", new { sessionId = tab.SessionId, path });
 
