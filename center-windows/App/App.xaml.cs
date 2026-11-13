@@ -539,7 +539,7 @@ public partial class App : Application
             var version = await _agent.InstalledVersionAsync();
             if (version != AgentVersion) { AgentVersion = version; changed = true; }
         }
-        if (status.State != AgentRunState.NotInstalled && DateTime.UtcNow - _lastReleaseCheck >= TimeSpan.FromHours(6))
+        if (status.State != AgentRunState.NotInstalled && DateTime.UtcNow - _lastReleaseCheck >= TimeSpan.FromHours(1))
         {
             _lastReleaseCheck = DateTime.UtcNow;
             try
@@ -553,7 +553,7 @@ public partial class App : Application
                     if (latest != LatestAgentBuild) { LatestAgentBuild = latest; changed = true; }
                 }
             }
-            catch (Exception) { _lastReleaseCheck = DateTime.UtcNow - TimeSpan.FromHours(5); /* retry in an hour */ }
+            catch (Exception) { _lastReleaseCheck = DateTime.UtcNow - TimeSpan.FromMinutes(50); /* retry in ten minutes */ }
             if (AgentUpdateAvailable && _announcedBuild != LatestAgentBuild)
             {
                 _announcedBuild = LatestAgentBuild;

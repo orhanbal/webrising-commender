@@ -345,7 +345,7 @@ final class AppModel: ObservableObject {
             let version = await agentControl.installedVersion()
             if version != agentVersion { agentVersion = version; changed = true }
         }
-        if status.state != .notInstalled && Date().timeIntervalSince(lastReleaseCheck) >= 6 * 3600 {
+        if status.state != .notInstalled && Date().timeIntervalSince(lastReleaseCheck) >= 3600 {
             lastReleaseCheck = Date()
             var request = URLRequest(url: AgentUpdate.releasesURL, timeoutInterval: 20)
             request.setValue("WECOMMANDER-Center", forHTTPHeaderField: "User-Agent")
@@ -355,7 +355,7 @@ final class AppModel: ObservableObject {
                let latest = AgentUpdate.latestMacBuild(data) {
                 if latest != latestAgentBuild { latestAgentBuild = latest; changed = true }
             } else {
-                lastReleaseCheck = Date().addingTimeInterval(-5 * 3600) // retry in an hour
+                lastReleaseCheck = Date().addingTimeInterval(-50 * 60) // retry in ten minutes
             }
             if agentUpdateAvailable, announcedBuild != latestAgentBuild, let latest = latestAgentBuild {
                 announcedBuild = latest
@@ -534,12 +534,12 @@ extension AppModel {
         if !embedded.paired, token != nil, Date().timeIntervalSince(lastPairAttempt) >= 300 {
             await ensurePaired()
         }
-        if Date().timeIntervalSince(lastReleaseCheck) >= 6 * 3600 {
+        if Date().timeIntervalSince(lastReleaseCheck) >= 3600 {
             lastReleaseCheck = Date()
             if let data = await releasesJSON(), let latest = AppUpdate.latest(data) {
                 latestApp = latest
             } else {
-                lastReleaseCheck = Date().addingTimeInterval(-5 * 3600) // retry in an hour
+                lastReleaseCheck = Date().addingTimeInterval(-50 * 60) // retry in ten minutes
             }
             if agentUpdateAvailable, let latest = latestApp, announcedApp != latest.build {
                 announcedApp = latest.build
