@@ -459,12 +459,28 @@ impl Connection {
     /// Runs `command` through the user's shell and collects its output.
     /// Output is capped at `max_output` bytes per stream; the rest is dropped.
     pub async fn exec(&self, command: &str, max_output: usize) -> Result<ExecOutput, SshError> {
+        self.exec_input(command, &[], max_output).await
+    }
+
+    /// Like [`exec`](Self::exec), with `input` sent to the command's standard
+    /// input (then end of input): secrets never appear in the command line,
+    /// where other users of the server could read them.
+    pub async fn exec_input(
+        &self,
+        command: &str,
+        input: &[u8],
+        max_output: usize,
+    ) -> Result<ExecOutput, SshError> {
         let mut channel = self
             .handle
             .channel_open_session()
             .await
             .map_err(map_error)?;
         channel.exec(true, command).await.map_err(map_error)?;
+        if !input.is_empty() {
+            channel.data(input).await.map_err(map_error)?;
+        }
+        channel.eof().await.map_err(map_error)?;
         let mut out = ExecOutput::default();
         while let Some(msg) = channel.wait().await {
             match msg {

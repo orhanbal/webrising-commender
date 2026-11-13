@@ -453,6 +453,10 @@ public class ServerManagementTests
         Assert.Equal("container", p.Zombies[0].Owner.Kind);
         var c = JsonSerializer.Deserialize<CleanupScan>("""{"items":[{"id":"apt-cache","title":"t","detail":"d","kb":2048,"command":"apt-get clean","warning":""}],"privilege":""}""", CoreClient.Json)!;
         Assert.Equal(2048ul, c.Items[0].Kb);
+        var sm = JsonSerializer.Deserialize<ServerSample>("""{"uptime":100.5,"cpuTotal":1000,"cpuIdle":800,"memTotalKb":1000,"memAvailableKb":400,"swapTotalKb":0,"swapFreeKb":0,"load1":0.5,"netRxBytes":1,"netTxBytes":2,"diskReadBytes":3,"diskWriteBytes":4}""", CoreClient.Json)!;
+        Assert.Equal(4ul, sm.DiskWriteBytes);
+        var fix = JsonSerializer.Deserialize<InitFix>("""{"status":"applied","app":"web","message":""}""", CoreClient.Json)!;
+        Assert.Equal("applied", fix.Status);
     }
 
     [Fact]

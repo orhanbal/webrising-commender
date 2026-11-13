@@ -21,12 +21,18 @@ public sealed record DockerUsage(string Kind, string Count, ulong SizeBytes, ulo
 public sealed record DiskUsage(string Path, ulong TotalKb, List<UsageEntry> Entries, List<DockerUsage> Docker, bool Complete);
 
 public sealed record CleanupItem(string Id, string Title, string Detail, ulong Kb, string Command, string Warning);
-public sealed record CleanupScan(List<CleanupItem> Items, string Privilege);
+public sealed record CleanupScan(List<CleanupItem> Items, string Privilege, ServerDisk? Disk = null);
 public sealed record CleanupResult(string Id, bool Ok, string Message);
 
 public sealed record ServerProcess(uint Pid, uint Ppid, string User, string State, double Cpu, double Mem, ulong RssKb, ulong ElapsedSecs, string Name, string Command);
 public sealed record ProcessOwner(string Kind, string Id, string Name);
 public sealed record ZombieGroup(ServerProcess Parent, uint Count, ProcessOwner Owner, string Protected);
+public sealed record ServerSample(double Uptime, ulong CpuTotal, ulong CpuIdle, ulong MemTotalKb, ulong MemAvailableKb, ulong SwapTotalKb, ulong SwapFreeKb,
+    double Load1, ulong NetRxBytes, ulong NetTxBytes, ulong DiskReadBytes, ulong DiskWriteBytes);
+
+/// <summary>What "Öneriyi uygula" did: applied, already, needs-token, compose, not-coolify.</summary>
+public sealed record InitFix(string Status, string App, string Message);
+
 public sealed record ProcessList(List<ServerProcess> Processes, List<ZombieGroup> Zombies, string Privilege);
 
 public static class Sizes
@@ -42,6 +48,9 @@ public static class Sizes
         while (v >= 1024 && i < units.Length - 1) { v /= 1024; i++; }
         return (v >= 100 || i == 0 ? v.ToString("0") : v.ToString("0.#")) + " " + units[i];
     }
+
+    /// <summary>"1,2 MB/sn" for a rate in bytes per second.</summary>
+    public static string Rate(double bytesPerSecond) => Bytes((ulong)Math.Max(0, bytesPerSecond)) + "/sn";
 
     /// <summary>"42 gün 12 sa", "3 sa 5 dk", "40 sn".</summary>
     public static string Duration(ulong secs)
