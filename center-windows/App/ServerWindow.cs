@@ -54,7 +54,7 @@ public sealed class ServerWindow : Window
             _nav.MenuItems.Add(new NavigationViewItem { Content = text, Tag = tag, Icon = new FontIcon { Glyph = glyph } });
         var refresh = new NavigationViewItem { Content = "Yenile", Tag = "refresh", SelectsOnInvoked = false, Icon = new SymbolIcon(Symbol.Refresh) };
         _nav.FooterMenuItems.Add(refresh);
-        _nav.ItemInvoked += (_, e) =>
+        _nav.ItemInvoked += (sender, e) =>
         {
             var tag = e.InvokedItemContainer?.Tag as string;
             if (tag is null) return;
