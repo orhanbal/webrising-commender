@@ -86,6 +86,10 @@ public sealed class ServersWindow : Window
             DispatcherQueue.TryEnqueue(() => Show("Yeni terminal için bir sunucuya tıkla (ya da arama kutusuna kullanıcı@adres yazıp Enter'a bas).", InfoBarSeverity.Informational));
         };
         _tabs.TabWidthMode = TabViewWidthMode.SizeToContent;
+        // The tab view sized itself to its tab strip (40 px), so the terminal
+        // under it got no height at all: a blank tab. It fills the page.
+        _tabs.VerticalAlignment = VerticalAlignment.Stretch;
+        _tabs.HorizontalAlignment = HorizontalAlignment.Stretch;
         _tabs.TabCloseRequested += (_, e) => { if (e.Tab.Tag is TabPage page) ClosePage(page); };
         _tabs.SelectionChanged += (_, _) => { SyncCommands(); if (_filesPane.Visibility == Visibility.Visible) _ = LoadFiles(null); };
 
@@ -243,7 +247,7 @@ public sealed class ServersWindow : Window
             }
             if (ReferenceEquals(shown, _terminals))
             {
-                lines.Add($"  tabs: size={_tabs.ActualWidth:0}x{_tabs.ActualHeight:0} vis={_tabs.Visibility} items={_tabs.TabItems.Count} selected={_tabs.SelectedIndex} empty={_empty.Visibility}");
+                lines.Add($"  tabs: size={_tabs.ActualWidth:0}x{_tabs.ActualHeight:0} valign={_tabs.VerticalAlignment} vis={_tabs.Visibility} items={_tabs.TabItems.Count} selected={_tabs.SelectedIndex} empty={_empty.Visibility}");
                 if (CurrentPage is { } cp)
                 {
                     lines.Add($"  pageRoot: size={cp.Root.ActualWidth:0}x{cp.Root.ActualHeight:0} parent={cp.Root.Parent?.GetType().Name ?? "null"} itemContentIsRoot={ReferenceEquals(cp.Item?.Content, cp.Root)}");
