@@ -293,6 +293,9 @@ export const consoleTurkish:Record<string,string> = {
   "Live operational counters and incident triage.": "Canlı operasyon sayaçları ve olay değerlendirme.",
   "Logos and favicon served on every page.": "Her sayfada kullanılan logolar ve sekme simgesi.",
   "Privacy policy and terms of use, per language.": "Dile göre gizlilik politikası ve kullanım koşulları.",
-  "Platform-wide counts from the production database.": "Üretim veritabanından platform genelindeki sayılar."
+  "Platform-wide counts from the production database.": "Üretim veritabanından platform genelindeki sayılar.",
+  "Marketing": "Pazarlama",
+  "Messages & surveys": "Mesajlar ve anketler",
+  "In-app surveys, announcements and tips, and what people answered.": "Uygulama içi anketler, duyurular ve ipuçları; kullanıcıların verdiği cevaplar."
 };
 export function consoleText(source:string,locale:"en"|"tr"):string {return locale==="tr"?(consoleTurkish[source]??source):source;}

@@ -32,6 +32,20 @@ public sealed class ServersWindow : Window
     private readonly AppBarToggleButton _filesButton = new() { Label = "Dosyalar", Icon = new SymbolIcon(Symbol.Folder) };
     private readonly AppBarButton _serverButton = new() { Label = "Sunucu yönetimi", Icon = new FontIcon { Glyph = "\uE9D9" } };
     private readonly Dictionary<string, ServerWindow> _serverWindows = [];
+    private readonly Border _messageHost = new()
+    {
+        Visibility = Visibility.Collapsed,
+        HorizontalAlignment = HorizontalAlignment.Left,
+        VerticalAlignment = VerticalAlignment.Bottom,
+        Margin = new Thickness(16),
+        Padding = new Thickness(16),
+        CornerRadius = new CornerRadius(12),
+        BorderThickness = new Thickness(1),
+        Background = (Brush)Application.Current.Resources["AcrylicInAppFillColorDefaultBrush"],
+        BorderBrush = (Brush)Application.Current.Resources["SurfaceStrokeColorDefaultBrush"],
+        Shadow = new ThemeShadow(),
+        Translation = new System.Numerics.Vector3(0, 0, 32),
+    };
     private readonly AppBarButton _tunnelsButton = new() { Label = "Tüneller", Icon = new FontIcon { Glyph = "\uE8AF" } };
     private readonly AppBarButton _snippetButton = new() { Label = "Parçacık", Icon = new FontIcon { Glyph = "\uE943" } };
     private readonly AppBarButton _splitButton = new() { Label = "Böl", Icon = new FontIcon { Glyph = "\uE70D" } };
@@ -155,7 +169,16 @@ public sealed class ServersWindow : Window
         _pageHost.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         _pageHost.Children.Add(_info);
         _nav.Content = _pageHost;
-        Content = _nav;
+        // Marketing messages and surveys sit bottom left, over the pages.
+        var shell = new Grid();
+        shell.Children.Add(_nav);
+        shell.Children.Add(_messageHost);
+        Content = shell;
+        DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(6));
+            await MessageCard.ShowNextAsync(_messageHost);
+        });
         RenderHosts();
         Navigate("hosts");
         SyncCommands();
