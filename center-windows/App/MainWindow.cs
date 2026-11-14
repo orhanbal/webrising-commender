@@ -93,6 +93,7 @@ public sealed class MainWindow : Window
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         SetWindowLongPtr(hwnd, GWLP_HWNDPARENT, owner is null ? IntPtr.Zero : WinRT.Interop.WindowNative.GetWindowHandle(owner));
         _owner = owner;
+        _panel.ShowClose = owner is null;
         if (AppWindow.Presenter is OverlappedPresenter presenter) presenter.IsAlwaysOnTop = owner is null;
     }
 
@@ -161,9 +162,10 @@ public sealed class MainWindow : Window
 
     public void ShowPanel()
     {
-        // Beside an open main window: just bring it forward there.
-        if (Docked && _owner!.AppWindow.IsVisible && AppWindow.IsVisible)
+        // The main window is open: the panel belongs beside it (shown again if it was hidden).
+        if (Docked && _owner!.AppWindow.IsVisible)
         {
+            App.Current.ShowPanelBesideMain();
             Activate();
             _panel.Refresh();
             return;
@@ -193,7 +195,7 @@ public sealed class MainWindow : Window
     /// <summary>Tray click: open, or close when open. The click that just took the focus away does not reopen it.</summary>
     public void TogglePanel()
     {
-        if (Docked && AppWindow.IsVisible) { Activate(); return; }
+        if (Docked && _owner!.AppWindow.IsVisible) { ShowPanel(); return; }
         if (AppWindow.IsVisible) HidePanel();
         else if (DateTime.UtcNow - _hiddenAt > TimeSpan.FromMilliseconds(400)) ShowPanel();
     }

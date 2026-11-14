@@ -29,7 +29,7 @@
                 <HyperlinkButton x:Name="SignOutLink" Content="Oturumu kapat" Padding="2,0" FontSize="12"
                                  HorizontalAlignment="Right" Click="SignOut_Click" />
             </StackPanel>
-            <Button Grid.Column="2" Click="Close_Click" Background="Transparent" BorderThickness="0"
+            <Button x:Name="CloseButton" Grid.Column="2" Click="Close_Click" Background="Transparent" BorderThickness="0"
                     Width="32" Height="32" Padding="0" VerticalAlignment="Top" ToolTipService.ToolTip="Kapat (Esc)">
                 <FontIcon Glyph="&#xE711;" FontSize="12" />
             </Button>

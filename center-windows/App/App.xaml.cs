@@ -327,6 +327,8 @@ public partial class App : Application
     public MainWindow? PanelWindow => _window;
     /// <summary>The panel beside the main window was closed with its own button.</summary>
     public void PanelDismissed() => _servers?.PanelDismissed();
+    /// <summary>The tray asked for the panel while the main window is open: beside it.</summary>
+    public void ShowPanelBesideMain() => _servers?.ShowPanelBeside();
     /// <summary>The main window, when open, shows approvals in its own panel on the right; otherwise the tray panel opens.</summary>
     public void ShowApprovals()
     {

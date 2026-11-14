@@ -346,6 +346,7 @@ public sealed class ServersWindow : Window
                 width = area.Width - (int)Math.Round(48 * scale);
                 side = 0;
                 _panelWanted = false;
+                _narrow = true;
             }
             var height = Math.Min((int)Math.Round(860 * scale), area.Height - (int)Math.Round(48 * scale));
             var x = area.X + (area.Width - width - side) / 2;
@@ -368,6 +369,15 @@ public sealed class ServersWindow : Window
         var tip = _panelWanted ? "Onay panelini gizle" : "Onay panelini göster";
         ToolTipService.SetToolTip(_panelButton, tip);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_panelButton, tip);
+    }
+
+    private bool _narrow;
+
+    public void ShowPanelBeside()
+    {
+        _panelWanted = true;
+        RenderAccount();
+        SyncPanel();
     }
 
     /// <summary>The panel window's own close button: it stays closed until the button in the bar opens it.</summary>
@@ -443,6 +453,8 @@ public sealed class ServersWindow : Window
     public void ShowWindow()
     {
         App.Current.CheckForUpdateSoon();
+        // Opening the app always brings the panel back beside it (unless the screen is too small for both).
+        if (!_narrow) _panelWanted = true;
         AppWindow.Show();
         Activate();
         SyncPanel();

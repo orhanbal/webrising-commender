@@ -52,6 +52,9 @@ public sealed partial class CenterPanel : UserControl
     }
 
     /// <summary>In the main window: no header of its own (the bottom bar shows the account, sign out and close).</summary>
+    /// <summary>Beside the main window there is no close button (like the Start menu's right side); it comes and goes with the main window.</summary>
+    public bool ShowClose { set => CloseButton.Visibility = value ? Visibility.Visible : Visibility.Collapsed; }
+
     public bool Docked
     {
         set
