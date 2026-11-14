@@ -1154,7 +1154,37 @@ jobs:
           New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA | Out-Null
           $env:WECOMMANDER_DEBUG_LAYOUT = '1'; $env:WECOMMANDER_DEBUG_DOCK = '1'; $env:WECOMMANDER_DEBUG_CHIP = '1'; $env:WECOMMANDER_DEBUG_TAB = '1'
           $exe = "center-windows\publish\WecommanderCenter.exe"
-          $layout = Join-Path $env:LOCALAPPDATA 'WECOMMANDER\layout.log'
+          # The app writes under the real profile folder (GetFolderPath ignores the variable).
+          $layout = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'WECOMMANDER\layout.log'
+          Remove-Item $layout -ErrorAction SilentlyContinue
+          # Win32 view of the windows: UI Automation lists an owned window under its owner, not at the top.
+          Add-Type @"
+          using System; using System.Runtime.InteropServices; using System.Text;
+          public static class Win {
+            public delegate bool EnumProc(IntPtr h, IntPtr l);
+            [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc f, IntPtr l);
+            [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+            [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+            [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+            [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
+            [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int a, out RECT r, int s);
+            public static string List(uint pid) {
+              var sb = new StringBuilder();
+              EnumWindows((h, l) => {
+                uint p; GetWindowThreadProcessId(h, out p);
+                if (p == pid && IsWindowVisible(h)) {
+                  var t = new StringBuilder(256); GetWindowText(h, t, 256); RECT r; DwmGetWindowAttribute(h, 9, out r, 16);
+                  sb.AppendLine(t + "|" + r.L + "," + r.T + "," + r.R + "," + r.B);
+                }
+                return true; }, IntPtr.Zero);
+              return sb.ToString();
+            }
+          }
+          "@
+          function Visible($prefix) {
+            foreach ($line in ([Win]::List([uint32]$app.Id) -split "`r?`n")) { if ($line -and $line.StartsWith($prefix)) { return $line } }
+            return $null
+          }
           $app = Start-Process -FilePath $exe -ArgumentList '--open-main' -PassThru
           Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
           $root = [System.Windows.Automation.AutomationElement]::RootElement
@@ -1169,8 +1199,8 @@ jobs:
             return $null
           }
           function Report($when) {
-            Write-Host "--- windows $when"
-            foreach ($w in (Windows-Of)) { Write-Host ("  '{0}' rect={1} offscreen={2}" -f $w.Current.Name, $w.Current.BoundingRectangle, $w.Current.IsOffscreen) }
+            Write-Host "--- windows $when (visible, drawn bounds)"
+            Write-Host ([Win]::List([uint32]$app.Id))
           }
           function WaitFor([scriptblock]$cond) { for ($i = 0; $i -lt 30; $i++) { if (& $cond) { return $true }; Start-Sleep -Milliseconds 500 }; return $false }
           $fail = @()
@@ -1178,12 +1208,14 @@ jobs:
           if (-not (WaitFor { Top $mainName -exact })) { $fail += 'main window did not open' }
           Start-Sleep -Seconds 2
           Report 'after start'
-          $main = Top $mainName -exact; $panel = Top $panelName
-          if (-not $panel) { $fail += 'panel window not beside the main window at start' }
-          elseif ($main) {
-            $m = $main.Current.BoundingRectangle; $p = $panel.Current.BoundingRectangle
-            Write-Host ("gap between windows (window rectangles): {0}" -f ($p.Left - $m.Right))
-            if ($p.Top -ne $m.Top -and [math]::Abs($p.Top - $m.Top) -gt 12) { $fail += "panel top $($p.Top) is not the main top $($m.Top)" }
+          $main = Top $mainName -exact
+          $panelLine = Visible $panelName; $mainLine = Visible ($mainName + '|')
+          if (-not $panelLine) { $fail += 'panel window not beside the main window at start' }
+          elseif ($mainLine) {
+            $m = ($mainLine -split '\|')[1] -split ','; $p = ($panelLine -split '\|')[1] -split ','
+            $gap = [int]$p[0] - [int]$m[2]
+            Write-Host "gap between the drawn windows: $gap px; tops $($m[1]) / $($p[1]); bottoms $($m[3]) / $($p[3])"
+            if ([math]::Abs([int]$p[1] - [int]$m[1]) -gt 2 -or [math]::Abs([int]$p[3] - [int]$m[3]) -gt 2) { $fail += 'panel not aligned with the main window' }
           }
           $chip = Top $chipName -exact
           if (-not $chip) { $fail += 'server box not shown' }
@@ -1200,14 +1232,14 @@ jobs:
             if (-not (WaitFor { -not (Top $mainName -exact) })) { $fail += 'main window did not close' }
             Start-Sleep -Seconds 1
             Report 'after closing the main window'
-            if (Top $panelName) { $fail += 'panel stayed on screen after the main window closed' }
+            if (Visible $panelName) { $fail += 'panel stayed on screen after the main window closed' }
           }
           # Open the app again (a second start is handed to the running one).
           Start-Process -FilePath $exe -ArgumentList '--open-main' | Out-Null
           if (-not (WaitFor { Top $mainName -exact })) { $fail += 'main window did not come back' }
           Start-Sleep -Seconds 2
           Report 'after opening again'
-          if (-not (Top $panelName)) { $fail += 'panel window did not come back beside the main window' }
+          if (-not (Visible $panelName)) { $fail += 'panel window did not come back beside the main window' }
           # Server management on the open terminal tab.
           $main = Top $mainName -exact
           if ($main) {
