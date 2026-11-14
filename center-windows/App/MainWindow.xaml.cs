@@ -47,8 +47,16 @@ public sealed partial class MainWindow : Window
         };
         Activated += (_, e) =>
         {
-            if (e.WindowActivationState == WindowActivationState.Deactivated && !_dialogOpen && AppWindow.IsVisible)
-                HidePanel();
+            if (e.WindowActivationState != WindowActivationState.Deactivated || _dialogOpen || !AppWindow.IsVisible) return;
+            // Opened from another window (Sunucular > "Onaylar", "Bu bilgisayar"):
+            // that window takes the focus back as its click ends. Stay open and
+            // take it again instead of closing the moment it appeared.
+            if (DateTime.UtcNow - _shownAt < TimeSpan.FromMilliseconds(800))
+            {
+                DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => Activate());
+                return;
+            }
+            HidePanel();
         };
         Root.KeyDown += (_, e) =>
         {
@@ -93,8 +101,11 @@ public sealed partial class MainWindow : Window
         AppWindow.MoveAndResize(new RectInt32(area.X + area.Width - width - margin, area.Y + margin, width, height));
     }
 
+    private DateTime _shownAt;
+
     public void ShowPanel()
     {
+        _shownAt = DateTime.UtcNow;
         PlaceOnRightEdge();
         AppWindow.Show();
         Activate();
@@ -198,6 +209,12 @@ public sealed partial class MainWindow : Window
             var current = Center.AppBuild is { } b ? "0.1." + b : Center.AgentVersion ?? "geliştirici sürümü";
             AgentVersionText.Text = "Sürüm: " + current + (update ? $" · yeni sürüm: 0.1.{Center.LatestAppBuild}" : Center.LatestAppBuild is not null ? " · güncel" + (Center.LastReleaseRead is { } read ? $" (son denetim {read:HH:mm})" : "") : "");
             AgentUpdateButton.Content = update ? "Yeni sürüm var — Uygulamayı güncelle" : "Güncellemeleri denetle";
+            if (Packaging.IsPackaged)
+            {
+                AgentVersionText.Text = "Sürüm: " + current + " · güncellemeler Microsoft Store'dan gelir";
+                AgentUpdateButton.Content = "Microsoft Store'da aç";
+                update = false;
+            }
         }
         else
         {

@@ -160,7 +160,7 @@ public partial class App
         }
         if (!_embedded.Paired && Token is not null && DateTime.UtcNow - _lastPairAttempt >= TimeSpan.FromMinutes(5))
             await EnsurePairedAsync();
-        if (DateTime.UtcNow - _lastReleaseCheck >= TimeSpan.FromHours(1))
+        if (!Packaging.IsPackaged && DateTime.UtcNow - _lastReleaseCheck >= TimeSpan.FromHours(1))
         {
             _lastReleaseCheck = DateTime.UtcNow;
             try

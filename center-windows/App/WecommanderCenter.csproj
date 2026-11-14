@@ -32,6 +32,11 @@
     <PackageReference Include="H.NotifyIcon.WinUI" Version="2.2.0" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
+  <!-- Microsoft Store copy (MSIX): built only with -p:WindowsPackageType=MSIX.
+       The core, the agent and build.txt are built by CI into StorePayload\. -->
+  <ItemGroup Condition="'$(WindowsPackageType)' == 'MSIX'">
+    <Content Include="..\StorePayload\*.*" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Core\WecommanderCenter.Core.csproj" />
   </ItemGroup>
@@ -40,5 +45,6 @@
     <!-- Terminal surface for the Servers window (xterm.js, MIT) -->
     <Content Include="Assets\terminal\*.*" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\monitor\*.*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Store\*.*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -1156,6 +1156,62 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  center-windows-store:
+    # Microsoft Store copy of the Windows app (MSIX, UnmadeThings.WECOMMANDER).
+    # Unsigned: Partner Center signs what is uploaded there.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build wecommander-core and the agent the app carries
+        env:
+          WECOMMANDER_VERSION: 0.1.${{ github.run_number }}
+        run: cargo build --locked --release -p wc-core-service -p webrising-commender-agent
+      - name: Build the Store package
+        shell: pwsh
+        run: |
+          $payload = "center-windows\StorePayload"
+          New-Item -ItemType Directory -Force -Path $payload | Out-Null
+          Copy-Item target\release\wecommander-core.exe "$payload\wecommander-core.exe"
+          Copy-Item target\release\webrising-commender.exe "$payload\webrising-commender.exe"
+          Set-Content -Path "$payload\build.txt" -Value "${{ github.run_number }}" -NoNewline -Encoding ascii
+          # Store versions: 0.1.<build>.0 (the last part must be 0).
+          $manifest = "center-windows\App\Package.appxmanifest"
+          (Get-Content $manifest -Raw) -replace 'Version="0\.1\.0\.0"', 'Version="0.1.${{ github.run_number }}.0"' | Set-Content $manifest -Encoding utf8
+          $out = Join-Path $PWD "center-windows\AppPackages\"
+          dotnet publish center-windows/App/WecommanderCenter.csproj -c Release -r win-x64 --self-contained true -p:Platform=x64 `
+            -p:WindowsPackageType=MSIX -p:GenerateAppxPackageOnBuild=true -p:AppxPackageSigningEnabled=false `
+            -p:AppxBundle=Never -p:AppxPackageDir=$out
+          if ($LASTEXITCODE -ne 0) { throw "MSIX build failed" }
+          Get-ChildItem $out -Recurse | Select-Object FullName, Length | Format-Table -AutoSize | Out-String -Width 300 | Write-Host
+      - name: Check the package
+        shell: pwsh
+        run: |
+          $msix = Get-ChildItem center-windows\AppPackages -Recurse -Filter *.msix | Select-Object -First 1
+          if (-not $msix) { throw "no .msix produced" }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead($msix.FullName)
+          $names = $zip.Entries | ForEach-Object { $_.FullName }
+          $manifest = (New-Object System.IO.StreamReader(($zip.Entries | Where-Object FullName -eq 'AppxManifest.xml').Open())).ReadToEnd()
+          $zip.Dispose()
+          foreach ($f in @('WecommanderCenter.exe','wecommander-core.exe','webrising-commender.exe','build.txt','resources.pri','Assets/terminal/index.html','Assets/monitor/ghost.png','Assets/Store/Square44x44Logo.png')) {
+            if ($names -notcontains $f) { throw "missing from the package: $f" }
+          }
+          if ($manifest -notmatch 'Name="UnmadeThings.WECOMMANDER"') { throw "wrong package name" }
+          if ($manifest -notmatch 'Publisher="CN=60C5C646-086F-4B8B-BF4A-E5099CC37CA7"') { throw "wrong publisher" }
+          if ($manifest -notmatch 'Version="0\.1\.${{ github.run_number }}\.0"') { throw "wrong version" }
+          if ($manifest -notmatch 'windows.startupTask') { throw "startup task missing" }
+          Write-Host "MSIX ok: $($msix.Name) $([math]::Round($msix.Length / 1MB, 1)) MB"
+          # Partner Center takes the .msix as it is and signs it.
+          New-Item -ItemType Directory -Force -Path store-dist | Out-Null
+          Copy-Item $msix.FullName "store-dist\WECOMMANDER-Store-x64.msix"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WECOMMANDER-Store-x64
+          path: store-dist/WECOMMANDER-Store-x64.msix
+          if-no-files-found: error
+          retention-days: 30
+
   windows-service-smoke:
     runs-on: windows-latest
     steps:

@@ -258,6 +258,8 @@ public sealed class ServersWindow : Window
     }
 
     /// <summary>CI only (WECOMMANDER_DEBUG_LAYOUT=1): where the page host and its pages are.</summary>
+    private static readonly object LayoutLogLock = new();
+
     private async Task LogLayout(UIElement shown, int delay)
     {
         await Task.Delay(delay);
@@ -284,8 +286,11 @@ public sealed class ServersWindow : Window
                 lines.Add($"  shown: size={sf.ActualWidth:0}x{sf.ActualHeight:0} parentIsHost={ReferenceEquals(sf.Parent, _pageHost)} parent={sf.Parent?.GetType().Name ?? "null"} desired={sf.DesiredSize.Width:0}x{sf.DesiredSize.Height:0}");
             var file = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WECOMMANDER", "layout.log");
             Directory.CreateDirectory(Path.GetDirectoryName(file)!);
-            await File.AppendAllLinesAsync(file, lines);
+            // One writer at a time; CI reads the file meanwhile, so a busy
+            // file only skips this entry (a debug log, not an app error).
+            lock (LayoutLogLock) File.AppendAllLines(file, lines);
         }
+        catch (IOException) { }
         catch (Exception e) { App.LogCrash(e); }
     }
 
@@ -392,9 +397,12 @@ public sealed class ServersWindow : Window
     {
         switch (tag)
         {
+            // After the click ends, so this window does not take the focus back.
             case "approvals":
+                DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () => App.Current.ShowApprovals());
+                break;
             case "agent":
-                App.Current.ShowPanel();
+                DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () => App.Current.ShowPanel());
                 break;
             case "settings":
                 ShowSettings();

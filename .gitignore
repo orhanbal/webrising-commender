@@ -18,3 +18,6 @@ center-macos/dist/
 
 # Python bytecode (plan tools)
 __pycache__/
+center-windows/StorePayload/
+center-windows/AppPackages/
+store-dist/

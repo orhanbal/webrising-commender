@@ -94,6 +94,7 @@ public partial class App : Application
     /// </summary>
     public async void UpdateAgent()
     {
+        if (Packaging.IsPackaged) { Packaging.OpenStorePage(); return; } // the Store updates it
         if (Embedded) { UpdateApp(); return; }
         if (InstallerRunning) return;
         try
@@ -161,7 +162,9 @@ public partial class App : Application
         NotificationSetting.DisabledByGroupPolicy or NotificationSetting.DisabledByManifest;
 
     private ToastNotifier? _notifier;
-    private ToastNotifier Notifier => _notifier ??= ToastNotificationManager.CreateToastNotifier(Program.AppUserModelId);
+    private ToastNotifier Notifier => _notifier ??= Packaging.IsPackaged
+        ? ToastNotificationManager.CreateToastNotifier()
+        : ToastNotificationManager.CreateToastNotifier(Program.AppUserModelId);
 
     /// <summary>Raised on the UI thread after every state change.</summary>
     public event Action? Changed;
@@ -270,7 +273,8 @@ public partial class App : Application
         StartEmbeddedAgent();
 
         var activation = AppInstance.GetCurrent().GetActivatedEventArgs();
-        var hidden = Environment.GetCommandLineArgs().Contains("--hidden");
+        var hidden = Environment.GetCommandLineArgs().Contains("--hidden")
+            || activation.Kind == ExtendedActivationKind.StartupTask; // Store copy at sign-in
         // Opened by the person: the main window (hosts and terminals); not
         // signed in yet: the sign-in panel. At login (--hidden) only the tray.
         if (Environment.GetCommandLineArgs().Contains("--open-main")) ShowServers(); // CI smoke test
@@ -294,6 +298,7 @@ public partial class App : Application
 
     /// <summary>The Management Center panel (approvals, autonomous mode, this computer, settings).</summary>
     public void ShowPanel() => _window?.ShowPanel();
+    public void ShowApprovals() => _window?.ShowApprovals();
 
     /// <summary>
     /// Registers app.wecommander.center (name and icon shown on the
@@ -301,6 +306,7 @@ public partial class App : Application
     /// </summary>
     private static void RegisterNotificationIdentity()
     {
+        if (Packaging.IsPackaged) return; // the package's own name and logo
         try
         {
             using var key = Registry.CurrentUser.CreateSubKey($@"Software\Classes\AppUserModelId\{Program.AppUserModelId}");
@@ -334,7 +340,11 @@ public partial class App : Application
 
     private void RemoveToast(string tag)
     {
-        try { ToastNotificationManager.History.Remove(tag, NotificationGroup, Program.AppUserModelId); }
+        try
+        {
+            if (Packaging.IsPackaged) ToastNotificationManager.History.Remove(tag, NotificationGroup);
+            else ToastNotificationManager.History.Remove(tag, NotificationGroup, Program.AppUserModelId);
+        }
         catch (Exception) { }
     }
 
@@ -832,7 +842,11 @@ public partial class App : Application
         _decidedHere.Clear();
         Error = message;
         LocalStore.DeleteToken();
-        try { ToastNotificationManager.History.RemoveGroup(NotificationGroup, Program.AppUserModelId); }
+        try
+        {
+            if (Packaging.IsPackaged) ToastNotificationManager.History.RemoveGroup(NotificationGroup);
+            else ToastNotificationManager.History.RemoveGroup(NotificationGroup, Program.AppUserModelId);
+        }
         catch (Exception) { }
     }
 
