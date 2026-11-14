@@ -37,7 +37,9 @@ connection.
 | `terminal.close` | `sessionId` | `null` |
 | `files.list` | `sessionId, path?` (home when empty) | `{path, parent, entries:[{name, path, kind, size, modified, permissions}]}` |
 | `server.overview` | `sessionId` | `{hostname, os, kernel, uptimeSecs, load, cpus, cpuPercent, memTotalKb, memAvailableKb, swapTotalKb, swapFreeKb, disks:[{device, fsType, mount, sizeKb, usedKb, availKb}], rebootRequired, updates, processes, zombies, privilege, docker}`; `privilege` is `root`, `sudo` or empty (no changes possible) |
-| `server.sample` | `sessionId` | `{uptime, cpuTotal, cpuIdle, memTotalKb, memAvailableKb, swapTotalKb, swapFreeKb, load1, netRxBytes, netTxBytes, diskReadBytes, diskWriteBytes}`: raw counters; the app turns two samples into rates |
+| `monitor.open` | `hostId` | `"monitor-…"`: a connection to the saved host without a terminal (saved credential, else this computer's SSH keys; nothing is asked). Every `server.*` method takes it as `sessionId` |
+| `monitor.close` | `monitorId` | `null` |
+| `server.sample` | `sessionId` | `{uptime, cpuTotal, cpuIdle, memTotalKb, memAvailableKb, swapTotalKb, swapFreeKb, load1, netRxBytes, netTxBytes, diskReadBytes, diskWriteBytes, rootUsedKb, rootAvailKb, zombies}`: raw counters; the app turns two samples into rates |
 | `server.coolifyInit` | `sessionId, containerId, token?` | `{status, app, message}`; `status` is `applied`, `already`, `needs-token`, `compose` or `not-coolify`. Adds `--init` to the Coolify app's custom Docker options and redeploys it; Coolify's API is called with curl on the server, the token on standard input, and the token is kept in the keychain per server host key |
 | `server.disk` | `sessionId, path?, transferId?` (`/` when empty); with `transferId`, `transfer-progress` events report the scan | `{path, totalKb, entries:[{path, kb}], docker:[{kind, count, sizeBytes, reclaimableBytes}], complete}`; the 40 largest folders |
 | `server.cleanupScan` | `sessionId` | `{items:[{id, title, detail, kb, command, warning}], privilege, disk}`; fixed safe categories only |

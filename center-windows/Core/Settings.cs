@@ -39,6 +39,8 @@ public sealed class Settings
     [JsonPropertyName("terminalFontSize")] public int TerminalFontSize { get; set; } = 13;
     /// <summary>"dark" or "light".</summary>
     [JsonPropertyName("terminalTheme")] public string TerminalTheme { get; set; } = "dark";
+    /// <summary>Saved hosts watched from the taskbar (live icon and panel).</summary>
+    [JsonPropertyName("watchedHosts")] public List<string> WatchedHosts { get; set; } = [];
 }
 
 public sealed class SettingsStore(string directory)

@@ -71,6 +71,7 @@ pub fn open(data_dir: &Path, keyring_service: &str, events: Arc<dyn EventSink>) 
         vault,
         vault_persistent,
         terminals: Mutex::new(HashMap::new()),
+        monitors: Mutex::new(HashMap::new()),
         background: Background::default(),
         sync_pending: sync::Pending::default(),
         team_pending: team::TeamPending::default(),
@@ -91,6 +92,12 @@ pub struct Terminal {
     pub _jump: Option<Arc<Connection>>,
 }
 
+/// A server connection kept for watching it (no terminal on it).
+pub struct Monitor {
+    pub connection: Arc<Connection>,
+    pub _jump: Option<Arc<Connection>>,
+}
+
 pub struct AppState {
     pub data: Mutex<Data>,
     pub store: Store,
@@ -99,6 +106,8 @@ pub struct AppState {
     /// kept only until the app closes.
     pub(crate) vault_persistent: bool,
     pub terminals: Mutex<HashMap<String, Terminal>>,
+    /// Connections without a terminal: desktop gauges watching a server.
+    pub monitors: Mutex<HashMap<String, Monitor>>,
     pub background: Background,
     /// A20: the merged library waiting for the server to accept it.
     pub sync_pending: sync::Pending,
@@ -1109,6 +1118,58 @@ pub async fn connect_saved(
         .await
         .map_err(|e| format!("{name}: {e}"))?;
     Ok((conn, Some(jump)))
+}
+
+/// Connects to saved host `id` with nothing to ask: its saved credential,
+/// else (no jump host) this computer's own SSH keys in one connection, as a
+/// terminal would. For gauges and other background work.
+pub async fn connect_quietly(
+    state: &AppState,
+    id: &str,
+) -> Result<(Connection, Option<Arc<Connection>>), String> {
+    match connect_saved(state, id).await {
+        Err(e) if e.contains("no saved credential") => {
+            let (host, trusted) = {
+                let data = state.data.lock().map_err(|_| "busy")?;
+                let host = data
+                    .hosts
+                    .iter()
+                    .find(|h| h.id == id)
+                    .map(|h| effective_host(&data, h))
+                    .ok_or("host no longer exists")?;
+                let trusted = data
+                    .known_hosts
+                    .get(&format!("{}:{}", host.profile.host, host.profile.port))
+                    .cloned();
+                (host, trusted)
+            };
+            if host.jump_id.is_some() || host.auth_kind == "password" {
+                return Err(e);
+            }
+            let keys: Vec<String> = default_key_files()
+                .iter()
+                .filter_map(|f| std::fs::read_to_string(f).ok())
+                .collect();
+            let Some((first, rest)) = keys.split_first() else {
+                return Err(e);
+            };
+            let options = ConnectOptions {
+                trusted_fingerprint: Some(trusted.ok_or(e.clone())?),
+                extra_keys: rest.to_vec(),
+                use_agent: wc_ssh_core::agent::local_agent_path().is_some(),
+                ..Default::default()
+            };
+            let credential = Credential::PrivateKey {
+                key: first.clone(),
+                passphrase: None,
+            };
+            let conn = connect(&host.profile, &credential, &options)
+                .await
+                .map_err(|err| format!("{}: {err}", host.profile.label))?;
+            Ok((conn, None))
+        }
+        other => other,
+    }
 }
 
 /// The host as it connects: with its identity's user, auth kind and key

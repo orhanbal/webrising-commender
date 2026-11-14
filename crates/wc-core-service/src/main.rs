@@ -148,6 +148,16 @@ struct SignalArg {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct HostArg {
+    host_id: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MonitorArg {
+    monitor_id: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct InitArg {
     session_id: String,
     container_id: String,
@@ -383,6 +393,13 @@ async fn dispatch(
         "server.overview" => {
             ok(core::server::overview(state, p::<Session>(params)?.session_id).await?)
         }
+        "monitor.open" => {
+            ok(core::server::monitor_open(state, p::<HostArg>(params)?.host_id).await?)
+        }
+        "monitor.close" => ok(core::server::monitor_close(
+            state,
+            p::<MonitorArg>(params)?.monitor_id,
+        )?),
         "server.sample" => ok(core::server::sample(state, p::<Session>(params)?.session_id).await?),
         "server.disk" => {
             let a: DiskArg = p(params)?;

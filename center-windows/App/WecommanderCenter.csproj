@@ -39,5 +39,6 @@
     <Content Include="Assets\*.*" CopyToOutputDirectory="PreserveNewest" />
     <!-- Terminal surface for the Servers window (xterm.js, MIT) -->
     <Content Include="Assets\terminal\*.*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\monitor\*.*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

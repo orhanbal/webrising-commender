@@ -28,7 +28,8 @@ public sealed record ServerProcess(uint Pid, uint Ppid, string User, string Stat
 public sealed record ProcessOwner(string Kind, string Id, string Name);
 public sealed record ZombieGroup(ServerProcess Parent, uint Count, ProcessOwner Owner, string Protected);
 public sealed record ServerSample(double Uptime, ulong CpuTotal, ulong CpuIdle, ulong MemTotalKb, ulong MemAvailableKb, ulong SwapTotalKb, ulong SwapFreeKb,
-    double Load1, ulong NetRxBytes, ulong NetTxBytes, ulong DiskReadBytes, ulong DiskWriteBytes);
+    double Load1, ulong NetRxBytes, ulong NetTxBytes, ulong DiskReadBytes, ulong DiskWriteBytes,
+    ulong RootUsedKb = 0, ulong RootAvailKb = 0, uint Zombies = 0);
 
 /// <summary>What "Öneriyi uygula" did: applied, already, needs-token, compose, not-coolify.</summary>
 public sealed record InitFix(string Status, string App, string Message);

@@ -183,6 +183,12 @@ public sealed class ServersWindow : Window
         _info.IsOpen = true;
     }
 
+    /// <summary>Opens a terminal to saved host <paramref name="hostId"/> (from the taskbar panel).</summary>
+    public void ConnectHost(string hostId)
+    {
+        if (_c.Hosts.FirstOrDefault(h => h.Id == hostId) is { } host) _ = OpenHost(host);
+    }
+
     /// <summary>Server management for the current terminal (one window per terminal).</summary>
     private void OpenServerWindow()
     {
@@ -466,6 +472,20 @@ public sealed class ServersWindow : Window
         flyout.Items.Add(Item("Düzenle…", () => _ = EditHost(host)));
         flyout.Items.Add(Item(host.Team ? "Ekipten çıkar (yalnız bende kalsın)" : "Ekiple paylaş", () => _ = ShareWithTeam("host", host.Id, !host.Team)));
         if (host.SavedSecret) flyout.Items.Add(Item("Kayıtlı giriş bilgisini unut", () => _ = _c.ForgetSecret(host)));
+        if (host.IsSsh)
+        {
+            var watched = App.Current.Monitor.IsWatched(host.Id);
+            flyout.Items.Add(Item(watched ? "Görev çubuğunda izlemeyi bırak" : "Görev çubuğunda izle", () =>
+            {
+                if (watched) App.Current.Monitor.Unwatch(host.Id);
+                else
+                {
+                    App.Current.Monitor.Watch(host);
+                    Show($"{host.Label} görev çubuğunda izleniyor: saatin yanındaki canlı simgeye tıkla.", InfoBarSeverity.Success);
+                }
+                RenderHosts();
+            }));
+        }
         flyout.Items.Add(new MenuFlyoutSeparator());
         flyout.Items.Add(Item("Sil", () => _ = ConfirmDelete(host)));
         card.ContextFlyout = flyout;

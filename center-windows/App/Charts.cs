@@ -181,7 +181,7 @@ public static class Charts
 /// </summary>
 public sealed class ColumnChart
 {
-    private readonly Grid _bars = new() { Height = 96, ColumnSpacing = 2 };
+    private readonly Grid _bars = new() { ColumnSpacing = 2 };
     private readonly TextBlock _value = new() { FontSize = 22, FontWeight = FontWeights.SemiBold };
     private readonly TextBlock _detail = new() { FontSize = 12 };
     private readonly TextBlock _scale = new() { FontSize = 11 };
@@ -193,8 +193,9 @@ public sealed class ColumnChart
 
     public FrameworkElement Root { get; }
 
-    public ColumnChart(string title, Color color, Func<double, string> format, double? fixedMax = null, int capacity = 45)
+    public ColumnChart(string title, Color color, Func<double, string> format, double? fixedMax = null, int capacity = 45, double height = 96)
     {
+        _bars.Height = height;
         _capacity = capacity;
         _format = format;
         _fixedMax = fixedMax;

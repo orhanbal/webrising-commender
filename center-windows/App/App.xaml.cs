@@ -266,6 +266,7 @@ public partial class App : Application
         BuildTray();
         Servers.Changed += () => _ui.TryEnqueue(() => { UpdateServersMenu(); RequestLibrarySync(); });
         Servers.Start();
+        StartMonitor();
         StartEmbeddedAgent();
 
         var activation = AppInstance.GetCurrent().GetActivatedEventArgs();
@@ -1033,6 +1034,7 @@ public partial class App : Application
         _embedded.Dispose();
         _timer?.Stop();
         _tray?.Dispose();
+        StopMonitor();
         _window?.Quit();
         Exit();
     }
