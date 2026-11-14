@@ -298,6 +298,7 @@ public partial class App : Application
 
     /// <summary>The Management Center panel (approvals, autonomous mode, this computer, settings).</summary>
     public void ShowPanel() => _window?.ShowPanel();
+    public void ShowApprovals() => _window?.ShowApprovals();
 
     /// <summary>
     /// Registers app.wecommander.center (name and icon shown on the

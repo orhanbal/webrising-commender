@@ -392,9 +392,12 @@ public sealed class ServersWindow : Window
     {
         switch (tag)
         {
+            // After the click ends, so this window does not take the focus back.
             case "approvals":
+                DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () => App.Current.ShowApprovals());
+                break;
             case "agent":
-                App.Current.ShowPanel();
+                DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () => App.Current.ShowPanel());
                 break;
             case "settings":
                 ShowSettings();
