@@ -164,7 +164,7 @@ public static partial class AppUpdate
             "  $title=New-Object System.Windows.Forms.Label; $title.AutoSize=$false; $title.SetBounds(20,14,360,24); $title.Font=New-Object System.Drawing.Font('Segoe UI Semibold',11); $title.Text='WECOMMANDER güncelleniyor'",
             "  $label=New-Object System.Windows.Forms.Label; $label.AutoSize=$false; $label.SetBounds(20,40,360,22); $label.Text='Uygulama kapanıyor…'",
             "  $bar=New-Object System.Windows.Forms.ProgressBar; $bar.SetBounds(20,70,360,16); $bar.Minimum=0; $bar.Maximum=100; $bar.Value=60",
-            "  $form.Controls.AddRange(@($title,$label,$bar)); $form.Show(); $form.Activate(); [System.Windows.Forms.Application]::DoEvents()",
+            "  $form.Controls.AddRange(@($title,$label,$bar)); $form.WindowState='Normal'; $form.Show(); $form.Visible=$true; $form.BringToFront(); $form.Activate(); [System.Windows.Forms.Application]::DoEvents()",
             "} catch { $form=$null }",
             "function Step($text,$value){ if($form){ try { $label.Text=$text; $bar.Value=$value; [System.Windows.Forms.Application]::DoEvents() } catch {} } }",
             "function WaitUi($ms){ $end=[DateTime]::UtcNow.AddMilliseconds($ms); do { if($form){ try { [System.Windows.Forms.Application]::DoEvents() } catch {} }; Start-Sleep -Milliseconds 50 } while([DateTime]::UtcNow -lt $end) }",

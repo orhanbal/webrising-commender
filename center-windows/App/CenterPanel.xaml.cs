@@ -70,6 +70,19 @@ public sealed partial class CenterPanel : UserControl
 
     public void Refresh() => Render();
 
+    private void RenderUpdateBar()
+    {
+        var running = Center.Embedded && Center.InstallerRunning && Center.UpdatePercent is not null;
+        UpdateBar.IsOpen = Center.ShowUpdateOffer || running;
+        UpdateBar.Title = running ? "Güncelleniyor" : "Yeni sürüm var";
+        UpdateBar.Message = running
+            ? (Center.InstallerLog.Count > 0 ? Center.InstallerLog[^1] : "")
+            : $"WECOMMANDER 0.1.{Center.LatestAppBuild} yayımlandı (sendeki: 0.1.{Center.AppBuild}). Güncelleme bir dakikadan kısa sürer; uygulama kendiliğinden yeniden açılır.";
+        UpdateBarButton.Visibility = running ? Visibility.Collapsed : Visibility.Visible;
+        UpdateBarProgress.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
+        if (Center.UpdatePercent is { } percent) UpdateBarProgress.Value = percent;
+    }
+
     public void SelectApprovals() => Tabs.SelectedItem = ApprovalsTab;
     public void SelectDevices() => Tabs.SelectedItem = DevicesTab;
     public void SelectSettings() => Tabs.SelectedItem = SettingsTab;
@@ -93,6 +106,7 @@ public sealed partial class CenterPanel : UserControl
                 : "";
             ErrorBar.Message = Center.Error ?? "";
             ErrorBar.IsOpen = Center.Error is not null;
+            RenderUpdateBar();
             NotificationBar.IsOpen = phase == Phase.SignedIn && Center.NotificationsBlocked;
             NotificationBar.Message = Texts.NotificationBlockedMessage(Center.NotificationSetting.ToString());
             AutonomyBar.IsOpen = phase == Phase.SignedIn && Center.Autonomy.Count > 0;

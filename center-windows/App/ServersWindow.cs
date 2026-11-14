@@ -193,16 +193,20 @@ public sealed class ServersWindow : Window
 
     // ---- shell: the app on the left, the Management Center panel on the right ----
 
-    private readonly CenterPanel _panel = new() { Docked = true };
-    private readonly ColumnDefinition _panelColumn = new() { Width = new GridLength(380) };
-    private readonly ColumnDefinition _gapColumn = new() { Width = new GridLength(12) };
-    private Border? _panelCard;
+    /// <summary>The tray panel opens as its own window next to this one (like the two halves of the Start menu); this button hides or shows it.</summary>
     private bool _panelWanted = true;
     private readonly PersonPicture _avatar = new() { Width = 32, Height = 32 };
     private readonly TextBlock _accountName = new() { TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly TextBlock _accountDetail = new() { TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 12 };
     private readonly MenuFlyoutItem _signOutItem = new() { Text = "Oturumu kapat", Icon = new FontIcon { Glyph = "\uF3B1" } };
     private readonly Button _panelButton = new();
+    private readonly Button _updateButton = new()
+    {
+        Visibility = Visibility.Collapsed,
+        Margin = new Thickness(0, 0, 8, 0),
+        VerticalAlignment = VerticalAlignment.Center,
+        Style = (Style)Application.Current.Resources["AccentButtonStyle"],
+    };
 
     private static Brush Res(string key) => (Brush)Application.Current.Resources[key];
 
@@ -276,11 +280,20 @@ public sealed class ServersWindow : Window
         bar.Children.Add(account);
 
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
+        // A new version: an accent button in the bar, so it is seen without opening a tab.
+        _updateButton.Click += (_, _) => App.Current.UpdateAgent();
+        actions.Children.Add(_updateButton);
         _panelButton.Content = new FontIcon { Glyph = "\uE8A0", FontSize = 16 };
         _panelButton.Width = 40; _panelButton.Height = 40; _panelButton.Padding = new Thickness(0);
         _panelButton.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
         _panelButton.BorderThickness = new Thickness(0);
-        _panelButton.Click += (_, _) => { _panelWanted = !_panelWanted; LayoutPanel(); };
+        _panelButton.Click += (_, _) =>
+        {
+            _panelWanted = !_panelWanted;
+            // Maximized there is no room beside it: back to the normal size, then the panel.
+            if (_panelWanted && AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter { State: Microsoft.UI.Windowing.OverlappedPresenterState.Maximized } p) p.Restore();
+            SyncPanel();
+        };
         var settings = BarButton("\uE713", "Ayarlar");
         settings.Click += (_, _) => { _nav.SelectedItem = null; ShowSettings(); };
         var power = BarButton("\uE7E8", "Kapat");
@@ -292,6 +305,9 @@ public sealed class ServersWindow : Window
         powerMenu.Items.Add(hide);
         powerMenu.Items.Add(quit);
         power.Flyout = powerMenu;
+        var monitor = BarButton("\uE9D9", "Sunucularım (görev çubuğu izleyicisi)");
+        monitor.Click += (_, _) => App.Current.ToggleMonitorPanel();
+        actions.Children.Add(monitor);
         actions.Children.Add(_panelButton);
         actions.Children.Add(settings);
         actions.Children.Add(power);
@@ -306,36 +322,24 @@ public sealed class ServersWindow : Window
         left.Children.Add(bar);
         var leftCard = Card(left);
 
-        _panelCard = Card(_panel);
-
         var root = new Grid { Padding = new Thickness(12, 0, 12, 12) };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        root.ColumnDefinitions.Add(_gapColumn);
-        root.ColumnDefinitions.Add(_panelColumn);
-        Grid.SetColumnSpan(title, 3);
         root.Children.Add(title);
         Grid.SetRow(leftCard, 1);
         root.Children.Add(leftCard);
-        Grid.SetRow(_panelCard, 1); Grid.SetColumn(_panelCard, 2);
-        root.Children.Add(_panelCard);
-        // A narrow window keeps the room for the app (its pages need about 860 px);
-        // the panel comes back when the window is wide again.
-        root.SizeChanged += (_, _) => LayoutPanel();
-        _shellRoot = root;
 
         App.Current.Changed += RenderAccount;
         RenderAccount();
-        LayoutPanel();
+        // The panel window follows this one: moved, resized, minimized, hidden.
+        AppWindow.Changed += (_, e) =>
+        {
+            if (e.DidPositionChange || e.DidSizeChange || e.DidPresenterChange || e.DidVisibilityChange) SyncPanel();
+        };
         return root;
     }
 
-    private Grid? _shellRoot;
-    /// <summary>The app's pages (title, search and action buttons) need about 860 px next to the 380 px panel.</summary>
-    private const double MinWidthWithPanel = 1280;
-
-    /// <summary>First size: room for the app and the panel side by side when the screen has it, centred.</summary>
+    /// <summary>First size: room for this window and the panel window beside it, the pair centred on the screen.</summary>
     private void SizeToScreen()
     {
         try
@@ -343,28 +347,48 @@ public sealed class ServersWindow : Window
             var area = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(AppWindow.Id, Microsoft.UI.Windowing.DisplayAreaFallback.Primary).WorkArea;
             var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
             var scale = GetDpiForWindow(hwnd) / 96.0;
-            var width = Math.Min((int)Math.Round(1640 * scale), area.Width - (int)Math.Round(48 * scale));
-            var height = Math.Min((int)Math.Round(880 * scale), area.Height - (int)Math.Round(48 * scale));
-            AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(area.X + (area.Width - width) / 2, area.Y + (area.Height - height) / 2, width, height));
+            var side = (int)Math.Round((MainWindow.DockedWidth + MainWindow.DockGap) * scale);
+            var width = Math.Min((int)Math.Round(1240 * scale), area.Width - side - (int)Math.Round(48 * scale));
+            // A small screen: the app gets the room (its pages need about 960 px); the panel opens from the bar button.
+            if (width < (int)Math.Round(960 * scale))
+            {
+                width = area.Width - (int)Math.Round(48 * scale);
+                side = 0;
+                _panelWanted = false;
+            }
+            var height = Math.Min((int)Math.Round(860 * scale), area.Height - (int)Math.Round(48 * scale));
+            var x = area.X + (area.Width - width - side) / 2;
+            AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(Math.Max(area.X, x), area.Y + (area.Height - height) / 2, width, height));
         }
         catch (Exception) { AppWindow.Resize(new Windows.Graphics.SizeInt32(1240, 800)); }
+    }
+
+    /// <summary>Shows the panel window beside this one, or hides it (this one minimized, maximized, hidden, or the owner turned it off).</summary>
+    private void SyncPanel()
+    {
+        if (App.Current.PanelWindow is not { } panel) return;
+        var state = (AppWindow.Presenter as Microsoft.UI.Windowing.OverlappedPresenter)?.State;
+        var show = _panelWanted && AppWindow.IsVisible
+            && state is not Microsoft.UI.Windowing.OverlappedPresenterState.Minimized
+            && state is not Microsoft.UI.Windowing.OverlappedPresenterState.Maximized;
+        if (show) panel.ShowDocked(this);
+        else panel.HideDocked();
+        var tip = _panelWanted ? "Onay panelini gizle" : "Onay panelini göster";
+        ToolTipService.SetToolTip(_panelButton, tip);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_panelButton, tip);
+    }
+
+    /// <summary>The panel window's own close button: it stays closed until the button in the bar opens it.</summary>
+    public void PanelDismissed()
+    {
+        _panelWanted = false;
+        RenderAccount();
+        SyncPanel();
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hwnd);
     private UIElement? _titleBar;
-
-    private void LayoutPanel()
-    {
-        var room = _shellRoot is null || _shellRoot.ActualWidth == 0 || _shellRoot.ActualWidth >= MinWidthWithPanel;
-        var show = _panelWanted && room;
-        _panelColumn.Width = new GridLength(show ? 380 : 0);
-        _gapColumn.Width = new GridLength(show ? 12 : 0);
-        if (_panelCard is not null) _panelCard.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-        var tip = _panelWanted ? "Onay panelini gizle" : "Onay panelini göster";
-        ToolTipService.SetToolTip(_panelButton, tip);
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_panelButton, tip);
-    }
 
     private void RenderAccount()
     {
@@ -380,10 +404,12 @@ public sealed class ServersWindow : Window
         else
         {
             _accountName.Text = center.Phase == Phase.Linking ? "Tarayıcıda onay bekleniyor" : "Oturum açılmadı";
-            _accountDetail.Text = "Sağdaki panelden oturum aç";
+            _accountDetail.Text = "Yandaki panelden oturum aç";
             _avatar.DisplayName = "";
             _signOutItem.Visibility = Visibility.Collapsed;
         }
+        _updateButton.Visibility = center.ShowUpdateOffer && !center.InstallerRunning ? Visibility.Visible : Visibility.Collapsed;
+        _updateButton.Content = $"Yeni sürüm: 0.1.{center.LatestAppBuild} · Güncelle";
         var pending = center.Phase == Phase.SignedIn ? center.Pending.Count : 0;
         _panelButton.Content = pending > 0 && !_panelWanted
             ? new InfoBadge { Value = pending }
@@ -411,12 +437,11 @@ public sealed class ServersWindow : Window
     {
         if (!AppWindow.IsVisible) return false;
         _panelWanted = true;
-        LayoutPanel();
-        _panel.SelectApprovals();
-        _panel.Refresh();
-        if (AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter { State: Microsoft.UI.Windowing.OverlappedPresenterState.Minimized } presenter)
+        if (AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter { State: Microsoft.UI.Windowing.OverlappedPresenterState.Minimized or Microsoft.UI.Windowing.OverlappedPresenterState.Maximized } presenter)
             presenter.Restore();
         Activate();
+        SyncPanel();
+        App.Current.PanelWindow?.SelectApprovals();
         return true;
     }
 
@@ -425,8 +450,10 @@ public sealed class ServersWindow : Window
 
     public void ShowWindow()
     {
+        App.Current.CheckForUpdateSoon();
         AppWindow.Show();
         Activate();
+        SyncPanel();
     }
 
     private void Show(string text, InfoBarSeverity severity)
@@ -652,10 +679,10 @@ public sealed class ServersWindow : Window
         {
             // After the click ends, so this window does not take the focus back.
             case "approvals":
-                _panelWanted = true; LayoutPanel(); _panel.SelectApprovals();
+                _panelWanted = true; SyncPanel(); App.Current.PanelWindow?.SelectApprovals();
                 break;
             case "agent":
-                _panelWanted = true; LayoutPanel(); _panel.SelectDevices();
+                _panelWanted = true; SyncPanel(); App.Current.PanelWindow?.SelectDevices();
                 break;
             case "settings":
                 ShowSettings();

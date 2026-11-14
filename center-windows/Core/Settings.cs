@@ -41,6 +41,17 @@ public sealed class Settings
     [JsonPropertyName("terminalTheme")] public string TerminalTheme { get; set; } = "dark";
     /// <summary>Saved hosts watched from the taskbar (live icon and panel).</summary>
     [JsonPropertyName("watchedHosts")] public List<string> WatchedHosts { get; set; } = [];
+    /// <summary>The owner picked what the taskbar monitor watches (until then it watches the first saved servers by itself).</summary>
+    [JsonPropertyName("watchChosen")] public bool WatchChosen { get; set; }
+    /// <summary>The server box at the bottom left of the screen, above the taskbar.</summary>
+    [JsonPropertyName("deskChip")] public bool DeskChip { get; set; } = true;
+    /// <summary>On: in front of every window. Off: only on the desktop (behind the windows).</summary>
+    [JsonPropertyName("deskChipOnTop")] public bool DeskChipOnTop { get; set; } = true;
+    /// <summary>Hidden while a full-screen app (game, video, presentation) runs.</summary>
+    [JsonPropertyName("deskChipHideFullscreen")] public bool DeskChipHideFullscreen { get; set; } = true;
+    /// <summary>Where the owner dragged it: from the left and from the bottom of the work area (96-dpi pixels); null: the bottom left corner.</summary>
+    [JsonPropertyName("deskChipLeft")] public int? DeskChipLeft { get; set; }
+    [JsonPropertyName("deskChipBottom")] public int? DeskChipBottom { get; set; }
 }
 
 public sealed class SettingsStore(string directory)

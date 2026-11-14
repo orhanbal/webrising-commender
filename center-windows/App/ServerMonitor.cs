@@ -90,6 +90,7 @@ public sealed class ServerMonitor
 
     private void Save()
     {
+        App.Current.Settings.WatchChosen = true;
         App.Current.Settings.WatchedHosts = Servers.Select(s => s.HostId).ToList();
         App.Current.SaveSettings();
     }
@@ -106,6 +107,20 @@ public sealed class ServerMonitor
         }
         foreach (var s in gone) { Close(s); Servers.Remove(s); }
         if (gone.Count > 0) Save();
+        // Nothing chosen yet: watch the first saved servers that connect without asking
+        // (up to three), so the live icon is there without a hidden menu item.
+        if (!App.Current.Settings.WatchChosen && Servers.Count == 0 && _c.Hosts.Count > 0)
+        {
+            foreach (var host in _c.Hosts.Where(h => h.CanConnectSilently).Take(3))
+                Servers.Add(new WatchedServer(host.Id) { Label = host.Label });
+            if (Servers.Count > 0)
+            {
+                Save();
+                try { LocalStore.AutostartEnabled = true; } catch (Exception) { }
+                _timer.Start();
+                _ = Tick();
+            }
+        }
         Changed?.Invoke();
     }
 

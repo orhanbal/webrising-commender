@@ -49,6 +49,15 @@
                 </InfoBar.ActionButton>
             </InfoBar>
             <InfoBar x:Name="ErrorBar" Severity="Error" IsClosable="True" />
+            <!-- A new version, on every tab: the button installs it, the bar shows how far it is. -->
+            <InfoBar x:Name="UpdateBar" Severity="Success" IsClosable="False" Title="Yeni sürüm var">
+                <InfoBar.ActionButton>
+                    <Button x:Name="UpdateBarButton" Content="Şimdi güncelle" Style="{StaticResource AccentButtonStyle}" Click="UpdateAgent_Click" />
+                </InfoBar.ActionButton>
+                <InfoBar.Content>
+                    <ProgressBar x:Name="UpdateBarProgress" Maximum="100" Margin="0,0,0,8" Visibility="Collapsed" />
+                </InfoBar.Content>
+            </InfoBar>
         </StackPanel>
 
         <Grid Grid.Row="2">

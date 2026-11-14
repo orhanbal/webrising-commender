@@ -305,6 +305,10 @@ public partial class App : Application
 
     /// <summary>The Management Center panel (approvals, autonomous mode, this computer, settings).</summary>
     public void ShowPanel() => _window?.ShowPanel();
+    /// <summary>The panel window (it also opens beside the main window).</summary>
+    public MainWindow? PanelWindow => _window;
+    /// <summary>The panel beside the main window was closed with its own button.</summary>
+    public void PanelDismissed() => _servers?.PanelDismissed();
     /// <summary>The main window, when open, shows approvals in its own panel on the right; otherwise the tray panel opens.</summary>
     public void ShowApprovals()
     {
@@ -387,7 +391,7 @@ public partial class App : Application
         }
     }
 
-    private void Toast(string text) => ShowToast(ToastContent.Simple("WECOMMANDER", text));
+    public void Toast(string text) => ShowToast(ToastContent.Simple("WECOMMANDER", text));
 
     /// <summary>Shows a notification on demand so the owner can see where approvals will appear.</summary>
     public void SendTestNotification() =>
@@ -888,6 +892,8 @@ public partial class App : Application
 
     public void Publish()
     {
+        if (_updateWindow is not null && InstallerRunning && _installerLog.Count > 0)
+            _updateWindow.Report(_installerLog[^1], UpdatePercent);
         UpdateTray();
         Changed?.Invoke();
     }

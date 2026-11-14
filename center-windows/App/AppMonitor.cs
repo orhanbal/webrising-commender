@@ -18,17 +18,37 @@ public partial class App
     public ServerMonitor Monitor => _monitor ??= new ServerMonitor(Servers, _ui!);
 
     /// <summary>Starts watching the saved servers (after the core started).</summary>
+    private DeskChip? _deskChip;
+
     private void StartMonitor()
     {
         Monitor.Changed += UpdateMonitorTray;
         Monitor.Start();
         UpdateMonitorTray();
+        // The server box at the bottom left (it shows itself once a server is watched).
+        try { _deskChip = new DeskChip(Monitor); }
+        catch (Exception e) { LogCrash(e); }
     }
 
     public void ToggleMonitorPanel()
     {
         _monitorFlyout ??= new MonitorFlyout(Monitor);
         _monitorFlyout.Toggle();
+    }
+
+    /// <summary>From the server box: the panel opens upward from it.</summary>
+    public void ToggleMonitorPanelAt(Windows.Graphics.RectInt32 anchor)
+    {
+        _monitorFlyout ??= new MonitorFlyout(Monitor);
+        _monitorFlyout.Toggle(anchor);
+    }
+
+    /// <summary>The server box on or off (its own menu, the tray menu).</summary>
+    public void SetDeskChip(bool on)
+    {
+        Settings.DeskChip = on;
+        SaveSettings();
+        _deskChip?.Apply();
     }
 
     /// <summary>Server management for a watched server, on the monitor's own connection.</summary>
@@ -88,6 +108,10 @@ public partial class App
         var menu = new MenuFlyout();
         menu.Items.Add(new MenuFlyoutItem { Text = "Sunucularım panelini aç", Command = new RelayCommand(ToggleMonitorPanel) });
         menu.Items.Add(new MenuFlyoutItem { Text = "Sunucular penceresi", Command = new RelayCommand(ShowServers) });
+        var chip = new ToggleMenuFlyoutItem { Text = "Masaüstü kutusunu göster (sol alt)", IsChecked = Settings.DeskChip };
+        chip.Command = new RelayCommand(() => SetDeskChip(!Settings.DeskChip));
+        menu.Opening += (_, _) => chip.IsChecked = Settings.DeskChip;
+        menu.Items.Add(chip);
         return menu;
     }
 
