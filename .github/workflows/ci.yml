@@ -1217,6 +1217,8 @@ jobs:
             Write-Host "gap between the drawn windows: $gap px; tops $($m[1]) / $($p[1]); bottoms $($m[3]) / $($p[3])"
             if ([math]::Abs([int]$p[1] - [int]$m[1]) -gt 2 -or [math]::Abs([int]$p[3] - [int]$m[3]) -gt 2) { $fail += 'panel not aligned with the main window' }
           }
+          # The box must stay up on a normal desktop for a while (it once hid itself every second there).
+          Start-Sleep -Seconds 3
           $chip = Top $chipName -exact
           if (-not $chip) { $fail += 'server box not shown' }
           else {

@@ -234,7 +234,10 @@ public sealed class DeskChip : Window
         if (!settings.DeskChip || _monitor.Servers.Count == 0) return;
         var fullscreen = false;
         if (settings.DeskChipHideFullscreen)
-            try { fullscreen = SHQueryUserNotificationState(out var q) == 0 && q is 3 or 4 or 5; } catch (Exception) { }
+            // QUERY_USER_NOTIFICATION_STATE: 2 busy (a full-screen app), 3 a full-screen
+            // game (Direct3D), 4 presentation mode. 5 is the normal desktop
+            // ("accepts notifications"): counting it hid the box all the time.
+            try { fullscreen = SHQueryUserNotificationState(out var q) == 0 && q is 2 or 3 or 4; } catch (Exception) { }
         if (fullscreen != _hiddenForFullscreen)
         {
             _hiddenForFullscreen = fullscreen;
