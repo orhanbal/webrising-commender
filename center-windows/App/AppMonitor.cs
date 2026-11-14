@@ -72,6 +72,8 @@ public partial class App
     {
         try { UpdateMonitorTrayNow(); }
         catch (ObjectDisposedException) { }
+        // The live icon is a nicety: a failure there must never close the app.
+        catch (Exception e) { LogCrash(e); }
     }
 
     private void UpdateMonitorTrayNow()
@@ -144,9 +146,13 @@ public partial class App
                 var x = 6 + i * 7.5f;
                 using (var track = new SolidBrush(Color.FromArgb(70, 255, 255, 255)))
                     g.FillRectangle(track, x, 6, 5, 20);
-                var h = worst is null ? 0 : (float)Math.Max(3, Math.Clamp(values[i], 0, 100) / 100 * 20);
-                var c = worst is null ? Color.Gray : Level(values[i]);
-                using var bar = new LinearGradientBrush(new PointF(x, 26 - h), new PointF(x, 26), Lighter(c), c);
+                // No numbers yet (the server is still connecting): no bar. A gradient
+                // between two equal points throws in GDI+ ("Out of memory"), which
+                // closed the whole app the moment a server was first watched.
+                if (worst is null) continue;
+                var h = (float)Math.Max(3, Math.Clamp(values[i], 0, 100) / 100 * 20);
+                var c = Level(values[i]);
+                using var bar = new LinearGradientBrush(new PointF(x, 26 - h - 1), new PointF(x, 26), Lighter(c), c);
                 g.FillRectangle(bar, x, 26 - h, 5, h);
             }
             if (servers.Any(s => s.Error is not null))
