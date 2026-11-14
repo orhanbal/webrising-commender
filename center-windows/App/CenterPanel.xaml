@@ -1,11 +1,7 @@
-<Window
-    x:Class="Wecommander.Center.MainWindow"
+<UserControl
+    x:Class="Wecommander.Center.CenterPanel"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="WECOMMANDER Yönetim Merkezi">
-    <Window.SystemBackdrop>
-        <DesktopAcrylicBackdrop />
-    </Window.SystemBackdrop>
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <Grid x:Name="Root" Padding="16,12,16,8" RowSpacing="8">
         <Grid.RowDefinitions>
@@ -15,8 +11,8 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Header: logo, account, sign out, close -->
-        <Grid ColumnSpacing="8">
+        <!-- Header: logo, account, sign out, close (in the main window the bottom bar has these) -->
+        <Grid x:Name="Header" ColumnSpacing="8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
@@ -186,4 +182,4 @@
         <TextBlock x:Name="StatusText" Grid.Row="3" Style="{StaticResource CaptionTextBlockStyle}"
                    Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
     </Grid>
-</Window>
+</UserControl>

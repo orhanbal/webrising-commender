@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using Microsoft.UI;
 using Microsoft.UI.Text;
 using Microsoft.UI.Windowing;
@@ -13,54 +12,28 @@ using Wecommander.Center.Core;
 namespace Wecommander.Center;
 
 /// <summary>
-/// The panel: opens on the right edge of the screen above the taskbar, like
-/// the Windows notification center, and hides when it loses focus.
+/// The Management Center panel (approvals, autonomous mode, this computer,
+/// settings). The same panel is the tray window (MainWindow) and the right
+/// side of the main window, like the two halves of the Windows Start menu.
 /// </summary>
-public sealed partial class MainWindow : Window
+public sealed partial class CenterPanel : UserControl
 {
     private static App Center => App.Current;
     private readonly DispatcherTimer _clock = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly List<(TextBlock Text, DateTimeOffset ExpiresAt)> _countdowns = [];
-    private DateTime _hiddenAt = DateTime.MinValue;
-    private bool _quitting, _rendering, _dialogOpen;
+    private bool _rendering, _dialogOpen;
 
-    public MainWindow()
+    /// <summary>The close button or Esc: the tray window hides itself.</summary>
+    public event Action? CloseRequested;
+    /// <summary>A dialog of the panel is open (the tray window stays open meanwhile).</summary>
+    public bool DialogOpen => _dialogOpen;
+
+    public CenterPanel()
     {
         InitializeComponent();
-        AppWindow.Title = "WECOMMANDER Yönetim Merkezi";
-        AppWindow.SetIcon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "icon.ico"));
-        AppWindow.IsShownInSwitchers = false;
-        ExtendsContentIntoTitleBar = true;
-        if (AppWindow.Presenter is OverlappedPresenter presenter)
-        {
-            presenter.IsResizable = false;
-            presenter.IsMaximizable = false;
-            presenter.IsMinimizable = false;
-            presenter.IsAlwaysOnTop = true;
-            presenter.SetBorderAndTitleBar(true, false);
-        }
-        AppWindow.Closing += (_, e) =>
-        {
-            if (_quitting) return;
-            e.Cancel = true; // closing keeps the app in the tray; "Çıkış" quits
-            HidePanel();
-        };
-        Activated += (_, e) =>
-        {
-            if (e.WindowActivationState != WindowActivationState.Deactivated || _dialogOpen || !AppWindow.IsVisible) return;
-            // Opened from another window (Sunucular > "Onaylar", "Bu bilgisayar"):
-            // that window takes the focus back as its click ends. Stay open and
-            // take it again instead of closing the moment it appeared.
-            if (DateTime.UtcNow - _shownAt < TimeSpan.FromMilliseconds(800))
-            {
-                DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => Activate());
-                return;
-            }
-            HidePanel();
-        };
         Root.KeyDown += (_, e) =>
         {
-            if (e.Key == Windows.System.VirtualKey.Escape) HidePanel();
+            if (e.Key == Windows.System.VirtualKey.Escape) CloseRequested?.Invoke();
         };
         Root.ActualThemeChanged += (_, _) => UpdateWordmark();
         UpdateWordmark();
@@ -78,6 +51,16 @@ public sealed partial class MainWindow : Window
         Render();
     }
 
+    /// <summary>In the main window: no header of its own (the bottom bar shows the account, sign out and close).</summary>
+    public bool Docked
+    {
+        set
+        {
+            Header.Visibility = value ? Visibility.Collapsed : Visibility.Visible;
+            Root.Padding = value ? new Thickness(16, 16, 16, 8) : new Thickness(16, 12, 16, 8);
+        }
+    }
+
     private void UpdateWordmark()
     {
         var dark = Root.ActualTheme == ElementTheme.Dark;
@@ -85,58 +68,11 @@ public sealed partial class MainWindow : Window
         Wordmark.Source = new BitmapImage(new Uri(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", file)));
     }
 
-    // ---- placement ----
+    public void Refresh() => Render();
 
-    [DllImport("user32.dll")]
-    private static extern uint GetDpiForWindow(IntPtr hwnd);
-
-    private void PlaceOnRightEdge()
-    {
-        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
-        var scale = GetDpiForWindow(hwnd) / 96.0;
-        var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
-        var margin = (int)Math.Round(12 * scale);
-        var width = Math.Min((int)Math.Round(400 * scale), area.Width - 2 * margin);
-        var height = area.Height - 2 * margin;
-        AppWindow.MoveAndResize(new RectInt32(area.X + area.Width - width - margin, area.Y + margin, width, height));
-    }
-
-    private DateTime _shownAt;
-
-    public void ShowPanel()
-    {
-        _shownAt = DateTime.UtcNow;
-        PlaceOnRightEdge();
-        AppWindow.Show();
-        Activate();
-        Render();
-    }
-
-    /// <summary>Open the panel on the Approvals tab (a new request arrived).</summary>
-    public void ShowApprovals()
-    {
-        Tabs.SelectedItem = ApprovalsTab;
-        ShowPanel();
-    }
-
-    public void HidePanel()
-    {
-        _hiddenAt = DateTime.UtcNow;
-        AppWindow.Hide();
-    }
-
-    /// <summary>Tray click: open, or close when open. The click that just took the focus away does not reopen it.</summary>
-    public void TogglePanel()
-    {
-        if (AppWindow.IsVisible) HidePanel();
-        else if (DateTime.UtcNow - _hiddenAt > TimeSpan.FromMilliseconds(400)) ShowPanel();
-    }
-
-    public void Quit()
-    {
-        _quitting = true;
-        Close();
-    }
+    public void SelectApprovals() => Tabs.SelectedItem = ApprovalsTab;
+    public void SelectDevices() => Tabs.SelectedItem = DevicesTab;
+    public void SelectSettings() => Tabs.SelectedItem = SettingsTab;
 
     // ---- rendering ----
 
@@ -470,7 +406,7 @@ public sealed partial class MainWindow : Window
 
     private void CancelLink_Click(object sender, RoutedEventArgs e) => Center.CancelLink();
 
-    private void Close_Click(object sender, RoutedEventArgs e) => HidePanel();
+    private void Close_Click(object sender, RoutedEventArgs e) => CloseRequested?.Invoke();
 
     private async void SignOut_Click(object sender, RoutedEventArgs e)
     {
