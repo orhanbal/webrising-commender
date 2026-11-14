@@ -1181,7 +1181,7 @@ jobs:
           $out = Join-Path $PWD "center-windows\AppPackages\"
           dotnet publish center-windows/App/WecommanderCenter.csproj -c Release -r win-x64 --self-contained true -p:Platform=x64 `
             -p:WindowsPackageType=MSIX -p:GenerateAppxPackageOnBuild=true -p:AppxPackageSigningEnabled=false `
-            -p:UapAppxPackageBuildMode=StoreUpload -p:AppxBundle=Never -p:AppxPackageDir=$out
+            -p:AppxBundle=Never -p:AppxPackageDir=$out
           if ($LASTEXITCODE -ne 0) { throw "MSIX build failed" }
           Get-ChildItem $out -Recurse | Select-Object FullName, Length | Format-Table -AutoSize | Out-String -Width 300 | Write-Host
       - name: Check the package
@@ -1189,8 +1189,6 @@ jobs:
         run: |
           $msix = Get-ChildItem center-windows\AppPackages -Recurse -Filter *.msix | Select-Object -First 1
           if (-not $msix) { throw "no .msix produced" }
-          $upload = Get-ChildItem center-windows\AppPackages -Recurse -Filter *.msixupload | Select-Object -First 1
-          if (-not $upload) { throw "no .msixupload produced (Partner Center upload file)" }
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $zip = [System.IO.Compression.ZipFile]::OpenRead($msix.FullName)
           $names = $zip.Entries | ForEach-Object { $_.FullName }
@@ -1203,13 +1201,14 @@ jobs:
           if ($manifest -notmatch 'Publisher="CN=60C5C646-086F-4B8B-BF4A-E5099CC37CA7"') { throw "wrong publisher" }
           if ($manifest -notmatch 'Version="0\.1\.${{ github.run_number }}\.0"') { throw "wrong version" }
           if ($manifest -notmatch 'windows.startupTask') { throw "startup task missing" }
-          Write-Host "MSIX ok: $($msix.Name) $([math]::Round($msix.Length / 1MB, 1)) MB; upload file $($upload.Name)"
+          Write-Host "MSIX ok: $($msix.Name) $([math]::Round($msix.Length / 1MB, 1)) MB"
+          # Partner Center takes the .msix as it is and signs it.
           New-Item -ItemType Directory -Force -Path store-dist | Out-Null
-          Copy-Item $upload.FullName "store-dist\WECOMMANDER-Store-x64.msixupload"
+          Copy-Item $msix.FullName "store-dist\WECOMMANDER-Store-x64.msix"
       - uses: actions/upload-artifact@v4
         with:
           name: WECOMMANDER-Store-x64
-          path: store-dist/WECOMMANDER-Store-x64.msixupload
+          path: store-dist/WECOMMANDER-Store-x64.msix
           if-no-files-found: error
           retention-days: 30
 
