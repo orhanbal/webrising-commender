@@ -239,6 +239,10 @@ public sealed partial class MainWindow : Window
             InstallerScroll.ChangeView(null, InstallerScroll.ScrollableHeight, null, true);
         }
         InstallerCloseButton.Visibility = Center.InstallerRunning ? Visibility.Collapsed : Visibility.Visible;
+        // A real bar while an update runs: the percent while it downloads and unpacks, moving while it waits.
+        InstallerProgress.Visibility = Center.InstallerRunning ? Visibility.Visible : Visibility.Collapsed;
+        InstallerProgress.IsIndeterminate = Center.InstallerRunning && Center.UpdatePercent is null;
+        if (Center.UpdatePercent is { } percent) InstallerProgress.Value = percent;
         if (Center.InstallerRunning) AgentProgress.IsActive = true;
         var down = agent is { Running: false, State: AgentRunState.Stopped } && !busy;
         AgentBar.IsOpen = Center.Phase == Phase.SignedIn && down;

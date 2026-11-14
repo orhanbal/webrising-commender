@@ -28,6 +28,8 @@ public partial class App
     public int? AppBuild { get; } = Core.AppUpdate.CurrentBuild();
     public bool AppUpdateAvailable => Core.AppUpdate.IsNewer(_latestApp, AppBuild);
     public int? LatestAppBuild => _latestApp?.Build;
+    /// <summary>How far the app update is (0–100) while it runs; null when nothing is measured yet.</summary>
+    public double? UpdatePercent { get; private set; }
     /// <summary>When the releases were last read successfully (local time), for "güncel (21:45)".</summary>
     public DateTime? LastReleaseRead { get; private set; }
 
@@ -217,6 +219,7 @@ public partial class App
         _installerLog.Clear();
         InstallerSucceeded = null;
         InstallerRunning = true;
+        UpdatePercent = null;
         AddInstallerLine("Yeni sürüm aranıyor…");
         Publish();
         var temp = Path.Combine(Path.GetTempPath(), "wecommander-update-" + Guid.NewGuid().ToString("N"));
@@ -233,34 +236,64 @@ public partial class App
                 return;
             }
             Directory.CreateDirectory(temp);
+            // Download 0–85 %, check 85–90 %, unpack 90–98 %; the swap window carries on from there.
+            UpdatePercent = 0;
             AddInstallerLine($"0.1.{latest.Build} indiriliyor…");
             Publish();
             var zip = Path.Combine(temp, Core.AppUpdate.ZipAsset);
             using (var download = await Http.GetAsync(latest.ZipUrl, HttpCompletionOption.ResponseHeadersRead))
             {
                 download.EnsureSuccessStatusCode();
+                var total = download.Content.Headers.ContentLength;
                 await using var file = File.Create(zip);
-                await download.Content.CopyToAsync(file);
+                await using var body = await download.Content.ReadAsStreamAsync();
+                var buffer = new byte[81920];
+                long done = 0;
+                var shown = -1;
+                int read;
+                while ((read = await body.ReadAsync(buffer)) > 0)
+                {
+                    await file.WriteAsync(buffer.AsMemory(0, read));
+                    done += read;
+                    // Shown once per percent, or per megabyte when the size is not known.
+                    var percent = total is > 0 ? (int)(done * 100 / total.Value) : -1;
+                    var mark = percent >= 0 ? percent : (int)(done / 1048576L);
+                    if (mark == shown) continue;
+                    shown = mark;
+                    if (percent >= 0) UpdatePercent = percent * 0.85;
+                    ReplaceInstallerLine($"0.1.{latest.Build} indiriliyor… "
+                        + (percent >= 0 ? $"%{percent} ({Megabytes(done)} / {Megabytes(total!.Value)})" : Megabytes(done)));
+                    Publish();
+                }
             }
+            UpdatePercent = 85;
+            AddInstallerLine("İndirildi. Doğrulanıyor…");
+            Publish();
             var sums = await Http.GetStringAsync(latest.SumsUrl);
             var expected = Core.AppUpdate.ExpectedHash(sums, Core.AppUpdate.ZipAsset)
                 ?? throw new InvalidOperationException("Sağlama listesinde bu paket yok; güncelleme durduruldu.");
             string actual;
             await using (var read = File.OpenRead(zip)) actual = Convert.ToHexString(await SHA256.HashDataAsync(read)).ToLowerInvariant();
             if (actual != expected) throw new InvalidOperationException("İndirilen paket doğrulanamadı (SHA-256 uyuşmuyor); güncelleme durduruldu.");
-            AddInstallerLine("SHA-256 doğrulandı. Hazırlanıyor…");
+            UpdatePercent = 90;
+            AddInstallerLine("SHA-256 doğrulandı. Dosyalar açılıyor…");
             Publish();
 
             var appDir = AppContext.BaseDirectory.TrimEnd('\\', '/');
             var staged = appDir + ".update";
-            if (Directory.Exists(staged)) Directory.Delete(staged, true);
-            ZipFile.ExtractToDirectory(zip, staged);
+            // Off the UI thread, so the window keeps drawing (and the bar moving) while it unpacks.
+            var unpacked = new Progress<double>(part => { UpdatePercent = 90 + part * 8; Publish(); });
+            await Task.Run(() => Unpack(zip, staged, unpacked));
             foreach (var needed in new[] { "WecommanderCenter.exe", EmbeddedAgent.ExeName, "wecommander-core.exe" })
                 if (!File.Exists(Path.Combine(staged, needed)))
                     throw new InvalidOperationException($"Pakette {needed} yok; güncelleme durduruldu.");
 
-            var script = Path.Combine(Path.GetTempPath(), "wecommander-swap-" + Guid.NewGuid().ToString("N") + ".ps1");
-            await File.WriteAllTextAsync(script, Core.AppUpdate.SwapScript(appDir, staged, Environment.ProcessId, UpdateFailFile));
+            var id = Guid.NewGuid().ToString("N");
+            var script = Path.Combine(Path.GetTempPath(), "wecommander-swap-" + id + ".ps1");
+            var ready = Path.Combine(Path.GetTempPath(), "wecommander-swap-" + id + ".ready");
+            // With a BOM: Windows PowerShell reads a file without one as ANSI and garbles the Turkish text of the window.
+            await File.WriteAllTextAsync(script, Core.AppUpdate.SwapScript(appDir, staged, Environment.ProcessId, UpdateFailFile, ready),
+                new System.Text.UTF8Encoding(true));
             var info = new ProcessStartInfo("powershell.exe")
             {
                 UseShellExecute = false,
@@ -272,10 +305,13 @@ public partial class App
             foreach (var a in new[] { "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File", script })
                 info.ArgumentList.Add(a);
             Process.Start(info)?.Dispose();
+            UpdatePercent = 98;
             AddInstallerLine("Uygulama yeniden başlatılıyor…");
             InstallerSucceeded = true;
             Publish();
-            await Task.Delay(500);
+            // Quit only once the helper's progress window is on screen, so there is never a moment with nothing to see.
+            for (var i = 0; i < 80 && !File.Exists(ready); i++) await Task.Delay(100);
+            try { File.Delete(ready); } catch (Exception) { }
             Quit();
         }
         catch (Exception e)
@@ -288,7 +324,36 @@ public partial class App
         {
             try { Directory.Delete(temp, true); } catch (Exception) { }
             InstallerRunning = false;
+            UpdatePercent = null;
             Publish();
+        }
+    }
+
+    private static string Megabytes(long bytes) => (bytes / 1048576.0).ToString("0.0", System.Globalization.CultureInfo.GetCultureInfo("tr-TR")) + " MB";
+
+    /// <summary>Unpacks the update entry by entry (reporting 0–1), refusing paths that leave the folder.</summary>
+    private static void Unpack(string zip, string staged, IProgress<double> progress)
+    {
+        if (Directory.Exists(staged)) Directory.Delete(staged, true);
+        Directory.CreateDirectory(staged);
+        var root = Path.GetFullPath(staged) + Path.DirectorySeparatorChar;
+        using var archive = ZipFile.OpenRead(zip);
+        var entries = archive.Entries;
+        var last = -1;
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            var target = Path.GetFullPath(Path.Combine(staged, entry.FullName));
+            if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Pakette geçersiz bir dosya yolu var; güncelleme durduruldu.");
+            if (entry.Name.Length == 0) Directory.CreateDirectory(target);
+            else
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                entry.ExtractToFile(target, overwrite: true);
+            }
+            var step = (i + 1) * 50 / entries.Count;
+            if (step != last) { last = step; progress.Report((i + 1) / (double)entries.Count); }
         }
     }
 }

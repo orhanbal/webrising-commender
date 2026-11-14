@@ -233,8 +233,12 @@ public class EmbeddedAgentTests : IDisposable
     [Fact]
     public void SwapScriptKeepsTheOldCopyUntilTheNewOneIsIn()
     {
-        var script = AppUpdate.SwapScript(@"C:\Users\o'b\AppData\Local\Programs\WECOMMANDER Center\", @"C:\Temp\new", 42, @"C:\Users\o'b\AppData\Local\WECOMMANDER\update-failed.txt");
-        Assert.Contains("Wait-Process -Id 42", script);
+        var script = AppUpdate.SwapScript(@"C:\Users\o'b\AppData\Local\Programs\WECOMMANDER Center\", @"C:\Temp\new", 42, @"C:\Users\o'b\AppData\Local\WECOMMANDER\update-failed.txt", @"C:\Temp\ready.txt");
+        Assert.Contains("Get-Process -Id 42", script);
+        // A window with a progress bar stays up while the files are swapped, and says so before the app quits.
+        Assert.Contains("System.Windows.Forms.ProgressBar", script);
+        Assert.Contains("$ready='C:\\Temp\\ready.txt'", script);
+        Assert.True(script.IndexOf("Set-Content -LiteralPath $ready", StringComparison.Ordinal) < script.IndexOf("Get-Process -Id 42", StringComparison.Ordinal));
         Assert.Contains("$app='C:\\Users\\o''b\\AppData\\Local\\Programs\\WECOMMANDER Center'", script);
         Assert.Contains("$old='C:\\Users\\o''b\\AppData\\Local\\Programs\\WECOMMANDER Center.old'", script);
         Assert.Contains("Rename-Item -LiteralPath $old -NewName", script);
@@ -247,7 +251,7 @@ public class EmbeddedAgentTests : IDisposable
         if (OperatingSystem.IsWindows())
         {
             var file = Path.Combine(_dir, "swap.ps1");
-            File.WriteAllText(file, script);
+            File.WriteAllText(file, script, new System.Text.UTF8Encoding(true));
             var check = new System.Diagnostics.ProcessStartInfo("powershell.exe")
             {
                 UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true,
