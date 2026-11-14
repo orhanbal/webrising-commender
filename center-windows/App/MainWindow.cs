@@ -7,9 +7,12 @@ using Windows.Graphics;
 namespace Wecommander.Center;
 
 /// <summary>
-/// The tray window: the Management Center panel on the right edge of the
-/// screen above the taskbar, like the Windows notification center; it hides
-/// when it loses focus.
+/// The Management Center panel window. Two ways it shows:
+/// - from the tray: on the right edge of the screen above the taskbar, like
+///   the Windows notification center; it hides when it loses focus;
+/// - beside the main window (docked): its own window right next to it, like
+///   the two halves of the Start menu. It follows the main window, stays in
+///   front of it (an owned window) and goes away with it.
 /// </summary>
 public sealed class MainWindow : Window
 {
@@ -17,6 +20,10 @@ public sealed class MainWindow : Window
     private DateTime _hiddenAt = DateTime.MinValue;
     private DateTime _shownAt;
     private bool _quitting;
+    /// <summary>Width of the docked panel and the gap to the main window (in 96-dpi pixels).</summary>
+    public const int DockedWidth = 400, DockGap = 10;
+    private Window? _owner;
+    private bool Docked => _owner is not null;
 
     public MainWindow()
     {
@@ -39,11 +46,12 @@ public sealed class MainWindow : Window
         {
             if (_quitting) return;
             e.Cancel = true; // closing keeps the app in the tray; "Çıkış" quits
-            HidePanel();
+            if (Docked) { HideDocked(); App.Current.PanelDismissed(); }
+            else HidePanel();
         };
         Activated += (_, e) =>
         {
-            if (e.WindowActivationState != WindowActivationState.Deactivated || _panel.DialogOpen || !AppWindow.IsVisible) return;
+            if (e.WindowActivationState != WindowActivationState.Deactivated || _panel.DialogOpen || !AppWindow.IsVisible || Docked) return;
             // Opened from another window: that window takes the focus back as
             // its click ends. Stay open and take it again instead of closing
             // the moment it appeared.
@@ -54,7 +62,11 @@ public sealed class MainWindow : Window
             }
             HidePanel();
         };
-        _panel.CloseRequested += HidePanel;
+        _panel.CloseRequested += () =>
+        {
+            if (Docked) { HideDocked(); App.Current.PanelDismissed(); }
+            else HidePanel();
+        };
     }
 
     [DllImport("user32.dll")]
@@ -71,8 +83,59 @@ public sealed class MainWindow : Window
         AppWindow.MoveAndResize(new RectInt32(area.X + area.Width - width - margin, area.Y + margin, width, height));
     }
 
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+    private static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
+    private const int GWLP_HWNDPARENT = -8;
+
+    /// <summary>Owned by the main window: always in front of it, minimized with it, no taskbar button of its own.</summary>
+    private void SetOwner(Window? owner)
+    {
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        SetWindowLongPtr(hwnd, GWLP_HWNDPARENT, owner is null ? IntPtr.Zero : WinRT.Interop.WindowNative.GetWindowHandle(owner));
+        _owner = owner;
+        if (AppWindow.Presenter is OverlappedPresenter presenter) presenter.IsAlwaysOnTop = owner is null;
+    }
+
+    /// <summary>Beside the main window: same top and height, a small gap; on its left when the screen has no room on its right.</summary>
+    public void ShowDocked(Window owner)
+    {
+        if (!ReferenceEquals(_owner, owner)) SetOwner(owner);
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        var scale = GetDpiForWindow(hwnd) / 96.0;
+        var main = owner.AppWindow.Position;
+        var size = owner.AppWindow.Size;
+        var area = DisplayArea.GetFromWindowId(owner.AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
+        var width = (int)Math.Round(DockedWidth * scale);
+        var gap = (int)Math.Round(DockGap * scale);
+        var x = main.X + size.Width + gap;
+        if (x + width > area.X + area.Width && main.X - gap - width >= area.X) x = main.X - gap - width;
+        x = Math.Min(x, area.X + area.Width - width);
+        AppWindow.MoveAndResize(new RectInt32(x, main.Y, width, size.Height));
+        if (!AppWindow.IsVisible)
+        {
+            AppWindow.Show(false); // the main window keeps the focus
+            _panel.Refresh();
+        }
+    }
+
+    public void HideDocked()
+    {
+        if (Docked && AppWindow.IsVisible) AppWindow.Hide();
+    }
+
+    public void SelectApprovals() { _panel.SelectApprovals(); _panel.Refresh(); }
+    public void SelectDevices() { _panel.SelectDevices(); _panel.Refresh(); }
+
     public void ShowPanel()
     {
+        // Beside an open main window: just bring it forward there.
+        if (Docked && _owner!.AppWindow.IsVisible && AppWindow.IsVisible)
+        {
+            Activate();
+            _panel.Refresh();
+            return;
+        }
+        if (Docked) SetOwner(null); // the main window is closed: back to the tray panel on the screen edge
         _shownAt = DateTime.UtcNow;
         App.Current.CheckForUpdateSoon();
         PlaceOnRightEdge();
@@ -97,6 +160,7 @@ public sealed class MainWindow : Window
     /// <summary>Tray click: open, or close when open. The click that just took the focus away does not reopen it.</summary>
     public void TogglePanel()
     {
+        if (Docked && AppWindow.IsVisible) { Activate(); return; }
         if (AppWindow.IsVisible) HidePanel();
         else if (DateTime.UtcNow - _hiddenAt > TimeSpan.FromMilliseconds(400)) ShowPanel();
     }
