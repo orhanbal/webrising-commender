@@ -49,6 +49,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var pairing = false
     @Published private(set) var updating = false
     @Published private(set) var updateMessage: String?
+    /// How far the app update is (0–1) while it runs; nil before anything is measured.
+    @Published private(set) var updateProgress: Double?
     private var embeddedReady = false
     private var lastPairAttempt = Date.distantPast
     private var announcedApp: Int?
@@ -582,6 +584,7 @@ extension AppModel {
     fileprivate func updateApp() async {
         guard !updating else { return }
         updating = true
+        updateProgress = nil
         updateMessage = "Yeni sürüm aranıyor…"
         publish()
         let work = FileManager.default.temporaryDirectory.appendingPathComponent("wecommander-update-" + UUID().uuidString)
@@ -593,25 +596,42 @@ extension AppModel {
             if let current = appBuild, latest.build <= current {
                 updateMessage = "Uygulama güncel (0.1.\(current))."
                 updating = false
+                updateProgress = nil
                 publish()
                 return
             }
+            // Download 0–85 %, check 85–90 %, unpack 90–98 %.
             updateMessage = "0.1.\(latest.build) indiriliyor…"
+            updateProgress = 0
             publish()
             try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
-            let (zipFile, zipResponse) = try await URLSession.shared.download(from: latest.zipURL)
+            var shown = -1
+            let (zipFile, zipResponse) = try await Self.download(latest.zipURL) { [weak self] fraction in
+                guard let self, self.updating else { return }
+                let percent = Int(fraction * 100)
+                guard percent != shown else { return }
+                shown = percent
+                self.updateProgress = fraction * 0.85
+                self.updateMessage = "0.1.\(latest.build) indiriliyor… %\(percent)"
+                self.publish()
+            }
             guard (zipResponse as? HTTPURLResponse)?.statusCode == 200 else { throw AgentError("Paket indirilemedi.") }
             let zip = work.appendingPathComponent(AppUpdate.zipAsset)
             try FileManager.default.moveItem(at: zipFile, to: zip)
+            updateProgress = 0.85
+            updateMessage = "İndirildi. Doğrulanıyor…"
+            publish()
             let (sumsData, _) = try await URLSession.shared.data(from: latest.sumsURL)
             guard let expected = AppUpdate.expectedHash(String(decoding: sumsData, as: UTF8.self), asset: AppUpdate.zipAsset) else {
                 throw AgentError("Sağlama listesinde bu paket yok; güncelleme durduruldu.")
             }
-            let actual = SHA256.hash(data: try Data(contentsOf: zip)).map { String(format: "%02x", $0) }.joined()
+            // Off the main thread, so the panel keeps drawing while it hashes.
+            let actual = try await Task.detached { SHA256.hash(data: try Data(contentsOf: zip)).map { String(format: "%02x", $0) }.joined() }.value
             guard actual == expected else {
                 throw AgentError("İndirilen paket doğrulanamadı (SHA-256 uyuşmuyor); güncelleme durduruldu.")
             }
-            updateMessage = "SHA-256 doğrulandı. Hazırlanıyor…"
+            updateMessage = "SHA-256 doğrulandı. Dosyalar açılıyor…"
+            updateProgress = 0.9
             publish()
             let unpacked = work.appendingPathComponent("app")
             let (code, _) = await ProcessRunner().run("/usr/bin/ditto", ["-x", "-k", zip.path, unpacked.path])
@@ -629,15 +649,41 @@ extension AppModel {
             helper.standardError = FileHandle.nullDevice
             try helper.run()
             updateMessage = "Uygulama yeniden başlatılıyor…"
+            updateProgress = 1
             publish()
+            notifier.showPlain("WECOMMANDER", "Güncelleme kuruluyor; uygulama birkaç saniye içinde yeniden açılacak.")
             try? await Task.sleep(nanoseconds: 500_000_000)
             NSApp.terminate(nil)
         } catch {
             try? FileManager.default.removeItem(at: work)
             updating = false
+            updateProgress = nil
             updateMessage = error.localizedDescription
             notifier.showPlain("WECOMMANDER", "Güncelleme tamamlanamadı; ayrıntı panelde.")
             publish()
+        }
+    }
+
+    /// Downloads to a file of its own, reporting 0–1 on the main actor as it goes.
+    nonisolated private static func download(_ url: URL, progress: @escaping @MainActor (Double) -> Void) async throws -> (URL, URLResponse) {
+        try await withCheckedThrowingContinuation { continuation in
+            var observation: NSKeyValueObservation?
+            let task = URLSession.shared.downloadTask(with: url) { file, response, error in
+                observation?.invalidate()
+                if let error { continuation.resume(throwing: error); return }
+                guard let file, let response else { continuation.resume(throwing: AgentError("Paket indirilemedi.")); return }
+                // The system removes `file` when this returns: keep it first.
+                let kept = FileManager.default.temporaryDirectory.appendingPathComponent("wecommander-download-" + UUID().uuidString)
+                do {
+                    try FileManager.default.moveItem(at: file, to: kept)
+                    continuation.resume(returning: (kept, response))
+                } catch { continuation.resume(throwing: error) }
+            }
+            observation = task.progress.observe(\.fractionCompleted) { value, _ in
+                let fraction = value.fractionCompleted
+                Task { @MainActor in progress(fraction) }
+            }
+            task.resume()
         }
     }
 }

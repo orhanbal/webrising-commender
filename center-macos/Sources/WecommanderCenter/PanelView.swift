@@ -430,6 +430,10 @@ private struct AgentCard: View {
                          + (model.agentUpdateAvailable ? " · yeni: 0.1.\(model.latestApp?.build ?? 0)" : model.latestApp != nil ? " · güncel" : ""))
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                // A real bar while the update runs: the percent while it downloads, moving while it waits.
+                if model.updating {
+                    if let progress = model.updateProgress { ProgressView(value: progress) } else { ProgressView().progressViewStyle(.linear) }
+                }
                 if let message = model.updateMessage {
                     Text(message).font(.caption).foregroundStyle(.secondary)
                 }

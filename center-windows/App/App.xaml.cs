@@ -151,6 +151,13 @@ public partial class App : Application
         if (_installerLog.Count > 200) _installerLog.RemoveAt(0);
     }
 
+    /// <summary>Rewrites the last line (a download's "%42" counting up) instead of adding one per step.</summary>
+    private void ReplaceInstallerLine(string line)
+    {
+        if (_installerLog.Count == 0) _installerLog.Add(line);
+        else _installerLog[^1] = line;
+    }
+
     public DateTime? LastSync => _lastSync == DateTime.MinValue ? null : _lastSync;
 
     /// <summary>Windows' own notification setting for this app (Settings, System, Notifications).</summary>

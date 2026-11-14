@@ -131,32 +131,60 @@ public static partial class AppUpdate
     }
 
     /// <summary>
-    /// The hidden helper (PowerShell, no window) that waits for the app to
-    /// quit, swaps the new files in (keeping the old copy until the new one is
-    /// in place) and starts the app again. It runs from the temp folder: a
-    /// process whose current folder is inside the app folder would stop the
-    /// swap (Windows does not rename a folder in use). When the swap does not
-    /// happen, the reason goes to <paramref name="failFile"/>; the app shows
-    /// it at its next start.
+    /// The helper (PowerShell, no console) that waits for the app to quit,
+    /// swaps the new files in (keeping the old copy until the new one is in
+    /// place) and starts the app again. While it works it shows a small
+    /// "WECOMMANDER güncelleniyor" window with a progress bar, so the update
+    /// never looks like the app just vanished; it writes
+    /// <paramref name="readyFile"/> once that window is up, and the app waits
+    /// for it before quitting. It runs from the temp folder: a process whose
+    /// current folder is inside the app folder would stop the swap (Windows
+    /// does not rename a folder in use). When the swap does not happen, the
+    /// reason goes to <paramref name="failFile"/>; the app shows it at its
+    /// next start. The window is a nicety: if it cannot be shown, the swap
+    /// still runs.
     /// </summary>
-    public static string SwapScript(string appDir, string newDir, int appPid, string failFile, string exeName = "WecommanderCenter.exe")
+    public static string SwapScript(string appDir, string newDir, int appPid, string failFile, string? readyFile = null, string exeName = "WecommanderCenter.exe")
     {
         static string Q(string s) => "'" + s.Replace("'", "''") + "'";
         var old = appDir.TrimEnd('\\') + ".old";
         return string.Join("\n",
             "$ErrorActionPreference='Stop'",
             "Set-Location -LiteralPath ([IO.Path]::GetTempPath())",
-            $"$app={Q(appDir.TrimEnd('\\'))}; $new={Q(newDir)}; $old={Q(old)}; $fail={Q(failFile)}",
-            $"try {{ Wait-Process -Id {appPid} -Timeout 30 -ErrorAction SilentlyContinue }} catch {{}}",
+            $"$app={Q(appDir.TrimEnd('\\'))}; $new={Q(newDir)}; $old={Q(old)}; $fail={Q(failFile)}; $ready={(readyFile is null ? "$null" : Q(readyFile))}",
+            // The progress window.
+            "$form=$null; $label=$null; $bar=$null",
+            "try {",
+            "  Add-Type -AssemblyName System.Windows.Forms, System.Drawing",
+            "  [System.Windows.Forms.Application]::EnableVisualStyles()",
+            "  $form=New-Object System.Windows.Forms.Form",
+            "  $form.Text='WECOMMANDER'; $form.FormBorderStyle='FixedDialog'; $form.ControlBox=$false; $form.MaximizeBox=$false; $form.MinimizeBox=$false",
+            "  $form.StartPosition='CenterScreen'; $form.TopMost=$true; $form.ShowInTaskbar=$true",
+            "  $form.Font=New-Object System.Drawing.Font('Segoe UI',10); $form.ClientSize=New-Object System.Drawing.Size(400,112)",
+            "  $title=New-Object System.Windows.Forms.Label; $title.AutoSize=$false; $title.SetBounds(20,14,360,24); $title.Font=New-Object System.Drawing.Font('Segoe UI Semibold',11); $title.Text='WECOMMANDER güncelleniyor'",
+            "  $label=New-Object System.Windows.Forms.Label; $label.AutoSize=$false; $label.SetBounds(20,40,360,22); $label.Text='Uygulama kapanıyor…'",
+            "  $bar=New-Object System.Windows.Forms.ProgressBar; $bar.SetBounds(20,70,360,16); $bar.Minimum=0; $bar.Maximum=100; $bar.Value=60",
+            "  $form.Controls.AddRange(@($title,$label,$bar)); $form.Show(); $form.Activate(); [System.Windows.Forms.Application]::DoEvents()",
+            "} catch { $form=$null }",
+            "function Step($text,$value){ if($form){ try { $label.Text=$text; $bar.Value=$value; [System.Windows.Forms.Application]::DoEvents() } catch {} } }",
+            "function WaitUi($ms){ $end=[DateTime]::UtcNow.AddMilliseconds($ms); do { if($form){ try { [System.Windows.Forms.Application]::DoEvents() } catch {} }; Start-Sleep -Milliseconds 50 } while([DateTime]::UtcNow -lt $end) }",
+            "if($ready){ try { Set-Content -LiteralPath $ready -Value 'ok' } catch {} }",
+            $"$i=0; while((Get-Process -Id {appPid} -ErrorAction SilentlyContinue) -and $i -lt 300){{ WaitUi 100; $i++ }}",
+            "Step 'Eski sürüm kapatılıyor…' 68",
             // Everything still running from the app folder (agent, core, a second copy).
             "Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($app + '\\',[StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force -ErrorAction SilentlyContinue",
-            "Start-Sleep -Milliseconds 800",
+            "WaitUi 800",
             "if(Test-Path -LiteralPath $old){ Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue }",
+            "Step 'Yeni sürüm yerleştiriliyor…' 80",
             "$moved=$false; $why=''",
-            "for($i=0;$i -lt 30 -and -not $moved;$i++){ try { Rename-Item -LiteralPath $app -NewName (Split-Path $old -Leaf); $moved=$true } catch { $why=$_.Exception.Message; Start-Sleep -Seconds 1 } }",
+            "for($i=0;$i -lt 30 -and -not $moved;$i++){ try { Rename-Item -LiteralPath $app -NewName (Split-Path $old -Leaf); $moved=$true } catch { $why=$_.Exception.Message; WaitUi 1000 } }",
             "if($moved){ try { Move-Item -LiteralPath $new -Destination $app; Remove-Item -LiteralPath $fail -Force -ErrorAction SilentlyContinue } catch { $why=$_.Exception.Message; Rename-Item -LiteralPath $old -NewName (Split-Path $app -Leaf); $moved=$false } }",
             "if(-not $moved){ New-Item -ItemType Directory -Force -Path (Split-Path $fail) | Out-Null; Set-Content -LiteralPath $fail -Value $why -Encoding UTF8 }",
+            "if($moved){ Step 'WECOMMANDER başlatılıyor…' 95 } else { Step 'Güncelleme tamamlanamadı; mevcut sürüm açılıyor…' 95 }",
             $"Start-Process -FilePath (Join-Path $app {Q(exeName)}) -WorkingDirectory $app -ArgumentList '--updated'",
-            "if($moved){ Start-Sleep -Seconds 5; Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue }");
+            "Step 'Hazır.' 100",
+            "WaitUi 2500",
+            "if($form){ try { $form.Close() } catch {} }",
+            "if($moved){ Start-Sleep -Seconds 3; Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue }");
     }
 }
