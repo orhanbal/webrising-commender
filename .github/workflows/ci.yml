@@ -1144,6 +1144,97 @@ jobs:
           Get-Process -Name 'wecommander-core','webrising-commender' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
           if (-not $sized) { throw "a terminal tab opened with a zero-size terminal" }
           Write-Host "A terminal tab gets its full size"
+      - name: Window check (panel beside the main window, reopen, server box, server management)
+        shell: powershell
+        run: |
+          # The owner's reports: the panel window must open beside the main
+          # window and come back when the app is opened again; the server box
+          # sits at the bottom left; "Sunucu yonetimi" opens its window.
+          $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'dock-localappdata'
+          New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA | Out-Null
+          $env:WECOMMANDER_DEBUG_LAYOUT = '1'; $env:WECOMMANDER_DEBUG_DOCK = '1'; $env:WECOMMANDER_DEBUG_CHIP = '1'; $env:WECOMMANDER_DEBUG_TAB = '1'
+          $exe = "center-windows\publish\WecommanderCenter.exe"
+          $layout = Join-Path $env:LOCALAPPDATA 'WECOMMANDER\layout.log'
+          $app = Start-Process -FilePath $exe -ArgumentList '--open-main' -PassThru
+          Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+          $root = [System.Windows.Automation.AutomationElement]::RootElement
+          $o = [char]0x00F6
+          function Windows-Of { $root.FindAll([System.Windows.Automation.TreeScope]::Children,
+            (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $app.Id))) }
+          function Top($prefix, [switch]$exact) {
+            foreach ($w in (Windows-Of)) {
+              $n = $w.Current.Name
+              if (($exact -and $n -eq $prefix) -or (-not $exact -and $n.StartsWith($prefix))) { if (-not $w.Current.IsOffscreen) { return $w } }
+            }
+            return $null
+          }
+          function Report($when) {
+            Write-Host "--- windows $when"
+            foreach ($w in (Windows-Of)) { Write-Host ("  '{0}' rect={1} offscreen={2}" -f $w.Current.Name, $w.Current.BoundingRectangle, $w.Current.IsOffscreen) }
+          }
+          function WaitFor([scriptblock]$cond) { for ($i = 0; $i -lt 30; $i++) { if (& $cond) { return $true }; Start-Sleep -Milliseconds 500 }; return $false }
+          $fail = @()
+          $mainName = 'WECOMMANDER'; $panelName = 'WECOMMANDER Y'; $chipName = 'WECOMMANDER Sunucu kutusu'
+          if (-not (WaitFor { Top $mainName -exact })) { $fail += 'main window did not open' }
+          Start-Sleep -Seconds 2
+          Report 'after start'
+          $main = Top $mainName -exact; $panel = Top $panelName
+          if (-not $panel) { $fail += 'panel window not beside the main window at start' }
+          elseif ($main) {
+            $m = $main.Current.BoundingRectangle; $p = $panel.Current.BoundingRectangle
+            Write-Host ("gap between windows (window rectangles): {0}" -f ($p.Left - $m.Right))
+            if ($p.Top -ne $m.Top -and [math]::Abs($p.Top - $m.Top) -gt 12) { $fail += "panel top $($p.Top) is not the main top $($m.Top)" }
+          }
+          $chip = Top $chipName -exact
+          if (-not $chip) { $fail += 'server box not shown' }
+          else {
+            $c = $chip.Current.BoundingRectangle
+            $screen = [System.Windows.Automation.AutomationElement]::RootElement.Current.BoundingRectangle
+            Write-Host "server box at $c (screen $screen)"
+            if ($c.Left -gt 60 -or $c.Bottom -lt $screen.Bottom - 140) { $fail += "server box is not at the bottom left: $c" }
+          }
+          # Close the main window (it hides to the tray): the panel goes with it.
+          if ($main) {
+            $wp = $null
+            if ($main.TryGetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern, [ref]$wp)) { $wp.Close() }
+            if (-not (WaitFor { -not (Top $mainName -exact) })) { $fail += 'main window did not close' }
+            Start-Sleep -Seconds 1
+            Report 'after closing the main window'
+            if (Top $panelName) { $fail += 'panel stayed on screen after the main window closed' }
+          }
+          # Open the app again (a second start is handed to the running one).
+          Start-Process -FilePath $exe -ArgumentList '--open-main' | Out-Null
+          if (-not (WaitFor { Top $mainName -exact })) { $fail += 'main window did not come back' }
+          Start-Sleep -Seconds 2
+          Report 'after opening again'
+          if (-not (Top $panelName)) { $fail += 'panel window did not come back beside the main window' }
+          # Server management on the open terminal tab.
+          $main = Top $mainName -exact
+          if ($main) {
+            $button = $main.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
+              (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, "Sunucu y${o}netimi")))
+            if (-not $button) {
+              $terms = $main.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
+                (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'Terminaller')))
+              if ($terms) { $sp = $null; if ($terms.TryGetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern, [ref]$sp)) { $sp.Select() }; Start-Sleep -Seconds 1 }
+              $button = $main.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
+                (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, "Sunucu y${o}netimi")))
+            }
+            if (-not $button) { $fail += 'Sunucu yonetimi button not found' }
+            else {
+              $ip = $null
+              if ($button.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$ip)) { $ip.Invoke() }
+              if (-not (WaitFor { Top "Sunucu y${o}netimi" })) { $fail += 'Sunucu yonetimi did not open its window' }
+              Report 'after Sunucu yonetimi'
+            }
+          }
+          if (Test-Path $layout) { Write-Host '--- layout.log ---'; Get-Content $layout | ForEach-Object { Write-Host $_ } }
+          $errors = Join-Path $env:LOCALAPPDATA 'WECOMMANDER\errors.log'
+          if (Test-Path $errors) { Write-Host '--- errors.log ---'; Get-Content $errors | ForEach-Object { Write-Host $_ }; $fail += 'the app logged an error' }
+          if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force }
+          Get-Process -Name 'WecommanderCenter','wecommander-core','webrising-commender' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          if ($fail.Count -gt 0) { throw ("window check failed: " + ($fail -join '; ')) }
+          Write-Host 'Panel beside the main window, back after reopening; server box bottom left; server management opens'
       - name: Package
         shell: pwsh
         run: |

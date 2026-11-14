@@ -49,6 +49,7 @@ public partial class App
         Settings.DeskChip = on;
         SaveSettings();
         _deskChip?.Apply();
+        UpdateMonitorTray();
     }
 
     /// <summary>Server management for a watched server, on the monitor's own connection.</summary>
@@ -79,7 +80,9 @@ public partial class App
     private void UpdateMonitorTrayNow()
     {
         var servers = Monitor.Servers;
-        if (servers.Count == 0)
+        // The live servers live in the box at the bottom left; the icon next to
+        // the clock is only there while that box is turned off.
+        if (servers.Count == 0 || Settings.DeskChip)
         {
             _monitorTray?.Dispose();
             _monitorTray = null;
@@ -110,10 +113,7 @@ public partial class App
         var menu = new MenuFlyout();
         menu.Items.Add(new MenuFlyoutItem { Text = "Sunucularım panelini aç", Command = new RelayCommand(ToggleMonitorPanel) });
         menu.Items.Add(new MenuFlyoutItem { Text = "Sunucular penceresi", Command = new RelayCommand(ShowServers) });
-        var chip = new ToggleMenuFlyoutItem { Text = "Masaüstü kutusunu göster (sol alt)", IsChecked = Settings.DeskChip };
-        chip.Command = new RelayCommand(() => SetDeskChip(!Settings.DeskChip));
-        menu.Opening += (_, _) => chip.IsChecked = Settings.DeskChip;
-        menu.Items.Add(chip);
+        menu.Items.Add(new MenuFlyoutItem { Text = "Sol alttaki sunucu kutusunu göster", Command = new RelayCommand(() => SetDeskChip(true)) });
         return menu;
     }
 

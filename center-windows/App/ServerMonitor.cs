@@ -56,6 +56,9 @@ public sealed class ServerMonitor
     {
         foreach (var id in App.Current.Settings.WatchedHosts.Distinct())
             Servers.Add(new WatchedServer(id));
+        // CI only: a watched server without a real host, so the server box shows.
+        if (Environment.GetEnvironmentVariable("WECOMMANDER_DEBUG_CHIP") == "1" && Servers.Count == 0)
+            Servers.Add(new WatchedServer("debug") { Label = "Debug" });
         RefreshLabels();
         if (Servers.Count > 0) _timer.Start();
         _ = Tick();

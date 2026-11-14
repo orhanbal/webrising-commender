@@ -115,6 +115,7 @@ public sealed class MainWindow : Window
         left = Math.Min(left, area.X + area.Width - width);
         var height = main.Bottom - main.Top;
         AppWindow.MoveAndResize(new RectInt32(left - self.Left, main.Top - self.Top, width + self.Left + self.Right, height + self.Top + self.Bottom));
+        App.DebugLayout($"dock: main drawn={main.Left},{main.Top},{main.Right},{main.Bottom} panel x={left} w={width} h={height} insets={self.Left},{self.Top},{self.Right},{self.Bottom} visible={AppWindow.IsVisible}");
         if (!AppWindow.IsVisible)
         {
             AppWindow.Show(false); // the main window keeps the focus
@@ -151,6 +152,7 @@ public sealed class MainWindow : Window
 
     public void HideDocked()
     {
+        App.DebugLayout($"hide docked: docked={Docked} visible={AppWindow.IsVisible}");
         if (Docked && AppWindow.IsVisible) AppWindow.Hide();
     }
 
