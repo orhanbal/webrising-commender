@@ -618,6 +618,35 @@ export async function migrate() {
     );
     create index if not exists app_error_reports_org_idx on app_error_reports(organization_id,created_at desc);
 
+    -- Marketing: in-app messages and surveys (satisfaction, NPS, news, tips),
+    -- shown once per user in the apps and the web dashboard.
+    create table if not exists marketing_campaigns (
+      id uuid primary key default gen_random_uuid(),
+      kind text not null check (kind in ('csat','nps','announcement','tip')),
+      title text not null,
+      body text not null default '',
+      cta_label text,
+      cta_url text,
+      audience jsonb not null default '{}'::jsonb,
+      status text not null default 'draft' check (status in ('draft','active','ended')),
+      starts_at timestamptz,
+      ends_at timestamptz,
+      created_by uuid references users(id) on delete set null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists marketing_responses (
+      campaign_id uuid not null references marketing_campaigns(id) on delete cascade,
+      user_id uuid not null references users(id) on delete cascade,
+      platform text not null default 'web',
+      action text not null check (action in ('shown','answered','dismissed','clicked')),
+      score smallint,
+      comment text,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      primary key (campaign_id,user_id)
+    );
+
     insert into organizations(name)
       select 'Self Hosted'
       where not exists(select 1 from organizations);

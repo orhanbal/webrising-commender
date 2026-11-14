@@ -38,6 +38,7 @@ import { db, housekeeping, migrate, ready } from "./db.js";
 import { getPublicPlans, publicPaddleConfig, createPaddleCheckout, createPaddlePortal, consumePaddleWebhook, syncPlanCatalog } from "./paddle.js";
 import { getDownloads } from "./downloads.js";
 import { scrubUserPaths } from "./scrub.js";
+import { campaignResults, campaignSchema, listCampaigns, nextMessage, PLATFORMS, recordResponse, responseSchema, saveCampaign } from "./marketing.js";
 import { installRoute } from "./install-scripts.js";
 import { createDeviceLink, getDeviceLinkStatus, approveDeviceLink } from "./device-link.js";
 import { createCenterLink, getCenterLinkStatus, approveCenterLink, centerLinkName, centerMayAccess } from "./center-link.js";
@@ -130,6 +131,7 @@ const agentRouteRateLimit = new FixedWindowRateLimiter();
 const pairingRateLimit = new FixedWindowRateLimiter();
 const checkoutRateLimit = new FixedWindowRateLimiter();
 const billingSupportRateLimit = new FixedWindowRateLimiter();
+const marketingResponseLimit = new FixedWindowRateLimiter();
 const consoleMutationAccountLimit = new FixedWindowRateLimiter();
 const consoleMutationIpLimit = new FixedWindowRateLimiter();
 const loginIpRateLimit = new FixedWindowRateLimiter();
@@ -2331,6 +2333,35 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           [principal.userId,payload.enabled?"enabled":"disabled"]);
         return void json(res,200,{ok:true,signupSetting:await publicSignupSetting(),mailConfigured:mailConfigured()});
       }
+      // ---- marketing: in-app messages and surveys ----
+      if (req.method === "GET" && url.pathname === "/api/console/marketing/campaigns") {
+        return void json(res,200,{items:await listCampaigns()});
+      }
+      if (req.method === "GET" && url.pathname === "/api/console/marketing/results") {
+        const id=z.string().uuid().parse(url.searchParams.get("id"));
+        const results=await campaignResults(id);
+        return results?void json(res,200,results):void json(res,404,{error:"not_found"});
+      }
+      if (req.method === "POST" && url.pathname === "/api/console/marketing/campaigns") {
+        const body=campaignSchema.parse(await readJson(req));
+        const id=await saveCampaign(body,principal.userId);
+        if(!id) return void json(res,404,{error:"not_found"});
+        await db.query("insert into platform_admin_audit(actor_user_id,action,detail) values($1,'marketing.save',$2)",[principal.userId,id+":"+body.kind]);
+        return void json(res,body.id?200:201,{id});
+      }
+      if (req.method === "POST" && url.pathname === "/api/console/marketing/status") {
+        const body=z.object({id:z.string().uuid(),status:z.enum(["draft","active","ended"])}).parse(await readJson(req));
+        const r=await db.query("update marketing_campaigns set status=$2,updated_at=now() where id=$1",[body.id,body.status]);
+        if(!r.rowCount) return void json(res,404,{error:"not_found"});
+        await db.query("insert into platform_admin_audit(actor_user_id,action,detail) values($1,'marketing.status',$2)",[principal.userId,body.id+":"+body.status]);
+        return void json(res,200,{ok:true});
+      }
+      if (req.method === "POST" && url.pathname === "/api/console/marketing/delete") {
+        const body=z.object({id:z.string().uuid()}).parse(await readJson(req));
+        await db.query("delete from marketing_campaigns where id=$1",[body.id]);
+        await db.query("insert into platform_admin_audit(actor_user_id,action,detail) values($1,'marketing.delete',$2)",[principal.userId,body.id]);
+        return void json(res,200,{ok:true});
+      }
       if (req.method === "GET" && url.pathname === "/api/console/legal") {
         const page=z.enum(["privacy","terms","refund"]).parse(url.searchParams.get("page"));
         const locale=url.searchParams.get("locale")==="tr"?"tr":"en";
@@ -3692,6 +3723,24 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       }).parse(await readJson(req));
       const result = await approveCenterLink(body.requestId, principal!, body.organizationId);
       return void json(res, result.status, result);
+    }
+    // Marketing messages for the signed-in person (web dashboard or an app).
+    if (url.pathname === "/api/messages" || url.pathname === "/api/messages/respond") {
+      if (!principal || (principal.authKind !== "center" && principal.authKind !== "session") || !principal.userId) {
+        return void json(res, 403, { error: "user_required" });
+      }
+      if (req.method === "GET" && url.pathname === "/api/messages") {
+        const platform = z.enum(PLATFORMS).catch("web").parse(url.searchParams.get("platform"));
+        const message = await nextMessage(principal.userId, principal.organizationId ?? null, platform);
+        return void json(res, 200, { message });
+      }
+      if (req.method === "POST" && url.pathname === "/api/messages/respond") {
+        const limit = marketingResponseLimit.hit(principal.userId, 60, 60 * 60_000);
+        if (!limit.allowed) return void json(res, 429, { error: "rate_limited" });
+        const result = await recordResponse(principal.userId, responseSchema.parse(await readJson(req)));
+        return void json(res, result.ok ? 200 : 400, result);
+      }
+      return void json(res, 405, { error: "method_not_allowed" });
     }
     if (req.method === "GET" && url.pathname === "/api/center/me") {
       if (principal!.authKind !== "center") return void json(res, 403, { error: "center_token_required" });

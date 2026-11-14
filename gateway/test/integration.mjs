@@ -594,6 +594,29 @@ const draftCms=async(title,metadata)=>fetch(base+"/api/console/site-content",{
 const cmsCreated=await draftCms("Integration Draft One","One <script>unsafe</script> & safe");
 assert.equal(cmsCreated.status,201);
 const cmsFirstId=(await cmsCreated.json()).id;
+// Marketing: a survey made in the console reaches the person once, and the
+// answer shows in the console's results.
+const surveyCreated=await fetch(base+"/api/console/marketing/campaigns",{method:"POST",headers:cmsSessionHeaders,
+ body:JSON.stringify({kind:"csat",title:"How is it going?",audience:{platforms:["web","windows"]}})});
+assert.equal(surveyCreated.status,201);
+const surveyId=(await surveyCreated.json()).id;
+const draftHidden=await (await fetch(base+"/api/messages?platform=web",{headers:{Cookie:browserCookies}})).json();
+assert.equal(draftHidden.message,null,"Draft surveys must not be shown");
+assert.equal((await fetch(base+"/api/console/marketing/status",{method:"POST",headers:cmsSessionHeaders,body:JSON.stringify({id:surveyId,status:"active"})})).status,200);
+const wrongPlatform=await (await fetch(base+"/api/messages?platform=linux",{headers:{Cookie:browserCookies}})).json();
+assert.equal(wrongPlatform.message,null,"Surveys reach only their platforms");
+const shownSurvey=await (await fetch(base+"/api/messages?platform=web",{headers:{Cookie:browserCookies}})).json();
+assert.equal(shownSurvey.message?.id,surveyId);
+const badScore=await fetch(base+"/api/messages/respond",{method:"POST",headers:cmsSessionHeaders,body:JSON.stringify({id:surveyId,platform:"web",action:"answered",score:9})});
+assert.equal(badScore.status,400,"A 1-5 survey refuses a 9");
+assert.equal((await fetch(base+"/api/messages/respond",{method:"POST",headers:cmsSessionHeaders,body:JSON.stringify({id:surveyId,platform:"web",action:"answered",score:5,comment:"Great"})})).status,200);
+const answeredHidden=await (await fetch(base+"/api/messages?platform=web",{headers:{Cookie:browserCookies}})).json();
+assert.equal(answeredHidden.message,null,"An answered survey is not shown again");
+const surveyResults=await (await fetch(base+"/api/console/marketing/results?id="+surveyId,{headers:{Cookie:browserCookies}})).json();
+assert.deepEqual(surveyResults.distribution,[{score:5,n:1}]);
+assert.equal(surveyResults.comments[0].comment,"Great");
+const anonymousMessages=await fetch(base+"/api/messages?platform=web");
+assert.equal(anonymousMessages.status>=400,true,"Messages need a signed-in person");
 const draftDoesNotPublish=await jsonFetch("/api/public/site-content?locale=en");
 assert.equal(draftDoesNotPublish.item,null);
 const cmsPublish=async(id)=>fetch(base+"/api/console/site-content/publish",{

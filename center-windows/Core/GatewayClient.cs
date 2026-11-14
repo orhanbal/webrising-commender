@@ -78,6 +78,15 @@ public sealed class GatewayClient(HttpClient http, string baseUrl)
     public async Task<CenterMe> MeAsync(string token, CancellationToken ct = default) =>
         Read<CenterMe>(await SendAsync(HttpMethod.Get, "/api/center/me?platform=windows", token, null, ct).ConfigureAwait(false));
 
+    /// <summary>The person's next marketing message or survey (null: none).</summary>
+    public async Task<InAppMessage?> MessageAsync(string token, CancellationToken ct = default) =>
+        (await SendAsync(HttpMethod.Get, "/api/messages?platform=windows", token, null, ct).ConfigureAwait(false))?["message"] is JsonObject m
+            ? m.Deserialize<InAppMessage>(Web) : null;
+
+    /// <summary>action: shown, answered (with a score), dismissed or clicked.</summary>
+    public async Task RespondAsync(string token, string id, string action, int? score = null, string? comment = null, CancellationToken ct = default) =>
+        await SendAsync(HttpMethod.Post, "/api/messages/respond", token, new { id, platform = "windows", action, score, comment }, ct).ConfigureAwait(false);
+
     public Task<List<ApprovalRequest>> PendingAsync(string token, CancellationToken ct = default) =>
         ItemsAsync<ApprovalRequest>("/api/approval-requests?status=pending&limit=100", token, ct);
 
@@ -234,3 +243,6 @@ public static class ErrorText
         return text.Length <= max ? text : text[..max];
     }
 }
+
+/// <summary>A marketing message or survey from the console: csat (1–5), nps (0–10), announcement or tip.</summary>
+public sealed record InAppMessage(string Id, string Kind, string Title, string Body, string? CtaLabel, string? CtaUrl);
