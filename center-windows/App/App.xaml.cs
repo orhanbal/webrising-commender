@@ -888,6 +888,8 @@ public partial class App : Application
 
     public void Publish()
     {
+        if (_updateWindow is not null && InstallerRunning && _installerLog.Count > 0)
+            _updateWindow.Report(_installerLog[^1], UpdatePercent);
         UpdateTray();
         Changed?.Invoke();
     }

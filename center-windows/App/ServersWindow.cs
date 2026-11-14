@@ -203,6 +203,13 @@ public sealed class ServersWindow : Window
     private readonly TextBlock _accountDetail = new() { TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 12 };
     private readonly MenuFlyoutItem _signOutItem = new() { Text = "Oturumu kapat", Icon = new FontIcon { Glyph = "\uF3B1" } };
     private readonly Button _panelButton = new();
+    private readonly Button _updateButton = new()
+    {
+        Visibility = Visibility.Collapsed,
+        Margin = new Thickness(0, 0, 8, 0),
+        VerticalAlignment = VerticalAlignment.Center,
+        Style = (Style)Application.Current.Resources["AccentButtonStyle"],
+    };
 
     private static Brush Res(string key) => (Brush)Application.Current.Resources[key];
 
@@ -276,6 +283,9 @@ public sealed class ServersWindow : Window
         bar.Children.Add(account);
 
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
+        // A new version: an accent button in the bar, so it is seen without opening a tab.
+        _updateButton.Click += (_, _) => App.Current.UpdateAgent();
+        actions.Children.Add(_updateButton);
         _panelButton.Content = new FontIcon { Glyph = "\uE8A0", FontSize = 16 };
         _panelButton.Width = 40; _panelButton.Height = 40; _panelButton.Padding = new Thickness(0);
         _panelButton.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
@@ -384,6 +394,8 @@ public sealed class ServersWindow : Window
             _avatar.DisplayName = "";
             _signOutItem.Visibility = Visibility.Collapsed;
         }
+        _updateButton.Visibility = center.ShowUpdateOffer && !center.InstallerRunning ? Visibility.Visible : Visibility.Collapsed;
+        _updateButton.Content = $"Yeni sürüm: 0.1.{center.LatestAppBuild} · Güncelle";
         var pending = center.Phase == Phase.SignedIn ? center.Pending.Count : 0;
         _panelButton.Content = pending > 0 && !_panelWanted
             ? new InfoBadge { Value = pending }
@@ -425,6 +437,7 @@ public sealed class ServersWindow : Window
 
     public void ShowWindow()
     {
+        App.Current.CheckForUpdateSoon();
         AppWindow.Show();
         Activate();
     }

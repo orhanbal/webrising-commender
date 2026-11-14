@@ -21,6 +21,21 @@ public partial class App
     private bool _embeddedReady;
     private Core.AppUpdate.Release? _latestApp;
     private int? _announcedApp;
+    /// <summary>The "WECOMMANDER güncelleniyor" window while an update runs.</summary>
+    private UpdateWindow? _updateWindow;
+    private static readonly TimeSpan UpdateCheckInterval = TimeSpan.FromMinutes(15);
+    private DateTime _lastSoonCheck = DateTime.MinValue;
+
+    /// <summary>A window was opened: look for a new version now (at most every 3 minutes), so the panel never says "güncel" from an old check.</summary>
+    public void CheckForUpdateSoon()
+    {
+        if (Packaging.IsPackaged || DateTime.UtcNow - _lastSoonCheck < TimeSpan.FromMinutes(3)) return;
+        _lastSoonCheck = DateTime.UtcNow;
+        _lastReleaseCheck = DateTime.MinValue; // the next tick (within 2 s) reads the releases
+    }
+
+    /// <summary>A newer app version is published and can be installed from here (not the Store copy).</summary>
+    public bool ShowUpdateOffer => Embedded && !Packaging.IsPackaged && AppUpdateAvailable;
 
     /// <summary>This app carries the agent and runs it itself.</summary>
     public bool Embedded => _embedded.Available;
@@ -162,7 +177,9 @@ public partial class App
         }
         if (!_embedded.Paired && Token is not null && DateTime.UtcNow - _lastPairAttempt >= TimeSpan.FromMinutes(5))
             await EnsurePairedAsync();
-        if (!Packaging.IsPackaged && DateTime.UtcNow - _lastReleaseCheck >= TimeSpan.FromHours(1))
+        // Every 15 minutes (and right away when a window opens, see CheckForUpdateSoon):
+        // hourly left a published version unseen for most of an hour.
+        if (!Packaging.IsPackaged && DateTime.UtcNow - _lastReleaseCheck >= UpdateCheckInterval)
         {
             _lastReleaseCheck = DateTime.UtcNow;
             try
@@ -171,11 +188,11 @@ public partial class App
                 if (latest?.Build != _latestApp?.Build) { _latestApp = latest; changed = true; }
                 LastReleaseRead = DateTime.Now; changed = true;
             }
-            catch (Exception) { _lastReleaseCheck = DateTime.UtcNow - TimeSpan.FromMinutes(50); /* retry in ten minutes */ }
+            catch (Exception) { _lastReleaseCheck = DateTime.UtcNow - UpdateCheckInterval + TimeSpan.FromMinutes(5); /* retry in five minutes */ }
             if (AppUpdateAvailable && _announcedApp != _latestApp!.Build)
             {
                 _announcedApp = _latestApp.Build;
-                Toast($"WECOMMANDER için yeni sürüm var (0.1.{_latestApp.Build}). Panelde \"Uygulamayı güncelle\"ye bas.");
+                Toast($"WECOMMANDER için yeni sürüm var (0.1.{_latestApp.Build}). Uygulamada \"Güncelle\"ye bas; bir dakikadan kısa sürer.");
             }
         }
         if (changed) Publish();
@@ -236,6 +253,9 @@ public partial class App
                 return;
             }
             Directory.CreateDirectory(temp);
+            _updateWindow?.CloseNow();
+            _updateWindow = new UpdateWindow(latest.Build);
+            _updateWindow.ShowCentered();
             // Download 0–85 %, check 85–90 %, unpack 90–98 %; the swap window carries on from there.
             UpdatePercent = 0;
             AddInstallerLine($"0.1.{latest.Build} indiriliyor…");
@@ -297,12 +317,13 @@ public partial class App
             var info = new ProcessStartInfo("powershell.exe")
             {
                 UseShellExecute = false,
+                // No console at all. Not "hidden": Windows would apply that to the
+                // helper's first window too, and its progress window never appeared.
                 CreateNoWindow = true,
-                WindowStyle = ProcessWindowStyle.Hidden,
                 // Not the app folder: a process in it would block the swap.
                 WorkingDirectory = Path.GetTempPath(),
             };
-            foreach (var a in new[] { "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File", script })
+            foreach (var a in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script })
                 info.ArgumentList.Add(a);
             Process.Start(info)?.Dispose();
             UpdatePercent = 98;
@@ -312,12 +333,16 @@ public partial class App
             // Quit only once the helper's progress window is on screen, so there is never a moment with nothing to see.
             for (var i = 0; i < 80 && !File.Exists(ready); i++) await Task.Delay(100);
             try { File.Delete(ready); } catch (Exception) { }
+            _updateWindow?.CloseNow();
+            _updateWindow = null;
             Quit();
         }
         catch (Exception e)
         {
             InstallerSucceeded = false;
             AddInstallerLine(e.Message);
+            _updateWindow?.CloseNow();
+            _updateWindow = null;
             Toast("Güncelleme tamamlanamadı; ayrıntı panelde.");
         }
         finally

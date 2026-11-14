@@ -74,6 +74,7 @@ public sealed class MainWindow : Window
     public void ShowPanel()
     {
         _shownAt = DateTime.UtcNow;
+        App.Current.CheckForUpdateSoon();
         PlaceOnRightEdge();
         AppWindow.Show();
         Activate();
