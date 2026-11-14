@@ -305,7 +305,15 @@ public partial class App : Application
 
     /// <summary>The Management Center panel (approvals, autonomous mode, this computer, settings).</summary>
     public void ShowPanel() => _window?.ShowPanel();
-    public void ShowApprovals() => _window?.ShowApprovals();
+    /// <summary>The main window, when open, shows approvals in its own panel on the right; otherwise the tray panel opens.</summary>
+    public void ShowApprovals()
+    {
+        if (_servers?.ShowApprovals() == true) return;
+        _window?.ShowApprovals();
+    }
+
+    /// <summary>"WECOMMANDER'dan çık" in the main window's power menu.</summary>
+    public void QuitApp() => Quit();
 
     /// <summary>
     /// Registers app.wecommander.center (name and icon shown on the
@@ -690,7 +698,7 @@ public partial class App : Application
                 // here), since otherwise the request would go unseen.
                 if (Settings.OpenOnRequest || NotificationsBlocked || !Settings.Notifications)
                 {
-                    _window?.ShowApprovals();
+                    ShowApprovals();
                 }
             }
         }

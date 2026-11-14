@@ -71,8 +71,9 @@ public sealed class ServersWindow : Window
     {
         _c = controller;
         Title = "WECOMMANDER";
-        SystemBackdrop = new MicaBackdrop();
-        ExtendsContentIntoTitleBar = false;
+        // See-through like the Windows Start menu: the desktop shows, blurred, behind both halves.
+        SystemBackdrop = new DesktopAcrylicBackdrop();
+        ExtendsContentIntoTitleBar = true;
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1240, 800));
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "icon.ico"));
 
@@ -90,9 +91,8 @@ public sealed class ServersWindow : Window
         _nav.MenuItems.Add(new NavigationViewItem { Content = "Tüneller", Tag = "tunnels", Icon = new FontIcon { Glyph = "\uE8AF" } });
         _nav.MenuItems.Add(new NavigationViewItem { Content = "Bilinen sunucular", Tag = "known", Icon = new FontIcon { Glyph = "\uE72E" } });
         _nav.MenuItems.Add(new NavigationViewItem { Content = "Geçmiş", Tag = "history", Icon = new FontIcon { Glyph = "\uE81C" } });
-        _nav.FooterMenuItems.Add(new NavigationViewItem { Content = "Onaylar ve otonom mod", Tag = "approvals", SelectsOnInvoked = false, Icon = new FontIcon { Glyph = "\uE8FB" } });
-        _nav.FooterMenuItems.Add(new NavigationViewItem { Content = "Bu bilgisayar (ajan)", Tag = "agent", SelectsOnInvoked = false, Icon = new FontIcon { Glyph = "\uE7F4" } });
-        _nav.FooterMenuItems.Add(new NavigationViewItem { Content = "Ayarlar", Tag = "settings", Icon = new SymbolIcon(Symbol.Setting) });
+        // Approvals, autonomous mode and this computer are the panel on the
+        // right; settings, the account and quitting are in the bottom bar.
         _nav.ItemInvoked += (_, e) => OnNavInvoked(e.InvokedItemContainer?.Tag);
 
         _tabs.IsAddTabButtonVisible = true;
@@ -170,10 +170,11 @@ public sealed class ServersWindow : Window
         _pageHost.Children.Add(_info);
         _nav.Content = _pageHost;
         // Marketing messages and surveys sit bottom left, over the pages.
-        var shell = new Grid();
-        shell.Children.Add(_nav);
-        shell.Children.Add(_messageHost);
-        Content = shell;
+        var app = new Grid();
+        app.Children.Add(_nav);
+        app.Children.Add(_messageHost);
+        Content = BuildShell(app);
+        SetTitleBar(_titleBar);
         DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, async () =>
         {
             await Task.Delay(TimeSpan.FromSeconds(6));
@@ -189,6 +190,214 @@ public sealed class ServersWindow : Window
     }
 
     private static Brush Secondary => (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
+
+    // ---- shell: the app on the left, the Management Center panel on the right ----
+
+    private readonly CenterPanel _panel = new() { Docked = true };
+    private readonly ColumnDefinition _panelColumn = new() { Width = new GridLength(380) };
+    private readonly ColumnDefinition _gapColumn = new() { Width = new GridLength(12) };
+    private Border? _panelCard;
+    private bool _panelWanted = true;
+    private readonly PersonPicture _avatar = new() { Width = 32, Height = 32 };
+    private readonly TextBlock _accountName = new() { TextTrimming = TextTrimming.CharacterEllipsis };
+    private readonly TextBlock _accountDetail = new() { TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 12 };
+    private readonly MenuFlyoutItem _signOutItem = new() { Text = "Oturumu kapat", Icon = new FontIcon { Glyph = "\uF3B1" } };
+    private readonly Button _panelButton = new();
+
+    private static Brush Res(string key) => (Brush)Application.Current.Resources[key];
+
+    /// <summary>A half of the window: a rounded, slightly lighter card over the see-through background.</summary>
+    private static Border Card(UIElement child) => new()
+    {
+        Child = child,
+        CornerRadius = new CornerRadius(8),
+        BorderThickness = new Thickness(1),
+        Background = Res("LayerFillColorDefaultBrush"),
+        BorderBrush = Res("CardStrokeColorDefaultBrush"),
+    };
+
+    private static Button BarButton(string glyph, string tip)
+    {
+        var button = new Button
+        {
+            Content = new FontIcon { Glyph = glyph, FontSize = 16 },
+            Width = 40, Height = 40, Padding = new Thickness(0),
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+        };
+        ToolTipService.SetToolTip(button, tip);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, tip);
+        return button;
+    }
+
+    private UIElement BuildShell(UIElement app)
+    {
+        // The navigation sits on the card itself (no panes of its own colour).
+        foreach (var key in new[] { "NavigationViewExpandedPaneBackground", "NavigationViewDefaultPaneBackground", "NavigationViewTopPaneBackground",
+                     "NavigationViewContentBackground", "NavigationViewContentGridBorderBrush", "NavigationViewMinimalPaneBackground" })
+            _nav.Resources[key] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+
+        // Title bar: the drag area; the window buttons stay where Windows draws them.
+        var title = new Grid { Height = 40, Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
+        var titleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(16, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        titleRow.Children.Add(new Image { Width = 16, Height = 16, Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(Path.Combine(AppContext.BaseDirectory, "Assets", "icon.png"))) });
+        titleRow.Children.Add(new TextBlock { Text = "WECOMMANDER", Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"] });
+        title.Children.Add(titleRow);
+        _titleBar = title;
+
+        // Bottom bar, like the Start menu's: who is signed in on the left; the panel, settings and power on the right.
+        var bar = new Grid { Padding = new Thickness(16, 8, 8, 8), ColumnSpacing = 12, BorderThickness = new Thickness(0, 1, 0, 0),
+            BorderBrush = Res("CardStrokeColorDefaultBrush"), Background = Res("LayerOnAcrylicFillColorDefaultBrush") };
+        bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var who = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        _accountDetail.Foreground = Secondary;
+        who.Children.Add(_accountName);
+        who.Children.Add(_accountDetail);
+        var account = new Button
+        {
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0),
+            Padding = new Thickness(8, 4, 12, 4), HorizontalAlignment = HorizontalAlignment.Left, MaxWidth = 420,
+        };
+        var accountRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
+        accountRow.Children.Add(_avatar);
+        accountRow.Children.Add(who);
+        account.Content = accountRow;
+        ToolTipService.SetToolTip(account, "Hesap");
+        var accountMenu = new MenuFlyout();
+        var web = new MenuFlyoutItem { Text = "Hesabı tarayıcıda aç", Icon = new FontIcon { Glyph = "\uE774" } };
+        web.Click += (_, _) => App.Current.OpenDashboard();
+        _signOutItem.Click += async (_, _) => await SignOutAsync();
+        accountMenu.Items.Add(web);
+        accountMenu.Items.Add(_signOutItem);
+        account.Flyout = accountMenu;
+        Grid.SetColumnSpan(account, 2);
+        bar.Children.Add(account);
+
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
+        _panelButton.Content = new FontIcon { Glyph = "\uE8A0", FontSize = 16 };
+        _panelButton.Width = 40; _panelButton.Height = 40; _panelButton.Padding = new Thickness(0);
+        _panelButton.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        _panelButton.BorderThickness = new Thickness(0);
+        _panelButton.Click += (_, _) => { _panelWanted = !_panelWanted; LayoutPanel(); };
+        var settings = BarButton("\uE713", "Ayarlar");
+        settings.Click += (_, _) => { _nav.SelectedItem = null; ShowSettings(); };
+        var power = BarButton("\uE7E8", "Kapat");
+        var powerMenu = new MenuFlyout { Placement = FlyoutPlacementMode.TopEdgeAlignedRight };
+        var hide = new MenuFlyoutItem { Text = "Pencereyi kapat (tepside çalışmaya devam eder)", Icon = new FontIcon { Glyph = "\uE73F" } };
+        hide.Click += (_, _) => AppWindow.Hide();
+        var quit = new MenuFlyoutItem { Text = "WECOMMANDER'dan çık", Icon = new FontIcon { Glyph = "\uE7E8" } };
+        quit.Click += (_, _) => App.Current.QuitApp();
+        powerMenu.Items.Add(hide);
+        powerMenu.Items.Add(quit);
+        power.Flyout = powerMenu;
+        actions.Children.Add(_panelButton);
+        actions.Children.Add(settings);
+        actions.Children.Add(power);
+        Grid.SetColumn(actions, 2);
+        bar.Children.Add(actions);
+
+        var left = new Grid();
+        left.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        left.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        left.Children.Add(app);
+        Grid.SetRow(bar, 1);
+        left.Children.Add(bar);
+        var leftCard = Card(left);
+
+        _panelCard = Card(_panel);
+
+        var root = new Grid { Padding = new Thickness(12, 0, 12, 12) };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        root.ColumnDefinitions.Add(_gapColumn);
+        root.ColumnDefinitions.Add(_panelColumn);
+        Grid.SetColumnSpan(title, 3);
+        root.Children.Add(title);
+        Grid.SetRow(leftCard, 1);
+        root.Children.Add(leftCard);
+        Grid.SetRow(_panelCard, 1); Grid.SetColumn(_panelCard, 2);
+        root.Children.Add(_panelCard);
+        // A narrow window keeps the room for the app; the panel comes back when it is wide again.
+        root.SizeChanged += (_, _) => LayoutPanel();
+        _shellRoot = root;
+
+        App.Current.Changed += RenderAccount;
+        RenderAccount();
+        LayoutPanel();
+        return root;
+    }
+
+    private Grid? _shellRoot;
+    private UIElement? _titleBar;
+
+    private void LayoutPanel()
+    {
+        var room = _shellRoot is null || _shellRoot.ActualWidth == 0 || _shellRoot.ActualWidth >= 940;
+        var show = _panelWanted && room;
+        _panelColumn.Width = new GridLength(show ? 380 : 0);
+        _gapColumn.Width = new GridLength(show ? 12 : 0);
+        if (_panelCard is not null) _panelCard.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        var tip = _panelWanted ? "Onay panelini gizle" : "Onay panelini göster";
+        ToolTipService.SetToolTip(_panelButton, tip);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_panelButton, tip);
+    }
+
+    private void RenderAccount()
+    {
+        var center = App.Current;
+        if (center.Phase == Phase.SignedIn && center.Me is { } me)
+        {
+            var name = string.IsNullOrWhiteSpace(me.Email) ? me.Name : me.Email!;
+            _accountName.Text = name;
+            _accountDetail.Text = me.OrganizationName ?? "Oturum açık";
+            _avatar.DisplayName = name;
+            _signOutItem.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            _accountName.Text = center.Phase == Phase.Linking ? "Tarayıcıda onay bekleniyor" : "Oturum açılmadı";
+            _accountDetail.Text = "Sağdaki panelden oturum aç";
+            _avatar.DisplayName = "";
+            _signOutItem.Visibility = Visibility.Collapsed;
+        }
+        var pending = center.Phase == Phase.SignedIn ? center.Pending.Count : 0;
+        _panelButton.Content = pending > 0 && !_panelWanted
+            ? new InfoBadge { Value = pending }
+            : new FontIcon { Glyph = "\uE8A0", FontSize = 16 };
+    }
+
+    private async Task SignOutAsync()
+    {
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Content.XamlRoot,
+            Title = "Oturum kapatılsın mı?",
+            Content = new TextBlock { Text = "Bu bilgisayar onay bildirimlerini almayı bırakır. Yeniden açmak için tarayıcıda onay gerekir.", TextWrapping = TextWrapping.Wrap },
+            PrimaryButtonText = "Oturumu kapat",
+            CloseButtonText = "Vazgeç",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        try { await App.Current.SignOutAsync(); }
+        catch (Exception e) { Show(e.Message, InfoBarSeverity.Error); }
+    }
+
+    /// <summary>A new approval request while this window is open: the panel on the right, on its Approvals tab.</summary>
+    public bool ShowApprovals()
+    {
+        if (!AppWindow.IsVisible) return false;
+        _panelWanted = true;
+        LayoutPanel();
+        _panel.SelectApprovals();
+        _panel.Refresh();
+        if (AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter { State: Microsoft.UI.Windowing.OverlappedPresenterState.Minimized } presenter)
+            presenter.Restore();
+        Activate();
+        return true;
+    }
 
     private TabPage? CurrentPage => (_tabs.SelectedItem as TabViewItem)?.Tag as TabPage;
     private TerminalTab? Current => CurrentPage?.Focused ?? CurrentPage?.Panes.FirstOrDefault();
@@ -422,10 +631,10 @@ public sealed class ServersWindow : Window
         {
             // After the click ends, so this window does not take the focus back.
             case "approvals":
-                DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () => App.Current.ShowApprovals());
+                _panelWanted = true; LayoutPanel(); _panel.SelectApprovals();
                 break;
             case "agent":
-                DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () => App.Current.ShowPanel());
+                _panelWanted = true; LayoutPanel(); _panel.SelectDevices();
                 break;
             case "settings":
                 ShowSettings();

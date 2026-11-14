@@ -1045,6 +1045,18 @@ jobs:
             throw "Main window did not show its sections (found: $($found -join ', '))"
           }
           Write-Host "Main window shows: $($found -join ', ')"
+          # A picture of the main window as it opened, to check the design.
+          try {
+            Add-Type -AssemblyName System.Drawing, System.Windows.Forms
+            Start-Sleep -Seconds 2
+            $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $shot = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height
+            $g = [System.Drawing.Graphics]::FromImage($shot)
+            $g.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
+            New-Item -ItemType Directory -Force -Path center-windows\screens | Out-Null
+            $shot.Save((Join-Path (Resolve-Path center-windows\screens) 'main-window.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+            $g.Dispose(); $shot.Dispose()
+          } catch { Write-Host "screenshot failed: $_" }
           # Walk every section and press the terminal tab strip's "+": an error
           # there must never reach users (it once did).
           # Found AND drawn: a collapsed page still has its elements in the
@@ -1149,6 +1161,13 @@ jobs:
           $size = (Get-Item "center-windows\WECOMMANDER-Center-windows-x64.zip").Length
           Write-Host "zip size: $([math]::Round($size / 1MB, 1)) MB"
           if ($size -lt 10MB) { throw "WinUI package is unexpectedly small: $size bytes" }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: WECOMMANDER-Center-windows-screens
+          path: center-windows/screens
+          if-no-files-found: ignore
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         with:
           name: WECOMMANDER-Center-WinUI-windows-x64
