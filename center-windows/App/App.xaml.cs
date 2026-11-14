@@ -391,7 +391,7 @@ public partial class App : Application
         }
     }
 
-    private void Toast(string text) => ShowToast(ToastContent.Simple("WECOMMANDER", text));
+    public void Toast(string text) => ShowToast(ToastContent.Simple("WECOMMANDER", text));
 
     /// <summary>Shows a notification on demand so the owner can see where approvals will appear.</summary>
     public void SendTestNotification() =>

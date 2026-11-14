@@ -107,10 +107,10 @@ public sealed class MonitorFlyout : Window
         return menu;
     }
 
-    public void Toggle()
+    public void Toggle(RectInt32? anchor = null)
     {
         if (AppWindow.IsVisible) Hide();
-        else if (DateTime.UtcNow - _hiddenAt > TimeSpan.FromMilliseconds(400)) ShowPanel();
+        else if (DateTime.UtcNow - _hiddenAt > TimeSpan.FromMilliseconds(400)) ShowPanel(anchor);
     }
 
     public void Hide()
@@ -122,7 +122,8 @@ public sealed class MonitorFlyout : Window
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hwnd);
 
-    public void ShowPanel()
+    /// <param name="anchor">The server box: the panel opens upward from it, left edges aligned. Without it: bottom right, above the clock.</param>
+    public void ShowPanel(RectInt32? anchor = null)
     {
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         var scale = GetDpiForWindow(hwnd) / 96.0;
@@ -131,8 +132,16 @@ public sealed class MonitorFlyout : Window
         var width = Math.Min((int)Math.Round(440 * scale), area.Width - 2 * margin);
         var wanted = (int)Math.Round((96 + Math.Max(1, _monitor.Servers.Count) * 372) * scale);
         var height = Math.Min(wanted, area.Height - 2 * margin);
+        if (anchor is { } box)
+        {
+            var gap = (int)Math.Round(8 * scale);
+            var x = Math.Clamp(box.X, area.X, area.X + area.Width - width);
+            var y = box.Y - gap - height;
+            if (y < area.Y + margin) { height = Math.Max((int)Math.Round(200 * scale), box.Y - gap - area.Y - margin); y = box.Y - gap - height; }
+            AppWindow.MoveAndResize(new RectInt32(x, y, width, height));
+        }
         // Bottom right, just above the taskbar: it opens upward from there.
-        AppWindow.MoveAndResize(new RectInt32(area.X + area.Width - width - margin, area.Y + area.Height - height - margin, width, height));
+        else AppWindow.MoveAndResize(new RectInt32(area.X + area.Width - width - margin, area.Y + area.Height - height - margin, width, height));
         AppWindow.Show();
         Activate();
         Refresh();
