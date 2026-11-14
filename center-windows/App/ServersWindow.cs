@@ -74,7 +74,7 @@ public sealed class ServersWindow : Window
         // See-through like the Windows Start menu: the desktop shows, blurred, behind both halves.
         SystemBackdrop = new DesktopAcrylicBackdrop();
         ExtendsContentIntoTitleBar = true;
-        AppWindow.Resize(new Windows.Graphics.SizeInt32(1240, 800));
+        SizeToScreen();
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "icon.ico"));
 
         _nav.PaneDisplayMode = NavigationViewPaneDisplayMode.Left;
@@ -320,7 +320,8 @@ public sealed class ServersWindow : Window
         root.Children.Add(leftCard);
         Grid.SetRow(_panelCard, 1); Grid.SetColumn(_panelCard, 2);
         root.Children.Add(_panelCard);
-        // A narrow window keeps the room for the app; the panel comes back when it is wide again.
+        // A narrow window keeps the room for the app (its pages need about 860 px);
+        // the panel comes back when the window is wide again.
         root.SizeChanged += (_, _) => LayoutPanel();
         _shellRoot = root;
 
@@ -331,11 +332,31 @@ public sealed class ServersWindow : Window
     }
 
     private Grid? _shellRoot;
+    /// <summary>The app's pages (title, search and action buttons) need about 860 px next to the 380 px panel.</summary>
+    private const double MinWidthWithPanel = 1280;
+
+    /// <summary>First size: room for the app and the panel side by side when the screen has it, centred.</summary>
+    private void SizeToScreen()
+    {
+        try
+        {
+            var area = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(AppWindow.Id, Microsoft.UI.Windowing.DisplayAreaFallback.Primary).WorkArea;
+            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            var scale = GetDpiForWindow(hwnd) / 96.0;
+            var width = Math.Min((int)Math.Round(1640 * scale), area.Width - (int)Math.Round(48 * scale));
+            var height = Math.Min((int)Math.Round(880 * scale), area.Height - (int)Math.Round(48 * scale));
+            AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(area.X + (area.Width - width) / 2, area.Y + (area.Height - height) / 2, width, height));
+        }
+        catch (Exception) { AppWindow.Resize(new Windows.Graphics.SizeInt32(1240, 800)); }
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hwnd);
     private UIElement? _titleBar;
 
     private void LayoutPanel()
     {
-        var room = _shellRoot is null || _shellRoot.ActualWidth == 0 || _shellRoot.ActualWidth >= 940;
+        var room = _shellRoot is null || _shellRoot.ActualWidth == 0 || _shellRoot.ActualWidth >= MinWidthWithPanel;
         var show = _panelWanted && room;
         _panelColumn.Width = new GridLength(show ? 380 : 0);
         _gapColumn.Width = new GridLength(show ? 12 : 0);
