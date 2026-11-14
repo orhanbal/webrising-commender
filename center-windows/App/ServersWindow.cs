@@ -80,7 +80,7 @@ public sealed class ServersWindow : Window
         _nav.PaneDisplayMode = NavigationViewPaneDisplayMode.Left;
         _nav.IsBackButtonVisible = NavigationViewBackButtonVisible.Collapsed;
         _nav.IsSettingsVisible = false;
-        _nav.PaneTitle = "WECOMMANDER";
+        _nav.PaneTitle = ""; // the title bar already says WECOMMANDER
         _nav.OpenPaneLength = 240;
         _terminalsItem.InfoBadge = _terminalsBadge;
         _nav.MenuItems.Add(_hostsItem);
@@ -210,15 +210,6 @@ public sealed class ServersWindow : Window
 
     private static Brush Res(string key) => (Brush)Application.Current.Resources[key];
 
-    /// <summary>A half of the window: a rounded, slightly lighter card over the see-through background.</summary>
-    private static Border Card(UIElement child) => new()
-    {
-        Child = child,
-        CornerRadius = new CornerRadius(8),
-        BorderThickness = new Thickness(1),
-        Background = Res("LayerFillColorDefaultBrush"),
-        BorderBrush = Res("CardStrokeColorDefaultBrush"),
-    };
 
     private static Button BarButton(string glyph, string tip)
     {
@@ -320,14 +311,14 @@ public sealed class ServersWindow : Window
         left.Children.Add(app);
         Grid.SetRow(bar, 1);
         left.Children.Add(bar);
-        var leftCard = Card(left);
-
-        var root = new Grid { Padding = new Thickness(12, 0, 12, 12) };
+        // The app fills the window itself (no card inside it: that looked like
+        // an app inside an app).
+        var root = new Grid();
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.Children.Add(title);
-        Grid.SetRow(leftCard, 1);
-        root.Children.Add(leftCard);
+        Grid.SetRow(left, 1);
+        root.Children.Add(left);
 
         App.Current.Changed += RenderAccount;
         RenderAccount();
