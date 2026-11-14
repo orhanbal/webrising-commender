@@ -119,7 +119,7 @@ public sealed class DeskChip : Window
         ToolTipService.SetToolTip(_root, "Tıkla: Sunucularım · Sürükle: taşı · Sağ tık: ayarlar");
         Content = _root;
 
-        _monitor.Changed += Refresh;
+        _monitor.Changed += () => { try { Refresh(); } catch (Exception e) { App.LogCrash(e); } };
         _timer.Tick += (_, _) => Watch();
         _timer.Start();
         Refresh();

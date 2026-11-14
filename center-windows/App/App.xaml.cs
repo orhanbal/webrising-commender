@@ -276,7 +276,9 @@ public partial class App : Application
         BuildTray();
         Servers.Changed += () => _ui.TryEnqueue(() => { UpdateServersMenu(); RequestLibrarySync(); });
         Servers.Start();
-        StartMonitor();
+        // Nothing optional may stop the start (a monitor icon error once left
+        // the app without its window, agent and sync).
+        try { StartMonitor(); } catch (Exception e) { LogCrash(e); ReportError(e); }
         StartEmbeddedAgent();
 
         var activation = AppInstance.GetCurrent().GetActivatedEventArgs();
