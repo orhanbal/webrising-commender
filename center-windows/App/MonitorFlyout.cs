@@ -33,7 +33,9 @@ public sealed class MonitorFlyout : Window
         Title = "WECOMMANDER Sunucularım";
         SystemBackdrop = new DesktopAcrylicBackdrop();
         AppWindow.IsShownInSwitchers = false;
-        ExtendsContentIntoTitleBar = true;
+        // No title bar at all (the presenter removes it). Extending content into
+        // it made the top ~32 px a drag area that swallowed clicks there.
+        ExtendsContentIntoTitleBar = false;
         if (AppWindow.Presenter is OverlappedPresenter p)
         {
             p.IsResizable = false;

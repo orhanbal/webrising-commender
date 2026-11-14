@@ -51,7 +51,9 @@ public sealed class DeskChip : Window
         _monitor = monitor;
         Title = "WECOMMANDER Sunucu kutusu";
         SystemBackdrop = new DesktopAcrylicBackdrop();
-        ExtendsContentIntoTitleBar = true;
+        // No title bar at all (the presenter removes it). Extending content into
+        // it made the top ~32 px a drag area that swallowed clicks there.
+        ExtendsContentIntoTitleBar = false;
         AppWindow.IsShownInSwitchers = false; // no taskbar button, not in Alt+Tab
         if (AppWindow.Presenter is OverlappedPresenter p)
         {
