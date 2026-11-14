@@ -198,6 +198,12 @@ public sealed partial class MainWindow : Window
             var current = Center.AppBuild is { } b ? "0.1." + b : Center.AgentVersion ?? "geliştirici sürümü";
             AgentVersionText.Text = "Sürüm: " + current + (update ? $" · yeni sürüm: 0.1.{Center.LatestAppBuild}" : Center.LatestAppBuild is not null ? " · güncel" + (Center.LastReleaseRead is { } read ? $" (son denetim {read:HH:mm})" : "") : "");
             AgentUpdateButton.Content = update ? "Yeni sürüm var — Uygulamayı güncelle" : "Güncellemeleri denetle";
+            if (Packaging.IsPackaged)
+            {
+                AgentVersionText.Text = "Sürüm: " + current + " · güncellemeler Microsoft Store'dan gelir";
+                AgentUpdateButton.Content = "Microsoft Store'da aç";
+                update = false;
+            }
         }
         else
         {

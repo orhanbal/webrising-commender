@@ -29,7 +29,8 @@ public static class Program
     private static int Main(string[] args)
     {
         // Must run before any window or notification API is touched.
-        _ = SetCurrentProcessExplicitAppUserModelID(AppUserModelId);
+        // The Store copy has its package's identity; only the zip copy names itself.
+        if (!Packaging.IsPackaged) _ = SetCurrentProcessExplicitAppUserModelID(AppUserModelId);
         WinRT.ComWrappersSupport.InitializeComWrappers();
         var main = AppInstance.FindOrRegisterForKey("wecommander-center");
         if (!main.IsCurrent)

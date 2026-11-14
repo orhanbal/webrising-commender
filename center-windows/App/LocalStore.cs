@@ -55,11 +55,14 @@ internal static class LocalStore
     {
         get
         {
+            if (Packaging.IsPackaged) return Packaging.StartsWithWindows();
             using var key = Registry.CurrentUser.OpenSubKey(RunKey);
             return key?.GetValue(RunName) is string value && value.Contains(Environment.ProcessPath ?? "\u0000", StringComparison.OrdinalIgnoreCase);
         }
         set
         {
+            // The Store copy cannot use the Run key: its startup task does it.
+            if (Packaging.IsPackaged) { _ = Packaging.SetStartsWithWindows(value); return; }
             using var key = Registry.CurrentUser.CreateSubKey(RunKey);
             if (value) key.SetValue(RunName, $"\"{Environment.ProcessPath}\" --hidden");
             else key.DeleteValue(RunName, throwOnMissingValue: false);
