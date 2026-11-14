@@ -41,6 +41,8 @@ public sealed class Settings
     [JsonPropertyName("terminalTheme")] public string TerminalTheme { get; set; } = "dark";
     /// <summary>Saved hosts watched from the taskbar (live icon and panel).</summary>
     [JsonPropertyName("watchedHosts")] public List<string> WatchedHosts { get; set; } = [];
+    /// <summary>The owner picked what the taskbar monitor watches (until then it watches the first saved servers by itself).</summary>
+    [JsonPropertyName("watchChosen")] public bool WatchChosen { get; set; }
 }
 
 public sealed class SettingsStore(string directory)

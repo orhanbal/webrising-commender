@@ -305,6 +305,9 @@ public sealed class ServersWindow : Window
         powerMenu.Items.Add(hide);
         powerMenu.Items.Add(quit);
         power.Flyout = powerMenu;
+        var monitor = BarButton("\uE9D9", "Sunucularım (görev çubuğu izleyicisi)");
+        monitor.Click += (_, _) => App.Current.ToggleMonitorPanel();
+        actions.Children.Add(monitor);
         actions.Children.Add(_panelButton);
         actions.Children.Add(settings);
         actions.Children.Add(power);
