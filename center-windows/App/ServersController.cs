@@ -169,6 +169,14 @@ public sealed class ServersController : IDisposable
         tab.Closed = true;
     }
 
+    /// <summary>A connection to a saved host without a terminal (taskbar monitor); its id works as a sessionId.</summary>
+    public Task<string> OpenMonitor(string hostId) => Core.CallAsync<string>("monitor.open", new { hostId });
+
+    public async Task CloseMonitor(string monitorId)
+    {
+        try { await Core.CallAsync("monitor.close", new { monitorId }); } catch (Exception) { }
+    }
+
     /// <summary>Server management (server.* in the core) for an SSH terminal.</summary>
     public Task<T> Server<T>(string method, object parameters) => Core.CallAsync<T>(method, parameters);
 

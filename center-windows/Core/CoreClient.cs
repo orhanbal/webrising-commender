@@ -181,6 +181,9 @@ public static class CoreText
     public static string Turkish(string text)
     {
         if (text == CoreException.Stopped) return "Uygulama çekirdeği çalışmıyor.";
+        if (text.Contains("no saved credential; connect to it once")) return "Kayıtlı giriş bilgisi yok: bu sunucuya bir kez terminalden bağlan ve giriş bilgisini kaydet.";
+        if (text.Contains("approve its host key")) return "Bu sunucuya önce bir kez terminalden bağlanıp sunucu anahtarını onayla.";
+        if (text == "monitor closed") return "Bağlantı koptu; yeniden bağlanılıyor.";
         if (text.Contains("no saved credential")) return "Bu sunucu için kayıtlı giriş bilgisi yok; bir kez gir.";
         if (text.Contains("authentication failed")) return AuthFailed(text);
         if (text.Contains("private key could not be used")) return "Özel anahtar okunamadı (biçim veya anahtar parolası yanlış).";

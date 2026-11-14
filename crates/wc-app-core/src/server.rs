@@ -27,10 +27,43 @@ R=; if [ "$(id -u)" = 0 ]; then R=root; elif sudo -n true 2>/dev/null; then R=su
 r() { if [ "$R" = sudo ]; then sudo -n "$@"; else "$@"; fi; }
 "#;
 
+/// The SSH connection of a terminal, or of a monitor (gauge) opened with
+/// [`monitor_open`]: every server.* call works on either.
 fn connection(state: &AppState, session_id: &str) -> Result<Arc<Connection>, String> {
+    if let Some(m) = state.monitors.lock().map_err(|_| "busy")?.get(session_id) {
+        if m.connection.is_closed() {
+            return Err("monitor closed".into());
+        }
+        return Ok(m.connection.clone());
+    }
     let terminals = state.terminals.lock().map_err(|_| "busy")?;
     let t = terminals.get(session_id).ok_or("terminal closed")?;
     t.connection.clone().ok_or_else(|| NOT_SSH.to_owned())
+}
+
+/// Connects to saved host `host_id` without a terminal (saved credential
+/// or this computer's SSH keys; nothing is asked) and returns an id that
+/// server.* calls take as `sessionId`.
+pub async fn monitor_open(state: &Arc<AppState>, host_id: String) -> Result<String, String> {
+    let (conn, jump) = crate::connect_quietly(state, &host_id).await?;
+    let id = format!("monitor-{}", uuid::Uuid::new_v4());
+    state.monitors.lock().map_err(|_| "busy")?.insert(
+        id.clone(),
+        crate::Monitor {
+            connection: Arc::new(conn),
+            _jump: jump,
+        },
+    );
+    Ok(id)
+}
+
+pub fn monitor_close(state: &Arc<AppState>, monitor_id: String) -> Result<(), String> {
+    state
+        .monitors
+        .lock()
+        .map_err(|_| "busy")?
+        .remove(&monitor_id);
+    Ok(())
 }
 
 fn quote(s: &str) -> String {
@@ -454,6 +487,10 @@ pub struct Sample {
     /// Bytes read and written by the disks (whole disks only).
     pub disk_read_bytes: u64,
     pub disk_write_bytes: u64,
+    /// The root disk (`/`).
+    pub root_used_kb: u64,
+    pub root_avail_kb: u64,
+    pub zombies: u32,
 }
 
 const SAMPLE: &str = "echo @@up; cat /proc/uptime
@@ -462,6 +499,8 @@ echo @@load; cat /proc/loadavg
 echo @@mem; grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo
 echo @@net; tail -n +3 /proc/net/dev
 echo @@io; cat /proc/diskstats
+echo @@df; df -Pk / 2>/dev/null | tail -1
+echo @@z; ps -eo stat= | grep -c '^Z'
 ";
 
 fn real_nic(name: &str) -> bool {
@@ -534,6 +573,12 @@ fn parse_sample(text: &str) -> Sample {
             out.net_tx_bytes += f[8];
         }
     }
+    let df: Vec<&str> = first(&s, "df").split_whitespace().collect();
+    if df.len() >= 4 {
+        out.root_used_kb = df[2].parse().unwrap_or(0);
+        out.root_avail_kb = df[3].parse().unwrap_or(0);
+    }
+    out.zombies = first(&s, "z").parse().unwrap_or(0);
     for line in s.get("io").into_iter().flatten() {
         let f: Vec<&str> = line.split_whitespace().collect();
         if f.len() >= 10 && whole_disk(f[2]) {
@@ -1457,7 +1502,10 @@ mod tests {
     #[test]
     fn scripts_run_on_a_real_linux_shell() {
         let sm = parse_sample(&local(SAMPLE));
-        assert!(sm.cpu_total > 0 && sm.mem_total_kb > 0, "{sm:?}");
+        assert!(
+            sm.cpu_total > 0 && sm.mem_total_kb > 0 && sm.root_used_kb > 0,
+            "{sm:?}"
+        );
         let o = parse_overview(&local(OVERVIEW));
         assert!(
             o.cpus >= 1 && o.mem_total_kb > 0 && o.uptime_secs > 0,
