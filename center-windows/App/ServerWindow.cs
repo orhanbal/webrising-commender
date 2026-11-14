@@ -175,12 +175,41 @@ public sealed class ServerWindow : Window
 
     // ---- building blocks ----
 
-    private static UIElement Waiting(string text)
+    /// <summary>Waiting for the server: a moving bar and the seconds so far, in a card (not a lone spinner).</summary>
+    private UIElement Waiting(string text)
     {
-        var p = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Margin = new Thickness(0, 24, 0, 0) };
-        p.Children.Add(new ProgressRing { IsActive = true, Width = 20, Height = 20 });
-        p.Children.Add(new TextBlock { Text = text, Foreground = Secondary, VerticalAlignment = VerticalAlignment.Center });
-        return p;
+        var card = new StackPanel { Spacing = 12, MaxWidth = 560, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 24, 0, 0) };
+        card.Children.Add(new TextBlock { Text = text, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
+        card.Children.Add(new ProgressBar { IsIndeterminate = true, MinWidth = 420 });
+        var elapsed = new TextBlock { Foreground = Secondary, FontSize = 12, Text = "0 sn" };
+        card.Children.Add(elapsed);
+        var started = DateTime.UtcNow;
+        var timer = DispatcherQueue.CreateTimer();
+        timer.Interval = TimeSpan.FromSeconds(1);
+        timer.Tick += (_, _) =>
+        {
+            if (card.XamlRoot is null && (DateTime.UtcNow - started).TotalSeconds > 2) { timer.Stop(); return; }
+            elapsed.Text = $"{(int)(DateTime.UtcNow - started).TotalSeconds} sn";
+        };
+        timer.Start();
+        return Card(card);
+    }
+
+    /// <summary>Moves a bar to a new value smoothly (not in a jump).</summary>
+    private static void AnimateTo(ProgressBar bar, double value, int ms = 600)
+    {
+        var animation = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
+        {
+            To = value,
+            Duration = TimeSpan.FromMilliseconds(ms),
+            EnableDependentAnimation = true,
+            EasingFunction = new Microsoft.UI.Xaml.Media.Animation.CubicEase { EasingMode = Microsoft.UI.Xaml.Media.Animation.EasingMode.EaseOut },
+        };
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(animation, bar);
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(animation, "Value");
+        var story = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
+        story.Children.Add(animation);
+        story.Begin();
     }
 
     private static TextBlock Heading(string text) => new()
@@ -580,18 +609,136 @@ public sealed class ServerWindow : Window
         return page;
     }
 
+    /// <summary>
+    /// Cleans the chosen items one by one and shows it happening: an overall
+    /// bar that fills by the space freed, the disk going down, and each item
+    /// waiting, working, done or failed.
+    /// </summary>
     private async Task RunCleanup(List<CleanupItem> chosen)
     {
+        var generation = ++_generation;
+        _live?.Stop();
         var before = await RootFree();
-        _scroll.Content = Waiting("Temizleniyor…");
+        var size = (await RootSize()) ?? 0;
+        var totalKb = Math.Max(1m, chosen.Sum(c => (decimal)c.Kb));
+
+        var page = new StackPanel { Spacing = 16 };
+        page.Children.Add(new TextBlock { Text = "Temizleniyor", Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] });
+        var head = new Grid();
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var step = new TextBlock { FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
+        var percent = new TextBlock { FontSize = 28, FontWeight = FontWeights.SemiBold, Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"] };
+        head.Children.Add(step);
+        Grid.SetColumn(percent, 1);
+        head.Children.Add(percent);
+        var overall = new ProgressBar { Maximum = 100, Height = 10, CornerRadius = new CornerRadius(5) };
+        var freedText = new TextBlock { Foreground = Secondary };
+        var top = new StackPanel { Spacing = 8 };
+        top.Children.Add(head);
+        top.Children.Add(overall);
+        top.Children.Add(freedText);
+        // The disk of / before and now, going down as items are cleaned.
+        TextBlock? diskNow = null;
+        ProgressBar? diskBar = null;
+        if (before is { } free0 && size > 0)
+        {
+            var used0 = (size - free0) * 100.0 / size;
+            var diskRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Margin = new Thickness(0, 8, 0, 0) };
+            diskRow.Children.Add(new TextBlock { Text = "Disk /", FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+            diskRow.Children.Add(new TextBlock { Text = $"%{used0:0}", FontSize = 20, Foreground = new SolidColorBrush(Charts.Level(used0)), VerticalAlignment = VerticalAlignment.Center });
+            diskRow.Children.Add(new TextBlock { Text = "→", FontSize = 20, Foreground = Secondary, VerticalAlignment = VerticalAlignment.Center });
+            diskNow = new TextBlock { Text = $"%{used0:0}", FontSize = 20, FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(Charts.Level(used0)), VerticalAlignment = VerticalAlignment.Center };
+            diskRow.Children.Add(diskNow);
+            top.Children.Add(diskRow);
+            diskBar = new ProgressBar { Maximum = 100, Value = used0, Height = 6 };
+            top.Children.Add(diskBar);
+        }
+        page.Children.Add(Card(top));
+
+        var rows = new StackPanel { Spacing = 10 };
+        var states = new List<(CleanupItem Item, ContentControl State, TextBlock Note, ProgressBar Bar)>();
+        foreach (var item in chosen)
+        {
+            var row = new Grid { ColumnSpacing = 12 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var state = new ContentControl { Content = new FontIcon { Glyph = "\uE823", FontSize = 16, Foreground = Secondary }, VerticalAlignment = VerticalAlignment.Center };
+            row.Children.Add(state);
+            var text = new StackPanel { Spacing = 4 };
+            text.Children.Add(new TextBlock { Text = item.Title, FontWeight = FontWeights.SemiBold });
+            var note = new TextBlock { Text = "Sırada", Foreground = Secondary, FontSize = 12 };
+            text.Children.Add(note);
+            var bar = new ProgressBar { IsIndeterminate = true, Visibility = Visibility.Collapsed };
+            text.Children.Add(bar);
+            Grid.SetColumn(text, 1);
+            row.Children.Add(text);
+            var amount = new TextBlock { Text = Sizes.Kb(item.Kb), FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(amount, 2);
+            row.Children.Add(amount);
+            rows.Children.Add(row);
+            states.Add((item, state, note, bar));
+        }
+        page.Children.Add(Card(rows));
+        _scroll.Content = page;
+
+        decimal doneKb = 0;
+        var results = new List<CleanupResult>();
+        void Overall(string text)
+        {
+            var value = (double)(doneKb * 100 / totalKb);
+            step.Text = text;
+            percent.Text = $"%{value:0}";
+            AnimateTo(overall, value);
+            freedText.Text = $"{Sizes.Kb((ulong)doneKb)} / {Sizes.Kb((ulong)totalKb)} temizlendi";
+        }
+        Overall("Başlıyor…");
         try
         {
-            var results = await _c.Server<List<CleanupResult>>("server.cleanupRun", new { sessionId = _sessionId, ids = chosen.Select(c => c.Id).ToList() });
+            for (var i = 0; i < states.Count; i++)
+            {
+                var (item, state, note, bar) = states[i];
+                state.Content = new ProgressRing { IsActive = true, Width = 18, Height = 18 };
+                note.Text = "Temizleniyor…";
+                bar.Visibility = Visibility.Visible;
+                Overall($"{i + 1}/{states.Count} · {item.Title}");
+                CleanupResult result;
+                try
+                {
+                    var one = await _c.Server<List<CleanupResult>>("server.cleanupRun", new { sessionId = _sessionId, ids = new List<string> { item.Id } });
+                    result = one.FirstOrDefault() ?? new CleanupResult(item.Id, false, "yanıt yok");
+                }
+                catch (Exception ex) { result = new CleanupResult(item.Id, false, Friendly(ex)); }
+                results.Add(result);
+                bar.Visibility = Visibility.Collapsed;
+                state.Content = new FontIcon
+                {
+                    Glyph = result.Ok ? "\uE73E" : "\uE783",
+                    FontSize = 16,
+                    Foreground = (Brush)Application.Current.Resources[result.Ok ? "SystemFillColorSuccessBrush" : "SystemFillColorCriticalBrush"],
+                };
+                note.Text = result.Ok ? "Temizlendi" : "Temizlenemedi" + (string.IsNullOrEmpty(result.Message) ? "" : ": " + result.Message);
+                doneKb += item.Kb;
+                Overall(i + 1 < states.Count ? $"{i + 1}/{states.Count} tamam" : "Bitti");
+                // The disk going down as it happens.
+                if (diskNow is not null && diskBar is not null && size > 0 && await RootFree() is { } freeNow)
+                {
+                    var usedNow = (size - freeNow) * 100.0 / size;
+                    diskNow.Text = $"%{usedNow:0}";
+                    diskNow.Foreground = new SolidColorBrush(Charts.Level(usedNow));
+                    AnimateTo(diskBar, usedNow);
+                }
+            }
+            if (generation != _generation) return;
             var after = await RootFree();
             var failed = results.Where(r => !r.Ok).ToList();
             var freed = before is { } b && after is { } a && a > b ? $" {Sizes.Kb(a - b)} yer açıldı." : "";
             if (failed.Count == 0) Show("Temizlik tamamlandı." + freed, InfoBarSeverity.Success);
             else Show($"Bazı kalemler temizlenemedi: {string.Join("; ", failed.Select(f => chosen.First(c => c.Id == f.Id).Title + (string.IsNullOrEmpty(f.Message) ? "" : $" ({f.Message})")))}." + freed, InfoBarSeverity.Warning);
+            // The finished list stays a moment, then the new scan.
+            await Task.Delay(1500);
+            if (generation != _generation) return;
             var message = _info.Message; var severity = _info.Severity;
             await Load();
             Show(message, severity);
@@ -601,6 +748,17 @@ public sealed class ServerWindow : Window
             await Load();
             Show(Friendly(ex), InfoBarSeverity.Error);
         }
+    }
+
+    /// <summary>Size of / (KB), for the disk bar while cleaning.</summary>
+    private async Task<double?> RootSize()
+    {
+        try
+        {
+            var o = await _c.Server<ServerOverview>("server.overview", new { sessionId = _sessionId });
+            return o.Disks.FirstOrDefault(d => d.Mount == "/") is { } d ? (double)(d.UsedKb + d.AvailKb) : null;
+        }
+        catch (Exception) { return null; }
     }
 
     /// <summary>Free space on / (KB), for "N GB freed".</summary>
