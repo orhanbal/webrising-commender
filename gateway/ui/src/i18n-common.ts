@@ -298,5 +298,12 @@ export const commonEnglish:Record<string,string> = {
   "Bu alana yalnızca yetkili platform yöneticileri erişebilir.": "Only authorised platform administrators can access this area.",
   "Çalışma Alanları": "Workspaces",
   "Çıkış Yap": "Sign out",
-  "ile bağlantı": "connection"
+  "ile bağlantı": "connection",
+  "Yeni özellikler, ipuçları ve kampanyalar e-postayla gelsin. İstediğin zaman abonelikten çıkabilirsin.": "Email me new features, tips and offers. You can unsubscribe at any time.",
+  "Ürün haberleri e-postayla gelecek.": "You will receive product news by email.",
+  "Pazarlama e-postalarından çıktın.": "You unsubscribed from marketing email.",
+  "E-posta tercihleri": "Email preferences",
+  "Hesap ve güvenlik e-postaları her zaman gelir.": "Account and security emails always arrive.",
+  "Ürün haberleri ve kampanyalar": "Product news and offers",
+  "Yeni özellikler, ipuçları ve indirimler. Ayda birkaç e-postayı geçmez.": "New features, tips and discounts. No more than a few emails a month."
 };

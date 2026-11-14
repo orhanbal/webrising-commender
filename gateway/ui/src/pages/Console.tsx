@@ -8,6 +8,7 @@ import {LegalEditor} from "./LegalEditor";
 import {SystemStatus} from "./SystemStatus";
 import {MediaLibrary} from "./MediaLibrary";
 import {Marketing} from "./Marketing";
+import {EmailCampaigns} from "./EmailCampaigns";
 import {ConsoleUserDetail} from "./ConsoleUserDetail";
 import {consoleText} from "../console-text";
 import {LanguageSwitcher,t as translate,useLocale} from "../i18n";
@@ -23,7 +24,7 @@ const faqPairs:Array<{question:string;answer:string}>=Array.from({length:Math.fl
  question:String(faqCopy[2+i*2]??""),answer:String(faqCopy[3+i*2]??""),
 })).filter(item=>item.question.length>0&&item.answer.length>0);
 
-const routes:Record<string,string>={Overview:"/console",Users:"/console/users",Organizations:"/console/organizations",Devices:"/console/devices",Operations:"/console/operations","Messages & surveys":"/console/marketing","Landing CMS":"/console/landing",Billing:"/console/billing",System:"/console/system",Brand:"/console/brand","Legal CMS":"/console/legal"};
+const routes:Record<string,string>={Overview:"/console",Users:"/console/users",Organizations:"/console/organizations",Devices:"/console/devices",Operations:"/console/operations","Messages & surveys":"/console/marketing","Email campaigns":"/console/email","Landing CMS":"/console/landing",Billing:"/console/billing",System:"/console/system",Brand:"/console/brand","Legal CMS":"/console/legal"};
 const sectionDescriptions:Record<string,string>={
  Overview:"Platform-wide counts from the production database.",
  Users:"Search accounts, open details and sessions, and disable or enable access. Changes need your password and are audited.",
@@ -31,6 +32,7 @@ const sectionDescriptions:Record<string,string>={
  Devices:"Every enrolled device across workspaces, with status and last contact.",
  Operations:"Audit trail of workspace and platform activity, filterable by source and risk.",
  "Messages & surveys":"In-app surveys, announcements and tips, and what people answered.",
+ "Email campaigns":"Product news by email to people who opted in, with one-click unsubscribe.",
  "Landing CMS":"Edit the public landing copy, media and search metadata per language.",
  Billing:"Plans, prices and customer subscription requests.",
  System:"Live operational counters and incident triage.",
@@ -323,7 +325,7 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
   {title:"",items:[{label:"Overview",icon:LayoutDashboard}]},
   {title:"Customers",items:[{label:"Users",icon:Users},{label:"Organizations",icon:Building2},{label:"Devices",icon:Monitor},{label:"Billing",icon:CreditCard}]},
   {title:"Monitoring",items:[{label:"Operations",icon:Activity},{label:"System",icon:Settings2}]},
-  {title:"Marketing",items:[{label:"Messages & surveys",icon:Megaphone},{label:"Landing CMS",icon:FileText},{label:"Brand",icon:ImageIcon}]},
+  {title:"Marketing",items:[{label:"Messages & surveys",icon:Megaphone},{label:"Email campaigns",icon:Mail},{label:"Landing CMS",icon:FileText},{label:"Brand",icon:ImageIcon}]},
   {title:"Website",items:[{label:"Legal CMS",icon:Scale}]},
  ];
  const limitLabel=(k:string)=>ui(({maxDevices:"Maximum devices",maxMembers:"Maximum members",maxApiTokens:"Maximum API tokens",monthlyToolCalls:"Monthly tool calls"} as Record<string,string>)[k]??k);
@@ -453,7 +455,7 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
     </div>
     <main className="dash-content">
       <PageHeader className="mb-6" title={ui(section==="Overview"?"Platform Overview":section)} description={ui(sectionDescriptions[section]??"Platform-wide counts from the production database.")}/>
-      {section==="Messages & surveys"?<Marketing/>:section==="Legal CMS"?<LegalEditor/>:section==="Brand"?<div className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-6 max-w-3xl"><h2 className="text-xl font-bold mb-3">{ui("Brand assets")}</h2><p className="muted text-sm mb-5">{ui("Upload PNG or WebP images up to 500 KB, or SVG up to 250 KB (converted to PNG), for dark/light logos and favicon. Original assets remain until replaced.")}</p><label className="block text-sm font-semibold mb-2">{ui("Asset")}</label><select className="w-full bg-[var(--input)] border border-[var(--stroke)] rounded-xl p-3 mb-5" value={brandKind} onChange={e=>{setBrandKind(e.target.value as "logo_light"|"logo_dark"|"favicon");setBrandImage("")}}><option value="logo_light">{ui("Logo displayed on dark background")}</option><option value="logo_dark">{ui("Logo displayed on light background")}</option><option value="favicon">{ui("Favicon")}</option></select><img src={"/api/public/brand/"+brandKind} alt="Current brand asset" className="w-auto max-w-[230px] max-h-[90px] object-contain p-3 rounded-xl bg-neutral-500/20 mb-5"/><label className="block text-sm font-semibold mb-2">{ui("Replacement image")}</label><input type="file" accept="image/png,image/webp,image/svg+xml,.svg" onChange={e=>readBrand(e.target.files?.[0])} className="block w-full text-sm mb-4"/>{brandImage&&<img src={brandImage} alt="Selected asset preview" className="max-h-[120px] max-w-[270px] object-contain p-3 bg-neutral-500/20 rounded-xl mb-5"/>}<label className="block text-sm font-semibold mb-2">{ui("Current administrator password")}</label><input type="password" autoComplete="current-password" value={brandPassword} onChange={e=>setBrandPassword(e.target.value)} className="w-full bg-[var(--input)] border border-[var(--stroke)] rounded-xl p-3 mb-4"/><button className="rounded-xl bg-[var(--accent)] text-[var(--accent-ink)] px-6 py-3 font-bold disabled:opacity-50" disabled={brandBusy||brandPassword.length<12||!brandImage} onClick={()=>void uploadBrand()}>{ui("Upload asset")}</button><p className="mt-3 text-sm" role="status">{brandError}</p></div>:section==="Billing"?<div className="grid gap-5">
+      {section==="Messages & surveys"?<Marketing/>:section==="Email campaigns"?<EmailCampaigns/>:section==="Legal CMS"?<LegalEditor/>:section==="Brand"?<div className="rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-6 max-w-3xl"><h2 className="text-xl font-bold mb-3">{ui("Brand assets")}</h2><p className="muted text-sm mb-5">{ui("Upload PNG or WebP images up to 500 KB, or SVG up to 250 KB (converted to PNG), for dark/light logos and favicon. Original assets remain until replaced.")}</p><label className="block text-sm font-semibold mb-2">{ui("Asset")}</label><select className="w-full bg-[var(--input)] border border-[var(--stroke)] rounded-xl p-3 mb-5" value={brandKind} onChange={e=>{setBrandKind(e.target.value as "logo_light"|"logo_dark"|"favicon");setBrandImage("")}}><option value="logo_light">{ui("Logo displayed on dark background")}</option><option value="logo_dark">{ui("Logo displayed on light background")}</option><option value="favicon">{ui("Favicon")}</option></select><img src={"/api/public/brand/"+brandKind} alt="Current brand asset" className="w-auto max-w-[230px] max-h-[90px] object-contain p-3 rounded-xl bg-neutral-500/20 mb-5"/><label className="block text-sm font-semibold mb-2">{ui("Replacement image")}</label><input type="file" accept="image/png,image/webp,image/svg+xml,.svg" onChange={e=>readBrand(e.target.files?.[0])} className="block w-full text-sm mb-4"/>{brandImage&&<img src={brandImage} alt="Selected asset preview" className="max-h-[120px] max-w-[270px] object-contain p-3 bg-neutral-500/20 rounded-xl mb-5"/>}<label className="block text-sm font-semibold mb-2">{ui("Current administrator password")}</label><input type="password" autoComplete="current-password" value={brandPassword} onChange={e=>setBrandPassword(e.target.value)} className="w-full bg-[var(--input)] border border-[var(--stroke)] rounded-xl p-3 mb-4"/><button className="rounded-xl bg-[var(--accent)] text-[var(--accent-ink)] px-6 py-3 font-bold disabled:opacity-50" disabled={brandBusy||brandPassword.length<12||!brandImage} onClick={()=>void uploadBrand()}>{ui("Upload asset")}</button><p className="mt-3 text-sm" role="status">{brandError}</p></div>:section==="Billing"?<div className="grid gap-5">
  <Panel flush title={ui("Plans")} description={ui("Limits per plan. Prices live in Paddle.")}>
   {!billing?<p className="muted px-5 pb-5 text-sm">{ui("Loading…")}</p>:<AdminTable rowKey={r=>String(r.key)} rows={billing.plans} columns={[
    {key:"plan",label:ui("Plan"),render:r=><div><div className="font-medium">{String(r.name)}</div><code className="font-mono text-[11px] text-[var(--faint)]">{String(r.key)}</code></div>},

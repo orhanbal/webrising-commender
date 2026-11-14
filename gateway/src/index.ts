@@ -38,6 +38,7 @@ import { db, housekeeping, migrate, ready } from "./db.js";
 import { getPublicPlans, publicPaddleConfig, createPaddleCheckout, createPaddlePortal, consumePaddleWebhook, syncPlanCatalog } from "./paddle.js";
 import { getDownloads } from "./downloads.js";
 import { scrubUserPaths } from "./scrub.js";
+import { audienceSize, emailAudienceSchema, emailSchema, listEmails, saveEmail, sendEmail, sendTestEmail, setMarketingConsent, validUnsubscribe } from "./marketing-email.js";
 import { campaignResults, campaignSchema, listCampaigns, nextMessage, PLATFORMS, recordResponse, responseSchema, saveCampaign } from "./marketing.js";
 import { installRoute } from "./install-scripts.js";
 import { createDeviceLink, getDeviceLinkStatus, approveDeviceLink } from "./device-link.js";
@@ -147,6 +148,7 @@ const resetIpRateLimit = new FixedWindowRateLimiter();
 const resetEmailRateLimit = new FixedWindowRateLimiter();
 const resetConfirmIpRateLimit = new FixedWindowRateLimiter();
 const resetTokenRateLimit = new FixedWindowRateLimiter();
+const unsubscribeRateLimit = new FixedWindowRateLimiter();
 const trustProxyHeaders = /^(1|true|yes)$/i.test(String(process.env.TRUST_PROXY_HEADERS || ""));
 
 await migrate();
@@ -431,7 +433,7 @@ async function serveBrandSvg(res: ServerResponse, fileName: string) {
 
 const modernPages = new Set([
   "/", "/features", "/how-it-works", "/login", "/register", "/forgot-password", "/verify",
-  "/reset-password", "/pricing", "/checkout", "/install", "/console", "/console/users", "/console/organizations", "/console/devices", "/console/operations", "/console/landing", "/console/billing", "/console/system", "/console/brand", "/console/legal", "/dashboard", "/account", "/billing",
+  "/reset-password", "/pricing", "/checkout", "/install", "/console", "/console/users", "/console/organizations", "/console/devices", "/console/operations", "/console/landing", "/console/billing", "/console/system", "/console/brand", "/console/legal", "/console/marketing", "/console/email", "/unsubscribe", "/dashboard", "/account", "/billing",
   "/devices", "/terminal", "/files", "/tasks", "/mcp", "/usage", "/approvals", "/team", "/audit", "/invite",
   "/privacy", "/terms", "/refund",
   ...contentPagePaths,
@@ -1035,6 +1037,30 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       });
     }
 
+    // Marketing mail: unsubscribe from the link in the mail (the /unsubscribe
+    // page posts here) or with the mail client's one-click button (RFC 8058).
+    if (req.method === "POST" && url.pathname === "/api/unsubscribe") {
+      const rate = unsubscribeRateLimit.hit(remoteKey(req), 60, 60 * 60_000);
+      if (!rate.allowed) {
+        res.setHeader("Retry-After", String(rate.retryAfterSeconds));
+        return void json(res, 429, { error: "rate_limited" });
+      }
+      const userId = url.searchParams.get("u") ?? "";
+      const digest = url.searchParams.get("t") ?? "";
+      if (!z.string().uuid().safeParse(userId).success || !validUnsubscribe(userId, digest)) {
+        return void json(res, 400, { error: "invalid_unsubscribe_link" });
+      }
+      if (await setMarketingConsent(userId, false)) {
+        await db.query(
+          `insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail)
+           select m.organization_id,$1,null,'marketing.unsubscribe','low','success','{}'
+             from organization_members m where m.user_id=$2 order by m.created_at limit 1`,
+          [`user:${userId}`, userId],
+        );
+      }
+      return void json(res, 200, { ok: true });
+    }
+
     if (req.method === "POST" && url.pathname === "/api/auth/signup") {
       if (deploymentMode !== "saas" || !(await publicSignupSetting()).enabled) {
         return void json(res, 404, { error: "signup_disabled" });
@@ -1048,6 +1074,8 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         password: z.string().min(12).max(256),
         // Optional: the sign-up form no longer asks; renamed later in settings.
         workspaceName: z.string().trim().min(2).max(120).optional(),
+        // The unticked-by-default "send me product news" box.
+        marketingOptIn: z.boolean().optional(),
       }).parse(await readJson(req));
       const email = normalizeEmail(body.email);
       const localPart = (email.split("@")[0] ?? "").replace(/[^\p{L}\p{N}._-]+/gu, " ").trim().slice(0, 60);
@@ -1084,18 +1112,19 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         await client.query("begin");
         await client.query(
           `insert into pending_signups(
-             email,password_hash,workspace_name,token_hash,expires_at,updated_at
+             email,password_hash,workspace_name,token_hash,expires_at,updated_at,marketing_opt_in
            )
-           values($1,$2,$3,$4,now()+($5::int*interval '1 hour'),now())
+           values($1,$2,$3,$4,now()+($5::int*interval '1 hour'),now(),$6)
            on conflict ((lower(email)))
            do update set
              password_hash=excluded.password_hash,
              workspace_name=excluded.workspace_name,
              token_hash=excluded.token_hash,
              expires_at=excluded.expires_at,
+             marketing_opt_in=excluded.marketing_opt_in,
              consumed_at=null,
              updated_at=now()`,
-          [email, passwordHash, workspaceName, sha256(token), ttlHours],
+          [email, passwordHash, workspaceName, sha256(token), ttlHours, body.marketingOptIn === true],
         );
         await enqueueMail(
           {
@@ -1160,8 +1189,9 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           email: string;
           password_hash: string;
           workspace_name: string;
+          marketing_opt_in: boolean;
         }>(
-          `select id,email,password_hash,workspace_name
+          `select id,email,password_hash,workspace_name,marketing_opt_in
              from pending_signups
             where token_hash=$1
               and consumed_at is null
@@ -1190,10 +1220,10 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         }
 
         const user = await client.query<{ id: string; email: string }>(
-          `insert into users(email,password_hash,email_verified_at)
-           values($1,$2,now())
+          `insert into users(email,password_hash,email_verified_at,marketing_opt_in,marketing_opt_in_at)
+           values($1,$2,now(),$3,case when $3 then now() end)
            returning id,email`,
-          [item.email, item.password_hash],
+          [item.email, item.password_hash, item.marketing_opt_in === true],
         );
         const organization = await client.query<{ id: string; name: string }>(
           "insert into organizations(name) values($1) returning id,name",
@@ -2362,6 +2392,52 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         await db.query("insert into platform_admin_audit(actor_user_id,action,detail) values($1,'marketing.delete',$2)",[principal.userId,body.id]);
         return void json(res,200,{ok:true});
       }
+      // ---- marketing: email campaigns (opted-in people only) ----
+      if (req.method === "GET" && url.pathname === "/api/console/marketing/emails") {
+        return void json(res,200,{...await listEmails(),mailConfigured:mailConfigured()});
+      }
+      if (req.method === "GET" && url.pathname === "/api/console/marketing/emails/audience") {
+        // A read: the editor asks while the administrator types (not a console change).
+        const days=(name:string)=>{const v=url.searchParams.get(name);return v===null||v===""?null:Number(v)};
+        const audience=emailAudienceSchema.parse({
+          plans:(url.searchParams.get("plans")??"").split(",").map(x=>x.trim()).filter(Boolean),
+          minDays:days("minDays"),maxDays:days("maxDays"),
+        });
+        return void json(res,200,{count:await audienceSize(audience)});
+      }
+      if (req.method === "POST" && url.pathname === "/api/console/marketing/emails") {
+        const body=emailSchema.parse(await readJson(req));
+        const id=await saveEmail(body,principal.userId);
+        if(!id) return void json(res,404,{error:"not_found"});
+        await db.query("insert into platform_admin_audit(actor_user_id,action,detail) values($1,'marketing.email.save',$2)",[principal.userId,id]);
+        return void json(res,body.id?200:201,{id});
+      }
+      if (req.method === "POST" && url.pathname === "/api/console/marketing/emails/test") {
+        const body=z.object({id:z.string().uuid()}).parse(await readJson(req));
+        if(!mailConfigured()) return void json(res,503,{error:"mail_not_configured"});
+        if(!principal.email) return void json(res,400,{error:"email_required"});
+        if(!(await sendTestEmail(body.id,principal.userId,principal.email,publicBaseUrl))) return void json(res,404,{error:"not_found"});
+        await db.query("insert into platform_admin_audit(actor_user_id,action,detail) values($1,'marketing.email.test',$2)",[principal.userId,body.id]);
+        return void json(res,200,{ok:true,to:principal.email});
+      }
+      if (req.method === "POST" && url.pathname === "/api/console/marketing/emails/send") {
+        const body=z.object({id:z.string().uuid(),currentPassword:z.string().min(12).max(256)}).parse(await readJson(req));
+        if(!mailConfigured()) return void json(res,503,{error:"mail_not_configured"});
+        const passwordRow=await db.query<{password_hash:string}>("select password_hash from users where id=$1 and disabled_at is null",[principal.userId]);
+        if(!passwordRow.rows[0]||!(await verifyPassword(body.currentPassword,passwordRow.rows[0].password_hash)))
+          return void json(res,403,{error:"reauthentication_failed"});
+        const result=await sendEmail(body.id,publicBaseUrl);
+        if(!result) return void json(res,404,{error:"not_found"});
+        await db.query("insert into platform_admin_audit(actor_user_id,action,detail) values($1,'marketing.email.send',$2)",[principal.userId,body.id+":"+result.queued]);
+        return void json(res,200,result);
+      }
+      if (req.method === "POST" && url.pathname === "/api/console/marketing/emails/delete") {
+        const body=z.object({id:z.string().uuid()}).parse(await readJson(req));
+        const r=await db.query("delete from marketing_emails where id=$1 and status='draft'",[body.id]);
+        if(!r.rowCount) return void json(res,409,{error:"only_drafts_can_be_deleted"});
+        await db.query("insert into platform_admin_audit(actor_user_id,action,detail) values($1,'marketing.email.delete',$2)",[principal.userId,body.id]);
+        return void json(res,200,{ok:true});
+      }
       if (req.method === "GET" && url.pathname === "/api/console/legal") {
         const page=z.enum(["privacy","terms","refund"]).parse(url.searchParams.get("page"));
         const locale=url.searchParams.get("locale")==="tr"?"tr":"en";
@@ -2477,6 +2553,18 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         userId: principal!.userId ?? null,
         email: principal!.email ?? null,
       });
+    }
+
+    if (url.pathname === "/api/account/marketing" && (req.method === "GET" || req.method === "POST")) {
+      if (!principal!.userId) return void json(res, 400, { error: "user_required" });
+      if (req.method === "POST") {
+        const body = z.object({ optIn: z.boolean() }).parse(await readJson(req));
+        if (await setMarketingConsent(principal!.userId, body.optIn)) {
+          await auditControl(principal!, null, body.optIn ? "marketing.opt_in" : "marketing.opt_out", "low", "success");
+        }
+      }
+      const row = await db.query<{ marketing_opt_in: boolean }>("select marketing_opt_in from users where id=$1", [principal!.userId]);
+      return void json(res, 200, { optIn: row.rows[0]?.marketing_opt_in === true });
     }
 
     if (req.method === "POST" && url.pathname === "/api/auth/logout") {

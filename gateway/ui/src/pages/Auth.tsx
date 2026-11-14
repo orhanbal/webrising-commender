@@ -9,6 +9,8 @@ export function AuthPage({path,nav,refresh,pricing,signupEnabled}:{path:string;n
  const [email,setEmail]=useState("");
  const [password,setPassword]=useState("");
  const [show,setShow]=useState(false);
+ // Product news by email: off unless the person ticks the box.
+ const [news,setNews]=useState(false);
  const [loading,setLoading]=useState(false);
  const [error,setError]=useState("");
  const [success,setSuccess]=useState("");
@@ -50,7 +52,7 @@ export function AuthPage({path,nav,refresh,pricing,signupEnabled}:{path:string;n
     return;
    }
    if(mode==="/register"){
-    await api("/api/auth/signup",{method:"POST",body:JSON.stringify({email,password})});
+    await api("/api/auth/signup",{method:"POST",body:JSON.stringify({email,password,marketingOptIn:news})});
     setSentTo(email.trim());setResent(false);
     return;
    }
@@ -76,7 +78,7 @@ export function AuthPage({path,nav,refresh,pricing,signupEnabled}:{path:string;n
  }
  async function resend(){
   setError("");setLoading(true);
-  try{await api("/api/auth/signup",{method:"POST",body:JSON.stringify({email:sentTo,password})});setResent(true)}
+  try{await api("/api/auth/signup",{method:"POST",body:JSON.stringify({email:sentTo,password,marketingOptIn:news})});setResent(true)}
   catch(err){setError(err instanceof Error?err.message:translate("Bir hata oluştu."))}
   finally{setLoading(false)}
  }
@@ -116,6 +118,7 @@ export function AuthPage({path,nav,refresh,pricing,signupEnabled}:{path:string;n
     {["/login","/register","/forgot-password"].includes(mode)&&<label><span className="field-label">{translate("E-posta adresi")}</span><Input autoComplete="email" type="email" placeholder={translate("siz@ornek.com")} required maxLength={320} value={email} onChange={e=>setEmail(e.target.value)}/></label>}
 
     {!["/forgot-password"].includes(mode)&&<label><span className="flex items-center justify-between mb-2"><span className="field-label !mb-0">{mode==="/reset-password"?translate("Yeni şifre"):translate("Şifre")}</span>{mode==="/login"&&<NavLink nav={nav} to="/forgot-password" className="text-xs text-[var(--accent)] font-semibold">{translate("Şifremi unuttum")}</NavLink>}</span><span className="relative block"><Input placeholder="••••••••••••" type={show?"text":"password"} required minLength={mode==="/verify"?1:12} maxLength={256} autoComplete={mode==="/login"?"current-password":"new-password"} value={password} onChange={e=>setPassword(e.target.value)} className="pr-12"/><button type="button" onClick={()=>setShow(!show)} className="absolute top-2 right-3 size-7 grid place-items-center text-[var(--muted)]" aria-label={show?translate("Şifreyi gizle"):translate("Şifreyi göster")}>{show?<EyeOff size={17}/>:<Eye size={17}/>}</button></span>{mode==="/register"&&<small className="form-help">{translate("En az 12 karakter; güçlü bir parola kullanın.")}</small>}</label>}
+    {mode==="/register"&&<label className="flex items-start gap-3 text-sm cursor-pointer"><input type="checkbox" className="mt-1 size-4 accent-[var(--accent)]" checked={news} onChange={e=>setNews(e.target.checked)}/><span className="muted">{translate("Yeni özellikler, ipuçları ve kampanyalar e-postayla gelsin. İstediğin zaman abonelikten çıkabilirsin.")}</span></label>}
     {error&&<div role="alert" className="form-error">{error}</div>}
     {success&&<div role="status" className="form-success">{success}</div>}
     <Button className="w-full" size="lg" type="submit" disabled={loading||(mode==="/register"&&(pricing?.mode==="self_hosted"||signupEnabled===false))}>{loading?"İşlem yapılıyor…":mode==="/login"?translate("Giriş Yap"):mode==="/register"?translate("Hesap Oluştur"):mode==="/forgot-password"?translate("Bağlantı Gönder"):mode==="/reset-password"?translate("Şifreyi Güncelle"):translate("Hesabı Doğrula")}<ArrowRight size={18}/></Button>
