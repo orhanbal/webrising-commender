@@ -198,7 +198,7 @@ try{
  await visit("/usage","Usage & reports","modern-usage");
  await visit("/account","Change password","modern-account");
  await visit("/console","Platform Overview","modern-console-overview");
- assert.equal(await evalJs("document.querySelectorAll('aside .dash-nav button').length"),11,"Console navigation should expose all configured sections");
+ assert.equal(await evalJs("document.querySelectorAll('aside .dash-nav button').length"),12,"Console navigation should expose all configured sections");
  await evalJs("document.querySelector('.dash-toolbar .locale-trigger').click()");
  await evalJs("document.querySelector('.dash-toolbar .locale-option[role=menuitemradio]:last-of-type').click()");
  await sleep(120);

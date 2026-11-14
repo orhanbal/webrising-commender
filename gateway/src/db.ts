@@ -647,6 +647,29 @@ export async function migrate() {
       primary key (campaign_id,user_id)
     );
 
+    -- Marketing: email campaigns, sent only to people who opted in.
+    alter table users add column if not exists marketing_opt_in boolean not null default false;
+    alter table users add column if not exists marketing_opt_in_at timestamptz;
+    alter table users add column if not exists marketing_opt_out_at timestamptz;
+    alter table pending_signups add column if not exists marketing_opt_in boolean not null default false;
+    create table if not exists marketing_emails (
+      id uuid primary key default gen_random_uuid(),
+      subject text not null,
+      body text not null,
+      audience jsonb not null default '{}'::jsonb,
+      status text not null default 'draft' check (status in ('draft','sent')),
+      sent_at timestamptz,
+      created_by uuid references users(id) on delete set null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+    create table if not exists marketing_email_recipients (
+      email_id uuid not null references marketing_emails(id) on delete cascade,
+      user_id uuid not null references users(id) on delete cascade,
+      queued_at timestamptz not null default now(),
+      primary key (email_id,user_id)
+    );
+
     insert into organizations(name)
       select 'Self Hosted'
       where not exists(select 1 from organizations);

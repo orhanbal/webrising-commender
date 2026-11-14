@@ -14,6 +14,8 @@ type MailPayload = {
   to: string;
   subject: string;
   text: string;
+  /** One-click unsubscribe URL (RFC 8058) for marketing mail. */
+  listUnsubscribe?: string;
 };
 
 type SmtpResponse = {
@@ -59,6 +61,13 @@ function encryptionKey() {
   } catch {}
 
   return candidates.find((candidate) => candidate.length === 32) ?? null;
+}
+
+/** A keyed digest for links in mail (unsubscribe), or null without a mail key. */
+export function mailLinkDigest(value: string) {
+  const key = encryptionKey();
+  if (!key) return null;
+  return crypto.createHmac("sha256", key).update("mail-link:" + value).digest("base64url").slice(0, 32);
 }
 
 export function mailConfigured() {
@@ -346,6 +355,12 @@ class SmtpConnection {
       `Subject: ${sanitizeHeader(payload.subject)}`,
       `Date: ${new Date().toUTCString()}`,
       `Message-ID: <${crypto.randomUUID()}@${messageIdDomain}>`,
+      ...(payload.listUnsubscribe
+        ? [
+            `List-Unsubscribe: <${sanitizeHeader(payload.listUnsubscribe)}>`,
+            "List-Unsubscribe-Post: List-Unsubscribe=One-Click",
+          ]
+        : []),
       "MIME-Version: 1.0",
       'Content-Type: text/plain; charset="UTF-8"',
       "Content-Transfer-Encoding: 8bit",

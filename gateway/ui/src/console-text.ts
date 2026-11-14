@@ -296,6 +296,8 @@ export const consoleTurkish:Record<string,string> = {
   "Platform-wide counts from the production database.": "Üretim veritabanından platform genelindeki sayılar.",
   "Marketing": "Pazarlama",
   "Messages & surveys": "Mesajlar ve anketler",
-  "In-app surveys, announcements and tips, and what people answered.": "Uygulama içi anketler, duyurular ve ipuçları; kullanıcıların verdiği cevaplar."
+  "In-app surveys, announcements and tips, and what people answered.": "Uygulama içi anketler, duyurular ve ipuçları; kullanıcıların verdiği cevaplar.",
+  "Email campaigns": "E-posta kampanyaları",
+  "Product news by email to people who opted in, with one-click unsubscribe.": "E-posta almayı kabul edenlere ürün haberleri; tek tıkla abonelikten çıkma."
 };
 export function consoleText(source:string,locale:"en"|"tr"):string {return locale==="tr"?(consoleTurkish[source]??source):source;}

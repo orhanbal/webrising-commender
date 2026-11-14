@@ -263,6 +263,7 @@ const signupResponse = await fetch(base + "/api/auth/signup", {
     email: "signup@example.test",
     password: "signup-initial-password",
     workspaceName: "Signup Workspace",
+    marketingOptIn: true,
   }),
 });
 assert.equal(signupResponse.status, 202);
@@ -349,6 +350,9 @@ assert.equal(verifySignupResponse.status, 200);
 const verifiedSignup = await verifySignupResponse.json();
 assert.equal(verifiedSignup.email, "signup@example.test");
 assert.equal(verifiedSignup.role, "owner");
+assert.equal((await acceptanceDb.query(
+  "select marketing_opt_in from users where lower(email)='signup@example.test'",
+)).rows[0].marketing_opt_in, true, "The sign-up box carries over to the account");
 const signupCookies = verifySignupResponse.headers
   .getSetCookie()
   .map((value) => value.split(";")[0])
@@ -459,6 +463,12 @@ const newSignupPassword = await fetch(base + "/api/auth/login", {
   }),
 });
 assert.equal(newSignupPassword.status, 200);
+const signupLogin = await newSignupPassword.json();
+const signupSessionHeaders = {
+  Cookie: newSignupPassword.headers.getSetCookie().map((value) => value.split(";")[0]).join("; "),
+  "Content-Type": "application/json",
+  "X-CSRF-Token": signupLogin.csrfToken,
+};
 
 const browserUser = await jsonFetch("/api/users", {
   method: "POST",
@@ -617,6 +627,39 @@ assert.equal(answeredHidden.message,null,"An answered survey is not shown again"
 const surveyResults=await (await fetch(base+"/api/console/marketing/results?id="+surveyId,{headers:{Cookie:browserCookies}})).json();
 assert.deepEqual(surveyResults.distribution,[{score:5,n:1}]);
 assert.equal(surveyResults.comments[0].comment,"Great");
+// Marketing email: only people who opted in receive it, once, with a working
+// one-click unsubscribe. (Sent by a second administrator: the first one's
+// console changes are used up by now.)
+await acceptanceDb.query(
+  "insert into platform_administrators(user_id,granted_by) values($1,'integration-test') on conflict(user_id) do update set revoked_at=null",
+  [signupLogin.userId]);
+const emailCreated=await fetch(base+"/api/console/marketing/emails",{method:"POST",headers:signupSessionHeaders,
+  body:JSON.stringify({subject:"Integration news",body:"Hello from the integration test",audience:{plans:[],minDays:null,maxDays:null}})});
+assert.equal(emailCreated.status,201);
+const emailId=(await emailCreated.json()).id;
+const reach=await (await fetch(base+"/api/console/marketing/emails/audience?plans=&minDays=&maxDays=",{headers:signupSessionHeaders})).json();
+assert.equal(reach.count,1,"Only the person who ticked the box is reached");
+assert.equal((await fetch(base+"/api/console/marketing/emails/test",{method:"POST",headers:signupSessionHeaders,body:JSON.stringify({id:emailId})})).status,200);
+await waitForMail(/Subject: \[TEST\] Integration news/);
+const wrongSendPassword=await fetch(base+"/api/console/marketing/emails/send",{method:"POST",headers:signupSessionHeaders,body:JSON.stringify({id:emailId,currentPassword:"not-the-password"})});
+assert.equal(wrongSendPassword.status,403,"Sending needs the administrator's password");
+const sent=await (await fetch(base+"/api/console/marketing/emails/send",{method:"POST",headers:signupSessionHeaders,body:JSON.stringify({id:emailId,currentPassword:"signup-replaced-password"})})).json();
+assert.deepEqual(sent,{queued:1,remaining:0});
+const campaignMail=await waitForMail(/Subject: Integration news/);
+assert.match(campaignMail.data,/List-Unsubscribe-Post: List-Unsubscribe=One-Click/);
+const oneClick=campaignMail.data.match(/List-Unsubscribe: <([^>]+)>/)[1];
+assert.match(campaignMail.data,/Abonelikten .*: https?:\/\/[^\s]+\/unsubscribe\?u=/);
+const tamperedUnsubscribe=oneClick.replace(/t=[^&]+/,"t=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+assert.equal((await fetch(tamperedUnsubscribe.replace(/^https?:\/\/[^/]+/,base),{method:"POST",body:"List-Unsubscribe=One-Click"})).status,400);
+assert.equal((await fetch(oneClick.replace(/^https?:\/\/[^/]+/,base),{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"List-Unsubscribe=One-Click"})).status,200);
+assert.equal((await acceptanceDb.query("select marketing_opt_in from users where id=$1",[signupLogin.userId])).rows[0].marketing_opt_in,false);
+const resend=await (await fetch(base+"/api/console/marketing/emails/send",{method:"POST",headers:signupSessionHeaders,body:JSON.stringify({id:emailId,currentPassword:"signup-replaced-password"})})).json();
+assert.deepEqual(resend,{queued:0,remaining:0},"Nobody gets a campaign after unsubscribing, or twice");
+const accountConsent=await (await fetch(base+"/api/account/marketing",{method:"POST",headers:signupSessionHeaders,body:JSON.stringify({optIn:true})})).json();
+assert.equal(accountConsent.optIn,true,"The account page turns it back on");
+const sentDelete=await fetch(base+"/api/console/marketing/emails/delete",{method:"POST",headers:signupSessionHeaders,body:JSON.stringify({id:emailId})});
+assert.equal(sentDelete.status,409,"A sent campaign stays on record");
+await acceptanceDb.query("delete from platform_administrators where user_id=$1",[signupLogin.userId]);
 const anonymousMessages=await fetch(base+"/api/messages?platform=web");
 assert.equal(anonymousMessages.status>=400,true,"Messages need a signed-in person");
 const draftDoesNotPublish=await jsonFetch("/api/public/site-content?locale=en");
