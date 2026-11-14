@@ -26,7 +26,7 @@ public sealed class DeskChip : Window
     private readonly TextBlock _name = new() { FontWeight = FontWeights.SemiBold, FontSize = 13, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 120 };
     private readonly Ellipse _dot = new() { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBlock _status = new() { FontSize = 11 };
-    private readonly (TextBlock Text, ColumnDefinition Fill, ColumnDefinition Rest, Rectangle Bar)[] _meters = new (TextBlock, ColumnDefinition, ColumnDefinition, Rectangle)[3];
+    private readonly (TextBlock Text, ColumnDefinition Fill, ColumnDefinition Empty, Rectangle Bar)[] _meters = new (TextBlock, ColumnDefinition, ColumnDefinition, Rectangle)[3];
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private bool _pressed, _hiddenForFullscreen, _shown;
     private POINT _pressAt;
@@ -153,7 +153,7 @@ public sealed class DeskChip : Window
             var c = s.Live ? Level(v) : Colors.Gray;
             _meters[i].Text.Text = s.Live ? $"{MeterNames[i]} %{v:0}" : $"{MeterNames[i]} –";
             _meters[i].Fill.Width = new GridLength(v, GridUnitType.Star);
-            _meters[i].Rest.Width = new GridLength(100 - v, GridUnitType.Star);
+            _meters[i].Empty.Width = new GridLength(100 - v, GridUnitType.Star);
             _meters[i].Bar.Fill = new SolidColorBrush(c);
             _iconBars[i].Height = Math.Max(3, v / 100 * 19);
             _iconBars[i].Fill = new SolidColorBrush(c);
