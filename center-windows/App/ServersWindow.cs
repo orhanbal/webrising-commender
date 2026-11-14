@@ -80,7 +80,7 @@ public sealed class ServersWindow : Window
         _nav.PaneDisplayMode = NavigationViewPaneDisplayMode.Left;
         _nav.IsBackButtonVisible = NavigationViewBackButtonVisible.Collapsed;
         _nav.IsSettingsVisible = false;
-        _nav.PaneTitle = "WECOMMANDER";
+        _nav.PaneTitle = ""; // the title bar already says WECOMMANDER
         _nav.OpenPaneLength = 240;
         _terminalsItem.InfoBadge = _terminalsBadge;
         _nav.MenuItems.Add(_hostsItem);
@@ -210,15 +210,6 @@ public sealed class ServersWindow : Window
 
     private static Brush Res(string key) => (Brush)Application.Current.Resources[key];
 
-    /// <summary>A half of the window: a rounded, slightly lighter card over the see-through background.</summary>
-    private static Border Card(UIElement child) => new()
-    {
-        Child = child,
-        CornerRadius = new CornerRadius(8),
-        BorderThickness = new Thickness(1),
-        Background = Res("LayerFillColorDefaultBrush"),
-        BorderBrush = Res("CardStrokeColorDefaultBrush"),
-    };
 
     private static Button BarButton(string glyph, string tip)
     {
@@ -320,14 +311,14 @@ public sealed class ServersWindow : Window
         left.Children.Add(app);
         Grid.SetRow(bar, 1);
         left.Children.Add(bar);
-        var leftCard = Card(left);
-
-        var root = new Grid { Padding = new Thickness(12, 0, 12, 12) };
+        // The app fills the window itself (no card inside it: that looked like
+        // an app inside an app).
+        var root = new Grid();
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.Children.Add(title);
-        Grid.SetRow(leftCard, 1);
-        root.Children.Add(leftCard);
+        Grid.SetRow(left, 1);
+        root.Children.Add(left);
 
         App.Current.Changed += RenderAccount;
         RenderAccount();
@@ -350,11 +341,12 @@ public sealed class ServersWindow : Window
             var side = (int)Math.Round((MainWindow.DockedWidth + MainWindow.DockGap) * scale);
             var width = Math.Min((int)Math.Round(1240 * scale), area.Width - side - (int)Math.Round(48 * scale));
             // A small screen: the app gets the room (its pages need about 960 px); the panel opens from the bar button.
-            if (width < (int)Math.Round(960 * scale))
+            if (width < (int)Math.Round(960 * scale) && Environment.GetEnvironmentVariable("WECOMMANDER_DEBUG_DOCK") != "1")
             {
                 width = area.Width - (int)Math.Round(48 * scale);
                 side = 0;
                 _panelWanted = false;
+                _narrow = true;
             }
             var height = Math.Min((int)Math.Round(860 * scale), area.Height - (int)Math.Round(48 * scale));
             var x = area.X + (area.Width - width - side) / 2;
@@ -371,11 +363,21 @@ public sealed class ServersWindow : Window
         var show = _panelWanted && AppWindow.IsVisible
             && state is not Microsoft.UI.Windowing.OverlappedPresenterState.Minimized
             && state is not Microsoft.UI.Windowing.OverlappedPresenterState.Maximized;
+        App.DebugLayout($"sync: wanted={_panelWanted} mainVisible={AppWindow.IsVisible} state={state} -> show={show}");
         if (show) panel.ShowDocked(this);
         else panel.HideDocked();
         var tip = _panelWanted ? "Onay panelini gizle" : "Onay panelini göster";
         ToolTipService.SetToolTip(_panelButton, tip);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_panelButton, tip);
+    }
+
+    private bool _narrow;
+
+    public void ShowPanelBeside()
+    {
+        _panelWanted = true;
+        RenderAccount();
+        SyncPanel();
     }
 
     /// <summary>The panel window's own close button: it stays closed until the button in the bar opens it.</summary>
@@ -451,6 +453,8 @@ public sealed class ServersWindow : Window
     public void ShowWindow()
     {
         App.Current.CheckForUpdateSoon();
+        // Opening the app always brings the panel back beside it (unless the screen is too small for both).
+        if (!_narrow) _panelWanted = true;
         AppWindow.Show();
         Activate();
         SyncPanel();
@@ -472,7 +476,13 @@ public sealed class ServersWindow : Window
     /// <summary>Server management for the current terminal (one window per terminal).</summary>
     private void OpenServerWindow()
     {
-        if (Current is not { Closed: false, Guest: null } t) return;
+        App.DebugLayout($"server management: current={(Current is { } c ? c.Host.Label + " closed=" + c.Closed + " guest=" + (c.Guest is not null) : "none")}");
+        if (Current is not { Closed: false, Guest: null } t)
+        {
+            Show(Current is null ? "Önce bir sunucuya bağlan: sunucu yönetimi açık bir terminalin bağlantısını kullanır."
+                : Current.Closed ? "Bu terminalin bağlantısı kapalı; sunucuya yeniden bağlan." : "Ortak bir terminalde sunucu yönetimi açılmaz.", InfoBarSeverity.Informational);
+            return;
+        }
         if (!_serverWindows.TryGetValue(t.SessionId, out var window))
         {
             window = new ServerWindow(_c, t.SessionId, t.Host.Label);

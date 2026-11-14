@@ -204,6 +204,7 @@ public sealed class DeskChip : Window
         if (_shown) return;
         _shown = true;
         Place();
+        App.DebugLayout($"chip: show at {AppWindow.Position.X},{AppWindow.Position.Y} {AppWindow.Size.Width}x{AppWindow.Size.Height} onTop={App.Current.Settings.DeskChipOnTop}");
         ApplyLayer();
         AppWindow.Show(false); // never takes the focus from what the owner is doing
         var round = 2; // DWMWCP_ROUND
@@ -215,6 +216,7 @@ public sealed class DeskChip : Window
     {
         if (!_shown) return;
         _shown = false;
+        App.DebugLayout("chip: hide");
         AppWindow.Hide();
     }
 

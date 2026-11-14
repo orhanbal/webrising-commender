@@ -208,6 +208,19 @@ public partial class App : Application
         SendErrorReport(error);
     }
 
+    /// <summary>CI only (WECOMMANDER_DEBUG_LAYOUT=1): one line in layout.log about the windows.</summary>
+    public static void DebugLayout(string line)
+    {
+        if (Environment.GetEnvironmentVariable("WECOMMANDER_DEBUG_LAYOUT") != "1") return;
+        try
+        {
+            var file = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WECOMMANDER", "layout.log");
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            File.AppendAllText(file, $"{DateTime.Now:HH:mm:ss.fff} {line}\n");
+        }
+        catch (Exception) { }
+    }
+
     private static DateTime _lastErrorReport = DateTime.MinValue;
     private static string? _lastErrorText;
 
@@ -301,6 +314,9 @@ public partial class App : Application
     /// <summary>Started again (Start menu, shortcut): the main window; signed out: the sign-in panel.</summary>
     private void HandleActivation(AppActivationArguments e)
     {
+        var args = (e.Data as Windows.ApplicationModel.Activation.ILaunchActivatedEventArgs)?.Arguments ?? "";
+        DebugLayout($"activation: kind={e.Kind} args='{args}' signedIn={Token is not null}");
+        if (args.Contains("--open-main")) { ShowServers(); return; }
         if (Token is null) _window?.ShowPanel();
         else ShowServers();
     }
@@ -311,6 +327,8 @@ public partial class App : Application
     public MainWindow? PanelWindow => _window;
     /// <summary>The panel beside the main window was closed with its own button.</summary>
     public void PanelDismissed() => _servers?.PanelDismissed();
+    /// <summary>The tray asked for the panel while the main window is open: beside it.</summary>
+    public void ShowPanelBesideMain() => _servers?.ShowPanelBeside();
     /// <summary>The main window, when open, shows approvals in its own panel on the right; otherwise the tray panel opens.</summary>
     public void ShowApprovals()
     {
@@ -959,6 +977,7 @@ public partial class App : Application
         var menu = new MenuFlyout();
         menu.Items.Add(new MenuFlyoutItem { Text = "WECOMMANDER'ı aç", Command = new RelayCommand(ShowServers) });
         menu.Items.Add(new MenuFlyoutItem { Text = "Onaylar ve otonom mod", Command = new RelayCommand(() => _window?.ShowPanel()) });
+        menu.Items.Add(new MenuFlyoutItem { Text = "Sunucu kutusu (sol alt): göster / gizle", Command = new RelayCommand(() => SetDeskChip(!Settings.DeskChip)) });
         _connectMenu = new MenuFlyoutSubItem { Text = "Bağlan", IsEnabled = false };
         _tunnelMenu = new MenuFlyoutSubItem { Text = "Tüneller", IsEnabled = false };
         menu.Items.Add(_connectMenu);

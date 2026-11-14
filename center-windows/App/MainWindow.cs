@@ -21,7 +21,7 @@ public sealed class MainWindow : Window
     private DateTime _shownAt;
     private bool _quitting;
     /// <summary>Width of the docked panel and the gap to the main window (in 96-dpi pixels).</summary>
-    public const int DockedWidth = 400, DockGap = 10;
+    public const int DockedWidth = 400, DockGap = 8;
     private Window? _owner;
     private bool Docked => _owner is not null;
 
@@ -93,6 +93,7 @@ public sealed class MainWindow : Window
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         SetWindowLongPtr(hwnd, GWLP_HWNDPARENT, owner is null ? IntPtr.Zero : WinRT.Interop.WindowNative.GetWindowHandle(owner));
         _owner = owner;
+        _panel.ShowClose = owner is null;
         if (AppWindow.Presenter is OverlappedPresenter presenter) presenter.IsAlwaysOnTop = owner is null;
     }
 
@@ -102,24 +103,57 @@ public sealed class MainWindow : Window
         if (!ReferenceEquals(_owner, owner)) SetOwner(owner);
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         var scale = GetDpiForWindow(hwnd) / 96.0;
-        var main = owner.AppWindow.Position;
-        var size = owner.AppWindow.Size;
+        // Measured on what is drawn: a resizable window has invisible resize
+        // borders around it (about 7 px a side), which made the gap three times
+        // as wide as meant.
+        var main = Visible(WinRT.Interop.WindowNative.GetWindowHandle(owner));
+        var self = Insets(hwnd);
         var area = DisplayArea.GetFromWindowId(owner.AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
         var width = (int)Math.Round(DockedWidth * scale);
         var gap = (int)Math.Round(DockGap * scale);
-        var x = main.X + size.Width + gap;
-        if (x + width > area.X + area.Width && main.X - gap - width >= area.X) x = main.X - gap - width;
-        x = Math.Min(x, area.X + area.Width - width);
-        AppWindow.MoveAndResize(new RectInt32(x, main.Y, width, size.Height));
+        var left = main.Right + gap;
+        if (left + width > area.X + area.Width && main.Left - gap - width >= area.X) left = main.Left - gap - width;
+        left = Math.Min(left, area.X + area.Width - width);
+        var height = main.Bottom - main.Top;
+        AppWindow.MoveAndResize(new RectInt32(left - self.Left, main.Top - self.Top, width + self.Left + self.Right, height + self.Top + self.Bottom));
+        App.DebugLayout($"dock: main drawn={main.Left},{main.Top},{main.Right},{main.Bottom} panel x={left} w={width} h={height} insets={self.Left},{self.Top},{self.Right},{self.Bottom} visible={AppWindow.IsVisible}");
         if (!AppWindow.IsVisible)
         {
             AppWindow.Show(false); // the main window keeps the focus
             _panel.Refresh();
+            // Its own borders are known only once it is on screen: place it again.
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => { if (_owner is { } o && AppWindow.IsVisible) ShowDocked(o); });
         }
+    }
+
+    [StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left, Top, Right, Bottom; }
+    [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out RECT value, int size);
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
+    private const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
+
+    /// <summary>The part of a window that is drawn (without the invisible resize borders), in screen pixels.</summary>
+    private static RECT Visible(IntPtr hwnd)
+    {
+        if (DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, out var r, Marshal.SizeOf<RECT>()) == 0 && r.Right > r.Left) return r;
+        GetWindowRect(hwnd, out r);
+        return r;
+    }
+
+    /// <summary>How far this window's invisible borders reach beyond what is drawn (0 while hidden).</summary>
+    private RECT Insets(IntPtr hwnd)
+    {
+        if (!AppWindow.IsVisible || !GetWindowRect(hwnd, out var outer)) return default;
+        var drawn = Visible(hwnd);
+        return new RECT
+        {
+            Left = Math.Max(0, drawn.Left - outer.Left), Top = Math.Max(0, drawn.Top - outer.Top),
+            Right = Math.Max(0, outer.Right - drawn.Right), Bottom = Math.Max(0, outer.Bottom - drawn.Bottom),
+        };
     }
 
     public void HideDocked()
     {
+        App.DebugLayout($"hide docked: docked={Docked} visible={AppWindow.IsVisible}");
         if (Docked && AppWindow.IsVisible) AppWindow.Hide();
     }
 
@@ -128,9 +162,10 @@ public sealed class MainWindow : Window
 
     public void ShowPanel()
     {
-        // Beside an open main window: just bring it forward there.
-        if (Docked && _owner!.AppWindow.IsVisible && AppWindow.IsVisible)
+        // The main window is open: the panel belongs beside it (shown again if it was hidden).
+        if (Docked && _owner!.AppWindow.IsVisible)
         {
+            App.Current.ShowPanelBesideMain();
             Activate();
             _panel.Refresh();
             return;
@@ -160,7 +195,7 @@ public sealed class MainWindow : Window
     /// <summary>Tray click: open, or close when open. The click that just took the focus away does not reopen it.</summary>
     public void TogglePanel()
     {
-        if (Docked && AppWindow.IsVisible) { Activate(); return; }
+        if (Docked && _owner!.AppWindow.IsVisible) { ShowPanel(); return; }
         if (AppWindow.IsVisible) HidePanel();
         else if (DateTime.UtcNow - _hiddenAt > TimeSpan.FromMilliseconds(400)) ShowPanel();
     }
