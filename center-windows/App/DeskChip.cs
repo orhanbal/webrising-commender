@@ -27,6 +27,18 @@ public sealed class DeskChip : Window
     private readonly Ellipse _dot = new() { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBlock _status = new() { FontSize = 11 };
     private readonly (TextBlock Text, ColumnDefinition Fill, ColumnDefinition Empty, Rectangle Bar)[] _meters = new (TextBlock, ColumnDefinition, ColumnDefinition, Rectangle)[3];
+    // The live line charts: one per meter, the last points moving in from the right.
+    private const double ChartWidth = 56, ChartHeight = 18;
+    private const int ChartPoints = 30;
+    private readonly Grid[] _tracks = new Grid[3];
+    private readonly Canvas[] _charts = new Canvas[3];
+    private readonly Polyline[] _lines = new Polyline[3];
+    private readonly Polygon[] _areas = new Polygon[3];
+    private readonly TranslateTransform[] _shift = new TranslateTransform[3];
+    private readonly Dictionary<string, List<double>[]> _history = [];
+    private readonly Dictionary<string, int> _seen = [];
+    private StackPanel? _meterPanel;
+    private bool _pressOnMeters;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
     private bool _pressed, _hiddenForFullscreen, _shown;
     private POINT _pressAt;
@@ -103,12 +115,26 @@ public sealed class DeskChip : Window
             track.ColumnDefinitions.Add(fill);
             track.ColumnDefinitions.Add(rest);
             track.Children.Add(barFill);
+            var chart = new Canvas { Width = ChartWidth, Height = ChartHeight, Margin = new Thickness(0, 2, 0, 0) };
+            chart.Clip = new RectangleGeometry { Rect = new Windows.Foundation.Rect(0, 0, ChartWidth, ChartHeight) };
+            // One transform on a layer holding both shapes (a transform cannot be shared between elements).
+            var shift = new TranslateTransform();
+            var layer = new Canvas { Width = ChartWidth, Height = ChartHeight, RenderTransform = shift };
+            var area = new Polygon { Opacity = 0.18 };
+            var line = new Polyline { StrokeThickness = 1.6, StrokeLineJoin = PenLineJoin.Round };
+            layer.Children.Add(area);
+            layer.Children.Add(line);
+            chart.Children.Add(layer);
             var cell = new StackPanel();
             cell.Children.Add(text);
             cell.Children.Add(track);
+            cell.Children.Add(chart);
             meters.Children.Add(cell);
             _meters[i] = (text, fill, rest, barFill);
+            _tracks[i] = track; _charts[i] = chart; _lines[i] = line; _areas[i] = area; _shift[i] = shift;
         }
+        _meterPanel = meters;
+        ApplyMode();
         Grid.SetColumn(meters, 2);
         _root.Children.Add(meters);
 
@@ -116,7 +142,7 @@ public sealed class DeskChip : Window
         _root.PointerMoved += OnMoved;
         _root.PointerReleased += OnReleased;
         _root.ContextFlyout = Menu();
-        ToolTipService.SetToolTip(_root, "Tıkla: Sunucularım · Sürükle: taşı · Sağ tık: ayarlar");
+        ToolTipService.SetToolTip(_root, "Tıkla: Sunucularım · Göstergelere tıkla: çizgi / çubuk · Sürükle: taşı · Sağ tık: ayarlar");
         Content = _root;
 
         _monitor.Changed += () => { try { Refresh(); } catch (Exception e) { App.LogCrash(e); } };
@@ -158,7 +184,77 @@ public sealed class DeskChip : Window
             _iconBars[i].Height = Math.Max(3, v / 100 * 19);
             _iconBars[i].Fill = new SolidColorBrush(c);
         }
+        DrawCharts(s);
         if (!_hiddenForFullscreen) ShowChip();
+    }
+
+    private void ApplyMode()
+    {
+        var line = App.Current.Settings.DeskChipLine;
+        for (var i = 0; i < 3; i++)
+        {
+            if (_tracks[i] is null) continue;
+            _tracks[i].Visibility = line ? Visibility.Collapsed : Visibility.Visible;
+            _charts[i].Visibility = line ? Visibility.Visible : Visibility.Collapsed;
+        }
+        ToolTipService.SetToolTip(_meterPanel, line ? "Tıkla: çubuklar" : "Tıkla: canlı çizgi grafik");
+    }
+
+    /// <summary>Adds the newest sample (once per sample) and draws the lines, sliding the new point in from the right.</summary>
+    private void DrawCharts(WatchedServer s)
+    {
+        if (!_history.TryGetValue(s.HostId, out var history))
+            _history[s.HostId] = history = [new(), new(), new()];
+        var fresh = s.Live && (!_seen.TryGetValue(s.HostId, out var seen) || seen != s.Samples);
+        if (fresh)
+        {
+            _seen[s.HostId] = s.Samples;
+            var values = new[] { s.Cpu, s.Mem, s.Disk };
+            for (var i = 0; i < 3; i++)
+            {
+                history[i].Add(Math.Clamp(values[i], 0, 100));
+                if (history[i].Count > ChartPoints) history[i].RemoveAt(0);
+            }
+        }
+        var step = ChartWidth / (ChartPoints - 1);
+        for (var i = 0; i < 3; i++)
+        {
+            var points = history[i];
+            var line = new PointCollection();
+            var area = new PointCollection();
+            // The newest point sits at the right edge; older ones to its left.
+            var start = ChartWidth - (points.Count - 1) * step;
+            for (var k = 0; k < points.Count; k++)
+            {
+                var p = new Windows.Foundation.Point(start + k * step, ChartHeight - 1 - points[k] / 100 * (ChartHeight - 3));
+                line.Add(p);
+                area.Add(p);
+            }
+            if (points.Count > 0)
+            {
+                area.Add(new Windows.Foundation.Point(ChartWidth, ChartHeight));
+                area.Add(new Windows.Foundation.Point(start, ChartHeight));
+            }
+            var color = points.Count > 0 ? Level(points[^1]) : Colors.Gray;
+            _lines[i].Points = line;
+            _lines[i].Stroke = new SolidColorBrush(color);
+            _areas[i].Points = area;
+            _areas[i].Fill = new SolidColorBrush(color);
+            if (fresh && points.Count > 1 && App.Current.Settings.DeskChipLine)
+            {
+                // Slide: the chart moves one step left as the new point arrives.
+                var slide = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
+                {
+                    From = step, To = 0, Duration = TimeSpan.FromMilliseconds(700),
+                    EasingFunction = new Microsoft.UI.Xaml.Media.Animation.CubicEase { EasingMode = Microsoft.UI.Xaml.Media.Animation.EasingMode.EaseOut },
+                };
+                Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(slide, _shift[i]);
+                Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(slide, "X");
+                var story = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
+                story.Children.Add(slide);
+                story.Begin();
+            }
+        }
     }
 
     // ---- where and in front of what ----
@@ -260,6 +356,13 @@ public sealed class DeskChip : Window
     {
         if (!e.GetCurrentPoint(_root).Properties.IsLeftButtonPressed) return;
         _pressed = true;
+        // On the meters a click switches bars / line charts; elsewhere it opens the panel.
+        _pressOnMeters = false;
+        if (_meterPanel is { } m)
+        {
+            var p = e.GetCurrentPoint(m).Position;
+            _pressOnMeters = p.X >= -4 && p.Y >= -6 && p.X <= m.ActualWidth + 4 && p.Y <= m.ActualHeight + 6;
+        }
         GetCursorPos(out _pressAt);
     }
 
@@ -279,6 +382,13 @@ public sealed class DeskChip : Window
     {
         if (!_pressed) return;
         _pressed = false;
+        if (_pressOnMeters)
+        {
+            App.Current.Settings.DeskChipLine = !App.Current.Settings.DeskChipLine;
+            App.Current.SaveSettings();
+            ApplyMode();
+            return;
+        }
         App.Current.ToggleMonitorPanelAt(Bounds);
     }
 
