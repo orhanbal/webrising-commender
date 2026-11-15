@@ -24,6 +24,7 @@ public sealed class MonitorFlyout : Window
     private readonly Grid _root = new();
     private readonly TranslateTransform _slide = new();
     private DateTime _hiddenAt;
+    private DateTime _shownAt;
 
     private static Brush Secondary => (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
 
@@ -33,7 +34,9 @@ public sealed class MonitorFlyout : Window
         Title = "WECOMMANDER Sunucularım";
         SystemBackdrop = new DesktopAcrylicBackdrop();
         AppWindow.IsShownInSwitchers = false;
-        ExtendsContentIntoTitleBar = true;
+        // No title bar at all (the presenter removes it). Extending content into
+        // it made the top ~32 px a drag area that swallowed clicks there.
+        ExtendsContentIntoTitleBar = false;
         if (AppWindow.Presenter is OverlappedPresenter p)
         {
             p.IsResizable = false;
@@ -45,7 +48,17 @@ public sealed class MonitorFlyout : Window
         AppWindow.Closing += (_, e) => { e.Cancel = true; Hide(); };
         Activated += (_, e) =>
         {
-            if (e.WindowActivationState == WindowActivationState.Deactivated && AppWindow.IsVisible) Hide();
+            App.DebugLayout($"monitor panel: activation {e.WindowActivationState} visible={AppWindow.IsVisible}");
+            if (e.WindowActivationState != WindowActivationState.Deactivated || !AppWindow.IsVisible) return;
+            // Opened from the server box: Windows activates the clicked box as the
+            // click ends, a few ms after the panel appeared (it then closed at once).
+            // Take the focus back instead of closing.
+            if (DateTime.UtcNow - _shownAt < TimeSpan.FromMilliseconds(800))
+            {
+                DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => Activate());
+                return;
+            }
+            Hide();
         };
 
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -109,12 +122,14 @@ public sealed class MonitorFlyout : Window
 
     public void Toggle(RectInt32? anchor = null)
     {
+        App.DebugLayout($"monitor panel: toggle visible={AppWindow.IsVisible} sinceHidden={(DateTime.UtcNow - _hiddenAt).TotalMilliseconds:0}ms anchor={(anchor is { } a ? $"{a.X},{a.Y}" : "none")}");
         if (AppWindow.IsVisible) Hide();
         else if (DateTime.UtcNow - _hiddenAt > TimeSpan.FromMilliseconds(400)) ShowPanel(anchor);
     }
 
     public void Hide()
     {
+        App.DebugLayout("monitor panel: hide");
         _hiddenAt = DateTime.UtcNow;
         AppWindow.Hide();
     }
@@ -142,6 +157,7 @@ public sealed class MonitorFlyout : Window
         }
         // Bottom right, just above the taskbar: it opens upward from there.
         else AppWindow.MoveAndResize(new RectInt32(area.X + area.Width - width - margin, area.Y + area.Height - height - margin, width, height));
+        _shownAt = DateTime.UtcNow;
         AppWindow.Show();
         Activate();
         Refresh();

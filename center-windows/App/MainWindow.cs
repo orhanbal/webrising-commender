@@ -33,7 +33,9 @@ public sealed class MainWindow : Window
         AppWindow.Title = "WECOMMANDER Yönetim Merkezi";
         AppWindow.SetIcon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "icon.ico"));
         AppWindow.IsShownInSwitchers = false;
-        ExtendsContentIntoTitleBar = true;
+        // No title bar at all (the presenter removes it). Extending content into
+        // it made the top ~32 px a drag area that swallowed clicks there.
+        ExtendsContentIntoTitleBar = false;
         if (AppWindow.Presenter is OverlappedPresenter presenter)
         {
             presenter.IsResizable = false;

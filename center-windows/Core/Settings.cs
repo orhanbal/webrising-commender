@@ -48,6 +48,8 @@ public sealed class Settings
     /// <summary>On: in front of every window. Off: only on the desktop (behind the windows).</summary>
     [JsonPropertyName("deskChipOnTop")] public bool DeskChipOnTop { get; set; } = true;
     /// <summary>Hidden while a full-screen app (game, video, presentation) runs.</summary>
+    /// <summary>The box's meters: live line charts (true) or bars (false); a click on them switches.</summary>
+    [JsonPropertyName("deskChipLine")] public bool DeskChipLine { get; set; } = true;
     [JsonPropertyName("deskChipHideFullscreen")] public bool DeskChipHideFullscreen { get; set; } = true;
     /// <summary>Where the owner dragged it: from the left and from the bottom of the work area (96-dpi pixels); null: the bottom left corner.</summary>
     [JsonPropertyName("deskChipLeft")] public int? DeskChipLeft { get; set; }
