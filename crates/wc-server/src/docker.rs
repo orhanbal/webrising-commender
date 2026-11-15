@@ -67,6 +67,11 @@ pub struct DockerEnv {
     /// Why this daemon could not be read (no access, timeout, not running);
     /// empty when it answered. Its sizes are then unknown, not zero.
     pub error: String,
+    /// The automatic build cache limit set in its daemon.json ("5GB"), or
+    /// empty when there is none (Docker then keeps the cache forever).
+    pub gc_keep: String,
+    /// That daemon.json (where the limit is saved).
+    pub config_path: String,
 }
 
 impl DockerEnv {
@@ -146,6 +151,220 @@ pub(crate) fn parse_found(text: &str, run_user: &str) -> (bool, String, Vec<Foun
     (has_docker, system, found)
 }
 
+/// The system daemon's settings file.
+pub(crate) const SYSTEM_CONFIG: &str = "/etc/docker/daemon.json";
+
+/// A path read from the server that may go into a script (quoted): absolute,
+/// plain characters only.
+pub(crate) fn valid_path(p: &str) -> Option<String> {
+    let p = p.trim();
+    (p.starts_with('/')
+        && p.len() < 512
+        && !p.contains("..")
+        && p.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "/._-@+".contains(c)))
+    .then(|| p.to_owned())
+}
+
+/// The build cache limit in a daemon.json, when it is on.
+pub(crate) fn gc_keep(config: &str) -> String {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(config) else {
+        return String::new();
+    };
+    let gc = &v["builder"]["gc"];
+    if gc["enabled"] == serde_json::Value::Bool(false) {
+        return String::new();
+    }
+    gc["defaultKeepStorage"].as_str().unwrap_or("").to_owned()
+}
+
+/// `config` with the build cache limit set to `keep` ("5GB"), every other
+/// setting kept. Refuses a file that is not a JSON object (never overwrites
+/// what it cannot read).
+pub(crate) fn with_gc_limit(config: &str, keep: &str) -> Result<String, String> {
+    let mut v: serde_json::Value = if config.trim().is_empty() {
+        serde_json::json!({})
+    } else {
+        serde_json::from_str(config).map_err(|_| {
+            "Docker ayar dosyası (daemon.json) okunamadı; elle düzeltilmeden değiştirilmez."
+                .to_owned()
+        })?
+    };
+    let root = v
+        .as_object_mut()
+        .ok_or("Docker ayar dosyası beklenen biçimde değil; değiştirilmedi.")?;
+    let builder = root
+        .entry("builder")
+        .or_insert_with(|| serde_json::json!({}));
+    let builder = builder
+        .as_object_mut()
+        .ok_or("daemon.json içindeki builder ayarı beklenen biçimde değil; değiştirilmedi.")?;
+    let gc = builder.entry("gc").or_insert_with(|| serde_json::json!({}));
+    let gc = gc
+        .as_object_mut()
+        .ok_or("daemon.json içindeki builder.gc ayarı beklenen biçimde değil; değiştirilmedi.")?;
+    gc.insert("enabled".into(), serde_json::Value::Bool(true));
+    gc.insert(
+        "defaultKeepStorage".into(),
+        serde_json::Value::String(keep.to_owned()),
+    );
+    Ok(serde_json::to_string_pretty(&v).unwrap_or_default() + "\n")
+}
+
+/// What "Build önbelleğini otomatik sınırla" did.
+#[derive(Serialize, Debug, Clone, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GcLimit {
+    pub docker: String,
+    pub keep: String,
+    pub config_path: String,
+    /// Where the earlier daemon.json was copied (empty: there was none).
+    pub backup: String,
+    /// What the immediate `builder prune --keep-storage` said.
+    pub pruned: String,
+}
+
+/// Sets daemon `docker`'s automatic build cache limit to `keep_gb` GB: saved
+/// in its daemon.json (merged, with a backup; for a rootless daemon the
+/// file stays its user's), and applied right away with Docker's own
+/// `builder prune --keep-storage` (no restart: running containers go on).
+/// The saved limit works by itself from the daemon's next start.
+pub async fn gc_limit<S: Shell>(sh: &S, docker: &str, keep_gb: u32) -> Result<GcLimit, String> {
+    gc_limit_in(sh, docker, keep_gb, RUN_USER).await
+}
+
+pub(crate) async fn gc_limit_in<S: Shell>(
+    sh: &S,
+    docker: &str,
+    keep_gb: u32,
+    run_user: &str,
+) -> Result<GcLimit, String> {
+    if !(1..=1000).contains(&keep_gb) {
+        return Err("Sınır 1 ile 1000 GB arasında olmalı.".into());
+    }
+    let keep = format!("{keep_gb}GB");
+    let (_, _, found) = parse_found(&run(sh, &discover_script(run_user), 30).await?, run_user);
+    let f = found
+        .into_iter()
+        .find(|f| f.id == docker)
+        .ok_or_else(|| format!("Bu Docker ortamı bulunamadı: {docker}. Taramayı yenileyin."))?;
+    // Its daemon.json and, for a rootless daemon, its user (owner of the file).
+    let probe = if f.uid == 0 {
+        format!("echo @@path; echo {SYSTEM_CONFIG}\necho @@cfg; r cat {SYSTEM_CONFIG} 2>/dev/null\necho @@priv; echo \"$R\"\n")
+    } else {
+        format!(
+            "echo @@pw; r getent passwd {uid} | cut -d: -f3,4,6\necho @@priv; echo \"$R\"\necho @@me; id -u\n",
+            uid = f.uid
+        )
+    };
+    let s = sections(&run(sh, &probe, 30).await?);
+    let root = !first(&s, "priv").is_empty();
+    let (path, owner) = if f.uid == 0 {
+        if !root {
+            return Err(crate::NEEDS_ROOT.into());
+        }
+        (SYSTEM_CONFIG.to_owned(), None)
+    } else {
+        let pw: Vec<&str> = first(&s, "pw").split(':').collect();
+        let (uid, gid, home) = match pw.as_slice() {
+            [u, g, h] => (u.parse::<u32>().ok(), g.parse::<u32>().ok(), valid_path(h)),
+            _ => (None, None, None),
+        };
+        let (Some(uid), Some(gid), Some(home)) = (uid, gid, home) else {
+            return Err("Bu Docker'ın kullanıcısı ya da ev klasörü bulunamadı.".into());
+        };
+        if uid != f.uid {
+            return Err("Kullanıcı bilgisi uyuşmuyor; değiştirilmedi.".into());
+        }
+        if !root && first(&s, "me") != uid.to_string() {
+            return Err(crate::NEEDS_ROOT.into());
+        }
+        (
+            format!("{home}/.config/docker/daemon.json"),
+            Some((uid, gid, home)),
+        )
+    };
+    let q = crate::quote(&path);
+    let current = sections(&run(sh, &format!("echo @@cfg; r cat {q} 2>/dev/null\n"), 30).await?)
+        .get("cfg")
+        .map(|l| l.join("\n"))
+        .unwrap_or_default();
+    let updated = with_gc_limit(&current, &keep)?;
+    let b64 = base64(updated.as_bytes());
+    let backup = format!("{path}.wecommander.bak");
+    let qb = crate::quote(&backup);
+    let qt = crate::quote(&format!("{path}.wecommander.tmp"));
+    let mut script = String::new();
+    match &owner {
+        // The user's own folders and file stay theirs.
+        Some((uid, gid, home)) => {
+            for dir in [format!("{home}/.config"), format!("{home}/.config/docker")] {
+                script.push_str(&format!(
+                    "[ -d {d} ] || r install -d -m 700 -o {uid} -g {gid} {d}\n",
+                    d = crate::quote(&dir)
+                ));
+            }
+        }
+        None => script.push_str("r mkdir -p /etc/docker\n"),
+    }
+    script.push_str(&format!(
+        "had=; r test -f {q} && {{ r cp -p {q} {qb} && had=1; }}\nprintf '%s' '{b64}' | base64 -d | r tee {qt} >/dev/null && r mv {qt} {q} || {{ echo @@fail; exit 0; }}\n"
+    ));
+    if let Some((uid, gid, _)) = &owner {
+        script.push_str(&format!("r chown {uid}:{gid} {q}\nr chmod 600 {q}\n"));
+    }
+    script.push_str("echo @@had; echo \"$had\"\n");
+    let w = sections(&run(sh, &script, 60).await?);
+    if w.contains_key("fail") {
+        return Err("Ayar dosyası yazılamadı; hiçbir şey değişmedi.".into());
+    }
+    // Now: Docker's own pruning down to the limit (as the daemon counts).
+    let socket = &f.socket;
+    let prune = format!(
+        "{DK}echo @@out; dk '{socket}' builder prune -f --keep-storage {keep} 2>&1 | tail -3\n"
+    );
+    let p = sections(&run(sh, &prune, 900).await?);
+    Ok(GcLimit {
+        docker: f.id,
+        keep,
+        config_path: path,
+        backup: if first(&w, "had").is_empty() {
+            String::new()
+        } else {
+            backup
+        },
+        pruned: p
+            .get("out")
+            .map(|l| l.join("\n"))
+            .unwrap_or_default()
+            .trim()
+            .to_owned(),
+    })
+}
+
+/// Standard base64, for a file's new content inside a script (its alphabet
+/// needs no quoting).
+fn base64(data: &[u8]) -> String {
+    const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in data.chunks(3) {
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
+        let n = (b[0] as u32) << 16 | (b[1] as u32) << 8 | b[2] as u32;
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(A[(n >> (18 - 6 * i) & 63) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
 /// One script that asks every daemon the same questions; each answer is in
 /// its own `@@<what>.<id>` section, with the exit code of `system df`.
 pub(crate) fn query_script(found: &[Found]) -> String {
@@ -157,6 +376,16 @@ pub(crate) fn query_script(found: &[Found]) -> String {
         if f.uid != 0 {
             script.push_str(&format!(
                 "echo @@user.{id}; r getent passwd {uid} | cut -d: -f1\n",
+                uid = f.uid
+            ));
+        }
+        // Its daemon.json: the system one, or the user's own (rootless
+        // dockerd reads $XDG_CONFIG_HOME/docker, normally ~/.config/docker).
+        if f.uid == 0 {
+            script.push_str(&format!("echo @@cfgpath.{id}; echo {SYSTEM_CONFIG}\necho @@cfg.{id}; r cat {SYSTEM_CONFIG} 2>/dev/null\n"));
+        } else {
+            script.push_str(&format!(
+                "h=$(r getent passwd {uid} | cut -d: -f6); echo @@cfgpath.{id}; [ \"$h\" ] && echo \"$h/.config/docker/daemon.json\"\necho @@cfg.{id}; [ \"$h\" ] && r cat \"$h/.config/docker/daemon.json\" 2>/dev/null\n",
                 uid = f.uid
             ));
         }
@@ -277,6 +506,8 @@ pub(crate) fn parse_envs(text: &str, found: &[Found]) -> Vec<DockerEnv> {
                 }
             }
             env.root_dir = first(&s, &format!("root.{id}")).to_owned();
+            env.config_path = valid_path(first(&s, &format!("cfgpath.{id}"))).unwrap_or_default();
+            env.gc_keep = gc_keep(&lines(&format!("cfg.{id}")).join("\n"));
             env.running = lines(&format!("ps.{id}"))
                 .iter()
                 .filter_map(|l| l.split_once('\t'))
@@ -698,5 +929,58 @@ mod tests {
             split_id("docker-build@u1000"),
             ("docker-build", Some("u1000"))
         );
+    }
+}
+
+#[cfg(test)]
+mod gc_tests {
+    use super::*;
+
+    #[test]
+    fn the_limit_is_merged_into_daemon_json_keeping_everything_else() {
+        let before = r#"{"data-root":"/srv/docker","features":{"containerd-snapshotter":true},"builder":{"gc":{"enabled":false,"policy":[{"keepStorage":"1GB"}]}}}"#;
+        let after: serde_json::Value =
+            serde_json::from_str(&with_gc_limit(before, "5GB").unwrap()).unwrap();
+        assert_eq!(after["data-root"], "/srv/docker");
+        assert_eq!(after["features"]["containerd-snapshotter"], true);
+        assert_eq!(after["builder"]["gc"]["enabled"], true);
+        assert_eq!(after["builder"]["gc"]["defaultKeepStorage"], "5GB");
+        assert_eq!(after["builder"]["gc"]["policy"][0]["keepStorage"], "1GB");
+        assert_eq!(gc_keep(&after.to_string()), "5GB");
+        // No file yet: a new one with only the limit.
+        assert_eq!(gc_keep(&with_gc_limit("", "5GB").unwrap()), "5GB");
+    }
+
+    #[test]
+    fn an_unreadable_daemon_json_is_never_overwritten() {
+        assert!(with_gc_limit("{ not json", "5GB").is_err());
+        assert!(with_gc_limit("[1,2]", "5GB").is_err());
+        assert!(with_gc_limit(r#"{"builder":"x"}"#, "5GB").is_err());
+        assert_eq!(gc_keep("{ not json"), "");
+        assert_eq!(
+            gc_keep(r#"{"builder":{"gc":{"enabled":false,"defaultKeepStorage":"5GB"}}}"#),
+            ""
+        );
+    }
+
+    #[test]
+    fn paths_from_the_server_are_checked_before_use() {
+        assert_eq!(
+            valid_path("/var/lib/devagent-ci"),
+            Some("/var/lib/devagent-ci".into())
+        );
+        assert_eq!(valid_path("relative"), None);
+        assert_eq!(valid_path("/home/a b"), None);
+        assert_eq!(valid_path("/home/x/../root"), None);
+        assert_eq!(valid_path("/home/$(id)"), None);
+    }
+
+    #[test]
+    fn base64_matches_the_standard() {
+        assert_eq!(base64(b""), "");
+        assert_eq!(base64(b"f"), "Zg==");
+        assert_eq!(base64(b"fo"), "Zm8=");
+        assert_eq!(base64(b"foo"), "Zm9v");
+        assert_eq!(base64("{\"a\":\"ğ\"}\n".as_bytes()), "eyJhIjoixJ8ifQo=");
     }
 }

@@ -535,7 +535,7 @@ public sealed class ServerWindow : Window
     // ---- cleanup ----
 
     /// <summary>A Docker daemon at the top of its cleanup card: which one it is, what it stores and frees, and the running containers a cleanup never touches.</summary>
-    private static UIElement DockerHeader(DockerEnv env)
+    private UIElement DockerHeader(DockerEnv env)
     {
         var p = new StackPanel { Spacing = 4 };
         var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
@@ -562,8 +562,53 @@ public sealed class ServerWindow : Window
                 ? "Korunur (dokunulmaz): " + string.Join(", ", env.Running.Take(6)) + (env.Running.Count > 6 ? $" ve {env.Running.Count - 6} konteyner daha" : "") + "; bunların ve durmuş konteynerlerin imajları, tüm volume'ler."
                 : "Korunur (dokunulmaz): durmuş konteynerlerin imajları ve tüm volume'ler.";
             p.Children.Add(new TextBlock { Text = protectedText, TextWrapping = TextWrapping.Wrap, Foreground = (Brush)Application.Current.Resources["SystemFillColorSuccessBrush"] });
+            // Without a limit Docker keeps the build cache forever: offer one, so it does not fill the disk again.
+            var limit = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Margin = new Thickness(0, 4, 0, 0) };
+            limit.Children.Add(new TextBlock
+            {
+                Text = string.IsNullOrEmpty(env.GcKeep) ? "Build önbelleği otomatik sınırı: yok (Docker hiç silmez)" : $"Build önbelleği otomatik sınırı: {env.GcKeep}",
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = string.IsNullOrEmpty(env.GcKeep) ? (Brush)Application.Current.Resources["SystemFillColorCautionBrush"] : Secondary,
+            });
+            var set = new Button { Content = string.IsNullOrEmpty(env.GcKeep) ? "Otomatik sınırla…" : "Sınırı değiştir…" };
+            set.Click += async (_, _) => await LimitBuildCache(env);
+            limit.Children.Add(set);
+            p.Children.Add(limit);
         }
         return p;
+    }
+
+    /// <summary>Saves an automatic build cache limit in the daemon's own settings and applies it now with Docker's own pruning (no restart).</summary>
+    private async Task LimitBuildCache(DockerEnv env)
+    {
+        var size = new NumberBox { Header = "En fazla tutulacak build önbelleği (GB)", Value = 5, Minimum = 1, Maximum = 1000, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, Width = 260, HorizontalAlignment = HorizontalAlignment.Left };
+        var body = new StackPanel { Spacing = 10 };
+        body.Children.Add(new TextBlock { TextWrapping = TextWrapping.Wrap, Text = $"{env.Label}: Docker build önbelleğini bu sınırda tutar; aşınca en eski ve en az kullanılan katmanları kendisi siler. Sınır bu Docker'ı kullanan bütün projeler için ortaktır." });
+        body.Children.Add(size);
+        body.Children.Add(new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Secondary, Text = $"Ayar şuraya kaydedilir (önce yedeği alınır, diğer ayarlara dokunulmaz): {(string.IsNullOrEmpty(env.ConfigPath) ? "daemon.json" : env.ConfigPath)}. Önbellek hemen bu sınıra indirilir; Docker yeniden başlatılmaz, çalışan konteynerler durmaz. Kayıtlı sınır Docker'ın bir sonraki açılışından sonra kendiliğinden çalışır." });
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Content.XamlRoot,
+            Title = "Build önbelleğini otomatik sınırla",
+            Content = body,
+            PrimaryButtonText = "Kaydet ve uygula",
+            CloseButtonText = "Vazgeç",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        var gb = double.IsNaN(size.Value) ? 5 : (int)Math.Clamp(size.Value, 1, 1000);
+        _scroll.Content = Waiting($"{env.Label}: build önbelleği {gb} GB ile sınırlanıyor…");
+        try
+        {
+            var r = await _c.Server<GcLimit>("server.dockerGcLimit", new { sessionId = _sessionId, docker = env.Id, keepGb = gb });
+            await Load();
+            Show($"{env.Label}: build önbelleği artık en fazla {r.Keep}. Ayar: {r.ConfigPath}" + (string.IsNullOrEmpty(r.Backup) ? "" : $" (eski hâli: {r.Backup})") + (string.IsNullOrEmpty(r.Pruned) ? "" : $". Docker: {r.Pruned}"), InfoBarSeverity.Success);
+        }
+        catch (Exception ex)
+        {
+            await Load();
+            Show(Friendly(ex), InfoBarSeverity.Error);
+        }
     }
 
     private UIElement CleanupPage(CleanupScan scan)

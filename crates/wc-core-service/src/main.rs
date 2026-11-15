@@ -36,6 +36,14 @@ impl core::EventSink for Events {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GcArg {
+    session_id: String,
+    docker: String,
+    keep_gb: u32,
+}
+
+#[derive(Deserialize)]
 struct Request {
     id: Value,
     method: String,
@@ -430,6 +438,10 @@ async fn dispatch(
         "server.coolifyInit" => {
             let a: InitArg = p(params)?;
             ok(core::server::coolify_init(state, a.session_id, a.container_id, a.token).await?)
+        }
+        "server.dockerGcLimit" => {
+            let a: GcArg = p(params)?;
+            ok(core::server::docker_gc_limit(state, a.session_id, a.docker, a.keep_gb).await?)
         }
         "server.restartOwner" => {
             let a: OwnerArg = p(params)?;

@@ -34,13 +34,16 @@ public sealed record DockerEnv(
     ulong ImagesBytes, ulong ImagesReclaimableBytes, ulong BuildCacheBytes, ulong BuildCacheReclaimableBytes,
     ulong ContainersBytes, ulong VolumesBytes, ulong DanglingBytes,
     uint ImagesTotal, uint ImagesActive, uint ContainersTotal, uint ContainersRunning,
-    List<string> Running, string Error)
+    List<string> Running, string Error, string GcKeep = "", string ConfigPath = "")
 {
     public ulong TotalBytes => ImagesBytes + BuildCacheBytes + ContainersBytes + VolumesBytes;
     /// <summary>The most a cleanup can free here: build cache plus unused images (dangling ones are part of those).</summary>
     public ulong ReclaimableBytes => BuildCacheReclaimableBytes + ImagesReclaimableBytes;
     public bool Rootless => Kind == "rootless";
 }
+
+/// <summary>What "Build önbelleğini otomatik sınırla" did: the saved limit, where, the backup, and Docker's own pruning down to it.</summary>
+public sealed record GcLimit(string Docker, string Keep, string ConfigPath, string Backup, string Pruned);
 
 /// <param name="Docker">The daemon this cleanup is for (system, u1000); empty for the rest.</param>
 /// <param name="Group">Items of one group overlap: only one of them can be chosen.</param>
