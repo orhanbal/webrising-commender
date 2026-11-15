@@ -1,6 +1,20 @@
 # Changelog
 
+## 1.0.0 — release notes (tagged after device acceptance)
+
+WECOMMANDER 1.0 is one desktop app (Windows, macOS) plus a non-root agent (Linux, Windows, macOS):
+
+- **SSH client:** saved servers with groups and tags, tabs and split view, SFTP, local/remote/SOCKS tunnels, jump hosts, Telnet, serial and Mosh, SSH agent login (OpenSSH agent, Pageant, macOS, FIDO2), session logs, terminal themes, autocomplete from history and snippets, `~/.ssh/config` import, backup export/import.
+- **Server management:** overview, disk analysis and safe cleanup with progress (logs, package caches, Docker per daemon including rootless Docker), processes and zombie fixes, Coolify support.
+- **Live monitoring:** a server box on the desktop (bottom left) with live line charts for CPU, memory and disk, and a tray panel next to the app.
+- **AI over MCP:** one MCP address for Claude, ChatGPT, Cursor and other clients, for every machine. Reads run without approval; commands, deletion, cleanup and restarts need a one-time server-side approval (web, app, e-mail), or autonomous mode for a set time.
+- **Sync and teams:** end-to-end encrypted library sync, team library and shared terminals, audit log with versions and undo.
+- **Plans:** Free, Pro and Team through Paddle (Merchant of Record), 14-day refund; Terms of Service and Privacy Policy on the site and at checkout.
+- **Updates:** the apps update themselves with a progress window; GitHub keeps the newest 10 preview releases per channel (daily clean-up).
+
 ## Unreleased
+
+- Releases: the `release-retention` workflow deletes preview releases (and their tags) beyond the newest 10 per channel once a day (and on demand); `center-linux-latest` and `macos-center-latest` stay.
 
 - Installer banner: always the WECOMMANDER icon with the name and what is being installed; the wide block-letter wordmark is gone (it rendered too coarse).
 

@@ -422,5 +422,9 @@ export const productEnglish:Record<string,string> = {
   "Sunucu ajanı": "Server agent",
   "Ya da PowerShell'e yapıştır": "Or paste into PowerShell",
   "Yapay zekâ": "AI",
-  "Yönetim": "Administration"
+  "Yönetim": "Administration",
+  "Gizlilik Politikası": "Privacy Policy",
+  "İade ve İptal Politikası": "Refund and Cancellation Policy",
+  "Fiyat, vergi ve dönem bilgileri Paddle ödeme ekranında gösterilir. Abonelik her ay yenilenir; istediğin zaman iptal edebilirsin. İlk ödemeden sonraki 14 gün içinde koşulsuz iade.": "Price, tax and billing period are shown on Paddle's checkout. The subscription renews monthly; you can cancel any time. Full refund within 14 days of your first payment.",
+  "Ödemeye geçerek şunları kabul etmiş olursun:": "By continuing to payment you accept:"
 };
