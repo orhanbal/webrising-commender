@@ -28,12 +28,13 @@ public sealed class DeskChip : Window
     private readonly TextBlock _status = new() { FontSize = 11 };
     private readonly (TextBlock Text, ColumnDefinition Fill, ColumnDefinition Empty, Rectangle Bar)[] _meters = new (TextBlock, ColumnDefinition, ColumnDefinition, Rectangle)[3];
     // The live line charts: one per meter, the last points moving in from the right.
-    private const double ChartWidth = 56, ChartHeight = 18;
-    private const int ChartPoints = 30;
+    private const double ChartWidth = 90, ChartHeight = 26;
+    private const int ChartPoints = 20; // a minute at one sample every 3 s
     private readonly Grid[] _tracks = new Grid[3];
     private readonly Canvas[] _charts = new Canvas[3];
     private readonly Polyline[] _lines = new Polyline[3];
     private readonly Polygon[] _areas = new Polygon[3];
+    private readonly Ellipse[] _dots = new Ellipse[3];
     private readonly TranslateTransform[] _shift = new TranslateTransform[3];
     private readonly Dictionary<string, List<double>[]> _history = [];
     private readonly Dictionary<string, int> _seen = [];
@@ -44,7 +45,7 @@ public sealed class DeskChip : Window
     private POINT _pressAt;
 
     private static readonly string[] MeterNames = ["CPU", "RAM", "Disk"];
-    public const int WidthDip = 380, HeightDip = 56;
+    public const int WidthDip = 490, HeightDip = 64;
 
     public DeskChip(ServerMonitor monitor)
     {
@@ -105,14 +106,14 @@ public sealed class DeskChip : Window
         Grid.SetColumn(who, 1);
         _root.Children.Add(who);
 
-        var meters = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, VerticalAlignment = VerticalAlignment.Center };
+        var meters = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14, VerticalAlignment = VerticalAlignment.Center };
         for (var i = 0; i < 3; i++)
         {
             var text = new TextBlock { FontSize = 11 };
             var fill = new ColumnDefinition { Width = new GridLength(0, GridUnitType.Star) };
             var rest = new ColumnDefinition { Width = new GridLength(100, GridUnitType.Star) };
             var barFill = new Rectangle { RadiusX = 2, RadiusY = 2 };
-            var track = new Grid { Height = 4, Width = 56, Margin = new Thickness(0, 3, 0, 0), CornerRadius = new CornerRadius(2),
+            var track = new Grid { Height = 4, Width = ChartWidth, Margin = new Thickness(0, 3, 0, 0), CornerRadius = new CornerRadius(2),
                 Background = new SolidColorBrush(ColorHelper.FromArgb(60, 128, 128, 128)) };
             track.ColumnDefinitions.Add(fill);
             track.ColumnDefinitions.Add(rest);
@@ -126,6 +127,9 @@ public sealed class DeskChip : Window
             var line = new Polyline { StrokeThickness = 1.6, StrokeLineJoin = PenLineJoin.Round };
             layer.Children.Add(area);
             layer.Children.Add(line);
+            var dot = new Ellipse { Width = 5, Height = 5 };
+            layer.Children.Add(dot);
+            _dots[i] = dot;
             chart.Children.Add(layer);
             var cell = new StackPanel();
             cell.Children.Add(text);
@@ -226,11 +230,26 @@ public sealed class DeskChip : Window
             var area = new PointCollection();
             // The newest point sits at the right edge; older ones to its left.
             var start = ChartWidth - (points.Count - 1) * step;
+            // Scaled to the recent range (at least 8 points tall), not 0–100:
+            // values that move by a few percent showed as a flat line.
+            var lo = points.Count > 0 ? points.Min() : 0;
+            var hi = points.Count > 0 ? points.Max() : 100;
+            var span = Math.Max(8, hi - lo);
+            var mid = (hi + lo) / 2;
+            lo = Math.Clamp(mid - span / 2 - 2, 0, 100);
+            hi = Math.Clamp(lo + span + 4, 0, 100);
+            if (hi - lo < span) lo = Math.Max(0, hi - span - 4);
+            double Y(double v) => ChartHeight - 3 - (v - lo) / Math.Max(1, hi - lo) * (ChartHeight - 6);
             for (var k = 0; k < points.Count; k++)
             {
-                var p = new Windows.Foundation.Point(start + k * step, ChartHeight - 1 - points[k] / 100 * (ChartHeight - 3));
+                var p = new Windows.Foundation.Point(start + k * step, Y(points[k]));
                 line.Add(p);
                 area.Add(p);
+            }
+            if (points.Count > 0)
+            {
+                Canvas.SetLeft(_dots[i], ChartWidth - 2.5);
+                Canvas.SetTop(_dots[i], Y(points[^1]) - 2.5);
             }
             if (points.Count > 0)
             {
@@ -242,13 +261,15 @@ public sealed class DeskChip : Window
             _lines[i].Stroke = new SolidColorBrush(color);
             _areas[i].Points = area;
             _areas[i].Fill = new SolidColorBrush(color);
+            _dots[i].Fill = new SolidColorBrush(color);
+            _dots[i].Visibility = points.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             if (fresh && points.Count > 1 && App.Current.Settings.DeskChipLine)
             {
-                // Slide: the chart moves one step left as the new point arrives.
+                // Flows all the time: the chart moves one step left steadily over the
+                // 3 s until the next sample (not a short jump and then a stop).
                 var slide = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
                 {
-                    From = step, To = 0, Duration = TimeSpan.FromMilliseconds(700),
-                    EasingFunction = new Microsoft.UI.Xaml.Media.Animation.CubicEase { EasingMode = Microsoft.UI.Xaml.Media.Animation.EasingMode.EaseOut },
+                    From = step, To = 0, Duration = TimeSpan.FromMilliseconds(2900),
                 };
                 Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(slide, _shift[i]);
                 Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(slide, "X");
