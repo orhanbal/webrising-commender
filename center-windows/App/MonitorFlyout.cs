@@ -47,6 +47,7 @@ public sealed class MonitorFlyout : Window
         AppWindow.Closing += (_, e) => { e.Cancel = true; Hide(); };
         Activated += (_, e) =>
         {
+            App.DebugLayout($"monitor panel: activation {e.WindowActivationState} visible={AppWindow.IsVisible}");
             if (e.WindowActivationState == WindowActivationState.Deactivated && AppWindow.IsVisible) Hide();
         };
 
@@ -111,12 +112,14 @@ public sealed class MonitorFlyout : Window
 
     public void Toggle(RectInt32? anchor = null)
     {
+        App.DebugLayout($"monitor panel: toggle visible={AppWindow.IsVisible} sinceHidden={(DateTime.UtcNow - _hiddenAt).TotalMilliseconds:0}ms anchor={(anchor is { } a ? $"{a.X},{a.Y}" : "none")}");
         if (AppWindow.IsVisible) Hide();
         else if (DateTime.UtcNow - _hiddenAt > TimeSpan.FromMilliseconds(400)) ShowPanel(anchor);
     }
 
     public void Hide()
     {
+        App.DebugLayout("monitor panel: hide");
         _hiddenAt = DateTime.UtcNow;
         AppWindow.Hide();
     }

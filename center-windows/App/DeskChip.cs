@@ -356,6 +356,7 @@ public sealed class DeskChip : Window
 
     private void OnPressed(object sender, PointerRoutedEventArgs e)
     {
+        App.DebugLayout($"chip: pressed left={e.GetCurrentPoint(_root).Properties.IsLeftButtonPressed}");
         if (!e.GetCurrentPoint(_root).Properties.IsLeftButtonPressed) return;
         _pressed = true;
         // On the meters a click switches bars / line charts; elsewhere it opens the panel.
@@ -382,6 +383,7 @@ public sealed class DeskChip : Window
 
     private void OnReleased(object sender, PointerRoutedEventArgs e)
     {
+        App.DebugLayout($"chip: released pressed={_pressed} onMeters={_pressOnMeters}");
         if (!_pressed) return;
         _pressed = false;
         if (_pressOnMeters)
