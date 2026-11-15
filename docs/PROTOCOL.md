@@ -24,6 +24,9 @@ Transport: JSON messages over authenticated WebSocket.
 - `system_info`
 - `log_query` (`source` `journal`|`file`, `path`, `unit`, `sinceMinutes` 1–10080, `level` error|warning|info|debug, `pattern` case-insensitive regex ≤512, `limit` 1–1000): bounded log search, newest first, with `matched`/`returned`/`truncated`, `repeated` message groups and `limitations`; output is redacted. The journal source needs the `systemLogs` capability; file logs follow the allowed roots. Low risk.
 - `health_snapshot` (`top` 1–20, default 5): CPU usage and load, memory and swap, disks, network counters, top processes by CPU and memory; carries `observedAt`, `source` and `limitations`. Low risk.
+- Server management (Linux; the same fixed scripts as the apps' Sunucu yönetimi, crate `wc-server`, run with `sh` on the device):
+  - `server_overview`, `server_disk_usage` (`path`, default `/`), `server_cleanup_scan`, `server_processes`: read-only. Low risk.
+  - `server_cleanup_run` (`ids` from the scan), `server_process_signal` (`pid`, `name`, `action` reap|term|kill, `confirmDatabase`), `server_restart_owner` (`ownerKind` container|service, `id`): fixed commands as root (or sudo without a password); they need the device's command capability and a human approval for the exact call. High risk. SSH, Docker, containerd, journald, logind, D-Bus and WECOMMANDER are never restarted; the processes that keep the server reachable are never signalled.
 - `fs_list`
 - `fs_stat`
 - `fs_read`

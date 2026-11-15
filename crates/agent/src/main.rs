@@ -12,6 +12,7 @@ mod process_ops;
 mod protocol;
 #[cfg(target_os = "linux")]
 mod reaper;
+mod server_ops;
 mod redact;
 mod spreadsheet_ops;
 mod stdio_mcp;

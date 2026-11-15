@@ -1,0 +1,10 @@
+[package]
+name = "wc-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Server management (overview, disk usage, safe cleanup, processes and zombies) as fixed sh scripts, run over SSH by the apps or locally by the agent"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }

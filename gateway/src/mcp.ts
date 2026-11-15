@@ -33,6 +33,18 @@ export const tools = [
   },
   tool("system_info", "Read system information from a device.", {}),
   tool("health_snapshot", "Read-only health snapshot of a device: CPU usage and load, memory and swap, disks, network counters, and the top processes by CPU and memory. Includes observedAt and limitations.", { top: { type: "integer", minimum: 1, maximum: 20, description: "Processes per list (default 5)." } }),
+  tool("server_overview", "Linux server overview, read-only: hostname, OS, kernel, uptime, load, CPU %, memory and swap, disks, whether a reboot is required, pending updates, process and zombie counts, and whether this agent can act as root (privilege). The same data as the app's Sunucu yönetimi > Genel bakış.", {}),
+  tool("server_disk_usage", "What fills a Linux disk, read-only: the 40 largest folders directly inside path (default /), sizes in KB, never crossing into another disk, plus Docker's own usage at /. Large disks can take a minute or two.", { path: { type: "string", description: "Absolute folder (default /)." } }),
+  tool("server_cleanup_scan", "Read-only: what can be safely freed on a Linux server, by category (apt cache, journal older than 7 days, rotated logs, old temp files, crash dumps, Docker build cache, dangling and unused Docker images), with the size and the exact command each cleanup runs. Use the ids with server_cleanup_run.", {}),
+  tool("server_cleanup_run", "Frees disk space on a Linux server: runs the fixed cleanup commands of the given categories (ids from server_cleanup_scan) as root. Only known, re-creatable files; application data, databases and Docker volumes are never touched. Needs a human approval for this exact call.", { ids: { type: "array", items: { type: "string" }, description: "Category ids from server_cleanup_scan, e.g. [\"apt-cache\",\"journal\"]." } }, ["ids"]),
+  tool("server_processes", "Linux processes, read-only: every process (pid, parent, user, state, CPU, memory, run time, command) and the zombie processes grouped by parent, with the container or systemd service that owns the parent and whether that parent is protected (the processes that keep the server reachable).", {}),
+  tool("server_process_signal", "Sends a signal to one Linux process: action 'reap' asks a parent to collect its zombies (SIGCHLD, harmless), 'term' asks it to stop, 'kill' stops it at once. name must still match the process (a PID reused by another program is refused); the processes that keep the server reachable are refused; a database needs confirm_database. Needs a human approval for this exact call.", {
+    pid: integer(), name: { type: "string", description: "The process name from server_processes." },
+    action: { type: "string", enum: ["reap", "term", "kill"] }, confirm_database: bool(),
+  }, ["pid", "name", "action"]),
+  tool("server_restart_owner", "Restarts the Docker container or systemd service that a process runs in (from server_processes zombie owners); its zombies go with the old process. SSH, Docker, containerd, journald, logind, D-Bus and WECOMMANDER itself are refused. Needs a human approval for this exact call.", {
+    owner_kind: { type: "string", enum: ["container", "service"] }, id: { type: "string", description: "Container id (12+ hex) or unit name ending in .service." },
+  }, ["owner_kind", "id"]),
   tool("log_query", "Read-only, bounded log search on a device, newest first. source 'journal' (Linux systemd journal: since_minutes window, unit, level) or 'file' (tail of a log file inside the allowed roots). Filters: level (error|warning|info|debug, default info), pattern (case-insensitive regex), limit (1-1000, default 100). Repeated messages are grouped; secrets are masked.", {
     source: { type: "string", enum: ["journal", "file"] },
     path: { type: "string", description: "Log file for source 'file'." },
@@ -248,6 +260,16 @@ export function actionFromTool(name: string, a: any): AgentAction {
     };
     case "health_snapshot": return { kind: "health_snapshot", ...(a.top !== undefined ? { top: Number(a.top) } : {}) };
     case "policy_info": return { kind: "policy_info" };
+    case "server_overview": return { kind: "server_overview" };
+    case "server_disk_usage": return { kind: "server_disk_usage", ...(a.path !== undefined ? { path: String(a.path) } : {}) };
+    case "server_cleanup_scan": return { kind: "server_cleanup_scan" };
+    case "server_cleanup_run": return { kind: "server_cleanup_run", ids: Array.isArray(a.ids) ? a.ids.map(String) : [] };
+    case "server_processes": return { kind: "server_processes" };
+    case "server_process_signal": return {
+      kind: "server_process_signal", pid: Number(a.pid), name: String(a.name), action: String(a.action) as "reap" | "term" | "kill",
+      ...(a.confirm_database !== undefined ? { confirmDatabase: Boolean(a.confirm_database) } : {}),
+    };
+    case "server_restart_owner": return { kind: "server_restart_owner", ownerKind: String(a.owner_kind) as "container" | "service", id: String(a.id) };
     case "fs_list": return { kind: "fs_list", path: String(a.path) };
     case "fs_stat": return { kind: "fs_stat", path: String(a.path) };
     case "fs_read": return { kind: "fs_read", path: String(a.path), ...(a.max_bytes ? { maxBytes: Number(a.max_bytes) } : {}) };

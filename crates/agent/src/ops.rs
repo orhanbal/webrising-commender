@@ -38,6 +38,9 @@ pub fn enforce_capabilities(capabilities: DeviceCapabilities, action: &AgentActi
             | AgentAction::TaskStart { .. }
             | AgentAction::TerminalStart { .. }
             | AgentAction::TerminalInput { .. }
+            | AgentAction::ServerCleanupRun { .. }
+            | AgentAction::ServerProcessSignal { .. }
+            | AgentAction::ServerRestartOwner { .. }
     );
     let needs_writes = matches!(
         action,
@@ -78,6 +81,7 @@ fn output_is_redacted(action: &AgentAction) -> bool {
         AgentAction::ProcessExec { .. }
             | AgentAction::ProcessList
             | AgentAction::LogQuery { .. }
+            | AgentAction::ServerProcesses
             | AgentAction::TaskStatus { .. }
             | AgentAction::TerminalRead { .. }
             | AgentAction::TerminalReadPage { .. }
@@ -160,6 +164,13 @@ async fn execute_unredacted(context: ExecutionContext<'_>, action: AgentAction) 
         AgentAction::HealthSnapshot { top } => {
             tokio::task::spawn_blocking(move || system_ops::health_snapshot(top)).await?
         }
+        AgentAction::ServerOverview
+        | AgentAction::ServerDiskUsage { .. }
+        | AgentAction::ServerCleanupScan
+        | AgentAction::ServerCleanupRun { .. }
+        | AgentAction::ServerProcesses
+        | AgentAction::ServerProcessSignal { .. }
+        | AgentAction::ServerRestartOwner { .. } => crate::server_ops::execute(action).await,
         AgentAction::PolicyInfo => Ok(serde_json::json!({
             "allowedRoots": policy.roots().iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>(),
             "agentMode": if !capabilities.commands && !capabilities.file_writes { "read_only" } else { "restricted" },

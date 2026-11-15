@@ -4482,6 +4482,7 @@ dependencies = [
  "tokio-serial",
  "uuid",
  "vt100",
+ "wc-server",
  "wc-ssh-core",
  "wc-vault",
 ]
@@ -4494,6 +4495,13 @@ dependencies = [
  "serde_json",
  "tokio",
  "wc-app-core",
+]
+
+[[package]]
+name = "wc-server"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -4580,6 +4588,7 @@ dependencies = [
  "tracing-subscriber",
  "umya-spreadsheet",
  "uuid",
+ "wc-server",
  "windows-service",
  "windows-sys 0.61.2",
  "zip 4.6.1",

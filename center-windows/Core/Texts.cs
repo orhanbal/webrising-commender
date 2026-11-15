@@ -14,6 +14,9 @@ public static class Texts
         "terminal_input" => "Terminale yaz",
         "fs_delete" => "Dosya sil",
         "fs_move" => "Dosya taşı",
+        "server_cleanup_run" => "Sunucuda yer aç (temizlik)",
+        "server_process_signal" => "Sürece sinyal gönder",
+        "server_restart_owner" => "Servisi yeniden başlat",
         _ => kind,
     };
 
