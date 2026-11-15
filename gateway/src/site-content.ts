@@ -29,9 +29,13 @@ export type PublicPage = {
 
 export const productName = "WECOMMANDER";
 export const productSummary =
-  "WECOMMANDER is a remote MCP (Model Context Protocol) server that lets AI assistants such as Claude, ChatGPT and Cursor use the terminals and files of your own Windows, macOS and Linux machines through one MCP URL, with human approval for risky actions, per-device limits and a full audit log.";
+  "WECOMMANDER is a desktop SSH client and server management app for Windows and macOS (SSH, SFTP, tunnels, snippets, disk cleanup, live monitoring, end-to-end encrypted sync) and a remote MCP (Model Context Protocol) server that lets AI assistants such as Claude, ChatGPT and Cursor use the terminals and files of your own Windows, macOS and Linux machines through one MCP URL, with human approval for risky actions, per-device limits and a full audit log.";
 
 const facts: string[] = [
+  "Desktop app for Windows 10/11 and macOS (Linux preview): saved hosts with groups and tags, tabbed and split terminals, SFTP file manager, local/remote/SOCKS tunnels, jump hosts, Telnet, serial ports and Mosh, snippets, autocomplete, broadcast typing, session logs and themes.",
+  "Server management without installing anything on the server: overview, what fills the disk, safe cleanup (old logs, package caches, Docker build cache and unused images, per Docker daemon including rootless Docker), processes and zombie fixes.",
+  "Live server monitoring in the bottom-left corner of the desktop, with line charts for CPU, memory and disk.",
+  "End-to-end encrypted sync of hosts, keys and snippets across devices; team library and live shared terminals.",
   "One MCP URL for all your machines: https://wecommander.app/mcp (OAuth sign-in from Claude, ChatGPT and other MCP clients).",
   "A small agent runs on each machine (Windows, macOS, Linux) and keeps one outbound encrypted connection; no inbound ports, VPN or SSH keys are needed.",
   "The agent runs as a normal user (not root/SYSTEM) and only inside the folders you allow.",
@@ -82,12 +86,31 @@ export const publicPages: PublicPage[] = [
     heading: "Features",
     intro: "Everything an AI assistant needs to work on a real machine, with the controls a person needs to stay in charge.",
     blocks: [
+      { h2: "Desktop app (SSH client)" },
+      {
+        ul: [
+          "Saved hosts with groups and tags, import from ~/.ssh/config; tabbed and split terminals; SFTP file manager.",
+          "Local, remote and SOCKS tunnels, jump hosts, SSH agent and FIDO2 keys; Telnet, serial ports and Mosh.",
+          "Snippets, autocomplete from history, typing into every tab at once, session logs and terminal themes.",
+          "End-to-end encrypted sync of hosts, keys and snippets; team library and live shared terminals.",
+        ],
+      },
+      { h2: "Server management" },
+      {
+        ul: [
+          "Overview: CPU, memory, disks, uptime, pending updates and reboots.",
+          "Disk: the largest folders, and which Docker daemon a storage folder belongs to.",
+          "Safe cleanup with progress: old logs, package caches, crash dumps, and per Docker daemon (system and rootless) build cache and unused images through Docker's own prune; running containers and volumes are never touched.",
+          "Processes and zombie fixes; live monitoring on the desktop.",
+        ],
+      },
       { h2: "For the AI" },
       {
         ul: [
           "Files: read (also line ranges, PDF, Word, Excel), write, exact search-and-replace edits, search by name or content, move, create folders.",
           "Commands: one-off commands with timeouts, long-running background tasks that survive disconnects, interactive terminals.",
           "Operations: process list, device health snapshot (CPU, memory, disks, network, top processes), log search in the system journal or log files.",
+          "Server management tools: overview, disk usage, cleanup scan and approved cleanup, processes, zombie fixes and service restarts.",
           "Desktop Commander-compatible tool names, so existing prompts keep working.",
         ],
       },
@@ -333,7 +356,14 @@ export const publicPages: PublicPage[] = [
     description: "How WECOMMANDER handles account, device and audit data.",
     heading: "Privacy",
     intro: "The privacy policy of WECOMMANDER.",
-    blocks: [],
+    blocks: [
+      { ul: [
+        "We keep account, device, subscription and audit log data to run the service; card details are handled by Paddle and never reach us.",
+        "SSH passwords, keys and host details stay in your computer's keychain; sync is end-to-end encrypted and terminal contents do not pass through our servers.",
+        "Only necessary HttpOnly session cookies; no advertising or tracking cookies.",
+        "Rights under KVKK and GDPR: access, correction, deletion, restriction, objection and portability.",
+      ] },
+    ],
   },
   {
     path: "/terms",
@@ -342,7 +372,13 @@ export const publicPages: PublicPage[] = [
     description: "Terms of service of WECOMMANDER.",
     heading: "Terms",
     intro: "The terms of service of WECOMMANDER.",
-    blocks: [],
+    blocks: [
+      { ul: [
+        "Use the service only on machines you own or are authorised to manage; you are responsible for actions you approve or allow in autonomous mode.",
+        "Paid plans are monthly subscriptions sold by Paddle.com (Merchant of Record); cancel any time, full refund within 14 days of the first payment.",
+        "Governed by the laws of the Republic of Türkiye; consumers keep their mandatory local rights.",
+      ] },
+    ],
   },
 ];
 
