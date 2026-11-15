@@ -1241,6 +1241,7 @@ jobs:
             [Mouse]::Click([int]($c.Left + 60), [int]($c.Top + $c.Height / 2))
             Start-Sleep -Seconds 2
             Report 'after clicking the server box'
+            if (Test-Path $layout) { Write-Host '--- layout.log so far ---'; Get-Content $layout | Where-Object { $_ -match 'chip:|monitor panel' } | ForEach-Object { Write-Host $_ } }
             $flyout = Visible "WECOMMANDER Sunucular"
             if (-not $flyout) { $fail += 'clicking the server box did not open Sunucularim' }
             else {
@@ -1249,7 +1250,7 @@ jobs:
               if ([int]$f[3] -gt $c.Top + 4 -or [int]$f[0] -gt $c.Left + 30) { $fail += 'Sunucularim did not open just above the box' }
             }
             # Clicking elsewhere closes it again.
-            if ($main) { $main.SetFocus() }
+            if ($main) { try { $main.SetFocus() } catch { } }
             Start-Sleep -Seconds 1
           }
           # Close the main window (it hides to the tray): the panel goes with it.
