@@ -18,10 +18,80 @@ public sealed record ServerOverview(
 
 public sealed record UsageEntry(string Path, ulong Kb);
 public sealed record DockerUsage(string Kind, string Count, ulong SizeBytes, ulong ReclaimableBytes);
-public sealed record DiskUsage(string Path, ulong TotalKb, List<UsageEntry> Entries, List<DockerUsage> Docker, bool Complete);
+public sealed record DiskUsage(string Path, ulong TotalKb, List<UsageEntry> Entries, List<DockerUsage> Docker, bool Complete,
+    List<DockerStore>? DockerStores = null);
 
-public sealed record CleanupItem(string Id, string Title, string Detail, ulong Kb, string Command, string Warning);
-public sealed record CleanupScan(List<CleanupItem> Items, string Privilege, ServerDisk? Disk = null);
+/// <summary>A Docker daemon's storage folder (the system one, or a user's rootless one).</summary>
+public sealed record DockerStore(string Id, string Kind, string Label, string User, string Socket, string RootDir, string Error);
+
+/// <summary>
+/// One Docker daemon on the server, as the cleanup reads it: what it stores,
+/// what it frees, what it protects (running containers), or why it could not
+/// be read (then its sizes are unknown, not zero).
+/// </summary>
+public sealed record DockerEnv(
+    string Id, string Kind, string Label, string User, uint Uid, string Socket, string RootDir,
+    ulong ImagesBytes, ulong ImagesReclaimableBytes, ulong BuildCacheBytes, ulong BuildCacheReclaimableBytes,
+    ulong ContainersBytes, ulong VolumesBytes, ulong DanglingBytes,
+    uint ImagesTotal, uint ImagesActive, uint ContainersTotal, uint ContainersRunning,
+    List<string> Running, string Error)
+{
+    public ulong TotalBytes => ImagesBytes + BuildCacheBytes + ContainersBytes + VolumesBytes;
+    /// <summary>The most a cleanup can free here: build cache plus unused images (dangling ones are part of those).</summary>
+    public ulong ReclaimableBytes => BuildCacheReclaimableBytes + ImagesReclaimableBytes;
+    public bool Rootless => Kind == "rootless";
+}
+
+/// <param name="Docker">The daemon this cleanup is for (system, u1000); empty for the rest.</param>
+/// <param name="Group">Items of one group overlap: only one of them can be chosen.</param>
+public sealed record CleanupItem(string Id, string Title, string Detail, ulong Kb, string Command, string Warning,
+    string Docker = "", string Group = "");
+public sealed record CleanupScan(List<CleanupItem> Items, string Privilege, ServerDisk? Disk = null, List<DockerEnv>? Dockers = null);
+
+/// <summary>What the cleanup page shows: the server's own items, then each Docker daemon with its items.</summary>
+public sealed record CleanupSection(DockerEnv? Docker, List<CleanupItem> Items);
+
+public static class CleanupLayout
+{
+    /// <summary>The server's own items first, then every Docker daemon (system, then rootless ones), each with its own items; a daemon that could not be read has none and shows why.</summary>
+    public static List<CleanupSection> Sections(CleanupScan scan)
+    {
+        var sections = new List<CleanupSection> { new(null, scan.Items.Where(i => string.IsNullOrEmpty(i.Docker)).OrderByDescending(i => i.Kb).ToList()) };
+        var dockers = scan.Dockers ?? [];
+        foreach (var env in dockers)
+            sections.Add(new(env, scan.Items.Where(i => i.Docker == env.Id).ToList()));
+        // An older core: Docker items without a daemon list stay with the rest.
+        var known = dockers.Select(d => d.Id).ToHashSet();
+        sections[0].Items.AddRange(scan.Items.Where(i => !string.IsNullOrEmpty(i.Docker) && !known.Contains(i.Docker)));
+        return sections;
+    }
+
+    /// <summary>The daemon whose data is in (or is) <paramref name="path"/>, for the Disk page.</summary>
+    public static DockerStore? StoreFor(string path, IEnumerable<DockerStore>? stores)
+    {
+        if (stores is null) return null;
+        var p = path.TrimEnd('/');
+        foreach (var s in stores.Where(s => !string.IsNullOrEmpty(s.RootDir)))
+        {
+            var root = s.RootDir.TrimEnd('/');
+            if (root == p || root.StartsWith(p + "/", StringComparison.Ordinal) || p.StartsWith(root + "/", StringComparison.Ordinal))
+                return s;
+        }
+        return null;
+    }
+
+    /// <summary>After a cleanup: the space really freed against the estimate, and why they can differ.</summary>
+    public static string Freed(ulong estimateKb, ulong? beforeFreeKb, ulong? afterFreeKb)
+    {
+        if (beforeFreeKb is not { } before || afterFreeKb is not { } after) return "";
+        var freed = after > before ? after - before : 0;
+        var text = $"Diskte gerçekten {Sizes.Kb(freed)} yer açıldı (tahmin {Sizes.Kb(estimateKb)}).";
+        var gap = Math.Abs((double)freed - estimateKb);
+        if (estimateKb > 0 && gap > estimateKb * 0.15)
+            text += " Fark normaldir: Docker paylaşılan katmanları ayrı sayar, başka bir diskteki depolama buradaki boş alanı değiştirmez ve bu sırada sunucuda yazılan dosyalar da boş alanı etkiler.";
+        return text;
+    }
+}
 public sealed record CleanupResult(string Id, bool Ok, string Message);
 
 public sealed record ServerProcess(uint Pid, uint Ppid, string User, string State, double Cpu, double Mem, ulong RssKb, ulong ElapsedSecs, string Name, string Command);

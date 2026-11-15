@@ -72,7 +72,7 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("server_overview") }).strict(),
   z.object({ kind: z.literal("server_disk_usage"), path: z.string().min(1).max(4096).regex(/^\/[^\n\0]*$/).optional() }).strict(),
   z.object({ kind: z.literal("server_cleanup_scan") }).strict(),
-  z.object({ kind: z.literal("server_cleanup_run"), ids: z.array(z.string().regex(/^[a-z-]{2,40}$/)).min(1).max(20) }).strict(),
+  z.object({ kind: z.literal("server_cleanup_run"), ids: z.array(z.string().regex(/^[a-z-]{2,40}(@u[0-9]{1,10})?$/)).min(1).max(20) }).strict(),
   z.object({ kind: z.literal("server_processes") }).strict(),
   z.object({
     kind: z.literal("server_process_signal"), pid: z.number().int().min(2).max(4194304),

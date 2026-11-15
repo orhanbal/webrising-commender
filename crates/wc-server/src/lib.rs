@@ -13,6 +13,11 @@ use std::future::Future;
 
 use serde::Serialize;
 
+mod docker;
+pub use docker::{
+    environments as docker_environments, stores as docker_stores, DockerEnv, DockerStore,
+};
+
 pub const NEEDS_ROOT: &str = "Bu işlem için sunucuda root ya da parolasız sudo gerekir.";
 
 /// Runs privileged commands as root: directly for root, else `sudo -n`.
@@ -37,7 +42,7 @@ pub fn quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r#"'\''"#))
 }
 
-async fn run<S: Shell>(sh: &S, script: &str, secs: u64) -> Result<String, String> {
+pub(crate) async fn run<S: Shell>(sh: &S, script: &str, secs: u64) -> Result<String, String> {
     sh.run_script(&format!("{PRELUDE}{script}"), secs).await
 }
 
@@ -251,10 +256,13 @@ pub struct DiskUsage {
     pub docker: Vec<DockerUsage>,
     /// False when some folders could not be read (no root).
     pub complete: bool,
+    /// Every Docker daemon's storage folder: a folder here that is one (or
+    /// holds one) is that daemon's data, cleaned from the Cleanup page.
+    pub docker_stores: Vec<DockerStore>,
 }
 
 /// "12.3GB", "512kB", "0B" (Docker's sizes) in bytes.
-fn docker_bytes(text: &str) -> u64 {
+pub(crate) fn docker_bytes(text: &str) -> u64 {
     let t = text.split_whitespace().next().unwrap_or("");
     let split = t
         .find(|c: char| !(c.is_ascii_digit() || c == '.'))
@@ -382,6 +390,8 @@ echo @@docker; [ "$R" ] && [ {p} = / ] && command -v docker >/dev/null 2>&1 && r
         total_kb,
         entries,
         docker: parse_docker_df(s.get("docker").map(|v| v.as_slice()).unwrap_or(&[])),
+        // Best effort: the folder sizes stand without it.
+        docker_stores: docker::stores(sh).await.unwrap_or_default(),
         complete: complete && s.contains_key("kids"),
     })
 }
@@ -571,30 +581,6 @@ const CATEGORIES: &[Category] = &[
         clean: "find /var/crash -xdev -type f -name '*.crash' -delete",
         warning: "",
     },
-    Category {
-        id: "docker-build",
-        title: "Docker build önbelleği",
-        detail: "İmaj derlerken biriken katmanlar. Sonraki derleme biraz uzun sürebilir.",
-        measure: "",
-        clean: "docker builder prune -af",
-        warning: "",
-    },
-    Category {
-        id: "docker-dangling",
-        title: "Docker: etiketsiz imajlar",
-        detail: "Yeni sürümü gelmiş, hiçbir konteynerin kullanmadığı eski imaj katmanları.",
-        measure: "",
-        clean: "docker image prune -f",
-        warning: "",
-    },
-    Category {
-        id: "docker-unused",
-        title: "Docker: kullanılmayan tüm imajlar",
-        detail: "Hiçbir konteynerin (durmuş olanlar dahil) kullanmadığı imajlar.",
-        measure: "",
-        clean: "docker image prune -af",
-        warning: "Coolify gibi araçlar eski sürüme dönmek için bu imajları kullanır; silinince o sürüme geri dönülemez.",
-    },
 ];
 
 #[derive(Serialize, Debug)]
@@ -607,6 +593,12 @@ pub struct Cleanup {
     /// The exact command that runs (as root).
     pub command: String,
     pub warning: String,
+    /// The Docker daemon this cleanup is for (`system`, `u1000`); empty for
+    /// the rest.
+    pub docker: String,
+    /// Items of one group overlap (untagged images are part of the unused
+    /// ones): choose one of them, never add them up.
+    pub group: String,
 }
 
 #[derive(Serialize, Debug)]
@@ -616,6 +608,9 @@ pub struct CleanupScan {
     pub privilege: String,
     /// The root disk, for "after cleanup" on the screen.
     pub disk: Option<Disk>,
+    /// Every Docker daemon: the system one and each user's rootless one,
+    /// with what it stores, protects and frees, or why it could not be read.
+    pub dockers: Vec<DockerEnv>,
 }
 
 fn measure_script(c: &Category) -> String {
@@ -626,7 +621,6 @@ fn measure_script(c: &Category) -> String {
         "tmp" => {
             format!("r {OLD_TMP} -printf '%k\\n' 2>/dev/null | awk '{{s+=$1}} END{{print s+0}}'")
         }
-        "docker-build" | "docker-unused" | "docker-dangling" => String::new(),
         _ => c.measure.to_owned(),
     }
 }
@@ -640,6 +634,13 @@ fn clean_command(c: &Category) -> String {
 }
 
 pub async fn cleanup_scan<S: Shell>(sh: &S) -> Result<CleanupScan, String> {
+    cleanup_scan_in(sh, docker::RUN_USER).await
+}
+
+pub(crate) async fn cleanup_scan_in<S: Shell>(
+    sh: &S,
+    run_user: &str,
+) -> Result<CleanupScan, String> {
     let mut script = String::from("echo @@priv; echo \"$R\"\necho @@df; df -PkT / 2>/dev/null\n");
     for c in CATEGORIES {
         let m = measure_script(c);
@@ -647,42 +648,26 @@ pub async fn cleanup_scan<S: Shell>(sh: &S) -> Result<CleanupScan, String> {
             script.push_str(&format!("echo @@{}; {m}\n", c.id));
         }
     }
-    script.push_str(
-        "if [ \"$R\" ] && command -v docker >/dev/null 2>&1; then
-echo @@docker; r docker system df --format '{{.Type}}\t{{.TotalCount}}\t{{.Size}}\t{{.Reclaimable}}' 2>/dev/null
-echo @@dangling; r docker images -f dangling=true --format '{{.Size}}' 2>/dev/null
-fi\n",
-    );
     let s = sections(&run(sh, &script, 120).await?);
-    let docker = parse_docker_df(s.get("docker").map(|v| v.as_slice()).unwrap_or(&[]));
-    let reclaim = |kind: &str| {
-        docker
-            .iter()
-            .find(|d| d.kind.eq_ignore_ascii_case(kind))
-            .map(|d| d.reclaimable_bytes / 1024)
-    };
-    let dangling: u64 = s
-        .get("dangling")
-        .map(|l| l.iter().map(|x| docker_bytes(x) / 1024).sum())
-        .unwrap_or(0);
-    let has_docker = s.contains_key("docker");
     let mut items = Vec::new();
     for c in CATEGORIES {
-        let kb = match c.id {
-            "docker-build" | "docker-unused" | "docker-dangling" if !has_docker => continue,
-            "docker-build" => reclaim("Build Cache").unwrap_or(0),
-            "docker-unused" => reclaim("Images").unwrap_or(0),
-            "docker-dangling" => dangling,
-            id => first(&s, id).parse().unwrap_or(0),
-        };
         items.push(Cleanup {
             id: c.id.to_owned(),
             title: c.title.to_owned(),
             detail: c.detail.to_owned(),
-            kb,
+            kb: first(&s, c.id).parse().unwrap_or(0),
             command: clean_command(c),
             warning: c.warning.to_owned(),
+            docker: String::new(),
+            group: String::new(),
         });
+    }
+    // Each Docker daemon on its own: its build cache and images, as that
+    // daemon counts them. A daemon that could not be read offers nothing
+    // (its sizes are unknown, not zero); the reason is in `dockers`.
+    let dockers = docker::environments_in(sh, run_user).await?;
+    for env in dockers.iter().filter(|e| e.error.is_empty()) {
+        items.extend(docker_items(env));
     }
     Ok(CleanupScan {
         items,
@@ -690,7 +675,53 @@ fi\n",
         disk: parse_df(s.get("df").map(|v| v.as_slice()).unwrap_or(&[]))
             .into_iter()
             .next(),
+        dockers,
     })
+}
+
+/// The cleanups one Docker daemon offers. The system daemon keeps the ids
+/// it always had (`docker-build`); a rootless one adds `@u<uid>`.
+fn docker_items(env: &DockerEnv) -> Vec<Cleanup> {
+    docker::DOCKER_KINDS
+        .iter()
+        .map(|k| {
+            let id = if env.id == "system" {
+                k.kind.to_owned()
+            } else {
+                format!("{}@{}", k.kind, env.id)
+            };
+            let bytes = match k.kind {
+                "docker-build" => env.build_cache_reclaimable_bytes,
+                "docker-dangling" => env.dangling_bytes,
+                _ => env.images_reclaimable_bytes,
+            };
+            let title = if env.id == "system" {
+                k.title.to_owned()
+            } else {
+                format!(
+                    "{} — {}",
+                    env.label,
+                    k.title
+                        .trim_start_matches("Docker: ")
+                        .trim_start_matches("Docker ")
+                )
+            };
+            Cleanup {
+                id,
+                title,
+                detail: k.detail.to_owned(),
+                kb: bytes / 1024,
+                command: docker::docker_clean_command(k, &env.socket),
+                warning: k.warning.to_owned(),
+                docker: env.id.clone(),
+                group: if k.kind == "docker-build" {
+                    String::new()
+                } else {
+                    format!("images@{}", env.id)
+                },
+            }
+        })
+        .collect()
 }
 
 #[derive(Serialize, Debug)]
@@ -702,8 +733,54 @@ pub struct CleanupResult {
 }
 
 pub async fn cleanup_run<S: Shell>(sh: &S, ids: Vec<String>) -> Result<Vec<CleanupResult>, String> {
+    cleanup_run_in(sh, ids, docker::RUN_USER).await
+}
+
+pub(crate) async fn cleanup_run_in<S: Shell>(
+    sh: &S,
+    ids: Vec<String>,
+    run_user: &str,
+) -> Result<Vec<CleanupResult>, String> {
+    // Docker cleanups go to the daemon their id names; it is found again
+    // here (the same discovery as the scan), so the preview and the run
+    // always address the same daemon, and an id for a daemon that is not
+    // there any more is refused.
+    let mut dockers: Option<Vec<docker::Found>> = None;
     let mut results = Vec::new();
     for id in ids {
+        let (kind, env) = docker::split_id(&id);
+        if let Some(k) = docker::DOCKER_KINDS.iter().find(|k| k.kind == kind) {
+            if dockers.is_none() {
+                let text = run(sh, &docker::discover_script(run_user), 30).await?;
+                dockers = Some(docker::parse_found(&text, run_user).2);
+            }
+            let env_id = env.unwrap_or("system");
+            let Some(found) = dockers.as_ref().unwrap().iter().find(|f| f.id == env_id) else {
+                return Err(format!(
+                    "Bu Docker ortamı artık bulunamadı: {env_id}. Taramayı yenileyin."
+                ));
+            };
+            let command = docker::docker_clean_command(k, &found.socket);
+            // The cleanup itself may take long (tens of GB of build cache).
+            let script = format!(
+                "if [ \"$R\" ]; then out=$(r timeout 840 {command} 2>&1); else out=$(timeout 840 {command} 2>&1); fi; c=$?\necho @@out; printf '%s\\n' \"$out\" | tail -3; echo @@code; echo $c\n"
+            );
+            let s = sections(&run(sh, &script, 900).await?);
+            results.push(CleanupResult {
+                id,
+                ok: first(&s, "code") == "0",
+                message: s
+                    .get("out")
+                    .map(|l| l.join("\n"))
+                    .unwrap_or_default()
+                    .trim()
+                    .to_owned(),
+            });
+            continue;
+        }
+        if env.is_some() {
+            return Err(format!("unknown cleanup: {id}"));
+        }
         let Some(c) = CATEGORIES.iter().find(|c| c.id == id) else {
             return Err(format!("unknown cleanup: {id}"));
         };
@@ -1228,5 +1305,241 @@ mod tests {
     #[test]
     fn quoting_survives_single_quotes() {
         assert_eq!(quote("it's"), r#"'it'\''s'"#);
+    }
+    /// Runs the scripts with this machine's `sh` as "root" (no sudo), with a
+    /// fake `docker` first on PATH: it answers per daemon and logs every call.
+    #[cfg(target_os = "linux")]
+    struct FakeDocker {
+        dir: std::path::PathBuf,
+        mode: &'static str,
+    }
+
+    #[cfg(target_os = "linux")]
+    impl Shell for FakeDocker {
+        async fn run_script(&self, script: &str, _secs: u64) -> Result<String, String> {
+            let script = script.replacen(PRELUDE, "export LC_ALL=C\nR=root\nr() { \"$@\"; }\n", 1);
+            let path = format!(
+                "{}/bin:{}",
+                self.dir.display(),
+                std::env::var("PATH").unwrap_or_default()
+            );
+            let out = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(script)
+                .env("PATH", path)
+                .env("FAKE_LOG", self.dir.join("calls.log"))
+                .env("FAKE_MODE", self.mode)
+                .output()
+                .map_err(|e| e.to_string())?;
+            Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn block_on<F: std::future::Future>(f: F) -> F::Output {
+        let mut f = std::pin::pin!(f);
+        let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+        loop {
+            if let std::task::Poll::Ready(v) = f.as_mut().poll(&mut cx) {
+                return v;
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    const FAKE_DOCKER: &str = r#"#!/bin/sh
+h=default
+if [ "$1" = -H ]; then h=${2#unix://}; shift 2; fi
+echo "$h|$*" >> "$FAKE_LOG"
+case "$h" in */run/user/*) rootless=1 ;; *) rootless= ;; esac
+if [ "$rootless" ] && [ "$FAKE_MODE" = denied ]; then echo "permission denied while trying to connect to the Docker daemon socket at unix://$h" >&2; exit 1; fi
+case "$1" in
+system) if [ "$rootless" ]; then printf 'Images\t31\t1\t61.2GB\t13.9GB (22%%)\nContainers\t2\t1\t2MB\t0B (0%%)\nLocal Volumes\t3\t1\t328MB\t0B (0%%)\nBuild Cache\t512\t0\t33.77GB\t33.77GB\n'; else printf 'Images\t2\t1\t1GB\t500MB (50%%)\nContainers\t1\t1\t1MB\t0B\nLocal Volumes\t0\t0\t0B\t0B\nBuild Cache\t0\t0\t0B\t0B\n'; fi ;;
+info) if [ "$rootless" ]; then echo /var/lib/devagent-ci/.local/share/docker; else echo /var/lib/docker; fi ;;
+ps) if [ "$2" = -aq ]; then [ "$rootless" ] && printf 'a1\na2\n'; elif [ "$rootless" ]; then printf 'devagent-stage2-gpu-relay\tdevagent/relay:42\n'; fi ;;
+images) [ "$rootless" ] && printf '1.2GB\n800MB\n' ;;
+builder|image) echo "Total reclaimed space: 1GB" ;;
+*) echo "unexpected: $*" >&2; exit 9 ;;
+esac
+"#;
+
+    /// A temporary /run/user with real sockets: this user's (a rootless
+    /// daemon), and one in another uid's folder that this user owns (not a
+    /// daemon of that uid: ignored).
+    #[cfg(target_os = "linux")]
+    fn fake_server(
+        name: &str,
+    ) -> (
+        std::path::PathBuf,
+        String,
+        Vec<std::os::unix::net::UnixListener>,
+    ) {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("wc-docker-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("bin")).unwrap();
+        let docker = dir.join("bin/docker");
+        std::fs::write(&docker, FAKE_DOCKER).unwrap();
+        std::fs::set_permissions(&docker, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let me = String::from_utf8(
+            std::process::Command::new("id")
+                .arg("-u")
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap();
+        let me = me.trim().to_owned();
+        let run_user = dir.join("run/user");
+        let mut listeners = Vec::new();
+        for uid in [me.as_str(), "4242"] {
+            std::fs::create_dir_all(run_user.join(uid)).unwrap();
+            listeners.push(
+                std::os::unix::net::UnixListener::bind(run_user.join(uid).join("docker.sock"))
+                    .unwrap(),
+            );
+        }
+        (dir, me, listeners)
+    }
+
+    // 2, 5, 9, 12: found, offered separately, and the run goes to the very
+    // daemon the preview showed (with Docker's own prune only).
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn rootless_cleanup_preview_and_run_use_the_same_daemon() {
+        let (dir, me, _sockets) = fake_server("same");
+        if me == "0" {
+            return; // as root every folder is root's: the ownership check is covered by parse tests
+        }
+        let run_user = dir.join("run/user").display().to_string();
+        let sh = FakeDocker {
+            dir: dir.clone(),
+            mode: "",
+        };
+        let scan = block_on(cleanup_scan_in(&sh, &run_user)).unwrap();
+        let ids: Vec<&str> = scan.dockers.iter().map(|d| d.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            ["system".to_owned(), format!("u{me}")],
+            "{:?}",
+            scan.dockers
+        );
+        let rootless = &scan.dockers[1];
+        assert_eq!(rootless.build_cache_reclaimable_bytes, 33_770_000_000);
+        assert_eq!(
+            rootless.root_dir,
+            "/var/lib/devagent-ci/.local/share/docker"
+        );
+        assert_eq!(
+            rootless.running,
+            ["devagent-stage2-gpu-relay (devagent/relay:42)"]
+        );
+        assert_eq!(rootless.containers_total, 2);
+        // The 4242 folder's socket belongs to this user, not to 4242: no daemon.
+        assert!(!scan.dockers.iter().any(|d| d.id == "u4242"));
+
+        let socket = format!("{run_user}/{me}/docker.sock");
+        let build = scan
+            .items
+            .iter()
+            .find(|i| i.id == format!("docker-build@u{me}"))
+            .unwrap();
+        assert_eq!(
+            build.command,
+            format!("docker -H unix://{socket} builder prune -af")
+        );
+        assert_eq!(build.kb, 33_770_000_000 / 1024);
+        assert_eq!(build.docker, format!("u{me}"));
+        let unused = scan
+            .items
+            .iter()
+            .find(|i| i.id == format!("docker-unused@u{me}"))
+            .unwrap();
+        let dangling = scan
+            .items
+            .iter()
+            .find(|i| i.id == format!("docker-dangling@u{me}"))
+            .unwrap();
+        assert_eq!(unused.group, dangling.group);
+        assert!(!unused.warning.is_empty());
+        // The system daemon keeps its old ids.
+        assert!(scan
+            .items
+            .iter()
+            .any(|i| i.id == "docker-build" && i.docker == "system"));
+
+        std::fs::write(dir.join("calls.log"), "").unwrap();
+        let done = block_on(cleanup_run_in(
+            &sh,
+            vec![build.id.clone(), unused.id.clone()],
+            &run_user,
+        ))
+        .unwrap();
+        assert!(done.iter().all(|r| r.ok), "{done:?}");
+        let calls = std::fs::read_to_string(dir.join("calls.log")).unwrap();
+        let prunes: Vec<&str> = calls.lines().filter(|l| l.contains("prune")).collect();
+        assert_eq!(
+            prunes,
+            [
+                format!("{socket}|builder prune -af"),
+                format!("{socket}|image prune -af")
+            ],
+            "{calls}"
+        );
+
+        // An id for a daemon that is not there, or not an id at all: refused, nothing runs.
+        std::fs::write(dir.join("calls.log"), "").unwrap();
+        assert!(block_on(cleanup_run_in(
+            &sh,
+            vec!["docker-build@u4242".into()],
+            &run_user
+        ))
+        .is_err());
+        assert!(block_on(cleanup_run_in(
+            &sh,
+            vec!["docker-build@u1;rm -rf /".into()],
+            &run_user
+        ))
+        .is_err());
+        assert!(block_on(cleanup_run_in(&sh, vec!["journal@u1000".into()], &run_user)).is_err());
+        let calls = std::fs::read_to_string(dir.join("calls.log")).unwrap();
+        assert!(!calls.contains("prune"), "{calls}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // 4 and 10: a daemon that refuses (no access) is reported, offers no
+    // cleanup, and the others are unaffected.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_daemon_without_access_is_reported_alone() {
+        let (dir, me, _sockets) = fake_server("denied");
+        if me == "0" {
+            return;
+        }
+        let run_user = dir.join("run/user").display().to_string();
+        let scan = block_on(cleanup_scan_in(
+            &FakeDocker {
+                dir: dir.clone(),
+                mode: "denied",
+            },
+            &run_user,
+        ))
+        .unwrap();
+        let rootless = scan
+            .dockers
+            .iter()
+            .find(|d| d.id == format!("u{me}"))
+            .unwrap();
+        assert!(
+            rootless.error.contains("erişim izni yok"),
+            "{}",
+            rootless.error
+        );
+        assert!(!scan.items.iter().any(|i| i.docker == rootless.id));
+        assert!(
+            scan.items.iter().any(|i| i.id == "docker-build"),
+            "the system daemon still offers its cleanup"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
