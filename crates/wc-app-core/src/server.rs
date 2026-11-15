@@ -8,8 +8,8 @@ use std::time::Duration;
 use serde::Serialize;
 use wc_server::{first, quote, sections, valid_owner, Shell, NEEDS_ROOT, PRELUDE};
 pub use wc_server::{
-    Cleanup, CleanupResult, CleanupScan, Disk, DiskUsage, DockerUsage, GcLimit, Overview, Owner,
-    Process, ProcessList, Sample, UsageEntry, ZombieGroup,
+    Cleanup, CleanupResult, CleanupScan, Disk, DiskUsage, DockerUsage, Overview, Owner, Process,
+    ProcessList, Sample, UsageEntry, ZombieGroup,
 };
 use wc_ssh_core::client::Connection;
 
@@ -180,17 +180,6 @@ pub async fn process_signal(
         confirm_database,
     )
     .await
-}
-
-/// The automatic build cache limit of one Docker daemon (saved, and applied
-/// right away without a restart).
-pub async fn docker_gc_limit(
-    state: &Arc<AppState>,
-    session_id: String,
-    docker: String,
-    keep_gb: u32,
-) -> Result<GcLimit, String> {
-    wc_server::docker_gc_limit(&shell(state, &session_id)?, &docker, keep_gb).await
 }
 
 pub async fn restart_owner(

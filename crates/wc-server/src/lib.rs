@@ -15,8 +15,7 @@ use serde::Serialize;
 
 mod docker;
 pub use docker::{
-    environments as docker_environments, gc_limit as docker_gc_limit, stores as docker_stores,
-    DockerEnv, DockerStore, GcLimit,
+    environments as docker_environments, stores as docker_stores, DockerEnv, DockerStore,
 };
 
 pub const NEEDS_ROOT: &str = "Bu işlem için sunucuda root ya da parolasız sudo gerekir.";
