@@ -24,6 +24,7 @@ public sealed class MonitorFlyout : Window
     private readonly Grid _root = new();
     private readonly TranslateTransform _slide = new();
     private DateTime _hiddenAt;
+    private DateTime _shownAt;
 
     private static Brush Secondary => (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
 
@@ -48,7 +49,16 @@ public sealed class MonitorFlyout : Window
         Activated += (_, e) =>
         {
             App.DebugLayout($"monitor panel: activation {e.WindowActivationState} visible={AppWindow.IsVisible}");
-            if (e.WindowActivationState == WindowActivationState.Deactivated && AppWindow.IsVisible) Hide();
+            if (e.WindowActivationState != WindowActivationState.Deactivated || !AppWindow.IsVisible) return;
+            // Opened from the server box: Windows activates the clicked box as the
+            // click ends, a few ms after the panel appeared (it then closed at once).
+            // Take the focus back instead of closing.
+            if (DateTime.UtcNow - _shownAt < TimeSpan.FromMilliseconds(800))
+            {
+                DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => Activate());
+                return;
+            }
+            Hide();
         };
 
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -147,6 +157,7 @@ public sealed class MonitorFlyout : Window
         }
         // Bottom right, just above the taskbar: it opens upward from there.
         else AppWindow.MoveAndResize(new RectInt32(area.X + area.Width - width - margin, area.Y + area.Height - height - margin, width, height));
+        _shownAt = DateTime.UtcNow;
         AppWindow.Show();
         Activate();
         Refresh();
