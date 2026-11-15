@@ -54,6 +54,26 @@ pub enum AgentAction {
     HealthSnapshot {
         top: Option<usize>,
     },
+    /// Server management (Linux): the app's fixed scripts from `wc-server`.
+    ServerOverview,
+    ServerDiskUsage {
+        path: Option<String>,
+    },
+    ServerCleanupScan,
+    ServerCleanupRun {
+        ids: Vec<String>,
+    },
+    ServerProcesses,
+    ServerProcessSignal {
+        pid: u32,
+        name: String,
+        action: String,
+        confirm_database: Option<bool>,
+    },
+    ServerRestartOwner {
+        owner_kind: String,
+        id: String,
+    },
     LogQuery {
         source: String,
         path: Option<String>,
@@ -299,6 +319,13 @@ impl AgentAction {
         match self {
             Self::SystemInfo => "system_info",
             Self::HealthSnapshot { .. } => "health_snapshot",
+            Self::ServerOverview => "server_overview",
+            Self::ServerDiskUsage { .. } => "server_disk_usage",
+            Self::ServerCleanupScan => "server_cleanup_scan",
+            Self::ServerCleanupRun { .. } => "server_cleanup_run",
+            Self::ServerProcesses => "server_processes",
+            Self::ServerProcessSignal { .. } => "server_process_signal",
+            Self::ServerRestartOwner { .. } => "server_restart_owner",
             Self::LogQuery { .. } => "log_query",
             Self::PolicyInfo => "policy_info",
             Self::FsList { .. } => "fs_list",
@@ -347,6 +374,10 @@ impl AgentAction {
         match self {
             Self::SystemInfo
             | Self::HealthSnapshot { .. }
+            | Self::ServerOverview
+            | Self::ServerDiskUsage { .. }
+            | Self::ServerCleanupScan
+            | Self::ServerProcesses
             | Self::LogQuery { .. }
             | Self::PolicyInfo
             | Self::FsList { .. }
@@ -385,7 +416,11 @@ impl AgentAction {
             // Typing into a live shell runs whatever is typed: it needs the
             // same exact-payload approval as process_exec, checked here so a
             // request that skipped the gateway is refused too.
+            // Server cleanup, signals and restarts run fixed commands as root.
             Self::TerminalInput { .. }
+            | Self::ServerCleanupRun { .. }
+            | Self::ServerProcessSignal { .. }
+            | Self::ServerRestartOwner { .. }
             | Self::FsDelete { .. }
             | Self::ProcessExec { .. }
             | Self::ProcessKill { .. }

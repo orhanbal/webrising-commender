@@ -6,6 +6,13 @@ export type Risk = "low" | "medium" | "high";
 export type AgentAction =
   | { kind: "system_info" }
   | { kind: "health_snapshot"; top?: number }
+  | { kind: "server_overview" }
+  | { kind: "server_disk_usage"; path?: string }
+  | { kind: "server_cleanup_scan" }
+  | { kind: "server_cleanup_run"; ids: string[] }
+  | { kind: "server_processes" }
+  | { kind: "server_process_signal"; pid: number; name: string; action: "reap" | "term" | "kill"; confirmDatabase?: boolean }
+  | { kind: "server_restart_owner"; ownerKind: "container" | "service"; id: string }
   | { kind: "log_query"; source: "journal" | "file"; path?: string; unit?: string; sinceMinutes?: number; level?: "error" | "warning" | "info" | "debug"; pattern?: string; limit?: number }
   | { kind: "policy_info" }
   | { kind: "fs_list"; path: string }
@@ -62,6 +69,16 @@ const timeoutSchema = z.number().int().min(100).max(24 * 60 * 60 * 1000);
 export const agentActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("system_info") }).strict(),
   z.object({ kind: z.literal("health_snapshot"), top: z.number().int().min(1).max(20).optional() }).strict(),
+  z.object({ kind: z.literal("server_overview") }).strict(),
+  z.object({ kind: z.literal("server_disk_usage"), path: z.string().min(1).max(4096).regex(/^\/[^\n\0]*$/).optional() }).strict(),
+  z.object({ kind: z.literal("server_cleanup_scan") }).strict(),
+  z.object({ kind: z.literal("server_cleanup_run"), ids: z.array(z.string().regex(/^[a-z-]{2,40}$/)).min(1).max(20) }).strict(),
+  z.object({ kind: z.literal("server_processes") }).strict(),
+  z.object({
+    kind: z.literal("server_process_signal"), pid: z.number().int().min(2).max(4194304),
+    name: z.string().min(1).max(64).regex(/^[^\n\0]+$/), action: z.enum(["reap", "term", "kill"]), confirmDatabase: z.boolean().optional(),
+  }).strict(),
+  z.object({ kind: z.literal("server_restart_owner"), ownerKind: z.enum(["container", "service"]), id: z.string().min(1).max(256).regex(/^[A-Za-z0-9@._-]+$/) }).strict(),
   z.object({
     kind: z.literal("log_query"), source: z.enum(["journal", "file"]), path: pathSchema.optional(),
     unit: z.string().min(1).max(256).regex(/^[A-Za-z0-9@._:\\-]+$/).optional(),
@@ -307,6 +324,10 @@ export function actionRisk(kind: AgentAction["kind"] | string): Risk {
   switch (kind) {
     case "system_info":
     case "health_snapshot":
+    case "server_overview":
+    case "server_disk_usage":
+    case "server_cleanup_scan":
+    case "server_processes":
     case "log_query":
     case "policy_info":
     case "fs_list":
@@ -345,6 +366,11 @@ export function actionRisk(kind: AgentAction["kind"] | string): Risk {
     // Typing into a live shell runs whatever is typed: an AI writing to a PTY
     // needs the same exact-payload human approval as process_exec.
     case "terminal_input":
+    // Server management changes run fixed commands as root (cleanup, a
+    // signal, a restart): the same human approval as process_exec.
+    case "server_cleanup_run":
+    case "server_process_signal":
+    case "server_restart_owner":
     case "fs_delete":
     case "process_exec":
     case "process_kill":

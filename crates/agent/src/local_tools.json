@@ -27,6 +27,129 @@
   }
  },
  {
+  "name": "server_overview",
+  "description": "Linux server overview, read-only: hostname, OS, kernel, uptime, load, CPU %, memory and swap, disks, whether a reboot is required, pending updates, process and zombie counts, and whether this agent can act as root (privilege). The same data as the app's Sunucu yönetimi > Genel bakış.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "required": [],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "server_disk_usage",
+  "description": "What fills a Linux disk, read-only: the 40 largest folders directly inside path (default /), sizes in KB, never crossing into another disk, plus Docker's own usage at /. Large disks can take a minute or two.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string",
+     "description": "Absolute folder (default /)."
+    }
+   },
+   "required": [],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "server_cleanup_scan",
+  "description": "Read-only: what can be safely freed on a Linux server, by category (apt cache, journal older than 7 days, rotated logs, old temp files, crash dumps, Docker build cache, dangling and unused Docker images), with the size and the exact command each cleanup runs. Use the ids with server_cleanup_run.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "required": [],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "server_cleanup_run",
+  "description": "Frees disk space on a Linux server: runs the fixed cleanup commands of the given categories (ids from server_cleanup_scan) as root. Only known, re-creatable files; application data, databases and Docker volumes are never touched. Needs a human approval for this exact call.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "ids": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "description": "Category ids from server_cleanup_scan, e.g. [\"apt-cache\",\"journal\"]."
+    }
+   },
+   "required": [
+    "ids"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "server_processes",
+  "description": "Linux processes, read-only: every process (pid, parent, user, state, CPU, memory, run time, command) and the zombie processes grouped by parent, with the container or systemd service that owns the parent and whether that parent is protected (the processes that keep the server reachable).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "required": [],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "server_process_signal",
+  "description": "Sends a signal to one Linux process: action 'reap' asks a parent to collect its zombies (SIGCHLD, harmless), 'term' asks it to stop, 'kill' stops it at once. name must still match the process (a PID reused by another program is refused); the processes that keep the server reachable are refused; a database needs confirm_database. Needs a human approval for this exact call.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "pid": {
+     "type": "integer"
+    },
+    "name": {
+     "type": "string",
+     "description": "The process name from server_processes."
+    },
+    "action": {
+     "type": "string",
+     "enum": [
+      "reap",
+      "term",
+      "kill"
+     ]
+    },
+    "confirm_database": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "pid",
+    "name",
+    "action"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "server_restart_owner",
+  "description": "Restarts the Docker container or systemd service that a process runs in (from server_processes zombie owners); its zombies go with the old process. SSH, Docker, containerd, journald, logind, D-Bus and WECOMMANDER itself are refused. Needs a human approval for this exact call.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "owner_kind": {
+     "type": "string",
+     "enum": [
+      "container",
+      "service"
+     ]
+    },
+    "id": {
+     "type": "string",
+     "description": "Container id (12+ hex) or unit name ending in .service."
+    }
+   },
+   "required": [
+    "owner_kind",
+    "id"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
   "name": "log_query",
   "description": "Read-only, bounded log search on a device, newest first. source 'journal' (Linux systemd journal: since_minutes window, unit, level) or 'file' (tail of a log file inside the allowed roots). Filters: level (error|warning|info|debug, default info), pattern (case-insensitive regex), limit (1-1000, default 100). Repeated messages are grouped; secrets are masked.",
   "inputSchema": {

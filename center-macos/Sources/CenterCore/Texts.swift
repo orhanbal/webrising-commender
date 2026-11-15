@@ -13,6 +13,9 @@ public enum Texts {
         case "terminal_input": return "Terminale yaz"
         case "fs_delete": return "Dosya sil"
         case "fs_move": return "Dosya taşı"
+        case "server_cleanup_run": return "Sunucuda yer aç (temizlik)"
+        case "server_process_signal": return "Sürece sinyal gönder"
+        case "server_restart_owner": return "Servisi yeniden başlat"
         default: return kind
         }
     }
