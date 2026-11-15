@@ -64,10 +64,11 @@ struct Ssh(Arc<Connection>);
 impl Shell for Ssh {
     async fn run_script(&self, script: &str, secs: u64) -> Result<String, String> {
         let command = format!("sh -c {}", quote(script));
-        let out = tokio::time::timeout(Duration::from_secs(secs), self.0.exec(&command, MAX_OUTPUT))
-            .await
-            .map_err(|_| "Sunucu zamanında yanıt vermedi.".to_owned())?
-            .map_err(|e| e.to_string())?;
+        let out =
+            tokio::time::timeout(Duration::from_secs(secs), self.0.exec(&command, MAX_OUTPUT))
+                .await
+                .map_err(|_| "Sunucu zamanında yanıt vermedi.".to_owned())?
+                .map_err(|e| e.to_string())?;
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
     }
 }
@@ -144,7 +145,10 @@ pub async fn sample(state: &Arc<AppState>, session_id: String) -> Result<Sample,
     wc_server::sample(&shell(state, &session_id)?).await
 }
 
-pub async fn cleanup_scan(state: &Arc<AppState>, session_id: String) -> Result<CleanupScan, String> {
+pub async fn cleanup_scan(
+    state: &Arc<AppState>,
+    session_id: String,
+) -> Result<CleanupScan, String> {
     wc_server::cleanup_scan(&shell(state, &session_id)?).await
 }
 
@@ -168,7 +172,14 @@ pub async fn process_signal(
     action: String,
     confirm_database: bool,
 ) -> Result<String, String> {
-    wc_server::process_signal(&shell(state, &session_id)?, pid, name, action, confirm_database).await
+    wc_server::process_signal(
+        &shell(state, &session_id)?,
+        pid,
+        name,
+        action,
+        confirm_database,
+    )
+    .await
 }
 
 pub async fn restart_owner(
@@ -394,7 +405,6 @@ pub async fn coolify_init(
     Ok(fix(status, &app_name, ""))
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -414,5 +424,4 @@ mod tests {
         );
         assert_eq!(with_init("--init --ulimit nofile=1024"), None);
     }
-
 }

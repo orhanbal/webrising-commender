@@ -27,10 +27,13 @@ impl wc_server::Shell for Local {
             .kill_on_drop(true)
             .spawn()
             .map_err(|e| format!("sh could not start: {e}"))?;
-        let out = tokio::time::timeout(std::time::Duration::from_secs(secs), child.wait_with_output())
-            .await
-            .map_err(|_| "Sunucu zamanında yanıt vermedi.".to_owned())?
-            .map_err(|e| e.to_string())?;
+        let out = tokio::time::timeout(
+            std::time::Duration::from_secs(secs),
+            child.wait_with_output(),
+        )
+        .await
+        .map_err(|_| "Sunucu zamanında yanıt vermedi.".to_owned())?
+        .map_err(|e| e.to_string())?;
         let mut stdout = out.stdout;
         stdout.truncate(MAX_OUTPUT);
         Ok(String::from_utf8_lossy(&stdout).into_owned())
@@ -45,18 +48,29 @@ fn json<T: serde::Serialize>(value: T) -> Result<Value> {
 pub async fn execute(action: AgentAction) -> Result<Value> {
     let sh = Local;
     let done = |r: Result<String, String>| -> Result<Value> {
-        r.map(|_| serde_json::json!({ "ok": true })).map_err(|e| anyhow!(e))
+        r.map(|_| serde_json::json!({ "ok": true }))
+            .map_err(|e| anyhow!(e))
     };
     match action {
-        AgentAction::ServerOverview => json(wc_server::overview(&sh).await.map_err(|e| anyhow!(e))?),
-        AgentAction::ServerDiskUsage { path } => {
-            json(wc_server::disk_usage(&sh, path, &|_, _| {}).await.map_err(|e| anyhow!(e))?)
+        AgentAction::ServerOverview => {
+            json(wc_server::overview(&sh).await.map_err(|e| anyhow!(e))?)
         }
-        AgentAction::ServerCleanupScan => json(wc_server::cleanup_scan(&sh).await.map_err(|e| anyhow!(e))?),
-        AgentAction::ServerCleanupRun { ids } => {
-            json(wc_server::cleanup_run(&sh, ids).await.map_err(|e| anyhow!(e))?)
+        AgentAction::ServerDiskUsage { path } => json(
+            wc_server::disk_usage(&sh, path, &|_, _| {})
+                .await
+                .map_err(|e| anyhow!(e))?,
+        ),
+        AgentAction::ServerCleanupScan => {
+            json(wc_server::cleanup_scan(&sh).await.map_err(|e| anyhow!(e))?)
         }
-        AgentAction::ServerProcesses => json(wc_server::processes(&sh).await.map_err(|e| anyhow!(e))?),
+        AgentAction::ServerCleanupRun { ids } => json(
+            wc_server::cleanup_run(&sh, ids)
+                .await
+                .map_err(|e| anyhow!(e))?,
+        ),
+        AgentAction::ServerProcesses => {
+            json(wc_server::processes(&sh).await.map_err(|e| anyhow!(e))?)
+        }
         AgentAction::ServerProcessSignal {
             pid,
             name,
@@ -102,7 +116,11 @@ mod tests {
         let scan = execute(action(serde_json::json!({ "kind": "server_cleanup_scan" })))
             .await
             .unwrap();
-        assert!(scan["items"].as_array().unwrap().iter().any(|i| i["id"] == "journal"));
+        assert!(scan["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["id"] == "journal"));
 
         let processes = execute(action(serde_json::json!({ "kind": "server_processes" })))
             .await
@@ -122,8 +140,12 @@ mod tests {
         }));
         assert_eq!(a.kind_name(), "server_process_signal");
         assert_eq!(a.risk(), crate::protocol::Risk::High);
-        let r = action(serde_json::json!({ "kind": "server_restart_owner", "ownerKind": "service", "id": "nginx.service" }));
-        assert!(matches!(r, AgentAction::ServerRestartOwner { ref owner_kind, .. } if owner_kind == "service"));
+        let r = action(
+            serde_json::json!({ "kind": "server_restart_owner", "ownerKind": "service", "id": "nginx.service" }),
+        );
+        assert!(
+            matches!(r, AgentAction::ServerRestartOwner { ref owner_kind, .. } if owner_kind == "service")
+        );
         let c = action(serde_json::json!({ "kind": "server_cleanup_run", "ids": ["apt-cache"] }));
         assert_eq!(c.risk(), crate::protocol::Risk::High);
     }

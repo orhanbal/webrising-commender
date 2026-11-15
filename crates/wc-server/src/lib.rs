@@ -26,8 +26,11 @@ r() { if [ "$R" = sudo ]; then sudo -n "$@"; else "$@"; fi; }
 /// the apps, on this machine in the agent. The [`PRELUDE`] is already in
 /// `script`.
 pub trait Shell: Sync {
-    fn run_script(&self, script: &str, secs: u64)
-        -> impl Future<Output = Result<String, String>> + Send;
+    fn run_script(
+        &self,
+        script: &str,
+        secs: u64,
+    ) -> impl Future<Output = Result<String, String>> + Send;
 }
 
 pub fn quote(s: &str) -> String {
@@ -997,12 +1000,7 @@ pub async fn process_signal<S: Shell>(
         }
     }
     if first(&s, "priv").is_empty() {
-        let run_as_user = run(
-            sh,
-            &format!("kill -{signal} {pid} 2>&1 && echo @@ok"),
-            20,
-        )
-        .await?;
+        let run_as_user = run(sh, &format!("kill -{signal} {pid} 2>&1 && echo @@ok"), 20).await?;
         return if run_as_user.contains("@@ok") {
             Ok(String::new())
         } else {
