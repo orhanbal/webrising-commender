@@ -53,7 +53,7 @@
  },
  {
   "name": "server_cleanup_scan",
-  "description": "Read-only: what can be safely freed on a Linux server, by category (apt cache, journal older than 7 days, rotated logs, old temp files, crash dumps, Docker build cache, dangling and unused Docker images), with the size and the exact command each cleanup runs. Use the ids with server_cleanup_run.",
+  "description": "Read-only: what can be safely freed on a Linux server, by category (apt cache, journal older than 7 days, rotated logs, old temp files, crash dumps) and, for every Docker daemon separately (the system one and each user's rootless one, listed in dockers with storage folder, running containers and any error), its build cache and unused images, with the size and the exact command each cleanup runs. Ids of a rootless daemon end in @u<uid>. Use the ids with server_cleanup_run.",
   "inputSchema": {
    "type": "object",
    "properties": {},
@@ -63,7 +63,7 @@
  },
  {
   "name": "server_cleanup_run",
-  "description": "Frees disk space on a Linux server: runs the fixed cleanup commands of the given categories (ids from server_cleanup_scan) as root. Only known, re-creatable files; application data, databases and Docker volumes are never touched. Needs a human approval for this exact call.",
+  "description": "Frees disk space on a Linux server: runs the fixed cleanup commands of the given categories (ids from server_cleanup_scan) as root; a Docker id goes to the daemon it names, through Docker's own prune. Only known, re-creatable files; application data, databases, containers and Docker volumes are never touched. Needs a human approval for this exact call.",
   "inputSchema": {
    "type": "object",
    "properties": {

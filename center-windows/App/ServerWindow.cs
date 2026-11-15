@@ -480,7 +480,12 @@ public sealed class ServerWindow : Window
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
             var name = Name(u.Path, e.Path);
-            row.Children.Add(new TextBlock { Text = name, FontFamily = Mono, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
+            var nameCell = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            nameCell.Children.Add(new TextBlock { Text = name, FontFamily = Mono, TextTrimming = TextTrimming.CharacterEllipsis });
+            // A Docker daemon's storage (or the folder holding it): say whose, so its cleanup is found.
+            if (CleanupLayout.StoreFor(e.Path, u.DockerStores) is { } store)
+                nameCell.Children.Add(new TextBlock { Text = "Docker: " + store.Label, FontSize = 11, Foreground = (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"] });
+            row.Children.Add(nameCell);
             var bar = new ProgressBar { Value = e.Kb * 100.0 / max, Maximum = 100, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(bar, 1);
             row.Children.Add(bar);
@@ -493,6 +498,17 @@ public sealed class ServerWindow : Window
             list.Children.Add(b);
         }
         if (u.Entries.Count == 0) list.Children.Add(Note("Bu klasörde alt klasör yok."));
+        // Inside (or at) a Docker daemon's storage: its data is cleaned through that daemon, never by deleting folders.
+        if (CleanupLayout.StoreFor(u.Path, u.DockerStores) is { } here && (here.RootDir.TrimEnd('/') == u.Path.TrimEnd('/') || u.Path.StartsWith(here.RootDir.TrimEnd('/') + "/", StringComparison.Ordinal)))
+        {
+            var info = new StackPanel { Spacing = 6 };
+            info.Children.Add(new TextBlock { Text = here.Label, Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"] });
+            info.Children.Add(Note($"Bu klasör {here.Label} ortamının depolaması ({here.RootDir}, soket {here.Socket}). İçindeki dosyalar elle silinmemeli: build önbelleği ve kullanılmayan imajlar Temizlik'ten, bu Docker'ın kendisi üzerinden güvenle temizlenir; çalışan konteynerler ve volume'ler korunur."));
+            var go = new Button { Content = "Bu ortamın temizliğine git", Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
+            go.Click += (_, _) => Go("cleanup");
+            info.Children.Add(go);
+            page.Children.Add(Card(info));
+        }
         page.Children.Add(Card(list));
 
         if (u.Docker.Count > 0)
@@ -517,6 +533,38 @@ public sealed class ServerWindow : Window
         path.Length > parent.Length && path.StartsWith(parent) ? path[parent.Length..].TrimStart('/') : path;
 
     // ---- cleanup ----
+
+    /// <summary>A Docker daemon at the top of its cleanup card: which one it is, what it stores and frees, and the running containers a cleanup never touches.</summary>
+    private static UIElement DockerHeader(DockerEnv env)
+    {
+        var p = new StackPanel { Spacing = 4 };
+        var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        title.Children.Add(new FontIcon { Glyph = env.Rootless ? "\uE77B" : "\uE7F4", FontSize = 18 });
+        title.Children.Add(new TextBlock { Text = env.Label, Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"] });
+        p.Children.Add(title);
+        var kind = env.Rootless ? "Rootless Docker" : "Sistem Docker";
+        p.Children.Add(new TextBlock { Text = $"{kind} · kullanıcı: {env.User} · soket: {(string.IsNullOrEmpty(env.Socket) ? "varsayılan" : env.Socket)}", FontFamily = Mono, FontSize = 12, Foreground = Secondary, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
+        if (string.IsNullOrEmpty(env.Error))
+        {
+            if (!string.IsNullOrEmpty(env.RootDir))
+                p.Children.Add(new TextBlock { Text = "Depolama: " + env.RootDir, FontFamily = Mono, FontSize = 12, Foreground = Secondary, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
+            p.Children.Add(new TextBlock
+            {
+                Text = $"Kullanım: {Sizes.Bytes(env.TotalBytes)}  ·  Build önbelleği: {Sizes.Bytes(env.BuildCacheBytes)}  ·  Geri kazanılabilir: {Sizes.Bytes(env.ReclaimableBytes)}",
+                FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap,
+            });
+            p.Children.Add(new TextBlock
+            {
+                Text = $"İmajlar: {env.ImagesTotal} ({env.ImagesActive} kullanımda) · Konteynerler: {env.ContainersTotal} ({env.ContainersRunning} çalışıyor) · Volume'ler: {Sizes.Bytes(env.VolumesBytes)}",
+                Foreground = Secondary, TextWrapping = TextWrapping.Wrap,
+            });
+            var protectedText = env.Running.Count > 0
+                ? "Korunur (dokunulmaz): " + string.Join(", ", env.Running.Take(6)) + (env.Running.Count > 6 ? $" ve {env.Running.Count - 6} konteyner daha" : "") + "; bunların ve durmuş konteynerlerin imajları, tüm volume'ler."
+                : "Korunur (dokunulmaz): durmuş konteynerlerin imajları ve tüm volume'ler.";
+            p.Children.Add(new TextBlock { Text = protectedText, TextWrapping = TextWrapping.Wrap, Foreground = (Brush)Application.Current.Resources["SystemFillColorSuccessBrush"] });
+        }
+        return p;
+    }
 
     private UIElement CleanupPage(CleanupScan scan)
     {
@@ -555,43 +603,66 @@ public sealed class ServerWindow : Window
             v.Children.Add(Charts.Stack(parts, size));
             visual.Child = v;
         }
-        var list = new StackPanel { Spacing = 14 };
         var colorIndex = 0;
-        foreach (var item in scan.Items.OrderByDescending(i => i.Kb))
+        // The server's own items, then every Docker daemon on its own card:
+        // the system one and each user's rootless one, with what they store,
+        // protect and free, or why they could not be read.
+        foreach (var section in CleanupLayout.Sections(scan))
         {
-            var color = Charts.Palette[colorIndex++ % (Charts.Palette.Length - 1)];
-            var row = new Grid { ColumnSpacing = 12 };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var box = new CheckBox
+            var list = new StackPanel { Spacing = 14 };
+            if (section.Docker is { } env)
             {
-                MinWidth = 0,
-                IsEnabled = canChange && item.Kb > 0,
-                IsChecked = canChange && item.Kb > 0 && string.IsNullOrEmpty(item.Warning),
-                VerticalAlignment = VerticalAlignment.Top,
-            };
-            box.Checked += (_, _) => Sum();
-            box.Unchecked += (_, _) => Sum();
-            row.Children.Add(box);
-            var text = new StackPanel { Spacing = 2 };
-            var titleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-            titleRow.Children.Add(new Microsoft.UI.Xaml.Shapes.Rectangle { Width = 12, Height = 12, RadiusX = 3, RadiusY = 3, Fill = new SolidColorBrush(color), VerticalAlignment = VerticalAlignment.Center });
-            titleRow.Children.Add(new TextBlock { Text = item.Title, FontWeight = FontWeights.SemiBold });
-            text.Children.Add(titleRow);
-            text.Children.Add(Note(item.Detail));
-            if (!string.IsNullOrEmpty(item.Warning))
-                text.Children.Add(new TextBlock { Text = "Dikkat: " + item.Warning, TextWrapping = TextWrapping.Wrap, Foreground = (Brush)Application.Current.Resources["SystemFillColorCautionBrush"] });
-            text.Children.Add(new TextBlock { Text = item.Command, FontFamily = Mono, FontSize = 12, Foreground = Secondary, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
-            Grid.SetColumn(text, 1);
-            row.Children.Add(text);
-            var size = new TextBlock { Text = item.Kb > 0 ? Sizes.Kb(item.Kb) : "boş", FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Top };
-            Grid.SetColumn(size, 2);
-            row.Children.Add(size);
-            list.Children.Add(row);
-            boxes.Add((box, item, color));
+                list.Children.Add(DockerHeader(env));
+                if (!string.IsNullOrEmpty(env.Error))
+                    list.Children.Add(Banner("Bu Docker okunamadı", env.Error + " Boyutları bilinmiyor; bu ortam için temizlik önerilmiyor.", InfoBarSeverity.Warning));
+            }
+            else if (section.Items.Count == 0) continue;
+            foreach (var item in section.Items)
+            {
+                var color = Charts.Palette[colorIndex++ % (Charts.Palette.Length - 1)];
+                var row = new Grid { ColumnSpacing = 12 };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                // Docker cleanups go through the daemon itself: no root needed when this login can reach it.
+                var allowed = canChange || !string.IsNullOrEmpty(item.Docker);
+                var box = new CheckBox
+                {
+                    MinWidth = 0,
+                    IsEnabled = allowed && item.Kb > 0,
+                    IsChecked = allowed && item.Kb > 0 && string.IsNullOrEmpty(item.Warning),
+                    VerticalAlignment = VerticalAlignment.Top,
+                };
+                var group = item.Group;
+                box.Checked += (_, _) =>
+                {
+                    // Untagged images are part of the unused ones: one of the two, never both.
+                    if (!string.IsNullOrEmpty(group))
+                        foreach (var other in boxes.Where(b => b.Item.Group == group && !ReferenceEquals(b.Box, box)))
+                            other.Box.IsChecked = false;
+                    Sum();
+                };
+                box.Unchecked += (_, _) => Sum();
+                row.Children.Add(box);
+                var text = new StackPanel { Spacing = 2 };
+                var titleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+                titleRow.Children.Add(new Microsoft.UI.Xaml.Shapes.Rectangle { Width = 12, Height = 12, RadiusX = 3, RadiusY = 3, Fill = new SolidColorBrush(color), VerticalAlignment = VerticalAlignment.Center });
+                titleRow.Children.Add(new TextBlock { Text = item.Title, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
+                text.Children.Add(titleRow);
+                text.Children.Add(Note(item.Detail));
+                if (!string.IsNullOrEmpty(item.Warning))
+                    text.Children.Add(new TextBlock { Text = "Dikkat: " + item.Warning, TextWrapping = TextWrapping.Wrap, Foreground = (Brush)Application.Current.Resources["SystemFillColorCautionBrush"] });
+                text.Children.Add(new TextBlock { Text = item.Command, FontFamily = Mono, FontSize = 12, Foreground = Secondary, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
+                Grid.SetColumn(text, 1);
+                row.Children.Add(text);
+                var size = new TextBlock { Text = item.Kb > 0 ? Sizes.Kb(item.Kb) : "boş", FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Top };
+                Grid.SetColumn(size, 2);
+                row.Children.Add(size);
+                list.Children.Add(row);
+                boxes.Add((box, item, color));
+            }
+            page.Children.Add(Card(list));
         }
-        page.Children.Add(Card(list));
         Sum();
 
         var bottom = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16 };
@@ -733,7 +804,9 @@ public sealed class ServerWindow : Window
             if (generation != _generation) return;
             var after = await RootFree();
             var failed = results.Where(r => !r.Ok).ToList();
-            var freed = before is { } b && after is { } a && a > b ? $" {Sizes.Kb(a - b)} yer açıldı." : "";
+            // Measured again after the cleanup, against the estimate.
+            var freedText = CleanupLayout.Freed((ulong)chosen.Sum(c => (decimal)c.Kb), before, after);
+            var freed = freedText.Length > 0 ? " " + freedText : "";
             if (failed.Count == 0) Show("Temizlik tamamlandı." + freed, InfoBarSeverity.Success);
             else Show($"Bazı kalemler temizlenemedi: {string.Join("; ", failed.Select(f => chosen.First(c => c.Id == f.Id).Title + (string.IsNullOrEmpty(f.Message) ? "" : $" ({f.Message})")))}." + freed, InfoBarSeverity.Warning);
             // The finished list stays a moment, then the new scan.
