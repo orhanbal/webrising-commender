@@ -805,8 +805,8 @@ public sealed class ServerWindow : Window
             var after = await RootFree();
             var failed = results.Where(r => !r.Ok).ToList();
             // Measured again after the cleanup, against the estimate.
-            var freedText = CleanupLayout.Freed((ulong)chosen.Sum(c => (decimal)c.Kb), before, after);
-            var freed = freedText.Length > 0 ? " " + freedText : "";
+            var measured = CleanupLayout.Freed((ulong)chosen.Sum(c => (decimal)c.Kb), before, after);
+            var freed = measured.Length > 0 ? " " + measured : "";
             if (failed.Count == 0) Show("Temizlik tamamlandı." + freed, InfoBarSeverity.Success);
             else Show($"Bazı kalemler temizlenemedi: {string.Join("; ", failed.Select(f => chosen.First(c => c.Id == f.Id).Title + (string.IsNullOrEmpty(f.Message) ? "" : $" ({f.Message})")))}." + freed, InfoBarSeverity.Warning);
             // The finished list stays a moment, then the new scan.
