@@ -155,15 +155,19 @@ public static partial class AppUpdate
             // The progress window.
             "$form=$null; $label=$null; $bar=$null",
             "try {",
+            // Sharp on scaled screens (125 %, 150 %): the window says it handles the
+            // scale itself; otherwise Windows stretches a 100 % bitmap and it is blurry.
+            "  try { Add-Type -Name Dpi -Namespace Wc -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool SetProcessDpiAwarenessContext(IntPtr v); [DllImport(\"user32.dll\")] public static extern bool SetProcessDPIAware(); [DllImport(\"user32.dll\")] public static extern uint GetDpiForSystem();'; if(-not [Wc.Dpi]::SetProcessDpiAwarenessContext([IntPtr](-4))){ [void][Wc.Dpi]::SetProcessDPIAware() } } catch {}",
+            "  $s=1.0; try { $s=[Wc.Dpi]::GetDpiForSystem()/96.0 } catch {}; function Px($v){ [int][math]::Round($v*$s) }",
             "  Add-Type -AssemblyName System.Windows.Forms, System.Drawing",
             "  [System.Windows.Forms.Application]::EnableVisualStyles()",
             "  $form=New-Object System.Windows.Forms.Form",
             "  $form.Text='WECOMMANDER'; $form.FormBorderStyle='FixedDialog'; $form.ControlBox=$false; $form.MaximizeBox=$false; $form.MinimizeBox=$false",
             "  $form.StartPosition='CenterScreen'; $form.TopMost=$true; $form.ShowInTaskbar=$true",
-            "  $form.Font=New-Object System.Drawing.Font('Segoe UI',10); $form.ClientSize=New-Object System.Drawing.Size(400,112)",
-            "  $title=New-Object System.Windows.Forms.Label; $title.AutoSize=$false; $title.SetBounds(20,14,360,24); $title.Font=New-Object System.Drawing.Font('Segoe UI Semibold',11); $title.Text='WECOMMANDER güncelleniyor'",
-            "  $label=New-Object System.Windows.Forms.Label; $label.AutoSize=$false; $label.SetBounds(20,40,360,22); $label.Text='Uygulama kapanıyor…'",
-            "  $bar=New-Object System.Windows.Forms.ProgressBar; $bar.SetBounds(20,70,360,16); $bar.Minimum=0; $bar.Maximum=100; $bar.Value=60",
+            "  $form.Font=New-Object System.Drawing.Font('Segoe UI',10); $form.AutoScaleMode='None'; $form.ClientSize=New-Object System.Drawing.Size((Px 400),(Px 112))",
+            "  $title=New-Object System.Windows.Forms.Label; $title.AutoSize=$false; $title.SetBounds((Px 20),(Px 14),(Px 360),(Px 26)); $title.Font=New-Object System.Drawing.Font('Segoe UI Semibold',11); $title.Text='WECOMMANDER güncelleniyor'",
+            "  $label=New-Object System.Windows.Forms.Label; $label.AutoSize=$false; $label.SetBounds((Px 20),(Px 42),(Px 360),(Px 22)); $label.Text='Uygulama kapanıyor…'",
+            "  $bar=New-Object System.Windows.Forms.ProgressBar; $bar.SetBounds((Px 20),(Px 72),(Px 360),(Px 16)); $bar.Minimum=0; $bar.Maximum=100; $bar.Value=60",
             "  $form.Controls.AddRange(@($title,$label,$bar)); $form.WindowState='Normal'; $form.Show(); $form.Visible=$true; $form.BringToFront(); $form.Activate(); [System.Windows.Forms.Application]::DoEvents()",
             "} catch { $form=$null }",
             "function Step($text,$value){ if($form){ try { $label.Text=$text; $bar.Value=$value; [System.Windows.Forms.Application]::DoEvents() } catch {} } }",
