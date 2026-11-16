@@ -18,10 +18,14 @@ public struct CenterSettings: Codable, Equatable {
     public var agentKeepRunning: Bool = true
     /// Interface language code ("en", "de"…); nil follows the system language.
     public var language: String?
+    /// Servers shown live in the menu bar (host ids).
+    public var watchedHosts: [String] = []
+    /// The person chose the watched servers (else the first few are watched).
+    public var watchChosen: Bool = false
 
     public init() {}
 
-    enum CodingKeys: String, CodingKey { case server, notifications, notificationIntroShown, openPanelOnRequest, agentKeepRunning, language }
+    enum CodingKeys: String, CodingKey { case server, notifications, notificationIntroShown, openPanelOnRequest, agentKeepRunning, language, watchedHosts, watchChosen }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -31,6 +35,8 @@ public struct CenterSettings: Codable, Equatable {
         openPanelOnRequest = try c.decodeIfPresent(Bool.self, forKey: .openPanelOnRequest) ?? false
         agentKeepRunning = try c.decodeIfPresent(Bool.self, forKey: .agentKeepRunning) ?? true
         language = try c.decodeIfPresent(String.self, forKey: .language)
+        watchedHosts = try c.decodeIfPresent([String].self, forKey: .watchedHosts) ?? []
+        watchChosen = try c.decodeIfPresent(Bool.self, forKey: .watchChosen) ?? false
     }
 }
 

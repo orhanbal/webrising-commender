@@ -19,6 +19,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var statusItem: NSStatusItem!
     private let popover = NSPopover()
     private let menu = NSMenu()
+    /// The live server monitor: its own menu bar item (shown while servers are watched).
+    private lazy var monitor = ServerMonitor(model: servers, app: model)
+    private var monitorItem: NSStatusItem?
+    private let monitorPopover = NSPopover()
+    private lazy var messages = MessageCenter(app: model)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -48,6 +53,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             return (self.model.gateway, token)
         }
         servers.startLibrarySync()
+        monitorPopover.behavior = .transient
+        monitorPopover.animates = true
+        monitorPopover.contentViewController = monitorController()
+        monitor.onChange = { [weak self] in self?.updateMonitorItem() }
+        monitor.start()
 
         DistributedNotificationCenter.default().addObserver(
             forName: Self.showPanelNotification, object: nil, queue: .main) { [weak self] _ in
@@ -75,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        monitor.stop()
         servers.stop()
         model.stopEmbeddedAgent()
     }
@@ -90,7 +101,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             serversStale = false
         }
         if serversWindow == nil {
-            let window = NSWindow(contentViewController: NSHostingController(rootView: ServersView(model: servers, showPanel: { [weak self] in self?.showPanel() })))
+            let window = NSWindow(contentViewController: NSHostingController(rootView: ServersView(model: servers, showPanel: { [weak self] in self?.showPanel() })
+                .overlay(alignment: .bottomLeading) { MessageCard(center: self.messages) }))
             window.title = "WECOMMANDER"
             window.setContentSize(NSSize(width: 1100, height: 700))
             window.styleMask.insert(.fullSizeContentView)
@@ -103,6 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
         NSApp.setActivationPolicy(.regular)
         serversWindow?.makeKeyAndOrderFront(nil)
+        if model.phase == .signedIn { messages.fetchOnce() }
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -110,6 +123,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private func languageChanged() {
         statusItem.button?.setAccessibilityLabel(L.t("WECOMMANDER Yönetim Merkezi"))
         popover.contentViewController = NSHostingController(rootView: PanelView(model: model))
+        monitorPopover.contentViewController = monitorController()
+        updateMonitorItem()
         guard let window = serversWindow else { return }
         serversStale = true
         if servers.sessions.isEmpty {
@@ -175,6 +190,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         if model.notificationsBlocked { tooltip += L.t(" · macOS bildirimleri kapalı") }
         if let agent = model.agent, agent.state == .stopped { tooltip += " · " + Texts.agentStateLabel(agent).lowercased() }
         button.toolTip = tooltip
+    }
+
+    // MARK: server monitor
+
+    private func monitorController() -> NSViewController {
+        NSHostingController(rootView: MonitorView(
+            monitor: monitor, servers: servers,
+            openTerminal: { [weak self] host in self?.monitorPopover.performClose(nil); self?.showServers(); self?.servers.open(host) },
+            openServers: { [weak self] in self?.monitorPopover.performClose(nil); self?.showServers() }))
+    }
+
+    /// "● 42%" next to the clock, coloured by the worst server; hidden when nothing is watched.
+    private func updateMonitorItem() {
+        guard let summary = monitor.summary else {
+            if let item = monitorItem { NSStatusBar.system.removeStatusItem(item); monitorItem = nil }
+            return
+        }
+        if monitorItem == nil {
+            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            item.button?.action = #selector(monitorClicked(_:))
+            item.button?.target = self
+            monitorItem = item
+        }
+        guard let button = monitorItem?.button else { return }
+        let live = monitor.servers.contains(where: \.live)
+        let title = NSMutableAttributedString(string: "● ", attributes: [.foregroundColor: MonitorColors.nsTint(live ? summary.worst : nil)])
+        title.append(NSAttributedString(string: summary.text, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .regular)]))
+        button.attributedTitle = title
+        let details = monitor.servers.map { s in
+            s.live ? L.f("{0}: işlemci {1} · bellek {2} · disk {3}", s.label, Percent.text(s.reading.cpu), Percent.text(s.reading.mem), Percent.text(s.reading.disk))
+                   : L.f("{0}: bağlanıyor", s.label)
+        }
+        button.toolTip = ([L.t("WECOMMANDER Sunucularım")] + details).joined(separator: "\n")
+        button.setAccessibilityLabel(button.toolTip)
+    }
+
+    @objc private func monitorClicked(_ sender: NSStatusBarButton) {
+        if monitorPopover.isShown { monitorPopover.performClose(nil); return }
+        monitorPopover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
+        monitorPopover.contentViewController?.view.window?.makeKey()
     }
 
     // MARK: menu (rebuilt each time it opens)
