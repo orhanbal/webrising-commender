@@ -30,6 +30,7 @@ public sealed class DockWindow : Window
     private readonly MeterHistory _history = new();
     private readonly Grid _root = new();
     private readonly AppBar _bar;
+    private readonly IntPtr _hwnd;
     private readonly SubclassProc _proc;
     private readonly DispatcherQueueTimer _fast, _slow, _reapply;
 
@@ -85,6 +86,7 @@ public sealed class DockWindow : Window
         _root.ContextFlyout = Menu();
 
         var hwnd = Hwnd;
+        _hwnd = hwnd;
         _bar = new AppBar(hwnd);
         _proc = WndProc; // kept alive as long as the window
         SetWindowSubclass(hwnd, _proc, (UIntPtr)0x5743, IntPtr.Zero);
@@ -664,17 +666,20 @@ public sealed class DockWindow : Window
 
     private void DroppedFloating()
     {
+        // Where Windows' move left it, read from the window itself (the move loop just ended).
+        if (!GetWindowRect(_hwnd, out var r)) return;
+        var rect = PixelRect.FromEdges(r.Left, r.Top, r.Right, r.Bottom);
         // The monitor it was dropped on becomes its monitor.
-        var center = (X: AppWindow.Position.X + AppWindow.Size.Width / 2, Y: AppWindow.Position.Y + AppWindow.Size.Height / 2);
-        var screen = Monitors.All().FirstOrDefault(m => m.Bounds.Contains(center.X, center.Y)) ?? _screen;
+        var cx = rect.X + rect.Width / 2;
+        var cy = rect.Y + rect.Height / 2;
+        var screen = Monitors.All().FirstOrDefault(m => m.Bounds.Contains(cx, cy)) ?? _screen;
         _screen = screen;
         var s = App.Current.Settings;
         s.DockMonitor = screen.Device;
-        s.DockFloatX = (int)Math.Round((AppWindow.Position.X - screen.Work.X) / screen.Scale);
-        s.DockFloatY = (int)Math.Round((AppWindow.Position.Y - screen.Work.Y) / screen.Scale);
+        s.DockFloatX = (int)Math.Round((rect.X - screen.Work.X) / screen.Scale);
+        s.DockFloatY = (int)Math.Round((rect.Y - screen.Work.Y) / screen.Scale);
         App.Current.SaveSettings();
         _lastApplied = null;
-        var rect = new PixelRect(AppWindow.Position.X, AppWindow.Position.Y, AppWindow.Size.Width, AppWindow.Size.Height);
         App.DebugLayout($"dock: floating moved to {rect.X},{rect.Y} on {screen.Device}");
         if (DockLayout.SnapEdge(rect, screen.Work, (int)Math.Round(24 * screen.Scale)) is { } edge) OfferEdge(edge);
     }
