@@ -76,7 +76,7 @@ final class ServerMonitor: ObservableObject {
         if servers.isEmpty { timer?.invalidate(); timer = nil; return }
         guard timer == nil else { return }
         let t = Timer(timeInterval: 3, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { Task { await self?.tick() } }
+            Task { @MainActor [weak self] in await self?.tick() }
         }
         RunLoop.main.add(t, forMode: .common)
         timer = t

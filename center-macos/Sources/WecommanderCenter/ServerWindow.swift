@@ -746,12 +746,21 @@ struct UsageMeter: View {
             HStack {
                 Text(label).fontWeight(.semibold).lineLimit(1).truncationMode(.middle)
                 Spacer()
-                Text(Sizes.kb(usedKb) + " / " + Sizes.kb(totalKb) + "  (" + Sizes.percent(percent) + ")" + (extra.map { "  ·  " + $0 } ?? ""))
+                Text(summary(percent))
                     .foregroundStyle(.secondary).monospacedDigit()
             }
             ProgressView(value: min(100, max(0, percent)), total: 100)
                 .tint(ServerColors.level(percent))
         }
+    }
+
+    private func summary(_ percent: Double) -> String {
+        let used: String = Sizes.kb(usedKb)
+        let total: String = Sizes.kb(totalKb)
+        let share: String = Sizes.percent(percent)
+        var text: String = used + " / " + total + "  (" + share + ")"
+        if let extra { text += "  ·  " + extra }
+        return text
     }
 }
 
@@ -1042,8 +1051,7 @@ struct DiskPage: View {
                 GroupBox {
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(u.docker) { d in
-                            Text(kindName(d.kind) + " (" + d.count + "): " + Sizes.bytes(d.sizeBytes)
-                                 + (d.reclaimableBytes > 0 && d.kind != "Local Volumes" ? L.f("  ·  {0} geri kazanılabilir", Sizes.bytes(d.reclaimableBytes)) : ""))
+                            Text(dockerLine(d))
                         }
                         Text(L.t("Birimlere (uygulama verileri) hiçbir zaman dokunulmaz.")).foregroundStyle(.secondary)
                         Button(L.t("Temizlik'e git")) { model.go(.cleanup) }
@@ -1053,6 +1061,16 @@ struct DiskPage: View {
                 }
             }
         }
+    }
+
+    private func dockerLine(_ d: DockerUsage) -> String {
+        let name: String = kindName(d.kind)
+        let size: String = Sizes.bytes(d.sizeBytes)
+        var text: String = name + " (" + d.count + "): " + size
+        if d.reclaimableBytes > 0 && d.kind != "Local Volumes" {
+            text += L.f("  ·  {0} geri kazanılabilir", Sizes.bytes(d.reclaimableBytes))
+        }
+        return text
     }
 
     private func kindName(_ kind: String) -> String {
