@@ -269,6 +269,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         menu.addItem(stop)
         menu.addItem(.separator())
         menu.addItem(item(L.t("Paneli tarayıcıda aç"), #selector(menuDashboard)))
+        if model.isEmbedded {
+            let update = item(model.agentUpdateAvailable ? L.t("Yeni sürüm var — Uygulamayı güncelle") : L.t("Güncellemeleri denetle"), #selector(menuCheckUpdates))
+            update.isEnabled = !model.updating
+            menu.addItem(update)
+        }
         let notify = item(L.t("Bildirimler"), #selector(menuToggleNotifications))
         notify.state = model.settings.notifications ? .on : .off
         menu.addItem(notify)
@@ -306,6 +311,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         Task { await servers.toggleTunnel(tunnel) }
     }
     @objc private func menuDashboard() { model.openDashboard() }
+    @objc private func menuCheckUpdates() { showPanel(); model.updateAgent() }
     @objc private func menuAllowNotifications() { Notifier.openSettings() }
     @objc private func menuToggleNotifications() { model.update { $0.notifications.toggle() } }
     @objc private func menuQuit() { NSApp.terminate(nil) }

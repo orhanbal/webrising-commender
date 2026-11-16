@@ -500,6 +500,18 @@ private struct SettingsView: View {
             Text(L.t("Bildirimin ekranda kalması için Sistem Ayarları › Bildirimler › WECOMMANDER Yönetim Merkezi'nde stili \"Uyarılar\" yap. Onayla / Reddet bildirimin \"Seçenekler\" düğmesinde de görünür."))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Divider()
+            if model.isEmbedded {
+                // Also here, not only under Devices: where people look for it first.
+                HStack(spacing: 8) {
+                    Button(model.agentUpdateAvailable ? L.t("Yeni sürüm var — Uygulamayı güncelle") : L.t("Güncellemeleri denetle")) { model.updateAgent() }
+                        .disabled(model.updating)
+                    if model.updating { ProgressView().controlSize(.small) }
+                }
+                if let message = model.updateMessage {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                }
+                Divider()
+            }
             HStack {
                 Button(L.t("Paneli tarayıcıda aç")) { model.openDashboard() }
                 Button(L.t("Oturumu kapat")) { Task { await model.signOut() } }
