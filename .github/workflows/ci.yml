@@ -1390,13 +1390,13 @@ jobs:
               # 5. The icon opens the panel just below a top Dock.
               Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
               $root = [System.Windows.Automation.AutomationElement]::RootElement
-              $cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'WECOMMANDER: Sunucularım paneli')
+              $iconName = 'WECOMMANDER: Sunucular' + [char]0x0131 + 'm paneli'  # this script file is read as ANSI: no non-ASCII literals
+              $cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $iconName)
               $btn = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
               if (-not $btn) { $fail += 'Dock icon button not found' }
               else {
                 $r = $btn.Current.BoundingRectangle
                 [D]::SetCursorPos([int]($r.Left + $r.Width / 2), [int]($r.Top + $r.Height / 2)); [D]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero); Start-Sleep -Milliseconds 60; [D]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero)
-                $o = [char]0x0131; $m = [char]0x0131
                 $panelTitle = "WECOMMANDER Sunucular" + [char]0x0131 + "m"
                 if (WaitFor { [D]::Find([uint32]$app.Id, $panelTitle) } 8) {
                   $p = Rect ([D]::Find([uint32]$app.Id, $panelTitle))
@@ -1460,7 +1460,7 @@ jobs:
           if ($d) {
             $gx = $d.L + [int](15 * $scale); $gy = [int](($d.T + $d.B) / 2)
             [D]::SetCursorPos($gx, $gy); [D]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero); Start-Sleep -Milliseconds 150
-            for ($i = 1; $i -le 20; $i++) { [D]::SetCursorPos($gx + 10 * $i, $gy - [int](($gy - $base.T - 30 * $scale) * $i / 20)); Start-Sleep -Milliseconds 30 }
+            for ($i = 1; $i -le 20; $i++) { [void][D]::SetCursorPos($gx + 10 * $i, $gy - [int](($gy - $base.T - 30 * $scale) * $i / 20)); Start-Sleep -Milliseconds 30 }
             [D]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero)
             Start-Sleep -Seconds 2
             $moved = Dock

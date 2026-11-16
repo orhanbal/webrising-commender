@@ -121,9 +121,11 @@ public sealed class DockWindow : Window
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
     [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] private struct MINMAXINFO { public POINT ptReserved, ptMaxSize, ptMaxPosition, ptMinTrackSize, ptMaxTrackSize; }
 
     private static readonly IntPtr HwndTopMost = new(-1), HwndNoTopMost = new(-2), HwndBottom = new(1);
     private const uint SwpNoSize = 0x1, SwpNoMove = 0x2, SwpNoActivate = 0x10;
+    private const uint WmGetMinMaxInfo = 0x0024;
     private const uint WmActivate = 0x0006, WmEndSession = 0x0016, WmSettingChange = 0x001A, WmWindowPosChanged = 0x0047,
         WmDisplayChange = 0x007E, WmDpiChanged = 0x02E0;
 
@@ -144,6 +146,15 @@ public sealed class DockWindow : Window
                 App.DebugLayout("dock: explorer restarted, registering again");
                 _bar.Forget();
                 ScheduleApply();
+            }
+            if (msg == WmGetMinMaxInfo)
+            {
+                // WinUI keeps windows at least ~136 px wide; a side Dock is thinner.
+                var result = DefSubclassProc(hwnd, msg, w, l);
+                var info = Marshal.PtrToStructure<MINMAXINFO>(l);
+                info.ptMinTrackSize = new POINT { X = 1, Y = 1 };
+                Marshal.StructureToPtr(info, l, false);
+                return result;
             }
             switch (msg)
             {
@@ -407,6 +418,8 @@ public sealed class DockWindow : Window
             Child = new FontIcon { Glyph = _horizontal ? "" : "", FontSize = 12, Opacity = 0.6, Rotation = _horizontal ? 0 : 90 } };
         ToolTipService.SetToolTip(grip, "Sürükle: taşı");
         grip.PointerPressed += OnGripPressed;
+        grip.PointerMoved += OnGripMoved;
+        grip.PointerReleased += (_, _) => _gripDown = false;
         _grip = grip;
         start.Children.Add(grip);
         var app = IconButton(AppIcon(), "WECOMMANDER: Sunucularım paneli");
@@ -622,13 +635,29 @@ public sealed class DockWindow : Window
 
     // ---- floating: drag, remember, offer an edge ----
 
+    private bool _gripDown;
+    private POINT _gripAt;
+
     private void OnGripPressed(object sender, PointerRoutedEventArgs e)
     {
         if (_mode != DockMode.Floating || !e.GetCurrentPoint(_root).Properties.IsLeftButtonPressed) return;
-        // Windows' own window move (like dragging a title bar); returns when the button is released.
+        _gripDown = true;
+        GetCursorPos(out _gripAt);
+        // Keep the moves coming while the mouse leaves the small grip.
+        if (sender is UIElement grip) grip.CapturePointer(e.Pointer);
+    }
+
+    private void OnGripMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_gripDown) return;
+        GetCursorPos(out var now);
+        if (Math.Abs(now.X - _gripAt.X) < 4 && Math.Abs(now.Y - _gripAt.Y) < 4) return;
+        _gripDown = false;
+        // Windows' own window move (like dragging a title bar, as the server box
+        // does); returns when the button is released.
         ReleaseCapture();
         SendMessage(Hwnd, 0xA1 /* WM_NCLBUTTONDOWN */, new IntPtr(2) /* HTCAPTION */, IntPtr.Zero);
-        DroppedFloating();
+        try { DroppedFloating(); } catch (Exception ex) { App.LogCrash(ex); }
     }
 
     private void DroppedFloating()
