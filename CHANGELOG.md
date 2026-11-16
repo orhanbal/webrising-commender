@@ -14,6 +14,15 @@ WECOMMANDER 1.0 is one desktop app (Windows, macOS) plus a non-root agent (Linux
 
 ## Unreleased
 
+- Landing page redesign:
+  - the original logos of the AI clients (Claude, ChatGPT, Cursor, GitHub Copilot, Gemini, Windsurf; LobeHub Icons, MIT);
+  - a new "Inside the app" showcase with three tabs: server management with the cleanup list, live monitoring with the Dock and flowing charts, and the terminal;
+  - feature icons each in their own colour, and a hero with a soft grid;
+  - plan cards with their features and a "Most popular" Pro card;
+  - a second "Download the app" button at the end;
+  - a five-column footer;
+  - the masked-secrets point in the security list instead of self-hosting, and the Dock in the live-monitoring text.
+
 - AI discoverability: every MCP tool carries MCP annotations (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`), derived from and tested against the enforced risk classes (also in the local stdio tool list); `serverInfo.title` is WECOMMANDER. The gateway lists itself in the official MCP Registry as `app.wecommander/wecommander` (domain proof at `/.well-known/mcp-registry-auth`, key derived from the server secret, once per listing version) and announces the public pages to Bing & co. through IndexNow after a deploy. The site title and description use the new positioning. `docs/DIRECTORY_SUBMISSIONS.md`: the Claude connectors directory and ChatGPT apps submission kit.
 
 - Windows: **WECOMMANDER Dock** (off by default; Settings → Dock or the Dock's right-click menu). Our own bar on a screen edge, not the Windows taskbar: **fixed** (a Windows AppBar through `SHAppBarMessage`; windows do not cover it, the strip goes back when the Dock closes or the app quits, and it registers again after Explorer restarts), **auto-hide** (slides out at the edge, with show/hide delays) or **floating** (dragged anywhere, remembers its place and monitor, offers to fix itself to an edge it is left near). Top, bottom, left or right, on any monitor (per-monitor DPI); steps aside for full-screen apps and games. It shows the watched server's live CPU / RAM / Disk with the server box's line charts (same data, no second connection), opens Sunucularım from the WECOMMANDER icon next to the button, and goes straight to Süreçler, disk analysis or (disk ≥ 90 %) cleanup, the terminal and pending approvals. Nothing risky runs from a single click. Settings: mode, edge, monitor, size, delays, on top (floating), full screen, theme, parts and their order, start with Windows. The server box steps aside while the Dock is on (it carries the same meters). `WecommanderCenter.exe --quit` closes the running app properly.
