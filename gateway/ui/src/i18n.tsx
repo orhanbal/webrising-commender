@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Check, ChevronDown, Globe2 } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
+import { Flag } from "./components/Flag";
 import { commonEnglish } from "./i18n-common";
 import { marketingEnglish } from "./i18n-marketing";
 import { productEnglish } from "./i18n-product";
@@ -139,7 +140,7 @@ export function LanguageSwitcher({compact=false}:{compact?:boolean}){
       aria-label={t("Dil seçin")} aria-haspopup="menu" aria-expanded={open}
       onClick={()=>setOpen(value=>!value)}
       onKeyDown={event=>{if(event.key==="ArrowDown"||event.key==="ArrowUp"){event.preventDefault();setOpen(true);requestAnimationFrame(()=>focusOption(event.key==="ArrowDown"?0:options.length-1))}}}>
-      <Globe2 size={17} aria-hidden="true"/>
+      <Flag code={current} size={20}/>
       {compact
         ? <span className="locale-code">{currentEntry.short}</span>
         : <><span className="locale-label-long">{currentEntry.name}</span><span className="locale-label-short" aria-hidden="true">{currentEntry.short}</span></>}
@@ -157,7 +158,7 @@ export function LanguageSwitcher({compact=false}:{compact?:boolean}){
           if(event.key==="End"){event.preventDefault();focusOption(options.length-1)}
           if(event.key==="Tab")setOpen(false);
         }}>
-        <span className="locale-option-name">{label}</span>
+        <span className="locale-option-name"><Flag code={code}/>{label}</span>
         <span className="locale-option-code">{current===code?<Check size={15} aria-hidden="true"/>:short}</span>
       </button>)}
     </div>}
