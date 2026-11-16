@@ -199,3 +199,28 @@ public enum GatewayDates {
         return d
     }
 }
+
+/// A marketing message or survey from the console: kind is message, tip,
+/// announcement, csat (faces 1–5) or nps (0–10).
+public struct InAppMessage: Decodable, Equatable, Identifiable {
+    public let id: String
+    public let kind: String
+    public let title: String
+    public let body: String
+    public let ctaLabel: String?
+    public let ctaUrl: String?
+
+    public init(id: String, kind: String, title: String, body: String, ctaLabel: String? = nil, ctaUrl: String? = nil) {
+        self.id = id; self.kind = kind; self.title = title; self.body = body; self.ctaLabel = ctaLabel; self.ctaUrl = ctaUrl
+    }
+
+    public var isSurvey: Bool { kind == "csat" || kind == "nps" }
+    /// Score buttons: 1–5 for csat, 0–10 for nps.
+    public var scores: [Int] { kind == "csat" ? Array(1...5) : kind == "nps" ? Array(0...10) : [] }
+    /// The call to action opens only https links.
+    public var cta: (label: String, url: URL)? {
+        guard let label = ctaLabel?.trimmingCharacters(in: .whitespaces), !label.isEmpty,
+              let raw = ctaUrl, raw.hasPrefix("https://"), let url = URL(string: raw) else { return nil }
+        return (label, url)
+    }
+}

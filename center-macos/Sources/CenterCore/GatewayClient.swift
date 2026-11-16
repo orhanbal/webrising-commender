@@ -117,6 +117,21 @@ public struct GatewayClient: Sendable {
         try decode(CenterMe.self, try await send("GET", "/api/center/me?platform=macos", token: token, body: nil))
     }
 
+    /// The person's next marketing message or survey (nil: none).
+    public func message(token: String) async throws -> InAppMessage? {
+        let json = try await send("GET", "/api/messages?platform=macos", token: token, body: nil)
+        guard let m = (json as? [String: Any])?["message"], !(m is NSNull) else { return nil }
+        return try decode(InAppMessage.self, m)
+    }
+
+    /// action: shown, answered (with a score), dismissed or clicked.
+    public func respond(token: String, id: String, action: String, score: Int? = nil, comment: String? = nil) async throws {
+        var body: [String: Any] = ["id": id, "platform": "macos", "action": action]
+        if let score { body["score"] = score }
+        if let comment { body["comment"] = comment }
+        _ = try await send("POST", "/api/messages/respond", token: token, body: body)
+    }
+
     /// Where and how a request ended, once it left the pending list.
     public func outcome(token: String, id: String) async throws -> ApprovalOutcome {
         guard let uuid = UUID(uuidString: id) else {
