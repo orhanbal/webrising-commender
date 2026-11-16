@@ -150,7 +150,7 @@ export const publicPages: PublicPage[] = [
     description: "WECOMMANDER plans for individuals and teams. See the current prices and limits on this page.",
     heading: "Pricing",
     intro: "Plans differ by the number of devices, team members and API tokens. Current prices are shown on this page.",
-    blocks: [{ p: "Self-hosting is possible: the gateway runs with Docker Compose and PostgreSQL." }],
+    blocks: [{ p: "Free, Pro and Team plans for the hosted WECOMMANDER service; payments through Paddle, the Merchant of Record, with a 14-day refund window." }],
   },
   {
     path: "/install",
@@ -242,7 +242,7 @@ export const publicPages: PublicPage[] = [
       { q: "Does the AI see my passwords or API keys?", a: "Common secrets in command and terminal output are masked on the device before the result is sent. File reads are exact, so keep secret files outside the allowed folders." },
       { q: "Can I undo a change the AI made?", a: "File edits keep undo snapshots; the AI or you can restore the previous content if the file has not changed since." },
       { q: "Can I use it without an account?", a: "Yes, in local mode: the agent serves MCP over stdio to a local client, with writes and commands off unless you enable them." },
-      { q: "Can I host it myself?", a: "Yes. The gateway runs with Docker Compose and PostgreSQL; the agent is the same." },
+      { q: "Where does WECOMMANDER run?", a: "The desktop app and the agent run on your own computers and servers; the account, approvals and the MCP endpoint are a hosted service at wecommander.app. A self-hosted edition is not offered." },
     ],
   },
   {

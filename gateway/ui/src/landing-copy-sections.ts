@@ -126,19 +126,10 @@ export const landingCopySections = [
       "PAKETLER",
       "İhtiyacın kadar kullan.",
       "Şeffaf şekilde büyü.",
-      "Kendi altyapınızda çalıştırma seçeneğini keşfedin.",
       "Paket ve ödeme bilgileri Paddle üzerinden güvenle yönetilir.",
-      "Kontrol sizde",
-      "Mevcut altyapınızda, kendi sunucunuzda yönetim.",
-      "Kendi sunucunuz",
-      "Cihaz ve MCP yönetimi",
-      "Yetki ve denetim",
-      "Seçenekleri incele",
-      "Bulutta çalışın",
+      "Ücretsiz",
+      "Öne Çıkan",
       "Bireysel ve ekip kullanımı için abonelik seçenekleri.",
-      "Merkezi kontrol paneli",
-      "Plan bazlı kaynak limitleri",
-      "Paddle ile faturalama",
       "Paketleri görüntüle"
     ]
   },
@@ -161,8 +152,6 @@ export const landingCopySections = [
       "Masaüstü uygulaması: Windows 10/11 ve macOS (Apple Silicon ve Intel); Linux için önizleme sürümü. Agent: Windows, macOS ve Linux (Ubuntu/Debian).",
       "Ödeme ve iade nasıl işliyor?",
       "Ödemeler resmi satıcımız Paddle üzerinden güvenle alınır. Aboneliğini istediğin zaman iptal edebilirsin; ilk ödemeden sonraki 14 gün içinde koşulsuz iade alırsın.",
-      "Self-hosted sürümü kullanabilir miyim?",
-      "Evet, kendi altyapınızda çalıştırma için dağıtım modu destekleniyor. Kurulum ve işletim sorumluluğu size ait olabilir."
     ]
   },
   {

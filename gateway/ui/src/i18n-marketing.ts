@@ -39,6 +39,7 @@ export const marketingEnglish:Record<string,string> = {
   "İhtiyacın kadar kullan.": "Only what you need.",
   "Şeffaf şekilde büyü.": "Grow transparently.",
   "Kendi altyapınızda çalıştırma seçeneğini keşfedin.": "Discover self-hosting on your infrastructure.",
+  "Ücretsiz": "Free",
   "Paket ve ödeme bilgileri Paddle üzerinden güvenle yönetilir.": "Plans and payments are securely managed by Paddle.",
   "Kontrol sizde": "You own the control",
   "Mevcut altyapınızda, kendi sunucunuzda yönetim.": "Manage everything on your existing infrastructure.",
