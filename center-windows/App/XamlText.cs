@@ -1,7 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Media;
 using Wecommander.Center.Core;
@@ -69,7 +68,7 @@ public static class XamlText
             if (Tr(ToolTipService.GetToolTip(element)) is { } tip) ToolTipService.SetToolTip(element, tip);
             if (Tr(AutomationProperties.GetName(element)) is { } name) AutomationProperties.SetName(element, name);
         }
-        if (node is ButtonBase { Flyout: MenuFlyout menu })
+        if (node is Button { Flyout: MenuFlyout menu })
             foreach (var item in menu.Items) if (item is MenuFlyoutItem mi && Tr(mi.Text) is { } mt) mi.Text = mt;
         var count = VisualTreeHelper.GetChildrenCount(node);
         if (count > 0)
