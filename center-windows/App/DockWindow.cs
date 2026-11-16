@@ -643,6 +643,7 @@ public sealed class DockWindow : Window
         if (_mode != DockMode.Floating || !e.GetCurrentPoint(_root).Properties.IsLeftButtonPressed) return;
         _gripDown = true;
         GetCursorPos(out _gripAt);
+        App.DebugLayout($"dock: grip pressed at {_gripAt.X},{_gripAt.Y}");
         // Keep the moves coming while the mouse leaves the small grip.
         if (sender is UIElement grip) grip.CapturePointer(e.Pointer);
     }
@@ -653,6 +654,7 @@ public sealed class DockWindow : Window
         GetCursorPos(out var now);
         if (Math.Abs(now.X - _gripAt.X) < 4 && Math.Abs(now.Y - _gripAt.Y) < 4) return;
         _gripDown = false;
+        App.DebugLayout($"dock: grip drag from {_gripAt.X},{_gripAt.Y} to {now.X},{now.Y}");
         // Windows' own window move (like dragging a title bar, as the server box
         // does); returns when the button is released.
         ReleaseCapture();

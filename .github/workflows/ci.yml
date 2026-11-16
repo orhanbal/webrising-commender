@@ -1460,7 +1460,12 @@ jobs:
           if ($d) {
             $gx = $d.L + [int](15 * $scale); $gy = [int](($d.T + $d.B) / 2)
             [D]::SetCursorPos($gx, $gy); [D]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero); Start-Sleep -Milliseconds 150
-            for ($i = 1; $i -le 20; $i++) { [void][D]::SetCursorPos($gx + 10 * $i, $gy - [int](($gy - $base.T - 30 * $scale) * $i / 20)); Start-Sleep -Milliseconds 30 }
+            # Real mouse input (absolute moves), small steps first so the grip sees the start of the drag.
+            for ($i = 1; $i -le 24; $i++) {
+              $tx = $gx + 2 * $i; $ty = $gy - [int](($gy - $base.T - 30 * $scale) * $i / 24)
+              [D]::mouse_event(0x8001, [uint32]($tx * 65535 / ($screen.Width - 1)), [uint32]($ty * 65535 / ($screen.Height - 1)), 0, [IntPtr]::Zero)
+              Start-Sleep -Milliseconds 40
+            }
             [D]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero)
             Start-Sleep -Seconds 2
             $moved = Dock

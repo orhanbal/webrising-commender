@@ -1088,12 +1088,20 @@ public partial class App : Application
 
     private void Quit()
     {
+        DebugLayout("quit: start");
+        // The Dock gives its strip back first; then, whatever hangs below
+        // (a tray icon after Explorer restarted), the app still ends.
+        try { StopDock(); } catch (Exception e) { LogCrash(e); }
+        _ = Task.Run(async () => { await Task.Delay(TimeSpan.FromSeconds(8)); DebugLayout("quit: forced after 8 s"); Environment.Exit(0); });
         Servers.Dispose();
         _embedded.Dispose();
         _timer?.Stop();
+        DebugLayout("quit: tray");
         _tray?.Dispose();
         StopMonitor();
+        DebugLayout("quit: windows");
         _window?.Quit();
+        DebugLayout("quit: exit");
         Exit();
     }
 }
