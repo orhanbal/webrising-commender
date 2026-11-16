@@ -300,4 +300,4 @@ export const consoleTurkish:Record<string,string> = {
   "Email campaigns": "E-posta kampanyaları",
   "Product news by email to people who opted in, with one-click unsubscribe.": "E-posta almayı kabul edenlere ürün haberleri; tek tıkla abonelikten çıkma."
 };
-export function consoleText(source:string,locale:"en"|"tr"):string {return locale==="tr"?(consoleTurkish[source]??source):source;}
+export function consoleText(source:string,locale:string):string {return locale==="tr"?(consoleTurkish[source]??source):source;}

@@ -494,7 +494,7 @@ async function serveModernFile(res: ServerResponse, fileName:string, isIndex=fal
           '<meta name="twitter:card" content="summary">'+
           '<meta name="twitter:title" content="'+safeTitle+'">'+
           '<meta name="twitter:description" content="'+safeDescription+'">'+
-          (seo.noindex?'<meta name="robots" content="noindex,nofollow">':'')+
+          (seo.noindex?'<meta name="robots" content="noindex,nofollow">':hreflangLinks(canonical))+
           (seo.jsonLd?'<script type="application/ld+json">'+seo.jsonLd+'</script>':'')+
           '<link rel="alternate" type="text/plain" title="LLM summary" href="/llms.txt"></head>');
         // Readable without JavaScript (search engines, AI crawlers); React
@@ -4733,6 +4733,13 @@ server.listen(port, host, () => {
     `WECOMMANDER gateway listening on ${nativeTlsEnabled ? "https" : "http"}://${host}:${port}\n`,
   );
 });
+
+/** The same page in each interface language (the app reads ?lang=); English is the default. */
+function hreflangLinks(canonical: string) {
+  const join = (lang: string) => canonical + (canonical.includes("?") ? "&" : "?") + "lang=" + lang;
+  return ["en", "tr", "de", "pt-BR", "es", "fr"].map((lang) => '<link rel="alternate" hreflang="' + lang + '" href="' + join(lang) + '">').join("")
+    + '<link rel="alternate" hreflang="x-default" href="' + canonical + '">';
+}
 
 async function listInMcpRegistry(origin: string) {
   try {

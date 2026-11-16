@@ -10,6 +10,10 @@ const faces=["😩","🙁","🤔","🙂","😄"];
 const text={
  tr:{thanks:"Teşekkürler!",note:"Eklemek istediğin bir şey var mı? (isteğe bağlı)",send:"Gönder",close:"Kapat",low:"Hiç olası değil",high:"Çok olası"},
  en:{thanks:"Thank you!",note:"Anything you'd like to add? (optional)",send:"Send",close:"Close",low:"Not likely",high:"Very likely"},
+ de:{thanks:"Danke!",note:"Möchtest du noch etwas ergänzen? (optional)",send:"Senden",close:"Schließen",low:"Gar nicht wahrscheinlich",high:"Sehr wahrscheinlich"},
+ "pt-BR":{thanks:"Obrigado!",note:"Quer acrescentar algo? (opcional)",send:"Enviar",close:"Fechar",low:"Nada provável",high:"Muito provável"},
+ es:{thanks:"¡Gracias!",note:"¿Quieres añadir algo? (opcional)",send:"Enviar",close:"Cerrar",low:"Nada probable",high:"Muy probable"},
+ fr:{thanks:"Merci !",note:"Souhaitez-vous ajouter quelque chose ? (facultatif)",send:"Envoyer",close:"Fermer",low:"Pas du tout probable",high:"Très probable"},
 };
 
 export function MessageCard({message,onDone,preview=false}:{message:InAppMessage;onDone:()=>void;preview?:boolean}){

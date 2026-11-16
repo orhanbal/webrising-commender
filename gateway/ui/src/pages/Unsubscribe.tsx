@@ -9,6 +9,14 @@ const text={
   again:"Fikrini değiştirirsen hesap ayarlarından yeniden açabilirsin.",invalid:"Bu bağlantı geçersiz. E-postadaki bağlantıyı yeniden aç ya da hesap ayarlarından kapat.",failed:"Şu an işlem yapılamadı; biraz sonra tekrar dene."},
  en:{title:"Email subscription",body:"Don't want WECOMMANDER product news and offers by email anymore?",button:"Unsubscribe",done:"You are unsubscribed and won't receive marketing email anymore. Account and security emails still arrive.",
   again:"Changed your mind? Turn it back on in your account settings.",invalid:"This link is not valid. Open the link in the email again, or turn it off in your account settings.",failed:"That didn't work right now; please try again in a moment."},
+ de:{title:"E-Mail-Abonnement",body:"Du möchtest keine Produktneuigkeiten und Angebote von WECOMMANDER mehr per E-Mail erhalten?",button:"Abmelden",done:"Du bist abgemeldet und erhältst keine Marketing-E-Mails mehr. Konto- und Sicherheits-E-Mails kommen weiterhin.",
+  again:"Meinung geändert? Du kannst es in deinen Kontoeinstellungen wieder einschalten.",invalid:"Dieser Link ist ungültig. Öffne den Link in der E-Mail erneut oder schalte es in deinen Kontoeinstellungen aus.",failed:"Das hat gerade nicht geklappt; bitte versuche es gleich noch einmal."},
+ "pt-BR":{title:"Assinatura de e-mail",body:"Não quer mais receber novidades e ofertas da WECOMMANDER por e-mail?",button:"Cancelar inscrição",done:"Sua inscrição foi cancelada e você não receberá mais e-mails de marketing. E-mails de conta e segurança continuam chegando.",
+  again:"Mudou de ideia? Ative novamente nas configurações da sua conta.",invalid:"Este link não é válido. Abra o link do e-mail novamente ou desative nas configurações da sua conta.",failed:"Não foi possível agora; tente novamente em instantes."},
+ es:{title:"Suscripción por correo",body:"¿Ya no quieres recibir noticias y ofertas de WECOMMANDER por correo?",button:"Darse de baja",done:"Te has dado de baja y ya no recibirás correos de marketing. Los correos de cuenta y seguridad seguirán llegando.",
+  again:"¿Cambiaste de opinión? Vuelve a activarlo en la configuración de tu cuenta.",invalid:"Este enlace no es válido. Abre de nuevo el enlace del correo o desactívalo en la configuración de tu cuenta.",failed:"No se pudo hacer ahora; inténtalo de nuevo en un momento."},
+ fr:{title:"Abonnement e-mail",body:"Vous ne souhaitez plus recevoir les nouveautés et offres de WECOMMANDER par e-mail ?",button:"Se désabonner",done:"Vous êtes désabonné et ne recevrez plus d'e-mails marketing. Les e-mails de compte et de sécurité continuent d'arriver.",
+  again:"Vous avez changé d'avis ? Réactivez-le dans les paramètres de votre compte.",invalid:"Ce lien n'est pas valide. Rouvrez le lien de l'e-mail ou désactivez-le dans les paramètres de votre compte.",failed:"Cela n'a pas fonctionné pour le moment ; réessayez dans un instant."},
 };
 
 export function UnsubscribePage(){
