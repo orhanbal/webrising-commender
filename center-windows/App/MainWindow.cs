@@ -1,3 +1,4 @@
+using Wecommander.Center.Core;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -27,10 +28,10 @@ public sealed class MainWindow : Window
 
     public MainWindow()
     {
-        Title = "WECOMMANDER Yönetim Merkezi";
+        Title = L.T("WECOMMANDER Yönetim Merkezi");
         SystemBackdrop = new DesktopAcrylicBackdrop();
         Content = _panel;
-        AppWindow.Title = "WECOMMANDER Yönetim Merkezi";
+        AppWindow.Title = L.T("WECOMMANDER Yönetim Merkezi");
         AppWindow.SetIcon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "icon.ico"));
         AppWindow.IsShownInSwitchers = false;
         // No title bar at all (the presenter removes it). Extending content into

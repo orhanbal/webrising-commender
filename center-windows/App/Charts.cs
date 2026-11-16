@@ -1,3 +1,4 @@
+using Wecommander.Center.Core;
 using Microsoft.UI;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
@@ -98,7 +99,7 @@ public static class Charts
         var legend = new StackPanel { Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
         for (var i = 0; i < parts.Count; i++)
         {
-            var color = i == parts.Count - 1 && parts[i].Label == "Diğer" ? Palette[^1] : Palette[i % (Palette.Length - 1)];
+            var color = i == parts.Count - 1 && parts[i].Label == L.T("Diğer") ? Palette[^1] : Palette[i % (Palette.Length - 1)];
             var f = total <= 0 ? 0 : parts[i].Value / total;
             if (f > 0.002)
                 donut.Children.Add(new Microsoft.UI.Xaml.Shapes.Path
@@ -247,6 +248,6 @@ public sealed class ColumnChart
         }
         _value.Text = _format(value);
         _detail.Text = detail;
-        _scale.Text = "üst: " + _format(max);
+        _scale.Text = L.T("üst: ") + _format(max);
     }
 }

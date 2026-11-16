@@ -1,3 +1,4 @@
+using Wecommander.Center.Core;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
@@ -60,7 +61,7 @@ public partial class App
     {
         if (s.MonitorId is not { } id)
         {
-            Toast($"{s.Label}: bağlantı henüz kurulmadı; birkaç saniye sonra yeniden dene.");
+            Toast(L.F("{0}: bağlantı henüz kurulmadı; birkaç saniye sonra yeniden dene.", s.Label));
             return;
         }
         new ServerWindow(Servers, id, s.Label).Bring();
@@ -95,7 +96,7 @@ public partial class App
         {
             _monitorTray = new TaskbarIcon
             {
-                ToolTipText = "WECOMMANDER Sunucularım",
+                ToolTipText = L.T("WECOMMANDER Sunucularım"),
                 NoLeftClickDelay = true,
                 LeftClickCommand = new RelayCommand(ToggleMonitorPanel),
                 ContextMenuMode = ContextMenuMode.PopupMenu,
@@ -107,16 +108,16 @@ public partial class App
         else SetMonitorIcon(servers);
         _monitorTray.ToolTipText = Trim(string.Join("\n", servers.Select(s =>
             s.Error is not null ? $"{s.Label}: {s.Error}"
-            : !s.Live ? $"{s.Label}: bağlanıyor"
-            : $"{s.Label}: işlemci %{s.Cpu:0} · bellek %{s.Mem:0} · disk %{s.Disk:0}")));
+            : !s.Live ? L.F("{0}: bağlanıyor", s.Label)
+            : L.F("{0}: işlemci %{1:0} · bellek %{2:0} · disk %{3:0}", s.Label, s.Cpu, s.Mem, s.Disk))));
     }
 
     private MenuFlyout MonitorMenu()
     {
         var menu = new MenuFlyout();
-        menu.Items.Add(new MenuFlyoutItem { Text = "Sunucularım panelini aç", Command = new RelayCommand(ToggleMonitorPanel) });
-        menu.Items.Add(new MenuFlyoutItem { Text = "Sunucular penceresi", Command = new RelayCommand(ShowServers) });
-        menu.Items.Add(new MenuFlyoutItem { Text = "Sol alttaki sunucu kutusunu göster", Command = new RelayCommand(() => SetDeskChip(true)) });
+        menu.Items.Add(new MenuFlyoutItem { Text = L.T("Sunucularım panelini aç"), Command = new RelayCommand(ToggleMonitorPanel) });
+        menu.Items.Add(new MenuFlyoutItem { Text = L.T("Sunucular penceresi"), Command = new RelayCommand(ShowServers) });
+        menu.Items.Add(new MenuFlyoutItem { Text = L.T("Sol alttaki sunucu kutusunu göster"), Command = new RelayCommand(() => SetDeskChip(true)) });
         return menu;
     }
 

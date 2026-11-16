@@ -14,6 +14,9 @@ namespace Wecommander.Center.Core;
 /// </summary>
 public sealed class CoreClient : IDisposable
 {
+    /// <summary>The start of the "this server takes only SSH keys" login error (the app offers to install the key).</summary>
+    public static string KeyOnlyLogin => L.T("Giriş reddedildi. Bu sunucu parolayla girişi kabul etmiyor, yalnız SSH anahtarı kabul ediyor. ");
+
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private readonly Process _process;
@@ -167,65 +170,65 @@ public static class CoreText
     public static string AuthFailed(string text)
     {
         var i = text.IndexOf("server accepts:", StringComparison.Ordinal);
-        if (i < 0) return "Giriş reddedildi. Anahtarı veya parolayı kontrol et.";
+        if (i < 0) return L.T("Giriş reddedildi. Anahtarı veya parolayı kontrol et.");
         var methods = text[(i + "server accepts:".Length)..].Trim().TrimEnd(')').Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         var password = methods.Contains("password") || methods.Contains("keyboard-interactive");
         var key = methods.Contains("publickey");
         if (key && !password)
-            return "Giriş reddedildi. Bu sunucu parolayla girişi kabul etmiyor, yalnız SSH anahtarı kabul ediyor. "
-                + "Bu bilgisayarın anahtarını sunucuya bir kez ekle; aşağıdaki satır bunu yapar. "
-                + "(root için Ubuntu varsayılan olarak parolayla girişi kapatır.)";
-        return "Giriş reddedildi; kullanıcı adı, parola ya da anahtar yanlış. Sunucunun kabul ettiği yöntemler: " + string.Join(", ", methods) + ".";
+            return CoreClient.KeyOnlyLogin
+                + L.T("Bu bilgisayarın anahtarını sunucuya bir kez ekle; aşağıdaki satır bunu yapar. ")
+                + L.T("(root için Ubuntu varsayılan olarak parolayla girişi kapatır.)");
+        return L.T("Giriş reddedildi; kullanıcı adı, parola ya da anahtar yanlış. Sunucunun kabul ettiği yöntemler: ") + string.Join(", ", methods) + ".";
     }
 
     public static string Turkish(string text)
     {
-        if (text == CoreException.Stopped) return "Uygulama çekirdeği çalışmıyor.";
-        if (text.Contains("no saved credential; connect to it once")) return "Kayıtlı giriş bilgisi yok: bu sunucuya bir kez terminalden bağlan ve giriş bilgisini kaydet.";
-        if (text.Contains("approve its host key")) return "Bu sunucuya önce bir kez terminalden bağlanıp sunucu anahtarını onayla.";
-        if (text == "monitor closed") return "Bağlantı koptu; yeniden bağlanılıyor.";
-        if (text.Contains("no saved credential")) return "Bu sunucu için kayıtlı giriş bilgisi yok; bir kez gir.";
+        if (text == CoreException.Stopped) return L.T("Uygulama çekirdeği çalışmıyor.");
+        if (text.Contains("no saved credential; connect to it once")) return L.T("Kayıtlı giriş bilgisi yok: bu sunucuya bir kez terminalden bağlan ve giriş bilgisini kaydet.");
+        if (text.Contains("approve its host key")) return L.T("Bu sunucuya önce bir kez terminalden bağlanıp sunucu anahtarını onayla.");
+        if (text == "monitor closed") return L.T("Bağlantı koptu; yeniden bağlanılıyor.");
+        if (text.Contains("no saved credential")) return L.T("Bu sunucu için kayıtlı giriş bilgisi yok; bir kez gir.");
         if (text.Contains("authentication failed")) return AuthFailed(text);
-        if (text.Contains("private key could not be used")) return "Özel anahtar okunamadı (biçim veya anahtar parolası yanlış).";
-        if (text.Contains("work only on SSH terminals")) return "Dosyalar ve tüneller yalnız SSH bağlantılarında kullanılabilir.";
-        if (text.StartsWith("telnet: could not connect")) return "Telnet bağlantısı kurulamadı; adresi ve portu kontrol et.";
-        if (text.Contains("not available in this version")) return "Bu bağlantı türü bu sürümde henüz yok.";
-        if (text.Contains("mosh-server is not installed")) return "Sunucuda mosh-server kurulu değil. Ubuntu/Debian'da: sudo apt install mosh";
-        if (text.Contains("mosh does not work through a jump host")) return "Mosh atlama sunucusu üzerinden çalışmaz; bu sunucu için SSH kullan.";
-        if (text.StartsWith("mosh-server did not start")) return "Sunucuda mosh-server başlatılamadı: " + text["mosh-server did not start:".Length..].Trim();
-        if (text.StartsWith("mosh: ")) return "Mosh için sunucuya UDP ile ulaşılamadı. Güvenlik duvarında UDP 60000-61000 açık olmalı.";
+        if (text.Contains("private key could not be used")) return L.T("Özel anahtar okunamadı (biçim veya anahtar parolası yanlış).");
+        if (text.Contains("work only on SSH terminals")) return L.T("Dosyalar ve tüneller yalnız SSH bağlantılarında kullanılabilir.");
+        if (text.StartsWith("telnet: could not connect")) return L.T("Telnet bağlantısı kurulamadı; adresi ve portu kontrol et.");
+        if (text.Contains("not available in this version")) return L.T("Bu bağlantı türü bu sürümde henüz yok.");
+        if (text.Contains("mosh-server is not installed")) return L.T("Sunucuda mosh-server kurulu değil. Ubuntu/Debian'da: sudo apt install mosh");
+        if (text.Contains("mosh does not work through a jump host")) return L.T("Mosh atlama sunucusu üzerinden çalışmaz; bu sunucu için SSH kullan.");
+        if (text.StartsWith("mosh-server did not start")) return L.T("Sunucuda mosh-server başlatılamadı: ") + text["mosh-server did not start:".Length..].Trim();
+        if (text.StartsWith("mosh: ")) return L.T("Mosh için sunucuya UDP ile ulaşılamadı. Güvenlik duvarında UDP 60000-61000 açık olmalı.");
         if (text.StartsWith("serial: could not open"))
-            return "Seri port açılamadı. Kablonun takılı olduğunu ve portu başka bir programın kullanmadığını kontrol et.";
-        if (text.Contains("invalid serial line settings")) return "Seri port ayarları geçersiz (hız, veri bitleri, eşlik ya da durdurma bitleri).";
-        if (text.Contains("invalid serial port") || text.Contains("serial port settings are missing")) return "Seri portu seç ya da yaz (ör. COM3).";
-        if (text.Contains("timed out")) return "Sunucuya ulaşılamadı (zaman aşımı). Sunucu kapalı olabilir ya da kısa sürede çok sayıda başarısız giriş yüzünden bu bilgisayarı geçici olarak engellemiş olabilir (ör. fail2ban); birkaç dakika sonra tekrar dene.";
-        if (text.Contains("did not start SFTP")) return "Bu sunucu SFTP'yi açmadı (sshd_config içinde 'Subsystem sftp' olmalı).";
-        if (text.StartsWith("key file ")) return "Anahtar dosyası okunamadı: " + text["key file ".Length..];
+            return L.T("Seri port açılamadı. Kablonun takılı olduğunu ve portu başka bir programın kullanmadığını kontrol et.");
+        if (text.Contains("invalid serial line settings")) return L.T("Seri port ayarları geçersiz (hız, veri bitleri, eşlik ya da durdurma bitleri).");
+        if (text.Contains("invalid serial port") || text.Contains("serial port settings are missing")) return L.T("Seri portu seç ya da yaz (ör. COM3).");
+        if (text.Contains("timed out")) return L.T("Sunucuya ulaşılamadı (zaman aşımı). Sunucu kapalı olabilir ya da kısa sürede çok sayıda başarısız giriş yüzünden bu bilgisayarı geçici olarak engellemiş olabilir (ör. fail2ban); birkaç dakika sonra tekrar dene.");
+        if (text.Contains("did not start SFTP")) return L.T("Bu sunucu SFTP'yi açmadı (sshd_config içinde 'Subsystem sftp' olmalı).");
+        if (text.StartsWith("key file ")) return L.T("Anahtar dosyası okunamadı: ") + text["key file ".Length..];
         if (text.StartsWith("jump host ")) return "Atlama sunucusu: " + text["jump host ".Length..];
         if (text.StartsWith("cannot listen on")) return "Port dinlenemiyor:" + text["cannot listen on".Length..];
-        if (text.StartsWith("connection failed: ")) return "Bağlanılamadı: " + text["connection failed: ".Length..];
-        if (text.StartsWith("ssh error: server refused the remote forward")) return "Sunucu uzak tüneli reddetti (sshd_config içinde AllowTcpForwarding açık olmalı; port kullanımda olabilir).";
-        if (text.Contains("a saved tunnel needs a fixed local port")) return "Kaydedilen tünel için sabit bir yerel port gir.";
-        if (text.Contains("a saved tunnel needs a fixed server port")) return "Kaydedilen uzak tünel için sabit bir sunucu portu gir.";
+        if (text.StartsWith("connection failed: ")) return L.T("Bağlanılamadı: ") + text["connection failed: ".Length..];
+        if (text.StartsWith("ssh error: server refused the remote forward")) return L.T("Sunucu uzak tüneli reddetti (sshd_config içinde AllowTcpForwarding açık olmalı; port kullanımda olabilir).");
+        if (text.Contains("a saved tunnel needs a fixed local port")) return L.T("Kaydedilen tünel için sabit bir yerel port gir.");
+        if (text.Contains("a saved tunnel needs a fixed server port")) return L.T("Kaydedilen uzak tünel için sabit bir sunucu portu gir.");
         if (text.Contains("the port on this computer is required")) return "Bu bilgisayardaki servis portunu gir.";
         if (text.Contains("remote host and port are required")) return "Uzak adres ve port gerekli.";
-        if (text.Contains("is already used by a saved tunnel")) return "Bu yerel port başka bir kayıtlı tünelde kullanılıyor.";
-        if (text.StartsWith("invalid variable name: ")) return "Geçersiz ortam değişkeni adı: " + text["invalid variable name: ".Length..];
-        if (text.Contains("not a WECOMMANDER backup file")) return "Bu dosya bir WECOMMANDER yedeği değil.";
-        if (text.Contains("made by a newer version")) return "Bu yedek daha yeni bir sürümle alınmış; önce uygulamayı güncelle.";
-        if (text.Contains("backup file is too large")) return "Yedek dosyası çok büyük.";
-        if (text == "terminal closed") return "Terminal kapalı.";
-        if (text.Contains("server management works only on SSH")) return "Sunucu yönetimi yalnız SSH bağlantılarında çalışır.";
-        if (text == "wrong sync passphrase") return "Eşitleme parolası yanlış (diğer bilgisayarda belirlediğin parolayı gir).";
-        if (text.Contains("sync passphrase needs at least 8")) return "Eşitleme parolası en az 8 karakter olmalı.";
-        if (text.Contains("sync passphrase was changed on another computer")) return "Eşitleme parolası başka bir bilgisayarda değiştirildi; yeni parolayı gir.";
-        if (text.Contains("sync is not set up")) return "Bu bilgisayarda eşitleme açık değil.";
-        if (text.Contains("synced by a newer version")) return "Kütüphane daha yeni bir sürümle eşitlenmiş; önce uygulamayı güncelle.";
-        if (text.StartsWith("sync conflict")) return "Eşitleme çakıştı; birazdan yeniden denenecek.";
-        if (text.Contains("does not have the team key yet")) return "Bu uygulamada ekip anahtarı henüz yok; ekipten biri uygulamasını açınca gelir.";
-        if (text.Contains("sealed for another app")) return "Ekip anahtarı bu uygulama için değil; ekipten birinin uygulamasını açmasını bekle.";
-        if (text.Contains("identity needs a valid user name")) return "Kimlik için geçerli bir kullanıcı adı gir.";
-        if (text.Contains("choose a key for this identity")) return "Bu kimlik için bir anahtar seç (Anahtarlar sayfasından oluşturabilirsin).";
+        if (text.Contains("is already used by a saved tunnel")) return L.T("Bu yerel port başka bir kayıtlı tünelde kullanılıyor.");
+        if (text.StartsWith("invalid variable name: ")) return L.T("Geçersiz ortam değişkeni adı: ") + text["invalid variable name: ".Length..];
+        if (text.Contains("not a WECOMMANDER backup file")) return L.T("Bu dosya bir WECOMMANDER yedeği değil.");
+        if (text.Contains("made by a newer version")) return L.T("Bu yedek daha yeni bir sürümle alınmış; önce uygulamayı güncelle.");
+        if (text.Contains("backup file is too large")) return L.T("Yedek dosyası çok büyük.");
+        if (text == "terminal closed") return L.T("Terminal kapalı.");
+        if (text.Contains("server management works only on SSH")) return L.T("Sunucu yönetimi yalnız SSH bağlantılarında çalışır.");
+        if (text == "wrong sync passphrase") return L.T("Eşitleme parolası yanlış (diğer bilgisayarda belirlediğin parolayı gir).");
+        if (text.Contains("sync passphrase needs at least 8")) return L.T("Eşitleme parolası en az 8 karakter olmalı.");
+        if (text.Contains("sync passphrase was changed on another computer")) return L.T("Eşitleme parolası başka bir bilgisayarda değiştirildi; yeni parolayı gir.");
+        if (text.Contains("sync is not set up")) return L.T("Bu bilgisayarda eşitleme açık değil.");
+        if (text.Contains("synced by a newer version")) return L.T("Kütüphane daha yeni bir sürümle eşitlenmiş; önce uygulamayı güncelle.");
+        if (text.StartsWith("sync conflict")) return L.T("Eşitleme çakıştı; birazdan yeniden denenecek.");
+        if (text.Contains("does not have the team key yet")) return L.T("Bu uygulamada ekip anahtarı henüz yok; ekipten biri uygulamasını açınca gelir.");
+        if (text.Contains("sealed for another app")) return L.T("Ekip anahtarı bu uygulama için değil; ekipten birinin uygulamasını açmasını bekle.");
+        if (text.Contains("identity needs a valid user name")) return L.T("Kimlik için geçerli bir kullanıcı adı gir.");
+        if (text.Contains("choose a key for this identity")) return L.T("Bu kimlik için bir anahtar seç (Anahtarlar sayfasından oluşturabilirsin).");
         return text;
     }
 }
@@ -241,7 +244,7 @@ public sealed record CoreHost(string Id, string Label, string Target, string Aut
     /// <summary>Logs in with SSH (SSH and Mosh hosts); Telnet and serial hosts open straight away.</summary>
     public bool IsSsh => Protocol is "ssh" or "mosh" or "" or null;
     /// <summary>Hosts without a group are listed under this name.</summary>
-    public const string NoGroup = "Gruplanmamış";
+    public static string NoGroup => L.T("Gruplanmamış");
     public string GroupName => string.IsNullOrWhiteSpace(Group) ? NoGroup : Group!;
 
     public bool CanConnectSilently => SavedSecret || (AuthKind == "key" && KeyPath is not null);

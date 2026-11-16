@@ -180,21 +180,21 @@ public sealed class AgentControl(ICommandRunner runner, string userSid, string? 
         {
             case AgentMode.Task when on:
                 await EnsureHeadlessTaskAsync().ConfigureAwait(false);
-                await Must(runner.RunAsync("schtasks.exe", $"/Change /TN \"{TaskName}\" /ENABLE"), "Görev etkinleştirilemedi.").ConfigureAwait(false);
+                await Must(runner.RunAsync("schtasks.exe", $"/Change /TN \"{TaskName}\" /ENABLE"), L.T("Görev etkinleştirilemedi.")).ConfigureAwait(false);
                 if (!runner.AgentProcessRunning())
-                    await Must(runner.RunAsync("schtasks.exe", $"/Run /TN \"{TaskName}\""), "Ajan başlatılamadı.").ConfigureAwait(false);
+                    await Must(runner.RunAsync("schtasks.exe", $"/Run /TN \"{TaskName}\""), L.T("Ajan başlatılamadı.")).ConfigureAwait(false);
                 break;
             case AgentMode.Task:
                 await runner.RunAsync("schtasks.exe", $"/End /TN \"{TaskName}\"").ConfigureAwait(false);
                 runner.KillAgentProcesses();
-                await Must(runner.RunAsync("schtasks.exe", $"/Change /TN \"{TaskName}\" /DISABLE"), "Görev kapatılamadı.").ConfigureAwait(false);
+                await Must(runner.RunAsync("schtasks.exe", $"/Change /TN \"{TaskName}\" /DISABLE"), L.T("Görev kapatılamadı.")).ConfigureAwait(false);
                 break;
             case AgentMode.Service:
                 // One UAC prompt for both steps.
                 var command = on
                     ? $"/c sc.exe config {ServiceName} start= auto & sc.exe start {ServiceName}"
                     : $"/c sc.exe stop {ServiceName} & sc.exe config {ServiceName} start= disabled";
-                await Must(runner.RunAsync("cmd.exe", command, elevated: true), "Yönetici onayı verilmedi.").ConfigureAwait(false);
+                await Must(runner.RunAsync("cmd.exe", command, elevated: true), L.T("Yönetici onayı verilmedi.")).ConfigureAwait(false);
                 break;
             default:
                 throw new InvalidOperationException(Texts.AgentNotInstalled);

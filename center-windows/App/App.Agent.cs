@@ -62,10 +62,10 @@ public partial class App
             {
                 var why = File.ReadAllText(UpdateFailFile).Trim();
                 File.Delete(UpdateFailFile);
-                Error = "Güncelleme tamamlanamadı: " + (why.Length > 0 ? why : "dosyalar değiştirilemedi") + ". Paneldeki indirme dosyasıyla yeniden kurabilirsin.";
-                Toast("Güncelleme tamamlanamadı; ayrıntı panelde.");
+                Error = L.T("Güncelleme tamamlanamadı: ") + (why.Length > 0 ? why : L.T("dosyalar değiştirilemedi")) + L.T(". Paneldeki indirme dosyasıyla yeniden kurabilirsin.");
+                Toast(L.T("Güncelleme tamamlanamadı; ayrıntı panelde."));
             }
-            else if (AppBuild is { } b) Toast($"WECOMMANDER 0.1.{b} sürümüne güncellendi.");
+            else if (AppBuild is { } b) Toast(L.F("WECOMMANDER 0.1.{0} sürümüne güncellendi.", b));
         }
         catch (Exception) { }
     }
@@ -114,7 +114,7 @@ public partial class App
             if (!found.Task && !found.Service && !found.Setup) { _cleanupDone = true; return; }
             var prompt = !Settings.LegacyCleanupPrompted;
             if (prompt && cleanup.ElevatedCommand(found.Task, found.Service, found.Setup) is not null && (found.Service || found.Setup))
-                Toast("Eski ajan kurulumu kaldırılıyor; artık ajan bu uygulamanın içinde çalışıyor. Windows bir kez onay isteyebilir.");
+                Toast(L.T("Eski ajan kurulumu kaldırılıyor; artık ajan bu uygulamanın içinde çalışıyor. Windows bir kez onay isteyebilir."));
             _cleanupDone = await cleanup.RunAsync(allowPrompt: prompt);
             if (prompt) { Settings.LegacyCleanupPrompted = true; SaveSettings(); }
         }
@@ -137,12 +137,12 @@ public partial class App
                 SaveSettings();
                 _embedded.ResetWatchdog();
                 _embedded.Tick(true, DateTimeOffset.UtcNow);
-                Toast("Bu bilgisayar hesabına bağlandı. Ajan arka planda çalışıyor.");
+                Toast(L.T("Bu bilgisayar hesabına bağlandı. Ajan arka planda çalışıyor."));
                 RequestSync();
             }
             else Error = _embedded.LastError;
         }
-        catch (GatewayException e) { Error = "Bu bilgisayar hesaba bağlanamadı: " + e.Message; }
+        catch (GatewayException e) { Error = L.T("Bu bilgisayar hesaba bağlanamadı: ") + e.Message; }
         finally
         {
             _pairing = false;
@@ -192,7 +192,7 @@ public partial class App
             if (AppUpdateAvailable && _announcedApp != _latestApp!.Build)
             {
                 _announcedApp = _latestApp.Build;
-                Toast($"WECOMMANDER için yeni sürüm var (0.1.{_latestApp.Build}). Uygulamada \"Güncelle\"ye bas; bir dakikadan kısa sürer.");
+                Toast(L.F("WECOMMANDER için yeni sürüm var (0.1.{0}). Uygulamada \"Güncelle\"ye bas; bir dakikadan kısa sürer.", _latestApp.Build));
             }
         }
         if (changed) Publish();
@@ -237,18 +237,18 @@ public partial class App
         InstallerSucceeded = null;
         InstallerRunning = true;
         UpdatePercent = null;
-        AddInstallerLine("Yeni sürüm aranıyor…");
+        AddInstallerLine(L.T("Yeni sürüm aranıyor…"));
         Publish();
         var temp = Path.Combine(Path.GetTempPath(), "wecommander-update-" + Guid.NewGuid().ToString("N"));
         try
         {
             var latest = Core.AppUpdate.Latest(await ReleasesJsonAsync())
-                ?? throw new InvalidOperationException("Yayımlanmış bir sürüm bulunamadı.");
+                ?? throw new InvalidOperationException(L.T("Yayımlanmış bir sürüm bulunamadı."));
             _latestApp = latest;
             LastReleaseRead = DateTime.Now;
             if (AppBuild is { } current && latest.Build <= current)
             {
-                AddInstallerLine($"Uygulama güncel (0.1.{current}).");
+                AddInstallerLine(L.F("Uygulama güncel (0.1.{0}).", current));
                 InstallerSucceeded = true;
                 return;
             }
@@ -287,16 +287,16 @@ public partial class App
                 }
             }
             UpdatePercent = 85;
-            AddInstallerLine("İndirildi. Doğrulanıyor…");
+            AddInstallerLine(L.T("İndirildi. Doğrulanıyor…"));
             Publish();
             var sums = await Http.GetStringAsync(latest.SumsUrl);
             var expected = Core.AppUpdate.ExpectedHash(sums, Core.AppUpdate.ZipAsset)
-                ?? throw new InvalidOperationException("Sağlama listesinde bu paket yok; güncelleme durduruldu.");
+                ?? throw new InvalidOperationException(L.T("Sağlama listesinde bu paket yok; güncelleme durduruldu."));
             string actual;
             await using (var read = File.OpenRead(zip)) actual = Convert.ToHexString(await SHA256.HashDataAsync(read)).ToLowerInvariant();
-            if (actual != expected) throw new InvalidOperationException("İndirilen paket doğrulanamadı (SHA-256 uyuşmuyor); güncelleme durduruldu.");
+            if (actual != expected) throw new InvalidOperationException(L.T("İndirilen paket doğrulanamadı (SHA-256 uyuşmuyor); güncelleme durduruldu."));
             UpdatePercent = 90;
-            AddInstallerLine("SHA-256 doğrulandı. Dosyalar açılıyor…");
+            AddInstallerLine(L.T("SHA-256 doğrulandı. Dosyalar açılıyor…"));
             Publish();
 
             var appDir = AppContext.BaseDirectory.TrimEnd('\\', '/');
@@ -306,7 +306,7 @@ public partial class App
             await Task.Run(() => Unpack(zip, staged, unpacked));
             foreach (var needed in new[] { "WecommanderCenter.exe", EmbeddedAgent.ExeName, "wecommander-core.exe" })
                 if (!File.Exists(Path.Combine(staged, needed)))
-                    throw new InvalidOperationException($"Pakette {needed} yok; güncelleme durduruldu.");
+                    throw new InvalidOperationException(L.F("Pakette {0} yok; güncelleme durduruldu.", needed));
 
             var id = Guid.NewGuid().ToString("N");
             var script = Path.Combine(Path.GetTempPath(), "wecommander-swap-" + id + ".ps1");
@@ -327,7 +327,7 @@ public partial class App
                 info.ArgumentList.Add(a);
             Process.Start(info)?.Dispose();
             UpdatePercent = 98;
-            AddInstallerLine("Uygulama yeniden başlatılıyor…");
+            AddInstallerLine(L.T("Uygulama yeniden başlatılıyor…"));
             InstallerSucceeded = true;
             Publish();
             // Quit only once the helper's progress window is on screen, so there is never a moment with nothing to see.
@@ -343,7 +343,7 @@ public partial class App
             AddInstallerLine(e.Message);
             _updateWindow?.CloseNow();
             _updateWindow = null;
-            Toast("Güncelleme tamamlanamadı; ayrıntı panelde.");
+            Toast(L.T("Güncelleme tamamlanamadı; ayrıntı panelde."));
         }
         finally
         {
@@ -354,7 +354,7 @@ public partial class App
         }
     }
 
-    private static string Megabytes(long bytes) => (bytes / 1048576.0).ToString("0.0", System.Globalization.CultureInfo.GetCultureInfo("tr-TR")) + " MB";
+    private static string Megabytes(long bytes) => (bytes / 1048576.0).ToString("0.0", L.Culture) + " MB";
 
     /// <summary>Unpacks the update entry by entry (reporting 0–1), refusing paths that leave the folder.</summary>
     private static void Unpack(string zip, string staged, IProgress<double> progress)
@@ -370,7 +370,7 @@ public partial class App
             var entry = entries[i];
             var target = Path.GetFullPath(Path.Combine(staged, entry.FullName));
             if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("Pakette geçersiz bir dosya yolu var; güncelleme durduruldu.");
+                throw new InvalidOperationException(L.T("Pakette geçersiz bir dosya yolu var; güncelleme durduruldu."));
             if (entry.Name.Length == 0) Directory.CreateDirectory(target);
             else
             {

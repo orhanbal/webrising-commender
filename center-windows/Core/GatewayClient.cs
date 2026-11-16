@@ -36,11 +36,11 @@ public sealed class GatewayClient(HttpClient http, string baseUrl)
         }
         catch (TaskCanceledException) when (!ct.IsCancellationRequested)
         {
-            throw new GatewayException(GatewayErrorKind.Network, 0, "timeout", "Sunucuya ulaşılamıyor (zaman aşımı).");
+            throw new GatewayException(GatewayErrorKind.Network, 0, "timeout", L.T("Sunucuya ulaşılamıyor (zaman aşımı)."));
         }
         catch (HttpRequestException)
         {
-            throw new GatewayException(GatewayErrorKind.Network, 0, "network", "Sunucuya ulaşılamıyor (bağlantı kurulamadı).");
+            throw new GatewayException(GatewayErrorKind.Network, 0, "network", L.T("Sunucuya ulaşılamıyor (bağlantı kurulamadı)."));
         }
         using (response)
         {
@@ -64,7 +64,7 @@ public sealed class GatewayClient(HttpClient http, string baseUrl)
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
 
     private static T Read<T>(JsonNode? node) =>
-        node.Deserialize<T>(Web) ?? throw new GatewayException(GatewayErrorKind.Network, 0, "bad_response", "Sunucudan beklenmeyen yanıt.");
+        node.Deserialize<T>(Web) ?? throw new GatewayException(GatewayErrorKind.Network, 0, "bad_response", L.T("Sunucudan beklenmeyen yanıt."));
 
     private async Task<List<T>> ItemsAsync<T>(string path, string token, CancellationToken ct) =>
         (await SendAsync(HttpMethod.Get, path, token, null, ct).ConfigureAwait(false))?["items"].Deserialize<List<T>>(Web) ?? [];
@@ -128,7 +128,7 @@ public sealed class GatewayClient(HttpClient http, string baseUrl)
     public async Task<string> PairingCodeAsync(string token, CancellationToken ct = default)
     {
         var node = await SendAsync(HttpMethod.Post, "/api/center/pairing-code", token, new { }, ct).ConfigureAwait(false);
-        return node?["pairingCode"]?.GetValue<string>() ?? throw new GatewayException(GatewayErrorKind.Http, 0, "", "Eşleştirme kodu alınamadı.");
+        return node?["pairingCode"]?.GetValue<string>() ?? throw new GatewayException(GatewayErrorKind.Http, 0, "", L.T("Eşleştirme kodu alınamadı."));
     }
 
     public async Task DisconnectAsync(string token, CancellationToken ct = default) =>
@@ -201,7 +201,7 @@ public sealed class GatewayClient(HttpClient http, string baseUrl)
 
     public async Task<string> CreateShareAsync(string token, string title, CancellationToken ct = default) =>
         (await SendAsync(HttpMethod.Post, "/api/center/shares", token, new { title }, ct).ConfigureAwait(false))?["id"]?.GetValue<string>()
-        ?? throw new GatewayException(GatewayErrorKind.Network, 0, "bad_response", "Sunucudan beklenmeyen yanıt.");
+        ?? throw new GatewayException(GatewayErrorKind.Network, 0, "bad_response", L.T("Sunucudan beklenmeyen yanıt."));
 
     public async Task EndShareAsync(string token, string id, CancellationToken ct = default)
     {

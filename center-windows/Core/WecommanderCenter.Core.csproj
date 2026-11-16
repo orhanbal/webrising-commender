@@ -8,4 +8,8 @@
     <RootNamespace>Wecommander.Center.Core</RootNamespace>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- Interface languages (L.cs): Turkish source text -> translation. -->
+    <EmbeddedResource Include="Strings\*.json" LogicalName="Wecommander.Center.Core.Strings.%(Filename).json" />
+  </ItemGroup>
 </Project>

@@ -282,6 +282,15 @@ public sealed class DockWindow : Window
         AppWindow.Hide();
     }
 
+    /// <summary>The interface language changed: build the parts again.</summary>
+    public void RebuildTexts()
+    {
+        _built = false;
+        _lastApplied = null;
+        _root.ContextFlyout = Menu();
+        if (_on) Apply();
+    }
+
     /// <summary>The app quits: the work area goes back to Windows.</summary>
     public void Shutdown()
     {
@@ -416,14 +425,14 @@ public sealed class DockWindow : Window
         var start = new StackPanel { Orientation = orientation, Spacing = 6, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
         var grip = new Border { Width = _horizontal ? 14 : double.NaN, Height = _horizontal ? double.NaN : 14, Background = new SolidColorBrush(Colors.Transparent),
             Child = new FontIcon { Glyph = _horizontal ? "" : "", FontSize = 12, Opacity = 0.6, Rotation = _horizontal ? 0 : 90 } };
-        ToolTipService.SetToolTip(grip, "Sürükle: taşı");
+        ToolTipService.SetToolTip(grip, L.T("Sürükle: taşı"));
         grip.PointerPressed += OnGripPressed;
         grip.PointerMoved += OnGripMoved;
         grip.PointerReleased += OnGripReleased;
         grip.PointerCaptureLost += (_, _) => { if (_gripDown && _dragging) { _gripDown = false; _dragging = false; try { DroppedFloating(); } catch (Exception ex) { App.LogCrash(ex); } } else _gripDown = false; };
         _grip = grip;
         start.Children.Add(grip);
-        var app = IconButton(AppIcon(), "WECOMMANDER: Sunucularım paneli");
+        var app = IconButton(AppIcon(), L.T("WECOMMANDER: Sunucularım paneli"));
         app.Click += (_, _) => OpenPanel(app);
         _appButton = app;
         start.Children.Add(app);
@@ -438,7 +447,7 @@ public sealed class DockWindow : Window
         if (modules.Contains("servers"))
         {
             var sections = new[] { "processes", "processes", "disk" };
-            var tips = new[] { "İşlemci: Süreçler", "Bellek: Süreçler", "Disk: disk analizi (kritikse temizlik)" };
+            var tips = new[] { L.T("İşlemci: Süreçler"), L.T("Bellek: Süreçler"), "Disk: disk analizi (kritikse temizlik)" };
             for (var i = 0; i < 3; i++)
             {
                 var meter = _meters[i];
@@ -468,7 +477,7 @@ public sealed class DockWindow : Window
             switch (m)
             {
                 case "processes":
-                    var procs = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, "Süreçler", _horizontal && !_compact ? "Süreçler" : null);
+                    var procs = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, L.T("Süreçler"), _horizontal && !_compact ? L.T("Süreçler") : null);
                     procs.Click += (_, _) => OpenSection("processes");
                     end.Children.Add(procs);
                     break;
@@ -479,7 +488,7 @@ public sealed class DockWindow : Window
                     break;
                 case "approvals":
                     var bell = new Grid();
-                    var approvals = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, "Bekleyen onaylar");
+                    var approvals = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, L.T("Bekleyen onaylar"));
                     approvals.Click += (_, _) => App.Current.ShowApprovals();
                     bell.Children.Add(approvals);
                     if (_badgeBox.Parent is Panel old) old.Children.Remove(_badgeBox);
@@ -489,7 +498,7 @@ public sealed class DockWindow : Window
                     break;
             }
         }
-        var settings = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, "Dock ayarları");
+        var settings = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, L.T("Dock ayarları"));
         settings.Click += (_, _) => App.Current.ShowDockSettings();
         end.Children.Add(settings);
         Put(end, 2);
@@ -539,12 +548,12 @@ public sealed class DockWindow : Window
         if (!_compact) state.Children.Add(_serverState);
         text.Children.Add(state);
         var button = new Button { Content = text, Padding = new Thickness(8, 2, 8, 2), Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0) };
-        ToolTipService.SetToolTip(button, "Gösterilen sunucu");
+        ToolTipService.SetToolTip(button, L.T("Gösterilen sunucu"));
         var menu = new MenuFlyout();
         menu.Opening += (_, _) =>
         {
             menu.Items.Clear();
-            var busiest = new ToggleMenuFlyoutItem { Text = "En yoğun sunucu (kendiliğinden)", IsChecked = App.Current.Settings.DockServer is null };
+            var busiest = new ToggleMenuFlyoutItem { Text = L.T("En yoğun sunucu (kendiliğinden)"), IsChecked = App.Current.Settings.DockServer is null };
             busiest.Click += (_, _) => { App.Current.Settings.DockServer = null; App.Current.SaveSettings(); Refresh(); };
             menu.Items.Add(busiest);
             menu.Items.Add(new MenuFlyoutSeparator());
@@ -555,7 +564,7 @@ public sealed class DockWindow : Window
                 item.Click += (_, _) => { App.Current.Settings.DockServer = id; App.Current.SaveSettings(); Refresh(); };
                 menu.Items.Add(item);
             }
-            if (_monitor.Servers.Count == 0) menu.Items.Add(new MenuFlyoutItem { Text = "İzlenen sunucu yok: Sunucularım panelinden ekle", IsEnabled = false });
+            if (_monitor.Servers.Count == 0) menu.Items.Add(new MenuFlyoutItem { Text = L.T("İzlenen sunucu yok: Sunucularım panelinden ekle"), IsEnabled = false });
         };
         Hold(menu);
         button.Flyout = menu;
@@ -578,7 +587,7 @@ public sealed class DockWindow : Window
         var s = Selected();
         if (s is null)
         {
-            _serverName.Text = "Sunucu yok";
+            _serverName.Text = L.T("Sunucu yok");
             _serverState.Text = "izlenmiyor";
             _serverDot.Fill = new SolidColorBrush(Colors.Gray);
             foreach (var m in _meters) m.Show(null, [], false, false);
@@ -586,11 +595,11 @@ public sealed class DockWindow : Window
         }
         _serverName.Text = s.Label;
         // A dropped connection is never shown as live: no numbers until it answers again.
-        var (state, color) = s.Error is not null ? ("bağlanamadı", ColorHelper.FromArgb(255, 0xEF, 0x44, 0x44))
-            : !s.Live ? ("bağlanıyor…", Colors.Gray)
+        var (state, color) = s.Error is not null ? (L.T("bağlanamadı"), ColorHelper.FromArgb(255, 0xEF, 0x44, 0x44))
+            : !s.Live ? (L.T("bağlanıyor…"), Colors.Gray)
             : s.Worst >= 90 ? ("kritik", ColorHelper.FromArgb(255, 0xEF, 0x44, 0x44))
-            : s.Worst >= 80 ? ("yüksek kullanım", ColorHelper.FromArgb(255, 0xF5, 0x9E, 0x0B))
-            : ("çevrimiçi", ColorHelper.FromArgb(255, 0x16, 0xA3, 0x4A));
+            : s.Worst >= 80 ? (L.T("yüksek kullanım"), ColorHelper.FromArgb(255, 0xF5, 0x9E, 0x0B))
+            : (L.T("çevrimiçi"), ColorHelper.FromArgb(255, 0x16, 0xA3, 0x4A));
         _serverState.Text = state;
         _serverDot.Fill = new SolidColorBrush(color);
         var (points, fresh) = _history.Take(s);
@@ -696,10 +705,10 @@ public sealed class DockWindow : Window
 
     private static string EdgeName(DockEdge e) => e switch
     {
-        DockEdge.Top => "üst",
+        DockEdge.Top => L.T("üst"),
         DockEdge.Bottom => "alt",
         DockEdge.Left => "sol",
-        _ => "sağ",
+        _ => L.T("sağ"),
     };
 
     private void OfferEdge(DockEdge edge)
@@ -707,7 +716,7 @@ public sealed class DockWindow : Window
         App.DebugLayout($"dock: snap offer {edge}");
         var panel = new StackPanel { Spacing = 8, MaxWidth = 260 };
         panel.Children.Add(new TextBlock { Text = $"Dock {EdgeName(edge)} kenara sabitlensin mi?", TextWrapping = TextWrapping.Wrap });
-        var yes = new Button { Content = "Sabitle", Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
+        var yes = new Button { Content = L.T("Sabitle"), Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
         panel.Children.Add(yes);
         var flyout = new Flyout { Content = panel };
         yes.Click += (_, _) =>
@@ -739,16 +748,16 @@ public sealed class DockWindow : Window
         {
             var s = App.Current.Settings;
             menu.Items.Clear();
-            var mode = new MenuFlyoutSubItem { Text = "Görünüm", Icon = new FontIcon { Glyph = "" } };
-            foreach (var (m, text) in new[] { (DockMode.Fixed, "Sabit"), (DockMode.AutoHide, "Otomatik gizlenen"), (DockMode.Floating, "Yüzen") })
+            var mode = new MenuFlyoutSubItem { Text = L.T("Görünüm"), Icon = new FontIcon { Glyph = "" } };
+            foreach (var (m, text) in new[] { (DockMode.Fixed, L.T("Sabit")), (DockMode.AutoHide, L.T("Otomatik gizlenen")), (DockMode.Floating, L.T("Yüzen")) })
             {
                 var item = new ToggleMenuFlyoutItem { Text = text, IsChecked = DockLayout.ParseMode(s.DockModeName) == m };
                 item.Click += (_, _) => { s.DockModeName = DockLayout.Name(m); App.Current.SaveSettings(); Apply(); };
                 mode.Items.Add(item);
             }
             menu.Items.Add(mode);
-            var edge = new MenuFlyoutSubItem { Text = "Konum", Icon = new FontIcon { Glyph = "" } };
-            foreach (var (e, text) in new[] { (DockEdge.Top, "Üst"), (DockEdge.Bottom, "Alt"), (DockEdge.Left, "Sol"), (DockEdge.Right, "Sağ") })
+            var edge = new MenuFlyoutSubItem { Text = L.T("Konum"), Icon = new FontIcon { Glyph = "" } };
+            foreach (var (e, text) in new[] { (DockEdge.Top, L.T("Üst")), (DockEdge.Bottom, L.T("Alt")), (DockEdge.Left, L.T("Sol")), (DockEdge.Right, L.T("Sağ")) })
             {
                 var item = new ToggleMenuFlyoutItem { Text = text, IsChecked = DockLayout.ParseEdge(s.DockEdgeName) == e };
                 item.Click += (_, _) => { s.DockEdgeName = DockLayout.Name(e); App.Current.SaveSettings(); Apply(); };
@@ -758,7 +767,7 @@ public sealed class DockWindow : Window
             var monitors = Monitors.All();
             if (monitors.Count > 1)
             {
-                var screen = new MenuFlyoutSubItem { Text = "Ekran", Icon = new FontIcon { Glyph = "" } };
+                var screen = new MenuFlyoutSubItem { Text = L.T("Ekran"), Icon = new FontIcon { Glyph = "" } };
                 var number = 0;
                 foreach (var m in monitors)
                 {
@@ -770,30 +779,30 @@ public sealed class DockWindow : Window
                 }
                 menu.Items.Add(screen);
             }
-            var compact = new ToggleMenuFlyoutItem { Text = "Kompakt", IsChecked = s.DockCompact };
+            var compact = new ToggleMenuFlyoutItem { Text = L.T("Kompakt"), IsChecked = s.DockCompact };
             compact.Click += (_, _) => { s.DockCompact = compact.IsChecked; App.Current.SaveSettings(); Apply(); };
             menu.Items.Add(compact);
             if (DockLayout.ParseMode(s.DockModeName) == DockMode.Floating)
             {
-                var onTop = new ToggleMenuFlyoutItem { Text = "Her zaman üstte", IsChecked = s.DockOnTop };
+                var onTop = new ToggleMenuFlyoutItem { Text = L.T("Her zaman üstte"), IsChecked = s.DockOnTop };
                 onTop.Click += (_, _) => { s.DockOnTop = onTop.IsChecked; App.Current.SaveSettings(); Apply(); };
                 menu.Items.Add(onTop);
             }
-            var fullscreen = new ToggleMenuFlyoutItem { Text = "Tam ekran uygulamalarda gizle", IsChecked = s.DockHideFullscreen };
+            var fullscreen = new ToggleMenuFlyoutItem { Text = L.T("Tam ekran uygulamalarda gizle"), IsChecked = s.DockHideFullscreen };
             fullscreen.Click += (_, _) => { s.DockHideFullscreen = fullscreen.IsChecked; App.Current.SaveSettings(); };
             menu.Items.Add(fullscreen);
             menu.Items.Add(new MenuFlyoutSeparator());
-            var settings = new MenuFlyoutItem { Text = "Dock ayarları…", Icon = new FontIcon { Glyph = "" } };
+            var settings = new MenuFlyoutItem { Text = L.T("Dock ayarları…"), Icon = new FontIcon { Glyph = "" } };
             settings.Click += (_, _) => App.Current.ShowDockSettings();
             menu.Items.Add(settings);
-            var app = new MenuFlyoutItem { Text = "WECOMMANDER penceresi", Icon = new FontIcon { Glyph = "" } };
+            var app = new MenuFlyoutItem { Text = L.T("WECOMMANDER penceresi"), Icon = new FontIcon { Glyph = "" } };
             app.Click += (_, _) => App.Current.ShowServers();
             menu.Items.Add(app);
-            var off = new MenuFlyoutItem { Text = "Dock'u gizle", Icon = new FontIcon { Glyph = "" } };
+            var off = new MenuFlyoutItem { Text = L.T("Dock'u gizle"), Icon = new FontIcon { Glyph = "" } };
             off.Click += (_, _) =>
             {
                 App.Current.SetDock(false);
-                App.Current.Toast("Dock kapandı ve ekran alanı geri verildi. Yeniden açmak için: Ayarlar → Dock.");
+                App.Current.Toast(L.T("Dock kapandı ve ekran alanı geri verildi. Yeniden açmak için: Ayarlar → Dock."));
             };
             menu.Items.Add(off);
         };

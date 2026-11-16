@@ -39,7 +39,7 @@ public sealed class ServerWindow : Window
         _c = controller;
         _sessionId = sessionId;
         _label = label;
-        Title = $"Sunucu yönetimi — {label}";
+        Title = L.F("Sunucu yönetimi — {0}", label);
         SystemBackdrop = new MicaBackdrop();
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1060, 780));
         try { AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "icon.ico")); } catch (Exception) { }
@@ -49,13 +49,13 @@ public sealed class ServerWindow : Window
         _nav.IsSettingsVisible = false;
         foreach (var (tag, text, glyph) in new[]
         {
-            ("overview", "Genel bakış", ""),
+            ("overview", L.T("Genel bakış"), ""),
             ("disk", "Disk", ""),
-            ("cleanup", "Temizlik", ""),
-            ("processes", "Süreçler", ""),
+            ("cleanup", L.T("Temizlik"), ""),
+            ("processes", L.T("Süreçler"), ""),
         })
             _nav.MenuItems.Add(new NavigationViewItem { Content = text, Tag = tag, Icon = new FontIcon { Glyph = glyph } });
-        var refresh = new NavigationViewItem { Content = "Yenile", Tag = "refresh", SelectsOnInvoked = false, Icon = new SymbolIcon(Symbol.Refresh) };
+        var refresh = new NavigationViewItem { Content = L.T("Yenile"), Tag = "refresh", SelectsOnInvoked = false, Icon = new SymbolIcon(Symbol.Refresh) };
         _nav.FooterMenuItems.Add(refresh);
         _nav.ItemInvoked += (sender, e) =>
         {
@@ -112,10 +112,10 @@ public sealed class ServerWindow : Window
         if (_section == "disk") { await LoadDisk(generation); return; }
         _scroll.Content = Waiting(_section switch
         {
-            "disk" => "Disk taranıyor. Büyük disklerde bir iki dakika sürebilir…",
-            "cleanup" => "Silinebilecek dosyalar hesaplanıyor…",
-            "processes" => "Süreçler okunuyor…",
-            _ => "Sunucu bilgileri okunuyor…",
+            "disk" => L.T("Disk taranıyor. Büyük disklerde bir iki dakika sürebilir…"),
+            "cleanup" => L.T("Silinebilecek dosyalar hesaplanıyor…"),
+            "processes" => L.T("Süreçler okunuyor…"),
+            _ => L.T("Sunucu bilgileri okunuyor…"),
         });
         try
         {
@@ -142,10 +142,10 @@ public sealed class ServerWindow : Window
         var bar = new ProgressBar { Maximum = 100, Value = 0, IsIndeterminate = true, Width = 420, HorizontalAlignment = HorizontalAlignment.Left };
         var percent = new TextBlock { Text = "%0", FontSize = 28, FontWeight = FontWeights.SemiBold };
         var waiting = new StackPanel { Spacing = 10, Margin = new Thickness(0, 24, 0, 0) };
-        waiting.Children.Add(new TextBlock { Text = $"{_diskPath} taranıyor", Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"] });
+        waiting.Children.Add(new TextBlock { Text = L.F("{0} taranıyor", _diskPath), Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"] });
         waiting.Children.Add(percent);
         waiting.Children.Add(bar);
-        waiting.Children.Add(Note("Klasörler tek tek ölçülüyor; büyük disklerde bir iki dakika sürebilir."));
+        waiting.Children.Add(Note(L.T("Klasörler tek tek ölçülüyor; büyük disklerde bir iki dakika sürebilir.")));
         _scroll.Content = waiting;
         var id = Guid.NewGuid().ToString("N");
         _c.Progress[id] = (done, total) => DispatcherQueue.TryEnqueue(() =>
@@ -174,7 +174,7 @@ public sealed class ServerWindow : Window
     }
 
     private static string Friendly(Exception ex) =>
-        ex.Message == "Terminal kapalı." ? "Bu sunucunun terminali kapandı. Sunucu yönetimi için yeniden bağlan." : ex.Message;
+        ex.Message == L.T("Terminal kapalı.") ? L.T("Bu sunucunun terminali kapandı. Sunucu yönetimi için yeniden bağlan.") : ex.Message;
 
     // ---- building blocks ----
 
@@ -184,7 +184,7 @@ public sealed class ServerWindow : Window
         var card = new StackPanel { Spacing = 12, MaxWidth = 560, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 24, 0, 0) };
         card.Children.Add(new TextBlock { Text = text, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
         card.Children.Add(new ProgressBar { IsIndeterminate = true, MinWidth = 420 });
-        var elapsed = new TextBlock { Foreground = Secondary, FontSize = 12, Text = "0 sn" };
+        var elapsed = new TextBlock { Foreground = Secondary, FontSize = 12, Text = L.T("0 sn") };
         card.Children.Add(elapsed);
         var started = DateTime.UtcNow;
         var timer = DispatcherQueue.CreateTimer();
@@ -287,15 +287,15 @@ public sealed class ServerWindow : Window
         var body = new StackPanel { Spacing = 10, MaxWidth = 560 };
         body.Children.Add(new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap });
         if (!string.IsNullOrEmpty(warning))
-            body.Children.Add(new InfoBar { Title = "Dikkat", Message = warning, Severity = InfoBarSeverity.Warning, IsOpen = true, IsClosable = false });
-        body.Children.Add(new TextBlock { Text = "Sunucuda çalışacak komut:", Foreground = Secondary });
+            body.Children.Add(new InfoBar { Title = L.T("Dikkat"), Message = warning, Severity = InfoBarSeverity.Warning, IsOpen = true, IsClosable = false });
+        body.Children.Add(new TextBlock { Text = L.T("Sunucuda çalışacak komut:"), Foreground = Secondary });
         body.Children.Add(new TextBlock { Text = command, FontFamily = Mono, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
         var dialog = new ContentDialog
         {
             Title = title,
             Content = new ScrollViewer { Content = body, MaxHeight = 460 },
             PrimaryButtonText = primary,
-            CloseButtonText = "Vazgeç",
+            CloseButtonText = L.T("Vazgeç"),
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = Content.XamlRoot,
         };
@@ -310,32 +310,32 @@ public sealed class ServerWindow : Window
         var page = new StackPanel { Spacing = 14 };
         var title = new TextBlock { Text = string.IsNullOrEmpty(o.Hostname) ? _label : o.Hostname, Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] };
         page.Children.Add(title);
-        page.Children.Add(Note($"{o.Os}  ·  {o.Kernel}  ·  açık kalma süresi {Sizes.Duration(o.UptimeSecs)}"));
+        page.Children.Add(Note(L.F("{0}  ·  {1}  ·  açık kalma süresi {2}", o.Os, o.Kernel, Sizes.Duration(o.UptimeSecs))));
 
         // What needs attention first.
         foreach (var d in o.Disks.Where(d => d.UsedPercent >= 85))
             page.Children.Add(Banner($"{d.Mount} %{d.UsedPercent:0} dolu",
-                $"Boş yer: {Sizes.Kb(d.AvailKb)}. Disk dolarsa veritabanları ve Docker durur.",
+                L.F("Boş yer: {0}. Disk dolarsa veritabanları ve Docker durur.", Sizes.Kb(d.AvailKb)),
                 d.UsedPercent >= 90 ? InfoBarSeverity.Error : InfoBarSeverity.Warning,
-                ButtonFor("Neyin yer kapladığını gör", () => { _diskPath = d.Mount; Go("disk"); })));
+                ButtonFor(L.T("Neyin yer kapladığını gör"), () => { _diskPath = d.Mount; Go("disk"); })));
         if (o.Zombies > 0)
-            page.Children.Add(Banner($"{o.Zombies} zombi süreç",
-                "Bitmiş ama üst süreçleri tarafından toplanmamış süreçler. Hangi programdan geldiklerini Süreçler'de gör.",
+            page.Children.Add(Banner(L.F("{0} zombi süreç", o.Zombies),
+                L.T("Bitmiş ama üst süreçleri tarafından toplanmamış süreçler. Hangi programdan geldiklerini Süreçler'de gör."),
                 o.Zombies >= 20 ? InfoBarSeverity.Warning : InfoBarSeverity.Informational,
-                ButtonFor("Zombileri gör", () => Go("processes"))));
+                ButtonFor(L.T("Zombileri gör"), () => Go("processes"))));
         if (o.RebootRequired)
-            page.Children.Add(Banner("Yeniden başlatma bekleniyor", "Kurulan güncellemelerin bir kısmı sunucu yeniden başlatılınca devreye girer.", InfoBarSeverity.Informational));
+            page.Children.Add(Banner(L.T("Yeniden başlatma bekleniyor"), L.T("Kurulan güncellemelerin bir kısmı sunucu yeniden başlatılınca devreye girer."), InfoBarSeverity.Informational));
         if (!string.IsNullOrEmpty(o.Updates))
-            page.Children.Add(Banner("Güncellemeler var", o.Updates.Replace("updates can be applied immediately.", "güncelleme hemen kurulabilir."), InfoBarSeverity.Informational));
+            page.Children.Add(Banner(L.T("Güncellemeler var"), o.Updates.Replace("updates can be applied immediately.", L.T("güncelleme hemen kurulabilir.")), InfoBarSeverity.Informational));
         if (!o.CanChange)
-            page.Children.Add(Banner("Yalnız görüntüleme", "Bu kullanıcı root değil ve parolasız sudo yok: bilgiler görünür ama temizlik ve süreç işlemleri yapılamaz.", InfoBarSeverity.Informational));
+            page.Children.Add(Banner(L.T("Yalnız görüntüleme"), L.T("Bu kullanıcı root değil ve parolasız sudo yok: bilgiler görünür ama temizlik ve süreç işlemleri yapılamaz."), InfoBarSeverity.Informational));
 
         // Gauges: how full each resource is right now.
         var gauges = new Grid { ColumnSpacing = 12 };
         var rings = new List<FrameworkElement>
         {
-            Charts.Ring(o.CpuPercent, $"İşlemci", $"{o.Cpus} çekirdek · yük {o.Load[0]:0.00}"),
-            Charts.Ring(o.MemTotalKb == 0 ? 0 : (o.MemTotalKb - o.MemAvailableKb) * 100.0 / o.MemTotalKb, "Bellek", $"{Sizes.Kb(o.MemTotalKb - o.MemAvailableKb)} / {Sizes.Kb(o.MemTotalKb)}"),
+            Charts.Ring(o.CpuPercent, L.T("İşlemci"), L.F("{0} çekirdek · yük {1:0.00}", o.Cpus, o.Load[0])),
+            Charts.Ring(o.MemTotalKb == 0 ? 0 : (o.MemTotalKb - o.MemAvailableKb) * 100.0 / o.MemTotalKb, L.T("Bellek"), $"{Sizes.Kb(o.MemTotalKb - o.MemAvailableKb)} / {Sizes.Kb(o.MemTotalKb)}"),
         };
         if (o.SwapTotalKb > 0)
             rings.Add(Charts.Ring((o.SwapTotalKb - o.SwapFreeKb) * 100.0 / o.SwapTotalKb, "Takas (swap)", $"{Sizes.Kb(o.SwapTotalKb - o.SwapFreeKb)} / {Sizes.Kb(o.SwapTotalKb)}"));
@@ -351,14 +351,14 @@ public sealed class ServerWindow : Window
 
         // Live: one column a sample, every two seconds.
         var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 12, 0, 0) };
-        head.Children.Add(new TextBlock { Text = "Canlı", Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"] });
+        head.Children.Add(new TextBlock { Text = L.T("Canlı"), Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"] });
         head.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse { Width = 8, Height = 8, Fill = new SolidColorBrush(Charts.Bad), VerticalAlignment = VerticalAlignment.Center });
-        head.Children.Add(new TextBlock { Text = $"2 saniyede bir · {o.Processes} süreç", Foreground = Secondary, VerticalAlignment = VerticalAlignment.Center });
+        head.Children.Add(new TextBlock { Text = L.F("2 saniyede bir · {0} süreç", o.Processes), Foreground = Secondary, VerticalAlignment = VerticalAlignment.Center });
         page.Children.Add(head);
-        var cpuChart = new ColumnChart("İşlemci", Charts.Palette[0], v => $"%{v:0}", fixedMax: 100);
-        var memChart = new ColumnChart("Bellek", Charts.Palette[3], v => $"%{v:0}", fixedMax: 100);
-        var netChart = new ColumnChart("Ağ trafiği", Charts.Palette[1], v => Sizes.Rate(v));
-        var ioChart = new ColumnChart("Disk okuma + yazma", Charts.Palette[2], v => Sizes.Rate(v));
+        var cpuChart = new ColumnChart(L.T("İşlemci"), Charts.Palette[0], v => $"%{v:0}", fixedMax: 100);
+        var memChart = new ColumnChart(L.T("Bellek"), Charts.Palette[3], v => $"%{v:0}", fixedMax: 100);
+        var netChart = new ColumnChart(L.T("Ağ trafiği"), Charts.Palette[1], v => Sizes.Rate(v));
+        var ioChart = new ColumnChart(L.T("Disk okuma + yazma"), Charts.Palette[2], v => Sizes.Rate(v));
         var live = new Grid { ColumnSpacing = 14, RowSpacing = 14 };
         live.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         live.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -375,13 +375,13 @@ public sealed class ServerWindow : Window
         page.Children.Add(live);
         StartLive(cpuChart, memChart, netChart, ioChart);
 
-        page.Children.Add(Heading("Diskler"));
+        page.Children.Add(Heading(L.T("Diskler")));
         var disks = new StackPanel { Spacing = 16 };
         foreach (var d in o.Disks)
         {
             var b = new Button { HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch, Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0), Padding = new Thickness(0) };
-            b.Content = Meter($"{d.Mount}   ({d.Device}, {d.FsType})", d.UsedKb, d.UsedKb + d.AvailKb, $"boş {Sizes.Kb(d.AvailKb)}");
-            ToolTipService.SetToolTip(b, "Bu diskte neyin yer kapladığını gör");
+            b.Content = Meter($"{d.Mount}   ({d.Device}, {d.FsType})", d.UsedKb, d.UsedKb + d.AvailKb, L.F("boş {0}", Sizes.Kb(d.AvailKb)));
+            ToolTipService.SetToolTip(b, L.T("Bu diskte neyin yer kapladığını gör"));
             var mount = d.Mount;
             b.Click += (_, _) => { _diskPath = mount; Go("disk"); };
             disks.Children.Add(b);
@@ -403,13 +403,13 @@ public sealed class ServerWindow : Window
                 var now = await _c.Server<ServerSample>("server.sample", new { sessionId = _sessionId });
                 if (generation != _generation) return;
                 var mp = now.MemTotalKb == 0 ? 0 : (now.MemTotalKb - now.MemAvailableKb) * 100.0 / now.MemTotalKb;
-                mem.Push(mp, $"{Sizes.Kb(now.MemTotalKb - now.MemAvailableKb)} kullanımda");
+                mem.Push(mp, L.F("{0} kullanımda", Sizes.Kb(now.MemTotalKb - now.MemAvailableKb)));
                 if (last is { } prev && now.Uptime > prev.Uptime)
                 {
                     var secs = now.Uptime - prev.Uptime;
                     var total = (double)(now.CpuTotal - prev.CpuTotal);
                     var busy = total <= 0 ? 0 : (total - (now.CpuIdle - prev.CpuIdle)) * 100.0 / total;
-                    cpu.Push(busy, $"yük {now.Load1:0.00}");
+                    cpu.Push(busy, L.F("yük {0:0.00}", now.Load1));
                     double Delta(ulong a, ulong b) => a >= b ? (a - b) / secs : 0;
                     var rx = Delta(now.NetRxBytes, prev.NetRxBytes);
                     var tx = Delta(now.NetTxBytes, prev.NetTxBytes);
@@ -451,7 +451,7 @@ public sealed class ServerWindow : Window
         var page = new StackPanel { Spacing = 12 };
         var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         var up = new Button { Content = new SymbolIcon(Symbol.Up), IsEnabled = u.Path != "/" };
-        ToolTipService.SetToolTip(up, "Üst klasör");
+        ToolTipService.SetToolTip(up, L.T("Üst klasör"));
         up.Click += (_, _) =>
         {
             var p = u.Path.TrimEnd('/');
@@ -464,15 +464,15 @@ public sealed class ServerWindow : Window
         head.Children.Add(new TextBlock { Text = $"toplam {Sizes.Kb(u.TotalKb)}", Foreground = Secondary, VerticalAlignment = VerticalAlignment.Center });
         page.Children.Add(head);
         if (!u.Complete)
-            page.Children.Add(Banner("Bazı klasörler okunamadı", "Bu kullanıcının erişemediği klasörler sayılmadı; boyutlar gerçekte daha büyük olabilir (root ile bağlan).", InfoBarSeverity.Informational));
+            page.Children.Add(Banner(L.T("Bazı klasörler okunamadı"), L.T("Bu kullanıcının erişemediği klasörler sayılmadı; boyutlar gerçekte daha büyük olabilir (root ile bağlan)."), InfoBarSeverity.Informational));
         if (u.Entries.Count > 0)
         {
             var top = u.Entries.Take(7).Select(e => (Name(u.Path, e.Path), (double)e.Kb, Sizes.Kb(e.Kb))).ToList();
             var rest = u.TotalKb > (ulong)u.Entries.Take(7).Sum(e => (decimal)e.Kb) ? u.TotalKb - (ulong)u.Entries.Take(7).Sum(e => (decimal)e.Kb) : 0;
-            if (rest > 0) top.Add(("Diğer", rest, Sizes.Kb(rest)));
+            if (rest > 0) top.Add((L.T("Diğer"), rest, Sizes.Kb(rest)));
             page.Children.Add(Card(Charts.Donut(top, Sizes.Kb(u.TotalKb))));
         }
-        page.Children.Add(Note("En çok yer kaplayanlar. Bir klasöre tıklayınca içine girer. Bu ekran yalnız ölçer; silme Temizlik'ten yapılır."));
+        page.Children.Add(Note(L.T("En çok yer kaplayanlar. Bir klasöre tıklayınca içine girer. Bu ekran yalnız ölçer; silme Temizlik'ten yapılır.")));
 
         var list = new StackPanel { Spacing = 2 };
         var max = u.Entries.Count == 0 ? 1 : Math.Max(1, u.Entries.Max(e => e.Kb));
@@ -500,14 +500,14 @@ public sealed class ServerWindow : Window
             b.Click += (_, _) => { _diskPath = path; _ = Load(); };
             list.Children.Add(b);
         }
-        if (u.Entries.Count == 0) list.Children.Add(Note("Bu klasörde alt klasör yok."));
+        if (u.Entries.Count == 0) list.Children.Add(Note(L.T("Bu klasörde alt klasör yok.")));
         // Inside (or at) a Docker daemon's storage: its data is cleaned through that daemon, never by deleting folders.
         if (CleanupLayout.StoreFor(u.Path, u.DockerStores) is { } here && (here.RootDir.TrimEnd('/') == u.Path.TrimEnd('/') || u.Path.StartsWith(here.RootDir.TrimEnd('/') + "/", StringComparison.Ordinal)))
         {
             var info = new StackPanel { Spacing = 6 };
             info.Children.Add(new TextBlock { Text = here.Label, Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"] });
-            info.Children.Add(Note($"Bu klasör {here.Label} ortamının depolaması ({here.RootDir}, soket {here.Socket}). İçindeki dosyalar elle silinmemeli: build önbelleği ve kullanılmayan imajlar Temizlik'ten, bu Docker'ın kendisi üzerinden güvenle temizlenir; çalışan konteynerler ve volume'ler korunur."));
-            var go = new Button { Content = "Bu ortamın temizliğine git", Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
+            info.Children.Add(Note(L.F("Bu klasör {0} ortamının depolaması ({1}, soket {2}). İçindeki dosyalar elle silinmemeli: build önbelleği ve kullanılmayan imajlar Temizlik'ten, bu Docker'ın kendisi üzerinden güvenle temizlenir; çalışan konteynerler ve volume'ler korunur.", here.Label, here.RootDir, here.Socket)));
+            var go = new Button { Content = L.T("Bu ortamın temizliğine git"), Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
             go.Click += (_, _) => Go("cleanup");
             info.Children.Add(go);
             page.Children.Add(Card(info));
@@ -520,11 +520,11 @@ public sealed class ServerWindow : Window
             var docker = new StackPanel { Spacing = 8 };
             foreach (var d in u.Docker)
             {
-                var kind = d.Kind switch { "Images" => "İmajlar", "Containers" => "Konteynerler", "Local Volumes" => "Birimler (veriler)", "Build Cache" => "Build önbelleği", _ => d.Kind };
-                docker.Children.Add(new TextBlock { Text = $"{kind} ({d.Count}): {Sizes.Bytes(d.SizeBytes)}" + (d.ReclaimableBytes > 0 && d.Kind != "Local Volumes" ? $"  ·  {Sizes.Bytes(d.ReclaimableBytes)} geri kazanılabilir" : "") });
+                var kind = d.Kind switch { "Images" => L.T("İmajlar"), "Containers" => L.T("Konteynerler"), "Local Volumes" => "Birimler (veriler)", "Build Cache" => L.T("Build önbelleği"), _ => d.Kind };
+                docker.Children.Add(new TextBlock { Text = $"{kind} ({d.Count}): {Sizes.Bytes(d.SizeBytes)}" + (d.ReclaimableBytes > 0 && d.Kind != "Local Volumes" ? L.F("  ·  {0} geri kazanılabilir", Sizes.Bytes(d.ReclaimableBytes)) : "") });
             }
-            docker.Children.Add(Note("Birimlere (uygulama verileri) hiçbir zaman dokunulmaz."));
-            var clean = new Button { Content = "Temizlik'e git" };
+            docker.Children.Add(Note(L.T("Birimlere (uygulama verileri) hiçbir zaman dokunulmaz.")));
+            var clean = new Button { Content = L.T("Temizlik'e git") };
             clean.Click += (_, _) => Go("cleanup");
             docker.Children.Add(clean);
             page.Children.Add(Card(docker));
@@ -545,25 +545,25 @@ public sealed class ServerWindow : Window
         title.Children.Add(new FontIcon { Glyph = env.Rootless ? "\uE77B" : "\uE7F4", FontSize = 18 });
         title.Children.Add(new TextBlock { Text = env.Label, Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"] });
         p.Children.Add(title);
-        var kind = env.Rootless ? "Rootless Docker" : "Sistem Docker";
-        p.Children.Add(new TextBlock { Text = $"{kind} · kullanıcı: {env.User} · soket: {(string.IsNullOrEmpty(env.Socket) ? "varsayılan" : env.Socket)}", FontFamily = Mono, FontSize = 12, Foreground = Secondary, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
+        var kind = env.Rootless ? "Rootless Docker" : L.T("Sistem Docker");
+        p.Children.Add(new TextBlock { Text = L.F("{0} · kullanıcı: {1} · soket: {2}", kind, env.User, string.IsNullOrEmpty(env.Socket) ? L.T("varsayılan") : env.Socket), FontFamily = Mono, FontSize = 12, Foreground = Secondary, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
         if (string.IsNullOrEmpty(env.Error))
         {
             if (!string.IsNullOrEmpty(env.RootDir))
                 p.Children.Add(new TextBlock { Text = "Depolama: " + env.RootDir, FontFamily = Mono, FontSize = 12, Foreground = Secondary, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
             p.Children.Add(new TextBlock
             {
-                Text = $"Kullanım: {Sizes.Bytes(env.TotalBytes)}  ·  Build önbelleği: {Sizes.Bytes(env.BuildCacheBytes)}  ·  Geri kazanılabilir: {Sizes.Bytes(env.ReclaimableBytes)}",
+                Text = L.F("Kullanım: {0}  ·  Build önbelleği: {1}  ·  Geri kazanılabilir: {2}", Sizes.Bytes(env.TotalBytes), Sizes.Bytes(env.BuildCacheBytes), Sizes.Bytes(env.ReclaimableBytes)),
                 FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap,
             });
             p.Children.Add(new TextBlock
             {
-                Text = $"İmajlar: {env.ImagesTotal} ({env.ImagesActive} kullanımda) · Konteynerler: {env.ContainersTotal} ({env.ContainersRunning} çalışıyor) · Volume'ler: {Sizes.Bytes(env.VolumesBytes)}",
+                Text = L.F("İmajlar: {0} ({1} kullanımda) · Konteynerler: {2} ({3} çalışıyor) · Volume'ler: {4}", env.ImagesTotal, env.ImagesActive, env.ContainersTotal, env.ContainersRunning, Sizes.Bytes(env.VolumesBytes)),
                 Foreground = Secondary, TextWrapping = TextWrapping.Wrap,
             });
             var protectedText = env.Running.Count > 0
-                ? "Korunur (dokunulmaz): " + string.Join(", ", env.Running.Take(6)) + (env.Running.Count > 6 ? $" ve {env.Running.Count - 6} konteyner daha" : "") + "; bunların ve durmuş konteynerlerin imajları, tüm volume'ler."
-                : "Korunur (dokunulmaz): durmuş konteynerlerin imajları ve tüm volume'ler.";
+                ? "Korunur (dokunulmaz): " + string.Join(", ", env.Running.Take(6)) + (env.Running.Count > 6 ? $" ve {env.Running.Count - 6} konteyner daha" : "") + L.T("; bunların ve durmuş konteynerlerin imajları, tüm volume'ler.")
+                : L.T("Korunur (dokunulmaz): durmuş konteynerlerin imajları ve tüm volume'ler.");
             p.Children.Add(new TextBlock { Text = protectedText, TextWrapping = TextWrapping.Wrap, Foreground = (Brush)Application.Current.Resources["SystemFillColorSuccessBrush"] });
         }
         return p;
@@ -572,11 +572,11 @@ public sealed class ServerWindow : Window
     private UIElement CleanupPage(CleanupScan scan)
     {
         var page = new StackPanel { Spacing = 12 };
-        page.Children.Add(new TextBlock { Text = "Güvenle silinebilecekler", Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] });
-        page.Children.Add(Note("Yalnız bilinen, yeniden oluşturulabilen dosyalar listelenir. Uygulama verilerine, veritabanlarına ve Docker birimlerine dokunulmaz. Silmeden önce çalışacak komutlar gösterilir."));
+        page.Children.Add(new TextBlock { Text = L.T("Güvenle silinebilecekler"), Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] });
+        page.Children.Add(Note(L.T("Yalnız bilinen, yeniden oluşturulabilen dosyalar listelenir. Uygulama verilerine, veritabanlarına ve Docker birimlerine dokunulmaz. Silmeden önce çalışacak komutlar gösterilir.")));
         var canChange = scan.Privilege is "root" or "sudo";
         if (!canChange)
-            page.Children.Add(Banner("Temizlik için yetki yok", "Bu kullanıcı root değil ve parolasız sudo yok. Boyutlar eksik ölçülmüş olabilir; temizlik için root ile bağlan.", InfoBarSeverity.Warning));
+            page.Children.Add(Banner(L.T("Temizlik için yetki yok"), L.T("Bu kullanıcı root değil ve parolasız sudo yok. Boyutlar eksik ölçülmüş olabilir; temizlik için root ile bağlan."), InfoBarSeverity.Warning));
 
         var boxes = new List<(CheckBox Box, CleanupItem Item, Windows.UI.Color Color)>();
         var total = new TextBlock { FontWeight = FontWeights.SemiBold };
@@ -586,7 +586,7 @@ public sealed class ServerWindow : Window
         void Sum()
         {
             var chosenKb = (ulong)boxes.Where(b => b.Box.IsChecked == true).Sum(b => (decimal)b.Item.Kb);
-            total.Text = $"Seçilenler: {Sizes.Kb(chosenKb)}";
+            total.Text = L.F("Seçilenler: {0}", Sizes.Kb(chosenKb));
             if (scan.Disk is not { } d) return;
             var size = (double)(d.UsedKb + d.AvailKb);
             if (size <= 0) return;
@@ -601,7 +601,7 @@ public sealed class ServerWindow : Window
             line.Children.Add(new TextBlock { Text = $"%{before:0}", FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(Charts.Level(before)) });
             line.Children.Add(new TextBlock { Text = "→", FontSize = 22, Foreground = Secondary });
             line.Children.Add(new TextBlock { Text = $"%{after:0}", FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(Charts.Level(after)) });
-            line.Children.Add(new TextBlock { Text = $"temizlikten sonra boş: {Sizes.Kb(d.AvailKb + freed)}", Foreground = Secondary, VerticalAlignment = VerticalAlignment.Center });
+            line.Children.Add(new TextBlock { Text = L.F("temizlikten sonra boş: {0}", Sizes.Kb(d.AvailKb + freed)), Foreground = Secondary, VerticalAlignment = VerticalAlignment.Center });
             v.Children.Add(line);
             v.Children.Add(Charts.Stack(parts, size));
             visual.Child = v;
@@ -617,7 +617,7 @@ public sealed class ServerWindow : Window
             {
                 list.Children.Add(DockerHeader(env));
                 if (!string.IsNullOrEmpty(env.Error))
-                    list.Children.Add(Banner("Bu Docker okunamadı", env.Error + " Boyutları bilinmiyor; bu ortam için temizlik önerilmiyor.", InfoBarSeverity.Warning));
+                    list.Children.Add(Banner(L.T("Bu Docker okunamadı"), env.Error + L.T(" Boyutları bilinmiyor; bu ortam için temizlik önerilmiyor."), InfoBarSeverity.Warning));
             }
             else if (section.Items.Count == 0) continue;
             foreach (var item in section.Items)
@@ -658,7 +658,7 @@ public sealed class ServerWindow : Window
                 text.Children.Add(new TextBlock { Text = item.Command, FontFamily = Mono, FontSize = 12, Foreground = Secondary, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
                 Grid.SetColumn(text, 1);
                 row.Children.Add(text);
-                var size = new TextBlock { Text = item.Kb > 0 ? Sizes.Kb(item.Kb) : "boş", FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Top };
+                var size = new TextBlock { Text = item.Kb > 0 ? Sizes.Kb(item.Kb) : L.T("boş"), FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Top };
                 Grid.SetColumn(size, 2);
                 row.Children.Add(size);
                 list.Children.Add(row);
@@ -670,13 +670,13 @@ public sealed class ServerWindow : Window
 
         var bottom = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16 };
         bottom.Children.Add(total);
-        bottom.Children.Add(Action("Seçilenleri temizle", async () =>
+        bottom.Children.Add(Action(L.T("Seçilenleri temizle"), async () =>
         {
             var chosen = boxes.Where(b => b.Box.IsChecked == true).Select(b => b.Item).ToList();
-            if (chosen.Count == 0) { Show("Temizlenecek bir şey seçilmedi.", InfoBarSeverity.Informational); return; }
+            if (chosen.Count == 0) { Show(L.T("Temizlenecek bir şey seçilmedi."), InfoBarSeverity.Informational); return; }
             var warning = string.Join(" ", chosen.Where(c => !string.IsNullOrEmpty(c.Warning)).Select(c => c.Warning));
-            if (!await Confirm("Temizlik", $"{chosen.Count} kalem silinecek; yaklaşık {Sizes.Kb((ulong)chosen.Sum(c => (decimal)c.Kb))} yer açılacak. Geri alınamaz.",
-                    string.Join("\n", chosen.Select(c => c.Command)), "Temizle", warning)) return;
+            if (!await Confirm(L.T("Temizlik"), L.F("{0} kalem silinecek; yaklaşık {1} yer açılacak. Geri alınamaz.", chosen.Count, Sizes.Kb((ulong)chosen.Sum(c => (decimal)c.Kb))),
+                    string.Join("\n", chosen.Select(c => c.Command)), L.T("Temizle"), warning)) return;
             await RunCleanup(chosen);
         }, accent: true));
         page.Children.Add(bottom);
@@ -697,7 +697,7 @@ public sealed class ServerWindow : Window
         var totalKb = Math.Max(1m, chosen.Sum(c => (decimal)c.Kb));
 
         var page = new StackPanel { Spacing = 16 };
-        page.Children.Add(new TextBlock { Text = "Temizleniyor", Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] });
+        page.Children.Add(new TextBlock { Text = L.T("Temizleniyor"), Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] });
         var head = new Grid();
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -742,7 +742,7 @@ public sealed class ServerWindow : Window
             row.Children.Add(state);
             var text = new StackPanel { Spacing = 4 };
             text.Children.Add(new TextBlock { Text = item.Title, FontWeight = FontWeights.SemiBold });
-            var note = new TextBlock { Text = "Sırada", Foreground = Secondary, FontSize = 12 };
+            var note = new TextBlock { Text = L.T("Sırada"), Foreground = Secondary, FontSize = 12 };
             text.Children.Add(note);
             var bar = new ProgressBar { IsIndeterminate = true, Visibility = Visibility.Collapsed };
             text.Children.Add(bar);
@@ -767,21 +767,21 @@ public sealed class ServerWindow : Window
             AnimateTo(overall, value);
             freedText.Text = $"{Sizes.Kb((ulong)doneKb)} / {Sizes.Kb((ulong)totalKb)} temizlendi";
         }
-        Overall("Başlıyor…");
+        Overall(L.T("Başlıyor…"));
         try
         {
             for (var i = 0; i < states.Count; i++)
             {
                 var (item, state, note, bar) = states[i];
                 state.Content = new ProgressRing { IsActive = true, Width = 18, Height = 18 };
-                note.Text = "Temizleniyor…";
+                note.Text = L.T("Temizleniyor…");
                 bar.Visibility = Visibility.Visible;
                 Overall($"{i + 1}/{states.Count} · {item.Title}");
                 CleanupResult result;
                 try
                 {
                     var one = await _c.Server<List<CleanupResult>>("server.cleanupRun", new { sessionId = _sessionId, ids = new List<string> { item.Id } });
-                    result = one.FirstOrDefault() ?? new CleanupResult(item.Id, false, "yanıt yok");
+                    result = one.FirstOrDefault() ?? new CleanupResult(item.Id, false, L.T("yanıt yok"));
                 }
                 catch (Exception ex) { result = new CleanupResult(item.Id, false, Friendly(ex)); }
                 results.Add(result);
@@ -792,7 +792,7 @@ public sealed class ServerWindow : Window
                     FontSize = 16,
                     Foreground = (Brush)Application.Current.Resources[result.Ok ? "SystemFillColorSuccessBrush" : "SystemFillColorCriticalBrush"],
                 };
-                note.Text = result.Ok ? "Temizlendi" : "Temizlenemedi" + (string.IsNullOrEmpty(result.Message) ? "" : ": " + result.Message);
+                note.Text = result.Ok ? L.T("Temizlendi") : L.T("Temizlenemedi") + (string.IsNullOrEmpty(result.Message) ? "" : ": " + result.Message);
                 doneKb += item.Kb;
                 Overall(i + 1 < states.Count ? $"{i + 1}/{states.Count} tamam" : "Bitti");
                 // The disk going down as it happens.
@@ -810,8 +810,8 @@ public sealed class ServerWindow : Window
             // Measured again after the cleanup, against the estimate.
             var measured = CleanupLayout.Freed((ulong)chosen.Sum(c => (decimal)c.Kb), before, after);
             var freed = measured.Length > 0 ? " " + measured : "";
-            if (failed.Count == 0) Show("Temizlik tamamlandı." + freed, InfoBarSeverity.Success);
-            else Show($"Bazı kalemler temizlenemedi: {string.Join("; ", failed.Select(f => chosen.First(c => c.Id == f.Id).Title + (string.IsNullOrEmpty(f.Message) ? "" : $" ({f.Message})")))}." + freed, InfoBarSeverity.Warning);
+            if (failed.Count == 0) Show(L.T("Temizlik tamamlandı.") + freed, InfoBarSeverity.Success);
+            else Show(L.F("Bazı kalemler temizlenemedi: {0}.", string.Join("; ", failed.Select(f => chosen.First(c => c.Id == f.Id).Title + (string.IsNullOrEmpty(f.Message) ? "" : $" ({f.Message})")))) + freed, InfoBarSeverity.Warning);
             // The finished list stays a moment, then the new scan.
             await Task.Delay(1500);
             if (generation != _generation) return;
@@ -857,13 +857,13 @@ public sealed class ServerWindow : Window
 
         if (list.Zombies.Count > 0)
         {
-            page.Children.Add(new TextBlock { Text = $"Zombi süreçler ({list.Zombies.Sum(z => z.Count)})", Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] });
-            page.Children.Add(Note("Zombi süreç zaten bitmiştir; bellek ya da işlemci kullanmaz, doğrudan sonlandırılamaz. Onu yalnız kendisini başlatan üst süreç toplayabilir. Önce üst sürece zararsız bir hatırlatma gönder; işe yaramazsa üst sürecin servisini ya da konteynerini yeniden başlat."));
+            page.Children.Add(new TextBlock { Text = L.F("Zombi süreçler ({0})", list.Zombies.Sum(z => z.Count)), Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] });
+            page.Children.Add(Note(L.T("Zombi süreç zaten bitmiştir; bellek ya da işlemci kullanmaz, doğrudan sonlandırılamaz. Onu yalnız kendisini başlatan üst süreç toplayabilir. Önce üst sürece zararsız bir hatırlatma gönder; işe yaramazsa üst sürecin servisini ya da konteynerini yeniden başlat.")));
             foreach (var z in list.Zombies) page.Children.Add(ZombieCard(z, canChange));
         }
         else
         {
-            page.Children.Add(Banner("Zombi süreç yok", "Bütün bitmiş süreçler toplanmış.", InfoBarSeverity.Success));
+            page.Children.Add(Banner(L.T("Zombi süreç yok"), L.T("Bütün bitmiş süreçler toplanmış."), InfoBarSeverity.Success));
         }
 
         // Who uses the machine: the ten heaviest by CPU and by memory.
@@ -878,19 +878,19 @@ public sealed class ServerWindow : Window
             box.Children.Add(Charts.Bars(procs.Take(10).Select(p => ($"{p.Name} ({p.Pid})", value(p), text(p))).ToList(), color));
             return Card(box);
         }
-        var cpuTop = Top("En çok işlemci kullanan 10 süreç", live.OrderByDescending(p => p.Cpu), p => p.Cpu, p => $"%{p.Cpu:0.0}", Charts.Palette[0]);
-        var memTop = Top("En çok bellek kullanan 10 süreç", live.OrderByDescending(p => p.RssKb), p => p.RssKb, p => Sizes.Kb(p.RssKb), Charts.Palette[3]);
+        var cpuTop = Top(L.T("En çok işlemci kullanan 10 süreç"), live.OrderByDescending(p => p.Cpu), p => p.Cpu, p => $"%{p.Cpu:0.0}", Charts.Palette[0]);
+        var memTop = Top(L.T("En çok bellek kullanan 10 süreç"), live.OrderByDescending(p => p.RssKb), p => p.RssKb, p => Sizes.Kb(p.RssKb), Charts.Palette[3]);
         Grid.SetColumn(memTop, 1);
         charts.Children.Add(cpuTop);
         charts.Children.Add(memTop);
         page.Children.Add(charts);
 
-        page.Children.Add(Heading("Süreçler"));
+        page.Children.Add(Heading(L.T("Süreçler")));
         var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        var search = new TextBox { PlaceholderText = "Ara (ad, komut, kullanıcı, PID)", Width = 320, Text = _processFilter };
+        var search = new TextBox { PlaceholderText = L.T("Ara (ad, komut, kullanıcı, PID)"), Width = 320, Text = _processFilter };
         var sort = new ComboBox { Width = 180 };
-        sort.Items.Add(new ComboBoxItem { Content = "İşlemciye göre", Tag = "cpu" });
-        sort.Items.Add(new ComboBoxItem { Content = "Belleğe göre", Tag = "mem" });
+        sort.Items.Add(new ComboBoxItem { Content = L.T("İşlemciye göre"), Tag = "cpu" });
+        sort.Items.Add(new ComboBoxItem { Content = L.T("Belleğe göre"), Tag = "mem" });
         sort.SelectedIndex = _processSort == "mem" ? 1 : 0;
         tools.Children.Add(search);
         tools.Children.Add(sort);
@@ -910,7 +910,7 @@ public sealed class ServerWindow : Window
                 .ToList();
             rows.Children.Add(ProcessRow(null, canChange));
             foreach (var p in shown) rows.Children.Add(ProcessRow(p, canChange));
-            if (shown.Count == 0) rows.Children.Add(Note("Eşleşen süreç yok."));
+            if (shown.Count == 0) rows.Children.Add(Note(L.T("Eşleşen süreç yok.")));
         }
         search.TextChanged += (_, _) => { _processFilter = search.Text; Fill(); };
         sort.SelectionChanged += (_, _) => { _processSort = (sort.SelectedItem as ComboBoxItem)?.Tag as string ?? "cpu"; Fill(); };
@@ -929,19 +929,19 @@ public sealed class ServerWindow : Window
             "service" => $"Servis: {z.Owner.Name}",
             _ => "",
         };
-        if (owner.Length > 0) p.Children.Add(Note(owner + $"  ·  çalışma süresi {Sizes.Duration(z.Parent.ElapsedSecs)}"));
+        if (owner.Length > 0) p.Children.Add(Note(owner + L.F("  ·  çalışma süresi {0}", Sizes.Duration(z.Parent.ElapsedSecs))));
         if (z.Owner.Kind == "container")
-            p.Children.Add(Note("Kalıcı çözüm: konteyner küçük bir init süreciyle (--init) çalışsın; o, bitmiş süreçleri kendiliğinden toplar. \"Öneriyi uygula\" bunu Coolify'daki ayarına ekleyip uygulamayı yeniden dağıtır."));
+            p.Children.Add(Note(L.T("Kalıcı çözüm: konteyner küçük bir init süreciyle (--init) çalışsın; o, bitmiş süreçleri kendiliğinden toplar. \"Öneriyi uygula\" bunu Coolify'daki ayarına ekleyip uygulamayı yeniden dağıtır.")));
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         if (canChange && z.Owner.Kind == "container")
-            buttons.Children.Add(Action("Öneriyi uygula", () => ApplyInit(z, null), accent: true));
+            buttons.Children.Add(Action(L.T("Öneriyi uygula"), () => ApplyInit(z, null), accent: true));
         if (canChange)
         {
-            buttons.Children.Add(Action("Toplamasını iste", async () =>
+            buttons.Children.Add(Action(L.T("Toplamasını iste"), async () =>
             {
-                if (!await Confirm("Zombileri toplamasını iste", $"{z.Parent.Name} sürecine SIGCHLD gönderilir: \"bitmiş alt süreçlerin var, topla\" demektir. Süreci durdurmaz, zararsızdır.",
-                        $"kill -CHLD {z.Parent.Pid}", "Gönder")) return;
+                if (!await Confirm(L.T("Zombileri toplamasını iste"), L.F("{0} sürecine SIGCHLD gönderilir: \"bitmiş alt süreçlerin var, topla\" demektir. Süreci durdurmaz, zararsızdır.", z.Parent.Name),
+                        $"kill -CHLD {z.Parent.Pid}", L.T("Gönder"))) return;
                 await Signal(z.Parent, "reap", false, then: async () =>
                 {
                     await Task.Delay(1500);
@@ -949,8 +949,8 @@ public sealed class ServerWindow : Window
                     _processes = await _c.Server<ProcessList>("server.processes", new { sessionId = _sessionId });
                     var now = _processes.Zombies.FirstOrDefault(x => x.Parent.Pid == z.Parent.Pid)?.Count ?? 0;
                     _scroll.Content = ProcessesPage(_processes);
-                    Show(now == 0 ? "Zombilerin hepsi toplandı." : now < before ? $"{before - now} zombi toplandı; {now} kaldı." :
-                        "Süreç hatırlatmaya yanıt vermedi (program zombileri toplamıyor). Kalıcı çözüm için servisini ya da konteynerini yeniden başlat.",
+                    Show(now == 0 ? L.T("Zombilerin hepsi toplandı.") : now < before ? L.F("{0} zombi toplandı; {1} kaldı.", before - now, now) :
+                        L.T("Süreç hatırlatmaya yanıt vermedi (program zombileri toplamıyor). Kalıcı çözüm için servisini ya da konteynerini yeniden başlat."),
                         now == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
                 });
             }));
@@ -958,17 +958,17 @@ public sealed class ServerWindow : Window
             {
                 var what = z.Owner.Kind == "container" ? "konteyneri" : "servisi";
                 var command = z.Owner.Kind == "container" ? $"docker restart {z.Owner.Id}" : $"systemctl restart {z.Owner.Id}";
-                buttons.Children.Add(Action($"{char.ToUpper(what[0])}{what[1..]} yeniden başlat", async () =>
+                buttons.Children.Add(Action(L.F("{0}{1} yeniden başlat", char.ToUpper(what[0]), what[1..]), async () =>
                 {
-                    if (!await Confirm($"{z.Owner.Name} yeniden başlatılsın mı?",
-                            $"Bu {what} birkaç saniye kapanıp açılır; o sürede hizmet vermez. Yeniden başlayınca zombiler de gider.",
-                            command, "Yeniden başlat")) return;
+                    if (!await Confirm(L.F("{0} yeniden başlatılsın mı?", z.Owner.Name),
+                            L.F("Bu {0} birkaç saniye kapanıp açılır; o sürede hizmet vermez. Yeniden başlayınca zombiler de gider.", what),
+                            command, L.T("Yeniden başlat"))) return;
                     try
                     {
-                        _scroll.Content = Waiting("Yeniden başlatılıyor…");
+                        _scroll.Content = Waiting(L.T("Yeniden başlatılıyor…"));
                         await _c.Server<string>("server.restartOwner", new { sessionId = _sessionId, kind = z.Owner.Kind, id = z.Owner.Id });
                         await Load();
-                        Show($"{z.Owner.Name} yeniden başlatıldı.", InfoBarSeverity.Success);
+                        Show(L.F("{0} yeniden başlatıldı.", z.Owner.Name), InfoBarSeverity.Success);
                     }
                     catch (Exception ex) { await Load(); Show(Friendly(ex), InfoBarSeverity.Error); }
                 }));
@@ -982,10 +982,10 @@ public sealed class ServerWindow : Window
     /// <summary>"Öneriyi uygula": --init in the app's Coolify settings, then a redeploy.</summary>
     private async Task ApplyInit(ZombieGroup z, string? token)
     {
-        if (token is null && !await Confirm("Öneriyi uygula",
-                $"{z.Owner.Name} konteynerinin uygulamasına Coolify'da --init seçeneği eklenir ve uygulama Coolify üzerinden yeniden dağıtılır. " +
-                "Dağıtım birkaç dakika sürer; eski konteyner yenisi hazır olunca kapanır. Ayar kalıcıdır; sonraki dağıtımlarda da geçerli olur.",
-                "Coolify API: custom_docker_run_options += \"--init\"\nCoolify API: deploy", "Uygula"))
+        if (token is null && !await Confirm(L.T("Öneriyi uygula"),
+                L.F("{0} konteynerinin uygulamasına Coolify'da --init seçeneği eklenir ve uygulama Coolify üzerinden yeniden dağıtılır. ", z.Owner.Name) +
+                L.T("Dağıtım birkaç dakika sürer; eski konteyner yenisi hazır olunca kapanır. Ayar kalıcıdır; sonraki dağıtımlarda da geçerli olur."),
+                "Coolify API: custom_docker_run_options += \"--init\"\nCoolify API: deploy", L.T("Uygula")))
             return;
         try
         {
@@ -997,7 +997,7 @@ public sealed class ServerWindow : Window
                     break;
                 case "applied":
                 case "already":
-                    Show($"{r.App}: --init {(r.Status == "already" ? "zaten açıktı" : "eklendi")}, yeniden dağıtım başladı. Birkaç dakika sonra Yenile'ye bas; zombiler gitmiş olmalı.", InfoBarSeverity.Success);
+                    Show(L.F("{0}: --init {1}, yeniden dağıtım başladı. Birkaç dakika sonra Yenile'ye bas; zombiler gitmiş olmalı.", r.App, r.Status == "already" ? L.T("zaten açıktı") : L.T("eklendi")), InfoBarSeverity.Success);
                     break;
                 default:
                     Show(r.Message, InfoBarSeverity.Informational);
@@ -1012,17 +1012,17 @@ public sealed class ServerWindow : Window
     {
         var body = new StackPanel { Spacing = 10, MaxWidth = 520 };
         if (!string.IsNullOrEmpty(why)) body.Children.Add(new InfoBar { Message = why, Severity = InfoBarSeverity.Warning, IsOpen = true, IsClosable = false });
-        body.Children.Add(new TextBlock { TextWrapping = TextWrapping.Wrap, Text = "Bu ayarı Coolify'a yazmak için bir kez Coolify API anahtarı gerekiyor:" });
-        body.Children.Add(new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Secondary, Text = "1. Coolify'da Ayarlar > Gelişmiş > API erişimi açık olsun.\n2. Keys & Tokens > API tokens > yeni anahtar oluştur; \"write\" ve \"deploy\" yetkilerini seç.\n3. Anahtarı buraya yapıştır." });
-        var box = new PasswordBox { PlaceholderText = "Coolify API anahtarı" };
+        body.Children.Add(new TextBlock { TextWrapping = TextWrapping.Wrap, Text = L.T("Bu ayarı Coolify'a yazmak için bir kez Coolify API anahtarı gerekiyor:") });
+        body.Children.Add(new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Secondary, Text = L.T("1. Coolify'da Ayarlar > Gelişmiş > API erişimi açık olsun.\n2. Keys & Tokens > API tokens > yeni anahtar oluştur; \"write\" ve \"deploy\" yetkilerini seç.\n3. Anahtarı buraya yapıştır.") });
+        var box = new PasswordBox { PlaceholderText = L.T("Coolify API anahtarı") };
         body.Children.Add(box);
-        body.Children.Add(new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Secondary, FontSize = 12, Text = "Anahtar bu bilgisayarın anahtar zincirinde saklanır. Coolify'a sunucunun kendi içinden bağlanılır; anahtar internete çıkmaz." });
+        body.Children.Add(new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Secondary, FontSize = 12, Text = L.T("Anahtar bu bilgisayarın anahtar zincirinde saklanır. Coolify'a sunucunun kendi içinden bağlanılır; anahtar internete çıkmaz.") });
         var dialog = new ContentDialog
         {
-            Title = "Coolify API anahtarı",
+            Title = L.T("Coolify API anahtarı"),
             Content = body,
-            PrimaryButtonText = "Devam",
-            CloseButtonText = "Vazgeç",
+            PrimaryButtonText = L.T("Devam"),
+            CloseButtonText = L.T("Vazgeç"),
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = Content.XamlRoot,
         };
@@ -1039,7 +1039,7 @@ public sealed class ServerWindow : Window
         foreach (var w in new[] { 160.0, 80, 100, 60, 80, -1, 40 })
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = w < 0 ? new GridLength(1, GridUnitType.Star) : new GridLength(w) });
         var cells = p is null
-            ? new[] { "Ad", "PID", "Kullanıcı", "İşlemci", "Bellek", "Komut" }
+            ? new[] { L.T("Ad"), "PID", L.T("Kullanıcı"), L.T("İşlemci"), L.T("Bellek"), L.T("Komut") }
             : new[] { p.Name, p.Pid.ToString(), p.User, $"%{p.Cpu:0.0}", Sizes.Kb(p.RssKb), p.Command };
         for (var i = 0; i < cells.Length; i++)
         {
@@ -1053,16 +1053,16 @@ public sealed class ServerWindow : Window
         {
             var more = new Button { Content = new SymbolIcon(Symbol.More), Padding = new Thickness(6), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0) };
             var menu = new MenuFlyout();
-            var stop = new MenuFlyoutItem { Text = "Sonlandır (kibarca)", Icon = new SymbolIcon(Symbol.Stop) };
+            var stop = new MenuFlyoutItem { Text = L.T("Sonlandır (kibarca)"), Icon = new SymbolIcon(Symbol.Stop) };
             stop.Click += async (_, _) =>
             {
-                if (await Confirm($"{p.Name} sonlandırılsın mı?", "Sürece kapanması söylenir (SIGTERM); program açık işlerini bitirip kapanır. Bir servisin parçasıysa servis onu yeniden başlatabilir.", $"kill -TERM {p.Pid}", "Sonlandır"))
+                if (await Confirm(L.F("{0} sonlandırılsın mı?", p.Name), L.T("Sürece kapanması söylenir (SIGTERM); program açık işlerini bitirip kapanır. Bir servisin parçasıysa servis onu yeniden başlatabilir."), $"kill -TERM {p.Pid}", L.T("Sonlandır")))
                     await Signal(p, "term", false);
             };
-            var kill = new MenuFlyoutItem { Text = "Zorla durdur", Icon = new SymbolIcon(Symbol.Cancel) };
+            var kill = new MenuFlyoutItem { Text = L.T("Zorla durdur"), Icon = new SymbolIcon(Symbol.Cancel) };
             kill.Click += async (_, _) =>
             {
-                if (await Confirm($"{p.Name} zorla durdurulsun mı?", "Süreç anında durdurulur (SIGKILL); kaydedilmemiş işleri kaybolur. Önce kibarca sonlandırmayı dene.", $"kill -KILL {p.Pid}", "Zorla durdur"))
+                if (await Confirm(L.F("{0} zorla durdurulsun mı?", p.Name), L.T("Süreç anında durdurulur (SIGKILL); kaydedilmemiş işleri kaybolur. Önce kibarca sonlandırmayı dene."), $"kill -KILL {p.Pid}", L.T("Zorla durdur")))
                     await Signal(p, "kill", false);
             };
             menu.Items.Add(stop);
@@ -1082,11 +1082,11 @@ public sealed class ServerWindow : Window
             if (then is not null) { await then(); return; }
             await Task.Delay(800);
             await Load();
-            Show(action == "kill" ? $"{p.Name} durduruldu." : $"{p.Name} için kapanma isteği gönderildi.", InfoBarSeverity.Success);
+            Show(action == "kill" ? $"{p.Name} durduruldu." : L.F("{0} için kapanma isteği gönderildi.", p.Name), InfoBarSeverity.Success);
         }
         catch (Exception ex) when (ex.Message == "database" && !confirmDatabase)
         {
-            if (await Confirm("Bu bir veritabanı", $"{p.Name} bir veritabanı. Durdurulursa yazılmakta olan veriler kaybolabilir ve ona bağlı uygulamalar hata verir. Yine de devam edilsin mi?",
+            if (await Confirm(L.T("Bu bir veritabanı"), L.F("{0} bir veritabanı. Durdurulursa yazılmakta olan veriler kaybolabilir ve ona bağlı uygulamalar hata verir. Yine de devam edilsin mi?", p.Name),
                     $"kill -{(action == "kill" ? "KILL" : "TERM")} {p.Pid}", "Yine de durdur"))
                 await Signal(p, action, true, then);
         }

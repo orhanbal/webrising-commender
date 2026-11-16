@@ -149,7 +149,7 @@ public sealed class EmbeddedAgent : IDisposable
             if (code != 0 || !Paired)
             {
                 Restore(backup);
-                LastError = "Bu bilgisayar hesaba bağlanamadı: " + Redact(output, pairingCode);
+                LastError = L.T("Bu bilgisayar hesaba bağlanamadı: ") + Redact(output, pairingCode);
                 if (wasRunning) Start();
                 return false;
             }
@@ -160,7 +160,7 @@ public sealed class EmbeddedAgent : IDisposable
         catch (Exception e)
         {
             Restore(backup);
-            LastError = "Bu bilgisayar hesaba bağlanamadı: " + Redact(e.Message, pairingCode);
+            LastError = L.T("Bu bilgisayar hesaba bağlanamadı: ") + Redact(e.Message, pairingCode);
             return false;
         }
     }
@@ -175,7 +175,7 @@ public sealed class EmbeddedAgent : IDisposable
         var t = (text ?? "").Trim();
         if (!string.IsNullOrEmpty(secret)) t = t.Replace(secret, "[REDACTED]");
         if (t.Length > 300) t = t[..300] + "…";
-        return t.Length == 0 ? "bilinmeyen hata" : t;
+        return t.Length == 0 ? L.T("bilinmeyen hata") : t;
     }
 
     /// <summary>Starts the paired agent hidden; no-op while it runs.</summary>
@@ -186,7 +186,7 @@ public sealed class EmbeddedAgent : IDisposable
             if (_process is { HasExited: false }) return true;
             _process?.Dispose();
             _process = null;
-            if (!Available) { LastError = "Uygulamanın içindeki ajan bulunamadı; uygulamayı yeniden kur."; return false; }
+            if (!Available) { LastError = L.T("Uygulamanın içindeki ajan bulunamadı; uygulamayı yeniden kur."); return false; }
             if (!Paired) { LastError = null; return false; }
             try
             {
@@ -196,7 +196,7 @@ public sealed class EmbeddedAgent : IDisposable
             }
             catch (Exception e)
             {
-                LastError = "Ajan başlatılamadı: " + e.Message;
+                LastError = L.T("Ajan başlatılamadı: ") + e.Message;
                 return false;
             }
         }

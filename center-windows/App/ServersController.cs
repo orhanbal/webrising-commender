@@ -32,7 +32,7 @@ public sealed class ServersController : IDisposable
         var exe = Path.Combine(AppContext.BaseDirectory, "wecommander-core.exe");
         if (!File.Exists(exe))
         {
-            StartError = "Uygulama çekirdeği (wecommander-core.exe) bulunamadı.";
+            StartError = L.T("Uygulama çekirdeği (wecommander-core.exe) bulunamadı.");
             return;
         }
         var data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WECOMMANDER", "core");
@@ -44,7 +44,7 @@ public sealed class ServersController : IDisposable
         }
         catch (Exception e)
         {
-            StartError = "Uygulama çekirdeği başlatılamadı: " + e.Message;
+            StartError = L.T("Uygulama çekirdeği başlatılamadı: ") + e.Message;
         }
     }
 
@@ -74,8 +74,8 @@ public sealed class ServersController : IDisposable
                 var sid = (string?)data?["sessionId"];
                 if (sid is not null && _tabs.TryGetValue(sid, out var t))
                 {
-                    var code = data?["code"] is JsonValue v && v.TryGetValue(out int c) ? $", çıkış kodu {c}" : "";
-                    var json = JsonSerializer.Serialize(new { type = "text", data = $"\r\n\u001b[90m[Bağlantı kapandı{code}. Sekmeyi kapatabilirsin.]\u001b[0m\r\n" });
+                    var code = data?["code"] is JsonValue v && v.TryGetValue(out int c) ? L.F(", çıkış kodu {0}", c) : "";
+                    var json = JsonSerializer.Serialize(new { type = "text", data = L.F("\r\n\u001b[90m[Bağlantı kapandı{0}. Sekmeyi kapatabilirsin.]\u001b[0m\r\n", code) });
                     t.Ui.TryEnqueue(() =>
                     {
                         t.Tab.Closed = true;
@@ -136,10 +136,10 @@ public sealed class ServersController : IDisposable
             Hosts = r.Hosts;
             Changed?.Invoke();
             return r.Added > 0
-                ? $"{r.Added} sunucu içe aktarıldı" + (r.Skipped > 0 ? $", {r.Skipped} zaten vardı." : ".")
-                : "Yeni sunucu bulunamadı.";
+                ? L.F("{0} sunucu içe aktarıldı", r.Added) + (r.Skipped > 0 ? L.F(", {0} zaten vardı.", r.Skipped) : ".")
+                : L.T("Yeni sunucu bulunamadı.");
         }
-        catch (CoreException e) { return "~/.ssh/config okunamadı: " + e.Message; }
+        catch (CoreException e) { return L.T("~/.ssh/config okunamadı: ") + e.Message; }
     }
 
     public Task<ConnectResult> Connect(CoreHost host, object auth, string? accept) =>
@@ -255,9 +255,9 @@ public sealed class ServersController : IDisposable
     /// <summary>Shares this terminal with the team; guests see it live (and type when allowed).</summary>
     public async Task StartSharing(TerminalTab tab, bool allowInput)
     {
-        if (App.Current.Credentials() is not { } c) throw new CoreException("Önce oturum aç.");
+        if (App.Current.Credentials() is not { } c) throw new CoreException(L.T("Önce oturum aç."));
         if (!(await Core.CallAsync<TeamKeyStatus>("team.status")).HasKey)
-            throw new CoreException("Paylaşmak için ekip anahtarı gerekli: Ayarlar → Ekip'te eşitlemenin tamamlanmasını bekle.");
+            throw new CoreException(L.T("Paylaşmak için ekip anahtarı gerekli: Ayarlar → Ekip'te eşitlemenin tamamlanmasını bekle."));
         var id = await c.Gateway.CreateShareAsync(c.Token, tab.Host.Label);
         var share = await TerminalShare.ConnectAsync(Core, c.Gateway.ShareSocketUri(id, "host"), c.Token, id, host: true);
         share.AllowInput = allowInput;
@@ -278,7 +278,7 @@ public sealed class ServersController : IDisposable
 
     public async Task<TerminalShare> JoinShare(ShareInfo info)
     {
-        if (App.Current.Credentials() is not { } c) throw new CoreException("Önce oturum aç.");
+        if (App.Current.Credentials() is not { } c) throw new CoreException(L.T("Önce oturum aç."));
         return await TerminalShare.ConnectAsync(Core, c.Gateway.ShareSocketUri(info.Id, "guest"), c.Token, info.Id, host: false);
     }
 
@@ -416,7 +416,7 @@ public sealed class ServersController : IDisposable
             SavedTunnels = await Core.CallAsync<List<SavedTunnel>>("tunnels.toggle", new { hostId = tunnel.HostId, index = tunnel.Index });
             Changed?.Invoke();
         }
-        catch (CoreException e) { Notice?.Invoke("Tünel açılamadı: " + e.Message); }
+        catch (CoreException e) { Notice?.Invoke(L.T("Tünel açılamadı: ") + e.Message); }
     }
 
     // ---- the host library (edit, groups, trusted keys, snippets, history) ----
