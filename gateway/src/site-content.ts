@@ -51,10 +51,10 @@ export const publicPages: PublicPage[] = [
   {
     path: "/",
     section: "Product",
-    title: "WECOMMANDER · Your AI, on every machine",
+    title: "WECOMMANDER · SSH client, server management and secure MCP for AI",
     description:
-      "Connect Claude, ChatGPT or any MCP client to the terminals and files of your Windows, macOS and Linux machines through one MCP URL, with human approvals, a non-root agent and a full audit trail.",
-    heading: "Your AI, on every machine",
+      "Your servers, your terminal and your AI in one app: an SSH client with SFTP and tunnels, server disk cleanup and live monitoring, and one remote MCP URL that lets Claude, ChatGPT or Cursor work on your Windows, macOS and Linux machines with human approvals, a non-root agent and a full audit trail.",
+    heading: "Your servers, your terminal and your AI, in one app",
     intro: productSummary,
     blocks: [
       { h2: "What it does" },
