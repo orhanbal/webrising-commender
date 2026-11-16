@@ -983,7 +983,6 @@ public partial class App : Application
         var menu = new MenuFlyout();
         menu.Items.Add(new MenuFlyoutItem { Text = L.T("WECOMMANDER'ı aç"), Command = new RelayCommand(ShowServers) });
         menu.Items.Add(new MenuFlyoutItem { Text = L.T("Onaylar ve otonom mod"), Command = new RelayCommand(() => _window?.ShowPanel()) });
-        menu.Items.Add(new MenuFlyoutItem { Text = L.T("Sunucu kutusu (sol alt): göster / gizle"), Command = new RelayCommand(() => SetDeskChip(!Settings.DeskChip)) });
         _connectMenu = new MenuFlyoutSubItem { Text = L.T("Bağlan"), IsEnabled = false };
         _tunnelMenu = new MenuFlyoutSubItem { Text = L.T("Tüneller"), IsEnabled = false };
         menu.Items.Add(_connectMenu);
