@@ -345,7 +345,7 @@ internal sealed class ServerCard
         }
         while (_drawn < s.Samples)
         {
-            _chart.Push(s.Cpu, L.F("yük {0}", s.Last?.Load1:0.00));
+            _chart.Push(s.Cpu, L.F("yük {0:0.00}", s.Last?.Load1));
             _drawn++;
         }
     }
