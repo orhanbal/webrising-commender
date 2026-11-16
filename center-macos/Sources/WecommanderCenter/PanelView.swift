@@ -18,7 +18,7 @@ struct PanelView: View {
             }
             Spacer(minLength: 0)
             if model.phase == .signedIn, let last = model.lastSync {
-                Text("Son eşitleme: \(max(0, Int(model.now.timeIntervalSince(last)))) sn önce")
+                Text(L.f("Son eşitleme: {0} sn önce", max(0, Int(model.now.timeIntervalSince(last)))))
                     .font(.caption2).foregroundStyle(.tertiary)
             }
         }
@@ -39,7 +39,7 @@ private struct Header: View {
                 } else {
                     Text("WECOMMANDER").font(.headline)
                 }
-                Text("Yönetim Merkezi").font(.caption).foregroundStyle(.secondary)
+                Text(L.t("Yönetim Merkezi")).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
             if model.phase == .signedIn {
@@ -48,7 +48,7 @@ private struct Header: View {
                         Text([me.email, me.organizationName].compactMap { $0 }.joined(separator: " · "))
                             .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                     }
-                    Button("Oturumu kapat") { Task { await model.signOut() } }
+                    Button(L.t("Oturumu kapat")) { Task { await model.signOut() } }
                         .buttonStyle(.link).font(.caption)
                 }
             }
@@ -62,30 +62,30 @@ private struct Banners: View {
     var body: some View {
         VStack(spacing: 6) {
             if model.phase == .signedIn && model.notificationsBlocked {
-                Callout(symbol: "bell.slash.fill", tint: .orange, title: "macOS bildirimleri kapalı",
+                Callout(symbol: "bell.slash.fill", tint: .orange, title: L.t("macOS bildirimleri kapalı"),
                         text: Texts.notificationBlockedMessage(model.notificationState)) {
-                    Button("Bildirimlere izin ver") { Notifier.openSettings() }
+                    Button(L.t("Bildirimlere izin ver")) { Notifier.openSettings() }
                 }
             } else if model.phase == .signedIn && model.settings.notifications && model.notificationState == "notDetermined" {
-                Callout(symbol: "bell.badge", tint: .blue, title: "Bildirim izni",
+                Callout(symbol: "bell.badge", tint: .blue, title: L.t("Bildirim izni"),
                         text: Texts.notificationBlockedMessage("notDetermined")) {
-                    Button("Bildirimlere izin ver") { model.notifier.requestPermission() }
+                    Button(L.t("Bildirimlere izin ver")) { model.notifier.requestPermission() }
                 }
             }
             if model.phase == .signedIn, let agent = model.agent, agent.state == .stopped, !model.agentBusy {
                 Callout(symbol: "bolt.horizontal.circle", tint: .red,
-                        title: agent.enabled ? "Bu Mac'teki ajan çalışmıyor" : "Bu Mac'teki ajan kapalı",
+                        title: agent.enabled ? L.t("Bu Mac'teki ajan çalışmıyor") : L.t("Bu Mac'teki ajan kapalı"),
                         text: Texts.agentOffWarning) {
-                    Button("Ajanı başlat") { Task { await model.setAgentEnabled(true) } }
+                    Button(L.t("Ajanı başlat")) { Task { await model.setAgentEnabled(true) } }
                 }
             }
             if model.phase == .signedIn && !model.autonomy.isEmpty {
-                Callout(symbol: "bolt.fill", tint: .orange, title: "Otonom mod açık",
-                        text: "\(model.autonomy.count) cihazda onay istenmiyor.") { EmptyView() }
+                Callout(symbol: "bolt.fill", tint: .orange, title: L.t("Otonom mod açık"),
+                        text: L.f("{0} cihazda onay istenmiyor.", model.autonomy.count)) { EmptyView() }
             }
             if let error = model.error {
-                Callout(symbol: "exclamationmark.triangle.fill", tint: .red, title: "Hata", text: error) {
-                    Button("Kapat") { model.error = nil }
+                Callout(symbol: "exclamationmark.triangle.fill", tint: .red, title: L.t("Hata"), text: error) {
+                    Button(L.t("Kapat")) { model.error = nil }
                 }
             }
         }
@@ -123,19 +123,19 @@ private struct SignedOutView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Oturum aç").font(.title3.weight(.semibold))
-            Text("Bu Mac tüm cihazlarındaki onay isteklerini bildirim olarak alır; onaylar, reddeder ve otonom modu yönetirsin. Şifren bu uygulamaya girmez: oturumu tarayıcıda açarsın.")
+            Text(L.t("Oturum aç")).font(.title3.weight(.semibold))
+            Text(L.t("Bu Mac tüm cihazlarındaki onay isteklerini bildirim olarak alır; onaylar, reddeder ve otonom modu yönetirsin. Şifren bu uygulamaya girmez: oturumu tarayıcıda açarsın."))
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Form {
-                TextField("Sunucu adresi", text: $server)
-                TextField("Bu bilgisayarın adı", text: $name)
+                TextField(L.t("Sunucu adresi"), text: $server)
+                TextField(L.t("Bu bilgisayarın adı"), text: $name)
             }
             .formStyle(.grouped)
             .frame(height: 120)
             Button {
                 Task { await model.connect(server: server, name: name) }
             } label: {
-                Text("Tarayıcıda oturum aç").frame(maxWidth: .infinity)
+                Text(L.t("Tarayıcıda oturum aç")).frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent).controlSize(.large)
             .disabled(model.busy)
@@ -149,13 +149,13 @@ private struct LinkingView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Tarayıcıda onayla").font(.title3.weight(.semibold))
-            Text("Açılan sayfada hesabınla giriş yap ve \"Bu Yönetim Merkezini bağla\"ya bas. Onaylayınca burası kendiliğinden açılır.")
+            Text(L.t("Tarayıcıda onayla")).font(.title3.weight(.semibold))
+            Text(L.t("Açılan sayfada hesabınla giriş yap ve \"Bu Yönetim Merkezini bağla\"ya bas. Onaylayınca burası kendiliğinden açılır."))
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             ProgressView().controlSize(.small)
             HStack {
-                Button("Sayfayı yeniden aç") { model.reopenLink() }
-                Button("Vazgeç") { model.cancelLink() }
+                Button(L.t("Sayfayı yeniden aç")) { model.reopenLink() }
+                Button(L.t("Vazgeç")) { model.cancelLink() }
             }
         }
     }
@@ -164,7 +164,7 @@ private struct LinkingView: View {
 // MARK: signed in
 
 private enum Tab: String, CaseIterable, Identifiable {
-    case approvals = "Onaylar", autonomy = "Otonom mod", devices = "Cihazlar", settings = "Ayarlar"
+    case approvals = "Onaylar", autonomy = "Otonom mod", devices = "Cihazlar", settings = L.t("Ayarlar")
     var id: String { rawValue }
 }
 
@@ -176,7 +176,7 @@ private struct SignedInView: View {
         VStack(alignment: .leading, spacing: 10) {
             Picker("", selection: $tab) {
                 ForEach(Tab.allCases) { t in
-                    Text(t == .approvals && !model.pending.isEmpty ? "Onaylar (\(model.pending.count))" : t.rawValue).tag(t)
+                    Text(t == .approvals && !model.pending.isEmpty ? L.f("Onaylar ({0})", model.pending.count) : L.t(t.rawValue)).tag(t)
                 }
             }
             .pickerStyle(.segmented)
@@ -201,7 +201,7 @@ private struct ApprovalsView: View {
             if model.pending.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "checkmark.circle").font(.system(size: 28)).foregroundStyle(.secondary)
-                    Text("Bekleyen onay yok. Yapay zekâ yüksek riskli bir işlem istediğinde bildirim gelir; oradan ya da buradan onaylarsın.")
+                    Text(L.t("Bekleyen onay yok. Yapay zekâ yüksek riskli bir işlem istediğinde bildirim gelir; oradan ya da buradan onaylarsın."))
                         .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 }
                 .padding(.top, 40).padding(.horizontal, 12)
@@ -244,18 +244,18 @@ private struct ApprovalCard: View {
                 Text(failure).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
             if let approve = confirming {
-                Text(approve ? "Bu işlemi bir kez çalıştırmasına izin veriyor musun?" : "Bu isteği reddetmek istiyor musun?")
+                Text(approve ? L.t("Bu işlemi bir kez çalıştırmasına izin veriyor musun?") : L.t("Bu isteği reddetmek istiyor musun?"))
                     .font(.caption)
                 HStack {
-                    Button(approve ? "Evet, onayla" : "Evet, reddet") { decide(approve) }
+                    Button(approve ? L.t("Evet, onayla") : L.t("Evet, reddet")) { decide(approve) }
                         .buttonStyle(.borderedProminent).tint(approve ? .accentColor : .red)
-                    Button("Vazgeç") { confirming = nil }
+                    Button(L.t("Vazgeç")) { confirming = nil }
                 }
                 .disabled(working)
             } else {
                 HStack {
-                    Button("Onayla") { confirming = true }.buttonStyle(.borderedProminent)
-                    Button("Reddet") { confirming = false }
+                    Button(L.t("Onayla")) { confirming = true }.buttonStyle(.borderedProminent)
+                    Button(L.t("Reddet")) { confirming = false }
                 }
                 .disabled(expired || working)
             }
@@ -292,7 +292,7 @@ private struct AutonomyView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if !model.autonomy.isEmpty {
-                GroupBox("Şu an açık") {
+                GroupBox(L.t("Şu an açık")) {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(model.autonomy) { a in
                             HStack {
@@ -302,17 +302,17 @@ private struct AutonomyView: View {
                             }
                             .font(.callout)
                         }
-                        Button("Hepsini durdur") { run { try await model.stopAutonomy() } }
+                        Button(L.t("Hepsini durdur")) { run { try await model.stopAutonomy() } }
                             .padding(.top, 4)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            Text("Seçilen cihazlarda yüksek riskli işlemler onay istemeden çalışır. Cihazın kendi sınırları (izinli klasörler, yazma/komut kapalı, sır gizleme) yine geçerlidir; her işlem denetim kaydına girer. Süre bitince onaylar kendiliğinden geri gelir.")
+            Text(L.t("Seçilen cihazlarda yüksek riskli işlemler onay istemeden çalışır. Cihazın kendi sınırları (izinli klasörler, yazma/komut kapalı, sır gizleme) yine geçerlidir; her işlem denetim kaydına girer. Süre bitince onaylar kendiliğinden geri gelir."))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Picker("Kapsam", selection: $scopeAll) {
-                Text("Tüm cihazlar").tag(true)
-                Text("Seçtiğim cihazlar").tag(false)
+            Picker(L.t("Kapsam"), selection: $scopeAll) {
+                Text(L.t("Tüm cihazlar")).tag(true)
+                Text(L.t("Seçtiğim cihazlar")).tag(false)
             }
             .pickerStyle(.radioGroup)
             if !scopeAll {
@@ -325,12 +325,12 @@ private struct AutonomyView: View {
                 }
                 .padding(.leading, 18)
             }
-            Picker("Süre", selection: $duration) {
+            Picker(L.t("Süre"), selection: $duration) {
                 ForEach(Array(Durations.choices.enumerated()), id: \.offset) { i, label in
                     Text(label).tag(i)
                 }
             }
-            SecureField("Hesap şifren", text: $password)
+            SecureField(L.t("Hesap şifren"), text: $password)
                 .textFieldStyle(.roundedBorder)
             if let message { Text(message).font(.caption).foregroundStyle(.red) }
             Button {
@@ -339,7 +339,7 @@ private struct AutonomyView: View {
                     try await model.startAutonomy(choice: duration, deviceIds: ids, password: password)
                     password = ""
                 }
-            } label: { Text("Otonom modu başlat").frame(maxWidth: .infinity) }
+            } label: { Text(L.t("Otonom modu başlat")).frame(maxWidth: .infinity) }
             .buttonStyle(.borderedProminent)
             .disabled(password.isEmpty || working || (!scopeAll && selected.isEmpty))
         }
@@ -363,14 +363,14 @@ private struct DevicesView: View {
             AgentCard(model: model)
                 .padding(.bottom, 6)
             if model.devices.isEmpty {
-                Text("Henüz cihaz yok.").font(.callout).foregroundStyle(.secondary)
+                Text(L.t("Henüz cihaz yok.")).font(.callout).foregroundStyle(.secondary)
             }
             ForEach(model.devices) { d in
                 HStack(spacing: 10) {
                     Circle().fill(d.online ? Color.green : Color.secondary.opacity(0.4)).frame(width: 8, height: 8)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(d.name).font(.callout.weight(.medium))
-                        Text([d.platform ?? "", d.online ? "çevrimiçi" : "çevrimdışı", Texts.trustLabel(d.trustLevel)]
+                        Text([d.platform ?? "", d.online ? L.t("çevrimiçi") : L.t("çevrimdışı"), Texts.trustLabel(d.trustLevel)]
                                 .filter { !$0.isEmpty }.joined(separator: " · "))
                             .font(.caption).foregroundStyle(.secondary)
                     }
@@ -383,7 +383,7 @@ private struct DevicesView: View {
     }
 }
 
-/// "Bu Mac'teki ajan": state and the "Ajan çalışsın" switch.
+/// L.t("Bu Mac'teki ajan"): state and the "Ajan çalışsın" switch.
 private struct AgentCard: View {
     @ObservedObject var model: AppModel
     @State private var confirmOff = false
@@ -398,13 +398,13 @@ private struct AgentCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Bu Mac'teki ajan").font(.callout.weight(.semibold))
+            Text(L.t("Bu Mac'teki ajan")).font(.callout.weight(.semibold))
             HStack(spacing: 8) {
                 Circle().fill(color).frame(width: 8, height: 8)
-                Text(model.agentBusy ? "İşleniyor…" : Texts.agentStateLabel(model.agent)).font(.callout)
+                Text(model.agentBusy ? L.t("İşleniyor…") : Texts.agentStateLabel(model.agent)).font(.callout)
                 if model.agentBusy { ProgressView().controlSize(.small) }
                 Spacer()
-                Toggle("Ajan çalışsın", isOn: Binding(
+                Toggle(L.t("Ajan çalışsın"), isOn: Binding(
                     get: { model.agent?.running ?? model.settings.agentKeepRunning },
                     set: { on in
                         if on { Task { await model.setAgentEnabled(true) } } else { confirmOff = true }
@@ -418,16 +418,16 @@ private struct AgentCard: View {
                 // The agent ships with the app: one version, one update button.
                 HStack(spacing: 8) {
                     if model.agentUpdateAvailable {
-                        Button("Yeni sürüm var — Uygulamayı güncelle") { model.updateAgent() }
+                        Button(L.t("Yeni sürüm var — Uygulamayı güncelle")) { model.updateAgent() }
                             .buttonStyle(.borderedProminent)
                             .disabled(model.updating)
                     } else {
-                        Button("Güncellemeleri denetle") { model.updateAgent() }
+                        Button(L.t("Güncellemeleri denetle")) { model.updateAgent() }
                             .disabled(model.updating)
                     }
                     if model.updating { ProgressView().controlSize(.small) }
-                    Text("Sürüm: " + (model.appBuild.map { "0.1.\($0)" } ?? model.agentVersion ?? "geliştirici sürümü")
-                         + (model.agentUpdateAvailable ? " · yeni: 0.1.\(model.latestApp?.build ?? 0)" : model.latestApp != nil ? " · güncel" : ""))
+                    Text(L.t("Sürüm: ") + (model.appBuild.map { "0.1.\($0)" } ?? model.agentVersion ?? L.t("geliştirici sürümü"))
+                         + (model.agentUpdateAvailable ? L.f(" · yeni: 0.1.{0}", model.latestApp?.build ?? 0) : model.latestApp != nil ? L.t(" · güncel") : ""))
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 // A real bar while the update runs: the percent while it downloads, moving while it waits.
@@ -440,15 +440,15 @@ private struct AgentCard: View {
             } else {
             HStack(spacing: 8) {
                 if model.agent?.state == .notInstalled || model.agentUpdateAvailable {
-                    Button(model.agent?.state == .notInstalled ? "Ajanı kur" : "Yeni sürüm var — Ajanı güncelle") { model.updateAgent() }
+                    Button(model.agent?.state == .notInstalled ? L.t("Ajanı kur") : L.t("Yeni sürüm var — Ajanı güncelle")) { model.updateAgent() }
                         .buttonStyle(.borderedProminent)
                         .disabled(model.agentBusy)
                 } else {
-                    Button("Ajanı güncelle") { model.updateAgent() }
+                    Button(L.t("Ajanı güncelle")) { model.updateAgent() }
                         .disabled(model.agentBusy)
                 }
                 if let version = model.agentVersion {
-                    Text("Kurulu sürüm: \(version)" + (model.agentUpdateAvailable ? " · yeni: 0.1.\(model.latestAgentBuild ?? 0)" : model.latestAgentBuild != nil ? " · güncel" : ""))
+                    Text(L.f("Kurulu sürüm: {0}", version) + (model.agentUpdateAvailable ? L.f(" · yeni: 0.1.{0}", model.latestAgentBuild ?? 0) : model.latestAgentBuild != nil ? L.t(" · güncel") : ""))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -456,25 +456,25 @@ private struct AgentCard: View {
         }
         .padding(10)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
-        .confirmationDialog("Ajan kapatılsın mı?", isPresented: $confirmOff) {
-            Button("Ajanı kapat", role: .destructive) { Task { await model.setAgentEnabled(false) } }
-            Button("Vazgeç", role: .cancel) {}
+        .confirmationDialog(L.t("Ajan kapatılsın mı?"), isPresented: $confirmOff) {
+            Button(L.t("Ajanı kapat"), role: .destructive) { Task { await model.setAgentEnabled(false) } }
+            Button(L.t("Vazgeç"), role: .cancel) {}
         } message: {
-            Text(Texts.agentOffWarning + " Yeniden açana kadar oturum açılışında da başlamaz.")
+            Text(Texts.agentOffWarning + L.t(" Yeniden açana kadar oturum açılışında da başlamaz."))
         }
     }
 
     private var help: String {
         if model.isEmbedded {
             switch model.agent?.state {
-            case .notInstalled: return model.pairing ? "Bu Mac hesabına bağlanıyor…" : Texts.embeddedNotPaired
+            case .notInstalled: return model.pairing ? L.t("Bu Mac hesabına bağlanıyor…") : Texts.embeddedNotPaired
             case .running: return Texts.embeddedRunning
             default: return Texts.agentOffWarning
             }
         }
         switch model.agent?.state {
         case .notInstalled: return Texts.agentNotInstalled
-        case .running: return "Açıkken ajan durursa Yönetim Merkezi onu kendiliğinden yeniden başlatır ve bildirim gösterir."
+        case .running: return L.t("Açıkken ajan durursa Yönetim Merkezi onu kendiliğinden yeniden başlatır ve bildirim gösterir.")
         default: return Texts.agentOffWarning
         }
     }
@@ -486,25 +486,26 @@ private struct SettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Toggle("Yeni onay isteğinde bildirim (Onayla / Reddet)", isOn: Binding(
+            LanguagePicker(model: model).frame(maxWidth: 260)
+            Toggle(L.t("Yeni onay isteğinde bildirim (Onayla / Reddet)"), isOn: Binding(
                 get: { model.settings.notifications }, set: { v in model.update { $0.notifications = v } }))
-            Toggle("Yeni onay isteğinde paneli de aç", isOn: Binding(
+            Toggle(L.t("Yeni onay isteğinde paneli de aç"), isOn: Binding(
                 get: { model.settings.openPanelOnRequest }, set: { v in model.update { $0.openPanelOnRequest = v } }))
-            Toggle("Oturum açılışında başlat", isOn: Binding(
+            Toggle(L.t("Oturum açılışında başlat"), isOn: Binding(
                 get: { loginItem }, set: { v in LoginItem.set(v); loginItem = LoginItem.enabled }))
             HStack {
-                Button("Test bildirimi gönder") { model.sendTestNotification() }
-                Button("Bildirim ayarlarını aç") { Notifier.openSettings() }
+                Button(L.t("Test bildirimi gönder")) { model.sendTestNotification() }
+                Button(L.t("Bildirim ayarlarını aç")) { Notifier.openSettings() }
             }
-            Text("Bildirimin ekranda kalması için Sistem Ayarları › Bildirimler › WECOMMANDER Yönetim Merkezi'nde stili \"Uyarılar\" yap. Onayla / Reddet bildirimin \"Seçenekler\" düğmesinde de görünür.")
+            Text(L.t("Bildirimin ekranda kalması için Sistem Ayarları › Bildirimler › WECOMMANDER Yönetim Merkezi'nde stili \"Uyarılar\" yap. Onayla / Reddet bildirimin \"Seçenekler\" düğmesinde de görünür."))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Divider()
             HStack {
-                Button("Paneli tarayıcıda aç") { model.openDashboard() }
-                Button("Oturumu kapat") { Task { await model.signOut() } }
+                Button(L.t("Paneli tarayıcıda aç")) { model.openDashboard() }
+                Button(L.t("Oturumu kapat")) { Task { await model.signOut() } }
             }
             let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
-            Text("Sürüm \(version)\(model.me.map { " · bu merkez: \($0.name)" } ?? "") · \(model.settings.server)")
+            Text(L.f("Sürüm {0}{1} · {2}", version, model.me.map { L.f(" · bu merkez: {0}", $0.name) } ?? "", model.settings.server))
                 .font(.caption2).foregroundStyle(.tertiary)
         }
         .onAppear { loginItem = LoginItem.enabled }

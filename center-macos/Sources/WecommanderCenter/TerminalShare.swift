@@ -78,10 +78,10 @@ final class ShareConnection: ObservableObject {
                 case .failure:
                     let reason: String
                     switch self.task.closeReason.flatMap({ String(data: $0, encoding: .utf8) }) {
-                    case "removed by host": reason = "Paylaşan kişi seni çıkardı."
-                    case "share is full": reason = "Bu paylaşım dolu."
-                    case "no such share": reason = "Paylaşım artık yok."
-                    default: reason = "Paylaşım bitti."
+                    case "removed by host": reason = L.t("Paylaşan kişi seni çıkardı.")
+                    case "share is full": reason = L.t("Bu paylaşım dolu.")
+                    case "no such share": reason = L.t("Paylaşım artık yok.")
+                    default: reason = L.t("Paylaşım bitti.")
                     }
                     self.onEnded?(reason)
                 }
@@ -107,7 +107,7 @@ final class ShareConnection: ObservableObject {
                   let plain = reply["data"] as? String else { return }
             if type == "input" { onInput?(plain) } else { onOutput?(plain) }
         case "paused" where !isHost:
-            onOutput?(Data("\r\n\u{1b}[90m[Paylaşan kişinin bağlantısı koptu; geri gelmesi bekleniyor.]\u{1b}[0m\r\n".utf8).base64EncodedString())
+            onOutput?(Data(("\r\n\u{1b}[90m[" + L.t("Paylaşan kişinin bağlantısı koptu; geri gelmesi bekleniyor.") + "]\u{1b}[0m\r\n").utf8).base64EncodedString())
         default:
             break
         }

@@ -23,8 +23,8 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     func start() {
         center.delegate = self
-        let approve = UNNotificationAction(identifier: Self.approveAction, title: "Onayla", options: [])
-        let deny = UNNotificationAction(identifier: Self.denyAction, title: "Reddet", options: [.destructive])
+        let approve = UNNotificationAction(identifier: Self.approveAction, title: L.t("Onayla"), options: [])
+        let deny = UNNotificationAction(identifier: Self.denyAction, title: L.t("Reddet"), options: [.destructive])
         let category = UNNotificationCategory(
             identifier: Self.approvalCategory, actions: [approve, deny], intentIdentifiers: [],
             options: [.customDismissAction])
@@ -63,9 +63,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     func showApproval(_ item: ApprovalRequest, device: String) {
         let content = UNMutableNotificationContent()
         let what = item.summary.isEmpty ? Texts.kindLabel(item.actionKind) : item.summary
-        content.title = "Onay bekliyor · \(device)"
+        content.title = L.f("Onay bekliyor · {0}", device)
         content.subtitle = what
-        content.body = "\(Texts.kindLabel(item.actionKind)) · yalnız bu işlem, bir kez\n" +
+        content.body = L.f("{0} · yalnız bu işlem, bir kez\n", Texts.kindLabel(item.actionKind)) +
             Texts.deadline(item.expiresAt, now: Date())
         content.sound = .default
         content.categoryIdentifier = Self.approvalCategory

@@ -4,18 +4,18 @@ import Foundation
 public enum Texts {
     public static func kindLabel(_ kind: String) -> String {
         switch kind {
-        case "process_exec": return "Komut çalıştır"
-        case "process_kill": return "İşlemi sonlandır"
-        case "task_start": return "Arka plan görevi başlat"
-        case "task_cancel": return "Görevi iptal et"
-        case "terminal_start": return "Terminal aç"
-        case "terminal_stop": return "Terminali kapat"
-        case "terminal_input": return "Terminale yaz"
-        case "fs_delete": return "Dosya sil"
-        case "fs_move": return "Dosya taşı"
-        case "server_cleanup_run": return "Sunucuda yer aç (temizlik)"
-        case "server_process_signal": return "Sürece sinyal gönder"
-        case "server_restart_owner": return "Servisi yeniden başlat"
+        case "process_exec": return L.t("Komut çalıştır")
+        case "process_kill": return L.t("İşlemi sonlandır")
+        case "task_start": return L.t("Arka plan görevi başlat")
+        case "task_cancel": return L.t("Görevi iptal et")
+        case "terminal_start": return L.t("Terminal aç")
+        case "terminal_stop": return L.t("Terminali kapat")
+        case "terminal_input": return L.t("Terminale yaz")
+        case "fs_delete": return L.t("Dosya sil")
+        case "fs_move": return L.t("Dosya taşı")
+        case "server_cleanup_run": return L.t("Sunucuda yer aç (temizlik)")
+        case "server_process_signal": return L.t("Sürece sinyal gönder")
+        case "server_restart_owner": return L.t("Servisi yeniden başlat")
         default: return kind
         }
     }
@@ -26,69 +26,69 @@ public enum Texts {
     public static func decidedElsewhere(_ outcome: ApprovalOutcome) -> String? {
         let verb: String
         switch outcome.status {
-        case "approved", "consumed": verb = "onaylandı"
-        case "denied": verb = "reddedildi"
+        case "approved", "consumed": verb = L.t("onaylandı")
+        case "denied": verb = L.t("reddedildi")
         default: return nil
         }
         guard let via = outcome.decidedVia, !via.isSelf else { return nil }
         let place: String
         if via.kind == "panel" {
-            place = "Web panelinden"
+            place = L.t("Web panelinden")
         } else {
             switch via.platform {
-            case "macos": place = "macOS'tan"
-            case "windows": place = "Windows'tan"
-            case "linux": place = "Linux'tan"
+            case "macos": place = L.t("macOS'tan")
+            case "windows": place = L.t("Windows'tan")
+            case "linux": place = L.t("Linux'tan")
             default:
                 let name = via.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                place = name.isEmpty ? "Başka bir Yönetim Merkezinden" : "\(name) üzerinden"
+                place = name.isEmpty ? L.t("Başka bir Yönetim Merkezinden") : L.f("{0} üzerinden", name)
             }
         }
         return "\(place) \(verb)"
     }
 
-    public static let agentNotInstalled =
-        "Bu Mac'te WECOMMANDER ajanı kurulu değil. Kurmak için wecommander.app panelindeki Cihazlar sayfasındaki macOS komutunu kullan."
-    public static let agentRestarted = "Bu Mac'teki ajan durmuştu; yeniden başlatıldı."
-    public static let agentGaveUp =
-        "Bu Mac'teki ajan durdu ve yeniden başlatılamadı. Yapay zekâ bu Mac'e erişemez. Menü çubuğundaki simgeden \"Ajan çalışsın\"ı yeniden dene."
-    public static let agentUpdateStarted =
-        "Ajan güncellemesi Terminal'de açıldı. macOS yönetici şifresini isteyecek; Mac'in kaydı korunur."
-    public static let agentInstallStarted =
-        "Ajan kurulumu Terminal'de açıldı. macOS yönetici şifresini isteyecek; ajan bu hesapla otomatik bağlanır."
-    public static let agentOffWarning = "Ajan kapalıyken yapay zekâ bu Mac'e erişemez."
-    public static let embeddedNotPaired =
-        "Bu Mac henüz hesabına bağlı değil. Giriş yaptığında uygulama onu kendiliğinden bağlar; ayrıca bir şey kurman gerekmez."
-    public static let embeddedRunning =
-        "Ajan bu uygulamanın içinde, arka planda çalışıyor. Durursa uygulama onu yeniden başlatır. Menüden Çıkış yaparsan ajan da durur."
+    public static var agentNotInstalled: String {
+        L.t("Bu Mac'te WECOMMANDER ajanı kurulu değil. Kurmak için wecommander.app panelindeki Cihazlar sayfasındaki macOS komutunu kullan.") }
+    public static var agentRestarted: String { L.t("Bu Mac'teki ajan durmuştu; yeniden başlatıldı.") }
+    public static var agentGaveUp: String {
+        L.t("Bu Mac'teki ajan durdu ve yeniden başlatılamadı. Yapay zekâ bu Mac'e erişemez. Menü çubuğundaki simgeden \"Ajan çalışsın\"ı yeniden dene.") }
+    public static var agentUpdateStarted: String {
+        L.t("Ajan güncellemesi Terminal'de açıldı. macOS yönetici şifresini isteyecek; Mac'in kaydı korunur.") }
+    public static var agentInstallStarted: String {
+        L.t("Ajan kurulumu Terminal'de açıldı. macOS yönetici şifresini isteyecek; ajan bu hesapla otomatik bağlanır.") }
+    public static var agentOffWarning: String { L.t("Ajan kapalıyken yapay zekâ bu Mac'e erişemez.") }
+    public static var embeddedNotPaired: String {
+        L.t("Bu Mac henüz hesabına bağlı değil. Giriş yaptığında uygulama onu kendiliğinden bağlar; ayrıca bir şey kurman gerekmez.") }
+    public static var embeddedRunning: String {
+        L.t("Ajan bu uygulamanın içinde, arka planda çalışıyor. Durursa uygulama onu yeniden başlatır. Menüden Çıkış yaparsan ajan da durur.") }
 
     /// One line for the agent card and the menu.
     public static func agentStateLabel(_ status: AgentStatus?) -> String {
-        guard let status else { return "Ajan durumu okunuyor…" }
+        guard let status else { return L.t("Ajan durumu okunuyor…") }
         switch status.state {
-        case .running: return "Ajan çalışıyor"
-        case .notInstalled: return "Ajan kurulu değil"
-        case .stopped: return status.enabled ? "Ajan durdu" : "Ajan kapalı"
+        case .running: return L.t("Ajan çalışıyor")
+        case .notInstalled: return L.t("Ajan kurulu değil")
+        case .stopped: return status.enabled ? L.t("Ajan durdu") : L.t("Ajan kapalı")
         }
     }
 
-    public static let notificationIntroTitle = "WECOMMANDER bildirimleri hazır"
-    public static let notificationIntroText =
-        "Onay istekleri sağ üstte bildirim olarak görünecek. macOS izin sorarsa \"İzin Ver\"e bas."
-    public static let notificationTestTitle = "Test bildirimi"
-    public static let notificationTestText = "Bunu görüyorsan onay istekleri de burada görünecek."
+    public static var notificationIntroTitle: String { L.t("WECOMMANDER bildirimleri hazır") }
+    public static var notificationIntroText: String {
+        L.t("Onay istekleri sağ üstte bildirim olarak görünecek. macOS izin sorarsa \"İzin Ver\"e bas.") }
+    public static var notificationTestTitle: String { L.t("Test bildirimi") }
+    public static var notificationTestText: String { L.t("Bunu görüyorsan onay istekleri de burada görünecek.") }
 
     /// macOS notification authorization as UNAuthorizationStatus / alert style names.
     public static func notificationBlockedMessage(_ state: String) -> String {
         switch state {
         case "denied":
-            return "macOS bu uygulamanın bildirimlerini kapatmış; onay istekleri ekranda görünmez. " +
-                "\"Bildirimlere izin ver\"e bas ve WECOMMANDER Yönetim Merkezi için bildirimleri aç."
+            return L.t("macOS bu uygulamanın bildirimlerini kapatmış; onay istekleri ekranda görünmez. ") +
+                L.t("\"Bildirimlere izin ver\"e bas ve WECOMMANDER Yönetim Merkezi için bildirimleri aç.")
         case "noAlerts":
-            return "Bildirimler açık ama ekranda gösterilmiyor (stil: Hiçbiri). " +
-                "\"Bildirimlere izin ver\"e bas ve stili \"Afişler\" ya da \"Uyarılar\" yap."
+            return L.t("Bildirimler açık ama ekranda gösterilmiyor (stil: Hiçbiri). ") +
+                L.t("\"Bildirimlere izin ver\"e bas ve stili \"Afişler\" ya da \"Uyarılar\" yap.")
         case "notDetermined":
-            return "macOS henüz bildirim izni sormadı. \"Bildirimlere izin ver\"e bas; açılan soruda \"İzin Ver\"i seç."
+            return L.t("macOS henüz bildirim izni sormadı. \"Bildirimlere izin ver\"e bas; açılan soruda \"İzin Ver\"i seç.")
         default:
             return ""
         }
@@ -96,29 +96,29 @@ public enum Texts {
 
     public static func forErrorCode(_ code: String, status: Int) -> String {
         switch code {
-        case "reauthentication_failed": return "Şifre hatalı."
+        case "reauthentication_failed": return L.t("Şifre hatalı.")
         case "approval_request_expired":
-            return "Bu onay isteğinin süresi dolmuş. Yapay zekâ işlemi yeniden denediğinde yeni bir istek gelir."
-        case "approval_request_not_pending": return "Bu istek için zaten karar verilmiş."
-        case "approval_request_not_found": return "Onay isteği bulunamadı."
-        case "forbidden": return "Bu işlem için yönetici ya da sahip rolü gerekiyor."
-        case "center_scope": return "Yönetim Merkezi bu işlemi yapamaz."
-        case "rate_limited": return "Çok fazla deneme. Biraz sonra yeniden dene."
-        case "invalid_request", "validation_error": return "İstek geçersiz."
-        case "": return "Sunucu hatası (HTTP \(status))."
+            return L.t("Bu onay isteğinin süresi dolmuş. Yapay zekâ işlemi yeniden denediğinde yeni bir istek gelir.")
+        case "approval_request_not_pending": return L.t("Bu istek için zaten karar verilmiş.")
+        case "approval_request_not_found": return L.t("Onay isteği bulunamadı.")
+        case "forbidden": return L.t("Bu işlem için yönetici ya da sahip rolü gerekiyor.")
+        case "center_scope": return L.t("Yönetim Merkezi bu işlemi yapamaz.")
+        case "rate_limited": return L.t("Çok fazla deneme. Biraz sonra yeniden dene.")
+        case "invalid_request", "validation_error": return L.t("İstek geçersiz.")
+        case "": return L.f("Sunucu hatası (HTTP {0}).", status)
         default: return code.replacingOccurrences(of: "_", with: " ")
         }
     }
 
-    public static let signedOutByServer = "Oturum sunucuda kapatılmış ya da süresi dolmuş. Yeniden oturum aç."
+    public static var signedOutByServer: String { L.t("Oturum sunucuda kapatılmış ya da süresi dolmuş. Yeniden oturum aç.") }
 
     /// Time left until an expiry, e.g. "8 dk 12 sn"; "süresi doldu" when past.
     public static func remaining(_ expiresAt: Date, now: Date) -> String {
         let left = expiresAt.timeIntervalSince(now)
-        if left <= 0 { return "süresi doldu" }
-        if left >= 3600 { return "\(Int((left / 3600).rounded())) sa" }
+        if left <= 0 { return L.t("süresi doldu") }
+        if left >= 3600 { return L.f("{0} sa", Int((left / 3600).rounded())) }
         let seconds = Int(left)
-        return seconds >= 60 ? "\(seconds / 60) dk \(seconds % 60) sn" : "\(seconds) sn"
+        return seconds >= 60 ? L.f("{0} dk {1} sn", seconds / 60, seconds % 60) : L.f("{0} sn", seconds)
     }
 
     /// Clock-style time left: "4:07", "1:02:05"; "0:00" when past.
@@ -142,7 +142,7 @@ public enum Texts {
     /// "23:41" in the given time zone.
     public static func clock(_ date: Date, timeZone: TimeZone = .current) -> String {
         let f = DateFormatter()
-        f.locale = Locale(identifier: "tr_TR")
+        f.locale = L.locale
         f.timeZone = timeZone
         f.dateFormat = "HH:mm"
         return f.string(from: date)
@@ -151,24 +151,24 @@ public enum Texts {
     /// The deadline line of an approval notification, e.g. "Süre: 9 dk · 01:27'ye kadar".
     public static func deadline(_ expiresAt: Date, now: Date, timeZone: TimeZone = .current) -> String {
         let minutes = max(0, Int((expiresAt.timeIntervalSince(now) / 60).rounded()))
-        let left = minutes >= 1 ? "\(minutes) dk" : "1 dk'dan az"
-        return "Süre: \(left) · \(clock(expiresAt, timeZone: timeZone))'e kadar"
+        let left = minutes >= 1 ? L.f("{0} dk", minutes) : L.t("1 dk'dan az")
+        return L.f("Süre: {0} · {1}'e kadar", left, clock(expiresAt, timeZone: timeZone))
     }
 
     public static func until(_ date: Date?, timeZone: TimeZone = .current) -> String {
-        guard let date else { return "süresiz" }
+        guard let date else { return L.t("süresiz") }
         let f = DateFormatter()
-        f.locale = Locale(identifier: "tr_TR")
+        f.locale = L.locale
         f.timeZone = timeZone
         f.dateFormat = "dd.MM HH:mm"
-        return f.string(from: date) + "'e kadar"
+        return L.f("{0}'e kadar", f.string(from: date))
     }
 
     public static func trustLabel(_ level: String?) -> String {
         switch level {
-        case "strict": return "Sıkı: her işlem onaylı"
-        case "full": return "Otonom: onay istenmiyor"
-        default: return "Standart: riskli işlemler onaylı"
+        case "strict": return L.t("Sıkı: her işlem onaylı")
+        case "full": return L.t("Otonom: onay istenmiyor")
+        default: return L.t("Standart: riskli işlemler onaylı")
         }
     }
 }
@@ -182,7 +182,7 @@ public enum Durations {
     }
 
     /// Duration choices of the autonomous mode, as in the Windows app.
-    public static let choices = ["30 dakika", "1 saat", "4 saat", "Yarın 09:00'a kadar", "Süresiz"]
+    public static var choices: [String] { [L.t("30 dakika"), L.t("1 saat"), L.t("4 saat"), L.t("Yarın 09:00'a kadar"), L.t("Süresiz")] }
 
     /// Minutes for choice index; nil means indefinite.
     public static func minutes(forChoice index: Int, now: Date, calendar: Calendar = .current) -> Int? {
@@ -207,15 +207,15 @@ public enum ServerURL {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let comps = URLComponents(string: text), let scheme = comps.scheme?.lowercased(),
               let host = comps.host, !host.isEmpty else {
-            throw Invalid(message: "Geçerli bir sunucu adresi girin.")
+            throw Invalid(message: L.t("Geçerli bir sunucu adresi girin."))
         }
         let local = host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
         guard scheme == "https" || (scheme == "http" && local) else {
-            throw Invalid(message: "Sunucu adresi https:// ile başlamalı.")
+            throw Invalid(message: L.t("Sunucu adresi https:// ile başlamalı."))
         }
         guard (comps.path.isEmpty || comps.path == "/"), comps.query == nil, comps.fragment == nil,
               comps.user == nil, comps.password == nil else {
-            throw Invalid(message: "Sunucu adresi yalnızca alan adı olmalı, ör. https://wecommander.app")
+            throw Invalid(message: L.t("Sunucu adresi yalnızca alan adı olmalı, ör. https://wecommander.app"))
         }
         var origin = "\(scheme)://\(host.lowercased())"
         if let port = comps.port { origin += ":\(port)" }

@@ -143,13 +143,13 @@ public final class EmbeddedAgent {
             }
         } catch {
             restore(backup)
-            lastError = "Bu Mac hesaba bağlanamadı: " + EmbeddedAgent.redact(error.localizedDescription, pairingCode)
+            lastError = L.t("Bu Mac hesaba bağlanamadı: ") + EmbeddedAgent.redact(error.localizedDescription, pairingCode)
             return false
         }
         let (status, output) = await launcher.run(executable, enrollArguments(server: server, pairingCode: pairingCode, root: folder))
         if status != 0 || !paired {
             restore(backup)
-            lastError = "Bu Mac hesaba bağlanamadı: " + EmbeddedAgent.redact(output, pairingCode)
+            lastError = L.t("Bu Mac hesaba bağlanamadı: ") + EmbeddedAgent.redact(output, pairingCode)
             if wasRunning { _ = start() }
             return false
         }
@@ -168,7 +168,7 @@ public final class EmbeddedAgent {
         var t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if !secret.isEmpty { t = t.replacingOccurrences(of: secret, with: "[REDACTED]") }
         if t.count > 300 { t = String(t.prefix(300)) + "…" }
-        return t.isEmpty ? "bilinmeyen hata" : t
+        return t.isEmpty ? L.t("bilinmeyen hata") : t
     }
 
     /// Starts the paired agent in the background; true while it runs.
@@ -177,7 +177,7 @@ public final class EmbeddedAgent {
         if running { return true }
         process = nil
         guard available else {
-            lastError = "Uygulamanın içindeki ajan bulunamadı; uygulamayı yeniden kur."
+            lastError = L.t("Uygulamanın içindeki ajan bulunamadı; uygulamayı yeniden kur.")
             return false
         }
         guard paired else { lastError = nil; return false }
@@ -186,7 +186,7 @@ public final class EmbeddedAgent {
             lastError = nil
             return true
         } catch {
-            lastError = "Ajan başlatılamadı: " + error.localizedDescription
+            lastError = L.t("Ajan başlatılamadı: ") + error.localizedDescription
             return false
         }
     }

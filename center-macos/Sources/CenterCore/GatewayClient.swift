@@ -56,7 +56,7 @@ public struct GatewayClient: Sendable {
 
     private func send(_ method: String, _ path: String, token: String?, body: [String: Any]?) async throws -> Any? {
         guard let url = URL(string: base + path) else {
-            throw GatewayError(.network, 0, "bad_url", "Sunucu adresi geçersiz.")
+            throw GatewayError(.network, 0, "bad_url", L.t("Sunucu adresi geçersiz."))
         }
         var request = URLRequest(url: url)
         request.httpMethod = method
@@ -71,11 +71,11 @@ public struct GatewayClient: Sendable {
         do {
             (data, status) = try await transport.send(request)
         } catch let error as URLError where error.code == .timedOut {
-            throw GatewayError(.network, 0, "timeout", "Sunucuya ulaşılamıyor (zaman aşımı).")
+            throw GatewayError(.network, 0, "timeout", L.t("Sunucuya ulaşılamıyor (zaman aşımı)."))
         } catch is GatewayError {
-            throw GatewayError(.network, 0, "network", "Sunucuya ulaşılamıyor (bağlantı kurulamadı).")
+            throw GatewayError(.network, 0, "network", L.t("Sunucuya ulaşılamıyor (bağlantı kurulamadı)."))
         } catch {
-            throw GatewayError(.network, 0, "network", "Sunucuya ulaşılamıyor (bağlantı kurulamadı).")
+            throw GatewayError(.network, 0, "network", L.t("Sunucuya ulaşılamıyor (bağlantı kurulamadı)."))
         }
         let json = data.isEmpty ? nil : try? JSONSerialization.jsonObject(with: data)
         if status == 401 {
@@ -92,7 +92,7 @@ public struct GatewayClient: Sendable {
         guard let value, JSONSerialization.isValidJSONObject(value),
               let data = try? JSONSerialization.data(withJSONObject: value),
               let result = try? GatewayDates.decoder().decode(T.self, from: data) else {
-            throw GatewayError(.network, 0, "bad_response", "Sunucudan beklenmeyen yanıt.")
+            throw GatewayError(.network, 0, "bad_response", L.t("Sunucudan beklenmeyen yanıt."))
         }
         return result
     }
@@ -124,7 +124,7 @@ public struct GatewayClient: Sendable {
         }
         let json = try await send("GET", "/api/approval-requests/\(uuid.uuidString.lowercased())", token: token, body: nil)
         guard let item = (json as? [String: Any])?["item"] else {
-            throw GatewayError(.network, 0, "bad_response", "Sunucudan beklenmeyen yanıt.")
+            throw GatewayError(.network, 0, "bad_response", L.t("Sunucudan beklenmeyen yanıt."))
         }
         return try decode(ApprovalOutcome.self, item)
     }
@@ -164,7 +164,7 @@ public struct GatewayClient: Sendable {
     public func pairingCode(token: String) async throws -> String {
         let json = try await send("POST", "/api/center/pairing-code", token: token, body: [:]) as? [String: Any]
         guard let code = json?["pairingCode"] as? String, code.count >= 20 else {
-            throw GatewayError(.http, 0, "", "Eşleştirme kodu alınamadı.")
+            throw GatewayError(.http, 0, "", L.t("Eşleştirme kodu alınamadı."))
         }
         return code
     }
@@ -232,7 +232,7 @@ extension GatewayClient {
         let json = try await sendJSON("GET", "/api/center/team", token: token, body: nil)
         guard let json, let data = try? JSONSerialization.data(withJSONObject: json),
               let state = try? JSONDecoder().decode(TeamState.self, from: data) else {
-            throw GatewayError(.network, 0, "bad_response", "Sunucudan beklenmeyen yanıt.")
+            throw GatewayError(.network, 0, "bad_response", L.t("Sunucudan beklenmeyen yanıt."))
         }
         return state
     }
@@ -276,7 +276,7 @@ extension GatewayClient {
 
     public func createShare(token: String, title: String) async throws -> String {
         let json = try await sendJSON("POST", "/api/center/shares", token: token, body: ["title": title]) as? [String: Any]
-        guard let id = json?["id"] as? String else { throw GatewayError(.network, 0, "bad_response", "Sunucudan beklenmeyen yanıt.") }
+        guard let id = json?["id"] as? String else { throw GatewayError(.network, 0, "bad_response", L.t("Sunucudan beklenmeyen yanıt.")) }
         return id
     }
 
