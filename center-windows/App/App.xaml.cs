@@ -317,6 +317,8 @@ public partial class App : Application
         var args = (e.Data as Windows.ApplicationModel.Activation.ILaunchActivatedEventArgs)?.Arguments ?? "";
         DebugLayout($"activation: kind={e.Kind} args='{args}' signedIn={Token is not null}");
         if (args.Contains("--open-main")) { ShowServers(); return; }
+        // "WecommanderCenter.exe --quit": closes the running app properly (the Dock gives its strip back).
+        if (args.Contains("--quit")) { Quit(); return; }
         if (Token is null) _window?.ShowPanel();
         else ShowServers();
     }

@@ -93,6 +93,9 @@ public sealed class ServerWindow : Window
         _info.IsOpen = true;
     }
 
+    /// <summary>Opens on one section (from the Dock: processes, disk, cleanup).</summary>
+    public void GoTo(string section) => Go(section);
+
     private void Go(string section)
     {
         _section = section;

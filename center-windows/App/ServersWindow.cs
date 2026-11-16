@@ -861,6 +861,16 @@ public sealed class ServersWindow : Window
                 foreach (var t in page.Panes) t.Post(json);
     }
 
+    private bool _settingsAtDock;
+
+    /// <summary>From the Dock: the settings page, scrolled to the Dock section.</summary>
+    public void OpenSettings()
+    {
+        _nav.SelectedItem = null;
+        _settingsAtDock = true;
+        ShowSettings();
+    }
+
     private void ShowSettings()
     {
         var settings = App.Current.Settings;
@@ -907,8 +917,15 @@ public sealed class ServersWindow : Window
             Directory.CreateDirectory(folder);
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", "\"" + folder + "\"") { UseShellExecute = true });
         });
-        foreach (var e in new UIElement[] { font, theme, keys, logsButton, syncTitle, syncPanel, teamTitle, teamPanel, backupTitle, backupHelp, backupRow, center }) body.Children.Add(e);
-        SetPage(Page("Ayarlar", "Terminal görünümü; değişiklikler açık terminallere hemen uygulanır.", new ScrollViewer { Content = body }));
+        var dock = DockSettingsPanel.Build();
+        foreach (var e in new UIElement[] { font, theme, keys, logsButton, dock, syncTitle, syncPanel, teamTitle, teamPanel, backupTitle, backupHelp, backupRow, center }) body.Children.Add(e);
+        var scroll = new ScrollViewer { Content = body };
+        SetPage(Page("Ayarlar", "Terminal görünümü ve Dock; değişiklikler hemen uygulanır.", scroll));
+        if (_settingsAtDock)
+        {
+            _settingsAtDock = false;
+            dock.Loaded += (_, _) => dock.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = true, VerticalAlignmentRatio = 0 });
+        }
     }
 
     private async Task RenderSync(StackPanel panel)

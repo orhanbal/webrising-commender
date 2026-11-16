@@ -14,6 +14,8 @@ WECOMMANDER 1.0 is one desktop app (Windows, macOS) plus a non-root agent (Linux
 
 ## Unreleased
 
+- Windows: **WECOMMANDER Dock** (off by default; Settings → Dock or the Dock's right-click menu). Our own bar on a screen edge, not the Windows taskbar: **fixed** (a Windows AppBar through `SHAppBarMessage`; windows do not cover it, the strip goes back when the Dock closes or the app quits, and it registers again after Explorer restarts), **auto-hide** (slides out at the edge, with show/hide delays) or **floating** (dragged anywhere, remembers its place and monitor, offers to fix itself to an edge it is left near). Top, bottom, left or right, on any monitor (per-monitor DPI); steps aside for full-screen apps and games. It shows the watched server's live CPU / RAM / Disk with the server box's line charts (same data, no second connection), opens Sunucularım from the WECOMMANDER icon next to the button, and goes straight to Süreçler, disk analysis or (disk ≥ 90 %) cleanup, the terminal and pending approvals. Nothing risky runs from a single click. Settings: mode, edge, monitor, size, delays, on top (floating), full screen, theme, parts and their order, start with Windows. The server box steps aside while the Dock is on (it carries the same meters). `WecommanderCenter.exe --quit` closes the running app properly.
+
 - Releases: the `release-retention` workflow deletes preview releases (and their tags) beyond the newest 10 per channel once a day (and on demand); `center-linux-latest` and `macos-center-latest` stay.
 
 - Installer banner: always the WECOMMANDER icon with the name and what is being installed; the wide block-letter wordmark is gone (it rendered too coarse).

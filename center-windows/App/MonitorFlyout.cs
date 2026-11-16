@@ -127,6 +127,24 @@ public sealed class MonitorFlyout : Window
         else if (DateTime.UtcNow - _hiddenAt > TimeSpan.FromMilliseconds(400)) ShowPanel(anchor);
     }
 
+    /// <summary>From the Dock: next to the clicked button, toward <paramref name="side"/> (away from the Dock's edge).</summary>
+    public void ToggleFrom(PixelRect anchor, DockEdge side)
+    {
+        App.DebugLayout($"monitor panel: toggle from dock visible={AppWindow.IsVisible} anchor={anchor.X},{anchor.Y} side={side}");
+        if (AppWindow.IsVisible) { Hide(); return; }
+        if (DateTime.UtcNow - _hiddenAt <= TimeSpan.FromMilliseconds(400)) return;
+        var display = DisplayArea.GetFromPoint(new PointInt32(anchor.X + anchor.Width / 2, anchor.Y + anchor.Height / 2), DisplayAreaFallback.Primary);
+        var w = display.WorkArea;
+        var work = new PixelRect(w.X, w.Y, w.Width, w.Height);
+        var scale = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this)) / 96.0;
+        var width = (int)Math.Round(440 * scale);
+        var height = (int)Math.Round((96 + Math.Max(1, _monitor.Servers.Count) * 372) * scale);
+        var rect = DockLayout.PanelAt(anchor, side, width, height, work, (int)Math.Round(8 * scale));
+        AppWindow.MoveAndResize(new RectInt32(rect.X, rect.Y, rect.Width, rect.Height));
+        App.DebugLayout($"monitor panel: from dock at {rect.X},{rect.Y} {rect.Width}x{rect.Height}");
+        Present(side == DockEdge.Bottom ? -40 : side == DockEdge.Top ? 40 : 0);
+    }
+
     public void Hide()
     {
         App.DebugLayout("monitor panel: hide");
@@ -157,11 +175,17 @@ public sealed class MonitorFlyout : Window
         }
         // Bottom right, just above the taskbar: it opens upward from there.
         else AppWindow.MoveAndResize(new RectInt32(area.X + area.Width - width - margin, area.Y + area.Height - height - margin, width, height));
+        Present(40);
+    }
+
+    /// <summary>Shows it and slides it in from <paramref name="from"/> pixels below (negative: above).</summary>
+    private void Present(double from)
+    {
         _shownAt = DateTime.UtcNow;
         AppWindow.Show();
         Activate();
         Refresh();
-        var rise = new DoubleAnimation { From = 40, To = 0, Duration = TimeSpan.FromMilliseconds(220), EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
+        var rise = new DoubleAnimation { From = from, To = 0, Duration = TimeSpan.FromMilliseconds(220), EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
         var fade = new DoubleAnimation { From = 0, To = 1, Duration = TimeSpan.FromMilliseconds(180) };
         Storyboard.SetTarget(rise, _slide);
         Storyboard.SetTargetProperty(rise, "Y");

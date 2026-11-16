@@ -28,6 +28,9 @@ public partial class App
         // The server box at the bottom left (it shows itself once a server is watched).
         try { _deskChip = new DeskChip(Monitor); }
         catch (Exception e) { LogCrash(e); }
+        // The Dock, when the owner turned it on.
+        try { StartDock(); }
+        catch (Exception e) { LogCrash(e); }
     }
 
     public void ToggleMonitorPanel()
@@ -82,7 +85,7 @@ public partial class App
         var servers = Monitor.Servers;
         // The live servers live in the box at the bottom left; the icon next to
         // the clock is only there while that box is turned off.
-        if (servers.Count == 0 || Settings.DeskChip)
+        if (servers.Count == 0 || Settings.DeskChip || Settings.Dock)
         {
             _monitorTray?.Dispose();
             _monitorTray = null;
@@ -189,6 +192,7 @@ public partial class App
 
     private void StopMonitor()
     {
+        StopDock();
         _monitorTray?.Dispose();
         if (_monitorIconHandle != IntPtr.Zero) DestroyIcon(_monitorIconHandle);
     }
