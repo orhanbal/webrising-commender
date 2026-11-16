@@ -54,6 +54,33 @@ public sealed class Settings
     /// <summary>Where the owner dragged it: from the left and from the bottom of the work area (96-dpi pixels); null: the bottom left corner.</summary>
     [JsonPropertyName("deskChipLeft")] public int? DeskChipLeft { get; set; }
     [JsonPropertyName("deskChipBottom")] public int? DeskChipBottom { get; set; }
+
+    // ---- WECOMMANDER Dock (off until the owner turns it on) ----
+    [JsonPropertyName("dock")] public bool Dock { get; set; }
+    /// <summary>"fixed" (takes its strip from the work area), "autohide" or "floating".</summary>
+    [JsonPropertyName("dockMode")] public string DockModeName { get; set; } = "fixed";
+    /// <summary>"top", "bottom", "left" or "right".</summary>
+    [JsonPropertyName("dockEdge")] public string DockEdgeName { get; set; } = "top";
+    /// <summary>The monitor's device name (\\.\DISPLAY2); null or gone: the primary monitor.</summary>
+    [JsonPropertyName("dockMonitor")] public string? DockMonitor { get; set; }
+    [JsonPropertyName("dockCompact")] public bool DockCompact { get; set; }
+    /// <summary>Floating: where it was left, from the top left of that monitor's work area (96-dpi pixels).</summary>
+    [JsonPropertyName("dockFloatX")] public int? DockFloatX { get; set; }
+    [JsonPropertyName("dockFloatY")] public int? DockFloatY { get; set; }
+    /// <summary>Floating: in front of every window.</summary>
+    [JsonPropertyName("dockOnTop")] public bool DockOnTop { get; set; } = true;
+    /// <summary>Out of the way while a full-screen app or game runs.</summary>
+    [JsonPropertyName("dockHideFullscreen")] public bool DockHideFullscreen { get; set; } = true;
+    /// <summary>Auto-hide: how long the mouse rests at the edge before it comes out, and how long after leaving before it hides (ms).</summary>
+    [JsonPropertyName("dockShowDelay")] public int DockShowDelay { get; set; } = 150;
+    [JsonPropertyName("dockHideDelay")] public int DockHideDelay { get; set; } = 700;
+    /// <summary>"system", "dark" or "light".</summary>
+    [JsonPropertyName("dockTheme")] public string DockTheme { get; set; } = "system";
+    /// <summary>The order of the Dock's parts and the ones turned off.</summary>
+    [JsonPropertyName("dockModules")] public List<string> DockModules { get; set; } = [];
+    [JsonPropertyName("dockHiddenModules")] public List<string> DockHiddenModules { get; set; } = [];
+    /// <summary>The watched server shown in the Dock (null: the busiest).</summary>
+    [JsonPropertyName("dockServer")] public string? DockServer { get; set; }
 }
 
 public sealed class SettingsStore(string directory)

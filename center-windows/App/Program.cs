@@ -39,6 +39,12 @@ public static class Program
             Task.Run(() => main.RedirectActivationToAsync(activation).AsTask()).Wait();
             return 0;
         }
+        // "--quit" with no running copy: nothing to close, do not start one.
+        if (args.Contains("--quit"))
+        {
+            main.UnregisterKey();
+            return 0;
+        }
         Application.Start(callback =>
         {
             SynchronizationContext.SetSynchronizationContext(
