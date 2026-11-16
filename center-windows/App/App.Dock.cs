@@ -45,8 +45,6 @@ public partial class App
             else _dock?.Apply();
         }
         catch (Exception e) { LogCrash(e); ReportError(e); }
-        _deskChip?.Apply();
-        UpdateMonitorTray();
     }
 
     /// <summary>From the Dock: the panel opens next to the clicked button, away from the edge.</summary>
@@ -99,7 +97,6 @@ public partial class App
             BuildTray();
             UpdateServersMenu();
             UpdateTray();
-            UpdateMonitorTray();
         }
         catch (Exception e) { LogCrash(e); }
         try { _dock?.RebuildTexts(); } catch (Exception e) { LogCrash(e); }

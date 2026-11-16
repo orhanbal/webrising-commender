@@ -1221,42 +1221,10 @@ jobs:
             Write-Host "gap between the drawn windows: $gap px; tops $($m[1]) / $($p[1]); bottoms $($m[3]) / $($p[3])"
             if ([math]::Abs([int]$p[1] - [int]$m[1]) -gt 2 -or [math]::Abs([int]$p[3] - [int]$m[3]) -gt 2) { $fail += 'panel not aligned with the main window' }
           }
-          # The box must stay up on a normal desktop for a while (it once hid itself every second there).
+          # The live servers live in the Dock: no server box on the desktop and no
+          # second icon next to the clock; the tray keeps only the Management Center.
           Start-Sleep -Seconds 3
-          $chip = Top $chipName -exact
-          if (-not $chip) { $fail += 'server box not shown' }
-          else {
-            $c = $chip.Current.BoundingRectangle
-            $screen = [System.Windows.Automation.AutomationElement]::RootElement.Current.BoundingRectangle
-            Write-Host "server box at $c (screen $screen)"
-            if ($c.Left -gt 60 -or $c.Bottom -lt $screen.Bottom - 140) { $fail += "server box is not at the bottom left: $c" }
-          }
-          # A click on the box opens "Sunucularim" just above it.
-          if ($chip) {
-            Add-Type @"
-          using System; using System.Runtime.InteropServices;
-          public static class Mouse {
-            [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
-            [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, uint d, IntPtr e);
-            public static void Click(int x, int y) { SetCursorPos(x, y); mouse_event(2, 0, 0, 0, IntPtr.Zero); System.Threading.Thread.Sleep(60); mouse_event(4, 0, 0, 0, IntPtr.Zero); }
-          }
-          "@
-            $c = $chip.Current.BoundingRectangle
-            [Mouse]::Click([int]($c.Left + 60), [int]($c.Top + $c.Height / 2))
-            Start-Sleep -Seconds 2
-            Report 'after clicking the server box'
-            if (Test-Path $layout) { Write-Host '--- layout.log so far ---'; Get-Content $layout | Where-Object { $_ -match 'chip:|monitor panel' } | ForEach-Object { Write-Host $_ } }
-            $flyout = Visible "WECOMMANDER Sunucular"
-            if (-not $flyout) { $fail += 'clicking the server box did not open Sunucularim' }
-            else {
-              $f = ($flyout -split '\|')[1] -split ','
-              Write-Host "Sunucularim at $($f -join ','); box top $($c.Top)"
-              if ([int]$f[3] -gt $c.Top + 4 -or [int]$f[0] -gt $c.Left + 30) { $fail += 'Sunucularim did not open just above the box' }
-            }
-            # Clicking elsewhere closes it again.
-            if ($main) { try { $main.SetFocus() } catch { } }
-            Start-Sleep -Seconds 1
-          }
+          if (Top $chipName -exact) { $fail += 'the server box is still shown on the desktop' }
           # Close the main window (it hides to the tray): the panel goes with it.
           if ($main) {
             $wp = $null
