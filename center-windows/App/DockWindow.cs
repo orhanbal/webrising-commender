@@ -117,8 +117,6 @@ public sealed class DockWindow : Window
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd, out RECT r);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder name, int max);
-    [DllImport("user32.dll")] private static extern bool ReleaseCapture();
-    [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr w, IntPtr l);
     [DllImport("shell32.dll")] private static extern int SHQueryUserNotificationState(out int state);
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
     [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X, Y; }
@@ -421,7 +419,8 @@ public sealed class DockWindow : Window
         ToolTipService.SetToolTip(grip, "Sürükle: taşı");
         grip.PointerPressed += OnGripPressed;
         grip.PointerMoved += OnGripMoved;
-        grip.PointerReleased += (_, _) => _gripDown = false;
+        grip.PointerReleased += OnGripReleased;
+        grip.PointerCaptureLost += (_, _) => { if (_gripDown && _dragging) { _gripDown = false; _dragging = false; try { DroppedFloating(); } catch (Exception ex) { App.LogCrash(ex); } } else _gripDown = false; };
         _grip = grip;
         start.Children.Add(grip);
         var app = IconButton(AppIcon(), "WECOMMANDER: Sunucularım paneli");
@@ -637,30 +636,41 @@ public sealed class DockWindow : Window
 
     // ---- floating: drag, remember, offer an edge ----
 
-    private bool _gripDown;
+    private bool _gripDown, _dragging;
     private POINT _gripAt;
+    private PointInt32 _windowAt;
 
+    // The Dock moves itself while the grip is held (no modal move loop: the
+    // pointer stays captured by the grip, so every move and the release arrive here).
     private void OnGripPressed(object sender, PointerRoutedEventArgs e)
     {
         if (_mode != DockMode.Floating || !e.GetCurrentPoint(_root).Properties.IsLeftButtonPressed) return;
         _gripDown = true;
+        _dragging = false;
         GetCursorPos(out _gripAt);
-        App.DebugLayout($"dock: grip pressed at {_gripAt.X},{_gripAt.Y}");
-        // Keep the moves coming while the mouse leaves the small grip.
+        _windowAt = AppWindow.Position;
         if (sender is UIElement grip) grip.CapturePointer(e.Pointer);
+        App.DebugLayout($"dock: grip pressed at {_gripAt.X},{_gripAt.Y}");
+        e.Handled = true;
     }
 
     private void OnGripMoved(object sender, PointerRoutedEventArgs e)
     {
         if (!_gripDown) return;
         GetCursorPos(out var now);
-        if (Math.Abs(now.X - _gripAt.X) < 4 && Math.Abs(now.Y - _gripAt.Y) < 4) return;
+        if (!_dragging && Math.Abs(now.X - _gripAt.X) < 4 && Math.Abs(now.Y - _gripAt.Y) < 4) return;
+        _dragging = true;
+        AppWindow.Move(new PointInt32(_windowAt.X + now.X - _gripAt.X, _windowAt.Y + now.Y - _gripAt.Y));
+        e.Handled = true;
+    }
+
+    private void OnGripReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_gripDown) return;
         _gripDown = false;
-        App.DebugLayout($"dock: grip drag from {_gripAt.X},{_gripAt.Y} to {now.X},{now.Y}");
-        // Windows' own window move (like dragging a title bar, as the server box
-        // does); returns when the button is released.
-        ReleaseCapture();
-        SendMessage(Hwnd, 0xA1 /* WM_NCLBUTTONDOWN */, new IntPtr(2) /* HTCAPTION */, IntPtr.Zero);
+        if (sender is UIElement grip) grip.ReleasePointerCapture(e.Pointer);
+        if (!_dragging) return;
+        _dragging = false;
         try { DroppedFloating(); } catch (Exception ex) { App.LogCrash(ex); }
     }
 
