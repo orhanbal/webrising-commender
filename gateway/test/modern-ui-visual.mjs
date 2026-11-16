@@ -165,7 +165,7 @@ try{
  await visit("/login","Welcome back","modern-login");
  await visit("/register","Create your account","modern-register");
  await visit("/forgot-password","Reset your password","modern-forgot-password");
- await visit("/pricing","Self-hosted","modern-pricing");
+ await visit("/pricing","right plan.","modern-pricing");
  await visit("/checkout?plan=pro","Paddle","modern-checkout");
  await visit("/dashboard","Welcome back","modern-dashboard");
  assert.ok(await evalJs("document.querySelector('.autonomy-banner')?.textContent.includes('Autonomous mode is on')"),"Dashboard pages show the autonomous-mode banner");
@@ -253,7 +253,7 @@ try{
  assert.ok(await evalJs("document.body.textContent.includes('Landing media library')"),"Landing CMS must expose uploaded-media management");
  await evalJs("(()=>{const s=[...document.querySelectorAll('select')].find(el=>[...el.options].some(o=>o.value==='FAQ'));if(!s)throw new Error('FAQ section selector missing');s.value='FAQ';s.dispatchEvent(new Event('change',{bubbles:true}))})()");
  await sleep(100);
- assert.equal(await evalJs("document.querySelectorAll('fieldset').length"),8,"CMS must show eight correctly paired FAQ editor cards");
+ assert.equal(await evalJs("document.querySelectorAll('fieldset').length"),7,"CMS must show seven correctly paired FAQ editor cards");
  assert.ok(await evalJs("[...document.querySelectorAll('fieldset')].every(f=>f.querySelectorAll('textarea').length===2)"),"Every FAQ editor card must have a question and answer");
 
  await visit("/console/system","System status","modern-console-system");

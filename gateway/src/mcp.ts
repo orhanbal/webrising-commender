@@ -11,6 +11,7 @@ import { actionRisk, type AgentAction } from "./protocol.js";
 import type { DeviceRouter } from "./device-router.js";
 import { issueApproval, redact } from "./security.js";
 import { startSearch, searchPage, listSearches, stopSearch, controlSearch } from "./search-sessions.js";
+import { annotate } from "./tool-annotations.js";
 
 type JsonRpcRequest = { jsonrpc?: string; id?: string | number | null; method?: string; params?: any };
 
@@ -228,6 +229,12 @@ export const tools = [
   };
 });
 
+let listed: ReturnType<typeof annotate>[] | undefined;
+/** What tools/list returns: every tool with its MCP annotations (read-only, destructive, ...). */
+export function listedTools() {
+  return (listed ??= [...tools, ...DC_TOOLS].map(annotate));
+}
+
 function str() {
   return { type: "string" };
 }
@@ -331,12 +338,13 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
     return ok(request.id, {
       protocolVersion: "2025-06-18",
       capabilities: { tools: { listChanged: false } },
-      serverInfo: { name: "webrising-commender", version: "0.1.0" },
+      // name stays stable for existing clients; title is what directories and clients show.
+      serverInfo: { name: "webrising-commender", title: "WECOMMANDER", version: "1.0.0" },
     });
   }
   if (request.method === "notifications/initialized") return null;
   if (request.method === "ping") return ok(request.id, {});
-  if (request.method === "tools/list") return ok(request.id, { tools: [...tools, ...DC_TOOLS] });
+  if (request.method === "tools/list") return ok(request.id, { tools: listedTools() });
   if (request.method !== "tools/call") return fail(request.id, -32601, "Method not found");
 
   let name = String(request.params?.name || "");

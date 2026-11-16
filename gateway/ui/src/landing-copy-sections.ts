@@ -6,6 +6,8 @@ export const landingCopySections = [
     "name": "Hero & navigation",
     "keys": [
       "SSH istemcisi · Sunucu yönetimi · Yapay zekâ için MCP",
+      "Sevdiğin yapay zekâ istemcileriyle çalışır",
+      "ve uzak MCP destekleyen her istemci",
       "Sunucuların, terminalin ve yapay zekân,",
       "tek uygulamada.",
       "WECOMMANDER; SSH, SFTP ve tünellerle sunucularını yönettiğin, diskini temizleyip canlı izlediğin bir masaüstü uygulaması. Aynı zamanda Claude ve ChatGPT'yi tek MCP adresiyle makinelerine bağlar: riskli her adım senin onayınla, her işlem denetim kaydında.",
@@ -33,6 +35,25 @@ export const landingCopySections = [
     "name": "Capabilities & cards",
     "keys": [
       "YETENEKLER",
+      "UYGULAMANIN İÇİ",
+      "Her şey tek pencerede.",
+      "Terminal, sunucu bakımı ve canlı izleme; yapay zekâ olmadan da eksiksiz bir araç.",
+      "Uygulama ekranları",
+      "Sunucu yönetimi",
+      "Canlı izleme",
+      "Terminal",
+      "Sunucularım",
+      "Disk",
+      "Temizlenebilir",
+      "Docker build önbelleği",
+      "Kullanılmayan imajlar",
+      "Eski loglar",
+      "Paket önbelleği",
+      "Yenile",
+      "Seçilenleri temizle",
+      "çevrimiçi",
+      "Süreçler",
+      "Ekranın kenarında kendi çubuğun: sabit, otomatik gizlenen ya da yüzen. Grafiğe tıkla, ilgili ekran açılsın.",
       "Sunucu işlerinin hepsi.",
       "Yanında yapay zekâ.",
       "Bir SSH istemcisinden beklediğin her şey, sunucu bakımını kolaylaştıran araçlar ve sınırlarını senin çizdiğin bir yapay zekâ.",
@@ -41,7 +62,7 @@ export const landingCopySections = [
       "Sunucu yönetimi",
       "Diski ne dolduruyor gör, güvenle temizle: eski loglar, paket önbelleği, Docker build önbelleği ve kullanılmayan imajlar (rootless Docker dahil). Süreçler ve zombi düzeltme. Sunucuya hiçbir şey kurmadan.",
       "Canlı sunucu izleme",
-      "Masaüstünün sol alt köşesinde CPU, bellek ve disk için akan çizgi grafikler. Tıkla, tüm sunucuların paneli açılsın; bir değer yükselince renk değiştirsin.",
+      "Masaüstünün köşesinde ya da ekran kenarındaki WECOMMANDER Dock'ta CPU, bellek ve disk için akan çizgi grafikler. Bir değer yükselince renk değişir; tıkla, süreçler ve disk analizi açılsın.",
       "Yapay zekâ için tek MCP adresi",
       "Claude, ChatGPT ve Cursor'ı tek MCP adresiyle tüm makinelerine bağla: terminal, dosya, görevler ve sunucu yönetimi araçları. Gelen bağlantı portu açman gerekmez.",
       "Her riskli adım senin onayınla",
@@ -117,7 +138,7 @@ export const landingCopySections = [
       "Cihaz başına güven seviyesi ve izinli komutlar",
       "OAuth ile bağlanan yapay zekâ istemcileri",
       "Denetim kaydı ve e-posta bildirimleri",
-      "Self-hosted çalışma seçeneği"
+      "Çıktıdaki parolalar ve anahtarlar cihazda maskelenir"
     ]
   },
   {
@@ -126,19 +147,13 @@ export const landingCopySections = [
       "PAKETLER",
       "İhtiyacın kadar kullan.",
       "Şeffaf şekilde büyü.",
-      "Kendi altyapınızda çalıştırma seçeneğini keşfedin.",
       "Paket ve ödeme bilgileri Paddle üzerinden güvenle yönetilir.",
-      "Kontrol sizde",
-      "Mevcut altyapınızda, kendi sunucunuzda yönetim.",
-      "Kendi sunucunuz",
-      "Cihaz ve MCP yönetimi",
-      "Yetki ve denetim",
-      "Seçenekleri incele",
-      "Bulutta çalışın",
+      "Ücretsiz planla başla; büyüdükçe Pro ya da Team'e geç. Ödemeler Paddle ile, 14 gün içinde koşulsuz iade.",
+      "En çok tercih edilen",
+      "Paketi seç",
+      "Ücretsiz",
+      "Öne Çıkan",
       "Bireysel ve ekip kullanımı için abonelik seçenekleri.",
-      "Merkezi kontrol paneli",
-      "Plan bazlı kaynak limitleri",
-      "Paddle ile faturalama",
       "Paketleri görüntüle"
     ]
   },
@@ -161,8 +176,6 @@ export const landingCopySections = [
       "Masaüstü uygulaması: Windows 10/11 ve macOS (Apple Silicon ve Intel); Linux için önizleme sürümü. Agent: Windows, macOS ve Linux (Ubuntu/Debian).",
       "Ödeme ve iade nasıl işliyor?",
       "Ödemeler resmi satıcımız Paddle üzerinden güvenle alınır. Aboneliğini istediğin zaman iptal edebilirsin; ilk ödemeden sonraki 14 gün içinde koşulsuz iade alırsın.",
-      "Self-hosted sürümü kullanabilir miyim?",
-      "Evet, kendi altyapınızda çalıştırma için dağıtım modu destekleniyor. Kurulum ve işletim sorumluluğu size ait olabilir."
     ]
   },
   {

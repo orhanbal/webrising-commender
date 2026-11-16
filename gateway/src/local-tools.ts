@@ -5,9 +5,10 @@
 // fails when it drifts. Regenerate with: npm run -s export-local-tools
 import { DC_TOOLS } from "./dc-compat.js";
 import { actionFromTool, tools } from "./mcp.js";
+import { toolAnnotations, type ToolAnnotations } from "./tool-annotations.js";
 
 type Schema = { type?: string; properties?: Record<string, any>; required?: string[]; items?: any; enum?: unknown[] };
-type Tool = { name: string; description: string; inputSchema: Schema };
+type Tool = { name: string; title?: string; description: string; inputSchema: Schema; annotations?: ToolAnnotations };
 
 const snakeToCamel = (key: string) => key.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
 
@@ -48,7 +49,8 @@ const withoutGatewayFields = (tool: Tool): Tool => {
   const properties = { ...(tool.inputSchema.properties ?? {}) };
   delete properties.device_id; delete properties.approval_token;
   const required = (tool.inputSchema.required ?? []).filter((r) => r !== "device_id" && r !== "approval_token");
-  return { name: tool.name, description: tool.description, inputSchema: { type: "object", properties, required, additionalProperties: false } as Schema };
+  const annotations = toolAnnotations(tool.name);
+  return { name: tool.name, title: annotations.title, description: tool.description, inputSchema: { type: "object", properties, required, additionalProperties: false } as Schema, annotations };
 };
 
 /** Tools the agent can serve directly (action kind equals the tool name),

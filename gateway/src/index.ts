@@ -1,4 +1,6 @@
 import zlib from "node:zlib";
+import { announcePages, indexNowKey, shouldAnnounce } from "./indexnow.js";
+import { publishToRegistry, registryAuthRecord, REGISTRY_LISTING_VERSION } from "./mcp-registry.js";
 import { contentPagePaths, llmsFullTxt, llmsTxt, pageByPath, pageJsonLd, renderPageHtml, robotsTxt, sitemapXml } from "./site-content.js";
 import { notifyAutonomy, notifyTrustChange } from "./approval-notify.js";
 import { MAX_ALLOWLIST_ENTRIES, normalizePattern } from "./command-allowlist.js";
@@ -577,6 +579,18 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         .map((p) => ({ path: p, heading: pageByPath.get(p)!.heading }));
       res.setHeader("cache-control", "public, max-age=300");
       return void json(res, 200, { page, related });
+    }
+    // MCP Registry domain proof (HTTP authentication): our Ed25519 public key.
+    if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/.well-known/mcp-registry-auth") {
+      const body = Buffer.from(registryAuthRecord(process.env.APPROVAL_SIGNING_SECRET || ""), "utf8");
+      res.writeHead(200, { ...securityHeaders(), "content-type": "text/plain; charset=utf-8", "content-length": body.length, "cache-control": "public, max-age=3600" });
+      return void res.end(req.method === "HEAD" ? undefined : body);
+    }
+    // IndexNow ownership proof: the key file Bing fetches after an announcement.
+    if ((req.method === "GET" || req.method === "HEAD") && url.pathname === `/${indexNowKey(publicBaseUrl.replace(/\/$/, ""))}.txt`) {
+      const body = Buffer.from(indexNowKey(publicBaseUrl.replace(/\/$/, "")), "utf8");
+      res.writeHead(200, { ...securityHeaders(), "content-type": "text/plain; charset=utf-8", "content-length": body.length, "cache-control": "public, max-age=86400" });
+      return void res.end(req.method === "HEAD" ? undefined : body);
     }
     // Discovery files for search engines and AI assistants.
     if ((req.method === "GET" || req.method === "HEAD") &&
@@ -4710,10 +4724,31 @@ server.on("upgrade", async (req, socket, head) => {
 
 server.listen(port, host, () => {
   startRelayHeartbeat();
+  // A new build may have changed the public pages: tell Bing & co. (once, in the background).
+  const origin = publicBaseUrl.replace(/\/$/, "");
+  if (shouldAnnounce(origin)) setTimeout(() => { void announcePages(origin); }, 30_000).unref();
+  // The MCP Registry listing, once per listing version.
+  if (shouldAnnounce(origin) && process.env.MCP_REGISTRY_DISABLED !== "true") setTimeout(() => { void listInMcpRegistry(origin); }, 45_000).unref();
   process.stdout.write(
     `WECOMMANDER gateway listening on ${nativeTlsEnabled ? "https" : "http"}://${host}:${port}\n`,
   );
 });
+
+async function listInMcpRegistry(origin: string) {
+  try {
+    const done = await db.query<{ value: unknown }>("select value from platform_settings where key='mcp_registry_version'");
+    if (done.rows[0]?.value === REGISTRY_LISTING_VERSION) return;
+    const result = await publishToRegistry(origin, process.env.APPROVAL_SIGNING_SECRET || "");
+    process.stdout.write(`MCP Registry: ${result.ok ? "listed" : "not listed"} ${REGISTRY_LISTING_VERSION} (${result.status} ${result.detail})\n`);
+    // Already listed at this version (a restart after it was published) counts as done too.
+    if (result.ok || /already exists|duplicate|cannot publish duplicate/i.test(result.detail))
+      await db.query(
+        `insert into platform_settings(key,value,updated_at) values('mcp_registry_version',to_jsonb($1::text),now())
+         on conflict (key) do update set value=excluded.value, updated_at=now()`, [REGISTRY_LISTING_VERSION]);
+  } catch (error) {
+    process.stdout.write(`MCP Registry: skipped (${error instanceof Error ? error.message : String(error)})\n`);
+  }
+}
 
 async function shutdown() {
   server.close();
