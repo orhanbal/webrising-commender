@@ -12,9 +12,9 @@ public final class CoreClient: @unchecked Sendable {
 
         public var errorDescription: String? {
             switch self {
-            case .stopped: return "Uygulama çekirdeği çalışmıyor."
+            case .stopped: return L.t("Uygulama çekirdeği çalışmıyor.")
             case .core(let text): return CoreText.turkish(text)
-            case .badReply: return "Uygulama çekirdeğinden beklenmeyen yanıt."
+            case .badReply: return L.t("Uygulama çekirdeğinden beklenmeyen yanıt.")
             }
         }
     }
@@ -181,7 +181,7 @@ public struct CoreHost: Decodable, Identifiable, Equatable, Hashable {
     public var isSsh: Bool { ["ssh", "mosh"].contains(`protocol` ?? "ssh") }
 
     /// Hosts without a group are listed under this name.
-    public static let noGroup = "Gruplanmamış"
+    public static var noGroup: String { L.t("Gruplanmamış") }
     public var groupName: String {
         let g = (group ?? "").trimmingCharacters(in: .whitespaces)
         return g.isEmpty ? CoreHost.noGroup : g
@@ -310,49 +310,49 @@ public struct ImportResult: Decodable, Equatable {
 /// Turkish texts for the core's English error prefixes.
 public enum CoreText {
     public static func turkish(_ text: String) -> String {
-        if text.contains("no saved credential") { return "Bu sunucu için kayıtlı giriş bilgisi yok; bir kez gir." }
+        if text.contains("no saved credential") { return L.t("Bu sunucu için kayıtlı giriş bilgisi yok; bir kez gir.") }
         if text.contains("authentication failed") {
-            guard let r = text.range(of: "server accepts:") else { return "Giriş reddedildi. Anahtarı veya parolayı kontrol et." }
+            guard let r = text.range(of: "server accepts:") else { return L.t("Giriş reddedildi. Anahtarı veya parolayı kontrol et.") }
             let methods = text[r.upperBound...].trimmingCharacters(in: CharacterSet(charactersIn: " )")).split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
             if methods.contains("publickey"), !methods.contains("password"), !methods.contains("keyboard-interactive") {
-                return "Giriş reddedildi. Bu sunucu parolayla girişi kabul etmiyor, yalnız SSH anahtarı kabul ediyor. Anahtarlar'dan bir anahtar oluştur, genel anahtarını sunucudaki ~/.ssh/authorized_keys dosyasına ekle, sonra sunucuyu düzenleyip o anahtarı seç. (root için Ubuntu varsayılan olarak parolayla girişi kapatır.)"
+                return L.t("Giriş reddedildi. Bu sunucu parolayla girişi kabul etmiyor, yalnız SSH anahtarı kabul ediyor. Anahtarlar'dan bir anahtar oluştur, genel anahtarını sunucudaki ~/.ssh/authorized_keys dosyasına ekle, sonra sunucuyu düzenleyip o anahtarı seç. (root için Ubuntu varsayılan olarak parolayla girişi kapatır.)")
             }
-            return "Giriş reddedildi; kullanıcı adı, parola ya da anahtar yanlış. Sunucunun kabul ettiği yöntemler: " + methods.joined(separator: ", ") + "."
+            return L.t("Giriş reddedildi; kullanıcı adı, parola ya da anahtar yanlış. Sunucunun kabul ettiği yöntemler: ") + methods.joined(separator: ", ") + "."
         }
-        if text.contains("private key could not be used") { return "Özel anahtar okunamadı (biçim veya anahtar parolası yanlış)." }
-        if text.contains("work only on SSH terminals") { return "Dosyalar ve tüneller yalnız SSH bağlantılarında kullanılabilir." }
-        if text.hasPrefix("telnet: could not connect") { return "Telnet bağlantısı kurulamadı; adresi ve portu kontrol et." }
-        if text.contains("not available in this version") { return "Bu bağlantı türü bu sürümde henüz yok." }
-        if text.contains("mosh-server is not installed") { return "Sunucuda mosh-server kurulu değil. Ubuntu/Debian'da: sudo apt install mosh" }
-        if text.contains("mosh does not work through a jump host") { return "Mosh atlama sunucusu üzerinden çalışmaz; bu sunucu için SSH kullan." }
-        if text.hasPrefix("mosh-server did not start") { return "Sunucuda mosh-server başlatılamadı: " + text.dropFirst("mosh-server did not start:".count).trimmingCharacters(in: .whitespaces) }
-        if text.hasPrefix("mosh: ") { return "Mosh için sunucuya UDP ile ulaşılamadı. Güvenlik duvarında UDP 60000-61000 açık olmalı." }
-        if text.hasPrefix("serial: could not open") { return "Seri port açılamadı. Kablonun takılı olduğunu ve portu başka bir programın kullanmadığını kontrol et." }
-        if text.contains("invalid serial line settings") { return "Seri port ayarları geçersiz (hız, veri bitleri, eşlik ya da durdurma bitleri)." }
-        if text.contains("invalid serial port") || text.contains("serial port settings are missing") { return "Seri portu seç ya da yaz (ör. /dev/cu.usbserial)." }
-        if text.contains("timed out") { return "Sunucuya ulaşılamadı (zaman aşımı). Sunucu kapalı olabilir ya da kısa sürede çok sayıda başarısız giriş yüzünden bu bilgisayarı geçici olarak engellemiş olabilir (ör. fail2ban); birkaç dakika sonra tekrar dene." }
-        if text.contains("did not start SFTP") { return "Bu sunucu SFTP'yi açmadı (sshd_config içinde 'Subsystem sftp' olmalı)." }
-        if text.hasPrefix("key file ") { return "Anahtar dosyası okunamadı: " + text.dropFirst("key file ".count) }
-        if text.hasPrefix("jump host ") { return "Atlama sunucusu: " + text.dropFirst("jump host ".count) }
-        if text.hasPrefix("cannot listen on") { return "Port dinlenemiyor: " + text.dropFirst("cannot listen on".count) }
-        if text.hasPrefix("connection failed: ") { return "Bağlanılamadı: " + text.dropFirst("connection failed: ".count) }
-        if text.hasPrefix("ssh error: server refused the remote forward") { return "Sunucu uzak tüneli reddetti (sshd_config içinde AllowTcpForwarding açık olmalı; port kullanımda olabilir)." }
-        if text.contains("a saved tunnel needs a fixed local port") { return "Kaydedilen tünel için sabit bir yerel port gir." }
-        if text.contains("a saved tunnel needs a fixed server port") { return "Kaydedilen uzak tünel için sabit bir sunucu portu gir." }
-        if text.contains("the port on this computer is required") { return "Bu Mac'teki servis portunu gir." }
-        if text.contains("remote host and port are required") { return "Uzak adres ve port gerekli." }
-        if text.contains("is already used by a saved tunnel") { return "Bu yerel port başka bir kayıtlı tünelde kullanılıyor." }
-        if text.hasPrefix("invalid variable name: ") { return "Geçersiz ortam değişkeni adı: " + text.dropFirst("invalid variable name: ".count) }
-        if text.contains("not a WECOMMANDER backup file") { return "Bu dosya bir WECOMMANDER yedeği değil." }
-        if text.contains("made by a newer version") { return "Bu yedek daha yeni bir sürümle alınmış; önce uygulamayı güncelle." }
-        if text.contains("identity needs a valid user name") { return "Kimlik için geçerli bir kullanıcı adı gir." }
-        if text.contains("choose a key for this identity") { return "Bu kimlik için bir anahtar seç (Anahtarlar sayfasından oluşturabilirsin)." }
-        if text == "terminal closed" { return "Terminal kapalı." }
-        if text.contains("does not have the team key yet") { return "Bu uygulamada ekip anahtarı henüz yok; ekipten biri uygulamasını açınca gelir." }
-        if text == "wrong sync passphrase" { return "Eşitleme parolası yanlış (diğer bilgisayarda belirlediğin parolayı gir)." }
-        if text.contains("sync passphrase needs at least 8") { return "Eşitleme parolası en az 8 karakter olmalı." }
-        if text.contains("sync passphrase was changed on another computer") { return "Eşitleme parolası başka bir bilgisayarda değiştirildi; yeni parolayı gir." }
-        if text.contains("synced by a newer version") { return "Kütüphane daha yeni bir sürümle eşitlenmiş; önce uygulamayı güncelle." }
+        if text.contains("private key could not be used") { return L.t("Özel anahtar okunamadı (biçim veya anahtar parolası yanlış).") }
+        if text.contains("work only on SSH terminals") { return L.t("Dosyalar ve tüneller yalnız SSH bağlantılarında kullanılabilir.") }
+        if text.hasPrefix("telnet: could not connect") { return L.t("Telnet bağlantısı kurulamadı; adresi ve portu kontrol et.") }
+        if text.contains("not available in this version") { return L.t("Bu bağlantı türü bu sürümde henüz yok.") }
+        if text.contains("mosh-server is not installed") { return L.t("Sunucuda mosh-server kurulu değil. Ubuntu/Debian'da: sudo apt install mosh") }
+        if text.contains("mosh does not work through a jump host") { return L.t("Mosh atlama sunucusu üzerinden çalışmaz; bu sunucu için SSH kullan.") }
+        if text.hasPrefix("mosh-server did not start") { return L.t("Sunucuda mosh-server başlatılamadı: ") + text.dropFirst("mosh-server did not start:".count).trimmingCharacters(in: .whitespaces) }
+        if text.hasPrefix("mosh: ") { return L.t("Mosh için sunucuya UDP ile ulaşılamadı. Güvenlik duvarında UDP 60000-61000 açık olmalı.") }
+        if text.hasPrefix("serial: could not open") { return L.t("Seri port açılamadı. Kablonun takılı olduğunu ve portu başka bir programın kullanmadığını kontrol et.") }
+        if text.contains("invalid serial line settings") { return L.t("Seri port ayarları geçersiz (hız, veri bitleri, eşlik ya da durdurma bitleri).") }
+        if text.contains("invalid serial port") || text.contains("serial port settings are missing") { return L.t("Seri portu seç ya da yaz (ör. /dev/cu.usbserial).") }
+        if text.contains("timed out") { return L.t("Sunucuya ulaşılamadı (zaman aşımı). Sunucu kapalı olabilir ya da kısa sürede çok sayıda başarısız giriş yüzünden bu bilgisayarı geçici olarak engellemiş olabilir (ör. fail2ban); birkaç dakika sonra tekrar dene.") }
+        if text.contains("did not start SFTP") { return L.t("Bu sunucu SFTP'yi açmadı (sshd_config içinde 'Subsystem sftp' olmalı).") }
+        if text.hasPrefix("key file ") { return L.t("Anahtar dosyası okunamadı: ") + text.dropFirst("key file ".count) }
+        if text.hasPrefix("jump host ") { return L.t("Atlama sunucusu: ") + text.dropFirst("jump host ".count) }
+        if text.hasPrefix("cannot listen on") { return L.t("Port dinlenemiyor: ") + text.dropFirst("cannot listen on".count) }
+        if text.hasPrefix("connection failed: ") { return L.t("Bağlanılamadı: ") + text.dropFirst("connection failed: ".count) }
+        if text.hasPrefix("ssh error: server refused the remote forward") { return L.t("Sunucu uzak tüneli reddetti (sshd_config içinde AllowTcpForwarding açık olmalı; port kullanımda olabilir).") }
+        if text.contains("a saved tunnel needs a fixed local port") { return L.t("Kaydedilen tünel için sabit bir yerel port gir.") }
+        if text.contains("a saved tunnel needs a fixed server port") { return L.t("Kaydedilen uzak tünel için sabit bir sunucu portu gir.") }
+        if text.contains("the port on this computer is required") { return L.t("Bu Mac'teki servis portunu gir.") }
+        if text.contains("remote host and port are required") { return L.t("Uzak adres ve port gerekli.") }
+        if text.contains("is already used by a saved tunnel") { return L.t("Bu yerel port başka bir kayıtlı tünelde kullanılıyor.") }
+        if text.hasPrefix("invalid variable name: ") { return L.t("Geçersiz ortam değişkeni adı: ") + text.dropFirst("invalid variable name: ".count) }
+        if text.contains("not a WECOMMANDER backup file") { return L.t("Bu dosya bir WECOMMANDER yedeği değil.") }
+        if text.contains("made by a newer version") { return L.t("Bu yedek daha yeni bir sürümle alınmış; önce uygulamayı güncelle.") }
+        if text.contains("identity needs a valid user name") { return L.t("Kimlik için geçerli bir kullanıcı adı gir.") }
+        if text.contains("choose a key for this identity") { return L.t("Bu kimlik için bir anahtar seç (Anahtarlar sayfasından oluşturabilirsin).") }
+        if text == "terminal closed" { return L.t("Terminal kapalı.") }
+        if text.contains("does not have the team key yet") { return L.t("Bu uygulamada ekip anahtarı henüz yok; ekipten biri uygulamasını açınca gelir.") }
+        if text == "wrong sync passphrase" { return L.t("Eşitleme parolası yanlış (diğer bilgisayarda belirlediğin parolayı gir).") }
+        if text.contains("sync passphrase needs at least 8") { return L.t("Eşitleme parolası en az 8 karakter olmalı.") }
+        if text.contains("sync passphrase was changed on another computer") { return L.t("Eşitleme parolası başka bir bilgisayarda değiştirildi; yeni parolayı gir.") }
+        if text.contains("synced by a newer version") { return L.t("Kütüphane daha yeni bir sürümle eşitlenmiş; önce uygulamayı güncelle.") }
         return text
     }
 }

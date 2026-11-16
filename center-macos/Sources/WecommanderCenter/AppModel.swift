@@ -79,6 +79,8 @@ final class AppModel: ObservableObject {
     init() {
         let (loaded, existed) = store.load()
         settings = loaded
+        // WECOMMANDER_LANGUAGE overrides the setting (CI screenshots per language).
+        L.use(L.resolve(ProcessInfo.processInfo.environment["WECOMMANDER_LANGUAGE"] ?? loaded.language))
         token = Keychain.load(server: loaded.server)
         if !existed {
             try? store.save(loaded)
@@ -155,7 +157,7 @@ final class AppModel: ObservableObject {
                 if settings.notifications {
                     let names = Dictionary(newDevices.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
                     for item in fresh.prefix(5) {
-                        notifier.showApproval(item, device: names[item.deviceId] ?? "bilinmeyen cihaz")
+                        notifier.showApproval(item, device: names[item.deviceId] ?? L.t("bilinmeyen cihaz"))
                     }
                 }
                 // Only the notification by default; the panel opens when asked
@@ -204,7 +206,7 @@ final class AppModel: ObservableObject {
         do {
             let origin = try ServerURL.normalize(server)
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { error = "Bu bilgisayar için bir ad girin."; return }
+            guard !trimmed.isEmpty else { error = L.t("Bu bilgisayar için bir ad girin."); return }
             if origin != settings.server {
                 settings.server = origin
                 saveSettings()
@@ -230,7 +232,7 @@ final class AppModel: ObservableObject {
         guard let current = link else { return }
         if Date() > current.deadline {
             link = nil
-            error = "Tarayıcıdaki onay zaman aşımına uğradı. Yeniden oturum aç."
+            error = L.t("Tarayıcıdaki onay zaman aşımına uğradı. Yeniden oturum aç.")
             publish()
             return
         }
@@ -245,12 +247,12 @@ final class AppModel: ObservableObject {
                 me = nil
                 seen.removeAll()
                 error = nil
-                notifier.showPlain("WECOMMANDER", "Yönetim Merkezi hesabına bağlandı.")
+                notifier.showPlain("WECOMMANDER", L.t("Yönetim Merkezi hesabına bağlandı."))
                 requestSync()
                 Task { await ensurePaired() }
             case "denied", "expired", "consumed":
                 link = nil
-                error = result.status == "denied" ? "Bağlantı tarayıcıda reddedildi." : "Bağlantı isteğinin süresi doldu. Yeniden oturum aç."
+                error = result.status == "denied" ? L.t("Bağlantı tarayıcıda reddedildi.") : L.t("Bağlantı isteğinin süresi doldu. Yeniden oturum aç.")
             default:
                 break
             }
@@ -294,7 +296,7 @@ final class AppModel: ObservableObject {
     // MARK: decisions and autonomy
 
     func decide(id: String, approve: Bool) async throws {
-        guard let token else { throw GatewayError(.unauthorized, 401, "", "Önce oturum aç.") }
+        guard let token else { throw GatewayError(.unauthorized, 401, "", L.t("Önce oturum aç.")) }
         decidedHere.insert(id)
         do {
             try await gateway.decide(token: token, id: id, approve: approve)
@@ -310,7 +312,7 @@ final class AppModel: ObservableObject {
     private func decideFromNotification(id: String, device: String, approve: Bool) async {
         do {
             try await decide(id: id, approve: approve)
-            notifier.showPlain("WECOMMANDER", "\(device) · \(approve ? "onaylandı, yapay zekâ bir kez çalıştırabilir" : "reddedildi")")
+            notifier.showPlain("WECOMMANDER", "\(device) · \(approve ? L.t("onaylandı, yapay zekâ bir kez çalıştırabilir") : L.t("reddedildi"))")
         } catch let e as GatewayError {
             notifier.showPlain("WECOMMANDER", e.message)
         } catch {
@@ -361,7 +363,7 @@ final class AppModel: ObservableObject {
             }
             if agentUpdateAvailable, announcedBuild != latestAgentBuild, let latest = latestAgentBuild {
                 announcedBuild = latest
-                notifier.showPlain("WECOMMANDER", "Ajan için yeni sürüm var (0.1.\(latest)). Yönetim Merkezinde \"Ajanı güncelle\" ile kurabilirsin.")
+                notifier.showPlain("WECOMMANDER", L.f("Ajan için yeni sürüm var (0.1.{0}). Yönetim Merkezinde \"Ajanı güncelle\" ile kurabilirsin.", latest))
             }
         }
         switch watchdog.next(keepRunning: settings.agentKeepRunning && status.enabled, status: status, now: Date()) {
@@ -444,6 +446,18 @@ final class AppModel: ObservableObject {
 
     // MARK: settings and helpers
 
+    /// Called after the interface language changed, to rebuild the windows.
+    var onLanguageChange: (() -> Void)?
+
+    /// Switch the interface language without a restart; nil follows the system.
+    func setLanguage(_ code: String?) {
+        let before = L.current
+        update { $0.language = code }
+        L.use(L.resolve(code))
+        if L.current != before { onLanguageChange?() }
+        publish()
+    }
+
     func update(_ change: (inout CenterSettings) -> Void) {
         change(&settings)
         saveSettings()
@@ -468,7 +482,7 @@ final class AppModel: ObservableObject {
     }
 
     func deviceName(_ id: String) -> String {
-        devices.first { $0.id == id }?.name ?? "bilinmeyen cihaz"
+        devices.first { $0.id == id }?.name ?? L.t("bilinmeyen cihaz")
     }
 }
 
@@ -481,7 +495,7 @@ extension AppModel {
         guard isEmbedded else { return }
         _ = await ProcessRunner().run("/usr/bin/pkill", ["-f", embedded.executable])
         if await LegacyAgentCleanup(control: agentControl).run() {
-            notifier.showPlain("WECOMMANDER", "Eski ajan kurulumu kaldırıldı; artık ajan bu uygulamanın içinde çalışıyor. Hesap bağlantın korundu.")
+            notifier.showPlain("WECOMMANDER", L.t("Eski ajan kurulumu kaldırıldı; artık ajan bu uygulamanın içinde çalışıyor. Hesap bağlantın korundu."))
         }
         embeddedReady = true
         if embedded.paired && settings.agentKeepRunning { embedded.tick(keepRunning: true) }
@@ -507,13 +521,13 @@ extension AppModel {
                 saveSettings()
                 embedded.resetWatchdog()
                 embedded.tick(keepRunning: true)
-                notifier.showPlain("WECOMMANDER", "Bu Mac hesabına bağlandı. Ajan arka planda çalışıyor.")
+                notifier.showPlain("WECOMMANDER", L.t("Bu Mac hesabına bağlandı. Ajan arka planda çalışıyor."))
                 requestSync()
             } else {
                 error = embedded.lastError
             }
         } catch {
-            self.error = "Bu Mac hesaba bağlanamadı: " + error.localizedDescription
+            self.error = L.t("Bu Mac hesaba bağlanamadı: ") + error.localizedDescription
         }
     }
 
@@ -545,7 +559,7 @@ extension AppModel {
             }
             if agentUpdateAvailable, let latest = latestApp, announcedApp != latest.build {
                 announcedApp = latest.build
-                notifier.showPlain("WECOMMANDER", "WECOMMANDER için yeni sürüm var (0.1.\(latest.build)). Panelde \"Uygulamayı güncelle\"ye bas.")
+                notifier.showPlain("WECOMMANDER", L.f("WECOMMANDER için yeni sürüm var (0.1.{0}). Panelde \"Uygulamayı güncelle\"ye bas.", latest.build))
             }
         }
         if before != agent { publish() }
@@ -585,23 +599,23 @@ extension AppModel {
         guard !updating else { return }
         updating = true
         updateProgress = nil
-        updateMessage = "Yeni sürüm aranıyor…"
+        updateMessage = L.t("Yeni sürüm aranıyor…")
         publish()
         let work = FileManager.default.temporaryDirectory.appendingPathComponent("wecommander-update-" + UUID().uuidString)
         do {
             guard let data = await releasesJSON(), let latest = AppUpdate.latest(data) else {
-                throw AgentError("Yayımlanmış bir sürüm bulunamadı.")
+                throw AgentError(L.t("Yayımlanmış bir sürüm bulunamadı."))
             }
             latestApp = latest
             if let current = appBuild, latest.build <= current {
-                updateMessage = "Uygulama güncel (0.1.\(current))."
+                updateMessage = L.f("Uygulama güncel (0.1.{0}).", current)
                 updating = false
                 updateProgress = nil
                 publish()
                 return
             }
             // Download 0–85 %, check 85–90 %, unpack 90–98 %.
-            updateMessage = "0.1.\(latest.build) indiriliyor…"
+            updateMessage = L.f("0.1.{0} indiriliyor…", latest.build)
             updateProgress = 0
             publish()
             try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
@@ -612,25 +626,25 @@ extension AppModel {
                 guard percent != shown else { return }
                 shown = percent
                 self.updateProgress = fraction * 0.85
-                self.updateMessage = "0.1.\(latest.build) indiriliyor… %\(percent)"
+                self.updateMessage = L.f("0.1.{0} indiriliyor… %{1}", latest.build, percent)
                 self.publish()
             }
-            guard (zipResponse as? HTTPURLResponse)?.statusCode == 200 else { throw AgentError("Paket indirilemedi.") }
+            guard (zipResponse as? HTTPURLResponse)?.statusCode == 200 else { throw AgentError(L.t("Paket indirilemedi.")) }
             let zip = work.appendingPathComponent(AppUpdate.zipAsset)
             try FileManager.default.moveItem(at: zipFile, to: zip)
             updateProgress = 0.85
-            updateMessage = "İndirildi. Doğrulanıyor…"
+            updateMessage = L.t("İndirildi. Doğrulanıyor…")
             publish()
             let (sumsData, _) = try await URLSession.shared.data(from: latest.sumsURL)
             guard let expected = AppUpdate.expectedHash(String(decoding: sumsData, as: UTF8.self), asset: AppUpdate.zipAsset) else {
-                throw AgentError("Sağlama listesinde bu paket yok; güncelleme durduruldu.")
+                throw AgentError(L.t("Sağlama listesinde bu paket yok; güncelleme durduruldu."))
             }
             // Off the main thread, so the panel keeps drawing while it hashes.
             let actual = try await Task.detached { SHA256.hash(data: try Data(contentsOf: zip)).map { String(format: "%02x", $0) }.joined() }.value
             guard actual == expected else {
-                throw AgentError("İndirilen paket doğrulanamadı (SHA-256 uyuşmuyor); güncelleme durduruldu.")
+                throw AgentError(L.t("İndirilen paket doğrulanamadı (SHA-256 uyuşmuyor); güncelleme durduruldu."))
             }
-            updateMessage = "SHA-256 doğrulandı. Dosyalar açılıyor…"
+            updateMessage = L.t("SHA-256 doğrulandı. Dosyalar açılıyor…")
             updateProgress = 0.9
             publish()
             let unpacked = work.appendingPathComponent("app")
@@ -638,7 +652,7 @@ extension AppModel {
             let newApp = unpacked.appendingPathComponent("WECOMMANDER Center.app")
             guard code == 0,
                   FileManager.default.isExecutableFile(atPath: newApp.appendingPathComponent("Contents/MacOS/\(EmbeddedAgent.executableName)").path)
-            else { throw AgentError("Paket açılamadı ya da içinde ajan yok; güncelleme durduruldu.") }
+            else { throw AgentError(L.t("Paket açılamadı ya da içinde ajan yok; güncelleme durduruldu.")) }
             let script = work.appendingPathComponent("swap.sh")
             try AppUpdate.swapScript(appPath: Bundle.main.bundlePath, newAppPath: newApp.path, pid: getpid())
                 .write(to: script, atomically: true, encoding: .utf8)
@@ -648,10 +662,10 @@ extension AppModel {
             helper.standardOutput = FileHandle.nullDevice
             helper.standardError = FileHandle.nullDevice
             try helper.run()
-            updateMessage = "Uygulama yeniden başlatılıyor…"
+            updateMessage = L.t("Uygulama yeniden başlatılıyor…")
             updateProgress = 1
             publish()
-            notifier.showPlain("WECOMMANDER", "Güncelleme kuruluyor; uygulama birkaç saniye içinde yeniden açılacak.")
+            notifier.showPlain("WECOMMANDER", L.t("Güncelleme kuruluyor; uygulama birkaç saniye içinde yeniden açılacak."))
             try? await Task.sleep(nanoseconds: 500_000_000)
             NSApp.terminate(nil)
         } catch {
@@ -659,7 +673,7 @@ extension AppModel {
             updating = false
             updateProgress = nil
             updateMessage = error.localizedDescription
-            notifier.showPlain("WECOMMANDER", "Güncelleme tamamlanamadı; ayrıntı panelde.")
+            notifier.showPlain("WECOMMANDER", L.t("Güncelleme tamamlanamadı; ayrıntı panelde."))
             publish()
         }
     }
@@ -671,7 +685,7 @@ extension AppModel {
             let task = URLSession.shared.downloadTask(with: url) { file, response, error in
                 observation?.invalidate()
                 if let error { continuation.resume(throwing: error); return }
-                guard let file, let response else { continuation.resume(throwing: AgentError("Paket indirilemedi.")); return }
+                guard let file, let response else { continuation.resume(throwing: AgentError(L.t("Paket indirilemedi."))); return }
                 // The system removes `file` when this returns: keep it first.
                 let kept = FileManager.default.temporaryDirectory.appendingPathComponent("wecommander-download-" + UUID().uuidString)
                 do {

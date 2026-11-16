@@ -16,10 +16,12 @@ public struct CenterSettings: Codable, Equatable {
     /// "Ajan çalışsın": keep the agent on this Mac running, starting it again
     /// when it stops. Switched off, the agent is stopped and stays off.
     public var agentKeepRunning: Bool = true
+    /// Interface language code ("en", "de"…); nil follows the system language.
+    public var language: String?
 
     public init() {}
 
-    enum CodingKeys: String, CodingKey { case server, notifications, notificationIntroShown, openPanelOnRequest, agentKeepRunning }
+    enum CodingKeys: String, CodingKey { case server, notifications, notificationIntroShown, openPanelOnRequest, agentKeepRunning, language }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -28,6 +30,7 @@ public struct CenterSettings: Codable, Equatable {
         notificationIntroShown = try c.decodeIfPresent(Bool.self, forKey: .notificationIntroShown) ?? false
         openPanelOnRequest = try c.decodeIfPresent(Bool.self, forKey: .openPanelOnRequest) ?? false
         agentKeepRunning = try c.decodeIfPresent(Bool.self, forKey: .agentKeepRunning) ?? true
+        language = try c.decodeIfPresent(String.self, forKey: .language)
     }
 }
 

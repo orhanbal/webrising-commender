@@ -60,11 +60,11 @@ public struct AgentControl: Sendable {
                 let (code, out) = await runner.run(launchctl, ["bootstrap", domain, plistPath])
                 // 37 / "already loaded" is fine.
                 if code != 0 && code != 37 && !out.contains("already") {
-                    throw AgentError("Ajan yüklenemedi (launchctl \(code)).")
+                    throw AgentError(L.f("Ajan yüklenemedi (launchctl {0}).", code))
                 }
             }
             let (code, _) = await runner.run(launchctl, ["kickstart", service])
-            if code != 0 { throw AgentError("Ajan başlatılamadı (launchctl \(code)).") }
+            if code != 0 { throw AgentError(L.f("Ajan başlatılamadı (launchctl {0}).", code)) }
         } else {
             _ = await runner.run(launchctl, ["disable", service])
             _ = await runner.run(launchctl, ["bootout", service])
@@ -107,7 +107,7 @@ public struct AgentControl: Sendable {
         let path = (directory as NSString).appendingPathComponent("wecommander-pairing-\(UUID().uuidString)")
         guard FileManager.default.createFile(atPath: path, contents: Data(code.utf8),
                                              attributes: [.posixPermissions: 0o600]) else {
-            throw AgentError("Eşleştirme kodu dosyası yazılamadı.")
+            throw AgentError(L.t("Eşleştirme kodu dosyası yazılamadı."))
         }
         return path
     }

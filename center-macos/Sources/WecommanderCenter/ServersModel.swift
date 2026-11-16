@@ -65,7 +65,7 @@ final class ServersModel: ObservableObject {
     func start() {
         guard core == nil else { return }
         guard let exe = Bundle.main.url(forAuxiliaryExecutable: "wecommander-core") else {
-            coreError = "Uygulama çekirdeği (wecommander-core) paketin içinde bulunamadı."
+            coreError = L.t("Uygulama çekirdeği (wecommander-core) paketin içinde bulunamadı.")
             return
         }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -78,7 +78,7 @@ final class ServersModel: ObservableObject {
             core = client
             Task { await reload() }
         } catch {
-            coreError = "Uygulama çekirdeği başlatılamadı: \(error.localizedDescription)"
+            coreError = L.f("Uygulama çekirdeği başlatılamadı: {0}", error.localizedDescription)
         }
     }
 
@@ -120,8 +120,8 @@ final class ServersModel: ObservableObject {
             guard let sid = object["sessionId"] as? String, let s = sessions.first(where: { $0.id == sid }) else { return }
             s.closed = true
             s.exitCode = (object["code"] as? NSNumber)?.intValue
-            let text = s.exitCode.map { "\r\n\u{1b}[90m[Bağlantı kapandı, çıkış kodu \($0).]\u{1b}[0m\r\n" }
-                ?? "\r\n\u{1b}[90m[Bağlantı kapandı.]\u{1b}[0m\r\n"
+            let text = s.exitCode.map { "\r\n\u{1b}[90m[" + L.f("Bağlantı kapandı, çıkış kodu {0}.", $0) + "]\u{1b}[0m\r\n" }
+                ?? "\r\n\u{1b}[90m[" + L.t("Bağlantı kapandı.") + "]\u{1b}[0m\r\n"
             s.receive(Array(text.utf8))
         case "transfer-progress":
             guard let id = object["transferId"] as? String, var t = transfers[id] else { return }
@@ -175,11 +175,11 @@ final class ServersModel: ObservableObject {
             let result = try await core.call("hosts.import", as: ImportResult.self)
             hosts = result.hosts
             notice = result.added > 0
-                ? "\(result.added) sunucu içe aktarıldı" + (result.skipped > 0 ? ", \(result.skipped) zaten vardı." : ".")
-                : "Yeni sunucu bulunamadı."
+                ? L.f("{0} sunucu içe aktarıldı", result.added) + (result.skipped > 0 ? L.f(", {0} zaten vardı.", result.skipped) : ".")
+                : L.t("Yeni sunucu bulunamadı.")
             onChange?()
         } catch {
-            notice = "~/.ssh/config okunamadı: \(error.localizedDescription)"
+            notice = L.f("~/.ssh/config okunamadı: {0}", error.localizedDescription)
         }
     }
 
@@ -228,12 +228,16 @@ final class ServersModel: ObservableObject {
             await reload()
         } catch {
             let text = error.localizedDescription
-            let needsCredential = text.contains("giriş bilgisi") || text.contains("reddedildi") || text.contains("Anahtar")
+            // Decided on the core's own (English) error, not on the translated message.
+            var raw = ""
+            if case .core(let r)? = error as? CoreClient.Failure { raw = r }
+            let needsCredential = raw.contains("no saved credential") || raw.contains("authentication failed") || raw.contains("private key")
+            let keyOnly = raw.contains("authentication failed") && raw.contains("publickey") && !raw.contains("password") && !raw.contains("keyboard-interactive")
             if connect != nil || needsCredential {
                 // After the silent try of this Mac's keys only a key-only
                 // server's message is worth showing; else the form opens clean.
                 let silentTry = auth["kind"] as? String == "key" && !(host.authKind == "key" && host.keyPath != nil)
-                let shown = text.contains("kayıtlı giriş bilgisi yok") || (silentTry && !text.contains("yalnız SSH anahtarı")) ? nil : text
+                let shown = raw.contains("no saved credential") || (silentTry && !keyOnly) ? nil : text
                 connect = ConnectRequest(host: host, message: shown)
             } else {
                 notice = "\(host.label): \(text)"
@@ -375,7 +379,7 @@ final class ServersModel: ObservableObject {
             savedTunnels = try await core.call("tunnels.toggle", ["hostId": tunnel.hostId, "index": tunnel.index], as: [SavedTunnel].self)
             onChange?()
         } catch {
-            notice = "Tünel açılamadı: \(error.localizedDescription)"
+            notice = L.f("Tünel açılamadı: {0}", error.localizedDescription)
         }
     }
 
@@ -587,7 +591,7 @@ final class ServersModel: ObservableObject {
     /// Turns sync on with the passphrase (checked against the server's library when there is one).
     func setupSync(passphrase: String) async throws {
         guard let core else { throw CoreClient.Failure.stopped }
-        guard let creds = credentials?() else { throw CoreClient.Failure.core("Önce oturum aç.") }
+        guard let creds = credentials?() else { throw CoreClient.Failure.core(L.t("Önce oturum aç.")) }
         let (gateway, token) = creds
         let remote = try await gateway.library(token: token)
         var params: [String: Any] = ["passphrase": passphrase]
@@ -738,12 +742,12 @@ final class ServersModel: ObservableObject {
     @Published private(set) var watching: [String: ShareConnection] = [:]
 
     func startSharing(_ session: TerminalSession, allowInput: Bool) async {
-        guard let core, let creds = credentials?() else { notice = "Önce oturum aç."; return }
+        guard let core, let creds = credentials?() else { notice = L.t("Önce oturum aç."); return }
         let (gateway, token) = creds
         do {
             let status = try await core.call("team.status") as? [String: Any]
             guard status?["hasKey"] as? Bool == true else {
-                notice = "Paylaşmak için ekip anahtarı gerekli: Ayarlar → Ekip'te eşitlemenin tamamlanmasını bekle."
+                notice = L.t("Paylaşmak için ekip anahtarı gerekli: Ayarlar → Ekip'te eşitlemenin tamamlanmasını bekle.")
                 return
             }
             let id = try await gateway.createShare(token: token, title: session.host.label)
@@ -755,9 +759,9 @@ final class ServersModel: ObservableObject {
                 Task { try? await core.call("terminal.write", ["sessionId": session.id, "data": keys]) }
             }
             hosting[session.id] = share
-            notice = "Terminal ekiple paylaşılıyor. Ekiptekiler Sunucular → \"Ortak terminaller\"den katılabilir."
+            notice = L.t("Terminal ekiple paylaşılıyor. Ekiptekiler Sunucular → \"Ortak terminaller\"den katılabilir.")
         } catch {
-            notice = "Paylaşılamadı: \(error.localizedDescription)"
+            notice = L.f("Paylaşılamadı: {0}", error.localizedDescription)
         }
     }
 

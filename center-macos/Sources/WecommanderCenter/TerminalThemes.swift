@@ -1,3 +1,4 @@
+import CenterCore
 import AppKit
 import SwiftTerm
 
@@ -11,14 +12,14 @@ struct TerminalTheme: Identifiable {
     /// The 16 ANSI colours; empty keeps SwiftTerm's defaults.
     let palette: [String]
 
-    static let all: [TerminalTheme] = [
-        TerminalTheme(id: "dark", name: "Koyu", background: "#0c0c0c", foreground: "#cccccc", cursor: "#60cdff",
+    static var all: [TerminalTheme] { [
+        TerminalTheme(id: "dark", name: L.t("Koyu tema"), background: "#0c0c0c", foreground: "#cccccc", cursor: "#60cdff",
                       palette: []),
-        TerminalTheme(id: "light", name: "Açık", background: "#fafafa", foreground: "#1e1e1e", cursor: "#005fb8",
+        TerminalTheme(id: "light", name: L.t("Açık tema"), background: "#fafafa", foreground: "#1e1e1e", cursor: "#005fb8",
                       palette: ["#000000", "#cd3131", "#107c10", "#949800", "#0451a5", "#bc05bc", "#0598bc", "#555555", "#666666", "#cd3131", "#14ce14", "#b5ba00", "#0451a5", "#bc05bc", "#0598bc", "#a5a5a5"]),
-        TerminalTheme(id: "solarized-dark", name: "Solarized koyu", background: "#002b36", foreground: "#839496", cursor: "#93a1a1",
+        TerminalTheme(id: "solarized-dark", name: L.t("Solarized koyu"), background: "#002b36", foreground: "#839496", cursor: "#93a1a1",
                       palette: ["#073642", "#dc322f", "#859900", "#b58900", "#268bd2", "#d33682", "#2aa198", "#eee8d5", "#002b36", "#cb4b16", "#586e75", "#657b83", "#839496", "#6c71c4", "#93a1a1", "#fdf6e3"]),
-        TerminalTheme(id: "solarized-light", name: "Solarized açık", background: "#fdf6e3", foreground: "#657b83", cursor: "#586e75",
+        TerminalTheme(id: "solarized-light", name: L.t("Solarized açık"), background: "#fdf6e3", foreground: "#657b83", cursor: "#586e75",
                       palette: ["#073642", "#dc322f", "#859900", "#b58900", "#268bd2", "#d33682", "#2aa198", "#eee8d5", "#002b36", "#cb4b16", "#586e75", "#657b83", "#839496", "#6c71c4", "#93a1a1", "#fdf6e3"]),
         TerminalTheme(id: "nord", name: "Nord", background: "#2e3440", foreground: "#d8dee9", cursor: "#d8dee9",
                       palette: ["#3b4252", "#bf616a", "#a3be8c", "#ebcb8b", "#81a1c1", "#b48ead", "#88c0d0", "#e5e9f0", "#4c566a", "#bf616a", "#a3be8c", "#ebcb8b", "#81a1c1", "#b48ead", "#8fbcbb", "#eceff4"]),
@@ -28,7 +29,7 @@ struct TerminalTheme: Identifiable {
                       palette: ["#272822", "#f92672", "#a6e22e", "#f4bf75", "#66d9ef", "#ae81ff", "#a1efe4", "#f8f8f2", "#75715e", "#f92672", "#a6e22e", "#f4bf75", "#66d9ef", "#ae81ff", "#a1efe4", "#f9f8f5"]),
         TerminalTheme(id: "dracula", name: "Dracula", background: "#282a36", foreground: "#f8f8f2", cursor: "#f8f8f2",
                       palette: ["#21222c", "#ff5555", "#50fa7b", "#f1fa8c", "#bd93f9", "#ff79c6", "#8be9fd", "#f8f8f2", "#6272a4", "#ff6e6e", "#69ff94", "#ffffa5", "#d6acff", "#ff92df", "#a4ffff", "#ffffff"]),
-    ]
+    ] }
 
     static func named(_ id: String) -> TerminalTheme { all.first { $0.id == id } ?? all[0] }
 

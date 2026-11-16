@@ -1,3 +1,4 @@
+import CenterCore
 import AppKit
 import SwiftTerm
 

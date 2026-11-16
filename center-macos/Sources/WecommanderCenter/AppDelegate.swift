@@ -13,6 +13,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     /// saved tunnels keep working with the Servers window closed.
     let servers = ServersModel()
     private var serversWindow: NSWindow?
+    /// The Servers window was built in an earlier language; rebuilt when no
+    /// terminal is open in it (rebuilding would drop their scrollback).
+    private var serversStale = false
     private var statusItem: NSStatusItem!
     private let popover = NSPopover()
     private let menu = NSMenu()
@@ -25,7 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             button.action = #selector(statusItemClicked(_:))
             button.target = self
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-            button.setAccessibilityLabel("WECOMMANDER Yönetim Merkezi")
+            button.setAccessibilityLabel(L.t("WECOMMANDER Yönetim Merkezi"))
         }
 
         popover.behavior = .transient
@@ -36,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         menu.delegate = self
 
         model.onChange = { [weak self] in self?.updateStatusItem() }
+        model.onLanguageChange = { [weak self] in DispatchQueue.main.async { self?.languageChanged() } }
         model.showPanel = { [weak self] in self?.showPanel() }
         model.start()
         servers.start()
@@ -79,6 +83,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     /// tunnels). The app shows in the Dock while it is open.
     func showServers() {
         servers.start()
+        if serversStale && servers.sessions.isEmpty, let old = serversWindow {
+            old.delegate = nil
+            old.close()
+            serversWindow = nil
+            serversStale = false
+        }
         if serversWindow == nil {
             let window = NSWindow(contentViewController: NSHostingController(rootView: ServersView(model: servers, showPanel: { [weak self] in self?.showPanel() })))
             window.title = "WECOMMANDER"
@@ -94,6 +104,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         NSApp.setActivationPolicy(.regular)
         serversWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// The interface language changed: rebuild what is on screen in it.
+    private func languageChanged() {
+        statusItem.button?.setAccessibilityLabel(L.t("WECOMMANDER Yönetim Merkezi"))
+        popover.contentViewController = NSHostingController(rootView: PanelView(model: model))
+        guard let window = serversWindow else { return }
+        serversStale = true
+        if servers.sessions.isEmpty {
+            let visible = window.isVisible
+            showServers() // rebuilds: no terminal to lose
+            if !visible { serversWindow?.orderOut(nil); NSApp.setActivationPolicy(.accessory) }
+        } else {
+            servers.notice = L.t("Dil değişti. Açık terminaller kapanmasın diye bu pencerenin tamamı, terminaller kapandıktan sonraki açılışta yeni dile geçer.")
+        }
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -144,10 +169,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         if autonomy > 0 { title += " ⚡︎" }
         button.title = title
         var tooltip = model.phase != .signedIn
-            ? "WECOMMANDER Yönetim Merkezi — oturum açılmadı"
-            : (pending == 0 ? "WECOMMANDER — bekleyen onay yok" : "WECOMMANDER — \(pending) bekleyen onay")
-        if autonomy > 0 { tooltip += " · otonom mod açık (\(autonomy) cihaz)" }
-        if model.notificationsBlocked { tooltip += " · macOS bildirimleri kapalı" }
+            ? L.t("WECOMMANDER Yönetim Merkezi — oturum açılmadı")
+            : (pending == 0 ? L.t("WECOMMANDER — bekleyen onay yok") : L.f("WECOMMANDER — {0} bekleyen onay", pending))
+        if autonomy > 0 { tooltip += L.f(" · otonom mod açık ({0} cihaz)", autonomy) }
+        if model.notificationsBlocked { tooltip += L.t(" · macOS bildirimleri kapalı") }
         if let agent = model.agent, agent.state == .stopped { tooltip += " · " + Texts.agentStateLabel(agent).lowercased() }
         button.toolTip = tooltip
     }
@@ -157,15 +182,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         let signedIn = model.phase == .signedIn
-        menu.addItem(item("Yönetim Merkezini aç", #selector(menuOpen)))
-        menu.addItem(item("WECOMMANDER'ı aç", #selector(menuServers), key: "s"))
+        menu.addItem(item(L.t("Yönetim Merkezini aç"), #selector(menuOpen)))
+        menu.addItem(item(L.t("WECOMMANDER'ı aç"), #selector(menuServers), key: "s"))
         let connectMenu = NSMenu()
         for host in servers.hosts {
             let entry = item(host.label, #selector(menuConnectHost(_:)))
             entry.representedObject = host.id
             connectMenu.addItem(entry)
         }
-        let connectItem = NSMenuItem(title: "Bağlan", action: nil, keyEquivalent: "")
+        let connectItem = NSMenuItem(title: L.t("Bağlan"), action: nil, keyEquivalent: "")
         connectItem.submenu = connectMenu
         connectItem.isEnabled = !servers.hosts.isEmpty
         menu.addItem(connectItem)
@@ -176,34 +201,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             entry.state = tunnel.running ? .on : .off
             tunnelMenu.addItem(entry)
         }
-        let tunnelItem = NSMenuItem(title: "Tüneller", action: nil, keyEquivalent: "")
+        let tunnelItem = NSMenuItem(title: L.t("Tüneller"), action: nil, keyEquivalent: "")
         tunnelItem.submenu = tunnelMenu
         tunnelItem.isEnabled = !servers.savedTunnels.isEmpty
         menu.addItem(tunnelItem)
         menu.addItem(.separator())
         let pending = model.pending.count
-        menu.addItem(item(!signedIn ? "Oturum açılmadı" : pending == 0 ? "Bekleyen onay yok" : "Bekleyen onaylar: \(pending)", #selector(menuOpen)))
-        menu.addItem(item(model.autonomy.isEmpty ? "Otonom mod kapalı" : "Otonom mod açık: \(model.autonomy.count) cihaz", #selector(menuOpen)))
-        let stop = item("Otonom modu durdur (tüm cihazlar)", #selector(menuStopAutonomy))
+        menu.addItem(item(!signedIn ? L.t("Oturum açılmadı") : pending == 0 ? L.t("Bekleyen onay yok") : L.f("Bekleyen onaylar: {0}", pending), #selector(menuOpen)))
+        menu.addItem(item(model.autonomy.isEmpty ? L.t("Otonom mod kapalı") : L.f("Otonom mod açık: {0} cihaz", model.autonomy.count), #selector(menuOpen)))
+        let stop = item(L.t("Otonom modu durdur (tüm cihazlar)"), #selector(menuStopAutonomy))
         stop.isEnabled = signedIn && !model.autonomy.isEmpty
         menu.addItem(stop)
         menu.addItem(.separator())
-        menu.addItem(item("Paneli tarayıcıda aç", #selector(menuDashboard)))
-        let notify = item("Bildirimler", #selector(menuToggleNotifications))
+        menu.addItem(item(L.t("Paneli tarayıcıda aç"), #selector(menuDashboard)))
+        let notify = item(L.t("Bildirimler"), #selector(menuToggleNotifications))
         notify.state = model.settings.notifications ? .on : .off
         menu.addItem(notify)
         if model.notificationsBlocked {
-            menu.addItem(item("macOS bildirimlerine izin ver…", #selector(menuAllowNotifications)))
+            menu.addItem(item(L.t("macOS bildirimlerine izin ver…"), #selector(menuAllowNotifications)))
         }
         menu.addItem(.separator())
-        let agentItem = item("Ajan çalışsın — " + Texts.agentStateLabel(model.agent).lowercased(), #selector(menuToggleAgent))
+        let agentItem = item(L.t("Ajan çalışsın — ") + Texts.agentStateLabel(model.agent).lowercased(), #selector(menuToggleAgent))
         agentItem.state = model.agent?.running == true ? .on : .off
         agentItem.isEnabled = !model.agentBusy && model.agent != nil && model.agent?.state != .notInstalled
         menu.addItem(agentItem)
         menu.addItem(.separator())
-        let account = !signedIn ? "Oturum aç…" : model.me?.email.map { "Oturumu kapat (\($0))" } ?? "Oturumu kapat"
+        let account = !signedIn ? L.t("Oturum aç…") : model.me?.email.map { L.f("Oturumu kapat ({0})", $0) } ?? L.t("Oturumu kapat")
         menu.addItem(item(account, #selector(menuAccount)))
-        menu.addItem(item("Çıkış", #selector(menuQuit), key: "q"))
+        menu.addItem(item(L.t("Çıkış"), #selector(menuQuit), key: "q"))
     }
 
     private func item(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
@@ -243,7 +268,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         Task {
             do {
                 try await model.stopAutonomy()
-                model.notifier.showPlain("WECOMMANDER", "Otonom mod durduruldu. Onaylar yeniden isteniyor.")
+                model.notifier.showPlain("WECOMMANDER", L.t("Otonom mod durduruldu. Onaylar yeniden isteniyor."))
             } catch {
                 model.notifier.showPlain("WECOMMANDER", error.localizedDescription)
             }
@@ -254,7 +279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         if model.phase != .signedIn { showPanel(); return }
         Task {
             await model.signOut()
-            model.notifier.showPlain("WECOMMANDER", "Oturum kapatıldı. Yeniden açmak için menü çubuğundaki simgeye tıkla.")
+            model.notifier.showPlain("WECOMMANDER", L.t("Oturum kapatıldı. Yeniden açmak için menü çubuğundaki simgeye tıkla."))
         }
     }
 }
