@@ -14,6 +14,7 @@ WECOMMANDER 1.0 is one desktop app (Windows, macOS) plus a non-root agent (Linux
 
 ## Unreleased
 
+- **macOS fix:** the main window's sidebar (Servers, Keys, Identities, Tunnels, Settings…) and the server management sidebar did not react to clicks on macOS 26: their rows were tagged with an optional value the list no longer matches. Rows now carry the plain value.
 - **Dock Task Manager (Windows):** the Dock's processes button opens a Task Manager for this computer.
   - **What it shows:** live CPU, memory and disk per process (every 2 s), search, sorting, a process tree and details (parent, threads, private memory, start time, path).
   - **Ending a process:** only after a confirmation that names the process and its child count. Windows system processes, databases and WECOMMANDER's own processes are protected and cannot be ended. A PID that now belongs to another process is refused, and missing admin rights are said plainly.
