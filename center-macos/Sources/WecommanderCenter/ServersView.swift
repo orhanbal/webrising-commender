@@ -141,6 +141,11 @@ struct ServersView: View {
                         }
                         .disabled(session.closed)
                     }
+                    Button { ServerWindows.show(model, session: session) } label: {
+                        Label(L.t("Sunucu yönetimi"), systemImage: "gauge.medium")
+                    }
+                    .help(L.t("Bu sunucunun disk, bellek, süreç ve temizlik ekranı"))
+                    .disabled(session.closed || model.watching[session.id] != nil || !session.host.isSsh)
                     SnippetMenu(model: model, session: session)
                     Button { showTunnels = true } label: { Label(L.t("Tüneller"), systemImage: "point.3.connected.trianglepath.dotted") }
                         .disabled(session.closed)

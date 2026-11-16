@@ -14,6 +14,11 @@ WECOMMANDER 1.0 is one desktop app (Windows, macOS) plus a non-root agent (Linux
 
 ## Unreleased
 
+- **macOS server management:** the "Sunucu yönetimi" button on an SSH terminal opens its own window, as on Windows.
+  - **Pages:** overview with live CPU, memory, network and disk charts; disk drill-down by folder with each Docker daemon's storage marked; safe cleanup per Docker daemon (rootless too) with the disk before and after; processes with zombie groups, their owner and the Coolify `--init` fix.
+  - **Safety:** every change shows the exact command and asks first; changes are off when the login is neither root nor passwordless sudo; the core alone decides what can be cleaned.
+  - **Closing the window** stops the live sampling; closing the terminal closes its window.
+  - **Tests:** `ServerManagementTests` cover the core's JSON, the cleanup sections, groups, the space freed and sizes.
 - **macOS app in six languages:** the same six languages as Windows, with the same translations for shared texts.
   - **Choosing the language:** the system language by default, English when it is not supported. Change it in the panel's settings or in the main window's Settings → Language.
   - **No restart:** the menu, the panel and the main window switch at once. If terminals are open, the main window waits until they are closed so no scrollback is lost.

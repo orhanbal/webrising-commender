@@ -124,6 +124,10 @@ final class ServersModel: ObservableObject {
                 ?? "\r\n\u{1b}[90m[" + L.t("Bağlantı kapandı.") + "]\u{1b}[0m\r\n"
             s.receive(Array(text.utf8))
         case "transfer-progress":
+            if let id = object["transferId"] as? String, let report = progress[id] {
+                report((object["done"] as? NSNumber)?.uint64Value ?? 0, (object["total"] as? NSNumber)?.uint64Value ?? 0)
+                return
+            }
             guard let id = object["transferId"] as? String, var t = transfers[id] else { return }
             t.done = (object["done"] as? NSNumber)?.uint64Value ?? t.done
             t.total = (object["total"] as? NSNumber)?.uint64Value ?? t.total
@@ -292,6 +296,7 @@ final class ServersModel: ObservableObject {
             session.closed = true
         }
         if hosting[session.id] != nil { stopSharing(session) }
+        ServerWindows.close(session.id)
         if !session.closed, let core {
             Task { try? await core.call("terminal.close", ["sessionId": session.id]) }
         }
@@ -307,6 +312,23 @@ final class ServersModel: ObservableObject {
         }
         splits = splits.filter { !$0.value.isEmpty }
         if selection == session.id { selection = sessions.last?.id }
+    }
+
+    // MARK: core calls (server management, monitor)
+
+    /// Progress of a long call (server.disk) by its transferId: done, total.
+    var progress: [String: @MainActor (UInt64, UInt64) -> Void] = [:]
+
+    /// A core call decoded as `type`; server.* calls go through here.
+    func coreCall<T: Decodable>(_ method: String, _ params: [String: Any] = [:], as type: T.Type) async throws -> T {
+        guard let core else { throw CoreClient.Failure.stopped }
+        return try await core.call(method, params, as: type)
+    }
+
+    /// A core call whose result is not needed.
+    func coreCall(_ method: String, _ params: [String: Any] = [:]) async throws {
+        guard let core else { throw CoreClient.Failure.stopped }
+        try await core.call(method, params)
     }
 
     // MARK: files
