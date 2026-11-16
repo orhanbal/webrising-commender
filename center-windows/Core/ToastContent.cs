@@ -52,12 +52,12 @@ public static class ToastContent
             Escape(EncodeArgs([new("action", action), new("id", id), new("device", device)])) + "\"/>";
         return $"<toast scenario=\"{(urgent ? "urgent" : "reminder")}\" launch=\"{Escape(EncodeArgs([new("action", "open")]))}\">" +
                "<visual><binding template=\"ToastGeneric\">" +
-               $"<text>{Escape($"Onay bekliyor · {device}")}</text>" +
+               $"<text>{Escape(L.F("Onay bekliyor · {0}", device))}</text>" +
                $"<text>{Escape(what)}</text>" +
-               $"<text>{Escape($"{kindLabel} · yalnız bu işlem, bir kez")}</text>" +
+               $"<text>{Escape(L.F("{0} · yalnız bu işlem, bir kez", kindLabel))}</text>" +
                $"<progress title=\"{{{ProgressTitle}}}\" value=\"{{{ProgressValue}}}\" " +
                $"valueStringOverride=\"{{{ProgressValueString}}}\" status=\"{{{ProgressStatus}}}\"/>" +
-               "</binding></visual><actions>" + Button("Onayla", "approve") + Button("Reddet", "deny") +
+               "</binding></visual><actions>" + Button(L.T("Onayla"), "approve") + Button(L.T("Reddet"), "deny") +
                "</actions></toast>";
     }
 
@@ -67,10 +67,10 @@ public static class ToastContent
         var expired = expiresAt <= now;
         return new Dictionary<string, string>
         {
-            [ProgressTitle] = expired ? "Süresi doldu" : "Kalan süre",
+            [ProgressTitle] = expired ? L.T("Süresi doldu") : L.T("Kalan süre"),
             [ProgressValue] = Texts.RemainingFraction(createdAt, expiresAt, now).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
             [ProgressValueString] = Texts.Countdown(expiresAt, now),
-            [ProgressStatus] = expired ? "Bu istek artık onaylanamaz" : "Süre dolunca istek düşer",
+            [ProgressStatus] = expired ? L.T("Bu istek artık onaylanamaz") : L.T("Süre dolunca istek düşer"),
         };
     }
 }

@@ -16,17 +16,17 @@ public static class DockSettingsPanel
         {
             TextWrapping = TextWrapping.Wrap,
             Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
-            Text = "Ekranın bir kenarında WECOMMANDER'a ait bir çubuk: canlı CPU, RAM ve disk; süreçler, terminal ve onaylara tek tıkla geçiş. Windows görev çubuğuna dokunmaz; kapatınca ekran alanı geri verilir.",
+            Text = L.T("Ekranın bir kenarında WECOMMANDER'a ait bir çubuk: canlı CPU, RAM ve disk; süreçler, terminal ve onaylara tek tıkla geçiş. Windows görev çubuğuna dokunmaz; kapatınca ekran alanı geri verilir."),
         });
         var details = new StackPanel { Spacing = 10 };
-        var on = new ToggleSwitch { Header = "Dock'u göster", IsOn = s.Dock };
+        var on = new ToggleSwitch { Header = L.T("Dock'u göster"), IsOn = s.Dock };
         void Save() { App.Current.SaveSettings(); App.Current.ApplyDock(); }
         on.Toggled += (_, _) => { details.Visibility = on.IsOn ? Visibility.Visible : Visibility.Collapsed; App.Current.SetDock(on.IsOn); };
         body.Children.Add(on);
 
-        var modes = new[] { ("fixed", "Sabit: kenarda durur, pencereler altına girmez"), ("autohide", "Otomatik gizlenen: fare kenara gelince açılır"), ("floating", "Yüzen: istediğin yere sürükle") };
-        var mode = Combo("Görünüm", modes.Select(m => m.Item2), Array.FindIndex(modes, m => m.Item1 == s.DockModeName));
-        var onTop = new CheckBox { Content = "Her zaman üstte (yüzen)", IsChecked = s.DockOnTop };
+        var modes = new[] { ("fixed", L.T("Sabit: kenarda durur, pencereler altına girmez")), ("autohide", L.T("Otomatik gizlenen: fare kenara gelince açılır")), ("floating", L.T("Yüzen: istediğin yere sürükle")) };
+        var mode = Combo(L.T("Görünüm"), modes.Select(m => m.Item2), Array.FindIndex(modes, m => m.Item1 == s.DockModeName));
+        var onTop = new CheckBox { Content = L.T("Her zaman üstte (yüzen)"), IsChecked = s.DockOnTop };
         void ModeChanged()
         {
             onTop.Visibility = s.DockModeName == "floating" ? Visibility.Visible : Visibility.Collapsed;
@@ -35,15 +35,15 @@ public static class DockSettingsPanel
         onTop.Click += (_, _) => { s.DockOnTop = onTop.IsChecked == true; Save(); };
         ModeChanged();
 
-        var edges = new[] { ("top", "Üst"), ("bottom", "Alt"), ("left", "Sol"), ("right", "Sağ") };
-        var edge = Combo("Konum", edges.Select(e => e.Item2), Array.FindIndex(edges, e => e.Item1 == s.DockEdgeName));
+        var edges = new[] { ("top", L.T("Üst")), ("bottom", L.T("Alt")), ("left", L.T("Sol")), ("right", L.T("Sağ")) };
+        var edge = Combo(L.T("Konum"), edges.Select(e => e.Item2), Array.FindIndex(edges, e => e.Item1 == s.DockEdgeName));
         edge.SelectionChanged += (_, _) => { s.DockEdgeName = edges[Math.Max(0, edge.SelectedIndex)].Item1; Save(); };
 
         var monitors = Monitors.All();
         var names = monitors.Select((m, i) => $"Ekran {i + 1}{(m.Primary ? " (ana)" : "")} · {m.Bounds.Width}×{m.Bounds.Height}").ToList();
         var current = monitors.FindIndex(m => m.Device == s.DockMonitor);
         if (current < 0) current = Math.Max(0, monitors.FindIndex(m => m.Primary));
-        var screen = Combo("Ekran", names, current);
+        var screen = Combo(L.T("Ekran"), names, current);
         screen.SelectionChanged += (_, _) =>
         {
             if (screen.SelectedIndex < 0 || screen.SelectedIndex >= monitors.Count) return;
@@ -52,23 +52,23 @@ public static class DockSettingsPanel
             Save();
         };
 
-        var size = Combo("Boyut", ["Normal", "Kompakt"], s.DockCompact ? 1 : 0);
+        var size = Combo(L.T("Boyut"), ["Normal", L.T("Kompakt")], s.DockCompact ? 1 : 0);
         size.SelectionChanged += (_, _) => { s.DockCompact = size.SelectedIndex == 1; Save(); };
 
-        var showDelay = Number("Açılma gecikmesi (ms, otomatik gizlenen)", s.DockShowDelay, 0, 2000);
+        var showDelay = Number(L.T("Açılma gecikmesi (ms, otomatik gizlenen)"), s.DockShowDelay, 0, 2000);
         showDelay.ValueChanged += (_, e) => { if (!double.IsNaN(e.NewValue)) { s.DockShowDelay = (int)e.NewValue; App.Current.SaveSettings(); } };
         var hideDelay = Number("Gizlenme gecikmesi (ms)", s.DockHideDelay, 0, 5000);
         hideDelay.ValueChanged += (_, e) => { if (!double.IsNaN(e.NewValue)) { s.DockHideDelay = (int)e.NewValue; App.Current.SaveSettings(); } };
 
-        var fullscreen = new CheckBox { Content = "Tam ekran uygulama ve oyunlarda gizle (kapalıysa arkaya geçer)", IsChecked = s.DockHideFullscreen };
+        var fullscreen = new CheckBox { Content = L.T("Tam ekran uygulama ve oyunlarda gizle (kapalıysa arkaya geçer)"), IsChecked = s.DockHideFullscreen };
         fullscreen.Click += (_, _) => { s.DockHideFullscreen = fullscreen.IsChecked == true; App.Current.SaveSettings(); };
 
-        var themes = new[] { ("system", "Windows ile aynı"), ("dark", "Koyu"), ("light", "Açık") };
-        var theme = Combo("Tema", themes.Select(t => t.Item2), Array.FindIndex(themes, t => t.Item1 == s.DockTheme));
+        var themes = new[] { ("system", L.T("Windows ile aynı")), ("dark", L.T("Koyu tema")), ("light", L.T("Açık tema")) };
+        var theme = Combo(L.T("Tema"), themes.Select(t => t.Item2), Array.FindIndex(themes, t => t.Item1 == s.DockTheme));
         theme.SelectionChanged += (_, _) => { s.DockTheme = themes[Math.Max(0, theme.SelectedIndex)].Item1; Save(); };
 
         // The parts and their order (up / down; drag and drop comes with the Dock's quick panel).
-        var modulesTitle = new TextBlock { Text = "Gösterilecek bölümler ve sırası", Margin = new Thickness(0, 6, 0, 0) };
+        var modulesTitle = new TextBlock { Text = L.T("Gösterilecek bölümler ve sırası"), Margin = new Thickness(0, 6, 0, 0) };
         var modulesList = new StackPanel { Spacing = 4 };
         void RenderModules()
         {
@@ -87,9 +87,9 @@ public static class DockSettingsPanel
                     Save();
                 };
                 var up = new Button { Content = new FontIcon { Glyph = "", FontSize = 12 }, IsEnabled = index > 0 };
-                ToolTipService.SetToolTip(up, "Yukarı / sola");
+                ToolTipService.SetToolTip(up, L.T("Yukarı / sola"));
                 var down = new Button { Content = new FontIcon { Glyph = "", FontSize = 12 }, IsEnabled = index < order.Count - 1 };
-                ToolTipService.SetToolTip(down, "Aşağı / sağa");
+                ToolTipService.SetToolTip(down, L.T("Aşağı / sağa"));
                 up.Click += (_, _) => { Swap(order, index, index - 1); s.DockModules = order; Save(); RenderModules(); };
                 down.Click += (_, _) => { Swap(order, index, index + 1); s.DockModules = order; Save(); RenderModules(); };
                 row.Children.Add(check);
@@ -100,7 +100,7 @@ public static class DockSettingsPanel
         }
         RenderModules();
 
-        var startup = new CheckBox { Content = "Windows ile başlat (oturum açınca WECOMMANDER ve Dock açılır)" };
+        var startup = new CheckBox { Content = L.T("Windows ile başlat (oturum açınca WECOMMANDER ve Dock açılır)") };
         try { startup.IsChecked = LocalStore.AutostartEnabled; } catch (Exception) { startup.IsEnabled = false; }
         startup.Click += (_, _) => { try { LocalStore.AutostartEnabled = startup.IsChecked == true; } catch (Exception e) { App.LogCrash(e); } };
 
@@ -113,10 +113,10 @@ public static class DockSettingsPanel
 
     private static string ModuleName(string module) => module switch
     {
-        "servers" => "Sunucu ve canlı grafikler",
-        "processes" => "Süreçler kısayolu",
-        "terminal" => "Terminal kısayolu",
-        "approvals" => "Bildirimler ve onaylar",
+        "servers" => L.T("Sunucu ve canlı grafikler"),
+        "processes" => L.T("Süreçler kısayolu"),
+        "terminal" => L.T("Terminal kısayolu"),
+        "approvals" => L.T("Bildirimler ve onaylar"),
         _ => module,
     };
 

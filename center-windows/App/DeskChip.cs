@@ -1,3 +1,4 @@
+using Wecommander.Center.Core;
 using System.Runtime.InteropServices;
 using Microsoft.UI;
 using Microsoft.UI.Text;
@@ -40,7 +41,7 @@ public sealed class DeskChip : Window
     public DeskChip(ServerMonitor monitor)
     {
         _monitor = monitor;
-        Title = "WECOMMANDER Sunucu kutusu";
+        Title = L.T("WECOMMANDER Sunucu kutusu");
         SystemBackdrop = new DesktopAcrylicBackdrop();
         // No title bar at all (the presenter removes it). Extending content into
         // it made the top ~32 px a drag area that swallowed clicks there.
@@ -107,7 +108,7 @@ public sealed class DeskChip : Window
         _root.PointerMoved += OnMoved;
         _root.PointerReleased += OnReleased;
         _root.ContextFlyout = Menu();
-        ToolTipService.SetToolTip(_root, "Tıkla: Sunucularım · Göstergelere tıkla: çizgi / çubuk · Sürükle: taşı · Sağ tık: ayarlar");
+        ToolTipService.SetToolTip(_root, L.T("Tıkla: Sunucularım · Göstergelere tıkla: çizgi / çubuk · Sürükle: taşı · Sağ tık: ayarlar"));
         Content = _root;
 
         _monitor.Changed += () => { try { Refresh(); } catch (Exception e) { App.LogCrash(e); } };
@@ -128,11 +129,11 @@ public sealed class DeskChip : Window
         // The busiest live server, else the first one.
         var s = servers.Where(x => x.Live).OrderByDescending(x => x.Worst).FirstOrDefault() ?? servers[0];
         _name.Text = s.Label + (servers.Count > 1 ? $"  +{servers.Count - 1}" : "");
-        var (status, color) = s.Error is not null ? ("bağlanamadı", ColorHelper.FromArgb(255, 0xEF, 0x44, 0x44))
-            : !s.Live ? ("bağlanıyor…", Colors.Gray)
+        var (status, color) = s.Error is not null ? (L.T("bağlanamadı"), ColorHelper.FromArgb(255, 0xEF, 0x44, 0x44))
+            : !s.Live ? (L.T("bağlanıyor…"), Colors.Gray)
             : s.Worst >= 90 ? ("dikkat", ColorHelper.FromArgb(255, 0xEF, 0x44, 0x44))
-            : s.Worst >= 80 ? ("yüksek kullanım", ColorHelper.FromArgb(255, 0xF5, 0x9E, 0x0B))
-            : ("çevrimiçi", ColorHelper.FromArgb(255, 0x16, 0xA3, 0x4A));
+            : s.Worst >= 80 ? (L.T("yüksek kullanım"), ColorHelper.FromArgb(255, 0xF5, 0x9E, 0x0B))
+            : (L.T("çevrimiçi"), ColorHelper.FromArgb(255, 0x16, 0xA3, 0x4A));
         _status.Text = status;
         _dot.Fill = new SolidColorBrush(color);
         var values = new[] { s.Cpu, s.Mem, s.Disk };
@@ -153,7 +154,7 @@ public sealed class DeskChip : Window
     {
         var line = App.Current.Settings.DeskChipLine;
         foreach (var m in _meters) m.SetLine(line);
-        ToolTipService.SetToolTip(_meterPanel, line ? "Tıkla: çubuklar" : "Tıkla: canlı çizgi grafik");
+        ToolTipService.SetToolTip(_meterPanel, line ? L.T("Tıkla: çubuklar") : L.T("Tıkla: canlı çizgi grafik"));
     }
 
     // ---- where and in front of what ----
@@ -309,9 +310,9 @@ public sealed class DeskChip : Window
     private MenuFlyout Menu()
     {
         var menu = new MenuFlyout();
-        var open = new MenuFlyoutItem { Text = "Sunucularım panelini aç", Icon = new FontIcon { Glyph = "" } };
+        var open = new MenuFlyoutItem { Text = L.T("Sunucularım panelini aç"), Icon = new FontIcon { Glyph = "" } };
         open.Click += (_, _) => App.Current.ToggleMonitorPanelAt(Bounds);
-        var onTop = new ToggleMenuFlyoutItem { Text = "Tüm pencerelerin üzerinde göster" };
+        var onTop = new ToggleMenuFlyoutItem { Text = L.T("Tüm pencerelerin üzerinde göster") };
         onTop.Click += (_, _) =>
         {
             App.Current.Settings.DeskChipOnTop = onTop.IsChecked;
@@ -319,14 +320,14 @@ public sealed class DeskChip : Window
             ApplyLayer();
             if (!onTop.IsChecked) SendToBack();
         };
-        var fullscreen = new ToggleMenuFlyoutItem { Text = "Tam ekran uygulamalarda gizle" };
+        var fullscreen = new ToggleMenuFlyoutItem { Text = L.T("Tam ekran uygulamalarda gizle") };
         fullscreen.Click += (_, _) =>
         {
             App.Current.Settings.DeskChipHideFullscreen = fullscreen.IsChecked;
             App.Current.SaveSettings();
             if (!fullscreen.IsChecked && _hiddenForFullscreen) { _hiddenForFullscreen = false; ShowChip(); }
         };
-        var corner = new MenuFlyoutItem { Text = "Sol alt köşeye geri al", Icon = new FontIcon { Glyph = "" } };
+        var corner = new MenuFlyoutItem { Text = L.T("Sol alt köşeye geri al"), Icon = new FontIcon { Glyph = "" } };
         corner.Click += (_, _) =>
         {
             App.Current.Settings.DeskChipLeft = null;
@@ -334,14 +335,14 @@ public sealed class DeskChip : Window
             App.Current.SaveSettings();
             Place();
         };
-        var hint = new MenuFlyoutItem { Text = "Taşımak için kutuyu sürükle", IsEnabled = false };
-        var servers = new MenuFlyoutItem { Text = "Sunucular penceresi", Icon = new FontIcon { Glyph = "" } };
+        var hint = new MenuFlyoutItem { Text = L.T("Taşımak için kutuyu sürükle"), IsEnabled = false };
+        var servers = new MenuFlyoutItem { Text = L.T("Sunucular penceresi"), Icon = new FontIcon { Glyph = "" } };
         servers.Click += (_, _) => App.Current.ShowServers();
-        var close = new MenuFlyoutItem { Text = "Kutuyu kapat", Icon = new FontIcon { Glyph = "" } };
+        var close = new MenuFlyoutItem { Text = L.T("Kutuyu kapat"), Icon = new FontIcon { Glyph = "" } };
         close.Click += (_, _) =>
         {
             App.Current.SetDeskChip(false);
-            App.Current.Toast("Sunucu kutusu kapandı. Geri açmak için: saatin yanındaki sunucu simgesine sağ tıkla > \"Masaüstü kutusunu göster\".");
+            App.Current.Toast(L.T("Sunucu kutusu kapandı. Geri açmak için: saatin yanındaki sunucu simgesine sağ tıkla > \"Sunucu kutusu (sol alt): göster / gizle\"."));
         };
         menu.Opening += (_, _) =>
         {

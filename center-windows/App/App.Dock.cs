@@ -64,7 +64,7 @@ public partial class App
     {
         if (s.MonitorId is not { } id)
         {
-            Toast($"{s.Label}: bağlantı henüz kurulmadı; birkaç saniye sonra yeniden dene.");
+            Toast(L.F("{0}: bağlantı henüz kurulmadı; birkaç saniye sonra yeniden dene.", s.Label));
             return;
         }
         var window = new ServerWindow(Servers, id, s.Label);
@@ -80,4 +80,59 @@ public partial class App
     }
 
     private void StopDock() => _dock?.Shutdown();
+
+    /// <summary>
+    /// Settings → Language: everything shown next is in the new language. The
+    /// main window and the panel are built again now; with terminal tabs open
+    /// the main window waits until the person agrees (closing it ends them).
+    /// </summary>
+    public void SetLanguage(string? code)
+    {
+        Settings.Language = code;
+        SaveSettings();
+        var before = L.Current;
+        L.Use(L.Resolve(code));
+        if (L.Current == before) return;
+        try
+        {
+            _tray?.Dispose();
+            BuildTray();
+            UpdateServersMenu();
+            UpdateTray();
+            UpdateMonitorTray();
+        }
+        catch (Exception e) { LogCrash(e); }
+        try { _dock?.RebuildTexts(); } catch (Exception e) { LogCrash(e); }
+        try { _monitorFlyout?.Close(); } catch (Exception) { }
+        _monitorFlyout = null;
+        try
+        {
+            var oldPanel = _window;
+            var wasVisible = oldPanel?.AppWindow.IsVisible == true;
+            _window = new MainWindow();
+            oldPanel?.Quit();
+            if (wasVisible && _servers is null) _window.ShowPanel();
+        }
+        catch (Exception e) { LogCrash(e); }
+        ReopenServersInLanguage(force: false);
+    }
+
+    /// <summary>Builds the main window again in the current language (with terminals open only when <paramref name="force"/>).</summary>
+    public void ReopenServersInLanguage(bool force)
+    {
+        if (_servers is not { } old) return;
+        if (old.HasTerminals && !force)
+        {
+            old.ShowLanguagePending();
+            return;
+        }
+        try
+        {
+            _servers = null;
+            old.CloseForLanguage();
+            ShowServers();
+            _servers?.OpenSettings();
+        }
+        catch (Exception e) { LogCrash(e); }
+    }
 }

@@ -93,7 +93,7 @@ public sealed class TerminalShare : IAsyncDisposable
     {
         var buffer = new byte[64 * 1024];
         var message = new MemoryStream();
-        var reason = "Paylaşım bitti.";
+        var reason = L.T("Paylaşım bitti.");
         try
         {
             while (_ws.State == WebSocketState.Open)
@@ -103,10 +103,10 @@ public sealed class TerminalShare : IAsyncDisposable
                 {
                     reason = _ws.CloseStatusDescription switch
                     {
-                        "removed by host" => "Paylaşan kişi seni çıkardı.",
-                        "share is full" => "Bu paylaşım dolu.",
-                        "no such share" => "Paylaşım artık yok.",
-                        _ => "Paylaşım bitti.",
+                        "removed by host" => L.T("Paylaşan kişi seni çıkardı."),
+                        "share is full" => L.T("Bu paylaşım dolu."),
+                        "no such share" => L.T("Paylaşım artık yok."),
+                        _ => L.T("Paylaşım bitti."),
                     };
                     break;
                 }
@@ -119,7 +119,7 @@ public sealed class TerminalShare : IAsyncDisposable
         }
         catch (Exception e) when (e is WebSocketException or OperationCanceledException or IOException)
         {
-            reason = "Paylaşım bağlantısı koptu.";
+            reason = L.T("Paylaşım bağlantısı koptu.");
         }
         Ended?.Invoke(reason);
     }
@@ -154,7 +154,7 @@ public sealed class TerminalShare : IAsyncDisposable
                 catch (CoreException) { }
                 break;
             case "paused" when !IsHost:
-                Output?.Invoke(Convert.ToBase64String(Encoding.UTF8.GetBytes("\r\n\u001b[90m[Paylaşan kişinin bağlantısı koptu; geri gelmesi bekleniyor.]\u001b[0m\r\n")));
+                Output?.Invoke(Convert.ToBase64String(Encoding.UTF8.GetBytes(L.T("\r\n\u001b[90m[Paylaşan kişinin bağlantısı koptu; geri gelmesi bekleniyor.]\u001b[0m\r\n"))));
                 break;
         }
     }

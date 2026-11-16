@@ -31,7 +31,7 @@ public sealed class MonitorFlyout : Window
     public MonitorFlyout(ServerMonitor monitor)
     {
         _monitor = monitor;
-        Title = "WECOMMANDER Sunucularım";
+        Title = L.T("WECOMMANDER Sunucularım");
         SystemBackdrop = new DesktopAcrylicBackdrop();
         AppWindow.IsShownInSwitchers = false;
         // No title bar at all (the presenter removes it). Extending content into
@@ -73,12 +73,12 @@ public sealed class MonitorFlyout : Window
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         head.Children.Add(Icon("chart_increasing", 34));
         var title = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        title.Children.Add(new TextBlock { Text = "Sunucularım", FontSize = 18, FontWeight = FontWeights.SemiBold });
-        title.Children.Add(new TextBlock { Text = "Canlı · 3 saniyede bir", Foreground = Secondary, FontSize = 12 });
+        title.Children.Add(new TextBlock { Text = L.T("Sunucularım"), FontSize = 18, FontWeight = FontWeights.SemiBold });
+        title.Children.Add(new TextBlock { Text = L.T("Canlı · 3 saniyede bir"), Foreground = Secondary, FontSize = 12 });
         Grid.SetColumn(title, 1);
         head.Children.Add(title);
         var add = new Button { Content = new SymbolIcon(Symbol.Add), Padding = new Thickness(8) };
-        ToolTipService.SetToolTip(add, "İzlenecek sunucu ekle");
+        ToolTipService.SetToolTip(add, L.T("İzlenecek sunucu ekle"));
         add.Flyout = AddMenu();
         Grid.SetColumn(add, 2);
         head.Children.Add(add);
@@ -115,7 +115,7 @@ public sealed class MonitorFlyout : Window
                 item.Click += (_, _) => _monitor.Watch(h);
                 menu.Items.Add(item);
             }
-            if (hosts.Count == 0) menu.Items.Add(new MenuFlyoutItem { Text = "Eklenecek başka sunucu yok", IsEnabled = false });
+            if (hosts.Count == 0) menu.Items.Add(new MenuFlyoutItem { Text = L.T("Eklenecek başka sunucu yok"), IsEnabled = false });
         };
         return menu;
     }
@@ -218,8 +218,8 @@ public sealed class MonitorFlyout : Window
         {
             var empty = new StackPanel { Spacing = 8, Margin = new Thickness(0, 24, 0, 0) };
             empty.Children.Add(Icon("desktop_computer", 64));
-            empty.Children.Add(new TextBlock { Text = "İzlenen sunucu yok", HorizontalAlignment = HorizontalAlignment.Center, FontWeight = FontWeights.SemiBold });
-            empty.Children.Add(new TextBlock { Text = "Yukarıdaki + ile ya da Sunucular listesinde sağ tık > \"Görev çubuğunda izle\" ile ekle.", Foreground = Secondary, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center });
+            empty.Children.Add(new TextBlock { Text = L.T("İzlenen sunucu yok"), HorizontalAlignment = HorizontalAlignment.Center, FontWeight = FontWeights.SemiBold });
+            empty.Children.Add(new TextBlock { Text = L.T("Yukarıdaki + ile ya da Sunucular listesinde sağ tık > \"Görev çubuğunda izle\" ile ekle."), Foreground = Secondary, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center });
             _cards.Children.Add(empty);
         }
         else if (_monitor.Servers.Count > 0)
@@ -236,14 +236,14 @@ internal sealed class ServerCard
     private readonly TextBlock _name = new() { FontSize = 16, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly TextBlock _status = new() { FontSize = 12, TextWrapping = TextWrapping.Wrap };
     private readonly Microsoft.UI.Xaml.Shapes.Ellipse _dot = new() { Width = 10, Height = 10 };
-    private readonly Tile _cpu = new("high_voltage", "İşlemci");
-    private readonly Tile _mem = new("brain", "Bellek");
+    private readonly Tile _cpu = new("high_voltage", L.T("İşlemci"));
+    private readonly Tile _mem = new("brain", L.T("Bellek"));
     private readonly Tile _disk = new("floppy_disk", "Disk /");
     private readonly TextBlock _net = new() { FontSize = 13 };
     private readonly TextBlock _io = new() { FontSize = 13 };
     private readonly TextBlock _zombies = new() { FontSize = 13 };
     private readonly StackPanel _zombieRow = new() { Orientation = Orientation.Horizontal, Spacing = 8 };
-    private readonly ColumnChart _chart = new("İşlemci geçmişi", Charts.Palette[0], v => $"%{v:0}", fixedMax: 100, capacity: 40, height: 56);
+    private readonly ColumnChart _chart = new(L.T("İşlemci geçmişi"), Charts.Palette[0], v => $"%{v:0}", fixedMax: 100, capacity: 40, height: 56);
     private int _drawn;
 
     public Border Root { get; }
@@ -270,11 +270,11 @@ internal sealed class ServerCard
         head.Children.Add(names);
         var more = new Button { Content = new SymbolIcon(Symbol.More), Padding = new Thickness(6), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0) };
         var menu = new MenuFlyout();
-        var manage = new MenuFlyoutItem { Text = "Sunucu yönetimini aç", Icon = new FontIcon { Glyph = "" } };
+        var manage = new MenuFlyoutItem { Text = L.T("Sunucu yönetimini aç"), Icon = new FontIcon { Glyph = "" } };
         manage.Click += (_, _) => { flyout.Hide(); App.Current.OpenServerManagement(s); };
-        var terminal = new MenuFlyoutItem { Text = "Terminal aç", Icon = new FontIcon { Glyph = "" } };
+        var terminal = new MenuFlyoutItem { Text = L.T("Terminal aç"), Icon = new FontIcon { Glyph = "" } };
         terminal.Click += (_, _) => { flyout.Hide(); App.Current.OpenHostTerminal(s.HostId); };
-        var stop = new MenuFlyoutItem { Text = "İzlemeyi bırak", Icon = new SymbolIcon(Symbol.Cancel) };
+        var stop = new MenuFlyoutItem { Text = L.T("İzlemeyi bırak"), Icon = new SymbolIcon(Symbol.Cancel) };
         stop.Click += (_, _) => monitor.Unwatch(s.HostId);
         menu.Items.Add(manage);
         menu.Items.Add(terminal);
@@ -310,7 +310,7 @@ internal sealed class ServerCard
         p.Children.Add(lines);
         p.Children.Add(_chart.Root);
 
-        var open = new Button { Content = "Sunucu yönetimi", HorizontalAlignment = HorizontalAlignment.Stretch, Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
+        var open = new Button { Content = L.T("Sunucu yönetimi"), HorizontalAlignment = HorizontalAlignment.Stretch, Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
         open.Click += (_, _) => { flyout.Hide(); App.Current.OpenServerManagement(s); };
         p.Children.Add(open);
 
@@ -331,21 +331,21 @@ internal sealed class ServerCard
         var color = s.Error is not null ? Microsoft.UI.Colors.Gray : !s.Live ? Charts.Warn : Charts.Level(s.Worst);
         _dot.Fill = new SolidColorBrush(color);
         if (s.Error is not null) _status.Text = s.Error;
-        else if (!s.Live) _status.Text = "Bağlanıyor…";
-        else _status.Text = $"Çalışıyor · yük {s.Last!.Load1:0.00}" + (s.Swap > 0 ? $" · swap %{s.Swap:0}" : "");
+        else if (!s.Live) _status.Text = L.T("Bağlanıyor…");
+        else _status.Text = L.F("Çalışıyor · yük {0:0.00}", s.Last!.Load1) + (s.Swap > 0 ? $" · swap %{s.Swap:0}" : "");
         if (s.Last is { } last)
         {
-            _cpu.Set(s.Cpu, s.Samples > 0 ? "" : "ölçülüyor");
+            _cpu.Set(s.Cpu, s.Samples > 0 ? "" : L.T("ölçülüyor"));
             _mem.Set(s.Mem, Sizes.Kb(last.MemTotalKb - last.MemAvailableKb));
-            _disk.Set(s.Disk, "boş " + Sizes.Kb(last.RootAvailKb));
-            _net.Text = $"Ağ  ↓ {Sizes.Rate(s.Rx)}   ↑ {Sizes.Rate(s.Tx)}";
+            _disk.Set(s.Disk, L.T("boş ") + Sizes.Kb(last.RootAvailKb));
+            _net.Text = L.F("Ağ  ↓ {0}   ↑ {1}", Sizes.Rate(s.Rx), Sizes.Rate(s.Tx));
             _io.Text = $"Disk  okuma {Sizes.Rate(s.Read)}   yazma {Sizes.Rate(s.Write)}";
-            _zombies.Text = last.Zombies == 0 ? "Zombi süreç yok" : $"{last.Zombies} zombi süreç";
+            _zombies.Text = last.Zombies == 0 ? L.T("Zombi süreç yok") : L.F("{0} zombi süreç", last.Zombies);
             _zombies.Foreground = last.Zombies >= 20 ? new SolidColorBrush(Charts.Warn) : (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"];
         }
         while (_drawn < s.Samples)
         {
-            _chart.Push(s.Cpu, $"yük {s.Last?.Load1:0.00}");
+            _chart.Push(s.Cpu, L.F("yük {0:0.00}", s.Last?.Load1));
             _drawn++;
         }
     }

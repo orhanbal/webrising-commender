@@ -106,7 +106,7 @@ public sealed class ServerMonitor
             var host = _c.Hosts.FirstOrDefault(h => h.Id == s.HostId);
             if (host is not null) s.Label = host.Label;
             else if (_c.Hosts.Count > 0) gone.Add(s); // deleted host: stop watching it
-            else if (s.Label.Length == 0) s.Label = "Sunucu";
+            else if (s.Label.Length == 0) s.Label = L.T("Sunucu");
         }
         foreach (var s in gone) { Close(s); Servers.Remove(s); }
         if (gone.Count > 0) Save();
@@ -188,7 +188,7 @@ public sealed class ServerMonitor
         catch (Exception e)
         {
             Close(s);
-            s.Error = e.Message.Contains("yeniden bağlanılıyor") ? e.Message : "Bağlantı koptu; yeniden bağlanılıyor.";
+            s.Error = e.Message == L.T("Bağlantı koptu; yeniden bağlanılıyor.") ? e.Message : L.T("Bağlantı koptu; yeniden bağlanılıyor.");
             s.NextTry = DateTime.UtcNow + TimeSpan.FromSeconds(5);
         }
     }

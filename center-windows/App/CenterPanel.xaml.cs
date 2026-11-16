@@ -31,6 +31,7 @@ public sealed partial class CenterPanel : UserControl
     public CenterPanel()
     {
         InitializeComponent();
+        XamlText.Apply(this);
         Root.KeyDown += (_, e) =>
         {
             if (e.Key == Windows.System.VirtualKey.Escape) CloseRequested?.Invoke();
@@ -48,6 +49,8 @@ public sealed partial class CenterPanel : UserControl
         };
         _clock.Start();
         Center.Changed += Render;
+        Unloaded += (_, _) => Center.Changed -= Render;
+        Loaded += (_, _) => { Center.Changed -= Render; Center.Changed += Render; };
         Render();
     }
 
@@ -77,10 +80,10 @@ public sealed partial class CenterPanel : UserControl
     {
         var running = Center.Embedded && Center.InstallerRunning && Center.UpdatePercent is not null;
         UpdateBar.IsOpen = Center.ShowUpdateOffer || running;
-        UpdateBar.Title = running ? "Güncelleniyor" : "Yeni sürüm var";
+        UpdateBar.Title = running ? L.T("Güncelleniyor") : L.T("Yeni sürüm var");
         UpdateBar.Message = running
             ? (Center.InstallerLog.Count > 0 ? Center.InstallerLog[^1] : "")
-            : $"WECOMMANDER 0.1.{Center.LatestAppBuild} yayımlandı (sendeki: 0.1.{Center.AppBuild}). Güncelleme bir dakikadan kısa sürer; uygulama kendiliğinden yeniden açılır.";
+            : L.F("WECOMMANDER 0.1.{0} yayımlandı (sendeki: 0.1.{1}). Güncelleme bir dakikadan kısa sürer; uygulama kendiliğinden yeniden açılır.", Center.LatestAppBuild, Center.AppBuild);
         UpdateBarButton.Visibility = running ? Visibility.Collapsed : Visibility.Visible;
         UpdateBarProgress.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
         if (Center.UpdatePercent is { } percent) UpdateBarProgress.Value = percent;
@@ -113,7 +116,7 @@ public sealed partial class CenterPanel : UserControl
             NotificationBar.IsOpen = phase == Phase.SignedIn && Center.NotificationsBlocked;
             NotificationBar.Message = Texts.NotificationBlockedMessage(Center.NotificationSetting.ToString());
             AutonomyBar.IsOpen = phase == Phase.SignedIn && Center.Autonomy.Count > 0;
-            AutonomyBar.Message = $"{Center.Autonomy.Count} cihazda onay istenmiyor.";
+            AutonomyBar.Message = L.F("{0} cihazda onay istenmiyor.", Center.Autonomy.Count);
             if (phase == Phase.SignedIn)
             {
                 RenderPending();
@@ -123,9 +126,9 @@ public sealed partial class CenterPanel : UserControl
                 NotifySwitch.IsOn = Center.Settings.Notifications;
                 OpenSwitch.IsOn = Center.Settings.OpenOnRequest;
                 AutostartSwitch.IsOn = LocalStore.AutostartEnabled;
-                AboutText.Text = $"Sürüm {typeof(App).Assembly.GetName().Version?.ToString(3)}" +
-                                 (Center.Me is { } m ? $" · bu merkez: {m.Name}" : "") + $" · {Center.Settings.Server}";
-                ApprovalsTab.Text = Center.Pending.Count > 0 ? $"Onaylar ({Center.Pending.Count})" : "Onaylar";
+                AboutText.Text = L.F("Sürüm {0}", typeof(App).Assembly.GetName().Version?.ToString(3)) +
+                                 (Center.Me is { } m ? L.F(" · bu merkez: {0}", m.Name) : "") + $" · {Center.Settings.Server}";
+                ApprovalsTab.Text = Center.Pending.Count > 0 ? L.F("Onaylar ({0})", Center.Pending.Count) : L.T("Onaylar");
             }
             UpdateStatus();
         }
@@ -136,7 +139,7 @@ public sealed partial class CenterPanel : UserControl
     {
         var agent = Center.Agent;
         var busy = Center.AgentBusy;
-        AgentStateText.Text = busy ? "İşleniyor…" : Texts.AgentStateLabel(agent);
+        AgentStateText.Text = busy ? L.T("İşleniyor…") : Texts.AgentStateLabel(agent);
         AgentDot.Fill = new SolidColorBrush(agent switch
         {
             { State: AgentRunState.Running } => Microsoft.UI.Colors.SeaGreen,
@@ -148,34 +151,34 @@ public sealed partial class CenterPanel : UserControl
         AgentSwitch.IsEnabled = !busy && agent is not null && agent.State != AgentRunState.NotInstalled;
         AgentHelpText.Text = agent switch
         {
-            { Mode: AgentMode.Embedded, State: AgentRunState.NotInstalled } => Center.Pairing ? "Bu bilgisayar hesabına bağlanıyor…" : Texts.EmbeddedNotPaired,
+            { Mode: AgentMode.Embedded, State: AgentRunState.NotInstalled } => Center.Pairing ? L.T("Bu bilgisayar hesabına bağlanıyor…") : Texts.EmbeddedNotPaired,
             { Mode: AgentMode.Embedded, Running: true } => Texts.EmbeddedRunning,
             { State: AgentRunState.NotInstalled } => Texts.AgentNotInstalled,
-            { Mode: AgentMode.Service } => "Ajan bir Windows hizmeti olarak kurulu: açıp kapatmak yönetici onayı ister. Durursa bildirim gelir.",
-            { Running: true } => "Açıkken ajan durursa Yönetim Merkezi onu kendiliğinden yeniden başlatır ve bildirim gösterir.",
+            { Mode: AgentMode.Service } => L.T("Ajan bir Windows hizmeti olarak kurulu: açıp kapatmak yönetici onayı ister. Durursa bildirim gelir."),
+            { Running: true } => L.T("Açıkken ajan durursa Yönetim Merkezi onu kendiliğinden yeniden başlatır ve bildirim gösterir."),
             _ => Texts.AgentOffWarning,
         };
         var update = Center.AgentUpdateAvailable;
         if (Center.Embedded)
         {
             // The agent ships with the app: one version, one update button.
-            var current = Center.AppBuild is { } b ? "0.1." + b : Center.AgentVersion ?? "geliştirici sürümü";
-            AgentVersionText.Text = "Sürüm: " + current + (update ? $" · yeni sürüm: 0.1.{Center.LatestAppBuild}" : Center.LatestAppBuild is not null ? " · güncel" + (Center.LastReleaseRead is { } read ? $" (son denetim {read:HH:mm})" : "") : "");
-            AgentUpdateButton.Content = update ? "Yeni sürüm var — Uygulamayı güncelle" : "Güncellemeleri denetle";
+            var current = Center.AppBuild is { } b ? "0.1." + b : Center.AgentVersion ?? L.T("geliştirici sürümü");
+            AgentVersionText.Text = L.T("Sürüm: ") + current + (update ? L.F(" · yeni sürüm: 0.1.{0}", Center.LatestAppBuild) : Center.LatestAppBuild is not null ? L.T(" · güncel") + (Center.LastReleaseRead is { } read ? $" (son denetim {read:HH:mm})" : "") : "");
+            AgentUpdateButton.Content = update ? L.T("Yeni sürüm var — Uygulamayı güncelle") : L.T("Güncellemeleri denetle");
             if (Packaging.IsPackaged)
             {
-                AgentVersionText.Text = "Sürüm: " + current + " · güncellemeler Microsoft Store'dan gelir";
-                AgentUpdateButton.Content = "Microsoft Store'da aç";
+                AgentVersionText.Text = L.T("Sürüm: ") + current + L.T(" · güncellemeler Microsoft Store'dan gelir");
+                AgentUpdateButton.Content = L.T("Microsoft Store'da aç");
                 update = false;
             }
         }
         else
         {
             AgentVersionText.Text = Center.AgentVersion is { } v
-                ? "Kurulu sürüm: " + v + (update ? $" · yeni sürüm: 0.1.{Center.LatestAgentBuild}" : Center.LatestAgentBuild is not null ? " · güncel" : "")
+                ? L.T("Kurulu sürüm: ") + v + (update ? L.F(" · yeni sürüm: 0.1.{0}", Center.LatestAgentBuild) : Center.LatestAgentBuild is not null ? L.T(" · güncel") : "")
                 : "";
-            AgentUpdateButton.Content = agent is { State: AgentRunState.NotInstalled } ? "Ajanı kur"
-                : update ? "Yeni sürüm var — Ajanı güncelle" : "Ajanı güncelle";
+            AgentUpdateButton.Content = agent is { State: AgentRunState.NotInstalled } ? L.T("Ajanı kur")
+                : update ? L.T("Yeni sürüm var — Ajanı güncelle") : L.T("Ajanı güncelle");
         }
         // Accent (blue) button while an update is waiting, like Windows Update.
         AgentUpdateButton.Style = update || (!Center.Embedded && agent is { State: AgentRunState.NotInstalled })
@@ -199,7 +202,7 @@ public sealed partial class CenterPanel : UserControl
         if (Center.InstallerRunning) AgentProgress.IsActive = true;
         var down = agent is { Running: false, State: AgentRunState.Stopped } && !busy;
         AgentBar.IsOpen = Center.Phase == Phase.SignedIn && down;
-        AgentBar.Title = agent is { Enabled: false } ? "Bu bilgisayardaki ajan kapalı" : "Bu bilgisayardaki ajan çalışmıyor";
+        AgentBar.Title = agent is { Enabled: false } ? L.T("Bu bilgisayardaki ajan kapalı") : L.T("Bu bilgisayardaki ajan çalışmıyor");
         AgentBar.Message = Texts.AgentOffWarning;
     }
 
@@ -207,8 +210,8 @@ public sealed partial class CenterPanel : UserControl
     {
         if (_rendering) return;
         var on = AgentSwitch.IsOn;
-        if (!on && !await ConfirmAsync("Ajan kapatılsın mı?",
-                Texts.AgentOffWarning + " Yeniden açana kadar oturum açılışında da başlamaz.", "Ajanı kapat"))
+        if (!on && !await ConfirmAsync(L.T("Ajan kapatılsın mı?"),
+                Texts.AgentOffWarning + L.T(" Yeniden açana kadar oturum açılışında da başlamaz."), L.T("Ajanı kapat")))
         {
             Render();
             return;
@@ -225,7 +228,7 @@ public sealed partial class CenterPanel : UserControl
     private void UpdateStatus()
     {
         StatusText.Text = Center.Phase == Phase.SignedIn && Center.LastSync is { } last
-            ? $"Son eşitleme: {(int)(DateTime.UtcNow - last).TotalSeconds} sn önce"
+            ? L.F("Son eşitleme: {0} sn önce", (int)(DateTime.UtcNow - last).TotalSeconds)
             : "";
     }
 
@@ -237,7 +240,7 @@ public sealed partial class CenterPanel : UserControl
         var names = Center.Devices.ToDictionary(d => d.Id, d => d.Name);
         foreach (var item in Center.Pending)
         {
-            var device = names.GetValueOrDefault(item.DeviceId, "bilinmeyen cihaz");
+            var device = names.GetValueOrDefault(item.DeviceId, L.T("bilinmeyen cihaz"));
             var expired = item.ExpiresAt <= DateTimeOffset.UtcNow;
             var time = new TextBlock
             {
@@ -278,8 +281,8 @@ public sealed partial class CenterPanel : UserControl
                     },
                 });
             }
-            var approve = new Button { Content = "Onayla", Style = (Style)Application.Current.Resources["AccentButtonStyle"], IsEnabled = !expired };
-            var deny = new Button { Content = "Reddet", IsEnabled = !expired };
+            var approve = new Button { Content = L.T("Onayla"), Style = (Style)Application.Current.Resources["AccentButtonStyle"], IsEnabled = !expired };
+            var deny = new Button { Content = L.T("Reddet"), IsEnabled = !expired };
             approve.Click += async (_, _) => await ConfirmDecisionAsync(item, device, true);
             deny.Click += async (_, _) => await ConfirmDecisionAsync(item, device, false);
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
@@ -307,7 +310,7 @@ public sealed partial class CenterPanel : UserControl
             Title = title,
             Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap },
             PrimaryButtonText = primary,
-            CloseButtonText = "Vazgeç",
+            CloseButtonText = L.T("Vazgeç"),
             DefaultButton = ContentDialogButton.Primary,
         };
         _dialogOpen = true;
@@ -319,9 +322,9 @@ public sealed partial class CenterPanel : UserControl
     {
         var what = string.IsNullOrEmpty(item.Summary) ? Texts.KindLabel(item.ActionKind) : item.Summary;
         var ok = await ConfirmAsync(
-            approve ? "Bu işlemi onayla?" : "Bu işlemi reddet?",
-            $"{device}\n{what}\n\n" + (approve ? "Onay yalnız bu işlem için ve bir kez geçerlidir." : "Yapay zekâ bu işlemi çalıştıramaz."),
-            approve ? "Onayla" : "Reddet");
+            approve ? L.T("Bu işlemi onayla?") : L.T("Bu işlemi reddet?"),
+            $"{device}\n{what}\n\n" + (approve ? L.T("Onay yalnız bu işlem için ve bir kez geçerlidir.") : L.T("Yapay zekâ bu işlemi çalıştıramaz.")),
+            approve ? L.T("Onayla") : L.T("Reddet"));
         if (!ok) return;
         await RunAsync(() => Center.DecideAsync(item.Id, approve));
     }
@@ -358,7 +361,7 @@ public sealed partial class CenterPanel : UserControl
         DevicesPanel.Children.Clear();
         if (Center.Devices.Count == 0)
         {
-            DevicesPanel.Children.Add(new TextBlock { Text = "Henüz cihaz yok.", Foreground = ThemeBrush("TextFillColorSecondaryBrush") });
+            DevicesPanel.Children.Add(new TextBlock { Text = L.T("Henüz cihaz yok."), Foreground = ThemeBrush("TextFillColorSecondaryBrush") });
             return;
         }
         foreach (var d in Center.Devices)
@@ -367,7 +370,7 @@ public sealed partial class CenterPanel : UserControl
             var trust = d.TrustLevel switch
             {
                 "full" => $"otonom ({Texts.Until(d.TrustFullUntil)})",
-                "strict" => "sıkı",
+                "strict" => L.T("sıkı"),
                 _ => "standart",
             };
             var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
@@ -382,7 +385,7 @@ public sealed partial class CenterPanel : UserControl
             text.Children.Add(new TextBlock { Text = d.Name, FontWeight = FontWeights.SemiBold });
             text.Children.Add(new TextBlock
             {
-                Text = string.Join(" · ", new[] { platform, d.Online ? "çevrimiçi" : "çevrimdışı", trust }.Where(s => s.Length > 0)),
+                Text = string.Join(" · ", new[] { platform, d.Online ? L.T("çevrimiçi") : L.T("çevrimdışı"), trust }.Where(s => s.Length > 0)),
                 Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
                 Foreground = ThemeBrush("TextFillColorSecondaryBrush"),
             });
@@ -427,8 +430,8 @@ public sealed partial class CenterPanel : UserControl
 
     private async void SignOut_Click(object sender, RoutedEventArgs e)
     {
-        if (await ConfirmAsync("Oturum kapatılsın mı?",
-                "Bu bilgisayar onay bildirimlerini almayı bırakır. Yeniden açmak için tarayıcıda onay gerekir.", "Oturumu kapat"))
+        if (await ConfirmAsync(L.T("Oturum kapatılsın mı?"),
+                L.T("Bu bilgisayar onay bildirimlerini almayı bırakır. Yeniden açmak için tarayıcıda onay gerekir."), L.T("Oturumu kapat")))
             await RunAsync(Center.SignOutAsync);
     }
 

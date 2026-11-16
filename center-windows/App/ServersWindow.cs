@@ -29,8 +29,8 @@ public sealed class ServersWindow : Window
     private readonly TextBlock _filesPath = new() { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly StackPanel _transfers = new() { Spacing = 4, Margin = new Thickness(8) };
     private readonly InfoBar _info = new() { IsClosable = true };
-    private readonly AppBarToggleButton _filesButton = new() { Label = "Dosyalar", Icon = new SymbolIcon(Symbol.Folder) };
-    private readonly AppBarButton _serverButton = new() { Label = "Sunucu yönetimi", Icon = new FontIcon { Glyph = "\uE9D9" } };
+    private readonly AppBarToggleButton _filesButton = new() { Label = L.T("Dosyalar"), Icon = new SymbolIcon(Symbol.Folder) };
+    private readonly AppBarButton _serverButton = new() { Label = L.T("Sunucu yönetimi"), Icon = new FontIcon { Glyph = "\uE9D9" } };
     private readonly Dictionary<string, ServerWindow> _serverWindows = [];
     private readonly Border _messageHost = new()
     {
@@ -46,11 +46,11 @@ public sealed class ServersWindow : Window
         Shadow = new ThemeShadow(),
         Translation = new System.Numerics.Vector3(0, 0, 32),
     };
-    private readonly AppBarButton _tunnelsButton = new() { Label = "Tüneller", Icon = new FontIcon { Glyph = "\uE8AF" } };
-    private readonly AppBarButton _snippetButton = new() { Label = "Parçacık", Icon = new FontIcon { Glyph = "\uE943" } };
-    private readonly AppBarButton _splitButton = new() { Label = "Böl", Icon = new FontIcon { Glyph = "\uE70D" } };
-    private readonly AppBarToggleButton _broadcastButton = new() { Label = "Tümüne yaz", Icon = new FontIcon { Glyph = "\uE789" } };
-    private readonly AppBarButton _shareButton = new() { Label = "Ekiple paylaş", Icon = new FontIcon { Glyph = "\uE72D" } };
+    private readonly AppBarButton _tunnelsButton = new() { Label = L.T("Tüneller"), Icon = new FontIcon { Glyph = "\uE8AF" } };
+    private readonly AppBarButton _snippetButton = new() { Label = L.T("Parçacık"), Icon = new FontIcon { Glyph = "\uE943" } };
+    private readonly AppBarButton _splitButton = new() { Label = L.T("Böl"), Icon = new FontIcon { Glyph = "\uE70D" } };
+    private readonly AppBarToggleButton _broadcastButton = new() { Label = L.T("Tümüne yaz"), Icon = new FontIcon { Glyph = "\uE789" } };
+    private readonly AppBarButton _shareButton = new() { Label = L.T("Ekiple paylaş"), Icon = new FontIcon { Glyph = "\uE72D" } };
     private readonly StackPanel _empty = new() { Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
     private readonly Grid _terminals = new();
     // The Sunucular page is built on every visit, like the other pages, with
@@ -60,9 +60,9 @@ public sealed class ServersWindow : Window
     private Grid? _hostsPage;
 
     private static AutoSuggestBox NewSearchBox() =>
-        new() { PlaceholderText = "Ara ya da kullanıcı@adres", QueryIcon = new SymbolIcon(Symbol.Find), MinWidth = 220 };
-    private readonly NavigationViewItem _hostsItem = new() { Content = "Sunucular", Tag = "hosts", Icon = new FontIcon { Glyph = "\uE968" } };
-    private readonly NavigationViewItem _terminalsItem = new() { Content = "Terminaller", Tag = "terminals", Icon = new FontIcon { Glyph = "\uE756" } };
+        new() { PlaceholderText = L.T("Ara ya da kullanıcı@adres"), QueryIcon = new SymbolIcon(Symbol.Find), MinWidth = 220 };
+    private readonly NavigationViewItem _hostsItem = new() { Content = L.T("Sunucular"), Tag = "hosts", Icon = new FontIcon { Glyph = "\uE968" } };
+    private readonly NavigationViewItem _terminalsItem = new() { Content = L.T("Terminaller"), Tag = "terminals", Icon = new FontIcon { Glyph = "\uE756" } };
     private readonly InfoBadge _terminalsBadge = new() { Visibility = Visibility.Collapsed };
     private RemoteListing? _listing;
     private List<Snippet> _snippets = [];
@@ -85,12 +85,12 @@ public sealed class ServersWindow : Window
         _terminalsItem.InfoBadge = _terminalsBadge;
         _nav.MenuItems.Add(_hostsItem);
         _nav.MenuItems.Add(_terminalsItem);
-        _nav.MenuItems.Add(new NavigationViewItem { Content = "Anahtarlar", Tag = "keys", Icon = new FontIcon { Glyph = "\uE8D7" } });
-        _nav.MenuItems.Add(new NavigationViewItem { Content = "Kimlikler", Tag = "identities", Icon = new FontIcon { Glyph = "\uE77B" } });
-        _nav.MenuItems.Add(new NavigationViewItem { Content = "Parçacıklar", Tag = "snippets", Icon = new FontIcon { Glyph = "\uE943" } });
-        _nav.MenuItems.Add(new NavigationViewItem { Content = "Tüneller", Tag = "tunnels", Icon = new FontIcon { Glyph = "\uE8AF" } });
-        _nav.MenuItems.Add(new NavigationViewItem { Content = "Bilinen sunucular", Tag = "known", Icon = new FontIcon { Glyph = "\uE72E" } });
-        _nav.MenuItems.Add(new NavigationViewItem { Content = "Geçmiş", Tag = "history", Icon = new FontIcon { Glyph = "\uE81C" } });
+        _nav.MenuItems.Add(new NavigationViewItem { Content = L.T("Anahtarlar"), Tag = "keys", Icon = new FontIcon { Glyph = "\uE8D7" } });
+        _nav.MenuItems.Add(new NavigationViewItem { Content = L.T("Kimlikler"), Tag = "identities", Icon = new FontIcon { Glyph = "\uE77B" } });
+        _nav.MenuItems.Add(new NavigationViewItem { Content = L.T("Parçacıklar"), Tag = "snippets", Icon = new FontIcon { Glyph = "\uE943" } });
+        _nav.MenuItems.Add(new NavigationViewItem { Content = L.T("Tüneller"), Tag = "tunnels", Icon = new FontIcon { Glyph = "\uE8AF" } });
+        _nav.MenuItems.Add(new NavigationViewItem { Content = L.T("Bilinen sunucular"), Tag = "known", Icon = new FontIcon { Glyph = "\uE72E" } });
+        _nav.MenuItems.Add(new NavigationViewItem { Content = L.T("Geçmiş"), Tag = "history", Icon = new FontIcon { Glyph = "\uE81C" } });
         // Approvals, autonomous mode and this computer are the panel on the
         // right; settings, the account and quitting are in the bottom bar.
         _nav.ItemInvoked += (_, e) => OnNavInvoked(e.InvokedItemContainer?.Tag);
@@ -99,7 +99,7 @@ public sealed class ServersWindow : Window
         _tabs.AddTabButtonClick += (_, _) =>
         {
             Navigate("hosts");
-            DispatcherQueue.TryEnqueue(() => Show("Yeni terminal için bir sunucuya tıkla (ya da arama kutusuna kullanıcı@adres yazıp Enter'a bas).", InfoBarSeverity.Informational));
+            DispatcherQueue.TryEnqueue(() => Show(L.T("Yeni terminal için bir sunucuya tıkla (ya da arama kutusuna kullanıcı@adres yazıp Enter'a bas)."), InfoBarSeverity.Informational));
         };
         _tabs.TabWidthMode = TabViewWidthMode.SizeToContent;
         // The tab view sized itself to its tab strip (40 px), so the terminal
@@ -116,17 +116,17 @@ public sealed class ServersWindow : Window
         };
         _tunnelsButton.Click += async (_, _) => await ShowTunnels();
         _serverButton.Click += (_, _) => OpenServerWindow();
-        ToolTipService.SetToolTip(_serverButton, "Bu sunucunun disk, bellek, süreç ve temizlik ekranı");
+        ToolTipService.SetToolTip(_serverButton, L.T("Bu sunucunun disk, bellek, süreç ve temizlik ekranı"));
         _snippetButton.Click += async (_, _) => await PickSnippet();
-        var closeButton = new AppBarButton { Label = "Terminali kapat", Icon = new SymbolIcon(Symbol.Cancel) };
+        var closeButton = new AppBarButton { Label = L.T("Terminali kapat"), Icon = new SymbolIcon(Symbol.Cancel) };
         closeButton.Click += (_, _) => { if (Current is { } t) CloseTab(t); };
         _splitButton.Flyout = SplitMenu();
-        ToolTipService.SetToolTip(_splitButton, "Bu sekmeye yan yana ya da alt alta ikinci bir terminal ekle");
+        ToolTipService.SetToolTip(_splitButton, L.T("Bu sekmeye yan yana ya da alt alta ikinci bir terminal ekle"));
         _broadcastButton.Click += (_, _) => { if (CurrentPage is { } page) page.Broadcast = _broadcastButton.IsChecked == true; };
-        ToolTipService.SetToolTip(_broadcastButton, "Yazdığın her şey bu sekmedeki tüm terminallere gider");
+        ToolTipService.SetToolTip(_broadcastButton, L.T("Yazdığın her şey bu sekmedeki tüm terminallere gider"));
         var bar = new CommandBar { DefaultLabelPosition = CommandBarDefaultLabelPosition.Right, IsOpen = false };
         _shareButton.Flyout = ShareMenu();
-        ToolTipService.SetToolTip(_shareButton, "Bu terminali ekipten birine canlı göster (uçtan uca şifreli)");
+        ToolTipService.SetToolTip(_shareButton, L.T("Bu terminali ekipten birine canlı göster (uçtan uca şifreli)"));
         bar.PrimaryCommands.Add(_serverButton);
         bar.PrimaryCommands.Add(_shareButton);
         bar.PrimaryCommands.Add(_splitButton);
@@ -137,8 +137,8 @@ public sealed class ServersWindow : Window
         bar.PrimaryCommands.Add(closeButton);
 
         _empty.Children.Add(new FontIcon { Glyph = "\uE756", FontSize = 40, Foreground = Secondary });
-        _empty.Children.Add(new TextBlock { Text = "Açık terminal yok", Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"], HorizontalAlignment = HorizontalAlignment.Center });
-        _empty.Children.Add(new TextBlock { Text = "Sunucular'dan birine tıkla; terminal burada, sekme olarak açılır.", Foreground = Secondary });
+        _empty.Children.Add(new TextBlock { Text = L.T("Açık terminal yok"), Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"], HorizontalAlignment = HorizontalAlignment.Center });
+        _empty.Children.Add(new TextBlock { Text = L.T("Sunucular'dan birine tıkla; terminal burada, sekme olarak açılır."), Foreground = Secondary });
 
         BuildFilesPane();
 
@@ -156,9 +156,17 @@ public sealed class ServersWindow : Window
         _terminals.Children.Add(_filesPane);
 
 
-        _c.Changed += () => DispatcherQueue.TryEnqueue(() => { RenderHosts(); });
-        _c.Notice += text => DispatcherQueue.TryEnqueue(() => Show(text, InfoBarSeverity.Warning));
-        Closed += (_, e) => { e.Handled = true; AppWindow.Hide(); };
+        Action onChanged = () => DispatcherQueue.TryEnqueue(() => { RenderHosts(); });
+        Action<string> onNotice = text => DispatcherQueue.TryEnqueue(() => Show(text, InfoBarSeverity.Warning));
+        _c.Changed += onChanged;
+        _c.Notice += onNotice;
+        Closed += (_, e) =>
+        {
+            // Closing only hides it; a language change closes it for real and builds a new one.
+            if (!_closingForLanguage) { e.Handled = true; AppWindow.Hide(); return; }
+            _c.Changed -= onChanged;
+            _c.Notice -= onNotice;
+        };
         // The window shows the navigation (menu + current section).
         // Pages never move between parents (WinUI may still hold an element in
         // its old parent: blank page or "already the child of another
@@ -198,7 +206,7 @@ public sealed class ServersWindow : Window
     private readonly PersonPicture _avatar = new() { Width = 32, Height = 32 };
     private readonly TextBlock _accountName = new() { TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly TextBlock _accountDetail = new() { TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 12 };
-    private readonly MenuFlyoutItem _signOutItem = new() { Text = "Oturumu kapat", Icon = new FontIcon { Glyph = "\uF3B1" } };
+    private readonly MenuFlyoutItem _signOutItem = new() { Text = L.T("Oturumu kapat"), Icon = new FontIcon { Glyph = "\uF3B1" } };
     private readonly Button _panelButton = new();
     private readonly Button _updateButton = new()
     {
@@ -259,9 +267,9 @@ public sealed class ServersWindow : Window
         accountRow.Children.Add(_avatar);
         accountRow.Children.Add(who);
         account.Content = accountRow;
-        ToolTipService.SetToolTip(account, "Hesap");
+        ToolTipService.SetToolTip(account, L.T("Hesap"));
         var accountMenu = new MenuFlyout();
-        var web = new MenuFlyoutItem { Text = "Hesabı tarayıcıda aç", Icon = new FontIcon { Glyph = "\uE774" } };
+        var web = new MenuFlyoutItem { Text = L.T("Hesabı tarayıcıda aç"), Icon = new FontIcon { Glyph = "\uE774" } };
         web.Click += (_, _) => App.Current.OpenDashboard();
         _signOutItem.Click += async (_, _) => await SignOutAsync();
         accountMenu.Items.Add(web);
@@ -285,18 +293,18 @@ public sealed class ServersWindow : Window
             if (_panelWanted && AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter { State: Microsoft.UI.Windowing.OverlappedPresenterState.Maximized } p) p.Restore();
             SyncPanel();
         };
-        var settings = BarButton("\uE713", "Ayarlar");
+        var settings = BarButton("\uE713", L.T("Ayarlar"));
         settings.Click += (_, _) => { _nav.SelectedItem = null; ShowSettings(); };
-        var power = BarButton("\uE7E8", "Kapat");
+        var power = BarButton("\uE7E8", L.T("Kapat"));
         var powerMenu = new MenuFlyout { Placement = FlyoutPlacementMode.TopEdgeAlignedRight };
-        var hide = new MenuFlyoutItem { Text = "Pencereyi kapat (tepside çalışmaya devam eder)", Icon = new FontIcon { Glyph = "\uE73F" } };
+        var hide = new MenuFlyoutItem { Text = L.T("Pencereyi kapat (tepside çalışmaya devam eder)"), Icon = new FontIcon { Glyph = "\uE73F" } };
         hide.Click += (_, _) => AppWindow.Hide();
-        var quit = new MenuFlyoutItem { Text = "WECOMMANDER'dan çık", Icon = new FontIcon { Glyph = "\uE7E8" } };
+        var quit = new MenuFlyoutItem { Text = L.T("WECOMMANDER'dan çık"), Icon = new FontIcon { Glyph = "\uE7E8" } };
         quit.Click += (_, _) => App.Current.QuitApp();
         powerMenu.Items.Add(hide);
         powerMenu.Items.Add(quit);
         power.Flyout = powerMenu;
-        var monitor = BarButton("\uE9D9", "Sunucularım (görev çubuğu izleyicisi)");
+        var monitor = BarButton("\uE9D9", L.T("Sunucularım (görev çubuğu izleyicisi)"));
         monitor.Click += (_, _) => App.Current.ToggleMonitorPanel();
         actions.Children.Add(monitor);
         actions.Children.Add(_panelButton);
@@ -366,7 +374,7 @@ public sealed class ServersWindow : Window
         App.DebugLayout($"sync: wanted={_panelWanted} mainVisible={AppWindow.IsVisible} state={state} -> show={show}");
         if (show) panel.ShowDocked(this);
         else panel.HideDocked();
-        var tip = _panelWanted ? "Onay panelini gizle" : "Onay panelini göster";
+        var tip = _panelWanted ? L.T("Onay panelini gizle") : L.T("Onay panelini göster");
         ToolTipService.SetToolTip(_panelButton, tip);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_panelButton, tip);
     }
@@ -399,19 +407,19 @@ public sealed class ServersWindow : Window
         {
             var name = string.IsNullOrWhiteSpace(me.Email) ? me.Name : me.Email!;
             _accountName.Text = name;
-            _accountDetail.Text = me.OrganizationName ?? "Oturum açık";
+            _accountDetail.Text = me.OrganizationName ?? L.T("Oturum açık");
             _avatar.DisplayName = name;
             _signOutItem.Visibility = Visibility.Visible;
         }
         else
         {
-            _accountName.Text = center.Phase == Phase.Linking ? "Tarayıcıda onay bekleniyor" : "Oturum açılmadı";
-            _accountDetail.Text = "Yandaki panelden oturum aç";
+            _accountName.Text = center.Phase == Phase.Linking ? L.T("Tarayıcıda onay bekleniyor") : L.T("Oturum açılmadı");
+            _accountDetail.Text = L.T("Yandaki panelden oturum aç");
             _avatar.DisplayName = "";
             _signOutItem.Visibility = Visibility.Collapsed;
         }
         _updateButton.Visibility = center.ShowUpdateOffer && !center.InstallerRunning ? Visibility.Visible : Visibility.Collapsed;
-        _updateButton.Content = $"Yeni sürüm: 0.1.{center.LatestAppBuild} · Güncelle";
+        _updateButton.Content = L.F("Yeni sürüm: 0.1.{0} · Güncelle", center.LatestAppBuild);
         var pending = center.Phase == Phase.SignedIn ? center.Pending.Count : 0;
         _panelButton.Content = pending > 0 && !_panelWanted
             ? new InfoBadge { Value = pending }
@@ -423,10 +431,10 @@ public sealed class ServersWindow : Window
         var dialog = new ContentDialog
         {
             XamlRoot = Content.XamlRoot,
-            Title = "Oturum kapatılsın mı?",
-            Content = new TextBlock { Text = "Bu bilgisayar onay bildirimlerini almayı bırakır. Yeniden açmak için tarayıcıda onay gerekir.", TextWrapping = TextWrapping.Wrap },
-            PrimaryButtonText = "Oturumu kapat",
-            CloseButtonText = "Vazgeç",
+            Title = L.T("Oturum kapatılsın mı?"),
+            Content = new TextBlock { Text = L.T("Bu bilgisayar onay bildirimlerini almayı bırakır. Yeniden açmak için tarayıcıda onay gerekir."), TextWrapping = TextWrapping.Wrap },
+            PrimaryButtonText = L.T("Oturumu kapat"),
+            CloseButtonText = L.T("Vazgeç"),
             DefaultButton = ContentDialogButton.Primary,
         };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
@@ -479,8 +487,8 @@ public sealed class ServersWindow : Window
         App.DebugLayout($"server management: current={(Current is { } c ? c.Host.Label + " closed=" + c.Closed + " guest=" + (c.Guest is not null) : "none")}");
         if (Current is not { Closed: false, Guest: null } t)
         {
-            Show(Current is null ? "Önce bir sunucuya bağlan: sunucu yönetimi açık bir terminalin bağlantısını kullanır."
-                : Current.Closed ? "Bu terminalin bağlantısı kapalı; sunucuya yeniden bağlan." : "Ortak bir terminalde sunucu yönetimi açılmaz.", InfoBarSeverity.Informational);
+            Show(Current is null ? L.T("Önce bir sunucuya bağlan: sunucu yönetimi açık bir terminalin bağlantısını kullanır.")
+                : Current.Closed ? L.T("Bu terminalin bağlantısı kapalı; sunucuya yeniden bağlan.") : L.T("Ortak bir terminalde sunucu yönetimi açılmaz."), InfoBarSeverity.Informational);
             return;
         }
         if (!_serverWindows.TryGetValue(t.SessionId, out var window))
@@ -502,7 +510,7 @@ public sealed class ServersWindow : Window
         _serverButton.IsEnabled = own;
         _snippetButton.IsEnabled = live;
         _shareButton.IsEnabled = live && t!.Guest is null;
-        _shareButton.Label = t?.Hosting is { } hs ? $"Paylaşılıyor ({hs.Guests.Count})" : "Ekiple paylaş";
+        _shareButton.Label = t?.Hosting is { } hs ? L.F("Paylaşılıyor ({0})", hs.Guests.Count) : L.T("Ekiple paylaş");
         var page = CurrentPage;
         _splitButton.IsEnabled = page is not null && page.Panes.Count < TabPage.MaxPanes;
         _broadcastButton.IsEnabled = page is { Panes.Count: > 1 };
@@ -643,7 +651,7 @@ public sealed class ServersWindow : Window
         if (!DispatcherQueue.TryEnqueue(() =>
         {
             try { NavigateNow(section); }
-            catch (Exception e) { App.LogCrash(e); Show("Sayfa açılamadı: " + e.Message, InfoBarSeverity.Error); }
+            catch (Exception e) { App.LogCrash(e); Show(L.T("Sayfa açılamadı: ") + e.Message, InfoBarSeverity.Error); }
         })) NavigateNow(section);
     }
 
@@ -672,12 +680,12 @@ public sealed class ServersWindow : Window
                 _search.QuerySubmitted += async (_, e) => await QuickConnect(e.QueryText);
                 _hostGroups = new StackPanel { Spacing = 18 };
                 RenderHosts();
-                _hostsPage = (Grid)Page("Sunucular", "Bir sunucuya tıkla, terminal yeni sekmede açılsın. Sağ tık: düzenle, sil.",
+                _hostsPage = (Grid)Page(L.T("Sunucular"), L.T("Bir sunucuya tıkla, terminal yeni sekmede açılsın. Sağ tık: düzenle, sil."),
                     new ScrollViewer { Content = _hostGroups },
                     _search,
-                    ActionButton("Ortak terminaller", Symbol.People, () => _ = ShowShares()),
-                    ActionButton("İçe aktar", Symbol.Import, async () => Show(await _c.ImportSshConfig(), InfoBarSeverity.Informational)),
-                    ActionButton("Yeni sunucu", Symbol.Add, () => _ = EditHost(null), accent: true));
+                    ActionButton(L.T("Ortak terminaller"), Symbol.People, () => _ = ShowShares()),
+                    ActionButton(L.T("İçe aktar"), Symbol.Import, async () => Show(await _c.ImportSshConfig(), InfoBarSeverity.Informational)),
+                    ActionButton(L.T("Yeni sunucu"), Symbol.Add, () => _ = EditHost(null), accent: true));
                 SetPage(_hostsPage);
                 break;
         }
@@ -716,14 +724,14 @@ public sealed class ServersWindow : Window
         {
             var welcome = new StackPanel { Spacing = 10, Margin = new Thickness(0, 40, 0, 0), HorizontalAlignment = HorizontalAlignment.Center };
             welcome.Children.Add(new FontIcon { Glyph = "\uE968", FontSize = 44, Foreground = Secondary });
-            welcome.Children.Add(new TextBlock { Text = "Henüz sunucu yok", Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"], HorizontalAlignment = HorizontalAlignment.Center });
-            welcome.Children.Add(new TextBlock { Text = "\"Yeni sunucu\" ile ekle ya da ~/.ssh/config dosyandan içe aktar.", Foreground = Secondary, HorizontalAlignment = HorizontalAlignment.Center });
+            welcome.Children.Add(new TextBlock { Text = L.T("Henüz sunucu yok"), Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"], HorizontalAlignment = HorizontalAlignment.Center });
+            welcome.Children.Add(new TextBlock { Text = L.T("\"Yeni sunucu\" ile ekle ya da ~/.ssh/config dosyandan içe aktar."), Foreground = Secondary, HorizontalAlignment = HorizontalAlignment.Center });
             _hostGroups.Children.Add(welcome);
             return;
         }
         if (hosts.Count == 0)
         {
-            _hostGroups.Children.Add(new TextBlock { Text = query.Contains('@') ? "Eşleşen sunucu yok. Enter'a basarsan bu adrese hızlı bağlanırım." : "Eşleşen sunucu yok.", Foreground = Secondary });
+            _hostGroups.Children.Add(new TextBlock { Text = query.Contains('@') ? L.T("Eşleşen sunucu yok. Enter'a basarsan bu adrese hızlı bağlanırım.") : L.T("Eşleşen sunucu yok."), Foreground = Secondary });
             return;
         }
         foreach (var group in hosts.GroupBy(h => h.GroupName).OrderBy(g => g.Key == CoreHost.NoGroup ? "\uFFFF" : g.Key, StringComparer.CurrentCultureIgnoreCase))
@@ -751,7 +759,7 @@ public sealed class ServersWindow : Window
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 2 };
         text.Children.Add(new TextBlock { Text = host.Label, Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], TextTrimming = TextTrimming.CharacterEllipsis });
         text.Children.Add(new TextBlock { Text = host.Target + (via is null ? "" : $" ↪ {via}"), Foreground = Secondary, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis });
-        text.Children.Add(new TextBlock { Text = (host.Team ? "👥 Ekip · " : "") + (host.CanConnectSilently ? (host.AuthKind == "password" ? "Parola kayıtlı" : "Anahtar hazır") : "Giriş bilgisi sorulacak"), Foreground = Secondary, FontSize = 11 });
+        text.Children.Add(new TextBlock { Text = (host.Team ? L.T("👥 Ekip · ") : "") + (host.CanConnectSilently ? (host.AuthKind == "password" ? L.T("Parola kayıtlı") : L.T("Anahtar hazır")) : L.T("Giriş bilgisi sorulacak")), Foreground = Secondary, FontSize = 11 });
         Grid.SetColumn(text, 1);
         grid.Children.Add(text);
         var card = new Button
@@ -763,29 +771,29 @@ public sealed class ServersWindow : Window
             Margin = new Thickness(0, 0, 10, 10),
             Padding = new Thickness(12),
         };
-        ToolTipService.SetToolTip(card, host.Target + (host.TrustedKey is null ? "" : $"\nSunucu anahtarı: {host.TrustedKey}"));
+        ToolTipService.SetToolTip(card, host.Target + (host.TrustedKey is null ? "" : L.F("\nSunucu anahtarı: {0}", host.TrustedKey)));
         card.Click += async (_, _) => await OpenHost(host);
         var flyout = new MenuFlyout();
-        flyout.Items.Add(Item("Bağlan", () => _ = OpenHost(host)));
-        flyout.Items.Add(Item("Düzenle…", () => _ = EditHost(host)));
-        flyout.Items.Add(Item(host.Team ? "Ekipten çıkar (yalnız bende kalsın)" : "Ekiple paylaş", () => _ = ShareWithTeam("host", host.Id, !host.Team)));
-        if (host.SavedSecret) flyout.Items.Add(Item("Kayıtlı giriş bilgisini unut", () => _ = _c.ForgetSecret(host)));
+        flyout.Items.Add(Item(L.T("Bağlan"), () => _ = OpenHost(host)));
+        flyout.Items.Add(Item(L.T("Düzenle…"), () => _ = EditHost(host)));
+        flyout.Items.Add(Item(host.Team ? L.T("Ekipten çıkar (yalnız bende kalsın)") : L.T("Ekiple paylaş"), () => _ = ShareWithTeam("host", host.Id, !host.Team)));
+        if (host.SavedSecret) flyout.Items.Add(Item(L.T("Kayıtlı giriş bilgisini unut"), () => _ = _c.ForgetSecret(host)));
         if (host.IsSsh)
         {
             var watched = App.Current.Monitor.IsWatched(host.Id);
-            flyout.Items.Add(Item(watched ? "Görev çubuğunda izlemeyi bırak" : "Görev çubuğunda izle", () =>
+            flyout.Items.Add(Item(watched ? L.T("Görev çubuğunda izlemeyi bırak") : L.T("Görev çubuğunda izle"), () =>
             {
                 if (watched) App.Current.Monitor.Unwatch(host.Id);
                 else
                 {
                     App.Current.Monitor.Watch(host);
-                    Show($"{host.Label} görev çubuğunda izleniyor: saatin yanındaki canlı simgeye tıkla.", InfoBarSeverity.Success);
+                    Show(L.F("{0} görev çubuğunda izleniyor: saatin yanındaki canlı simgeye tıkla.", host.Label), InfoBarSeverity.Success);
                 }
                 RenderHosts();
             }));
         }
         flyout.Items.Add(new MenuFlyoutSeparator());
-        flyout.Items.Add(Item("Sil", () => _ = ConfirmDelete(host)));
+        flyout.Items.Add(Item(L.T("Sil"), () => _ = ConfirmDelete(host)));
         card.ContextFlyout = flyout;
         return card;
     }
@@ -815,8 +823,8 @@ public sealed class ServersWindow : Window
         await Guard(() => _c.SetTeam(kind, id, team));
         App.Current.RequestLibrarySync();
         Show(team
-            ? "Ekiple paylaşıldı. Ekipteki herkesin uygulamasına birkaç saniye içinde gelir; kayıtlı parolası da şifreli olarak paylaşılır."
-            : "Artık yalnız sende. Ekipteki diğer uygulamalardan kaldırılır.", InfoBarSeverity.Success);
+            ? L.T("Ekiple paylaşıldı. Ekipteki herkesin uygulamasına birkaç saniye içinde gelir; kayıtlı parolası da şifreli olarak paylaşılır.")
+            : L.T("Artık yalnız sende. Ekipteki diğer uygulamalardan kaldırılır."), InfoBarSeverity.Success);
         if (kind == "snippet") await ShowSnippets();
     }
 
@@ -829,16 +837,16 @@ public sealed class ServersWindow : Window
 
     private async Task ConfirmDelete(CoreHost host)
     {
-        var dialog = Dialog($"{host.Label} silinsin mi?", new TextBlock { Text = "Kasadaki giriş bilgisi de silinir." }, "Sil");
+        var dialog = Dialog($"{host.Label} silinsin mi?", new TextBlock { Text = L.T("Kasadaki giriş bilgisi de silinir.") }, L.T("Sil"));
         if (await ShowDialog(dialog) == ContentDialogResult.Primary) await _c.DeleteHost(host);
     }
 
-    private ContentDialog Dialog(string title, UIElement content, string primary, string close = "Vazgeç") => new()
+    private ContentDialog Dialog(string title, UIElement content, string primary, string? close = null) => new()
     {
         Title = title,
         Content = content,
         PrimaryButtonText = primary,
-        CloseButtonText = close,
+        CloseButtonText = close ?? L.T("Vazgeç"),
         DefaultButton = ContentDialogButton.Primary,
         XamlRoot = Content.XamlRoot,
     };
@@ -862,6 +870,33 @@ public sealed class ServersWindow : Window
     }
 
     private bool _settingsAtDock;
+    private bool _closingForLanguage;
+
+    /// <summary>Open terminal tabs (a language change does not close them without asking).</summary>
+    public bool HasTerminals => _tabs.TabItems.Count > 0;
+
+    /// <summary>The language changed while terminals are open: ask before rebuilding this window.</summary>
+    public async void ShowLanguagePending()
+    {
+        try
+        {
+            var text = new TextBlock
+            {
+                TextWrapping = TextWrapping.Wrap,
+                Text = L.T("Yeni dil tepside, panelde ve yeni açılan pencerelerde hemen geçerli. Bu pencereyi yeni dilde açmak için açık terminaller kapanır."),
+            };
+            var dialog = Dialog(L.T("Dil değişti"), text, L.T("Şimdi uygula"), L.T("Sonra"));
+            if (await dialog.ShowAsync() == ContentDialogResult.Primary) App.Current.ReopenServersInLanguage(force: true);
+        }
+        catch (Exception e) { App.LogCrash(e); }
+    }
+
+    /// <summary>Closes the window for real so a new one is built in the new language.</summary>
+    public void CloseForLanguage()
+    {
+        _closingForLanguage = true;
+        Close();
+    }
 
     /// <summary>From the Dock: the settings page, scrolled to the Dock section.</summary>
     public void OpenSettings()
@@ -874,53 +909,69 @@ public sealed class ServersWindow : Window
     private void ShowSettings()
     {
         var settings = App.Current.Settings;
-        var font = new NumberBox { Header = "Terminal yazı boyutu", Value = settings.TerminalFontSize, Minimum = 8, Maximum = 32, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, Width = 220, HorizontalAlignment = HorizontalAlignment.Left };
+        var font = new NumberBox { Header = L.T("Terminal yazı boyutu"), Value = settings.TerminalFontSize, Minimum = 8, Maximum = 32, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, Width = 220, HorizontalAlignment = HorizontalAlignment.Left };
         font.ValueChanged += (_, e) =>
         {
             if (double.IsNaN(e.NewValue)) return;
             settings.TerminalFontSize = (int)Math.Clamp(e.NewValue, 8, 32);
             ApplyTerminalSettings();
         };
-        var themes = new[] { ("dark", "Koyu"), ("light", "Açık"), ("solarized-dark", "Solarized koyu"), ("solarized-light", "Solarized açık"),
+        var themes = new[] { ("dark", L.T("Koyu tema")), ("light", L.T("Açık tema")), ("solarized-dark", L.T("Solarized koyu")), ("solarized-light", L.T("Solarized açık")),
             ("nord", "Nord"), ("gruvbox", "Gruvbox"), ("monokai", "Monokai"), ("dracula", "Dracula") };
-        var theme = new ComboBox { Header = "Terminal teması", ItemsSource = themes.Select(t => t.Item2).ToList(), MinWidth = 220,
+        var theme = new ComboBox { Header = L.T("Terminal teması"), ItemsSource = themes.Select(t => t.Item2).ToList(), MinWidth = 220,
             SelectedIndex = Math.Max(0, Array.FindIndex(themes, t => t.Item1 == settings.TerminalTheme)) };
         theme.SelectionChanged += (_, _) => { settings.TerminalTheme = themes[Math.Max(0, theme.SelectedIndex)].Item1; ApplyTerminalSettings(); };
         var keys = new TextBlock
         {
             TextWrapping = TextWrapping.Wrap,
             Foreground = Secondary,
-            Text = "Terminal kısayolları: Ctrl+F ara · Ctrl+= / Ctrl+- yazı boyutu · Ctrl+0 varsayılan boyut · seçiliyken Ctrl+C kopyala · Ctrl+V yapıştır.",
+            Text = L.T("Terminal kısayolları: Ctrl+F ara · Ctrl+= / Ctrl+- yazı boyutu · Ctrl+0 varsayılan boyut · seçiliyken Ctrl+C kopyala · Ctrl+V yapıştır."),
         };
-        var center = new HyperlinkButton { Content = "Bildirimler, otonom mod ve bu bilgisayarın ajanı: Yönetim Merkezi panelini aç" };
+        var center = new HyperlinkButton { Content = L.T("Bildirimler, otonom mod ve bu bilgisayarın ajanı: Yönetim Merkezi panelini aç") };
         center.Click += (_, _) => App.Current.ShowPanel();
-        var backupTitle = new TextBlock { Text = "Yedekleme", Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], Margin = new Thickness(0, 8, 0, 0) };
+        var backupTitle = new TextBlock { Text = L.T("Yedekleme"), Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], Margin = new Thickness(0, 8, 0, 0) };
         var backupHelp = new TextBlock
         {
             TextWrapping = TextWrapping.Wrap,
             Foreground = Secondary,
-            Text = "Sunucular, gruplar, tüneller, parçacıklar ve güvenilen sunucu anahtarları tek bir dosyaya yazılır. Parolalar ve özel anahtarlar dosyaya girmez; yeni bilgisayarda ilk bağlantıda bir kez sorulur. İçe aktarma var olanları değiştirmez, yalnız yenileri ekler.",
+            Text = L.T("Sunucular, gruplar, tüneller, parçacıklar ve güvenilen sunucu anahtarları tek bir dosyaya yazılır. Parolalar ve özel anahtarlar dosyaya girmez; yeni bilgisayarda ilk bağlantıda bir kez sorulur. İçe aktarma var olanları değiştirmez, yalnız yenileri ekler."),
         };
         var backupRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        backupRow.Children.Add(ActionButton("Dışa aktar…", Symbol.Save, () => _ = ExportBackup()));
-        backupRow.Children.Add(ActionButton("İçe aktar…", Symbol.OpenFile, () => _ = ImportBackup()));
-        var syncTitle = new TextBlock { Text = "Eşitleme (bilgisayarların arasında)", Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], Margin = new Thickness(0, 8, 0, 0) };
+        backupRow.Children.Add(ActionButton(L.T("Dışa aktar…"), Symbol.Save, () => _ = ExportBackup()));
+        backupRow.Children.Add(ActionButton(L.T("İçe aktar…"), Symbol.OpenFile, () => _ = ImportBackup()));
+        var syncTitle = new TextBlock { Text = L.T("Eşitleme (bilgisayarların arasında)"), Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], Margin = new Thickness(0, 8, 0, 0) };
         var syncPanel = new StackPanel { Spacing = 8 };
         _ = RenderSync(syncPanel);
-        var teamTitle = new TextBlock { Text = "Ekip", Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], Margin = new Thickness(0, 8, 0, 0) };
+        var teamTitle = new TextBlock { Text = L.T("Ekip"), Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], Margin = new Thickness(0, 8, 0, 0) };
         var teamPanel = new StackPanel { Spacing = 8 };
         RenderTeam(teamPanel);
         var body = new StackPanel { Spacing = 18, MaxWidth = 640, HorizontalAlignment = HorizontalAlignment.Left };
-        var logsButton = ActionButton("Oturum kayıtları klasörünü aç", Symbol.Folder, async () =>
+        var logsButton = ActionButton(L.T("Oturum kayıtları klasörünü aç"), Symbol.Folder, async () =>
         {
-            if (await _c.LogsFolder() is not { } folder) { Show("Kayıt klasörü bulunamadı.", InfoBarSeverity.Warning); return; }
+            if (await _c.LogsFolder() is not { } folder) { Show(L.T("Kayıt klasörü bulunamadı."), InfoBarSeverity.Warning); return; }
             Directory.CreateDirectory(folder);
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", "\"" + folder + "\"") { UseShellExecute = true });
         });
         var dock = DockSettingsPanel.Build();
-        foreach (var e in new UIElement[] { font, theme, keys, logsButton, dock, syncTitle, syncPanel, teamTitle, teamPanel, backupTitle, backupHelp, backupRow, center }) body.Children.Add(e);
+        // Interface language: the Windows display language unless one is chosen.
+        var languages = new List<(string? Code, string Name)> { (null, L.T("Windows ile aynı")) };
+        languages.AddRange(L.Languages.Select(l => ((string?)l.Code, l.Name)));
+        var language = new ComboBox
+        {
+            Header = L.T("Dil"),
+            ItemsSource = languages.Select(l => l.Name).ToList(),
+            SelectedIndex = Math.Max(0, languages.FindIndex(l => l.Code == settings.Language)),
+            MinWidth = 260,
+        };
+        language.SelectionChanged += (_, _) =>
+        {
+            var chosen = languages[Math.Max(0, language.SelectedIndex)].Code;
+            if (chosen == settings.Language) return;
+            DispatcherQueue.TryEnqueue(() => App.Current.SetLanguage(chosen));
+        };
+        foreach (var e in new UIElement[] { language, font, theme, keys, logsButton, dock, syncTitle, syncPanel, teamTitle, teamPanel, backupTitle, backupHelp, backupRow, center }) body.Children.Add(e);
         var scroll = new ScrollViewer { Content = body };
-        SetPage(Page("Ayarlar", "Terminal görünümü ve Dock; değişiklikler hemen uygulanır.", scroll));
+        SetPage(Page(L.T("Ayarlar"), L.T("Terminal görünümü ve Dock; değişiklikler hemen uygulanır."), scroll));
         if (_settingsAtDock)
         {
             _settingsAtDock = false;
@@ -936,24 +987,24 @@ public sealed class ServersWindow : Window
         {
             TextWrapping = TextWrapping.Wrap,
             Foreground = Secondary,
-            Text = "Sunucular, gruplar, tüneller, parçacıklar, kimlikler, anahtarlar ve kayıtlı parolalar aynı hesapla oturum açtığın tüm bilgisayarlarda aynı olur. "
-                + "Her şey bu bilgisayarda, yalnız senin bildiğin eşitleme parolasıyla şifrelenir; WECOMMANDER sunucusu içeriği göremez. Parolayı unutursan eşitlenen kopya açılamaz.",
+            Text = L.T("Sunucular, gruplar, tüneller, parçacıklar, kimlikler, anahtarlar ve kayıtlı parolalar aynı hesapla oturum açtığın tüm bilgisayarlarda aynı olur. ")
+                + L.T("Her şey bu bilgisayarda, yalnız senin bildiğin eşitleme parolasıyla şifrelenir; WECOMMANDER sunucusu içeriği göremez. Parolayı unutursan eşitlenen kopya açılamaz."),
         };
         panel.Children.Add(help);
         var error = new TextBlock { Foreground = new SolidColorBrush(Microsoft.UI.Colors.IndianRed), TextWrapping = TextWrapping.Wrap };
         if (!status.Configured)
         {
-            var pass = new PasswordBox { Header = "Eşitleme parolası (en az 8 karakter)", Width = 320, HorizontalAlignment = HorizontalAlignment.Left };
-            var again = new PasswordBox { Header = "Parolayı tekrar yaz", Width = 320, HorizontalAlignment = HorizontalAlignment.Left };
-            var note = new TextBlock { Text = "Başka bir bilgisayarda eşitlemeyi zaten açtıysan oradaki parolayı gir.", Foreground = Secondary, TextWrapping = TextWrapping.Wrap };
-            var start = ActionButton("Eşitlemeyi aç", Symbol.Sync, async () =>
+            var pass = new PasswordBox { Header = L.T("Eşitleme parolası (en az 8 karakter)"), Width = 320, HorizontalAlignment = HorizontalAlignment.Left };
+            var again = new PasswordBox { Header = L.T("Parolayı tekrar yaz"), Width = 320, HorizontalAlignment = HorizontalAlignment.Left };
+            var note = new TextBlock { Text = L.T("Başka bir bilgisayarda eşitlemeyi zaten açtıysan oradaki parolayı gir."), Foreground = Secondary, TextWrapping = TextWrapping.Wrap };
+            var start = ActionButton(L.T("Eşitlemeyi aç"), Symbol.Sync, async () =>
             {
                 error.Text = "";
-                if (pass.Password != again.Password) { error.Text = "Parolalar aynı değil."; return; }
+                if (pass.Password != again.Password) { error.Text = L.T("Parolalar aynı değil."); return; }
                 try
                 {
                     await App.Current.SetupLibrarySync(pass.Password);
-                    Show("Eşitleme açıldı.", InfoBarSeverity.Success);
+                    Show(L.T("Eşitleme açıldı."), InfoBarSeverity.Success);
                     await RenderSync(panel);
                 }
                 catch (Exception e) when (e is CoreException or GatewayException) { error.Text = e.Message; }
@@ -961,19 +1012,19 @@ public sealed class ServersWindow : Window
             foreach (var e in new UIElement[] { pass, again, note, start, error }) panel.Children.Add(e);
             return;
         }
-        var last = _c.LastLibrarySync is { } t ? $"Son eşitleme: {t:HH:mm}" : "Henüz eşitlenmedi";
-        panel.Children.Add(new TextBlock { Text = "● Eşitleme açık. " + last + (status.Persistent ? "" : " (anahtar zinciri yok: eşitleme anahtarı uygulama kapanınca unutulur)") });
+        var last = _c.LastLibrarySync is { } t ? L.F("Son eşitleme: {0:HH:mm}", t) : L.T("Henüz eşitlenmedi");
+        panel.Children.Add(new TextBlock { Text = L.T("● Eşitleme açık. ") + last + (status.Persistent ? "" : L.T(" (anahtar zinciri yok: eşitleme anahtarı uygulama kapanınca unutulur)")) });
         if (App.Current.LibrarySyncError is { } problem) error.Text = problem;
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        row.Children.Add(ActionButton("Şimdi eşitle", Symbol.Sync, async () =>
+        row.Children.Add(ActionButton(L.T("Şimdi eşitle"), Symbol.Sync, async () =>
         {
             await App.Current.LibrarySyncAsync();
             await RenderSync(panel);
-            if (App.Current.LibrarySyncError is null) Show("Eşitlendi.", InfoBarSeverity.Success);
+            if (App.Current.LibrarySyncError is null) Show(L.T("Eşitlendi."), InfoBarSeverity.Success);
         }));
-        row.Children.Add(ActionButton("Bu bilgisayarda kapat", Symbol.Cancel, async () =>
+        row.Children.Add(ActionButton(L.T("Bu bilgisayarda kapat"), Symbol.Cancel, async () =>
         {
-            var dialog = Dialog("Eşitleme bu bilgisayarda kapatılsın mı?", new TextBlock { Text = "Buradaki sunucular silinmez; yalnız artık diğer bilgisayarlarla eşitlenmez. Sunucudaki şifreli kopya kalır.", TextWrapping = TextWrapping.Wrap }, "Kapat");
+            var dialog = Dialog(L.T("Eşitleme bu bilgisayarda kapatılsın mı?"), new TextBlock { Text = L.T("Buradaki sunucular silinmez; yalnız artık diğer bilgisayarlarla eşitlenmez. Sunucudaki şifreli kopya kalır."), TextWrapping = TextWrapping.Wrap }, L.T("Kapat"));
             if (await ShowDialog(dialog) != ContentDialogResult.Primary) return;
             await Guard(() => _c.ForgetSync());
             await RenderSync(panel);
@@ -989,22 +1040,22 @@ public sealed class ServersWindow : Window
         {
             TextWrapping = TextWrapping.Wrap,
             Foreground = Secondary,
-            Text = "Bir sunucuya ya da parçacığa sağ tıklayıp \"Ekiple paylaş\" dersen, çalışma alanındaki herkesin uygulamasında görünür (kayıtlı parolasıyla). "
-                + "Ekip kütüphanesi ekip anahtarıyla uçtan uca şifrelenir; anahtar yalnız ekip üyelerinin uygulamalarına, onların açık anahtarıyla şifrelenerek verilir. "
-                + "Üye eklemek ve rolleri değiştirmek panelde: Yönetim → Ekip. İzleyiciler ortak sunucuları kullanır ama değiştiremez.",
+            Text = L.T("Bir sunucuya ya da parçacığa sağ tıklayıp \"Ekiple paylaş\" dersen, çalışma alanındaki herkesin uygulamasında görünür (kayıtlı parolasıyla). ")
+                + L.T("Ekip kütüphanesi ekip anahtarıyla uçtan uca şifrelenir; anahtar yalnız ekip üyelerinin uygulamalarına, onların açık anahtarıyla şifrelenerek verilir. ")
+                + L.T("Üye eklemek ve rolleri değiştirmek panelde: Yönetim → Ekip. İzleyiciler ortak sunucuları kullanır ama değiştiremez."),
         });
         if (_c.TeamName is { } name)
         {
-            var role = _c.TeamRole switch { "owner" => "sahip", "admin" => "yönetici", "operator" => "operatör", _ => "izleyici" };
-            panel.Children.Add(new TextBlock { Text = $"Çalışma alanı: {name} · rolün: {role}" });
+            var role = _c.TeamRole switch { "owner" => L.T("sahip"), "admin" => L.T("yönetici"), "operator" => L.T("operatör"), _ => L.T("izleyici") };
+            panel.Children.Add(new TextBlock { Text = L.F("Çalışma alanı: {0} · rolün: {1}", name, role) });
             if (_c.TeamState == TeamSyncState.WaitingForKey)
-                panel.Children.Add(new TextBlock { Text = "Ekip anahtarı bekleniyor: ekipten operatör ya da üstü biri uygulamasını açtığında bu bilgisayara verilir.", TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(Microsoft.UI.Colors.DarkOrange) });
+                panel.Children.Add(new TextBlock { Text = L.T("Ekip anahtarı bekleniyor: ekipten operatör ya da üstü biri uygulamasını açtığında bu bilgisayara verilir."), TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(Microsoft.UI.Colors.DarkOrange) });
             foreach (var m in _c.TeamMembers)
-                panel.Children.Add(new TextBlock { Text = $"{(m.HasKey ? "●" : "○")} {m.Email} · {m.CenterName}" + (m.HasKey ? "" : " (anahtar bekliyor)"), Foreground = Secondary, FontSize = 12 });
+                panel.Children.Add(new TextBlock { Text = $"{(m.HasKey ? "●" : "○")} {m.Email} · {m.CenterName}" + (m.HasKey ? "" : L.T(" (anahtar bekliyor)")), Foreground = Secondary, FontSize = 12 });
         }
         if (App.Current.TeamSyncError is { } problem)
             panel.Children.Add(new TextBlock { Text = problem, Foreground = new SolidColorBrush(Microsoft.UI.Colors.IndianRed), TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(ActionButton("Şimdi eşitle", Symbol.Sync, async () => { await App.Current.LibrarySyncAsync(); RenderTeam(panel); }));
+        panel.Children.Add(ActionButton(L.T("Şimdi eşitle"), Symbol.Sync, async () => { await App.Current.LibrarySyncAsync(); RenderTeam(panel); }));
     }
 
     private async Task ExportBackup()
@@ -1013,7 +1064,7 @@ public sealed class ServersWindow : Window
         {
             var json = await _c.ExportLibrary();
             var picker = new FileSavePicker { SuggestedFileName = $"wecommander-yedek-{DateTime.Now:yyyy-MM-dd}", SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
-            picker.FileTypeChoices.Add("WECOMMANDER yedeği", [".json"]);
+            picker.FileTypeChoices.Add(L.T("WECOMMANDER yedeği"), [".json"]);
             WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
             var file = await picker.PickSaveFileAsync();
             if (file is null) return;
@@ -1036,13 +1087,13 @@ public sealed class ServersWindow : Window
             var file = await picker.PickSingleFileAsync();
             if (file is null) return;
             var summary = await _c.ImportLibrary(await File.ReadAllTextAsync(file.Path));
-            Show($"İçe aktarıldı: {summary.Hosts} sunucu, {summary.Snippets} parçacık, {summary.KnownHosts} sunucu anahtarı"
-                + (summary.Skipped > 0 ? $" ({summary.Skipped} sunucu zaten vardı, atlandı)." : "."), InfoBarSeverity.Success);
+            Show(L.F("İçe aktarıldı: {0} sunucu, {1} parçacık, {2} sunucu anahtarı", summary.Hosts, summary.Snippets, summary.KnownHosts)
+                + (summary.Skipped > 0 ? L.F(" ({0} sunucu zaten vardı, atlandı).", summary.Skipped) : "."), InfoBarSeverity.Success);
             RenderHosts();
         }
         catch (Exception e) when (e is CoreException or IOException or UnauthorizedAccessException)
         {
-            Show("Yedek içe aktarılamadı: " + e.Message, InfoBarSeverity.Error);
+            Show(L.T("Yedek içe aktarılamadı: ") + e.Message, InfoBarSeverity.Error);
         }
     }
 
@@ -1053,7 +1104,7 @@ public sealed class ServersWindow : Window
         var keys = await _c.Keys();
         var list = new StackPanel { Spacing = 8 };
         if (keys.Count == 0)
-            list.Children.Add(new TextBlock { Text = "Henüz anahtar yok. \"Yeni anahtar\" ile oluştur; genel anahtarını sunucunun ~/.ssh/authorized_keys dosyasına ekle, sonra sunucuyu düzenleyip bu anahtarı seç.", Foreground = Secondary, TextWrapping = TextWrapping.Wrap });
+            list.Children.Add(new TextBlock { Text = L.T("Henüz anahtar yok. \"Yeni anahtar\" ile oluştur; genel anahtarını sunucunun ~/.ssh/authorized_keys dosyasına ekle, sonra sunucuyu düzenleyip bu anahtarı seç."), Foreground = Secondary, TextWrapping = TextWrapping.Wrap });
         foreach (var k in keys)
         {
             var row = new Grid { ColumnSpacing = 8, Padding = new Thickness(12), CornerRadius = new CornerRadius(6), Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"] };
@@ -1064,21 +1115,21 @@ public sealed class ServersWindow : Window
             var text = new StackPanel { Spacing = 2 };
             text.Children.Add(new TextBlock { Text = k.Label, Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"] });
             text.Children.Add(new TextBlock { Text = $"{k.Algorithm}  ·  {k.Fingerprint}", FontFamily = new FontFamily("Cascadia Mono, Consolas"), Foreground = Secondary, IsTextSelectionEnabled = true, TextTrimming = TextTrimming.CharacterEllipsis });
-            text.Children.Add(new TextBlock { Text = used.Count > 0 ? "Kullanan: " + string.Join(", ", used) : "Henüz bir sunucuda kullanılmıyor", Foreground = Secondary, FontSize = 12 });
+            text.Children.Add(new TextBlock { Text = used.Count > 0 ? L.T("Kullanan: ") + string.Join(", ", used) : L.T("Henüz bir sunucuda kullanılmıyor"), Foreground = Secondary, FontSize = 12 });
             row.Children.Add(text);
-            var copy = new Button { Content = "Genel anahtarı kopyala" };
+            var copy = new Button { Content = L.T("Genel anahtarı kopyala") };
             copy.Click += (_, _) =>
             {
                 var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
                 package.SetText(k.PublicKey);
                 Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
-                Show("Genel anahtar kopyalandı. Sunucuda ~/.ssh/authorized_keys dosyasına ekle.", InfoBarSeverity.Success);
+                Show(L.T("Genel anahtar kopyalandı. Sunucuda ~/.ssh/authorized_keys dosyasına ekle."), InfoBarSeverity.Success);
             };
             Grid.SetColumn(copy, 1); row.Children.Add(copy);
             var del = new Button { Content = new SymbolIcon(Symbol.Delete) };
             del.Click += async (_, _) =>
             {
-                var dialog = Dialog($"{k.Label} silinsin mi?", new TextBlock { Text = used.Count > 0 ? "Bu anahtarı kullanan sunucular bir dahaki bağlantıda giriş bilgisi ister." : "Özel anahtar kasadan da silinir.", TextWrapping = TextWrapping.Wrap }, "Sil");
+                var dialog = Dialog($"{k.Label} silinsin mi?", new TextBlock { Text = used.Count > 0 ? L.T("Bu anahtarı kullanan sunucular bir dahaki bağlantıda giriş bilgisi ister.") : L.T("Özel anahtar kasadan da silinir."), TextWrapping = TextWrapping.Wrap }, L.T("Sil"));
                 if (await ShowDialog(dialog) != ContentDialogResult.Primary) return;
                 await Guard(() => _c.DeleteKey(k));
                 await ShowKeys();
@@ -1086,30 +1137,30 @@ public sealed class ServersWindow : Window
             Grid.SetColumn(del, 2); row.Children.Add(del);
             list.Children.Add(row);
         }
-        SetPage(Page("Anahtarlar", "SSH anahtarların. Özel anahtar Windows Kimlik Bilgisi Yöneticisi'nde saklanır; burada yalnız genel anahtar görünür.", new ScrollViewer { Content = list },
-            ActionButton("İçe aktar", Symbol.Import, () => _ = ImportKey()),
-            ActionButton("Yeni anahtar", Symbol.Add, () => _ = GenerateKey(), accent: true)));
+        SetPage(Page(L.T("Anahtarlar"), L.T("SSH anahtarların. Özel anahtar Windows Kimlik Bilgisi Yöneticisi'nde saklanır; burada yalnız genel anahtar görünür."), new ScrollViewer { Content = list },
+            ActionButton(L.T("İçe aktar"), Symbol.Import, () => _ = ImportKey()),
+            ActionButton(L.T("Yeni anahtar"), Symbol.Add, () => _ = GenerateKey(), accent: true)));
     }
 
     private async Task GenerateKey()
     {
-        var label = new TextBox { Header = "Ad", Text = Environment.MachineName + " anahtarı", MinWidth = 360 };
-        var dialog = Dialog("Yeni anahtar (Ed25519)", label, "Oluştur");
+        var label = new TextBox { Header = L.T("Ad"), Text = Environment.MachineName + L.T(" anahtarı"), MinWidth = 360 };
+        var dialog = Dialog(L.T("Yeni anahtar (Ed25519)"), label, L.T("Oluştur"));
         if (await ShowDialog(dialog) != ContentDialogResult.Primary) return;
         await Guard(async () =>
         {
             await _c.GenerateKey(label.Text);
-            Show("Anahtar oluşturuldu. \"Genel anahtarı kopyala\" ile sunucuya ekle.", InfoBarSeverity.Success);
+            Show(L.T("Anahtar oluşturuldu. \"Genel anahtarı kopyala\" ile sunucuya ekle."), InfoBarSeverity.Success);
         });
         await ShowKeys();
     }
 
     private async Task ImportKey()
     {
-        var label = new TextBox { Header = "Ad", PlaceholderText = "İş dizüstü anahtarı" };
-        var pick = new Button { Content = "Dosyadan seç…" };
-        var key = new TextBox { Header = "Özel anahtar", AcceptsReturn = true, Height = 130, FontFamily = new FontFamily("Cascadia Mono, Consolas"), PlaceholderText = "-----BEGIN OPENSSH PRIVATE KEY-----", TextWrapping = TextWrapping.NoWrap };
-        var passphrase = new PasswordBox { Header = "Anahtar parolası (varsa)" };
+        var label = new TextBox { Header = L.T("Ad"), PlaceholderText = L.T("İş dizüstü anahtarı") };
+        var pick = new Button { Content = L.T("Dosyadan seç…") };
+        var key = new TextBox { Header = L.T("Özel anahtar"), AcceptsReturn = true, Height = 130, FontFamily = new FontFamily("Cascadia Mono, Consolas"), PlaceholderText = "-----BEGIN OPENSSH PRIVATE KEY-----", TextWrapping = TextWrapping.NoWrap };
+        var passphrase = new PasswordBox { Header = L.T("Anahtar parolası (varsa)") };
         var error = new TextBlock { Foreground = new SolidColorBrush(Microsoft.UI.Colors.IndianRed), TextWrapping = TextWrapping.Wrap };
         pick.Click += async (_, _) =>
         {
@@ -1123,7 +1174,7 @@ public sealed class ServersWindow : Window
         };
         var panel = new StackPanel { Spacing = 10, MinWidth = 460 };
         foreach (var e in new UIElement[] { label, pick, key, passphrase, error }) panel.Children.Add(e);
-        var dialog = Dialog("Anahtarı içe aktar", panel, "İçe aktar");
+        var dialog = Dialog(L.T("Anahtarı içe aktar"), panel, L.T("İçe aktar"));
         dialog.PrimaryButtonClick += async (_, args) =>
         {
             var deferral = args.GetDeferral();
@@ -1142,7 +1193,7 @@ public sealed class ServersWindow : Window
         var keys = await _c.Keys();
         var list = new StackPanel { Spacing = 8 };
         if (identities.Count == 0)
-            list.Children.Add(new TextBlock { Text = "Kimlik, bir kullanıcı adı ile anahtarı ya da parolasıdır; birçok sunucuda kullanılır. Örneğin \"deploy + ekip anahtarı\". Bir kez oluştur, sunucuyu düzenlerken seç; değiştirince hepsi güncellenir.", Foreground = Secondary, TextWrapping = TextWrapping.Wrap });
+            list.Children.Add(new TextBlock { Text = L.T("Kimlik, bir kullanıcı adı ile anahtarı ya da parolasıdır; birçok sunucuda kullanılır. Örneğin \"deploy + ekip anahtarı\". Bir kez oluştur, sunucuyu düzenlerken seç; değiştirince hepsi güncellenir."), Foreground = Secondary, TextWrapping = TextWrapping.Wrap });
         foreach (var i in identities)
         {
             var row = new Grid { ColumnSpacing = 8, Padding = new Thickness(12), CornerRadius = new CornerRadius(6), Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"] };
@@ -1153,8 +1204,8 @@ public sealed class ServersWindow : Window
             var keyName = keys.FirstOrDefault(k => k.Id == i.KeyId)?.Label;
             var text = new StackPanel { Spacing = 2 };
             text.Children.Add(new TextBlock { Text = i.Label, Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"] });
-            text.Children.Add(new TextBlock { Text = i.User + "  ·  " + (i.AuthKind == "password" ? "Parola" : keyName is null ? "Anahtar seçilmemiş" : "Anahtar: " + keyName), Foreground = Secondary });
-            text.Children.Add(new TextBlock { Text = used.Count > 0 ? "Kullanan: " + string.Join(", ", used) : "Henüz bir sunucuda kullanılmıyor", Foreground = Secondary, FontSize = 12 });
+            text.Children.Add(new TextBlock { Text = i.User + "  ·  " + (i.AuthKind == "password" ? L.T("Parola") : keyName is null ? L.T("Anahtar seçilmemiş") : L.T("Anahtar: ") + keyName), Foreground = Secondary });
+            text.Children.Add(new TextBlock { Text = used.Count > 0 ? L.T("Kullanan: ") + string.Join(", ", used) : L.T("Henüz bir sunucuda kullanılmıyor"), Foreground = Secondary, FontSize = 12 });
             row.Children.Add(text);
             var edit = new Button { Content = new SymbolIcon(Symbol.Edit) };
             edit.Click += async (_, _) => await EditIdentity(i);
@@ -1162,7 +1213,7 @@ public sealed class ServersWindow : Window
             var del = new Button { Content = new SymbolIcon(Symbol.Delete) };
             del.Click += async (_, _) =>
             {
-                var dialog = Dialog($"{i.Label} silinsin mi?", new TextBlock { Text = used.Count > 0 ? "Bu kimliği kullanan sunucular kendi giriş bilgilerine döner." : "Kayıtlı parolası da silinir.", TextWrapping = TextWrapping.Wrap }, "Sil");
+                var dialog = Dialog($"{i.Label} silinsin mi?", new TextBlock { Text = used.Count > 0 ? L.T("Bu kimliği kullanan sunucular kendi giriş bilgilerine döner.") : L.T("Kayıtlı parolası da silinir."), TextWrapping = TextWrapping.Wrap }, L.T("Sil"));
                 if (await ShowDialog(dialog) != ContentDialogResult.Primary) return;
                 await Guard(() => _c.DeleteIdentity(i));
                 await ShowIdentities();
@@ -1170,19 +1221,19 @@ public sealed class ServersWindow : Window
             Grid.SetColumn(del, 2); row.Children.Add(del);
             list.Children.Add(row);
         }
-        SetPage(Page("Kimlikler", "Birçok sunucuda kullanılan kullanıcı + anahtar ya da parola. Parola Windows Kimlik Bilgisi Yöneticisi'nde saklanır.", new ScrollViewer { Content = list },
-            ActionButton("Yeni kimlik", Symbol.Add, () => _ = EditIdentity(null), accent: true)));
+        SetPage(Page(L.T("Kimlikler"), L.T("Birçok sunucuda kullanılan kullanıcı + anahtar ya da parola. Parola Windows Kimlik Bilgisi Yöneticisi'nde saklanır."), new ScrollViewer { Content = list },
+            ActionButton(L.T("Yeni kimlik"), Symbol.Add, () => _ = EditIdentity(null), accent: true)));
     }
 
     private async Task EditIdentity(Identity? existing)
     {
         var keys = await _c.Keys();
-        var label = new TextBox { Header = "Ad", Text = existing?.Label ?? "", PlaceholderText = "Ekip deploy" };
-        var user = new TextBox { Header = "Kullanıcı", Text = existing?.User ?? "" };
-        var kind = new RadioButtons { Header = "Giriş", ItemsSource = new[] { "Anahtar", "Parola" }, SelectedIndex = existing?.AuthKind == "password" ? 1 : 0, MaxColumns = 2 };
+        var label = new TextBox { Header = L.T("Ad"), Text = existing?.Label ?? "", PlaceholderText = L.T("Ekip deploy") };
+        var user = new TextBox { Header = L.T("Kullanıcı"), Text = existing?.User ?? "" };
+        var kind = new RadioButtons { Header = L.T("Giriş"), ItemsSource = new[] { L.T("Anahtar"), L.T("Parola") }, SelectedIndex = existing?.AuthKind == "password" ? 1 : 0, MaxColumns = 2 };
         var keyNames = keys.Select(k => k.Label).ToList();
-        var key = new ComboBox { Header = "Anahtar", ItemsSource = keyNames, SelectedIndex = existing?.KeyId is { } kid ? keys.FindIndex(k => k.Id == kid) : keys.Count > 0 ? 0 : -1, HorizontalAlignment = HorizontalAlignment.Stretch, PlaceholderText = keys.Count == 0 ? "Önce Anahtarlar'dan bir anahtar oluştur" : "" };
-        var password = new PasswordBox { Header = existing is null ? "Parola" : "Parola (boş bırakırsan kayıtlı parola kalır)" };
+        var key = new ComboBox { Header = L.T("Anahtar"), ItemsSource = keyNames, SelectedIndex = existing?.KeyId is { } kid ? keys.FindIndex(k => k.Id == kid) : keys.Count > 0 ? 0 : -1, HorizontalAlignment = HorizontalAlignment.Stretch, PlaceholderText = keys.Count == 0 ? L.T("Önce Anahtarlar'dan bir anahtar oluştur") : "" };
+        var password = new PasswordBox { Header = existing is null ? L.T("Parola") : L.T("Parola (boş bırakırsan kayıtlı parola kalır)") };
         var error = new TextBlock { Foreground = new SolidColorBrush(Microsoft.UI.Colors.IndianRed), TextWrapping = TextWrapping.Wrap };
         void Sync()
         {
@@ -1193,7 +1244,7 @@ public sealed class ServersWindow : Window
         Sync();
         var panel = new StackPanel { Spacing = 10, MinWidth = 420 };
         foreach (var e in new UIElement[] { label, user, kind, key, password, error }) panel.Children.Add(e);
-        var dialog = Dialog(existing is null ? "Yeni kimlik" : "Kimliği düzenle", panel, "Kaydet");
+        var dialog = Dialog(existing is null ? L.T("Yeni kimlik") : L.T("Kimliği düzenle"), panel, L.T("Kaydet"));
         dialog.PrimaryButtonClick += async (_, args) =>
         {
             var deferral = args.GetDeferral();
@@ -1217,7 +1268,7 @@ public sealed class ServersWindow : Window
         _snippets = await _c.Snippets();
         var list = new StackPanel { Spacing = 8 };
         if (_snippets.Count == 0)
-            list.Children.Add(new TextBlock { Text = "Sık kullandığın komutları burada sakla; açık terminale tek tıkla gönder.", Foreground = Secondary });
+            list.Children.Add(new TextBlock { Text = L.T("Sık kullandığın komutları burada sakla; açık terminale tek tıkla gönder."), Foreground = Secondary });
         foreach (var s in _snippets)
         {
             var row = new Grid { ColumnSpacing = 8, Padding = new Thickness(12), CornerRadius = new CornerRadius(6), Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"] };
@@ -1229,34 +1280,34 @@ public sealed class ServersWindow : Window
             text.Children.Add(new TextBlock { Text = s.Label, Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"] });
             text.Children.Add(new TextBlock { Text = s.Command, FontFamily = new FontFamily("Cascadia Mono, Consolas"), Foreground = Secondary, TextTrimming = TextTrimming.CharacterEllipsis });
             row.Children.Add(text);
-            var run = new Button { Content = "Terminale gönder", IsEnabled = Current is { Closed: false } };
+            var run = new Button { Content = L.T("Terminale gönder"), IsEnabled = Current is { Closed: false } };
             run.Click += (_, _) => { SendSnippet(s); Navigate("terminals"); };
             Grid.SetColumn(run, 1); row.Children.Add(run);
-            text.Children.Add(new TextBlock { Text = s.Team ? "👥 Ekiple paylaşılıyor" : "", Foreground = Secondary, FontSize = 11, Visibility = s.Team ? Visibility.Visible : Visibility.Collapsed });
+            text.Children.Add(new TextBlock { Text = s.Team ? L.T("👥 Ekiple paylaşılıyor") : "", Foreground = Secondary, FontSize = 11, Visibility = s.Team ? Visibility.Visible : Visibility.Collapsed });
             var edit = new Button { Content = new SymbolIcon(Symbol.Edit) };
             edit.Click += async (_, _) => { await EditSnippet(s); };
             var shareMenu = new MenuFlyout();
-            shareMenu.Items.Add(Item(s.Team ? "Ekipten çıkar" : "Ekiple paylaş", () => _ = ShareWithTeam("snippet", s.Id, !s.Team)));
+            shareMenu.Items.Add(Item(s.Team ? L.T("Ekipten çıkar") : L.T("Ekiple paylaş"), () => _ = ShareWithTeam("snippet", s.Id, !s.Team)));
             edit.ContextFlyout = shareMenu;
-            ToolTipService.SetToolTip(edit, "Düzenle (sağ tık: ekiple paylaş)");
+            ToolTipService.SetToolTip(edit, L.T("Düzenle (sağ tık: ekiple paylaş)"));
             Grid.SetColumn(edit, 2); row.Children.Add(edit);
             var del = new Button { Content = new SymbolIcon(Symbol.Delete) };
             del.Click += async (_, _) => { await Guard(async () => _snippets = await _c.DeleteSnippet(s)); await ShowSnippets(); };
             Grid.SetColumn(del, 3); row.Children.Add(del);
             list.Children.Add(row);
         }
-        SetPage(Page("Parçacıklar", "Kayıtlı komutlar. Açık terminale gönderilir; Enter ile çalışır.", new ScrollViewer { Content = list },
-            ActionButton("Yeni parçacık", Symbol.Add, () => _ = EditSnippet(null), accent: true)));
+        SetPage(Page(L.T("Parçacıklar"), L.T("Kayıtlı komutlar. Açık terminale gönderilir; Enter ile çalışır."), new ScrollViewer { Content = list },
+            ActionButton(L.T("Yeni parçacık"), Symbol.Add, () => _ = EditSnippet(null), accent: true)));
     }
 
     private async Task EditSnippet(Snippet? snippet)
     {
-        var label = new TextBox { Header = "Ad", Text = snippet?.Label ?? "", PlaceholderText = "Disk kullanımı" };
-        var command = new TextBox { Header = "Komut", Text = snippet?.Command ?? "", AcceptsReturn = true, Height = 120, FontFamily = new FontFamily("Cascadia Mono, Consolas"), PlaceholderText = "df -h" };
+        var label = new TextBox { Header = L.T("Ad"), Text = snippet?.Label ?? "", PlaceholderText = L.T("Disk kullanımı") };
+        var command = new TextBox { Header = L.T("Komut"), Text = snippet?.Command ?? "", AcceptsReturn = true, Height = 120, FontFamily = new FontFamily("Cascadia Mono, Consolas"), PlaceholderText = "df -h" };
         var error = new TextBlock { Foreground = new SolidColorBrush(Microsoft.UI.Colors.IndianRed), TextWrapping = TextWrapping.Wrap };
         var panel = new StackPanel { Spacing = 10, MinWidth = 420 };
         foreach (var e in new UIElement[] { label, command, error }) panel.Children.Add(e);
-        var dialog = Dialog(snippet is null ? "Yeni parçacık" : "Parçacığı düzenle", panel, "Kaydet");
+        var dialog = Dialog(snippet is null ? L.T("Yeni parçacık") : L.T("Parçacığı düzenle"), panel, L.T("Kaydet"));
         dialog.PrimaryButtonClick += async (_, args) =>
         {
             var deferral = args.GetDeferral();
@@ -1292,7 +1343,7 @@ public sealed class ServersWindow : Window
     {
         var list = new StackPanel { Spacing = 8 };
         if (_c.SavedTunnels.Count == 0)
-            list.Children.Add(new TextBlock { Text = "Kayıtlı tünel yok. Bir terminalde \"Tüneller\" ile açıp \"kaydet\"i işaretle.", Foreground = Secondary, TextWrapping = TextWrapping.Wrap });
+            list.Children.Add(new TextBlock { Text = L.T("Kayıtlı tünel yok. Bir terminalde \"Tüneller\" ile açıp \"kaydet\"i işaretle."), Foreground = Secondary, TextWrapping = TextWrapping.Wrap });
         foreach (var t in _c.SavedTunnels)
         {
             var row = new Grid { ColumnSpacing = 8, Padding = new Thickness(12), CornerRadius = new CornerRadius(6), Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"] };
@@ -1303,7 +1354,7 @@ public sealed class ServersWindow : Window
             text.Children.Add(new TextBlock { Text = $"{(t.Running ? "● " : "○ ")}{t.HostLabel}", Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"] });
             text.Children.Add(new TextBlock { Text = $"{KindLabel(t.Kind)}   {t.Local}  →  {t.Remote}", FontFamily = new FontFamily("Cascadia Mono, Consolas"), Foreground = Secondary });
             row.Children.Add(text);
-            var toggle = new ToggleSwitch { IsOn = t.Running, OnContent = "Açık", OffContent = "Kapalı" };
+            var toggle = new ToggleSwitch { IsOn = t.Running, OnContent = L.T("Açık"), OffContent = L.T("Kapalı") };
             toggle.Toggled += async (_, _) => { await _c.ToggleTunnel(t); ShowTunnelsPage(); };
             Grid.SetColumn(toggle, 1); row.Children.Add(toggle);
             var del = new Button { Content = new SymbolIcon(Symbol.Delete) };
@@ -1311,14 +1362,14 @@ public sealed class ServersWindow : Window
             Grid.SetColumn(del, 2); row.Children.Add(del);
             list.Children.Add(row);
         }
-        SetPage(Page("Tüneller", "Kayıtlı tüneller: yerel (ssh -L), uzak (ssh -R) ve SOCKS proxy (ssh -D). Uygulama açıkken arka planda çalışır.", new ScrollViewer { Content = list }));
+        SetPage(Page(L.T("Tüneller"), L.T("Kayıtlı tüneller: yerel (ssh -L), uzak (ssh -R) ve SOCKS proxy (ssh -D). Uygulama açıkken arka planda çalışır."), new ScrollViewer { Content = list }));
     }
 
     private async Task ShowKnown()
     {
         var known = await _c.KnownHosts();
         var list = new StackPanel { Spacing = 8 };
-        if (known.Count == 0) list.Children.Add(new TextBlock { Text = "Henüz güvenilen sunucu anahtarı yok.", Foreground = Secondary });
+        if (known.Count == 0) list.Children.Add(new TextBlock { Text = L.T("Henüz güvenilen sunucu anahtarı yok."), Foreground = Secondary });
         foreach (var k in known)
         {
             var row = new Grid { ColumnSpacing = 8, Padding = new Thickness(12), CornerRadius = new CornerRadius(6), Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"] };
@@ -1328,20 +1379,20 @@ public sealed class ServersWindow : Window
             text.Children.Add(new TextBlock { Text = k.Target + (k.Labels.Count > 0 ? "  ·  " + string.Join(", ", k.Labels) : ""), Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"] });
             text.Children.Add(new TextBlock { Text = k.Fingerprint, FontFamily = new FontFamily("Cascadia Mono, Consolas"), Foreground = Secondary, IsTextSelectionEnabled = true });
             row.Children.Add(text);
-            var forget = new Button { Content = "Unut" };
-            ToolTipService.SetToolTip(forget, "Bir sonraki bağlantıda anahtar yeniden sorulur.");
+            var forget = new Button { Content = L.T("Unut") };
+            ToolTipService.SetToolTip(forget, L.T("Bir sonraki bağlantıda anahtar yeniden sorulur."));
             forget.Click += async (_, _) => { await Guard(() => _c.ForgetKnownHost(k)); await ShowKnown(); };
             Grid.SetColumn(forget, 1); row.Children.Add(forget);
             list.Children.Add(row);
         }
-        SetPage(Page("Bilinen sunucular", "Güvendiğin sunucu anahtarları (known_hosts). Anahtar değişirse bağlanmadan önce uyarılırsın.", new ScrollViewer { Content = list }));
+        SetPage(Page(L.T("Bilinen sunucular"), L.T("Güvendiğin sunucu anahtarları (known_hosts). Anahtar değişirse bağlanmadan önce uyarılırsın."), new ScrollViewer { Content = list }));
     }
 
     private async Task ShowHistory()
     {
         var history = await _c.History();
         var list = new StackPanel { Spacing = 6 };
-        if (history.Count == 0) list.Children.Add(new TextBlock { Text = "Henüz bağlantı yok.", Foreground = Secondary });
+        if (history.Count == 0) list.Children.Add(new TextBlock { Text = L.T("Henüz bağlantı yok."), Foreground = Secondary });
         foreach (var h in history)
         {
             var row = new Grid { ColumnSpacing = 8, Padding = new Thickness(12, 8, 12, 8), CornerRadius = new CornerRadius(6), Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"] };
@@ -1352,50 +1403,50 @@ public sealed class ServersWindow : Window
             var when = new TextBlock { Text = h.When.ToLocalTime().ToString("dd.MM.yyyy HH:mm"), Foreground = Secondary, VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(when, 1); row.Children.Add(when);
             var host = _c.Hosts.FirstOrDefault(x => x.Id == h.HostId);
-            var again = new Button { Content = "Bağlan", IsEnabled = host is not null };
+            var again = new Button { Content = L.T("Bağlan"), IsEnabled = host is not null };
             again.Click += async (_, _) => { if (host is not null) await OpenHost(host); };
             Grid.SetColumn(again, 2); row.Children.Add(again);
             list.Children.Add(row);
         }
-        SetPage(Page("Geçmiş", "Son bağlantıların (en yenisi üstte).", new ScrollViewer { Content = list },
-            ActionButton("Temizle", Symbol.Delete, async () => { await Guard(() => _c.ClearHistory()); await ShowHistory(); })));
+        SetPage(Page(L.T("Geçmiş"), L.T("Son bağlantıların (en yenisi üstte)."), new ScrollViewer { Content = list },
+            ActionButton(L.T("Temizle"), Symbol.Delete, async () => { await Guard(() => _c.ClearHistory()); await ShowHistory(); })));
     }
 
     // ---- add / edit host ----
 
     private async Task EditHost(CoreHost? existing)
     {
-        var protocols = new[] { ("ssh", "SSH"), ("mosh", "Mosh (SSH ile giriş, UDP ile kesintisiz)"), ("telnet", "Telnet"), ("serial", "Seri port") };
+        var protocols = new[] { ("ssh", "SSH"), ("mosh", L.T("Mosh (SSH ile giriş, UDP ile kesintisiz)")), ("telnet", "Telnet"), ("serial", L.T("Seri port")) };
         var protocol = new ComboBox
         {
-            Header = "Bağlantı türü",
+            Header = L.T("Bağlantı türü"),
             ItemsSource = protocols.Select(p => p.Item2).ToList(),
             SelectedIndex = Math.Max(0, Array.FindIndex(protocols, p => p.Item1 == (existing?.Protocol ?? "ssh"))),
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
-        var label = new TextBox { Header = "Ad", PlaceholderText = "Prod web", Text = existing?.Label ?? "" };
-        var host = new TextBox { Header = "Adres", PlaceholderText = "sunucu.ornek.com", Text = existing?.Host ?? "" };
-        var user = new TextBox { Header = "Kullanıcı", Text = existing?.User ?? "" };
+        var label = new TextBox { Header = L.T("Ad"), PlaceholderText = "Prod web", Text = existing?.Label ?? "" };
+        var host = new TextBox { Header = L.T("Adres"), PlaceholderText = L.T("sunucu.ornek.com"), Text = existing?.Host ?? "" };
+        var user = new TextBox { Header = L.T("Kullanıcı"), Text = existing?.User ?? "" };
         var port = new NumberBox { Header = "Port", Value = existing?.Port ?? 22, Minimum = 1, Maximum = 65535 };
         var groups = _c.Hosts.Select(h => h.Group).Where(g => !string.IsNullOrWhiteSpace(g)).Distinct().ToList();
-        var group = new AutoSuggestBox { Header = "Grup (isteğe bağlı)", Text = existing?.Group ?? "", PlaceholderText = "Production", ItemsSource = groups };
-        var kind = new ComboBox { Header = "Giriş", ItemsSource = new[] { "Özel anahtar", "Parola" }, SelectedIndex = existing?.AuthKind == "password" ? 1 : 0, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var group = new AutoSuggestBox { Header = L.T("Grup (isteğe bağlı)"), Text = existing?.Group ?? "", PlaceholderText = "Production", ItemsSource = groups };
+        var kind = new ComboBox { Header = L.T("Giriş"), ItemsSource = new[] { L.T("Özel anahtar"), L.T("Parola") }, SelectedIndex = existing?.AuthKind == "password" ? 1 : 0, HorizontalAlignment = HorizontalAlignment.Stretch };
         var candidates = _c.Hosts.Where(h => h.Id != existing?.Id).ToList();
-        var jumpNames = new List<string> { "Doğrudan bağlan" };
-        jumpNames.AddRange(candidates.Select(h => h.Label + " üzerinden"));
+        var jumpNames = new List<string> { L.T("Doğrudan bağlan") };
+        jumpNames.AddRange(candidates.Select(h => h.Label + L.T(" üzerinden")));
         var jumpIndex = existing?.JumpId is { } j ? candidates.FindIndex(h => h.Id == j) + 1 : 0;
-        var jump = new ComboBox { Header = "Atlama sunucusu", ItemsSource = jumpNames, SelectedIndex = Math.Max(0, jumpIndex), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var jump = new ComboBox { Header = L.T("Atlama sunucusu"), ItemsSource = jumpNames, SelectedIndex = Math.Max(0, jumpIndex), HorizontalAlignment = HorizontalAlignment.Stretch };
         var appKeys = await _c.Keys();
-        var keyNames = new List<string> { "Bağlanırken sor / anahtar dosyası" };
+        var keyNames = new List<string> { L.T("Bağlanırken sor / anahtar dosyası") };
         keyNames.AddRange(appKeys.Select(k => k.Label));
         var keyIndex = existing?.KeyId is { } kid ? appKeys.FindIndex(k => k.Id == kid) + 1 : 0;
-        var keyChoice = new ComboBox { Header = "Anahtar", ItemsSource = keyNames, SelectedIndex = Math.Max(0, keyIndex), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var keyChoice = new ComboBox { Header = L.T("Anahtar"), ItemsSource = keyNames, SelectedIndex = Math.Max(0, keyIndex), HorizontalAlignment = HorizontalAlignment.Stretch };
         var identities = await _c.Identities();
-        var identityNames = new List<string> { "Yok (bu sunucunun kendi kullanıcısı ve giriş bilgisi)" };
+        var identityNames = new List<string> { L.T("Yok (bu sunucunun kendi kullanıcısı ve giriş bilgisi)") };
         identityNames.AddRange(identities.Select(i => $"{i.Label} ({i.User})"));
         var identityIndex = existing?.IdentityId is { } iid ? identities.FindIndex(i => i.Id == iid) + 1 : 0;
-        var identity = new ComboBox { Header = "Kimlik", ItemsSource = identityNames, SelectedIndex = Math.Max(0, identityIndex), HorizontalAlignment = HorizontalAlignment.Stretch };
-        ToolTipService.SetToolTip(identity, "Seçersen kullanıcı adı ve giriş bilgisi kimlikten gelir.");
+        var identity = new ComboBox { Header = L.T("Kimlik"), ItemsSource = identityNames, SelectedIndex = Math.Max(0, identityIndex), HorizontalAlignment = HorizontalAlignment.Stretch };
+        ToolTipService.SetToolTip(identity, L.T("Seçersen kullanıcı adı ve giriş bilgisi kimlikten gelir."));
         void SyncIdentity()
         {
             var own = identity.SelectedIndex <= 0;
@@ -1405,20 +1456,20 @@ public sealed class ServersWindow : Window
         }
         identity.SelectionChanged += (_, _) => SyncIdentity();
         SyncIdentity();
-        var startup = new TextBox { Header = "Bağlanınca çalışacak komut (isteğe bağlı)", Text = existing?.StartupCommand ?? "", PlaceholderText = "cd /var/www && git status", FontFamily = new FontFamily("Cascadia Mono, Consolas") };
+        var startup = new TextBox { Header = L.T("Bağlanınca çalışacak komut (isteğe bağlı)"), Text = existing?.StartupCommand ?? "", PlaceholderText = "cd /var/www && git status", FontFamily = new FontFamily("Cascadia Mono, Consolas") };
         var envText = new TextBox
         {
-            Header = "Ortam değişkenleri (her satıra AD=değer)",
+            Header = L.T("Ortam değişkenleri (her satıra AD=değer)"),
             Text = existing?.Env is { Count: > 0 } env ? string.Join("\r", env.Select(kv => $"{kv.Key}={kv.Value}")) : "",
             PlaceholderText = "LANG=tr_TR.UTF-8",
             AcceptsReturn = true, Height = 80, FontFamily = new FontFamily("Cascadia Mono, Consolas"),
         };
-        var agent = new CheckBox { Content = "SSH agent yönlendirme (ssh -A): sunucu, bu bilgisayardaki ssh-agent anahtarlarını kullanabilsin", IsChecked = existing?.AgentForwarding == true };
-        ToolTipService.SetToolTip(agent, "Yalnız güvendiğin sunucularda aç: sunucuda yönetici yetkisi olan biri, bağlantı açıkken agent'taki anahtarlarını kullanabilir.");
-        var sessionLog = new CheckBox { Content = "Oturumu kaydet: terminalde görünenler bir metin dosyasına yazılır (Ayarlar → Oturum kayıtları)", IsChecked = existing?.SessionLog == true };
+        var agent = new CheckBox { Content = L.T("SSH agent yönlendirme (ssh -A): sunucu, bu bilgisayardaki ssh-agent anahtarlarını kullanabilsin"), IsChecked = existing?.AgentForwarding == true };
+        ToolTipService.SetToolTip(agent, L.T("Yalnız güvendiğin sunucularda aç: sunucuda yönetici yetkisi olan biri, bağlantı açıkken agent'taki anahtarlarını kullanabilir."));
+        var sessionLog = new CheckBox { Content = L.T("Oturumu kaydet: terminalde görünenler bir metin dosyasına yazılır (Ayarlar → Oturum kayıtları)"), IsChecked = existing?.SessionLog == true };
         var terminalOptions = new Expander
         {
-            Header = "Terminal seçenekleri",
+            Header = L.T("Terminal seçenekleri"),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
             IsExpanded = !string.IsNullOrEmpty(existing?.StartupCommand) || existing?.Env is { Count: > 0 } || existing?.AgentForwarding == true || existing?.SessionLog == true,
@@ -1429,15 +1480,15 @@ public sealed class ServersWindow : Window
         var error = new TextBlock { Foreground = new SolidColorBrush(Microsoft.UI.Colors.IndianRed), TextWrapping = TextWrapping.Wrap };
         // Serial line settings.
         var serialNow = existing?.Serial;
-        var serialDevice = new ComboBox { Header = "Seri port", IsEditable = true, ItemsSource = await _c.SerialPorts(), Text = serialNow?.Device ?? "", PlaceholderText = "COM3", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var serialDevice = new ComboBox { Header = L.T("Seri port"), IsEditable = true, ItemsSource = await _c.SerialPorts(), Text = serialNow?.Device ?? "", PlaceholderText = "COM3", HorizontalAlignment = HorizontalAlignment.Stretch };
         var bauds = new List<string> { "1200", "2400", "4800", "9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600" };
-        var baud = new ComboBox { Header = "Hız (baud)", IsEditable = true, ItemsSource = bauds, Text = (serialNow?.Baud ?? 9600).ToString(), HorizontalAlignment = HorizontalAlignment.Stretch };
-        var dataBits = new ComboBox { Header = "Veri bitleri", ItemsSource = new[] { "8", "7", "6", "5" }, SelectedItem = (serialNow?.DataBits ?? 8).ToString(), HorizontalAlignment = HorizontalAlignment.Stretch };
-        var parities = new[] { ("none", "Yok"), ("even", "Çift"), ("odd", "Tek") };
-        var parity = new ComboBox { Header = "Eşlik", ItemsSource = parities.Select(x => x.Item2).ToList(), SelectedIndex = Math.Max(0, Array.FindIndex(parities, x => x.Item1 == (serialNow?.Parity ?? "none"))), HorizontalAlignment = HorizontalAlignment.Stretch };
-        var stopBits = new ComboBox { Header = "Durdurma bitleri", ItemsSource = new[] { "1", "2" }, SelectedItem = (serialNow?.StopBits ?? 1).ToString(), HorizontalAlignment = HorizontalAlignment.Stretch };
-        var flows = new[] { ("none", "Yok"), ("hardware", "Donanım (RTS/CTS)"), ("software", "Yazılım (XON/XOFF)") };
-        var flow = new ComboBox { Header = "Akış denetimi", ItemsSource = flows.Select(x => x.Item2).ToList(), SelectedIndex = Math.Max(0, Array.FindIndex(flows, x => x.Item1 == (serialNow?.Flow ?? "none"))), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var baud = new ComboBox { Header = L.T("Hız (baud)"), IsEditable = true, ItemsSource = bauds, Text = (serialNow?.Baud ?? 9600).ToString(), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var dataBits = new ComboBox { Header = L.T("Veri bitleri"), ItemsSource = new[] { "8", "7", "6", "5" }, SelectedItem = (serialNow?.DataBits ?? 8).ToString(), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var parities = new[] { ("none", L.T("Yok")), ("even", L.T("Çift")), ("odd", L.T("Tek")) };
+        var parity = new ComboBox { Header = L.T("Eşlik"), ItemsSource = parities.Select(x => x.Item2).ToList(), SelectedIndex = Math.Max(0, Array.FindIndex(parities, x => x.Item1 == (serialNow?.Parity ?? "none"))), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var stopBits = new ComboBox { Header = L.T("Durdurma bitleri"), ItemsSource = new[] { "1", "2" }, SelectedItem = (serialNow?.StopBits ?? 1).ToString(), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var flows = new[] { ("none", L.T("Yok")), ("hardware", L.T("Donanım (RTS/CTS)")), ("software", L.T("Yazılım (XON/XOFF)")) };
+        var flow = new ComboBox { Header = L.T("Akış denetimi"), ItemsSource = flows.Select(x => x.Item2).ToList(), SelectedIndex = Math.Max(0, Array.FindIndex(flows, x => x.Item1 == (serialNow?.Flow ?? "none"))), HorizontalAlignment = HorizontalAlignment.Stretch };
         var serialPanel = new StackPanel { Spacing = 10 };
         foreach (var e in new UIElement[] { serialDevice, baud, dataBits, parity, stopBits, flow }) serialPanel.Children.Add(e);
         // Telnet logs in inside the terminal; a serial port has no address at all.
@@ -1459,7 +1510,7 @@ public sealed class ServersWindow : Window
         SyncProtocol();
         var panel = new StackPanel { Spacing = 10, MinWidth = 400 };
         foreach (var e in new UIElement[] { protocol, label, host, serialPanel, user, port, group, identity, kind, keyChoice, jump, terminalOptions, error }) panel.Children.Add(e);
-        var dialog = Dialog(existing is null ? "Yeni sunucu" : "Sunucuyu düzenle", new ScrollViewer { Content = panel, MaxHeight = 560 }, "Kaydet");
+        var dialog = Dialog(existing is null ? L.T("Yeni sunucu") : L.T("Sunucuyu düzenle"), new ScrollViewer { Content = panel, MaxHeight = 560 }, L.T("Kaydet"));
         dialog.PrimaryButtonClick += async (d, args) =>
         {
             var deferral = args.GetDeferral();
@@ -1472,8 +1523,8 @@ public sealed class ServersWindow : Window
                 if (chosen == "serial")
                 {
                     var device = (serialDevice.Text ?? serialDevice.SelectedItem as string ?? "").Trim();
-                    if (device.Length == 0) throw new CoreException("Seri portu seç ya da yaz (ör. COM3).");
-                    if (!int.TryParse((baud.Text ?? baud.SelectedItem as string ?? "").Trim(), out var baudValue)) throw new CoreException("Hız (baud) bir sayı olmalı.");
+                    if (device.Length == 0) throw new CoreException(L.T("Seri portu seç ya da yaz (ör. COM3)."));
+                    if (!int.TryParse((baud.Text ?? baud.SelectedItem as string ?? "").Trim(), out var baudValue)) throw new CoreException(L.T("Hız (baud) bir sayı olmalı."));
                     serialSettings = new SerialSettings(device, baudValue, int.Parse((string)dataBits.SelectedItem), parities[Math.Max(0, parity.SelectedIndex)].Item1,
                         int.Parse((string)stopBits.SelectedItem), flows[Math.Max(0, flow.SelectedIndex)].Item1);
                     // The profile still needs an address; the port is the real target.
@@ -1512,7 +1563,7 @@ public sealed class ServersWindow : Window
                         var t = line.Trim();
                         if (t.Length == 0 || t.StartsWith('#')) continue;
                         var eq = t.IndexOf('=');
-                        if (eq <= 0) throw new CoreException($"Ortam değişkeni AD=değer biçiminde olmalı: {t}");
+                        if (eq <= 0) throw new CoreException(L.F("Ortam değişkeni AD=değer biçiminde olmalı: {0}", t));
                         vars[t[..eq].Trim()] = t[(eq + 1)..];
                     }
                     var cmd = startup.Text.Trim();
@@ -1555,7 +1606,7 @@ public sealed class ServersWindow : Window
         catch (Exception e)
         {
             App.LogCrash(e);
-            Show("Pencere açılamadı: " + e.Message, InfoBarSeverity.Error);
+            Show(L.T("Pencere açılamadı: ") + e.Message, InfoBarSeverity.Error);
             return ContentDialogResult.None;
         }
         finally { _dialogGate.Release(); }
@@ -1612,7 +1663,7 @@ public sealed class ServersWindow : Window
                 || e.Raw.Contains("private key could not be used") || e.Raw.StartsWith("key file ");
             // After the silent try of this computer's keys only a key-only
             // server's message is worth showing; else the login form opens clean.
-            var message = e.Raw.Contains("no saved credential") || (silentKeyTry && !e.Message.Contains("yalnız SSH anahtarı")) ? null : e.Message;
+            var message = e.Raw.Contains("no saved credential") || (silentKeyTry && !e.Message.StartsWith(CoreClient.KeyOnlyLogin, StringComparison.Ordinal)) ? null : e.Message;
             if (credential && askOnCredentialError) await AskCredentials(host, message);
             else Show($"{host.Label}: {e.Message}", InfoBarSeverity.Error);
         }
@@ -1627,27 +1678,27 @@ public sealed class ServersWindow : Window
             IsOpen = true,
             IsClosable = false,
             Severity = changed ? InfoBarSeverity.Error : InfoBarSeverity.Informational,
-            Title = changed ? "Bu sunucunun anahtarı değişti" : "Bu sunucuya ilk kez bağlanıyorsun",
+            Title = changed ? L.T("Bu sunucunun anahtarı değişti") : L.T("Bu sunucuya ilk kez bağlanıyorsun"),
             Message = changed
-                ? $"Güvendiğin anahtar {result.Trusted} idi. Sunucuyu yeniden kurmadıysan bağlanma; araya biri girmiş olabilir."
-                : $"{result.Algorithm} anahtarının parmak izi aşağıda. Sunucu yöneticisinden aldığın değerle aynıysa güven.",
+                ? L.F("Güvendiğin anahtar {0} idi. Sunucuyu yeniden kurmadıysan bağlanma; araya biri girmiş olabilir.", result.Trusted)
+                : L.F("{0} anahtarının parmak izi aşağıda. Sunucu yöneticisinden aldığın değerle aynıysa güven.", result.Algorithm),
         });
         panel.Children.Add(new TextBox { Text = result.Fingerprint ?? "", IsReadOnly = true, FontFamily = new FontFamily("Cascadia Mono, Consolas") });
-        var dialog = Dialog($"{host.Label} · {host.Target}", panel, changed ? "Yeni anahtara yine de güven" : "Güven ve bağlan");
+        var dialog = Dialog($"{host.Label} · {host.Target}", panel, changed ? L.T("Yeni anahtara yine de güven") : L.T("Güven ve bağlan"));
         return await ShowDialog(dialog) == ContentDialogResult.Primary;
     }
 
     private async Task AskCredentials(CoreHost host, string? message)
     {
-        var useKey = new RadioButtons { ItemsSource = new[] { "Özel anahtar", "Parola" }, SelectedIndex = host.AuthKind == "password" ? 1 : 0, MaxColumns = 2 };
+        var useKey = new RadioButtons { ItemsSource = new[] { L.T("Özel anahtar"), L.T("Parola") }, SelectedIndex = host.AuthKind == "password" ? 1 : 0, MaxColumns = 2 };
         string? keyPath = host.KeyPath;
-        var keyPathText = new TextBlock { Text = keyPath ?? "ya da anahtarı aşağıya yapıştır", Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"], TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
-        var pick = new Button { Content = "Anahtar dosyası seç…" };
+        var keyPathText = new TextBlock { Text = keyPath ?? L.T("ya da anahtarı aşağıya yapıştır"), Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"], TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+        var pick = new Button { Content = L.T("Anahtar dosyası seç…") };
         var key = new TextBox { AcceptsReturn = true, Height = 110, FontFamily = new FontFamily("Cascadia Mono, Consolas"), PlaceholderText = "-----BEGIN OPENSSH PRIVATE KEY-----", TextWrapping = TextWrapping.NoWrap };
-        var passphrase = new PasswordBox { PlaceholderText = "Anahtar parolası (varsa)" };
-        var password = new PasswordBox { PlaceholderText = "Parola" };
-        var remember = new CheckBox { Content = "Windows Kimlik Bilgisi Yöneticisi'nde sakla", IsChecked = true };
-        var installKey = new CheckBox { Content = "Bir dahaki sefere parola sorma (bu bilgisayarın anahtarını sunucuya ekle)", IsChecked = true };
+        var passphrase = new PasswordBox { PlaceholderText = L.T("Anahtar parolası (varsa)") };
+        var password = new PasswordBox { PlaceholderText = L.T("Parola") };
+        var remember = new CheckBox { Content = L.T("Windows Kimlik Bilgisi Yöneticisi'nde sakla"), IsChecked = true };
+        var installKey = new CheckBox { Content = L.T("Bir dahaki sefere parola sorma (bu bilgisayarın anahtarını sunucuya ekle)"), IsChecked = true };
         var keyRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
         keyRow.Children.Add(pick);
         keyRow.Children.Add(keyPathText);
@@ -1678,7 +1729,7 @@ public sealed class ServersWindow : Window
         foreach (var e in new UIElement[] { useKey, keyRow, key, passphrase, password, installKey, remember }) panel.Children.Add(e);
         // A server that takes keys only: this computer's key and the one line
         // that puts it on the server (the hosting panel's web console works too).
-        var keyOnly = message is not null && message.Contains("yalnız SSH anahtarı");
+        var keyOnly = message is not null && message.StartsWith(CoreClient.KeyOnlyLogin, StringComparison.Ordinal);
         KeyMeta? appKey = null;
         if (keyOnly)
         {
@@ -1692,23 +1743,23 @@ public sealed class ServersWindow : Window
             steps.Children.Add(new TextBlock
             {
                 TextWrapping = TextWrapping.Wrap,
-                Text = "Bir kez yapılır: aşağıdaki satırı sunucuda çalıştır (sunucu sağlayıcının web konsolundan ya da sunucuya girebilen başka bir kullanıcıyla), sonra \"Bu bilgisayarın anahtarıyla bağlan\"a bas.",
+                Text = L.T("Bir kez yapılır: aşağıdaki satırı sunucuda çalıştır (sunucu sağlayıcının web konsolundan ya da sunucuya girebilen başka bir kullanıcıyla), sonra \"Bu bilgisayarın anahtarıyla bağlan\"a bas."),
             });
             steps.Children.Add(new TextBox { Text = line, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, FontFamily = new FontFamily("Cascadia Mono, Consolas") });
-            var copy = new Button { Content = "Satırı kopyala" };
+            var copy = new Button { Content = L.T("Satırı kopyala") };
             copy.Click += (_, _) =>
             {
                 var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
                 package.SetText(line);
                 Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
-                copy.Content = "Kopyalandı";
+                copy.Content = L.T("Kopyalandı");
             };
             steps.Children.Add(copy);
-            panel.Children.Insert(1, new Expander { Header = "Bu bilgisayarın anahtarını sunucuya ekle", Content = steps, IsExpanded = true, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch });
+            panel.Children.Insert(1, new Expander { Header = L.T("Bu bilgisayarın anahtarını sunucuya ekle"), Content = steps, IsExpanded = true, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch });
             useKey.SelectedIndex = 0;
         }
-        var dialog = Dialog($"{host.Label} · {host.Target}", panel, "Bağlan");
-        if (appKey is not null) dialog.SecondaryButtonText = "Bu bilgisayarın anahtarıyla bağlan";
+        var dialog = Dialog($"{host.Label} · {host.Target}", panel, L.T("Bağlan"));
+        if (appKey is not null) dialog.SecondaryButtonText = L.T("Bu bilgisayarın anahtarıyla bağlan");
         var choice = await ShowDialog(dialog);
         if (choice == ContentDialogResult.Secondary && appKey is not null)
         {
@@ -1741,7 +1792,7 @@ public sealed class ServersWindow : Window
     {
         var view = new Microsoft.UI.Xaml.Controls.WebView2();
         var tab = new TerminalTab(sessionId, host, view);
-        tab.Exited = () => { tab.Caption.Text = host.Label + " (kapandı)"; if (tab.Page is { } p && p.Item is not null) p.Item.Header = p.Title; SyncCommands(); };
+        tab.Exited = () => { tab.Caption.Text = host.Label + L.T(" (kapandı)"); if (tab.Page is { } p && p.Item is not null) p.Item.Header = p.Title; SyncCommands(); };
         view.GotFocus += (_, _) => { if (tab.Page is { } p) { p.Focused = tab; SyncCommands(); } };
         _c.Register(tab, DispatcherQueue);
         if (_splitTarget is { } target && _tabs.TabItems.Contains(target.Page.Item) && target.Page.Panes.Count < TabPage.MaxPanes)
@@ -1805,7 +1856,7 @@ public sealed class ServersWindow : Window
                 head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 head.Children.Add(pane.Caption);
                 var close = new Button { Content = new SymbolIcon(Symbol.Cancel), Padding = new Thickness(4), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0) };
-                ToolTipService.SetToolTip(close, "Bu bölmeyi kapat");
+                ToolTipService.SetToolTip(close, L.T("Bu bölmeyi kapat"));
                 close.Click += (_, _) => CloseTab(pane);
                 Grid.SetColumn(close, 1); head.Children.Add(close);
                 cell.Children.Add(head);
@@ -1826,10 +1877,10 @@ public sealed class ServersWindow : Window
         {
             menu.Items.Clear();
             if (CurrentPage is not { } page) return;
-            foreach (var (vertical, title) in new[] { (false, "Yan yana"), (true, "Alt alta") })
+            foreach (var (vertical, title) in new[] { (false, L.T("Yan yana")), (true, L.T("Alt alta")) })
             {
                 var sub = new MenuFlyoutSubItem { Text = title };
-                if (Current is { } cur) sub.Items.Add(Item($"Aynı sunucu ({cur.Host.Label})", () => Split(page, vertical, cur.Host)));
+                if (Current is { } cur) sub.Items.Add(Item(L.F("Aynı sunucu ({0})", cur.Host.Label), () => Split(page, vertical, cur.Host)));
                 if (sub.Items.Count > 0) sub.Items.Add(new MenuFlyoutSeparator());
                 foreach (var h in _c.Hosts.OrderBy(h => h.Label, StringComparer.CurrentCultureIgnoreCase).Take(30))
                     sub.Items.Add(Item(h.Label, () => Split(page, vertical, h)));
@@ -1848,19 +1899,19 @@ public sealed class ServersWindow : Window
             if (Current is not { Closed: false } tab) return;
             if (tab.Hosting is { } share)
             {
-                var allow = new ToggleMenuFlyoutItem { Text = "Misafirler yazabilsin", IsChecked = share.AllowInput };
+                var allow = new ToggleMenuFlyoutItem { Text = L.T("Misafirler yazabilsin"), IsChecked = share.AllowInput };
                 allow.Click += (_, _) => share.AllowInput = allow.IsChecked;
                 menu.Items.Add(allow);
                 menu.Items.Add(new MenuFlyoutSeparator());
-                if (share.Guests.Count == 0) menu.Items.Add(new MenuFlyoutItem { Text = "Henüz izleyen yok", IsEnabled = false });
+                if (share.Guests.Count == 0) menu.Items.Add(new MenuFlyoutItem { Text = L.T("Henüz izleyen yok"), IsEnabled = false });
                 foreach (var (id, email) in share.Guests.ToList())
-                    menu.Items.Add(Item($"Çıkar: {email}", () => _ = share.KickAsync(id)));
+                    menu.Items.Add(Item(L.F("Çıkar: {0}", email), () => _ = share.KickAsync(id)));
                 menu.Items.Add(new MenuFlyoutSeparator());
-                menu.Items.Add(Item("Paylaşmayı durdur", async () => { await _c.StopSharing(tab); SyncCommands(); Show("Paylaşım durduruldu.", InfoBarSeverity.Informational); }));
+                menu.Items.Add(Item(L.T("Paylaşmayı durdur"), async () => { await _c.StopSharing(tab); SyncCommands(); Show(L.T("Paylaşım durduruldu."), InfoBarSeverity.Informational); }));
                 return;
             }
-            menu.Items.Add(Item("Paylaş: yalnız izlesinler", () => _ = StartShare(tab, false)));
-            menu.Items.Add(Item("Paylaş: yazabilsinler de", () => _ = StartShare(tab, true)));
+            menu.Items.Add(Item(L.T("Paylaş: yalnız izlesinler"), () => _ = StartShare(tab, false)));
+            menu.Items.Add(Item(L.T("Paylaş: yazabilsinler de"), () => _ = StartShare(tab, true)));
         };
         return menu;
     }
@@ -1873,14 +1924,14 @@ public sealed class ServersWindow : Window
             tab.Hosting!.GuestsChanged += () => DispatcherQueue.TryEnqueue(() =>
             {
                 SyncCommands();
-                Show($"Bu terminali izleyen: {tab.Hosting?.Guests.Count ?? 0} kişi.", InfoBarSeverity.Informational);
+                Show(L.F("Bu terminali izleyen: {0} kişi.", tab.Hosting?.Guests.Count ?? 0), InfoBarSeverity.Informational);
             });
             SyncCommands();
-            Show("Terminal ekiple paylaşılıyor. Ekiptekiler Sunucular → \"Ortak terminaller\"den katılabilir.", InfoBarSeverity.Success);
+            Show(L.T("Terminal ekiple paylaşılıyor. Ekiptekiler Sunucular → \"Ortak terminaller\"den katılabilir."), InfoBarSeverity.Success);
         }
         catch (Exception e) when (e is CoreException or GatewayException or System.Net.WebSockets.WebSocketException)
         {
-            Show("Paylaşılamadı: " + e.Message, InfoBarSeverity.Error);
+            Show(L.T("Paylaşılamadı: ") + e.Message, InfoBarSeverity.Error);
         }
     }
 
@@ -1891,10 +1942,10 @@ public sealed class ServersWindow : Window
         try { shares = await _c.Shares(); }
         catch (GatewayException e) { Show(e.Message, InfoBarSeverity.Error); return; }
         var list = new StackPanel { Spacing = 8, MinWidth = 420 };
-        if (shares.Count == 0) list.Children.Add(new TextBlock { Text = "Şu an ekipte paylaşılan terminal yok. Bir terminalde \"Ekiple paylaş\" ile başlatılır.", TextWrapping = TextWrapping.Wrap, Foreground = Secondary });
-        var dialog = Dialog("Ortak terminaller", list, "Kapat", "Vazgeç");
+        if (shares.Count == 0) list.Children.Add(new TextBlock { Text = L.T("Şu an ekipte paylaşılan terminal yok. Bir terminalde \"Ekiple paylaş\" ile başlatılır."), TextWrapping = TextWrapping.Wrap, Foreground = Secondary });
+        var dialog = Dialog(L.T("Ortak terminaller"), list, L.T("Kapat"), L.T("Vazgeç"));
         dialog.PrimaryButtonText = "";
-        dialog.CloseButtonText = "Kapat";
+        dialog.CloseButtonText = L.T("Kapat");
         foreach (var s in shares)
         {
             var row = new Grid { ColumnSpacing = 8 };
@@ -1904,7 +1955,7 @@ public sealed class ServersWindow : Window
             text.Children.Add(new TextBlock { Text = s.Title, Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"] });
             text.Children.Add(new TextBlock { Text = $"{s.HostEmail} · {s.Guests} izleyen", Foreground = Secondary, FontSize = 12 });
             row.Children.Add(text);
-            var join = new Button { Content = "Katıl" };
+            var join = new Button { Content = L.T("Katıl") };
             join.Click += async (_, _) => { dialog.Hide(); await JoinShare(s); };
             Grid.SetColumn(join, 1); row.Children.Add(join);
             list.Children.Add(row);
@@ -1933,7 +1984,7 @@ public sealed class ServersWindow : Window
         }
         catch (Exception e) when (e is CoreException or GatewayException or System.Net.WebSockets.WebSocketException)
         {
-            Show("Katılamadın: " + e.Message, InfoBarSeverity.Error);
+            Show(L.T("Katılamadın: ") + e.Message, InfoBarSeverity.Error);
         }
     }
 
@@ -2035,7 +2086,7 @@ public sealed class ServersWindow : Window
     private readonly Grid _localPane = new() { Visibility = Visibility.Collapsed };
     private readonly ListView _localList = new() { SelectionMode = ListViewSelectionMode.Extended };
     private readonly TextBox _localPath = new() { VerticalAlignment = VerticalAlignment.Center };
-    private readonly AppBarToggleButton _twoPane = new() { Label = "İki panel", Icon = new FontIcon { Glyph = "\uE89F" }, LabelPosition = CommandBarLabelPosition.Collapsed };
+    private readonly AppBarToggleButton _twoPane = new() { Label = L.T("İki panel"), Icon = new FontIcon { Glyph = "\uE89F" }, LabelPosition = CommandBarLabelPosition.Collapsed };
     private string _localDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
     private void BuildFilesPane()
@@ -2051,17 +2102,17 @@ public sealed class ServersWindow : Window
         remote.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         remote.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var up = new Button { Content = new SymbolIcon(Symbol.Up) };
-        ToolTipService.SetToolTip(up, "Üst klasör");
+        ToolTipService.SetToolTip(up, L.T("Üst klasör"));
         up.Click += (_, _) => _ = LoadFiles(_listing?.Parent);
         var refresh = new Button { Content = new SymbolIcon(Symbol.Refresh) };
         refresh.Click += (_, _) => _ = LoadFiles(_listing?.Path);
         var upload = new Button { Content = new SymbolIcon(Symbol.Upload) };
-        ToolTipService.SetToolTip(upload, "Dosya yükle");
+        ToolTipService.SetToolTip(upload, L.T("Dosya yükle"));
         upload.Click += async (_, _) => await UploadPicked();
         var mkdir = new Button { Content = new SymbolIcon(Symbol.NewFolder) };
-        ToolTipService.SetToolTip(mkdir, "Yeni klasör");
+        ToolTipService.SetToolTip(mkdir, L.T("Yeni klasör"));
         mkdir.Click += async (_, _) => await NewFolder();
-        ToolTipService.SetToolTip(_twoPane, "Bu bilgisayarı yanında göster (yerel ↔ sunucu)");
+        ToolTipService.SetToolTip(_twoPane, L.T("Bu bilgisayarı yanında göster (yerel ↔ sunucu)"));
         _twoPane.Click += (_, _) => SetTwoPane(_twoPane.IsChecked == true);
         var head = new Grid { Padding = new Thickness(8), ColumnSpacing = 6 };
         for (var i = 0; i < 6; i++) head.ColumnDefinitions.Add(new ColumnDefinition { Width = i == 1 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto });
@@ -2110,7 +2161,7 @@ public sealed class ServersWindow : Window
         _localPane.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         _localPane.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var up = new Button { Content = new SymbolIcon(Symbol.Up) };
-        ToolTipService.SetToolTip(up, "Üst klasör");
+        ToolTipService.SetToolTip(up, L.T("Üst klasör"));
         up.Click += (_, _) => { if (Directory.GetParent(_localDir) is { } parent) LoadLocal(parent.FullName); };
         _localPath.KeyDown += (_, e) => { if (e.Key == Windows.System.VirtualKey.Enter) LoadLocal(_localPath.Text.Trim()); };
         var head = new Grid { Padding = new Thickness(8), ColumnSpacing = 6 };
@@ -2144,7 +2195,7 @@ public sealed class ServersWindow : Window
                 await DownloadHere(tab, path, path[(path.LastIndexOf('/') + 1)..]);
         };
         _localPane.Children.Add(_localList);
-        var send = new Button { Content = "Seçilenleri sunucuya yükle →", HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(8) };
+        var send = new Button { Content = L.T("Seçilenleri sunucuya yükle →"), HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(8) };
         send.Click += async (_, _) =>
         {
             foreach (var f in _localList.SelectedItems.OfType<ListViewItem>().Select(i => i.Tag).OfType<FileInfo>().ToList())
@@ -2198,7 +2249,7 @@ public sealed class ServersWindow : Window
                 if (e is FileInfo file)
                 {
                     var menu = new MenuFlyout();
-                    menu.Items.Add(Item("Sunucuya yükle →", () => _ = Upload(file.FullName)));
+                    menu.Items.Add(Item(L.T("Sunucuya yükle →"), () => _ = Upload(file.FullName)));
                     item.ContextFlyout = menu;
                 }
                 _localList.Items.Add(item);
@@ -2207,7 +2258,7 @@ public sealed class ServersWindow : Window
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException or ArgumentException)
         {
             _localPath.Text = _localDir;
-            _localList.Items.Add(new ListViewItem { Content = new TextBlock { Text = "Klasör açılamadı: " + e.Message, TextWrapping = TextWrapping.Wrap }, IsEnabled = false });
+            _localList.Items.Add(new ListViewItem { Content = new TextBlock { Text = L.T("Klasör açılamadı: ") + e.Message, TextWrapping = TextWrapping.Wrap }, IsEnabled = false });
         }
     }
 
@@ -2217,7 +2268,7 @@ public sealed class ServersWindow : Window
         var target = Path.Combine(_localDir, name);
         if (File.Exists(target))
         {
-            var dialog = Dialog($"{name} zaten var", new TextBlock { Text = "Bu bilgisayardaki dosyanın üzerine yazılsın mı?" }, "Üzerine yaz");
+            var dialog = Dialog(L.F("{0} zaten var", name), new TextBlock { Text = L.T("Bu bilgisayardaki dosyanın üzerine yazılsın mı?") }, L.T("Üzerine yaz"));
             if (await ShowDialog(dialog) != ContentDialogResult.Primary) return;
         }
         await Transfer($"⬇ {name}", id => _c.FilesAction(tab, "files.download", new { sessionId = tab.SessionId, remote = remotePath, local = target, transferId = id }));
@@ -2255,10 +2306,10 @@ public sealed class ServersWindow : Window
         var item = new ListViewItem { Content = row, Tag = e };
         ToolTipService.SetToolTip(item, $"{e.Permissions}  {e.Path}");
         var menu = new MenuFlyout();
-        if (!e.IsFolder) menu.Items.Add(Item("İndir…", () => _ = Download(tab, e)));
-        if (!e.IsFolder) menu.Items.Add(Item("← Açık yerel klasöre indir", () => { if (_localPane.Visibility != Visibility.Visible) SetTwoPane(true); _ = DownloadHere(tab, e.Path, e.Name); }));
-        menu.Items.Add(Item("Yeniden adlandır…", () => _ = Rename(tab, e)));
-        menu.Items.Add(Item("Sil", () => _ = Delete(tab, e)));
+        if (!e.IsFolder) menu.Items.Add(Item(L.T("İndir…"), () => _ = Download(tab, e)));
+        if (!e.IsFolder) menu.Items.Add(Item(L.T("← Açık yerel klasöre indir"), () => { if (_localPane.Visibility != Visibility.Visible) SetTwoPane(true); _ = DownloadHere(tab, e.Path, e.Name); }));
+        menu.Items.Add(Item(L.T("Yeniden adlandır…"), () => _ = Rename(tab, e)));
+        menu.Items.Add(Item(L.T("Sil"), () => _ = Delete(tab, e)));
         item.ContextFlyout = menu;
         return item;
     }
@@ -2276,14 +2327,14 @@ public sealed class ServersWindow : Window
     private async Task<string?> AskText(string title, string value)
     {
         var box = new TextBox { Text = value, MinWidth = 320 };
-        var dialog = Dialog(title, box, "Tamam");
+        var dialog = Dialog(title, box, L.T("Tamam"));
         return await ShowDialog(dialog) == ContentDialogResult.Primary ? box.Text.Trim() : null;
     }
 
     private async Task NewFolder()
     {
         if (Current is not { } tab || _listing is null) return;
-        var name = await AskText("Yeni klasör", "");
+        var name = await AskText(L.T("Yeni klasör"), "");
         if (string.IsNullOrEmpty(name)) return;
         await Guard(() => _c.FilesAction(tab, "files.mkdir", new { sessionId = tab.SessionId, path = Join(_listing.Path, name) }));
         await LoadFiles(_listing.Path);
@@ -2292,7 +2343,7 @@ public sealed class ServersWindow : Window
     private async Task Rename(TerminalTab tab, RemoteEntry e)
     {
         if (_listing is null) return;
-        var name = await AskText("Yeniden adlandır", e.Name);
+        var name = await AskText(L.T("Yeniden adlandır"), e.Name);
         if (string.IsNullOrEmpty(name) || name == e.Name) return;
         await Guard(() => _c.FilesAction(tab, "files.rename", new { sessionId = tab.SessionId, from = e.Path, to = Join(_listing.Path, name) }));
         await LoadFiles(_listing.Path);
@@ -2300,7 +2351,7 @@ public sealed class ServersWindow : Window
 
     private async Task Delete(TerminalTab tab, RemoteEntry e)
     {
-        var dialog = Dialog($"{e.Name} silinsin mi?", new TextBlock { Text = e.IsFolder ? "Yalnızca boş klasörler silinebilir." : "Bu işlem geri alınamaz." }, "Sil");
+        var dialog = Dialog($"{e.Name} silinsin mi?", new TextBlock { Text = e.IsFolder ? L.T("Yalnızca boş klasörler silinebilir.") : L.T("Bu işlem geri alınamaz.") }, L.T("Sil"));
         if (await ShowDialog(dialog) != ContentDialogResult.Primary) return;
         await Guard(() => _c.FilesAction(tab, "files.delete", new { sessionId = tab.SessionId, path = e.Path }));
         await LoadFiles(_listing?.Path);
@@ -2315,7 +2366,7 @@ public sealed class ServersWindow : Window
     private async Task Download(TerminalTab tab, RemoteEntry e)
     {
         var picker = new FileSavePicker { SuggestedFileName = e.Name, SuggestedStartLocation = PickerLocationId.Downloads };
-        picker.FileTypeChoices.Add("Dosya", [Path.GetExtension(e.Name) is { Length: > 0 } ext ? ext : "."]);
+        picker.FileTypeChoices.Add(L.T("Dosya"), [Path.GetExtension(e.Name) is { Length: > 0 } ext ? ext : "."]);
         WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
         var file = await picker.PickSaveFileAsync();
         if (file is null) return;
@@ -2382,7 +2433,7 @@ public sealed class ServersWindow : Window
                 row.Children.Add(new TextBlock { Text = KindLabel(f.Kind), Foreground = Secondary, VerticalAlignment = VerticalAlignment.Center });
                 var text = new TextBlock { Text = $"{f.Local}  →  {f.Remote}", FontFamily = new FontFamily("Cascadia Mono, Consolas"), VerticalAlignment = VerticalAlignment.Center, IsTextSelectionEnabled = true };
                 Grid.SetColumn(text, 1); row.Children.Add(text);
-                var stop = new Button { Content = "Kapat" };
+                var stop = new Button { Content = L.T("Kapat") };
                 stop.Click += async (_, _) => await Render(await _c.StopForward(tab, f.StopId));
                 Grid.SetColumn(stop, 2); row.Children.Add(stop);
                 list.Children.Add(row);
@@ -2390,38 +2441,38 @@ public sealed class ServersWindow : Window
             await Task.CompletedTask;
         }
         await Render(await _c.Forwards(tab));
-        var kind = new RadioButtons { Header = "Tünel türü", ItemsSource = new[] { "Yerel (-L)", "Uzak (-R)", "SOCKS proxy (-D)" }, SelectedIndex = 0, MaxColumns = 3 };
+        var kind = new RadioButtons { Header = L.T("Tünel türü"), ItemsSource = new[] { "Yerel (-L)", "Uzak (-R)", "SOCKS proxy (-D)" }, SelectedIndex = 0, MaxColumns = 3 };
         var help = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Secondary };
-        var local = new NumberBox { Header = "Bu bilgisayardaki port (0 = boş port)", Value = 0, Minimum = 0, Maximum = 65535 };
-        var localHost = new TextBox { Header = "Bu taraftaki adres", Text = "127.0.0.1" };
-        var remoteHost = new TextBox { Header = "Uzak adres (sunucudan görüldüğü gibi)", Text = "127.0.0.1" };
-        var remotePort = new NumberBox { Header = "Uzak port", Minimum = 0, Maximum = 65535 };
-        var save = new CheckBox { Content = "Bu tüneli kaydet (Tüneller sayfasından ve tepsi simgesinden açılır)" };
+        var local = new NumberBox { Header = L.T("Bu bilgisayardaki port (0 = boş port)"), Value = 0, Minimum = 0, Maximum = 65535 };
+        var localHost = new TextBox { Header = L.T("Bu taraftaki adres"), Text = "127.0.0.1" };
+        var remoteHost = new TextBox { Header = L.T("Uzak adres (sunucudan görüldüğü gibi)"), Text = "127.0.0.1" };
+        var remotePort = new NumberBox { Header = L.T("Uzak port"), Minimum = 0, Maximum = 65535 };
+        var save = new CheckBox { Content = L.T("Bu tüneli kaydet (Tüneller sayfasından ve tepsi simgesinden açılır)") };
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap };
         void Sync()
         {
             switch (kind.SelectedIndex)
             {
                 case 1:
-                    help.Text = "Sunucu bir port açar; oraya gelen bağlantılar bu bilgisayardaki bir servise (örneğin yerel web sunucun) gelir (ssh -R). Sunucu varsayılan olarak yalnız kendi içinden (localhost) dinler.";
-                    local.Header = "Bu bilgisayardaki servis portu";
-                    remoteHost.Header = "Sunucunun dinleyeceği adres";
+                    help.Text = L.T("Sunucu bir port açar; oraya gelen bağlantılar bu bilgisayardaki bir servise (örneğin yerel web sunucun) gelir (ssh -R). Sunucu varsayılan olarak yalnız kendi içinden (localhost) dinler.");
+                    local.Header = L.T("Bu bilgisayardaki servis portu");
+                    remoteHost.Header = L.T("Sunucunun dinleyeceği adres");
                     remoteHost.Text = remoteHost.Text is "127.0.0.1" or "" ? "localhost" : remoteHost.Text;
-                    remotePort.Header = "Sunucunun dinleyeceği port (0 = sunucu seçsin)";
+                    remotePort.Header = L.T("Sunucunun dinleyeceği port (0 = sunucu seçsin)");
                     localHost.Visibility = Visibility.Visible;
                     remoteHost.Visibility = remotePort.Visibility = Visibility.Visible;
                     break;
                 case 2:
-                    help.Text = "Bu bilgisayarda bir SOCKS5 proxy açar; tarayıcını ya da bir uygulamayı bu proxy'ye yönlendirirsen trafik sunucunun ağından çıkar (ssh -D). Yalnızca bu bilgisayardan (127.0.0.1) erişilebilir.";
-                    local.Header = "Proxy portu (0 = boş port)";
+                    help.Text = L.T("Bu bilgisayarda bir SOCKS5 proxy açar; tarayıcını ya da bir uygulamayı bu proxy'ye yönlendirirsen trafik sunucunun ağından çıkar (ssh -D). Yalnızca bu bilgisayardan (127.0.0.1) erişilebilir.");
+                    local.Header = L.T("Proxy portu (0 = boş port)");
                     localHost.Visibility = remoteHost.Visibility = remotePort.Visibility = Visibility.Collapsed;
                     break;
                 default:
-                    help.Text = "Bu bilgisayardaki bir portu, sunucunun erişebildiği bir adrese bağlar (ssh -L). Yalnızca bu bilgisayardan (127.0.0.1) erişilebilir.";
-                    local.Header = "Bu bilgisayardaki port (0 = boş port)";
-                    remoteHost.Header = "Uzak adres (sunucudan görüldüğü gibi)";
+                    help.Text = L.T("Bu bilgisayardaki bir portu, sunucunun erişebildiği bir adrese bağlar (ssh -L). Yalnızca bu bilgisayardan (127.0.0.1) erişilebilir.");
+                    local.Header = L.T("Bu bilgisayardaki port (0 = boş port)");
+                    remoteHost.Header = L.T("Uzak adres (sunucudan görüldüğü gibi)");
                     remoteHost.Text = remoteHost.Text is "localhost" or "" ? "127.0.0.1" : remoteHost.Text;
-                    remotePort.Header = "Uzak port";
+                    remotePort.Header = L.T("Uzak port");
                     localHost.Visibility = Visibility.Collapsed;
                     remoteHost.Visibility = remotePort.Visibility = Visibility.Visible;
                     break;
@@ -2431,7 +2482,7 @@ public sealed class ServersWindow : Window
         Sync();
         var panel = new StackPanel { Spacing = 10, MinWidth = 460 };
         foreach (var e in new UIElement[] { list, kind, help, local, localHost, remoteHost, remotePort, save, status }) panel.Children.Add(e);
-        var dialog = Dialog($"Tüneller · {tab.Host.Label}", new ScrollViewer { Content = panel, MaxHeight = 600 }, "Tünel aç", "Kapat");
+        var dialog = Dialog(L.F("Tüneller · {0}", tab.Host.Label), new ScrollViewer { Content = panel, MaxHeight = 600 }, L.T("Tünel aç"), L.T("Kapat"));
         dialog.PrimaryButtonClick += async (_, args) =>
         {
             args.Cancel = true; // stay open to show the list
@@ -2445,9 +2496,9 @@ public sealed class ServersWindow : Window
                 var last = forwards.Count > 0 ? forwards[^1] : null;
                 status.Text = last is null ? "" : k switch
                 {
-                    "remote" => $"Açıldı: sunucuda {last.Local} → bu bilgisayarda {last.Remote}.",
-                    "dynamic" => $"Açıldı: uygulamanda SOCKS5 proxy olarak {last.Local} adresini kullan.",
-                    _ => $"Açıldı: {last.Local} adresine bağlan.",
+                    "remote" => L.F("Açıldı: sunucuda {0} → bu bilgisayarda {1}.", last.Local, last.Remote),
+                    "dynamic" => L.F("Açıldı: uygulamanda SOCKS5 proxy olarak {0} adresini kullan.", last.Local),
+                    _ => L.F("Açıldı: {0} adresine bağlan.", last.Local),
                 };
             }
             catch (CoreException e) { status.Text = e.Message; }
@@ -2510,7 +2561,7 @@ public sealed class TabPage
     public string Title => Panes.Count switch
     {
         0 => "",
-        1 => Panes[0].Host.Label + (Panes[0].Closed ? " (kapandı)" : ""),
+        1 => Panes[0].Host.Label + (Panes[0].Closed ? L.T(" (kapandı)") : ""),
         _ => string.Join(" | ", Panes.Select(p => p.Host.Label)),
     };
 }

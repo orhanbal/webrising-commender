@@ -55,6 +55,9 @@ public sealed class Settings
     [JsonPropertyName("deskChipLeft")] public int? DeskChipLeft { get; set; }
     [JsonPropertyName("deskChipBottom")] public int? DeskChipBottom { get; set; }
 
+    /// <summary>Interface language ("en", "tr", "de", "pt-BR", "es", "fr"); null: the Windows display language.</summary>
+    [JsonPropertyName("language")] public string? Language { get; set; }
+
     // ---- WECOMMANDER Dock (off until the owner turns it on) ----
     [JsonPropertyName("dock")] public bool Dock { get; set; }
     /// <summary>"fixed" (takes its strip from the work area), "autohide" or "floating".</summary>

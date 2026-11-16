@@ -111,7 +111,7 @@ public partial class App : Application
             _installerLog.Clear();
             InstallerSucceeded = null;
             InstallerRunning = true;
-            AddInstallerLine(Agent is { State: AgentRunState.NotInstalled } ? "Ajan kurulumu başladı (bu hesapla otomatik bağlanacak)…" : "Ajan güncellemesi başladı…");
+            AddInstallerLine(Agent is { State: AgentRunState.NotInstalled } ? L.T("Ajan kurulumu başladı (bu hesapla otomatik bağlanacak)…") : L.T("Ajan güncellemesi başladı…"));
             Publish();
 
             using var process = new System.Diagnostics.Process { StartInfo = AgentControl.InstallerStartInfo(Settings.Server, code) };
@@ -122,8 +122,8 @@ public partial class App : Application
             process.BeginErrorReadLine();
             await process.WaitForExitAsync();
             InstallerSucceeded = process.ExitCode == 0;
-            AddInstallerLine(InstallerSucceeded == true ? "Tamamlandı." : $"Kurulum bitmedi (çıkış kodu {process.ExitCode}).");
-            Toast(InstallerSucceeded == true ? "Ajan kurulumu/güncellemesi tamamlandı." : "Ajan kurulumu tamamlanamadı; ayrıntı Cihazlar sekmesinde.");
+            AddInstallerLine(InstallerSucceeded == true ? L.T("Tamamlandı.") : L.F("Kurulum bitmedi (çıkış kodu {0}).", process.ExitCode));
+            Toast(InstallerSucceeded == true ? L.T("Ajan kurulumu/güncellemesi tamamlandı.") : L.T("Ajan kurulumu tamamlanamadı; ayrıntı Cihazlar sekmesinde."));
         }
         catch (Exception e)
         {
@@ -253,8 +253,8 @@ public partial class App : Application
         {
             _ui?.TryEnqueue(() =>
             {
-                Error = "Beklenmeyen bir hata oldu (" + error.GetType().Name + ": " + error.Message + "). Ayrıntı: " + ErrorLogPath;
-                Toast("Bir işlem hata verdi; uygulama çalışmaya devam ediyor.");
+                Error = L.F("Beklenmeyen bir hata oldu ({0}: {1}). Ayrıntı: {2}", error.GetType().Name, error.Message, ErrorLogPath);
+                Toast(L.T("Bir işlem hata verdi; uygulama çalışmaya devam ediyor."));
                 Publish();
             });
         }
@@ -268,6 +268,9 @@ public partial class App : Application
         _ui = DispatcherQueue.GetForCurrentThread();
         var (settings, existed) = _settingsStore.Load();
         Settings = settings;
+        // The interface language before any window is built.
+        // WECOMMANDER_LANGUAGE (CI) wins over the saved choice.
+        L.Use(L.Resolve(Environment.GetEnvironmentVariable("WECOMMANDER_LANGUAGE") ?? Settings.Language));
         if (!existed)
         {
             _settingsStore.Save(Settings);
@@ -351,7 +354,7 @@ public partial class App : Application
         try
         {
             using var key = Registry.CurrentUser.CreateSubKey($@"Software\Classes\AppUserModelId\{Program.AppUserModelId}");
-            key.SetValue("DisplayName", "WECOMMANDER Yönetim Merkezi");
+            key.SetValue("DisplayName", L.T("WECOMMANDER Yönetim Merkezi"));
             var icon = Path.Combine(AppContext.BaseDirectory, "Assets", "icon.png");
             if (File.Exists(icon)) key.SetValue("IconUri", icon);
         }
@@ -535,7 +538,7 @@ public partial class App : Application
             // Background work never pops an error at the user: logged, and
             // shown only in Settings.
             LogCrash(e);
-            LibrarySyncError = "Eşitleme şu an yapılamadı; birazdan yeniden denenecek.";
+            LibrarySyncError = L.T("Eşitleme şu an yapılamadı; birazdan yeniden denenecek.");
         }
         try
         {
@@ -549,7 +552,7 @@ public partial class App : Application
         catch (Exception e)
         {
             LogCrash(e);
-            TeamSyncError = "Ekip eşitlemesi şu an yapılamadı; birazdan yeniden denenecek.";
+            TeamSyncError = L.T("Ekip eşitlemesi şu an yapılamadı; birazdan yeniden denenecek.");
         }
     }
 
@@ -561,7 +564,7 @@ public partial class App : Application
 
     public async Task SetupLibrarySync(string passphrase)
     {
-        if (Token is not { } token) throw new GatewayException(GatewayErrorKind.Unauthorized, 401, "", "Önce oturum aç.");
+        if (Token is not { } token) throw new GatewayException(GatewayErrorKind.Unauthorized, 401, "", L.T("Önce oturum aç."));
         await Servers.SetupSync(Gateway, token, passphrase);
         _lastLibrarySync = DateTime.UtcNow;
         LibrarySyncError = null;
@@ -609,7 +612,7 @@ public partial class App : Application
             if (AgentUpdateAvailable && _announcedBuild != LatestAgentBuild)
             {
                 _announcedBuild = LatestAgentBuild;
-                Toast($"Ajan için yeni sürüm var (0.1.{LatestAgentBuild}). Yönetim Merkezinde \"Ajanı güncelle\" ile kurabilirsin.");
+                Toast(L.F("Ajan için yeni sürüm var (0.1.{0}). Yönetim Merkezinde \"Ajanı güncelle\" ile kurabilirsin.", LatestAgentBuild));
             }
         }
         if (status.Running) _serviceStopNoticeShown = false;
@@ -716,7 +719,7 @@ public partial class App : Application
                 {
                     var names = Devices.ToDictionary(d => d.Id, d => d.Name);
                     foreach (var item in fresh.Take(5))
-                        NotifyRequest(item, names.GetValueOrDefault(item.DeviceId, "bilinmeyen cihaz"));
+                        NotifyRequest(item, names.GetValueOrDefault(item.DeviceId, L.T("bilinmeyen cihaz")));
                 }
                 // By default only the small Windows notification appears. The
                 // panel opens by itself when the owner asked for it, or when no
@@ -744,7 +747,7 @@ public partial class App : Application
     {
         var normalized = ServerUrl.Normalize(server);
         name = new string(name.Trim().Where(c => !char.IsControl(c) && c is not '<' and not '>').Take(80).ToArray());
-        if (name.Length == 0) name = "Yönetim Merkezi";
+        if (name.Length == 0) name = L.T("Yönetim Merkezi");
         Settings.Server = normalized;
         _settingsStore.Save(Settings);
         var start = await Gateway.LinkStartAsync(name);
@@ -766,7 +769,7 @@ public partial class App : Application
         if (DateTime.UtcNow > link.Deadline)
         {
             _link = null;
-            Error = "Oturum açma isteğinin süresi doldu. Yeniden dene.";
+            Error = L.T("Oturum açma isteğinin süresi doldu. Yeniden dene.");
             Publish();
             return;
         }
@@ -779,7 +782,7 @@ public partial class App : Application
                     _link = null;
                     Token = token;
                     LocalStore.SaveToken(Settings.Server, token);
-                    Toast("Yönetim Merkezi hesabına bağlandı.");
+                    Toast(L.T("Yönetim Merkezi hesabına bağlandı."));
                     _window?.ShowPanel();
                     await SyncAsync();
                     await EnsurePairedAsync();
@@ -788,7 +791,7 @@ public partial class App : Application
                     break;
                 default:
                     _link = null;
-                    Error = "Oturum açma isteği geçersiz ya da kullanılmış. Yeniden dene.";
+                    Error = L.T("Oturum açma isteği geçersiz ya da kullanılmış. Yeniden dene.");
                     Publish();
                     break;
             }
@@ -808,7 +811,7 @@ public partial class App : Application
         var names = Devices.ToDictionary(d => d.Id, d => d.Name);
         foreach (var item in others.Take(5))
         {
-            var device = names.GetValueOrDefault(item.DeviceId, "bilinmeyen cihaz");
+            var device = names.GetValueOrDefault(item.DeviceId, L.T("bilinmeyen cihaz"));
             var what = string.IsNullOrEmpty(item.Summary) ? Texts.KindLabel(item.ActionKind) : item.Summary;
             _ = AnnounceAsync(item.Id, device, what);
         }
@@ -827,7 +830,7 @@ public partial class App : Application
 
     public async Task DecideAsync(string id, bool approve)
     {
-        if (Token is not { } token) throw new GatewayException(GatewayErrorKind.Unauthorized, 401, "", "Önce oturum aç.");
+        if (Token is not { } token) throw new GatewayException(GatewayErrorKind.Unauthorized, 401, "", L.T("Önce oturum aç."));
         _decidedHere.Add(id);
         try
         {
@@ -927,25 +930,25 @@ public partial class App : Application
 
     private void BuildTray()
     {
-        _pendingItem = new MenuFlyoutItem { Text = "Oturum açılmadı", Command = new RelayCommand(() => _window?.ShowPanel()) };
-        _autonomyItem = new MenuFlyoutItem { Text = "Otonom mod kapalı", Command = new RelayCommand(() => _window?.ShowPanel()) };
+        _pendingItem = new MenuFlyoutItem { Text = L.T("Oturum açılmadı"), Command = new RelayCommand(() => _window?.ShowPanel()) };
+        _autonomyItem = new MenuFlyoutItem { Text = L.T("Otonom mod kapalı"), Command = new RelayCommand(() => _window?.ShowPanel()) };
         _stopAutonomyItem = new MenuFlyoutItem
         {
-            Text = "Otonom modu durdur (tüm cihazlar)",
+            Text = L.T("Otonom modu durdur (tüm cihazlar)"),
             IsEnabled = false,
             Command = new RelayCommand(async () =>
             {
                 try
                 {
                     await StopAutonomyAsync();
-                    Toast("Otonom mod durduruldu. Onaylar yeniden isteniyor.");
+                    Toast(L.T("Otonom mod durduruldu. Onaylar yeniden isteniyor."));
                 }
                 catch (GatewayException e) { Toast(e.Message); }
             }),
         };
         _notifyItem = new ToggleMenuFlyoutItem
         {
-            Text = "Bildirimler",
+            Text = L.T("Bildirimler"),
             IsChecked = Settings.Notifications,
             Command = new RelayCommand(() =>
             {
@@ -956,32 +959,32 @@ public partial class App : Application
         };
         _allowNotifyItem = new MenuFlyoutItem
         {
-            Text = "Windows bildirimlerine izin ver…",
+            Text = L.T("Windows bildirimlerine izin ver…"),
             Visibility = Visibility.Collapsed,
             Command = new RelayCommand(OpenNotificationSettings),
         };
         _agentItem = new ToggleMenuFlyoutItem
         {
-            Text = "Ajan çalışsın",
+            Text = L.T("Ajan çalışsın"),
             IsChecked = Settings.AgentKeepRunning,
             Command = new RelayCommand(async () => await SetAgentEnabledAsync(!(Agent?.Running ?? false))),
         };
         _accountItem = new MenuFlyoutItem
         {
-            Text = "Oturum aç…",
+            Text = L.T("Oturum aç…"),
             Command = new RelayCommand(async () =>
             {
                 if (Token is null) { _window?.ShowPanel(); return; }
                 await SignOutAsync();
-                Toast("Oturum kapatıldı. Yeniden açmak için tepsi simgesine tıkla.");
+                Toast(L.T("Oturum kapatıldı. Yeniden açmak için tepsi simgesine tıkla."));
             }),
         };
         var menu = new MenuFlyout();
-        menu.Items.Add(new MenuFlyoutItem { Text = "WECOMMANDER'ı aç", Command = new RelayCommand(ShowServers) });
-        menu.Items.Add(new MenuFlyoutItem { Text = "Onaylar ve otonom mod", Command = new RelayCommand(() => _window?.ShowPanel()) });
-        menu.Items.Add(new MenuFlyoutItem { Text = "Sunucu kutusu (sol alt): göster / gizle", Command = new RelayCommand(() => SetDeskChip(!Settings.DeskChip)) });
-        _connectMenu = new MenuFlyoutSubItem { Text = "Bağlan", IsEnabled = false };
-        _tunnelMenu = new MenuFlyoutSubItem { Text = "Tüneller", IsEnabled = false };
+        menu.Items.Add(new MenuFlyoutItem { Text = L.T("WECOMMANDER'ı aç"), Command = new RelayCommand(ShowServers) });
+        menu.Items.Add(new MenuFlyoutItem { Text = L.T("Onaylar ve otonom mod"), Command = new RelayCommand(() => _window?.ShowPanel()) });
+        menu.Items.Add(new MenuFlyoutItem { Text = L.T("Sunucu kutusu (sol alt): göster / gizle"), Command = new RelayCommand(() => SetDeskChip(!Settings.DeskChip)) });
+        _connectMenu = new MenuFlyoutSubItem { Text = L.T("Bağlan"), IsEnabled = false };
+        _tunnelMenu = new MenuFlyoutSubItem { Text = L.T("Tüneller"), IsEnabled = false };
         menu.Items.Add(_connectMenu);
         menu.Items.Add(_tunnelMenu);
         menu.Items.Add(new MenuFlyoutSeparator());
@@ -989,18 +992,18 @@ public partial class App : Application
         menu.Items.Add(_autonomyItem);
         menu.Items.Add(_stopAutonomyItem);
         menu.Items.Add(new MenuFlyoutSeparator());
-        menu.Items.Add(new MenuFlyoutItem { Text = "Paneli tarayıcıda aç", Command = new RelayCommand(OpenDashboard) });
+        menu.Items.Add(new MenuFlyoutItem { Text = L.T("Paneli tarayıcıda aç"), Command = new RelayCommand(OpenDashboard) });
         menu.Items.Add(_notifyItem);
         menu.Items.Add(_allowNotifyItem);
         menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(_agentItem);
         menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(_accountItem);
-        menu.Items.Add(new MenuFlyoutItem { Text = "Çıkış", Command = new RelayCommand(Quit) });
+        menu.Items.Add(new MenuFlyoutItem { Text = L.T("Çıkış"), Command = new RelayCommand(Quit) });
 
         _tray = new TaskbarIcon
         {
-            ToolTipText = "WECOMMANDER Yönetim Merkezi",
+            ToolTipText = L.T("WECOMMANDER Yönetim Merkezi"),
             Icon = LoadIcon("tray.ico"),
             ContextMenuMode = ContextMenuMode.PopupMenu,
             ContextFlyout = menu,
@@ -1031,18 +1034,18 @@ public partial class App : Application
             (true, true) => "tray-autonomy-pending.ico",
         });
         var tooltip = !signedIn
-            ? "WECOMMANDER Yönetim Merkezi — oturum açılmadı"
-            : (pending == 0 ? "WECOMMANDER — bekleyen onay yok" : $"WECOMMANDER — {pending} bekleyen onay")
-              + (autonomy > 0 ? $" · otonom mod açık ({autonomy} cihaz)" : "");
+            ? L.T("WECOMMANDER Yönetim Merkezi — oturum açılmadı")
+            : (pending == 0 ? L.T("WECOMMANDER — bekleyen onay yok") : L.F("WECOMMANDER — {0} bekleyen onay", pending))
+              + (autonomy > 0 ? L.F(" · otonom mod açık ({0} cihaz)", autonomy) : "");
         _tray.ToolTipText = tooltip;
-        _pendingItem!.Text = !signedIn ? "Oturum açılmadı" : pending == 0 ? "Bekleyen onay yok" : $"Bekleyen onaylar: {pending}";
-        _autonomyItem!.Text = autonomy > 0 ? $"Otonom mod açık: {autonomy} cihaz" : "Otonom mod kapalı";
+        _pendingItem!.Text = !signedIn ? L.T("Oturum açılmadı") : pending == 0 ? L.T("Bekleyen onay yok") : L.F("Bekleyen onaylar: {0}", pending);
+        _autonomyItem!.Text = autonomy > 0 ? L.F("Otonom mod açık: {0} cihaz", autonomy) : L.T("Otonom mod kapalı");
         _stopAutonomyItem!.IsEnabled = signedIn && autonomy > 0;
         _notifyItem!.IsChecked = Settings.Notifications;
         _allowNotifyItem!.Visibility = NotificationsBlocked ? Visibility.Visible : Visibility.Collapsed;
-        if (NotificationsBlocked) _tray.ToolTipText = tooltip + " · Windows bildirimleri kapalı";
-        _accountItem!.Text = !signedIn ? "Oturum aç…" : Me?.Email is { } email ? $"Oturumu kapat ({email})" : "Oturumu kapat";
-        _agentItem!.Text = Agent is null ? "Ajan çalışsın" : $"Ajan çalışsın ({Texts.AgentStateLabel(Agent).ToLowerInvariant()})";
+        if (NotificationsBlocked) _tray.ToolTipText = tooltip + L.T(" · Windows bildirimleri kapalı");
+        _accountItem!.Text = !signedIn ? L.T("Oturum aç…") : Me?.Email is { } email ? L.F("Oturumu kapat ({0})", email) : L.T("Oturumu kapat");
+        _agentItem!.Text = Agent is null ? L.T("Ajan çalışsın") : L.F("Ajan çalışsın ({0})", Texts.AgentStateLabel(Agent).ToLowerInvariant());
         _agentItem.IsChecked = Agent?.Running ?? Settings.AgentKeepRunning;
         _agentItem.IsEnabled = !_agentBusy && Agent is not null && Agent.State != AgentRunState.NotInstalled;
         if (Agent is { Running: false, State: not AgentRunState.NotInstalled }) _tray.ToolTipText += " · " + Texts.AgentStateLabel(Agent).ToLowerInvariant();
@@ -1083,7 +1086,7 @@ public partial class App : Application
         }
         _tunnelMenu.IsEnabled = Servers.SavedTunnels.Count > 0;
         var running = Servers.SavedTunnels.Count(t => t.Running);
-        if (_tray is not null && running > 0) _tray.ToolTipText = $"WECOMMANDER · {running} tünel açık";
+        if (_tray is not null && running > 0) _tray.ToolTipText = L.F("WECOMMANDER · {0} tünel açık", running);
     }
 
     private void Quit()

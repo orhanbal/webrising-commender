@@ -1,3 +1,4 @@
+using Wecommander.Center.Core;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -21,7 +22,7 @@ public sealed class UpdateWindow : Window
 
     public UpdateWindow(int build)
     {
-        Title = "WECOMMANDER güncelleniyor";
+        Title = L.T("WECOMMANDER güncelleniyor");
         SystemBackdrop = new DesktopAcrylicBackdrop();
         ExtendsContentIntoTitleBar = true;
         AppWindow.SetIcon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "icon.ico"));
@@ -45,7 +46,7 @@ public sealed class UpdateWindow : Window
         row.Children.Add(_percent);
         var hint = new TextBlock
         {
-            Text = "Bitince uygulama kendiliğinden yeniden açılır.",
+            Text = L.T("Bitince uygulama kendiliğinden yeniden açılır."),
             Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
             Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
         };

@@ -85,10 +85,10 @@ public static class CleanupLayout
     {
         if (beforeFreeKb is not { } before || afterFreeKb is not { } after) return "";
         var freed = after > before ? after - before : 0;
-        var text = $"Diskte gerçekten {Sizes.Kb(freed)} yer açıldı (tahmin {Sizes.Kb(estimateKb)}).";
+        var text = L.F("Diskte gerçekten {0} yer açıldı (tahmin {1}).", Sizes.Kb(freed), Sizes.Kb(estimateKb));
         var gap = Math.Abs((double)freed - estimateKb);
         if (estimateKb > 0 && gap > estimateKb * 0.15)
-            text += " Fark normaldir: Docker paylaşılan katmanları ayrı sayar, başka bir diskteki depolama buradaki boş alanı değiştirmez ve bu sırada sunucuda yazılan dosyalar da boş alanı etkiler.";
+            text += L.T(" Fark normaldir: Docker paylaşılan katmanları ayrı sayar, başka bir diskteki depolama buradaki boş alanı değiştirmez ve bu sırada sunucuda yazılan dosyalar da boş alanı etkiler.");
         return text;
     }
 }
@@ -127,7 +127,7 @@ public static class Sizes
     public static string Duration(ulong secs)
     {
         var d = secs / 86400; var h = secs % 86400 / 3600; var m = secs % 3600 / 60;
-        if (d > 0) return $"{d} gün {h} sa";
+        if (d > 0) return L.F("{0} gün {1} sa", d, h);
         if (h > 0) return $"{h} sa {m} dk";
         if (m > 0) return $"{m} dk";
         return $"{secs} sn";

@@ -43,7 +43,7 @@ internal static class MessageCard
         var icon = m.Kind switch { "tip" => "💡 ", "announcement" => "📣 ", _ => "👋 " };
         head.Children.Add(new TextBlock { Text = icon + m.Title, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
         var x = new Button { Content = new SymbolIcon(Symbol.Cancel), Padding = new Thickness(4), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0) };
-        ToolTipService.SetToolTip(x, "Kapat");
+        ToolTipService.SetToolTip(x, L.T("Kapat"));
         x.Click += (_, _) => { _ = Respond(m, "dismissed"); close(); };
         Grid.SetColumn(x, 1);
         head.Children.Add(x);
@@ -53,8 +53,8 @@ internal static class MessageCard
         if (m.Kind is "csat" or "nps")
         {
             var answer = new StackPanel { Spacing = 8, Visibility = Visibility.Collapsed };
-            var note = new TextBox { PlaceholderText = "Eklemek istediğin bir şey var mı? (isteğe bağlı)", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxLength = 1000, Height = 64 };
-            var send = new Button { Content = "Gönder", HorizontalAlignment = HorizontalAlignment.Stretch, Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
+            var note = new TextBox { PlaceholderText = L.T("Eklemek istediğin bir şey var mı? (isteğe bağlı)"), AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxLength = 1000, Height = 64 };
+            var send = new Button { Content = L.T("Gönder"), HorizontalAlignment = HorizontalAlignment.Stretch, Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
             answer.Children.Add(note);
             answer.Children.Add(send);
             int? chosen = null;
@@ -90,8 +90,8 @@ internal static class MessageCard
                 var scale = new Grid();
                 scale.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 scale.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                scale.Children.Add(new TextBlock { Text = "Hiç olası değil", FontSize = 11, Foreground = secondary });
-                var high = new TextBlock { Text = "Çok olası", FontSize = 11, Foreground = secondary };
+                scale.Children.Add(new TextBlock { Text = L.T("Hiç olası değil"), FontSize = 11, Foreground = secondary });
+                var high = new TextBlock { Text = L.T("Çok olası"), FontSize = 11, Foreground = secondary };
                 Grid.SetColumn(high, 1);
                 scale.Children.Add(high);
                 p.Children.Add(scale);
@@ -102,7 +102,7 @@ internal static class MessageCard
                 send.IsEnabled = false;
                 await Respond(m, "answered", chosen, string.IsNullOrWhiteSpace(note.Text) ? null : note.Text.Trim());
                 p.Children.Clear();
-                p.Children.Add(new TextBlock { Text = "Teşekkürler! 🙏", FontWeight = FontWeights.SemiBold });
+                p.Children.Add(new TextBlock { Text = L.T("Teşekkürler! 🙏"), FontWeight = FontWeights.SemiBold });
                 await Task.Delay(1500);
                 close();
             };

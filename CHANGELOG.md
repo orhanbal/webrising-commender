@@ -14,6 +14,12 @@ WECOMMANDER 1.0 is one desktop app (Windows, macOS) plus a non-root agent (Linux
 
 ## Unreleased
 
+- **Windows app in six languages:** English, Türkçe, Deutsch, Português (Brasil), Español and Français.
+  - **Choosing the language:** the first start follows the Windows display language, falling back to English. You can change it under Settings → Language ("Same as Windows" or one of the six).
+  - **No restart:** a change applies at once to the tray menu, the panel, the Dock and the server panel. The main window is rebuilt as well; if terminal tabs are open, the app asks first.
+  - **What stays as is:** terminal output, server output, paths and commands are never translated.
+  - **Tests:** the Core tests fail when Turkish text is left outside `L.T`/`L.F`, when a language is missing a text, or when a translation changes a placeholder or the spacing.
+
 - Website and web app in six languages: English, Türkçe, Deutsch, Português (Brasil), Español, Français.
   - **Language choice:** `?lang=`, then the saved choice, then the browser language (de-AT → de, pt-PT → pt-BR); English for anything else. Switching takes effect immediately, without reloading.
   - **Loading:** the large tables load only for the chosen language.
