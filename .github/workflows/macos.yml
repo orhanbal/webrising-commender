@@ -226,6 +226,33 @@ jobs:
         run: swift test --package-path center-macos
       - name: Build universal app bundle (ad-hoc signed) and zip
         run: bash scripts/build-center-macos.sh "0.1.${{ github.run_number }}" center-macos/dist
+      - name: UI snapshots (every page drawn by the app itself, in Turkish and English)
+        run: |
+          # The app opens each sidebar page and the panel, saves what it draws and
+          # the texts each page shows, then quits. A page that does not open, or
+          # an empty title, fails the build.
+          rm -rf snap && mkdir -p snap && ditto -x -k center-macos/dist/WECOMMANDER-Center-macos.zip snap
+          app="snap/WECOMMANDER Center.app/Contents/MacOS/WecommanderCenter"
+          for lang in tr en; do
+            WECOMMANDER_LANGUAGE=$lang WECOMMANDER_SNAPSHOT_DIR="$PWD/center-macos/screens" WECOMMANDER_SNAPSHOT_QUIT=1 \
+              "$app" --snapshot &
+            pid=$!
+            for i in $(seq 1 90); do [ -f "center-macos/screens/$lang-report.txt" ] && break; sleep 1; done
+            kill $pid 2>/dev/null || true
+            cat "center-macos/screens/$lang-report.txt"
+          done
+          ls -l center-macos/screens
+          for lang in tr en; do
+            test -f "center-macos/screens/$lang-report.txt"
+            if grep -E "selected=false|image=false" "center-macos/screens/$lang-report.txt"; then echo "a page did not open or draw ($lang)"; exit 1; fi
+          done
+          grep -q "Anahtarlar" center-macos/screens/tr-report.txt
+          grep -q "Keys" center-macos/screens/en-report.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-ui-snapshots
+          path: center-macos/screens
       - name: Installer syntax and release selection (dry run)
         env:
           GITHUB_TOKEN: ${{ github.token }}

@@ -67,7 +67,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         updateStatusItem()
         // Opened by the person: the main window (hosts and terminals); not
         // signed in yet: the sign-in panel. Started at login: menu bar only.
-        if model.phase != .signedIn { showPanel() }
+        if Snapshots.requested {
+            Snapshots.run(servers: servers,
+                          showServers: { [weak self] in self?.showServers(); return self?.serversWindow },
+                          panel: { [weak self] in self?.showPanel(); return self?.popover.contentViewController?.view })
+        } else if model.phase != .signedIn { showPanel() }
         else if !CommandLine.arguments.contains("--hidden") && !Self.launchedAtLogin { showServers() }
     }
 
