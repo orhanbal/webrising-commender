@@ -41,21 +41,21 @@ struct ServersView: View {
     private var sidebar: some View {
         List(selection: Binding(get: { model.selection }, set: { model.selection = $0 })) {
             Section {
-                Label(L.t("Sunucular"), systemImage: "server.rack").tag(Optional(Self.hostsPage))
-                Label(L.t("Anahtarlar"), systemImage: "key").tag(Optional("page:keys"))
-                Label(L.t("Kimlikler"), systemImage: "person.crop.circle.badge.checkmark").tag(Optional("page:identities"))
-                Label(L.t("Parçacıklar"), systemImage: "text.badge.plus").tag(Optional("page:snippets"))
-                Label(L.t("Tüneller"), systemImage: "point.3.connected.trianglepath.dotted").tag(Optional("page:tunnels"))
-                Label(L.t("Bilinen sunucular"), systemImage: "checkmark.shield").tag(Optional("page:known"))
-                Label(L.t("Geçmiş"), systemImage: "clock.arrow.circlepath").tag(Optional("page:history"))
-                Label(L.t("Ayarlar"), systemImage: "gearshape").tag(Optional("page:settings"))
+                Label(L.t("Sunucular"), systemImage: "server.rack").tag(Self.hostsPage)
+                Label(L.t("Anahtarlar"), systemImage: "key").tag("page:keys")
+                Label(L.t("Kimlikler"), systemImage: "person.crop.circle.badge.checkmark").tag("page:identities")
+                Label(L.t("Parçacıklar"), systemImage: "text.badge.plus").tag("page:snippets")
+                Label(L.t("Tüneller"), systemImage: "point.3.connected.trianglepath.dotted").tag("page:tunnels")
+                Label(L.t("Bilinen sunucular"), systemImage: "checkmark.shield").tag("page:known")
+                Label(L.t("Geçmiş"), systemImage: "clock.arrow.circlepath").tag("page:history")
+                Label(L.t("Ayarlar"), systemImage: "gearshape").tag("page:settings")
             }
             if !model.sessions.isEmpty {
                 Section(L.t("Açık terminaller")) {
                     ForEach(model.sessions) { session in
                         Label(session.host.label, systemImage: session.closed ? "terminal" : "terminal.fill")
                             .foregroundStyle(session.closed ? .secondary : .primary)
-                            .tag(Optional(session.id))
+                            .tag(session.id)
                             .contextMenu { Button(L.t("Terminali kapat")) { model.close(session) } }
                     }
                 }

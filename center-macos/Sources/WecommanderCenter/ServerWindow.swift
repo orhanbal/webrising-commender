@@ -585,7 +585,7 @@ struct ServerManagementView: View {
         NavigationSplitView {
             List(selection: Binding(get: { model.page }, set: { if let p = $0 { model.go(p) } })) {
                 ForEach(ServerManagementModel.Page.allCases) { p in
-                    Label(p.title, systemImage: p.symbol).tag(Optional(p))
+                    Label(p.title, systemImage: p.symbol).tag(p)
                 }
             }
             .listStyle(.sidebar)
