@@ -1338,6 +1338,45 @@ jobs:
           }
           $env:WECOMMANDER_LANGUAGE = 'tr'
           if ($fail.Count -gt 0) { throw ("language check failed: " + ($fail -join '; ')) }
+      - name: Task Manager (this computer's processes, guards, end a real child; window and screenshot)
+        shell: powershell
+        run: |
+          # The reader and the guards on the real machine, no window: the app starts
+          # a child (ping), finds it under itself, refuses lsass and itself, refuses a
+          # PID whose start time does not match, then ends the child.
+          $exe = (Resolve-Path "center-windows\publish\WecommanderCenter.exe").Path
+          $log = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'WECOMMANDER\taskmanager-selftest.log'
+          Remove-Item $log -ErrorAction SilentlyContinue
+          $test = Start-Process -FilePath $exe -ArgumentList '--task-manager-selftest' -PassThru -Wait
+          if (Test-Path $log) { Get-Content $log | ForEach-Object { Write-Host $_ } } else { Write-Host "no self-test log" }
+          if ($test.ExitCode -ne 0) { throw "Task Manager self-test failed (exit $($test.ExitCode))" }
+          # The window: it lists this app's own process with its PID column.
+          Add-Type -AssemblyName System.Drawing, System.Windows.Forms, UIAutomationClient, UIAutomationTypes
+          Get-Process -Name 'WecommanderCenter' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 1
+          $app = Start-Process -FilePath $exe -ArgumentList '--open-task-manager' -PassThru
+          $root = [System.Windows.Automation.AutomationElement]::RootElement
+          $found = $false
+          for ($i = 0; $i -lt 40 -and -not $found; $i++) {
+            Start-Sleep -Milliseconds 500
+            $cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $app.Id)
+            foreach ($w in $root.FindAll([System.Windows.Automation.TreeScope]::Children, $cond)) {
+              $names = $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition) | ForEach-Object { $_.Current.Name }
+              if (($names -contains 'WecommanderCenter.exe') -and ($names -contains 'PID') -and ($names -contains "$($app.Id)")) { $found = $true; break }
+            }
+          }
+          Start-Sleep -Seconds 3
+          try {
+            $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height
+            $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
+            New-Item -ItemType Directory -Force -Path center-windows\screens | Out-Null
+            $bmp.Save((Join-Path (Resolve-Path center-windows\screens) "task-manager.png"), [System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose()
+          } catch { Write-Host "screenshot failed: $_" }
+          Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+          Get-Process -Name 'wecommander-core','webrising-commender' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          if (-not $found) { throw "the Task Manager window did not list this app's own process" }
+          Write-Host "PASS the Task Manager window lists WecommanderCenter.exe with its PID $($app.Id)"
       - name: Dock check (AppBar edges, work area, Explorer restart, full screen, floating, auto-hide)
         shell: powershell
         run: |

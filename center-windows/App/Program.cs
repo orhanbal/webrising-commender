@@ -28,6 +28,12 @@ public static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        // CI: the Task Manager's reader and guards on the real machine, no window.
+        if (args.Contains("--task-manager-selftest"))
+        {
+            var log = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WECOMMANDER", "taskmanager-selftest.log");
+            return LocalProcessReader.SelfTest(log) ? 0 : 1;
+        }
         // Must run before any window or notification API is touched.
         // The Store copy has its package's identity; only the zip copy names itself.
         if (!Packaging.IsPackaged) _ = SetCurrentProcessExplicitAppUserModelID(AppUserModelId);

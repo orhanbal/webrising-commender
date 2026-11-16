@@ -114,7 +114,7 @@ public static class DockSettingsPanel
     private static string ModuleName(string module) => module switch
     {
         "servers" => L.T("Sunucu ve canlı grafikler"),
-        "processes" => L.T("Süreçler kısayolu"),
+        "processes" => L.T("Görev Yöneticisi kısayolu"),
         "terminal" => L.T("Terminal kısayolu"),
         "approvals" => L.T("Bildirimler ve onaylar"),
         _ => module,

@@ -477,8 +477,8 @@ public sealed class DockWindow : Window
             switch (m)
             {
                 case "processes":
-                    var procs = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, L.T("Süreçler"), _horizontal && !_compact ? L.T("Süreçler") : null);
-                    procs.Click += (_, _) => OpenSection("processes");
+                    var procs = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, L.T("Görev Yöneticisi"), _horizontal && !_compact ? L.T("Görev Yöneticisi") : null);
+                    procs.Click += (_, _) => TaskManagerWindow.Open();
                     end.Children.Add(procs);
                     break;
                 case "terminal":

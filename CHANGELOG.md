@@ -14,6 +14,11 @@ WECOMMANDER 1.0 is one desktop app (Windows, macOS) plus a non-root agent (Linux
 
 ## Unreleased
 
+- **Dock Task Manager (Windows):** the Dock's processes button opens a Task Manager for this computer.
+  - **What it shows:** live CPU, memory and disk per process (every 2 s), search, sorting, a process tree and details (parent, threads, private memory, start time, path).
+  - **Ending a process:** only after a confirmation that names the process and its child count. Windows system processes, databases and WECOMMANDER's own processes are protected and cannot be ended. A PID that now belongs to another process is refused, and missing admin rights are said plainly.
+  - **Servers:** a server chosen in the device list opens in its own process screen, so local and remote processes are never one list. "Windows Task Manager" opens Windows' own.
+  - **CI:** on a real Windows runner the app starts a child process, finds it under itself, refuses lsass and itself, refuses a stale PID, ends the child, and shows the window listing its own PID.
 - **macOS menu bar server monitor:** watched servers show live next to the clock (the worst of CPU, memory and disk, coloured). The panel lists CPU, memory, disk, network, a CPU history line and zombie processes; servers are added from its + menu. Until one is chosen, the first three servers that connect without asking are watched, as on Windows.
 - **macOS in-app messages and surveys:** the console's messages, tips, announcements and surveys (faces 1–5, 0–10) appear bottom left of the main window, once per app run; links open only over https.
 - **macOS server management:** the "Sunucu yönetimi" button on an SSH terminal opens its own window, as on Windows.
