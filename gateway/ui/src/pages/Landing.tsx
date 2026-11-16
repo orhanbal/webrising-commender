@@ -55,7 +55,10 @@ export function Landing({nav,pricing,signupEnabled}:{nav:Nav;pricing:Pricing|nul
   if(siteCopy?.seo_description&&description)description.content=siteCopy.seo_description;
   return()=>{document.title=previousTitle;if(description&&previousDescription!==undefined)description.content=previousDescription};
  },[siteCopy]);
- useEffect(()=>{let mounted=true;api<{item:{hero_title:string;hero_subtitle:string;overrides:Record<string,string>;seo_title:string;seo_description:string}|null}>("/api/public/site-content?locale="+language).then(r=>{if(mounted)setSiteCopy(r.item)}).catch(()=>{if(mounted)setSiteCopy(null)});return()=>{mounted=false}},[language]);
+ useEffect(()=>{let mounted=true;
+  // The CMS copy exists in Turkish and English; the other languages use the built-in translations.
+  if(language!=="tr"&&language!=="en"){setSiteCopy(null);return}
+  api<{item:{hero_title:string;hero_subtitle:string;overrides:Record<string,string>;seo_title:string;seo_description:string}|null}>("/api/public/site-content?locale="+language).then(r=>{if(mounted)setSiteCopy(r.item)}).catch(()=>{if(mounted)setSiteCopy(null)});return()=>{mounted=false}},[language]);
  const progress=useRef<HTMLDivElement>(null);
  useEffect(()=>{
   const nodes=document.querySelectorAll("[data-reveal]");const reduced=matchMedia("(prefers-reduced-motion: reduce)").matches;

@@ -13,7 +13,7 @@ type Membership={id:string;name:string;role:string;created_at:string};
 type Detail={user:ConsoleUser;organizations:Membership[]};
 type Props={userId:string;onClose:()=>void;onSessions:(user:{id:string;email:string})=>void};
 export function ConsoleUserDetail({userId,onClose,onSessions}:Props){
- const locale=useLocale(),ui=(message:string)=>consoleText(message,locale);
+ const locale=useLocale()==="tr"?"tr":"en",ui=(message:string)=>consoleText(message,locale);
  const [detail,setDetail]=useState<Detail|null>(null);
  const [loading,setLoading]=useState(true),[error,setError]=useState("");
  const root=useRef<HTMLDivElement>(null),previousFocus=useRef<HTMLElement|null>(null);

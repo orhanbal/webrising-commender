@@ -14,6 +14,15 @@ WECOMMANDER 1.0 is one desktop app (Windows, macOS) plus a non-root agent (Linux
 
 ## Unreleased
 
+- Website and web app in six languages: English, Türkçe, Deutsch, Português (Brasil), Español, Français.
+  - **Language choice:** `?lang=`, then the saved choice, then the browser language (de-AT → de, pt-PT → pt-BR); English for anything else. Switching takes effect immediately, without reloading.
+  - **Loading:** the large tables load only for the chosen language.
+  - **Formats:** dates and numbers follow the language, and Paddle checkout opens in it.
+  - **Legal pages:** shown in English with a "the English version is binding" note in the other languages.
+  - **Other pages:** the unsubscribe page and the survey card are translated. The platform console stays Turkish or English.
+  - **Search engines:** public pages carry hreflang alternates.
+  - **CI:** a test fails when a language misses a text, or when a placeholder, link or command changes in a translation.
+
 - Landing page redesign:
   - the original logos of the AI clients (Claude, ChatGPT, Cursor, GitHub Copilot, Gemini, Windsurf; LobeHub Icons, MIT);
   - a new "Inside the app" showcase with three tabs: server management with the cleanup list, live monitoring with the Dock and flowing charts, and the terminal;

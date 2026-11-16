@@ -4,41 +4,112 @@ import { commonEnglish } from "./i18n-common";
 import { marketingEnglish } from "./i18n-marketing";
 import { productEnglish } from "./i18n-product";
 
-export type Locale = "en" | "tr";
+/** The six languages of the first release; adding one is a table file plus a line here. */
+export const LOCALES = [
+  { code: "en", name: "English", short: "EN", intl: "en-US", paddle: "en" },
+  { code: "tr", name: "Türkçe", short: "TR", intl: "tr-TR", paddle: "tr" },
+  { code: "de", name: "Deutsch", short: "DE", intl: "de-DE", paddle: "de" },
+  { code: "pt-BR", name: "Português (Brasil)", short: "PT", intl: "pt-BR", paddle: "pt" },
+  { code: "es", name: "Español", short: "ES", intl: "es-ES", paddle: "es" },
+  { code: "fr", name: "Français", short: "FR", intl: "fr-FR", paddle: "fr" },
+] as const;
+export type Locale = (typeof LOCALES)[number]["code"];
 const storageKey = "wecommander-language";
 const translationTable:Record<string,string> = {...commonEnglish,...marketingEnglish,...productEnglish};
+// The other languages load on demand (each is a large table): Turkish source -> text.
+const loaders:Record<string,()=>Promise<Record<string,string>>> = {
+  de: () => import("./locales/de").then((m) => m.table),
+  "pt-BR": () => import("./locales/pt-BR").then((m) => m.table),
+  es: () => import("./locales/es").then((m) => m.table),
+  fr: () => import("./locales/fr").then((m) => m.table),
+};
+const loaded:Record<string,Record<string,string>> = {};
 const subscriptions = new Set<()=>void>();
-function storedLocale():Locale{
-  try { return window.localStorage.getItem(storageKey)==="tr"?"tr":"en"; } catch {return "en"}
+
+export function isLocale(value:unknown):value is Locale { return LOCALES.some((l) => l.code === value); }
+
+/** A browser or system language tag (de-AT, pt-BR, es-419) to one of ours; null when we have none. */
+export function matchLocale(tag:string|null|undefined):Locale|null {
+  const lower=(tag||"").toLowerCase();
+  if(!lower)return null;
+  if(lower.startsWith("pt"))return "pt-BR";
+  const base=lower.split(/[-_]/)[0];
+  return (LOCALES.find((l) => l.code === base)?.code as Locale|undefined) ?? null;
 }
-let activeLocale:Locale = typeof window!=="undefined" ? storedLocale() : "en";
+
+function initialLocale():Locale{
+  // ?lang=de (links from search engines' hreflang alternates) wins, then the saved choice, then the browser.
+  try {
+    const fromUrl=new URLSearchParams(window.location.search).get("lang");
+    if(isLocale(fromUrl))return fromUrl;
+    const saved=window.localStorage.getItem(storageKey);
+    if(isLocale(saved))return saved;
+  } catch {}
+  try {
+    for(const tag of navigator.languages?.length?navigator.languages:[navigator.language]){
+      const match=matchLocale(tag);
+      if(match)return match;
+    }
+  } catch {}
+  return "en";
+}
+let activeLocale:Locale = typeof window!=="undefined" ? initialLocale() : "en";
+
+function applyDocument(){
+  if(typeof document!=="undefined"){
+    document.documentElement.lang=activeLocale;
+    document.documentElement.dataset.locale=activeLocale;
+  }
+}
+function ensureTable(code:Locale){
+  const load=loaders[code];
+  if(!load||loaded[code])return;
+  void load().then((table)=>{loaded[code]=table;subscriptions.forEach(listener=>listener())}).catch(()=>{});
+}
+if(typeof window!=="undefined"){applyDocument();ensureTable(activeLocale);}
 
 export function locale():Locale { return activeLocale; }
+/** Intl tag of the current language (dates, numbers). */
+export function intlLocale():string { return LOCALES.find((l)=>l.code===activeLocale)?.intl ?? "en-US"; }
+/** Paddle checkout language. */
+export function paddleLocale():string { return LOCALES.find((l)=>l.code===activeLocale)?.paddle ?? "en"; }
 export function setLocale(next:Locale):void{
-  if(next!=="en" && next!=="tr")return;
+  if(!isLocale(next))return;
   activeLocale=next;
   try{window.localStorage.setItem(storageKey,next)}catch{}
-  if(typeof document!=="undefined"){
-    document.documentElement.lang=next;
-    document.documentElement.dataset.locale=next;
-  }
+  applyDocument();
+  ensureTable(next);
   subscriptions.forEach(listener=>listener());
 }
+let version=0;
+subscriptions.add(()=>{version++;});
 export function subscribeLocale(cb:()=>void){subscriptions.add(cb);return ()=>subscriptions.delete(cb)}
-export function useLocale():Locale {return useSyncExternalStore(subscribeLocale,locale,()=> "en");}
+export function useLocale():Locale {
+  // Re-renders also when a language's table finishes loading.
+  useSyncExternalStore(subscribeLocale,()=>version,()=>0);
+  return useSyncExternalStore(subscribeLocale,locale,()=> "en");
+}
 
 /** Turkish source string -> native English UI text (English is always default).
  * Source strings stay stable to preserve an exact Turkish secondary translation.
  * React views call this helper while rendering; never store a translated label in a module singleton.
  */
 export function t(source:string):string {
-  return activeLocale==="tr" ? source : (translationTable[source]??source);
+  if(activeLocale==="tr")return source;
+  if(activeLocale!=="en"){const own=loaded[activeLocale]?.[source];if(own)return own;}
+  return translationTable[source]??source;
+}
+/** The text in a given language (for plan names that come from the server). */
+export function tIn(code:Locale,source:string):string|undefined {
+  if(code==="tr")return source;
+  if(code==="en")return translationTable[source];
+  return loaded[code]?.[source];
 }
 export function localizedDate(value:string|Date|number|undefined|null,options?:Intl.DateTimeFormatOptions):string {
   if(!value)return "—";
   const date=new Date(value);
   if(Number.isNaN(date.getTime()))return "—";
-  return new Intl.DateTimeFormat(activeLocale==="tr"?"tr-TR":"en-US",options).format(date);
+  return new Intl.DateTimeFormat(intlLocale(),options).format(date);
 }
 export function LanguageSwitcher({compact=false}:{compact?:boolean}){
   const current=useLocale();
@@ -47,7 +118,8 @@ export function LanguageSwitcher({compact=false}:{compact?:boolean}){
   const trigger=useRef<HTMLButtonElement>(null);
   const choices=useRef<Array<HTMLButtonElement|null>>([]);
   // Each language in its own name, with its code.
-  const options:[Locale,string,string][]=[["en","English","EN"],["tr","Türkçe","TR"]];
+  const options:[Locale,string,string][]=LOCALES.map(l=>[l.code,l.name,l.short]);
+  const currentEntry=LOCALES.find(l=>l.code===current)??LOCALES[0];
   useEffect(()=>{
     if(!open)return;
     const onPointer=(event:PointerEvent)=>{
@@ -64,17 +136,17 @@ export function LanguageSwitcher({compact=false}:{compact?:boolean}){
   const focusOption=(index:number)=>choices.current[(index+options.length)%options.length]?.focus();
   return <div ref={root} className={"locale-switcher"+(compact?" locale-switcher-compact":"")}>
     <button ref={trigger} type="button" className="locale-trigger"
-      aria-label={current==="en"?"Select language":"Dil seçin"} aria-haspopup="menu" aria-expanded={open}
+      aria-label={t("Dil seçin")} aria-haspopup="menu" aria-expanded={open}
       onClick={()=>setOpen(value=>!value)}
       onKeyDown={event=>{if(event.key==="ArrowDown"||event.key==="ArrowUp"){event.preventDefault();setOpen(true);requestAnimationFrame(()=>focusOption(event.key==="ArrowDown"?0:options.length-1))}}}>
       <Globe2 size={17} aria-hidden="true"/>
       {compact
-        ? <span className="locale-code">{current==="en"?"EN":"TR"}</span>
-        : <><span className="locale-label-long">{current==="en"?"English":"Türkçe"}</span><span className="locale-label-short" aria-hidden="true">{current==="en"?"EN":"TR"}</span></>}
+        ? <span className="locale-code">{currentEntry.short}</span>
+        : <><span className="locale-label-long">{currentEntry.name}</span><span className="locale-label-short" aria-hidden="true">{currentEntry.short}</span></>}
       <ChevronDown size={15} className={"locale-chevron"+(open?" locale-chevron-open":"")} aria-hidden="true"/>
     </button>
-    {open&&<div className="locale-menu" role="menu" aria-label={current==="en"?"Language":"Dil"}>
-      <div className="locale-menu-title" aria-hidden="true">{current==="en"?"Language":"Dil"}</div>
+    {open&&<div className="locale-menu" role="menu" aria-label={t("Dil")}>
+      <div className="locale-menu-title" aria-hidden="true">{t("Dil")}</div>
       {options.map(([code,label,short],index)=><button key={code} type="button" role="menuitemradio"
         aria-checked={current===code} ref={node=>{choices.current[index]=node}}
         className={"locale-option"+(current===code?" locale-option-active":"")}

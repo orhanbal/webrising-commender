@@ -27,7 +27,7 @@ function table() {
 function sources(dir = src, out = []) {
   for (const name of fs.readdirSync(dir)) {
     const full = path.join(dir, name);
-    if (fs.statSync(full).isDirectory()) sources(full, out);
+    if (fs.statSync(full).isDirectory()) { if (name !== "locales") sources(full, out); }
     else if (/\.(tsx?|ts)$/.test(name) && !tableFiles.includes(name)) out.push(full);
   }
   return out;
@@ -74,3 +74,24 @@ test("every console ui() literal has a Turkish entry", () => {
   }
   assert.deepEqual([...new Set(missing)], [], "add these keys to ui/src/console-text.ts");
 });
+
+// The first-release languages besides English and Turkish: every key, never empty,
+// with the same placeholders, URLs and commands as the English text.
+const otherLocales = ["de", "pt-BR", "es", "fr"];
+function localeTable(code) {
+  const text = fs.readFileSync(path.join(src, "locales", code + ".ts"), "utf8");
+  const json = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
+  return new Map(Object.entries(JSON.parse(json)));
+}
+const tokens = (value) => [...value.matchAll(/\$\{[^}]*\}|\{[a-zA-Z_]+\}|%[sd]|https?:\/\/\S+|`[^`]*`/g)].map((m) => m[0]).sort();
+
+for (const code of otherLocales) {
+  test(`${code}: every English key is translated, with the same placeholders`, () => {
+    const english = table();
+    const own = localeTable(code);
+    const missing = [...english.keys()].filter((k) => !own.get(k)?.trim());
+    assert.deepEqual(missing, [], `${code}: translations missing`);
+    const broken = [...english].filter(([k, en]) => JSON.stringify(tokens(en)) !== JSON.stringify(tokens(own.get(k) ?? "")));
+    assert.deepEqual(broken.map(([k]) => k), [], `${code}: placeholders, links or commands changed`);
+  });
+}

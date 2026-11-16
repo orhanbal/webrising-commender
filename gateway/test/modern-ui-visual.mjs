@@ -113,7 +113,7 @@ try{
  assert.equal(await evalJs("document.documentElement.lang"),"en","English must be the default regardless of browser language");
  assert.ok(await evalJs("document.querySelector('.site-header .locale-trigger')?.textContent.trim()==='EN'"),"English is selected by default");
  await evalJs("document.querySelector('.site-header .locale-trigger').click()");
- await evalJs("document.querySelector('.site-header .locale-option[role=menuitemradio]:last-of-type').click()");
+ await evalJs("document.querySelector('.site-header .locale-option[role=menuitemradio]:nth-of-type(2)').click()");
  await sleep(120);
  assert.equal(await evalJs("document.documentElement.lang"),"tr","Switching to Turkish must update html lang");
  assert.ok(await evalJs("document.querySelector('h1')?.textContent.includes('tek uygulamada.')"),"Turkish landing translation was not applied");
@@ -172,7 +172,7 @@ try{
  const languagePicker=await evalJs("document.querySelector('.dash-toolbar .locale-trigger')!==null");
  assert.equal(languagePicker,true,"Dashboard needs its own language picker");
  await evalJs("document.querySelector('.dash-toolbar .locale-trigger').click()");
- await evalJs("document.querySelector('.dash-toolbar .locale-option[role=menuitemradio]:last-of-type').click()");
+ await evalJs("document.querySelector('.dash-toolbar .locale-option[role=menuitemradio]:nth-of-type(2)').click()");
  await sleep(110);
  assert.ok(await evalJs("document.body.textContent.includes('Tekrar hoş geldin')"),"Dashboard must switch to Turkish");
  await evalJs("document.querySelector('.dash-toolbar .locale-trigger').click()");
@@ -200,7 +200,7 @@ try{
  await visit("/console","Platform Overview","modern-console-overview");
  assert.equal(await evalJs("document.querySelectorAll('aside .dash-nav button').length"),12,"Console navigation should expose all configured sections");
  await evalJs("document.querySelector('.dash-toolbar .locale-trigger').click()");
- await evalJs("document.querySelector('.dash-toolbar .locale-option[role=menuitemradio]:last-of-type').click()");
+ await evalJs("document.querySelector('.dash-toolbar .locale-option[role=menuitemradio]:nth-of-type(2)').click()");
  await sleep(120);
  assert.equal(await evalJs("document.documentElement.lang"),"tr","Super admin locale must change");
  assert.ok(await evalJs("document.body.textContent.includes('Genel Bakış')&&document.body.textContent.includes('Son kayıtlar')"),"Super admin overview should be translated");
@@ -210,7 +210,7 @@ try{
 
  await visit("/console/users","Users","modern-console-users");
  await evalJs("document.querySelector('.dash-toolbar .locale-trigger').click()");
- await evalJs("document.querySelector('.dash-toolbar .locale-option[role=menuitemradio]:last-of-type').click()");
+ await evalJs("document.querySelector('.dash-toolbar .locale-option[role=menuitemradio]:nth-of-type(2)').click()");
  await sleep(120);
  assert.ok(await evalJs("document.querySelector('th')?.textContent.includes('Kullanıcı')"),"Admin table column names are localized into Turkish");
  await evalJs("document.querySelector('.dash-toolbar .locale-trigger').click()");
@@ -286,7 +286,7 @@ try{
 
  await visit("/console/legal","Privacy & terms editor","modern-console-legal");
  await evalJs("document.querySelector('.dash-toolbar .locale-trigger').click()");
- await evalJs("document.querySelector('.dash-toolbar .locale-option[role=menuitemradio]:last-of-type').click()");
+ await evalJs("document.querySelector('.dash-toolbar .locale-option[role=menuitemradio]:nth-of-type(2)').click()");
  await sleep(120);
  assert.ok(await evalJs("document.body.textContent.includes('Gizlilik ve kullanım koşulları editörü')"),"Legal CMS text should follow Turkish locale");
  await evalJs("document.querySelector('.dash-toolbar .locale-trigger').click()");

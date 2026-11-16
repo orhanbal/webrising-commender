@@ -40,7 +40,8 @@ const sectionDescriptions:Record<string,string>={
  "Legal CMS":"Privacy policy and terms of use, per language.",
 };
 export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;theme:Theme;toggle:()=>void;logout:()=>void}){
- const currentLocale=useLocale();
+ // The platform console is in Turkish or English only.
+ const currentLocale=useLocale()==="tr"?"tr":"en";
  const ui=(source:string)=>consoleText(source,currentLocale);
  const [admin,setAdmin]=useState<Admin|null>(null);
  const [overview,setOverview]=useState<Overview|null>(null);

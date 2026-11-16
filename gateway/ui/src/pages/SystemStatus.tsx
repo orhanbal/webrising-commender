@@ -1,5 +1,5 @@
 import {AlertTriangle,CheckCircle2,Database,Mail,ShieldCheck,RadioTower,Users,ClipboardCheck} from "lucide-react";
-import {useLocale} from "../i18n";
+import {useLocale,intlLocale} from "../i18n";
 import {useEffect,useState} from "react";
 import {api} from "../api";
 import {consoleText} from "../console-text";
@@ -94,7 +94,7 @@ export function SystemStatus({data}:{data:Record<string,unknown>|null}){
    <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
     {signals.map(signal=><div className="rounded-xl border border-[var(--stroke)] p-5" key={signal.title}>
      <div className="flex items-center gap-2 muted text-sm"><signal.icon size={17}/>{ui(signal.title)}</div>
-     <div className="text-3xl font-bold mt-3 tabular-nums">{signal.value.toLocaleString(language==="tr"?"tr-TR":"en-US")}</div>
+     <div className="text-3xl font-bold mt-3 tabular-nums">{signal.value.toLocaleString(intlLocale())}</div>
     </div>)}
    </div>
   </section>
@@ -112,7 +112,7 @@ export function SystemStatus({data}:{data:Record<string,unknown>|null}){
        <span className="text-sm muted">{incident.acknowledgedAt?ui("Reviewed"):ui("Review required")}</span>
       </div>
       <p className="muted text-sm leading-6 mt-2">{ui(incident.explanation)}</p>
-      {incident.acknowledgedAt?<p className="muted text-xs mt-2">{ui("Reviewed at")}: {new Date(incident.acknowledgedAt).toLocaleString(language==="tr"?"tr-TR":"en-US")}</p>:
+      {incident.acknowledgedAt?<p className="muted text-xs mt-2">{ui("Reviewed at")}: {new Date(incident.acknowledgedAt).toLocaleString(intlLocale())}</p>:
        <button type="button" className="mt-3 rounded-xl border border-[var(--stroke)] px-4 py-2 text-sm" onClick={()=>{setSelected(incident.fingerprint);setCurrentPassword("");setIncidentError("")}}>{ui("Mark reviewed")}</button>}
      </div>)}</div>}
    {selected&&<div className="mt-5 rounded-xl border border-[var(--stroke)] p-5">
@@ -161,7 +161,7 @@ export function SystemStatus({data}:{data:Record<string,unknown>|null}){
     <div className="flex justify-between gap-4"><dt className="muted">{ui("Deployment mode")}</dt><dd className="font-medium">{current.deploymentMode||"—"}</dd></div>
     <div className="flex justify-between gap-4"><dt className="muted">{ui("Branded SMTP")}</dt><dd className="font-medium">{current.mailConfigured?ui("Configured"):ui("Not configured")}</dd></div>
     <div className="flex justify-between gap-4"><dt className="muted">{ui("Public signup")}</dt><dd className="font-medium">{signup.enabled&&current.mailConfigured&&current.deploymentMode==="saas"?ui("Enabled"):ui("Disabled")}</dd></div>
-    {current.checkedAt&&<div className="flex justify-between gap-4"><dt className="muted">{ui("Last checked")}</dt><dd className="font-medium">{new Date(current.checkedAt).toLocaleString(language==="tr"?"tr-TR":"en-US")}</dd></div>}
+    {current.checkedAt&&<div className="flex justify-between gap-4"><dt className="muted">{ui("Last checked")}</dt><dd className="font-medium">{new Date(current.checkedAt).toLocaleString(intlLocale())}</dd></div>}
    </dl>
    <p className="muted text-sm mt-5">{ui("Credentials and secrets are not exposed.")}</p>
   </section>

@@ -32,7 +32,8 @@ const emptyDraft=(subject="",body=""):Draft=>({subject,body,plans:"",minDays:"",
 const audienceOf=(d:Draft)=>{const num=(v:string)=>v.trim()===""?null:Math.max(0,Math.round(Number(v)));return {plans:d.plans.split(",").map(x=>x.trim()).filter(Boolean),minDays:num(d.minDays),maxDays:num(d.maxDays)}};
 
 export function EmailCampaigns(){
- const locale=useLocale();
+ // Platform console: Turkish or English only.
+ const locale=useLocale()==="tr"?"tr":"en";
  const t=L[locale];
  const [items,setItems]=useState<Email[]>([]);
  const [stats,setStats]=useState({subscribers:0,users:0,mailConfigured:true});

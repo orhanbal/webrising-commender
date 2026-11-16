@@ -1,5 +1,5 @@
 import {useEffect,useState} from "react";
-import { t as translate,useLocale } from "../i18n";
+import { t as translate,useLocale,paddleLocale,tIn,isLocale } from "../i18n";
 import {ArrowLeft,ArrowRight,Check,CheckCheck,CreditCard,ExternalLink,KeyRound,LockKeyhole,ShieldCheck,Sparkles} from "lucide-react";
 import{Button,Card,Badge}from"../components/ui";
 import{api,type Account,type Billing,type Plan,type Pricing}from"../api";import type{Nav,Theme}from"../App";import{NavLink}from"../App";import{loadPaddle}from"../paddle";
@@ -12,15 +12,25 @@ const PLAN_EN:Record<string,string>={
  "Otonom mod ve izinli komutlar":"Autonomous mode and allowed commands","Yönetim Merkezi bildirimleri":"Management Center notifications",
  "Roller ve ortak onaylar":"Roles and shared approvals",
 };
+// Plan texts come from the server in Turkish; numbers vary, so the common shapes are rebuilt per language.
+const PLAN_WORDS:Record<string,{device:[string,string];member:[string,string];calls:string;month:string;sep:string}>={
+ en:{device:["device","devices"],member:["member","members"],calls:"tool calls a month",month:"month",sep:","},
+ de:{device:["Gerät","Geräte"],member:["Mitglied","Mitglieder"],calls:"Tool-Aufrufe pro Monat",month:"Monat",sep:"."},
+ "pt-BR":{device:["dispositivo","dispositivos"],member:["membro","membros"],calls:"chamadas de ferramenta por mês",month:"mês",sep:"."},
+ es:{device:["dispositivo","dispositivos"],member:["miembro","miembros"],calls:"llamadas a herramientas al mes",month:"mes",sep:"."},
+ fr:{device:["appareil","appareils"],member:["membre","membres"],calls:"appels d'outils par mois",month:"mois",sep:" "},
+};
 export function planText(text:string|null|undefined,lang:string){
- if(!text||lang!=="en")return text??"";
- if(PLAN_EN[text])return PLAN_EN[text];
+ if(!text||lang==="tr"||!isLocale(lang))return text??"";
+ const known=lang==="en"?PLAN_EN[text]:tIn(lang,text);
+ if(known)return known;
+ const w=PLAN_WORDS[lang]??PLAN_WORDS.en!;
  return text
-  .replace(/^Ayda ([\d.]+) araç çağrısı$/,(_,n)=>`${n.replace(/\./g,",")} tool calls a month`)
-  .replace(/^(\d+) cihaz$/,(_,n)=>`${n} device${n==="1"?"":"s"}`)
-  .replace(/^(\d+) kişi$/,(_,n)=>`${n} member${n==="1"?"":"s"}`)
-  .replace(/^(\d+) ekip üyesi$/,(_,n)=>`${n} team members`)
-  .replace(/^([\d.,]+) (USD|EUR|TRY) \/ ay$/,(_,n,c)=>`${n} ${c} / month`);
+  .replace(/^Ayda ([\d.]+) araç çağrısı$/,(_,n)=>`${n.replace(/\./g,w.sep)} ${w.calls}`)
+  .replace(/^(\d+) cihaz$/,(_,n)=>`${n} ${w.device[n==="1"?0:1]}`)
+  .replace(/^(\d+) kişi$/,(_,n)=>`${n} ${w.member[n==="1"?0:1]}`)
+  .replace(/^(\d+) ekip üyesi$/,(_,n)=>`${n} ${w.member[1]}`)
+  .replace(/^([\d.,]+) (USD|EUR|TRY) \/ ay$/,(_,n,c)=>`${n} ${c} / ${w.month}`);
 }
 function features(plan:Plan){return plan.features.length?plan.features:[
   plan.maxDevices===null?translate("Sınırsız cihaz"):plan.maxDevices+translate(" cihaz"),
@@ -56,7 +66,7 @@ export function PlansPage({nav,pricing,account,checkoutMode=false,theme="dark",s
     nav("/billing?pending=1");
    });
    // Signed in: Paddle's first step is pre-filled with the account e-mail.
-   paddle.Checkout.open({transactionId:transaction.transactionId,...(account?.email?{customer:{email:account.email}}:{}),settings:{displayMode:"overlay",theme,locale:"tr"}});
+   paddle.Checkout.open({transactionId:transaction.transactionId,...(account?.email?{customer:{email:account.email}}:{}),settings:{displayMode:"overlay",theme,locale:paddleLocale()}});
   }catch(e){setMessage(e instanceof Error?e.message:translate("Ödeme ekranı açılamadı."))}
   finally{setBusy(false)}
  }

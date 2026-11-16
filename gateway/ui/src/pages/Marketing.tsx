@@ -38,7 +38,8 @@ const emptyDraft=(kind:InAppMessage["kind"]="csat",title=""):Draft=>({kind,title
 const toLocalInput=(v:string|null)=>v?new Date(new Date(v).getTime()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16):"";
 
 export function Marketing(){
- const locale=useLocale();
+ // Platform console: Turkish or English only.
+ const locale=useLocale()==="tr"?"tr":"en";
  const t=L[locale];
  const [items,setItems]=useState<Campaign[]>([]);
  const [draft,setDraft]=useState<Draft|null>(null);
