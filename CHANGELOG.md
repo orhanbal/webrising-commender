@@ -14,6 +14,8 @@ WECOMMANDER 1.0 is one desktop app (Windows, macOS) plus a non-root agent (Linux
 
 ## Unreleased
 
+- **macOS menu bar server monitor:** watched servers show live next to the clock (the worst of CPU, memory and disk, coloured). The panel lists CPU, memory, disk, network, a CPU history line and zombie processes; servers are added from its + menu. Until one is chosen, the first three servers that connect without asking are watched, as on Windows.
+- **macOS in-app messages and surveys:** the console's messages, tips, announcements and surveys (faces 1–5, 0–10) appear bottom left of the main window, once per app run; links open only over https.
 - **macOS server management:** the "Sunucu yönetimi" button on an SSH terminal opens its own window, as on Windows.
   - **Pages:** overview with live CPU, memory, network and disk charts; disk drill-down by folder with each Docker daemon's storage marked; safe cleanup per Docker daemon (rootless too) with the disk before and after; processes with zombie groups, their owner and the Coolify `--init` fix.
   - **Safety:** every change shows the exact command and asks first; changes are off when the login is neither root nor passwordless sudo; the core alone decides what can be cleaned.

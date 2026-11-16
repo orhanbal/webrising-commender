@@ -25,4 +25,27 @@ final class MessageAndMonitorTests: XCTestCase {
         L.use("en")
         XCTAssertEqual(Percent.text(42.4), "42%")
     }
+
+    func testMonitorReading() {
+        func sample(_ up: Double, total: UInt64, idle: UInt64, rx: UInt64) -> ServerSample {
+            ServerSample(uptime: up, cpuTotal: total, cpuIdle: idle, memTotalKb: 1000, memAvailableKb: 250,
+                         swapTotalKb: 0, swapFreeKb: 0, load1: 0.5, netRxBytes: rx, netTxBytes: 0,
+                         diskReadBytes: 0, diskWriteBytes: 0, rootUsedKb: 90, rootAvailKb: 10, zombies: 0)
+        }
+        let first = MonitorMath.reading(previous: nil, now: sample(100, total: 1000, idle: 800, rx: 0))
+        XCTAssertFalse(first.hasRates)
+        XCTAssertEqual(first.mem, 75, accuracy: 0.01)
+        XCTAssertEqual(first.disk, 90, accuracy: 0.01)
+        XCTAssertEqual(first.swap, 0)
+        let second = MonitorMath.reading(previous: sample(100, total: 1000, idle: 800, rx: 0),
+                                         now: sample(102, total: 1200, idle: 850, rx: 4096), last: first)
+        XCTAssertTrue(second.hasRates)
+        XCTAssertEqual(second.cpu, 75, accuracy: 0.01)
+        XCTAssertEqual(second.rx, 2048, accuracy: 0.01)
+        XCTAssertEqual(second.worst, 90, accuracy: 0.01)
+        // A restarted server (uptime went back) keeps the old rates.
+        let reboot = MonitorMath.reading(previous: sample(102, total: 1200, idle: 850, rx: 4096),
+                                         now: sample(5, total: 10, idle: 9, rx: 0), last: second)
+        XCTAssertEqual(reboot.cpu, 75, accuracy: 0.01)
+    }
 }

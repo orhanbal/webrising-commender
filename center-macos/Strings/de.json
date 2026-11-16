@@ -96,6 +96,7 @@
  "Port dinlenemiyor: ": "Port kann nicht abgehört werden: ",
  "Proxy portu (0 = boş)": "Proxy-Port (0 = freier Port)",
  "SSH agent yönlendirme (ssh -A)": "SSH-Agent-Weiterleitung (ssh -A)",
+ "Sağ üstteki + ile izlenecek sunucuyu seç; işlemci, bellek ve disk burada canlı görünür.": "Wähle mit dem + oben rechts einen Server zum Beobachten; CPU, Arbeitsspeicher und Festplatte erscheinen hier live.",
  "Seri portu seç ya da yaz (ör. /dev/cu.usbserial).": "Wähle einen seriellen Port oder gib ihn ein (z. B. /dev/cu.usbserial).",
  "Seri portu seç ya da yaz.": "Wähle einen seriellen Port oder gib ihn ein.",
  "Servis: {0}": "Dienst: {0}",
@@ -170,7 +171,9 @@
  "{0} · {1} izleyen": "{0} · {1} schauen zu",
  "{0} çekirdek · yük {1}": "{0} Kerne · Last {1}",
  "{0}/sn": "{0}/s",
+ "{0}: işlemci {1} · bellek {2} · disk {3}": "{0}: CPU {1} · Speicher {2} · Festplatte {3}",
  "~/.ssh/config okunamadı: {0}": "~/.ssh/config konnte nicht gelesen werden: {0}",
+ "Çalışıyor · yük {0}": "Läuft · Last {0}",
  "Özel anahtar dosyası (ör. ~/.ssh/id_ed25519)": "Private-Schlüssel-Datei (z. B. ~/.ssh/id_ed25519)",
  "İş anahtarı": "Arbeitsschlüssel",
  "↪ {0} üzerinden": "↪ über {0}"
