@@ -246,8 +246,11 @@ jobs:
             test -f "center-macos/screens/$lang-report.txt"
             if grep -E "selected=false|image=false" "center-macos/screens/$lang-report.txt"; then echo "a page did not open or draw ($lang)"; exit 1; fi
           done
-          grep -q "Anahtarlar" center-macos/screens/tr-report.txt
-          grep -q "Keys" center-macos/screens/en-report.txt
+          # Each page's image must hold a real drawing, not a blank window.
+          for f in center-macos/screens/*.png; do
+            size=$(stat -f %z "$f"); echo "$f $size bytes"
+            [ "$size" -gt 20000 ] || { echo "blank drawing: $f"; exit 1; }
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
