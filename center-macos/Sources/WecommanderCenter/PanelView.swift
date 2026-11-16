@@ -164,7 +164,7 @@ private struct LinkingView: View {
 // MARK: signed in
 
 private enum Tab: String, CaseIterable, Identifiable {
-    case approvals = "Onaylar", autonomy = "Otonom mod", devices = "Cihazlar", settings = L.t("Ayarlar")
+    case approvals = "Onaylar", autonomy = "Otonom mod", devices = "Cihazlar", settings = "Ayarlar"
     var id: String { rawValue }
 }
 
