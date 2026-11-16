@@ -342,7 +342,7 @@ public sealed class DeskChip : Window
         close.Click += (_, _) =>
         {
             App.Current.SetDeskChip(false);
-            App.Current.Toast(L.T("Sunucu kutusu kapandı. Geri açmak için: saatin yanındaki sunucu simgesine sağ tıkla > \"Masaüstü kutusunu göster\"."));
+            App.Current.Toast(L.T("Sunucu kutusu kapandı. Geri açmak için: saatin yanındaki sunucu simgesine sağ tıkla > \"Sunucu kutusu (sol alt): göster / gizle\"."));
         };
         menu.Opening += (_, _) =>
         {

@@ -63,7 +63,7 @@ public static class DockSettingsPanel
         var fullscreen = new CheckBox { Content = L.T("Tam ekran uygulama ve oyunlarda gizle (kapalıysa arkaya geçer)"), IsChecked = s.DockHideFullscreen };
         fullscreen.Click += (_, _) => { s.DockHideFullscreen = fullscreen.IsChecked == true; App.Current.SaveSettings(); };
 
-        var themes = new[] { ("system", L.T("Windows ile aynı")), ("dark", L.T("Koyu")), ("light", L.T("Açık")) };
+        var themes = new[] { ("system", L.T("Windows ile aynı")), ("dark", L.T("Koyu tema")), ("light", L.T("Açık tema")) };
         var theme = Combo(L.T("Tema"), themes.Select(t => t.Item2), Array.FindIndex(themes, t => t.Item1 == s.DockTheme));
         theme.SelectionChanged += (_, _) => { s.DockTheme = themes[Math.Max(0, theme.SelectedIndex)].Item1; Save(); };
 

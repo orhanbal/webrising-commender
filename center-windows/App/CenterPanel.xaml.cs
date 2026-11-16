@@ -116,7 +116,7 @@ public sealed partial class CenterPanel : UserControl
             NotificationBar.IsOpen = phase == Phase.SignedIn && Center.NotificationsBlocked;
             NotificationBar.Message = Texts.NotificationBlockedMessage(Center.NotificationSetting.ToString());
             AutonomyBar.IsOpen = phase == Phase.SignedIn && Center.Autonomy.Count > 0;
-            AutonomyBar.Message = $"{Center.Autonomy.Count} cihazda onay istenmiyor.";
+            AutonomyBar.Message = L.F("{0} cihazda onay istenmiyor.", Center.Autonomy.Count);
             if (phase == Phase.SignedIn)
             {
                 RenderPending();
@@ -127,8 +127,8 @@ public sealed partial class CenterPanel : UserControl
                 OpenSwitch.IsOn = Center.Settings.OpenOnRequest;
                 AutostartSwitch.IsOn = LocalStore.AutostartEnabled;
                 AboutText.Text = L.F("Sürüm {0}", typeof(App).Assembly.GetName().Version?.ToString(3)) +
-                                 (Center.Me is { } m ? $" · bu merkez: {m.Name}" : "") + $" · {Center.Settings.Server}";
-                ApprovalsTab.Text = Center.Pending.Count > 0 ? $"Onaylar ({Center.Pending.Count})" : "Onaylar";
+                                 (Center.Me is { } m ? L.F(" · bu merkez: {0}", m.Name) : "") + $" · {Center.Settings.Server}";
+                ApprovalsTab.Text = Center.Pending.Count > 0 ? L.F("Onaylar ({0})", Center.Pending.Count) : L.T("Onaylar");
             }
             UpdateStatus();
         }

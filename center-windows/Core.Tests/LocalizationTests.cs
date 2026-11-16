@@ -16,6 +16,10 @@ public class LocalizationTests
     private static readonly Regex Call = new(@"\bL\.[TF]\(\s*""((?:[^""\\]|\\.)*)""", RegexOptions.Compiled);
     private static readonly Regex Literal = new(@"(?<![@])\$?""((?:[^""\\\n]|\\.)*)""", RegexOptions.Compiled);
     private static readonly Regex TurkishLetters = new("[çğıöşüÇĞİÖŞÜ]", RegexOptions.Compiled);
+    // Turkish words written only with ASCII letters (the letter check alone misses "Bekleyen onaylar").
+    private static readonly Regex TurkishWords = new(@"\b(bir|ile|yok|var|onay|onaylar|bekleyen|oturumu?|sunucu|sunucular|kapat|yeni|tamam|hata|kenara|kullanan|zaten|daha|konteyner|konteyneri|servisi|cihazda|merkez|yine|durdur|gerekli|sahip|izleyici|reddedildi|anahtar|ekip|kaydet|uygula|sil|ekle|gizle|ayarlar)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    // Sample commands shown as placeholders: the same in every language.
+    private static readonly HashSet<string> Commands = ["cd /var/www && git status"];
     private static readonly Regex Holes = new(@"\{\d+(?:[,:][^}]*)?\}", RegexOptions.Compiled);
 
     private static string Root()
@@ -71,7 +75,11 @@ public class LocalizationTests
                 var code = line.Split("//")[0];
                 var stripped = Call.Replace(code, "L.T(\"\")");
                 foreach (Match m in Literal.Matches(stripped))
-                    if (TurkishLetters.IsMatch(m.Groups[1].Value)) left.Add($"{Path.GetFileName(file)}:{i + 1}: {m.Value}");
+                {
+                    var value = m.Groups[1].Value;
+                    if (Commands.Contains(value)) continue;
+                    if (TurkishLetters.IsMatch(value) || TurkishWords.IsMatch(Regex.Replace(value, @"\{[^}]*\}", ""))) left.Add($"{Path.GetFileName(file)}:{i + 1}: {m.Value}");
+                }
             }
         }
         Assert.True(left.Count == 0, "wrap these in L.T / L.F:\n" + string.Join("\n", left.Take(20)));

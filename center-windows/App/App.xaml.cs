@@ -253,7 +253,7 @@ public partial class App : Application
         {
             _ui?.TryEnqueue(() =>
             {
-                Error = "Beklenmeyen bir hata oldu (" + error.GetType().Name + ": " + error.Message + L.T("). Ayrıntı: ") + ErrorLogPath;
+                Error = L.F("Beklenmeyen bir hata oldu ({0}: {1}). Ayrıntı: {2}", error.GetType().Name, error.Message, ErrorLogPath);
                 Toast(L.T("Bir işlem hata verdi; uygulama çalışmaya devam ediyor."));
                 Publish();
             });
@@ -941,7 +941,7 @@ public partial class App : Application
                 try
                 {
                     await StopAutonomyAsync();
-                    Toast("Otonom mod durduruldu. Onaylar yeniden isteniyor.");
+                    Toast(L.T("Otonom mod durduruldu. Onaylar yeniden isteniyor."));
                 }
                 catch (GatewayException e) { Toast(e.Message); }
             }),
@@ -1035,16 +1035,16 @@ public partial class App : Application
         });
         var tooltip = !signedIn
             ? L.T("WECOMMANDER Yönetim Merkezi — oturum açılmadı")
-            : (pending == 0 ? L.T("WECOMMANDER — bekleyen onay yok") : $"WECOMMANDER — {pending} bekleyen onay")
+            : (pending == 0 ? L.T("WECOMMANDER — bekleyen onay yok") : L.F("WECOMMANDER — {0} bekleyen onay", pending))
               + (autonomy > 0 ? L.F(" · otonom mod açık ({0} cihaz)", autonomy) : "");
         _tray.ToolTipText = tooltip;
-        _pendingItem!.Text = !signedIn ? L.T("Oturum açılmadı") : pending == 0 ? L.T("Bekleyen onay yok") : $"Bekleyen onaylar: {pending}";
+        _pendingItem!.Text = !signedIn ? L.T("Oturum açılmadı") : pending == 0 ? L.T("Bekleyen onay yok") : L.F("Bekleyen onaylar: {0}", pending);
         _autonomyItem!.Text = autonomy > 0 ? L.F("Otonom mod açık: {0} cihaz", autonomy) : L.T("Otonom mod kapalı");
         _stopAutonomyItem!.IsEnabled = signedIn && autonomy > 0;
         _notifyItem!.IsChecked = Settings.Notifications;
         _allowNotifyItem!.Visibility = NotificationsBlocked ? Visibility.Visible : Visibility.Collapsed;
         if (NotificationsBlocked) _tray.ToolTipText = tooltip + L.T(" · Windows bildirimleri kapalı");
-        _accountItem!.Text = !signedIn ? L.T("Oturum aç…") : Me?.Email is { } email ? $"Oturumu kapat ({email})" : L.T("Oturumu kapat");
+        _accountItem!.Text = !signedIn ? L.T("Oturum aç…") : Me?.Email is { } email ? L.F("Oturumu kapat ({0})", email) : L.T("Oturumu kapat");
         _agentItem!.Text = Agent is null ? L.T("Ajan çalışsın") : L.F("Ajan çalışsın ({0})", Texts.AgentStateLabel(Agent).ToLowerInvariant());
         _agentItem.IsChecked = Agent?.Running ?? Settings.AgentKeepRunning;
         _agentItem.IsEnabled = !_agentBusy && Agent is not null && Agent.State != AgentRunState.NotInstalled;

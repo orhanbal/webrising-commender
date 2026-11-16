@@ -759,7 +759,7 @@ public sealed class ServersWindow : Window
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 2 };
         text.Children.Add(new TextBlock { Text = host.Label, Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], TextTrimming = TextTrimming.CharacterEllipsis });
         text.Children.Add(new TextBlock { Text = host.Target + (via is null ? "" : $" ↪ {via}"), Foreground = Secondary, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis });
-        text.Children.Add(new TextBlock { Text = (host.Team ? "👥 Ekip · " : "") + (host.CanConnectSilently ? (host.AuthKind == "password" ? L.T("Parola kayıtlı") : L.T("Anahtar hazır")) : L.T("Giriş bilgisi sorulacak")), Foreground = Secondary, FontSize = 11 });
+        text.Children.Add(new TextBlock { Text = (host.Team ? L.T("👥 Ekip · ") : "") + (host.CanConnectSilently ? (host.AuthKind == "password" ? L.T("Parola kayıtlı") : L.T("Anahtar hazır")) : L.T("Giriş bilgisi sorulacak")), Foreground = Secondary, FontSize = 11 });
         Grid.SetColumn(text, 1);
         grid.Children.Add(text);
         var card = new Button
@@ -916,7 +916,7 @@ public sealed class ServersWindow : Window
             settings.TerminalFontSize = (int)Math.Clamp(e.NewValue, 8, 32);
             ApplyTerminalSettings();
         };
-        var themes = new[] { ("dark", L.T("Koyu")), ("light", L.T("Açık")), ("solarized-dark", L.T("Solarized koyu")), ("solarized-light", L.T("Solarized açık")),
+        var themes = new[] { ("dark", L.T("Koyu tema")), ("light", L.T("Açık tema")), ("solarized-dark", L.T("Solarized koyu")), ("solarized-light", L.T("Solarized açık")),
             ("nord", "Nord"), ("gruvbox", "Gruvbox"), ("monokai", "Monokai"), ("dracula", "Dracula") };
         var theme = new ComboBox { Header = L.T("Terminal teması"), ItemsSource = themes.Select(t => t.Item2).ToList(), MinWidth = 220,
             SelectedIndex = Math.Max(0, Array.FindIndex(themes, t => t.Item1 == settings.TerminalTheme)) };
@@ -1046,12 +1046,12 @@ public sealed class ServersWindow : Window
         });
         if (_c.TeamName is { } name)
         {
-            var role = _c.TeamRole switch { "owner" => "sahip", "admin" => L.T("yönetici"), "operator" => L.T("operatör"), _ => "izleyici" };
+            var role = _c.TeamRole switch { "owner" => L.T("sahip"), "admin" => L.T("yönetici"), "operator" => L.T("operatör"), _ => L.T("izleyici") };
             panel.Children.Add(new TextBlock { Text = L.F("Çalışma alanı: {0} · rolün: {1}", name, role) });
             if (_c.TeamState == TeamSyncState.WaitingForKey)
                 panel.Children.Add(new TextBlock { Text = L.T("Ekip anahtarı bekleniyor: ekipten operatör ya da üstü biri uygulamasını açtığında bu bilgisayara verilir."), TextWrapping = TextWrapping.Wrap, Foreground = new SolidColorBrush(Microsoft.UI.Colors.DarkOrange) });
             foreach (var m in _c.TeamMembers)
-                panel.Children.Add(new TextBlock { Text = $"{(m.HasKey ? "●" : "○")} {m.Email} · {m.CenterName}" + (m.HasKey ? "" : " (anahtar bekliyor)"), Foreground = Secondary, FontSize = 12 });
+                panel.Children.Add(new TextBlock { Text = $"{(m.HasKey ? "●" : "○")} {m.Email} · {m.CenterName}" + (m.HasKey ? "" : L.T(" (anahtar bekliyor)")), Foreground = Secondary, FontSize = 12 });
         }
         if (App.Current.TeamSyncError is { } problem)
             panel.Children.Add(new TextBlock { Text = problem, Foreground = new SolidColorBrush(Microsoft.UI.Colors.IndianRed), TextWrapping = TextWrapping.Wrap });
@@ -1115,7 +1115,7 @@ public sealed class ServersWindow : Window
             var text = new StackPanel { Spacing = 2 };
             text.Children.Add(new TextBlock { Text = k.Label, Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"] });
             text.Children.Add(new TextBlock { Text = $"{k.Algorithm}  ·  {k.Fingerprint}", FontFamily = new FontFamily("Cascadia Mono, Consolas"), Foreground = Secondary, IsTextSelectionEnabled = true, TextTrimming = TextTrimming.CharacterEllipsis });
-            text.Children.Add(new TextBlock { Text = used.Count > 0 ? "Kullanan: " + string.Join(", ", used) : L.T("Henüz bir sunucuda kullanılmıyor"), Foreground = Secondary, FontSize = 12 });
+            text.Children.Add(new TextBlock { Text = used.Count > 0 ? L.T("Kullanan: ") + string.Join(", ", used) : L.T("Henüz bir sunucuda kullanılmıyor"), Foreground = Secondary, FontSize = 12 });
             row.Children.Add(text);
             var copy = new Button { Content = L.T("Genel anahtarı kopyala") };
             copy.Click += (_, _) =>
@@ -1145,7 +1145,7 @@ public sealed class ServersWindow : Window
     private async Task GenerateKey()
     {
         var label = new TextBox { Header = L.T("Ad"), Text = Environment.MachineName + L.T(" anahtarı"), MinWidth = 360 };
-        var dialog = Dialog("Yeni anahtar (Ed25519)", label, L.T("Oluştur"));
+        var dialog = Dialog(L.T("Yeni anahtar (Ed25519)"), label, L.T("Oluştur"));
         if (await ShowDialog(dialog) != ContentDialogResult.Primary) return;
         await Guard(async () =>
         {
@@ -1204,8 +1204,8 @@ public sealed class ServersWindow : Window
             var keyName = keys.FirstOrDefault(k => k.Id == i.KeyId)?.Label;
             var text = new StackPanel { Spacing = 2 };
             text.Children.Add(new TextBlock { Text = i.Label, Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"] });
-            text.Children.Add(new TextBlock { Text = i.User + "  ·  " + (i.AuthKind == "password" ? L.T("Parola") : keyName is null ? L.T("Anahtar seçilmemiş") : "Anahtar: " + keyName), Foreground = Secondary });
-            text.Children.Add(new TextBlock { Text = used.Count > 0 ? "Kullanan: " + string.Join(", ", used) : L.T("Henüz bir sunucuda kullanılmıyor"), Foreground = Secondary, FontSize = 12 });
+            text.Children.Add(new TextBlock { Text = i.User + "  ·  " + (i.AuthKind == "password" ? L.T("Parola") : keyName is null ? L.T("Anahtar seçilmemiş") : L.T("Anahtar: ") + keyName), Foreground = Secondary });
+            text.Children.Add(new TextBlock { Text = used.Count > 0 ? L.T("Kullanan: ") + string.Join(", ", used) : L.T("Henüz bir sunucuda kullanılmıyor"), Foreground = Secondary, FontSize = 12 });
             row.Children.Add(text);
             var edit = new Button { Content = new SymbolIcon(Symbol.Edit) };
             edit.Click += async (_, _) => await EditIdentity(i);
@@ -1228,7 +1228,7 @@ public sealed class ServersWindow : Window
     private async Task EditIdentity(Identity? existing)
     {
         var keys = await _c.Keys();
-        var label = new TextBox { Header = L.T("Ad"), Text = existing?.Label ?? "", PlaceholderText = "Ekip deploy" };
+        var label = new TextBox { Header = L.T("Ad"), Text = existing?.Label ?? "", PlaceholderText = L.T("Ekip deploy") };
         var user = new TextBox { Header = L.T("Kullanıcı"), Text = existing?.User ?? "" };
         var kind = new RadioButtons { Header = L.T("Giriş"), ItemsSource = new[] { L.T("Anahtar"), L.T("Parola") }, SelectedIndex = existing?.AuthKind == "password" ? 1 : 0, MaxColumns = 2 };
         var keyNames = keys.Select(k => k.Label).ToList();
@@ -1425,7 +1425,7 @@ public sealed class ServersWindow : Window
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
         var label = new TextBox { Header = L.T("Ad"), PlaceholderText = "Prod web", Text = existing?.Label ?? "" };
-        var host = new TextBox { Header = L.T("Adres"), PlaceholderText = "sunucu.ornek.com", Text = existing?.Host ?? "" };
+        var host = new TextBox { Header = L.T("Adres"), PlaceholderText = L.T("sunucu.ornek.com"), Text = existing?.Host ?? "" };
         var user = new TextBox { Header = L.T("Kullanıcı"), Text = existing?.User ?? "" };
         var port = new NumberBox { Header = "Port", Value = existing?.Port ?? 22, Minimum = 1, Maximum = 65535 };
         var groups = _c.Hosts.Select(h => h.Group).Where(g => !string.IsNullOrWhiteSpace(g)).Distinct().ToList();
@@ -2268,7 +2268,7 @@ public sealed class ServersWindow : Window
         var target = Path.Combine(_localDir, name);
         if (File.Exists(target))
         {
-            var dialog = Dialog($"{name} zaten var", new TextBlock { Text = L.T("Bu bilgisayardaki dosyanın üzerine yazılsın mı?") }, L.T("Üzerine yaz"));
+            var dialog = Dialog(L.F("{0} zaten var", name), new TextBlock { Text = L.T("Bu bilgisayardaki dosyanın üzerine yazılsın mı?") }, L.T("Üzerine yaz"));
             if (await ShowDialog(dialog) != ContentDialogResult.Primary) return;
         }
         await Transfer($"⬇ {name}", id => _c.FilesAction(tab, "files.download", new { sessionId = tab.SessionId, remote = remotePath, local = target, transferId = id }));

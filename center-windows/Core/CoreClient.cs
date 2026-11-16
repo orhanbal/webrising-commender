@@ -210,8 +210,8 @@ public static class CoreText
         if (text.StartsWith("ssh error: server refused the remote forward")) return L.T("Sunucu uzak tüneli reddetti (sshd_config içinde AllowTcpForwarding açık olmalı; port kullanımda olabilir).");
         if (text.Contains("a saved tunnel needs a fixed local port")) return L.T("Kaydedilen tünel için sabit bir yerel port gir.");
         if (text.Contains("a saved tunnel needs a fixed server port")) return L.T("Kaydedilen uzak tünel için sabit bir sunucu portu gir.");
-        if (text.Contains("the port on this computer is required")) return "Bu bilgisayardaki servis portunu gir.";
-        if (text.Contains("remote host and port are required")) return "Uzak adres ve port gerekli.";
+        if (text.Contains("the port on this computer is required")) return L.T("Bu bilgisayardaki servis portunu gir.");
+        if (text.Contains("remote host and port are required")) return L.T("Uzak adres ve port gerekli.");
         if (text.Contains("is already used by a saved tunnel")) return L.T("Bu yerel port başka bir kayıtlı tünelde kullanılıyor.");
         if (text.StartsWith("invalid variable name: ")) return L.T("Geçersiz ortam değişkeni adı: ") + text["invalid variable name: ".Length..];
         if (text.Contains("not a WECOMMANDER backup file")) return L.T("Bu dosya bir WECOMMANDER yedeği değil.");

@@ -703,19 +703,19 @@ public sealed class DockWindow : Window
         if (DockLayout.SnapEdge(rect, screen.Work, (int)Math.Round(24 * screen.Scale)) is { } edge) OfferEdge(edge);
     }
 
-    private static string EdgeName(DockEdge e) => e switch
+    private static string SnapQuestion(DockEdge e) => e switch
     {
-        DockEdge.Top => L.T("üst"),
-        DockEdge.Bottom => "alt",
-        DockEdge.Left => "sol",
-        _ => L.T("sağ"),
+        DockEdge.Top => L.T("Dock üst kenara sabitlensin mi?"),
+        DockEdge.Bottom => L.T("Dock alt kenara sabitlensin mi?"),
+        DockEdge.Left => L.T("Dock sol kenara sabitlensin mi?"),
+        _ => L.T("Dock sağ kenara sabitlensin mi?"),
     };
 
     private void OfferEdge(DockEdge edge)
     {
         App.DebugLayout($"dock: snap offer {edge}");
         var panel = new StackPanel { Spacing = 8, MaxWidth = 260 };
-        panel.Children.Add(new TextBlock { Text = $"Dock {EdgeName(edge)} kenara sabitlensin mi?", TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(new TextBlock { Text = SnapQuestion(edge), TextWrapping = TextWrapping.Wrap });
         var yes = new Button { Content = L.T("Sabitle"), Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
         panel.Children.Add(yes);
         var flyout = new Flyout { Content = panel };

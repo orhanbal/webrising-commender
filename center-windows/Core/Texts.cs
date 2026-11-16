@@ -27,21 +27,23 @@ public static class Texts
     /// </summary>
     public static string? DecidedElsewhere(ApprovalOutcome outcome)
     {
-        var verb = outcome.Status switch
+        bool? approved = outcome.Status switch
         {
-            "approved" or "consumed" => L.T("onaylandı"),
-            "denied" => "reddedildi",
+            "approved" or "consumed" => true,
+            "denied" => false,
             _ => null,
         };
-        if (verb is null || outcome.DecidedVia is not { Self: false } via) return null;
-        var place = via.Kind == "panel" ? L.T("Web panelinden") : via.Platform switch
+        if (approved is not { } yes || outcome.DecidedVia is not { Self: false } via) return null;
+        // Whole sentences, so each language can order them its own way.
+        if (via.Kind == "panel") return yes ? L.T("Web panelinden onaylandı") : L.T("Web panelinden reddedildi");
+        return via.Platform switch
         {
-            "macos" => L.T("macOS'tan"),
-            "windows" => L.T("Windows'tan"),
-            "linux" => L.T("Linux'tan"),
-            _ => string.IsNullOrWhiteSpace(via.Name) ? L.T("Başka bir Yönetim Merkezinden") : L.F("{0} üzerinden", via.Name.Trim()),
+            "macos" => yes ? L.T("macOS'tan onaylandı") : L.T("macOS'tan reddedildi"),
+            "windows" => yes ? L.T("Windows'tan onaylandı") : L.T("Windows'tan reddedildi"),
+            "linux" => yes ? L.T("Linux'tan onaylandı") : L.T("Linux'tan reddedildi"),
+            _ when string.IsNullOrWhiteSpace(via.Name) => yes ? L.T("Başka bir Yönetim Merkezinden onaylandı") : L.T("Başka bir Yönetim Merkezinden reddedildi"),
+            _ => yes ? L.F("{0} üzerinden onaylandı", via.Name.Trim()) : L.F("{0} üzerinden reddedildi", via.Name.Trim()),
         };
-        return $"{place} {verb}";
     }
 
     public static string AgentNotInstalled =>
@@ -143,7 +145,7 @@ public static class Texts
     }
 
     public static string Until(DateTimeOffset? until) => until is { } u
-        ? u.ToLocalTime().ToString("dd.MM HH:mm") + L.T("'e kadar")
+        ? L.F("{0}'e kadar", u.ToLocalTime().ToString("dd.MM HH:mm"))
         : L.T("süresiz");
 }
 

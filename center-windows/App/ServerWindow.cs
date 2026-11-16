@@ -562,7 +562,7 @@ public sealed class ServerWindow : Window
                 Foreground = Secondary, TextWrapping = TextWrapping.Wrap,
             });
             var protectedText = env.Running.Count > 0
-                ? "Korunur (dokunulmaz): " + string.Join(", ", env.Running.Take(6)) + (env.Running.Count > 6 ? $" ve {env.Running.Count - 6} konteyner daha" : "") + L.T("; bunların ve durmuş konteynerlerin imajları, tüm volume'ler.")
+                ? L.T("Korunur (dokunulmaz): ") + string.Join(", ", env.Running.Take(6)) + (env.Running.Count > 6 ? L.F(" ve {0} konteyner daha", env.Running.Count - 6) : "") + L.T("; bunların ve durmuş konteynerlerin imajları, tüm volume'ler.")
                 : L.T("Korunur (dokunulmaz): durmuş konteynerlerin imajları ve tüm volume'ler.");
             p.Children.Add(new TextBlock { Text = protectedText, TextWrapping = TextWrapping.Wrap, Foreground = (Brush)Application.Current.Resources["SystemFillColorSuccessBrush"] });
         }
@@ -794,7 +794,7 @@ public sealed class ServerWindow : Window
                 };
                 note.Text = result.Ok ? L.T("Temizlendi") : L.T("Temizlenemedi") + (string.IsNullOrEmpty(result.Message) ? "" : ": " + result.Message);
                 doneKb += item.Kb;
-                Overall(i + 1 < states.Count ? $"{i + 1}/{states.Count} tamam" : "Bitti");
+                Overall(i + 1 < states.Count ? L.F("{0}/{1} tamam", i + 1, states.Count) : L.T("Bitti"));
                 // The disk going down as it happens.
                 if (diskNow is not null && diskBar is not null && size > 0 && await RootFree() is { } freeNow)
                 {
@@ -925,7 +925,7 @@ public sealed class ServerWindow : Window
         p.Children.Add(new TextBlock { Text = z.Parent.Command, FontFamily = Mono, FontSize = 12, Foreground = Secondary, TextTrimming = TextTrimming.CharacterEllipsis });
         var owner = z.Owner.Kind switch
         {
-            "container" => $"Docker konteyneri: {z.Owner.Name}",
+            "container" => L.F("Docker konteyneri: {0}", z.Owner.Name),
             "service" => $"Servis: {z.Owner.Name}",
             _ => "",
         };
@@ -956,12 +956,12 @@ public sealed class ServerWindow : Window
             }));
             if (z.Owner.Kind is "container" or "service" && z.Protected.Length == 0)
             {
-                var what = z.Owner.Kind == "container" ? "konteyneri" : "servisi";
+                var container = z.Owner.Kind == "container";
                 var command = z.Owner.Kind == "container" ? $"docker restart {z.Owner.Id}" : $"systemctl restart {z.Owner.Id}";
-                buttons.Children.Add(Action(L.F("{0}{1} yeniden başlat", char.ToUpper(what[0]), what[1..]), async () =>
+                buttons.Children.Add(Action(container ? L.T("Konteyneri yeniden başlat") : L.T("Servisi yeniden başlat"), async () =>
                 {
                     if (!await Confirm(L.F("{0} yeniden başlatılsın mı?", z.Owner.Name),
-                            L.F("Bu {0} birkaç saniye kapanıp açılır; o sürede hizmet vermez. Yeniden başlayınca zombiler de gider.", what),
+                            container ? L.T("Bu konteyner birkaç saniye kapanıp açılır; o sürede hizmet vermez. Yeniden başlayınca zombiler de gider.") : L.T("Bu servis birkaç saniye kapanıp açılır; o sürede hizmet vermez. Yeniden başlayınca zombiler de gider."),
                             command, L.T("Yeniden başlat"))) return;
                     try
                     {
@@ -1087,7 +1087,7 @@ public sealed class ServerWindow : Window
         catch (Exception ex) when (ex.Message == "database" && !confirmDatabase)
         {
             if (await Confirm(L.T("Bu bir veritabanı"), L.F("{0} bir veritabanı. Durdurulursa yazılmakta olan veriler kaybolabilir ve ona bağlı uygulamalar hata verir. Yine de devam edilsin mi?", p.Name),
-                    $"kill -{(action == "kill" ? "KILL" : "TERM")} {p.Pid}", "Yine de durdur"))
+                    $"kill -{(action == "kill" ? "KILL" : "TERM")} {p.Pid}", L.T("Yine de durdur")))
                 await Signal(p, action, true, then);
         }
         catch (Exception ex)
