@@ -354,7 +354,6 @@
 /* Pre-rendered text for crawlers, shown only until the app starts. */
 .prerender{max-width:760px;margin:40px auto;padding:0 16px;font:16px/1.6 system-ui,sans-serif}
 /* ---- Landing v1.0 polish ---- */
-.hero-modern:after{content:"";pointer-events:none;position:absolute;inset:0;background-image:linear-gradient(var(--stroke) 1px,transparent 1px),linear-gradient(90deg,var(--stroke) 1px,transparent 1px);background-size:56px 56px;mask-image:radial-gradient(ellipse 70% 60% at 50% 30%,#000 10%,transparent 75%);-webkit-mask-image:radial-gradient(ellipse 70% 60% at 50% 30%,#000 10%,transparent 75%);opacity:.45}
 .hero-grid{z-index:1}
 .session-window{box-shadow:0 30px 80px -30px color-mix(in srgb,var(--accent) 35%,transparent),0 18px 50px -20px var(--shadow)}
 .logo-strip{border-block:1px solid var(--stroke);background:var(--surface-2);padding:34px 0 30px;text-align:center}
