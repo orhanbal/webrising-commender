@@ -19,8 +19,9 @@ namespace Wecommander.Center;
 /// WECOMMANDER Dock: our own bar on a screen edge (or floating), not the
 /// Windows taskbar. Fixed: a Windows AppBar that takes its strip from the
 /// work area. Auto-hide: slides out of sight and back when the mouse reaches
-/// the edge. Floating: dragged anywhere, offers to fix itself to an edge it is
-/// left near. It shows the watched server's live CPU / RAM / Disk (the same
+/// the edge. Floating: anywhere on the screen. Unlocked, it is dragged like the
+/// Windows taskbar: dropped near an edge it is fixed there, elsewhere it floats.
+/// It shows the watched server's live CPU / RAM / Disk (the same
 /// meters and data as the server box, no second connection) and opens the
 /// management screens; nothing risky runs from a single click here.
 /// </summary>
@@ -56,7 +57,7 @@ public sealed class DockWindow : Window
     private Border _badgeBox = new() { CornerRadius = new CornerRadius(8), MinWidth = 16, Height = 16, Padding = new Thickness(4, 0, 4, 0),
         Background = new SolidColorBrush(ColorHelper.FromArgb(255, 0xEF, 0x44, 0x44)), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
         Margin = new Thickness(0, 2, 2, 0), Visibility = Visibility.Collapsed, IsHitTestVisible = false };
-    private FrameworkElement? _appButton, _grip;
+    private FrameworkElement? _appButton;
 
     public const string WindowTitle = "WECOMMANDER Dock";
 
@@ -85,11 +86,19 @@ public sealed class DockWindow : Window
         };
         Content = _root;
         _root.ContextFlyout = Menu();
-        // Esc while a module button is dragged: it goes back where it was.
+        // Esc while a module button or the Dock itself is dragged: it goes back where it was.
         _root.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler((_, e) =>
         {
-            if (_reordering && e.Key == Windows.System.VirtualKey.Escape) { CancelReorder("escape"); e.Handled = true; }
+            if (e.Key != Windows.System.VirtualKey.Escape) return;
+            if (_reordering) { CancelReorder("escape"); e.Handled = true; }
+            else if (_moving) { CancelMove("escape"); e.Handled = true; }
         }), true);
+        // Moving the Dock (unlocked): a press anywhere but on a module button. The buttons
+        // handle their presses themselves, so these see them anyway (handledEventsToo).
+        _root.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnRootPressed), true);
+        _root.AddHandler(UIElement.PointerMovedEvent, new PointerEventHandler(OnRootMoved), true);
+        _root.AddHandler(UIElement.PointerReleasedEvent, new PointerEventHandler(OnRootReleased), true);
+        _root.AddHandler(UIElement.PointerCaptureLostEvent, new PointerEventHandler(OnRootCaptureLost), true);
 
         var hwnd = Hwnd;
         _hwnd = hwnd;
@@ -107,7 +116,8 @@ public sealed class DockWindow : Window
         _reapply = queue.CreateTimer();
         _reapply.Interval = TimeSpan.FromMilliseconds(200);
         _reapply.IsRepeating = false;
-        _reapply.Tick += (_, _) => { if (_on) { _lastApplied = null; Apply(); } };
+        // Not while the Dock is being dragged: the drop applies the new place itself.
+        _reapply.Tick += (_, _) => { if (_on && !_moving) { _lastApplied = null; Apply(); } };
 
         _monitor.Changed += () => { try { if (_on) Refresh(); } catch (Exception e) { App.LogCrash(e); } };
     }
@@ -327,16 +337,25 @@ public sealed class DockWindow : Window
         SetWindowPos(Hwnd, on ? HwndTopMost : HwndNoTopMost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
     }
 
+    /// <summary>A floating Dock's size in physical pixels at <paramref name="scale"/>: as long as its parts need.</summary>
+    private (int Width, int Height) FloatingSize(double scale)
+    {
+        var thicknessDip = DockLayout.ThicknessDip(_edge, _compact);
+        _root.Measure(_horizontal
+            ? new Windows.Foundation.Size(double.PositiveInfinity, thicknessDip)
+            : new Windows.Foundation.Size(thicknessDip, double.PositiveInfinity));
+        var desired = _root.DesiredSize;
+        var thickness = (int)Math.Round(thicknessDip * scale);
+        return _horizontal
+            ? ((int)Math.Round(Math.Max(360, desired.Width + 8) * scale), thickness)
+            : (thickness, (int)Math.Round(Math.Max(300, desired.Height + 8) * scale));
+    }
+
     private void PlaceFloating()
     {
         var s = App.Current.Settings;
         var scale = _screen.Scale;
-        _root.Measure(_horizontal
-            ? new Windows.Foundation.Size(double.PositiveInfinity, DockLayout.ThicknessDip(_edge, _compact))
-            : new Windows.Foundation.Size(DockLayout.ThicknessDip(_edge, _compact), double.PositiveInfinity));
-        var desired = _root.DesiredSize;
-        var width = _horizontal ? (int)Math.Round(Math.Max(360, desired.Width + 8) * scale) : _thickness;
-        var height = _horizontal ? _thickness : (int)Math.Round(Math.Max(300, desired.Height + 8) * scale);
+        var (width, height) = FloatingSize(scale);
         var work = _screen.Work;
         var x = s.DockFloatX is { } fx ? work.X + (int)Math.Round(fx * scale) : work.X + (work.Width - width) / 2;
         var y = s.DockFloatY is { } fy ? work.Y + (int)Math.Round(fy * scale) : work.Y + (int)Math.Round(12 * scale);
@@ -395,7 +414,7 @@ public sealed class DockWindow : Window
         GetCursorPos(out var p);
         var now = new PixelRect(AppWindow.Position.X, AppWindow.Position.Y, AppWindow.Size.Width, AppWindow.Size.Height);
         var over = now.Contains(p.X, p.Y) || DockLayout.Wakes(_screen.Work, _edge, p.X, p.Y, Math.Max(2, (int)Math.Round(2 * _screen.Scale)));
-        var want = over || _menuOpen || _reorderDown || App.Current.MonitorPanelOpen || App.Current.QuickPanelOpen;
+        var want = over || _menuOpen || _reorderDown || _moveDown || App.Current.MonitorPanelOpen || App.Current.QuickPanelOpen;
         if (want != _wantShown) { _wantShown = want; _wantSince = DateTime.UtcNow; }
         var delay = want ? App.Current.Settings.DockShowDelay : App.Current.Settings.DockHideDelay;
         if ((DateTime.UtcNow - _wantSince).TotalMilliseconds >= Math.Clamp(delay, 0, 5000)) _target = want ? 1 : 0;
@@ -432,17 +451,9 @@ public sealed class DockWindow : Window
         var orientation = _horizontal ? Orientation.Horizontal : Orientation.Vertical;
         var modules = DockLayout.Modules(App.Current.Settings.DockModules, App.Current.Settings.DockHiddenModules);
 
-        // Left / top: the grip (floating), the WECOMMANDER icon and the server.
+        // Left / top: the WECOMMANDER icon (a start menu) and the server. Unlocked, the Dock
+        // is moved by dragging any of these, the meters or the background (no separate grip).
         var start = new StackPanel { Orientation = orientation, Spacing = 6, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-        var grip = new Border { Width = _horizontal ? 14 : double.NaN, Height = _horizontal ? double.NaN : 14, Background = new SolidColorBrush(Colors.Transparent),
-            Child = new FontIcon { Glyph = _horizontal ? "" : "", FontSize = 12, Opacity = 0.6, Rotation = _horizontal ? 0 : 90 } };
-        ToolTipService.SetToolTip(grip, L.T("Sürükle: taşı"));
-        grip.PointerPressed += OnGripPressed;
-        grip.PointerMoved += OnGripMoved;
-        grip.PointerReleased += OnGripReleased;
-        grip.PointerCaptureLost += (_, _) => { if (_gripDown && _dragging) { _gripDown = false; _dragging = false; try { DroppedFloating(); } catch (Exception ex) { App.LogCrash(ex); } } else _gripDown = false; };
-        _grip = grip;
-        start.Children.Add(grip);
         var app = IconButton(AppIcon(), L.T("WECOMMANDER: hızlı panel"));
         app.Click += (_, _) => OpenQuickPanel(app);
         _appButton = app;
@@ -494,19 +505,20 @@ public sealed class DockWindow : Window
                     procs.Click += (_, _) => TaskManagerWindow.Open();
                     AddModule(end, m, procs, procs);
                     break;
-                case "timers":
-                    var timers = IconButton(new FontIcon { Glyph = "\uE823", FontSize = 16 }, L.T("Zamanlayıcılar"), _horizontal && !_compact ? L.T("Zamanlayıcılar") : null);
-                    timers.Click += (_, _) => TaskSchedulerWindow.Open();
-                    AddModule(end, m, timers, timers);
-                    break;
                 case "terminal":
                     var term = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, "Terminal", _horizontal && !_compact ? "Terminal" : null);
                     term.Click += (_, _) => OpenTerminal();
                     AddModule(end, m, term, term);
                     break;
                 case "tasks":
-                    var tasks = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, L.T("Zamanlanmış görevler"));
-                    tasks.Click += (_, _) => App.Current.ShowScheduledTasks();
+                    // One button for both kinds of schedule (it replaced separate timers and tasks buttons).
+                    var tasks = IconButton(new FontIcon { Glyph = "\uE787", FontSize = 16 }, L.T("Görevler"), _horizontal && !_compact ? L.T("Görevler") : null);
+                    var tasksMenu = TasksMenu();
+                    tasks.Click += (_, _) =>
+                    {
+                        try { tasksMenu.ShowAt(tasks, new FlyoutShowOptions { Placement = MenuPlacement() }); }
+                        catch (Exception ex) { App.LogCrash(ex); }
+                    };
                     AddModule(end, m, tasks, tasks);
                     break;
                 case "approvals":
@@ -561,6 +573,32 @@ public sealed class DockWindow : Window
         return button;
     }
 
+    /// <summary>The "Görevler" button's menu: WECOMMANDER's own scheduled tasks and the timers (this computer, the server).</summary>
+    private MenuFlyout TasksMenu()
+    {
+        var menu = new MenuFlyout();
+        Hold(menu);
+        void Add(string glyph, string text, Action open)
+        {
+            var item = new MenuFlyoutItem { Text = text, Icon = new FontIcon { Glyph = glyph } };
+            item.Click += (_, _) => { try { open(); } catch (Exception ex) { App.LogCrash(ex); } };
+            menu.Items.Add(item);
+        }
+        Add("\uE787", L.T("WECOMMANDER görevleri"), () => App.Current.ShowScheduledTasks());
+        Add("\uE823", L.T("Windows zamanlayıcıları"), () => TaskSchedulerWindow.Open());
+        Add("\uE968", L.T("Sunucu zamanlayıcıları"), () => OpenSection("timers"));
+        return menu;
+    }
+
+    /// <summary>A menu opened from a Dock button goes away from the Dock's edge.</summary>
+    private FlyoutPlacementMode MenuPlacement() => PanelSide() switch
+    {
+        DockEdge.Top => FlyoutPlacementMode.TopEdgeAlignedLeft,
+        DockEdge.Bottom => FlyoutPlacementMode.BottomEdgeAlignedLeft,
+        DockEdge.Left => FlyoutPlacementMode.LeftEdgeAlignedTop,
+        _ => FlyoutPlacementMode.RightEdgeAlignedTop,
+    };
+
     private Button ServerPicker()
     {
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
@@ -583,13 +621,14 @@ public sealed class DockWindow : Window
         menu.Opening += (_, _) =>
         {
             menu.Items.Clear();
-            var busiest = new ToggleMenuFlyoutItem { Text = L.T("En yoğun sunucu (kendiliğinden)"), IsChecked = App.Current.Settings.DockServer is null };
+            // Radio items: one choice is checked (a toggle item checks itself on every click).
+            var busiest = new RadioMenuFlyoutItem { Text = L.T("En yoğun sunucu (kendiliğinden)"), GroupName = "dock-server", IsChecked = App.Current.Settings.DockServer is null };
             busiest.Click += (_, _) => { App.Current.Settings.DockServer = null; App.Current.SaveSettings(); Refresh(); };
             menu.Items.Add(busiest);
             menu.Items.Add(new MenuFlyoutSeparator());
             foreach (var s in _monitor.Servers)
             {
-                var item = new ToggleMenuFlyoutItem { Text = s.Label, IsChecked = App.Current.Settings.DockServer == s.HostId };
+                var item = new RadioMenuFlyoutItem { Text = s.Label, GroupName = "dock-server", IsChecked = App.Current.Settings.DockServer == s.HostId };
                 var id = s.HostId;
                 item.Click += (_, _) => { App.Current.Settings.DockServer = id; App.Current.SaveSettings(); Refresh(); };
                 menu.Items.Add(item);
@@ -654,7 +693,7 @@ public sealed class DockWindow : Window
 
     private DockEdge PanelSide() => _mode == DockMode.Floating ? FloatingSide() : DockLayout.PanelSide(_edge);
 
-    /// <summary>The WECOMMANDER icon: the quick panel (servers, terminals, files, timers, approvals, settings).</summary>
+    /// <summary>The WECOMMANDER icon, like the Start button: the start panel (server search, tiles, account, settings, exit).</summary>
     private void OpenQuickPanel(FrameworkElement from) =>
         App.Current.ToggleQuickPanelFromDock(ScreenRect(from), PanelSide(), Selected);
 
@@ -676,92 +715,213 @@ public sealed class DockWindow : Window
             (int)Math.Round(e.ActualWidth * scale), (int)Math.Round(e.ActualHeight * scale));
     }
 
-    // ---- floating: drag, remember, offer an edge ----
+    // ---- moving the Dock like the Windows taskbar (unlocked only) ----
 
-    private bool _gripDown, _dragging;
-    private POINT _gripAt;
-    private PointInt32 _windowAt;
+    private bool _moveDown, _moving, _moveStealing;
+    private uint _movePointerId;
+    private POINT _moveAt;
+    private PointInt32 _moveGrab;
+    private ButtonBase? _movePressed;
+    private DockMode _moveFrom;
+    private DockEdge? _moveEdge;
+    private bool? _moveWasFloating;
+    private MonitorSpec? _moveScreen;
+    private (string Key, int Width, int Height) _moveFloatSize;
 
-    // The Dock moves itself while the grip is held (no modal move loop: the
-    // pointer stays captured by the grip, so every move and the release arrive here).
-    private void OnGripPressed(object sender, PointerRoutedEventArgs e)
+    /// <summary>
+    /// A left press anywhere on the Dock but a module button (those keep their
+    /// reorder drag): the app icon, the server picker, the meters, the background.
+    /// Nothing happens yet; a plain click stays the button's click.
+    /// </summary>
+    private void OnRootPressed(object sender, PointerRoutedEventArgs e)
     {
-        if (_mode != DockMode.Floating || !e.GetCurrentPoint(_root).Properties.IsLeftButtonPressed) return;
-        _gripDown = true;
-        _dragging = false;
-        GetCursorPos(out _gripAt);
-        _windowAt = AppWindow.Position;
-        if (sender is UIElement grip) grip.CapturePointer(e.Pointer);
-        App.DebugLayout($"dock: grip pressed at {_gripAt.X},{_gripAt.Y}");
-        e.Handled = true;
+        try
+        {
+            if (!_on || _moveDown || _moving || _reordering || App.Current.Settings.DockLocked) return;
+            if (!e.GetCurrentPoint(_root).Properties.IsLeftButtonPressed) return;
+            if (InModule(e.OriginalSource as DependencyObject, out var pressed)) return;
+            _moveDown = true;
+            _movePressed = pressed;
+            _movePointerId = e.Pointer.PointerId;
+            GetCursorPos(out _moveAt);
+            _moveGrab = new PointInt32(_moveAt.X - AppWindow.Position.X, _moveAt.Y - AppWindow.Position.Y);
+        }
+        catch (Exception ex) { App.LogCrash(ex); _moveDown = false; }
     }
 
-    private void OnGripMoved(object sender, PointerRoutedEventArgs e)
+    /// <summary>Whether <paramref name="source"/> is inside a module button's holder; also the button it is in, if any.</summary>
+    private bool InModule(DependencyObject? source, out ButtonBase? button)
     {
-        if (!_gripDown) return;
-        GetCursorPos(out var now);
-        if (!_dragging && Math.Abs(now.X - _gripAt.X) < 4 && Math.Abs(now.Y - _gripAt.Y) < 4) return;
-        _dragging = true;
-        AppWindow.Move(new PointInt32(_windowAt.X + now.X - _gripAt.X, _windowAt.Y + now.Y - _gripAt.Y));
-        e.Handled = true;
+        button = null;
+        for (var e = source; e is not null && !ReferenceEquals(e, _root); e = VisualTreeHelper.GetParent(e))
+        {
+            if (button is null && e is ButtonBase b) button = b;
+            foreach (var m in _moduleItems)
+                if (ReferenceEquals(m.Item, e)) return true;
+        }
+        return false;
     }
 
-    private void OnGripReleased(object sender, PointerRoutedEventArgs e)
+    private void OnRootMoved(object sender, PointerRoutedEventArgs e)
     {
-        if (!_gripDown) return;
-        _gripDown = false;
-        if (sender is UIElement grip) grip.ReleasePointerCapture(e.Pointer);
-        if (!_dragging) return;
-        _dragging = false;
-        try { DroppedFloating(); } catch (Exception ex) { App.LogCrash(ex); }
+        if (!_moveDown || e.Pointer.PointerId != _movePointerId) return;
+        try
+        {
+            if (!e.GetCurrentPoint(_root).Properties.IsLeftButtonPressed)
+            {
+                // The release was missed (it happened elsewhere).
+                if (_moving) CancelMove("button up"); else _moveDown = false;
+                return;
+            }
+            GetCursorPos(out var now);
+            if (!_moving)
+            {
+                var threshold = Math.Max(4, (int)Math.Round(6 * Scale));
+                if (Math.Abs(now.X - _moveAt.X) < threshold && Math.Abs(now.Y - _moveAt.Y) < threshold) return;
+                StartMove(e.Pointer);
+            }
+            if ((GetAsyncKeyState(0x1B /* VK_ESCAPE */) & 0x8000) != 0) { CancelMove("escape"); e.Handled = true; return; }
+            FollowMove(now);
+            e.Handled = true;
+        }
+        catch (Exception ex) { App.LogCrash(ex); CancelMove("error"); }
     }
 
-    private void DroppedFloating()
+    private void StartMove(Pointer pointer)
     {
-        // Where Windows' move left it, read from the window itself (the move loop just ended).
-        if (!GetWindowRect(_hwnd, out var r)) return;
-        var rect = PixelRect.FromEdges(r.Left, r.Top, r.Right, r.Bottom);
-        // The monitor it was dropped on becomes its monitor.
-        var cx = rect.X + rect.Width / 2;
-        var cy = rect.Y + rect.Height / 2;
-        var screen = Monitors.All().FirstOrDefault(m => m.Bounds.Contains(cx, cy)) ?? _screen;
+        _moving = true;
+        _moveFrom = _mode;
+        _moveEdge = null;
+        _moveWasFloating = null;
+        _moveScreen = _screen;
+        _moveFloatSize = ("", 0, 0);
+        // The old place is left at once (the work area grows back), as the taskbar does.
+        _fast.Stop();
+        _reapply.Stop();
+        _bar.Remove();
+        _moveStealing = true;
+        try
+        {
+            // The pressed button lets go of the pointer (so its click does not fire); the Dock takes it.
+            _movePressed?.ReleasePointerCaptures();
+            if (!_root.CapturePointer(pointer)) App.DebugLayout("dock: move could not capture the pointer");
+        }
+        finally { _moveStealing = false; }
+        SetTopMost(true);
+        App.DebugLayout($"dock: move started at {_moveAt.X},{_moveAt.Y} from {_mode} {_edge}");
+    }
+
+    /// <summary>
+    /// Live preview: near an edge of the monitor under the pointer, the Dock lies
+    /// along that edge (as it will once dropped); elsewhere it floats under the
+    /// pointer, held where it was grabbed.
+    /// </summary>
+    private void FollowMove(POINT now)
+    {
+        var screen = Monitors.All().FirstOrDefault(m => m.Bounds.Contains(now.X, now.Y)) ?? _moveScreen ?? _screen;
+        var edge = DockLayout.DragTarget(now.X, now.Y, screen.Bounds, (int)Math.Round(72 * screen.Scale));
+        _moveScreen = screen;
+        _moveEdge = edge;
         _screen = screen;
+        // Floating, it is a row.
+        _edge = edge ?? (DockLayout.IsHorizontal(_edge) ? _edge : DockEdge.Top);
+        var horizontal = DockLayout.IsHorizontal(_edge);
+        if (horizontal != _horizontal)
+        {
+            // Build only replaces _root's children: the pointer captured by _root stays captured.
+            _horizontal = horizontal;
+            Build();
+            Refresh();
+            _moveFloatSize = ("", 0, 0);
+        }
+        _thickness = (int)Math.Round(DockLayout.ThicknessDip(_edge, _compact) * screen.Scale);
+        var floating = edge is null;
+        if (_moveWasFloating != floating)
+        {
+            _moveWasFloating = floating;
+            Rounded(floating);
+        }
+        if (edge is { } at)
+        {
+            Place(DockLayout.Strip(screen.Work, at, _thickness));
+            return;
+        }
+        var key = $"{screen.Dpi}|{_horizontal}";
+        if (_moveFloatSize.Key != key)
+        {
+            var (w, h) = FloatingSize(screen.Scale);
+            _moveFloatSize = (key, w, h);
+        }
+        var (_, width, height) = _moveFloatSize;
+        // Held where it was grabbed (inside it, when it was a longer strip before).
+        var gx = Math.Clamp(_moveGrab.X, 0, Math.Max(0, width - 1));
+        var gy = Math.Clamp(_moveGrab.Y, 0, Math.Max(0, height - 1));
+        Place(new PixelRect(now.X - gx, now.Y - gy, width, height));
+    }
+
+    private void OnRootReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_moveDown || e.Pointer.PointerId != _movePointerId) return;
+        _moveDown = false;
+        if (!_moving) return; // a plain click: the button handles it
+        e.Handled = true;
+        _moving = false;
+        try { _root.ReleasePointerCapture(e.Pointer); } catch (Exception) { }
+        try { DropMove(); }
+        catch (Exception ex)
+        {
+            App.LogCrash(ex);
+            try { _lastApplied = null; Apply(); } catch (Exception again) { App.LogCrash(again); }
+        }
+    }
+
+    /// <summary>Dropped: near an edge it is fixed there (an auto-hide Dock stays auto-hide), elsewhere it floats where it was left.</summary>
+    private void DropMove()
+    {
+        GetCursorPos(out var now);
+        FollowMove(now);
         var s = App.Current.Settings;
+        var screen = _moveScreen ?? _screen;
         s.DockMonitor = screen.Device;
-        s.DockFloatX = (int)Math.Round((rect.X - screen.Work.X) / screen.Scale);
-        s.DockFloatY = (int)Math.Round((rect.Y - screen.Work.Y) / screen.Scale);
+        if (_moveEdge is { } edge)
+        {
+            s.DockModeName = DockLayout.Name(_moveFrom == DockMode.AutoHide ? DockMode.AutoHide : DockMode.Fixed);
+            s.DockEdgeName = DockLayout.Name(edge);
+            App.DebugLayout($"dock: dropped at edge {edge} on {screen.Device}");
+        }
+        else
+        {
+            var rect = DockLayout.Clamp(new PixelRect(AppWindow.Position.X, AppWindow.Position.Y, AppWindow.Size.Width, AppWindow.Size.Height), screen.Work);
+            s.DockModeName = DockLayout.Name(DockMode.Floating);
+            // The preview floated as a row: a side edge saved before would make it a column again.
+            if (!DockLayout.IsHorizontal(DockLayout.ParseEdge(s.DockEdgeName))) s.DockEdgeName = DockLayout.Name(DockEdge.Top);
+            s.DockFloatX = (int)Math.Round((rect.X - screen.Work.X) / screen.Scale);
+            s.DockFloatY = (int)Math.Round((rect.Y - screen.Work.Y) / screen.Scale);
+            App.DebugLayout($"dock: dropped floating at {rect.X},{rect.Y} on {screen.Device}");
+        }
         App.Current.SaveSettings();
         _lastApplied = null;
-        App.DebugLayout($"dock: floating moved to {rect.X},{rect.Y} on {screen.Device}");
-        if (DockLayout.SnapEdge(rect, screen.Work, (int)Math.Round(24 * screen.Scale)) is { } edge) OfferEdge(edge);
+        Apply();
     }
 
-    private static string SnapQuestion(DockEdge e) => e switch
+    private void OnRootCaptureLost(object sender, PointerRoutedEventArgs e)
     {
-        DockEdge.Top => L.T("Dock üst kenara sabitlensin mi?"),
-        DockEdge.Bottom => L.T("Dock alt kenara sabitlensin mi?"),
-        DockEdge.Left => L.T("Dock sol kenara sabitlensin mi?"),
-        _ => L.T("Dock sağ kenara sabitlensin mi?"),
-    };
+        if (!_moving || _moveStealing || e.Pointer.PointerId != _movePointerId) return;
+        // A child's capture going away bubbles here too: only the Dock's own counts.
+        if (_root.PointerCaptures?.Any(p => p.PointerId == _movePointerId) == true) return;
+        CancelMove("capture lost");
+    }
 
-    private void OfferEdge(DockEdge edge)
+    /// <summary>Esc, a lost pointer or an error mid-drag: the Dock goes back to its saved place.</summary>
+    private void CancelMove(string why)
     {
-        App.DebugLayout($"dock: snap offer {edge}");
-        var panel = new StackPanel { Spacing = 8, MaxWidth = 260 };
-        panel.Children.Add(new TextBlock { Text = SnapQuestion(edge), TextWrapping = TextWrapping.Wrap });
-        var yes = new Button { Content = L.T("Sabitle"), Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
-        panel.Children.Add(yes);
-        var flyout = new Flyout { Content = panel };
-        yes.Click += (_, _) =>
-        {
-            flyout.Hide();
-            App.Current.Settings.DockModeName = DockLayout.Name(DockMode.Fixed);
-            App.Current.Settings.DockEdgeName = DockLayout.Name(edge);
-            App.Current.SaveSettings();
-            Apply();
-        };
-        Hold(flyout);
-        if (_grip is not null) flyout.ShowAt(_grip);
+        var was = _moving;
+        _moveDown = false;
+        _moving = false;
+        if (!was) return;
+        try { _root.ReleasePointerCaptures(); } catch (Exception) { }
+        App.DebugLayout($"dock: move cancelled ({why})");
+        try { _lastApplied = null; Apply(); } catch (Exception ex) { App.LogCrash(ex); }
     }
 
     // ---- module buttons: drag along the Dock (or Alt + arrows) to change their order ----
@@ -801,7 +961,9 @@ public sealed class DockWindow : Window
 
     private void OnModulePressed(object sender, PointerRoutedEventArgs e)
     {
-        if (_reordering || sender is not FrameworkElement holder) return;
+        if (_reordering || _moving || sender is not FrameworkElement holder) return;
+        // Locked (like the Windows taskbar): the order does not change by dragging (Alt + arrows still works).
+        if (App.Current.Settings.DockLocked) return;
         if (!e.GetCurrentPoint(holder).Properties.IsLeftButtonPressed) return;
         var index = _moduleItems.FindIndex(x => x.Item == holder);
         if (index < 0) return;
@@ -993,23 +1155,35 @@ public sealed class DockWindow : Window
     {
         var menu = new MenuFlyout();
         Hold(menu);
+        // A choice that moves or resizes the Dock runs once the menu has closed: moving the
+        // window (an AppBar) under the open menu left its submenu stranded on the screen.
+        void Later(Action change)
+        {
+            menu.Hide();
+            DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
+            {
+                try { change(); App.Current.SaveSettings(); Apply(); }
+                catch (Exception ex) { App.LogCrash(ex); }
+            });
+        }
         menu.Opening += (_, _) =>
         {
             var s = App.Current.Settings;
             menu.Items.Clear();
+            // Mutually exclusive choices are radio items in a group (a toggle item checks itself on every click).
             var mode = new MenuFlyoutSubItem { Text = L.T("Görünüm"), Icon = new FontIcon { Glyph = "" } };
             foreach (var (m, text) in new[] { (DockMode.Fixed, L.T("Sabit")), (DockMode.AutoHide, L.T("Otomatik gizlenen")), (DockMode.Floating, L.T("Yüzen")) })
             {
-                var item = new ToggleMenuFlyoutItem { Text = text, IsChecked = DockLayout.ParseMode(s.DockModeName) == m };
-                item.Click += (_, _) => { s.DockModeName = DockLayout.Name(m); App.Current.SaveSettings(); Apply(); };
+                var item = new RadioMenuFlyoutItem { Text = text, GroupName = "dock-mode", IsChecked = DockLayout.ParseMode(s.DockModeName) == m };
+                item.Click += (_, _) => Later(() => s.DockModeName = DockLayout.Name(m));
                 mode.Items.Add(item);
             }
             menu.Items.Add(mode);
             var edge = new MenuFlyoutSubItem { Text = L.T("Konum"), Icon = new FontIcon { Glyph = "" } };
             foreach (var (e, text) in new[] { (DockEdge.Top, L.T("Üst")), (DockEdge.Bottom, L.T("Alt")), (DockEdge.Left, L.T("Sol")), (DockEdge.Right, L.T("Sağ")) })
             {
-                var item = new ToggleMenuFlyoutItem { Text = text, IsChecked = DockLayout.ParseEdge(s.DockEdgeName) == e };
-                item.Click += (_, _) => { s.DockEdgeName = DockLayout.Name(e); App.Current.SaveSettings(); Apply(); };
+                var item = new RadioMenuFlyoutItem { Text = text, GroupName = "dock-edge", IsChecked = DockLayout.ParseEdge(s.DockEdgeName) == e };
+                item.Click += (_, _) => Later(() => s.DockEdgeName = DockLayout.Name(e));
                 edge.Items.Add(item);
             }
             menu.Items.Add(edge);
@@ -1021,25 +1195,29 @@ public sealed class DockWindow : Window
                 foreach (var m in monitors)
                 {
                     number++;
-                    var item = new ToggleMenuFlyoutItem { Text = $"Ekran {number}{(m.Primary ? " (ana)" : "")} · {m.Bounds.Width}×{m.Bounds.Height}", IsChecked = m.Device == _screen.Device };
+                    var item = new RadioMenuFlyoutItem { GroupName = "dock-screen", Text = $"Ekran {number}{(m.Primary ? " (ana)" : "")} · {m.Bounds.Width}×{m.Bounds.Height}", IsChecked = m.Device == _screen.Device };
                     var device = m.Device;
-                    item.Click += (_, _) => { s.DockMonitor = device; s.DockFloatX = null; s.DockFloatY = null; App.Current.SaveSettings(); Apply(); };
+                    item.Click += (_, _) => Later(() => { s.DockMonitor = device; s.DockFloatX = null; s.DockFloatY = null; });
                     screen.Items.Add(item);
                 }
                 menu.Items.Add(screen);
             }
             var compact = new ToggleMenuFlyoutItem { Text = L.T("Kompakt"), IsChecked = s.DockCompact };
-            compact.Click += (_, _) => { s.DockCompact = compact.IsChecked; App.Current.SaveSettings(); Apply(); };
+            compact.Click += (_, _) => { var on = compact.IsChecked; Later(() => s.DockCompact = on); };
             menu.Items.Add(compact);
             if (DockLayout.ParseMode(s.DockModeName) == DockMode.Floating)
             {
                 var onTop = new ToggleMenuFlyoutItem { Text = L.T("Her zaman üstte"), IsChecked = s.DockOnTop };
-                onTop.Click += (_, _) => { s.DockOnTop = onTop.IsChecked; App.Current.SaveSettings(); Apply(); };
+                onTop.Click += (_, _) => { var on = onTop.IsChecked; Later(() => s.DockOnTop = on); };
                 menu.Items.Add(onTop);
             }
             var fullscreen = new ToggleMenuFlyoutItem { Text = L.T("Tam ekran uygulamalarda gizle"), IsChecked = s.DockHideFullscreen };
             fullscreen.Click += (_, _) => { s.DockHideFullscreen = fullscreen.IsChecked; App.Current.SaveSettings(); };
             menu.Items.Add(fullscreen);
+            // Like the Windows taskbar: locked, it is not moved and its buttons keep their order.
+            var locked = new ToggleMenuFlyoutItem { Text = L.T("Dock'u kilitle"), IsChecked = s.DockLocked };
+            locked.Click += (_, _) => { s.DockLocked = locked.IsChecked; App.Current.SaveSettings(); };
+            menu.Items.Add(locked);
             menu.Items.Add(new MenuFlyoutSeparator());
             var settings = new MenuFlyoutItem { Text = L.T("Dock ayarları…"), Icon = new FontIcon { Glyph = "" } };
             settings.Click += (_, _) => App.Current.ShowDockSettings();
@@ -1050,8 +1228,17 @@ public sealed class DockWindow : Window
             var off = new MenuFlyoutItem { Text = L.T("Dock'u gizle"), Icon = new FontIcon { Glyph = "" } };
             off.Click += (_, _) =>
             {
-                App.Current.SetDock(false);
-                App.Current.Toast(L.T("Dock kapandı ve ekran alanı geri verildi. Yeniden açmak için: Ayarlar → Dock."));
+                // Hidden after the menu has closed (the same reason as Later).
+                menu.Hide();
+                DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
+                {
+                    try
+                    {
+                        App.Current.SetDock(false);
+                        App.Current.Toast(L.T("Dock kapandı ve ekran alanı geri verildi. Yeniden açmak için: Ayarlar → Dock."));
+                    }
+                    catch (Exception ex) { App.LogCrash(ex); }
+                });
             };
             menu.Items.Add(off);
         };

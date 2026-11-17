@@ -91,18 +91,24 @@ public static class DockLayout
         };
     }
 
-    /// <summary>A floating Dock left this close to an edge of the work area: offer to fix it there (null: not near one).</summary>
-    public static DockEdge? SnapEdge(PixelRect window, PixelRect work, int threshold)
+    /// <summary>
+    /// While the Dock is dragged (like the Windows taskbar): the edge of the
+    /// monitor under the pointer it would be fixed to, when the pointer at
+    /// (x, y) is within <paramref name="reach"/> pixels of one (the nearest
+    /// wins); null: off every edge, it floats where it is dropped.
+    /// </summary>
+    public static DockEdge? DragTarget(int x, int y, PixelRect monitor, int reach)
     {
+        if (!monitor.Contains(x, y)) return null;
         var distances = new (DockEdge Edge, int Distance)[]
         {
-            (DockEdge.Top, Math.Abs(window.Y - work.Y)),
-            (DockEdge.Bottom, Math.Abs(work.Bottom - window.Bottom)),
-            (DockEdge.Left, Math.Abs(window.X - work.X)),
-            (DockEdge.Right, Math.Abs(work.Right - window.Right)),
+            (DockEdge.Top, y - monitor.Y),
+            (DockEdge.Bottom, monitor.Bottom - 1 - y),
+            (DockEdge.Left, x - monitor.X),
+            (DockEdge.Right, monitor.Right - 1 - x),
         };
         var nearest = distances.OrderBy(d => d.Distance).First();
-        return nearest.Distance <= threshold ? nearest.Edge : null;
+        return nearest.Distance < reach ? nearest.Edge : null;
     }
 
     /// <summary>Keeps a floating Dock fully on the work area (a monitor was removed, the resolution changed).</summary>
@@ -176,8 +182,11 @@ public static class DockLayout
     public static string Name(DockEdge edge) => edge.ToString().ToLowerInvariant();
     public static string Name(DockMode mode) => mode.ToString().ToLowerInvariant();
 
-    /// <summary>The Dock's parts, in the default order.</summary>
-    public static readonly string[] AllModules = ["servers", "processes", "timers", "tasks", "terminal", "approvals"];
+    /// <summary>
+    /// The Dock's parts, in the default order. "tasks" opens both schedulers
+    /// (it replaced the separate "timers" button; a saved "timers" is dropped).
+    /// </summary>
+    public static readonly string[] AllModules = ["servers", "processes", "tasks", "terminal", "approvals"];
 
     /// <summary>The saved order with unknown names dropped and missing ones (added in a later version) appended, hidden ones left out.</summary>
     public static List<string> Modules(IEnumerable<string>? order, IEnumerable<string>? hidden)

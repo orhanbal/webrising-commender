@@ -1375,7 +1375,7 @@ jobs:
           if ($test.ExitCode -ne 0) { throw "Task Scheduler self-test failed (exit $($test.ExitCode))" }
           if ($left) { throw "the self-test task was left behind" }
           Write-Host "PASS the Task Scheduler self-test"
-      - name: Dock check (AppBar edges, work area, Explorer restart, full screen, floating, reorder by drag, auto-hide)
+      - name: Dock check (AppBar edges, work area, Explorer restart, full screen, floating, move and reorder by drag, auto-hide)
         shell: powershell
         run: |
           # Real window management on Windows: the Dock reserves its strip
@@ -1543,41 +1543,60 @@ jobs:
             $fail += "work area stays reserved after the app is killed (now $(Fmt ([D]::Work())))"
           }
 
-          # 4. Floating: placed where it was left, no work area taken; a drag to the top edge offers to fix it there.
-          $script:case = 'floating'
-          Settings '{"dock":true,"dockMode":"floating","dockEdge":"top","dockFloatX":200,"dockFloatY":300,"dockOnTop":true,"deskChip":true,"watchChosen":true}'
-          Start-App
-          $d = Dock; $w = [D]::Work()
-          Write-Host "floating: dock $(if ($d) { "$($d.L),$($d.T),$($d.R),$($d.B)" } else { 'none' }), work area $(Fmt $w)"
-          $scale = [math]::Round(($d.B - $d.T) / 60.0, 2)
-          if ($d -and [math]::Abs($d.L - ($base.L + 200 * $scale)) -le 3 -and [math]::Abs($d.T - ($base.T + 300 * $scale)) -le 3 -and (Fmt $w) -eq (Fmt $base)) { $passed += 'floating Dock restored at its saved place, no work area taken' } else { $fail += 'floating Dock not at its saved place (or took work area)' }
-          Shot 'dock-floating'
-          if ($d) {
-            $gx = $d.L + [int](15 * $scale); $gy = [int](($d.T + $d.B) / 2)
+          # 4. Floating: placed where it was left, no work area taken. Moving it like the taskbar: locked
+          #    (the default) a drag does nothing; unlocked, a drag from the app icon to the top edge fixes it there.
+          $dl = [string][char]0x0131  # this script file is read as ANSI: no non-ASCII literals
+          $quickTitle = 'WECOMMANDER h' + $dl + 'zl' + $dl + ' panel'
+          function Drag-Dock($d, $scale) {
+            # Real mouse input on the app icon (not a module button), small steps first so the start of the drag is seen.
+            $gx = $d.L + [int](27 * $scale); $gy = [int](($d.T + $d.B) / 2)
             [D]::SetCursorPos($gx, $gy); [D]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero); Start-Sleep -Milliseconds 150
-            # Real mouse input (absolute moves), small steps first so the grip sees the start of the drag.
             for ($i = 1; $i -le 24; $i++) {
-              $tx = $gx + 2 * $i; $ty = $gy - [int](($gy - $base.T - 30 * $scale) * $i / 24)
+              $tx = $gx + 2 * $i; $ty = $gy - [int](($gy - $base.T - 20 * $scale) * $i / 24)
               [D]::mouse_event(0x8001, [uint32]($tx * 65535 / ($screen.Width - 1)), [uint32]($ty * 65535 / ($screen.Height - 1)), 0, [IntPtr]::Zero)
               Start-Sleep -Milliseconds 40
             }
+            Start-Sleep -Milliseconds 200
             [D]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero)
             Start-Sleep -Seconds 2
+          }
+          foreach ($locked in $true, $false) {
+            $script:case = if ($locked) { 'floating locked' } else { 'floating unlocked' }
+            $lockJson = if ($locked) { '' } else { ',"dockLocked":false' }
+            Settings ('{"dock":true,"dockMode":"floating","dockEdge":"top","dockFloatX":200,"dockFloatY":300,"dockOnTop":true,"deskChip":true,"watchChosen":true' + $lockJson + '}')
+            Start-App
+            $d = Dock; $w = [D]::Work()
+            Write-Host "$($script:case): dock $(if ($d) { "$($d.L),$($d.T),$($d.R),$($d.B)" } else { 'none' }), work area $(Fmt $w)"
+            if (-not $d) { Quit-App; continue }
+            $scale = [math]::Round(($d.B - $d.T) / 60.0, 2)
+            if ([math]::Abs($d.L - ($base.L + 200 * $scale)) -le 3 -and [math]::Abs($d.T - ($base.T + 300 * $scale)) -le 3 -and (Fmt $w) -eq (Fmt $base)) { $passed += "floating Dock restored at its saved place, no work area taken ($($script:case))" } else { $fail += "floating Dock not at its saved place (or took work area) ($($script:case))" }
+            if (-not $locked) { Shot 'dock-floating' }
+            Drag-Dock $d $scale
             $moved = Dock
             $saved = Get-Content $settingsFile -Raw | ConvertFrom-Json
-            Write-Host "after the drag: dock $($moved.L),$($moved.T); saved x=$($saved.dockFloatX) y=$($saved.dockFloatY)"
-            if ($moved.T -lt $d.T - 100 -and $saved.dockFloatY -lt 300) { $passed += 'floating Dock moves and remembers the place' } else { $fail += 'floating Dock drag was not saved' }
-            if ((Get-Content $layout -Raw) -match 'snap offer Top') { $passed += 'left near the top edge, it offers to fix itself there' } else { $fail += 'no offer to fix the Dock to the edge it was dropped near' }
-            Shot 'dock-floating-snap'
+            $log = Get-Content $layout -Raw -ErrorAction SilentlyContinue
+            Write-Host "$($script:case) after the drag: dock $(if ($moved) { "$($moved.L),$($moved.T),$($moved.R),$($moved.B)" } else { 'none' }), work area $(Fmt ([D]::Work())); saved mode=$($saved.dockMode) edge=$($saved.dockEdge) locked=$($saved.dockLocked)"
+            if ([D]::Find([uint32]$app.Id, $quickTitle)) { $fail += "$($script:case): the drag clicked the app icon (start panel opened)" }
+            if ($locked) {
+              if ($moved -and [math]::Abs($moved.L - $d.L) -le 3 -and [math]::Abs($moved.T - $d.T) -le 3 -and $saved.dockMode -eq 'floating' -and $log -notmatch 'move started') { $passed += 'a locked Dock does not move when dragged' } else { $fail += 'the locked Dock moved (or changed its mode) when dragged' }
+            } else {
+              $fixed = WaitFor { $m = Dock; $m -and $m.T -eq $base.T -and ([D]::Work()).T -eq $m.B } 8
+              $moved = Dock
+              Write-Host "unlocked drag: dock $(if ($moved) { "$($moved.L),$($moved.T),$($moved.R),$($moved.B)" } else { 'none' }), work area $(Fmt ([D]::Work()))"
+              if ($saved.dockMode -eq 'fixed' -and $saved.dockEdge -eq 'top' -and $log -match 'dropped at edge Top' -and $fixed) { $passed += 'dragged to the top edge, the unlocked Dock is fixed there and reserves its strip' } else { $fail += "unlocked drag to the top edge (mode $($saved.dockMode), edge $($saved.dockEdge), log $($log -match 'dropped at edge Top'), reserved $fixed)" }
+              Shot 'dock-dragged-to-top'
+            }
+            Quit-App
+            $after = [D]::Work()
+            if ((Fmt $after) -ne (Fmt $base)) { $fail += "work area not given back after quitting ($($script:case)): $(Fmt $after)" }
           }
-          Quit-App
 
           # 6. Reorder on the Dock itself: a real mouse drag of the approvals button onto the terminal button
           #    (a row on top, a column on the left) saves the new order and keeps the others in place.
           Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
           foreach ($edge in 'top','left') {
             $script:case = "reorder $edge"
-            Settings "{`"dock`":true,`"dockMode`":`"fixed`",`"dockEdge`":`"$edge`",`"deskChip`":true,`"watchChosen`":true}"
+            Settings "{`"dock`":true,`"dockMode`":`"fixed`",`"dockEdge`":`"$edge`",`"dockLocked`":false,`"deskChip`":true,`"watchChosen`":true}"
             Start-App
             $uiRoot = [System.Windows.Automation.AutomationElement]::RootElement
             $dockCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'WECOMMANDER Dock')
@@ -1601,7 +1620,7 @@ jobs:
               Start-Sleep -Milliseconds 200
               if ($edge -eq 'top') { Shot 'dock-reorder-dragging' }
               [D]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero)
-              $want = 'servers,processes,timers,tasks,approvals,terminal'
+              $want = 'servers,processes,tasks,approvals,terminal'
               $script:order = ''
               $saved = WaitFor { try { $script:order = (@((Get-Content $settingsFile -Raw | ConvertFrom-Json).dockModules) -join ','); $script:order -eq $want } catch { $false } } 8
               Write-Host "reorder ${edge}: saved order '$($script:order)'"

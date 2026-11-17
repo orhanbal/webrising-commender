@@ -70,14 +70,31 @@ public class DockLayoutTests
         Assert.True(DockLayout.Wakes(Second, DockEdge.Top, 2500, -200, 2));
     }
 
+    [Theory]
+    [InlineData(900, 0, DockEdge.Top)]
+    [InlineData(900, 71, DockEdge.Top)]
+    [InlineData(900, 1079, DockEdge.Bottom)]
+    [InlineData(900, 1008, DockEdge.Bottom)]
+    [InlineData(0, 500, DockEdge.Left)]
+    [InlineData(1919, 500, DockEdge.Right)]
+    [InlineData(10, 40, DockEdge.Left)]   // a corner: the nearer edge wins
+    [InlineData(40, 10, DockEdge.Top)]
+    public void DragTargetIsTheNearestEdgeWithinReach(int x, int y, DockEdge edge) =>
+        Assert.Equal(edge, DockLayout.DragTarget(x, y, Monitor, 72));
+
     [Fact]
-    public void SnapEdgeOffersTheNearestEdgeWithinTheThreshold()
+    public void DragTargetIsNullAwayFromTheEdgesAndOffTheMonitor()
     {
-        var work = new PixelRect(0, 0, 1920, 1032);
-        Assert.Equal(DockEdge.Top, DockLayout.SnapEdge(new PixelRect(400, 10, 800, 60), work, 24));
-        Assert.Equal(DockEdge.Bottom, DockLayout.SnapEdge(new PixelRect(400, 960, 800, 60), work, 24));
-        Assert.Equal(DockEdge.Right, DockLayout.SnapEdge(new PixelRect(1800, 400, 110, 400), work, 24));
-        Assert.Null(DockLayout.SnapEdge(new PixelRect(400, 400, 800, 60), work, 24));
+        Assert.Null(DockLayout.DragTarget(900, 72, Monitor, 72));
+        Assert.Null(DockLayout.DragTarget(900, 500, Monitor, 72));
+        Assert.Null(DockLayout.DragTarget(900, 1007, Monitor, 72));
+        // Off this monitor (on the second one): not this monitor's edge.
+        Assert.Null(DockLayout.DragTarget(2500, 0, Monitor, 72));
+        Assert.Null(DockLayout.DragTarget(-5, 500, Monitor, 72));
+        // A monitor with a negative origin.
+        Assert.Equal(DockEdge.Top, DockLayout.DragTarget(2500, -190, Second, 72));
+        Assert.Equal(DockEdge.Right, DockLayout.DragTarget(4470, 400, Second, 72));
+        Assert.Null(DockLayout.DragTarget(3000, 400, Second, 72));
     }
 
     [Fact]
@@ -140,19 +157,23 @@ public class DockLayoutTests
     public void ModulesKeepTheOrderDropUnknownAndAddNewOnes()
     {
         Assert.Equal(DockLayout.AllModules, DockLayout.Modules(null, null));
-        Assert.Equal(["terminal", "servers", "processes", "timers", "tasks", "approvals"], DockLayout.Modules(["terminal", "bogus", "servers", "terminal"], null));
-        Assert.Equal(["servers", "terminal"], DockLayout.Modules(null, ["processes", "timers", "tasks", "approvals"]));
-        // An order saved before the timers shortcut existed gets it at the end.
-        Assert.Equal(["approvals", "terminal", "processes", "servers", "timers", "tasks"], DockLayout.Modules(["approvals", "terminal", "processes", "servers"], null));
+        Assert.Equal(["terminal", "servers", "processes", "tasks", "approvals"], DockLayout.Modules(["terminal", "bogus", "servers", "terminal"], null));
+        Assert.Equal(["servers", "terminal"], DockLayout.Modules(null, ["processes", "tasks", "approvals"]));
+        // An order saved before the tasks shortcut existed gets it at the end.
+        Assert.Equal(["approvals", "terminal", "processes", "servers", "tasks"], DockLayout.Modules(["approvals", "terminal", "processes", "servers"], null));
+        // The old separate "timers" button (merged into "tasks") is dropped from saved orders and hidden lists.
+        Assert.Equal(["servers", "processes", "tasks", "approvals", "terminal"],
+            DockLayout.Modules(["servers", "processes", "timers", "tasks", "approvals", "terminal"], ["timers"]));
+        Assert.DoesNotContain("timers", DockLayout.AllModules);
     }
 
     [Fact]
     public void MoveTakesOnePartToItsNewPlace()
     {
-        string[] order = ["servers", "processes", "timers", "terminal", "approvals"];
-        Assert.Equal(["processes", "timers", "servers", "terminal", "approvals"], DockLayout.Move(order, 0, 2));
-        Assert.Equal(["approvals", "servers", "processes", "timers", "terminal"], DockLayout.Move(order, 4, 0));
-        Assert.Equal(["servers", "processes", "timers", "approvals", "terminal"], DockLayout.Move(order, 3, 99));
+        string[] order = ["servers", "processes", "tasks", "terminal", "approvals"];
+        Assert.Equal(["processes", "tasks", "servers", "terminal", "approvals"], DockLayout.Move(order, 0, 2));
+        Assert.Equal(["approvals", "servers", "processes", "tasks", "terminal"], DockLayout.Move(order, 4, 0));
+        Assert.Equal(["servers", "processes", "tasks", "approvals", "terminal"], DockLayout.Move(order, 3, 99));
         Assert.Equal(order, DockLayout.Move(order, 2, 2));
         Assert.Equal(order, DockLayout.Move(order, -1, 0));
         Assert.Equal(order, DockLayout.Move(order, 5, 0));
@@ -190,7 +211,7 @@ public class DockLayoutTests
         Assert.Equal(0, DockLayout.DropSlot([], 0, 10));
         Assert.Equal(0, DockLayout.DropSlot([(0, 40)], 0, 900));
         // Dropped where it was: Move changes nothing.
-        string[] order = ["processes", "timers", "tasks"];
+        string[] order = ["processes", "tasks", "terminal"];
         Assert.Equal(order, DockLayout.Move(order, 1, DockLayout.DropSlot(column, 1, 259)));
     }
 
@@ -198,13 +219,14 @@ public class DockLayoutTests
     public void RearrangedKeepsHiddenAndOtherPartsInTheirPlaces()
     {
         // Saved order with the server part first and terminal hidden; the Dock shows the other four buttons.
-        string[] saved = ["servers", "processes", "terminal", "timers", "tasks", "approvals"];
-        string[] shown = ["processes", "timers", "tasks", "approvals"];
-        Assert.Equal(["servers", "approvals", "terminal", "processes", "timers", "tasks"], DockLayout.MoveShown(saved, shown, 3, 0));
-        Assert.Equal(["servers", "timers", "terminal", "processes", "tasks", "approvals"], DockLayout.MoveShown(saved, shown, 0, 1));
-        // An empty (default) saved order: the full default order comes back with the move applied.
-        Assert.Equal(["servers", "processes", "timers", "tasks", "approvals", "terminal"],
-            DockLayout.MoveShown(null, ["processes", "timers", "tasks", "terminal", "approvals"], 4, 3));
+        string[] saved = ["servers", "processes", "terminal", "tasks", "approvals"];
+        string[] shown = ["processes", "tasks", "approvals"];
+        Assert.Equal(["servers", "approvals", "terminal", "processes", "tasks"], DockLayout.MoveShown(saved, shown, 2, 0));
+        Assert.Equal(["servers", "tasks", "terminal", "processes", "approvals"], DockLayout.MoveShown(saved, shown, 0, 1));
+        // An empty (default) saved order: the full default order comes back with the move applied
+        // (the CI drag of approvals onto terminal expects exactly this order).
+        Assert.Equal(["servers", "processes", "tasks", "approvals", "terminal"],
+            DockLayout.MoveShown(null, ["processes", "tasks", "terminal", "approvals"], 3, 2));
         // Unknown and duplicate names in the shown list are ignored.
         Assert.Equal(DockLayout.AllModules, DockLayout.Rearranged(null, ["processes", "bogus", "processes"]));
         // Nothing moved: the same order.
@@ -232,7 +254,12 @@ public class DockLayoutTests
             Assert.Equal(DockEdge.Left, DockLayout.ParseEdge(back.DockEdgeName));
             Assert.Equal(300, back.DockFloatX);
             Assert.Equal(@"\\.\DISPLAY2", back.DockMonitor);
-            Assert.Equal(["approvals", "servers", "processes", "timers", "tasks"], DockLayout.Modules(back.DockModules, back.DockHiddenModules));
+            Assert.Equal(["approvals", "servers", "processes", "tasks"], DockLayout.Modules(back.DockModules, back.DockHiddenModules));
+            // Locked by default, like the Windows taskbar; the choice survives a round trip.
+            Assert.True(fresh.DockLocked);
+            back.DockLocked = false;
+            store.Save(back);
+            Assert.False(store.Load().Item1.DockLocked);
         }
         finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
     }

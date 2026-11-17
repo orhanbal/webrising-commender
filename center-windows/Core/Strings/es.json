@@ -1309,5 +1309,13 @@
  "{0} satır eklenir; mevcut satırların hiçbiri silinmez.": "Se añaden {0} líneas; no se elimina ninguna línea existente.",
  "{0} satır eklenir, {1} satır değişir (yalnız WECOMMANDER girdisi ve çevresindeki biçim).": "Se añaden {0} líneas y cambian {1} (solo la entrada de WECOMMANDER y el formato a su alrededor).",
  "{0} onay istiyor · {1}": "{0} pide aprobación · {1}",
- "{0} · yerel yapay zekâ · yalnız bu komut, bir kez": "{0} · IA local · solo este comando, una vez"
+ "{0} · yerel yapay zekâ · yalnız bu komut, bir kez": "{0} · IA local · solo este comando, una vez",
+ "Dock'u kilitle": "Bloquear el Dock",
+ "Kilitliyken Dock taşınamaz ve düğmelerin sırası değişmez. Kilidi açınca Dock'u boş bir yerinden ya da WECOMMANDER simgesinden tutup bir kenara (sabitlenir) ya da istediğin yere (yüzer) sürükle.": "Mientras está bloqueado, el Dock no se puede mover y sus botones mantienen el orden. Desbloquéalo y arrastra el Dock desde un espacio vacío o desde el icono de WECOMMANDER hasta un borde (se fija allí) o a cualquier otro lugar (flota).",
+ "Görevler kısayolu (WECOMMANDER görevleri ve zamanlayıcılar)": "Acceso a Tareas (tareas de WECOMMANDER y temporizadores)",
+ "Görevler": "Tareas",
+ "WECOMMANDER görevleri": "Tareas de WECOMMANDER",
+ "Windows zamanlayıcıları": "Temporizadores de Windows",
+ "Sunucu ara (ad, adres, grup)": "Buscar servidores (nombre, dirección, grupo)",
+ "{0}: terminal aç": "{0}: abrir un terminal"
 }
