@@ -49,9 +49,9 @@ public sealed class DockWindow : Window
 
     // The parts shown (rebuilt when the edge or size changes).
     private LiveMeter[] _meters = [];
-    private readonly TextBlock _serverName = new() { FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
-    private readonly TextBlock _serverState = new() { FontSize = 11 };
-    private readonly Ellipse _serverDot = new() { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center };
+    private TextBlock _serverName = new() { FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
+    private TextBlock _serverState = new() { FontSize = 11 };
+    private Ellipse _serverDot = new() { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBlock _badge = new() { FontSize = 10, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(Colors.White), HorizontalAlignment = HorizontalAlignment.Center };
     private readonly Border _badgeBox = new() { CornerRadius = new CornerRadius(8), MinWidth = 16, Height = 16, Padding = new Thickness(4, 0, 4, 0),
         Background = new SolidColorBrush(ColorHelper.FromArgb(255, 0xEF, 0x44, 0x44)), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
@@ -563,9 +563,12 @@ public sealed class DockWindow : Window
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         _serverName.FontSize = _compact ? 12 : 13;
         _serverName.MaxWidth = _horizontal ? 140 : 90;
-        if (_serverName.Parent is Panel a) a.Children.Remove(_serverName);
-        if (_serverDot.Parent is Panel b) b.Children.Remove(_serverDot);
-        if (_serverState.Parent is Panel c) c.Children.Remove(_serverState);
+        // Fresh elements on every build: a rebuild (e.g. after a module drag) can run while the
+        // old tree still holds the previous ones, and WinUI refuses an element with a parent.
+        _serverName = new TextBlock { Text = _serverName.Text, FontSize = _serverName.FontSize, MaxWidth = _serverName.MaxWidth,
+            FontWeight = _serverName.FontWeight, TextTrimming = _serverName.TextTrimming, VerticalAlignment = _serverName.VerticalAlignment };
+        _serverDot = new Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center, Fill = _serverDot.Fill };
+        _serverState = new TextBlock { Text = _serverState.Text, FontSize = 11, Foreground = _serverState.Foreground };
         text.Children.Add(_serverName);
         var state = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
         state.Children.Add(_serverDot);
