@@ -1879,13 +1879,22 @@ public sealed partial class ServersWindow : Window
         {
             _splitTarget = null;
             var page = new TabPage();
+            // The icon is in the header, not an IconSource: a PathIconSource
+            // hands its one geometry to every icon the tab makes from it, and
+            // WinUI does not let two elements share a geometry.
+            var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            var icon = Icons.Make(IconName.Terminal);
+            icon.VerticalAlignment = VerticalAlignment.Center;
+            header.Children.Add(icon);
+            header.Children.Add(new TextBlock { Text = host.Label, VerticalAlignment = VerticalAlignment.Center });
             var item = new TabViewItem
             {
-                Header = host.Label,
+                Header = header,
                 Content = page.Root,
                 Tag = page,
-                IconSource = Icons.Source(IconName.Terminal),
             };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(item, host.Label);
+            page.Icon = icon;
             page.Item = item;
             AddPane(page, tab);
             _tabs.TabItems.Add(item);
@@ -1896,12 +1905,16 @@ public sealed partial class ServersWindow : Window
         _ = InitTerminal(tab);
     }
 
-    /// <summary>The selected terminal tab's icon is Bold.</summary>
+    /// <summary>The selected terminal tab's icon is Bold (only its geometry changes; nothing is added or removed).</summary>
     private void SyncTabIcons()
     {
-        foreach (var item in _tabs.TabItems.OfType<TabViewItem>())
-            if (item.IconSource is PathIconSource)
-                item.IconSource = Icons.Source(IconName.Terminal, active: ReferenceEquals(item, _tabs.SelectedItem));
+        try
+        {
+            foreach (var item in _tabs.TabItems.OfType<TabViewItem>())
+                if (item.Tag is TabPage { Icon: { } icon })
+                    Icons.SetActive(icon, ReferenceEquals(item, _tabs.SelectedItem));
+        }
+        catch (Exception e) { App.LogCrash(e); }
     }
 
     private void AddPane(TabPage page, TerminalTab tab)
@@ -2591,6 +2604,8 @@ public sealed class TabPage
     public bool Broadcast { get; set; }
     public Grid Root { get; } = new();
     public TabViewItem? Item { get; set; }
+    /// <summary>The terminal icon in the tab's header (Bold while the tab is selected).</summary>
+    public IconElement? Icon { get; set; }
     public string Title => Panes.Count switch
     {
         0 => "",

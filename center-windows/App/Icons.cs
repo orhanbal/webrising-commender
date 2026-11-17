@@ -20,30 +20,32 @@ internal static class Icons
     /// <summary>What an icon made here is, kept in its Tag so its variant can be switched.</summary>
     private sealed record Info(IconName Name, double Size, bool Active);
 
-    /// <summary>The icon <paramref name="name"/>, <paramref name="size"/> DIPs square (like a FontIcon's FontSize).</summary>
+    /// <summary>The icon <paramref name="name"/>, <paramref name="size"/> DIPs square (like a FontIcon's FontSize).
+    /// Never throws: a geometry that cannot be built is logged and the icon stays empty.</summary>
     public static PathIcon Make(IconName name, bool active = false, double size = 16, Brush? foreground = null)
     {
-        var icon = new PathIcon
-        {
-            Data = Geometry(name, active, size),
-            Width = size,
-            Height = size,
-            Tag = new Info(name, size, active),
-        };
+        var icon = new PathIcon { Width = size, Height = size, Tag = new Info(name, size, active) };
+        try { icon.Data = Geometry(name, active, size); }
+        catch (Exception e) { App.LogCrash(e); }
         if (foreground is not null) icon.Foreground = foreground;
         return icon;
     }
 
-    /// <summary>The same as an <see cref="IconSource"/> (a TabViewItem's icon).</summary>
-    public static PathIconSource Source(IconName name, bool active = false, double size = 16) =>
-        new() { Data = Geometry(name, active, size) };
+    // No IconSource on purpose: a PathIconSource gives its one geometry to every
+    // icon element made from it, and WinUI does not let two elements share a
+    // geometry (the CI's terminal tab with a PathIconSource was never laid out:
+    // the app went down). Put a Make() icon in the content instead.
 
-    /// <summary>Linear or Bold for an icon made by <see cref="Make"/>; any other icon is left alone.</summary>
+    /// <summary>Linear or Bold for an icon made by <see cref="Make"/>; any other icon is left alone. Never throws.</summary>
     public static void SetActive(IconElement? icon, bool active)
     {
-        if (icon is not PathIcon { Tag: Info info } path || info.Active == active) return;
-        path.Data = Geometry(info.Name, active, info.Size);
-        path.Tag = info with { Active = active };
+        try
+        {
+            if (icon is not PathIcon { Tag: Info info } path || info.Active == active) return;
+            path.Data = Geometry(info.Name, active, info.Size);
+            path.Tag = info with { Active = active };
+        }
+        catch (Exception e) { App.LogCrash(e); }
     }
 
     /// <summary>The selected item of <paramref name="nav"/> shows its Bold icon, the others Linear.</summary>
@@ -51,8 +53,12 @@ internal static class Icons
     {
         void Sync()
         {
-            foreach (var item in nav.MenuItems.Concat(nav.FooterMenuItems).OfType<NavigationViewItem>())
-                SetActive(item.Icon, ReferenceEquals(item, nav.SelectedItem));
+            try
+            {
+                foreach (var item in nav.MenuItems.Concat(nav.FooterMenuItems).OfType<NavigationViewItem>())
+                    SetActive(item.Icon, ReferenceEquals(item, nav.SelectedItem));
+            }
+            catch (Exception e) { App.LogCrash(e); }
         }
         nav.SelectionChanged += (_, _) => Sync();
         Sync();
@@ -63,8 +69,12 @@ internal static class Icons
     {
         void Sync()
         {
-            foreach (var item in bar.Items)
-                SetActive(item.Icon, ReferenceEquals(item, bar.SelectedItem));
+            try
+            {
+                foreach (var item in bar.Items)
+                    SetActive(item.Icon, ReferenceEquals(item, bar.SelectedItem));
+            }
+            catch (Exception e) { App.LogCrash(e); }
         }
         bar.SelectionChanged += (_, _) => Sync();
         Sync();
