@@ -999,6 +999,12 @@ public partial class App : Application
         menu.Items.Add(_autonomyItem);
         menu.Items.Add(_stopAutonomyItem);
         menu.Items.Add(new MenuFlyoutSeparator());
+        // The Dock is turned on or off right here as well as on the settings page.
+        var dockItem = new ToggleMenuFlyoutItem { Text = L.T("Dock'u göster"), IsChecked = Settings.Dock };
+        dockItem.Click += (_, _) => SetDock(dockItem.IsChecked);
+        menu.Opening += (_, _) => dockItem.IsChecked = Settings.Dock;
+        menu.Items.Add(dockItem);
+        menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(new MenuFlyoutItem { Text = L.T("Paneli tarayıcıda aç"), Command = new RelayCommand(OpenDashboard) });
         menu.Items.Add(_notifyItem);
         menu.Items.Add(_allowNotifyItem);
