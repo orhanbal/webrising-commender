@@ -65,7 +65,8 @@ public sealed class DockWindow : Window
     {
         _monitor = monitor;
         Title = WindowTitle;
-        SystemBackdrop = new DesktopAcrylicBackdrop();
+        // The Windows 11 taskbar's own material and theme (TaskbarBackdrop), not the lighter default acrylic.
+        SystemBackdrop = new TaskbarBackdrop();
         // No title bar at all: extending content into it made the top ~32 px a
         // drag area that swallowed clicks (see DeskChip).
         ExtendsContentIntoTitleBar = false;
@@ -174,6 +175,9 @@ public sealed class DockWindow : Window
                 Marshal.StructureToPtr(info, l, false);
                 return result;
             }
+            // The taskbar's colours changed (light / dark, accent on the taskbar): the Dock and its panels follow.
+            if (msg == WmSettingChange && l != IntPtr.Zero && TaskbarLook.IsColorChange(Marshal.PtrToStringUni(l)))
+                DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () => { try { TaskbarBackdrop.RefreshAll(); } catch (Exception e) { App.LogCrash(e); } });
             switch (msg)
             {
                 case WmActivate: _bar.Activated(); break;
@@ -248,7 +252,8 @@ public sealed class DockWindow : Window
             _compact = s.DockCompact;
             Build();
         }
-        _root.RequestedTheme = s.DockTheme switch { "dark" => ElementTheme.Dark, "light" => ElementTheme.Light, _ => ElementTheme.Default };
+        // "system" follows the taskbar (not the apps' theme); a chosen theme is kept. The panels follow too.
+        TaskbarBackdrop.RefreshAll();
         _thickness = (int)Math.Round(DockLayout.ThicknessDip(edge, _compact) * _screen.Scale);
         Rounded(mode == DockMode.Floating);
 
@@ -414,7 +419,7 @@ public sealed class DockWindow : Window
         GetCursorPos(out var p);
         var now = new PixelRect(AppWindow.Position.X, AppWindow.Position.Y, AppWindow.Size.Width, AppWindow.Size.Height);
         var over = now.Contains(p.X, p.Y) || DockLayout.Wakes(_screen.Work, _edge, p.X, p.Y, Math.Max(2, (int)Math.Round(2 * _screen.Scale)));
-        var want = over || _menuOpen || _reorderDown || _moveDown || App.Current.MonitorPanelOpen || App.Current.QuickPanelOpen;
+        var want = over || _menuOpen || _reorderDown || _moveDown || App.Current.MonitorPanelOpen || App.Current.QuickPanelOpen || App.Current.DockPanelOpen;
         if (want != _wantShown) { _wantShown = want; _wantSince = DateTime.UtcNow; }
         var delay = want ? App.Current.Settings.DockShowDelay : App.Current.Settings.DockHideDelay;
         if ((DateTime.UtcNow - _wantSince).TotalMilliseconds >= Math.Clamp(delay, 0, 5000)) _target = want ? 1 : 0;
@@ -478,7 +483,13 @@ public sealed class DockWindow : Window
                 var hit = new Button { Content = meter.Root, Padding = new Thickness(4, 0, 4, 0), Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0) };
                 ToolTipService.SetToolTip(hit, tips[i]);
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(hit, meter.Name);
-                hit.Click += (_, _) => OpenSection(index == 2 && Selected() is { Disk: >= 90 } ? "cleanup" : sections[index]);
+                hit.Click += (_, _) => Run(() =>
+                {
+                    var section = index == 2 && Selected() is { Disk: >= 90 } ? "cleanup" : sections[index];
+                    // Dock mode: the server management content in a panel under the meter.
+                    if (App.Current.PanelsFromDock) Panel("server", hit, section);
+                    else OpenSection(section);
+                });
                 middle.Children.Add(hit);
             }
         }
@@ -495,6 +506,7 @@ public sealed class DockWindow : Window
         // Right / bottom: quick access (the module buttons move along the Dock by drag or Alt + arrows).
         ResetReorder();
         _moduleItems.Clear();
+        _anchors.Clear();
         var end = new StackPanel { Orientation = orientation, Spacing = 2, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
         foreach (var m in modules)
         {
@@ -502,12 +514,22 @@ public sealed class DockWindow : Window
             {
                 case "processes":
                     var procs = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, L.T("Görev Yöneticisi"), _horizontal && !_compact ? L.T("Görev Yöneticisi") : null);
-                    procs.Click += (_, _) => TaskManagerWindow.Open();
+                    procs.Click += (_, _) => Run(() =>
+                    {
+                        if (App.Current.PanelsFromDock) Panel("taskmanager", procs);
+                        else TaskManagerWindow.Open();
+                    });
+                    _anchors["taskmanager"] = procs;
                     AddModule(end, m, procs, procs);
                     break;
                 case "terminal":
                     var term = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, "Terminal", _horizontal && !_compact ? "Terminal" : null);
-                    term.Click += (_, _) => OpenTerminal();
+                    term.Click += (_, _) => Run(() =>
+                    {
+                        if (App.Current.PanelsFromDock) Panel("terminal", term);
+                        else OpenTerminal();
+                    });
+                    _anchors["terminal"] = term;
                     AddModule(end, m, term, term);
                     break;
                 case "tasks":
@@ -516,15 +538,23 @@ public sealed class DockWindow : Window
                     var tasksMenu = TasksMenu();
                     tasks.Click += (_, _) =>
                     {
+                        // Dock mode: a panel with the three as tabs; classic: the menu that opens their windows.
+                        if (App.Current.PanelsFromDock) { Run(() => Panel("tasks", tasks)); return; }
                         try { tasksMenu.ShowAt(tasks, new FlyoutShowOptions { Placement = MenuPlacement() }); }
                         catch (Exception ex) { App.LogCrash(ex); }
                     };
+                    _anchors["tasks"] = tasks;
                     AddModule(end, m, tasks, tasks);
                     break;
                 case "approvals":
                     var bell = new Grid();
                     var approvals = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, L.T("Bekleyen onaylar"));
-                    approvals.Click += (_, _) => App.Current.ShowApprovals();
+                    approvals.Click += (_, _) => Run(() =>
+                    {
+                        if (App.Current.PanelsFromDock) Panel("approvals", approvals);
+                        else App.Current.ShowApprovals();
+                    });
+                    _anchors["approvals"] = approvals;
                     bell.Children.Add(approvals);
                     // Fresh badge on every build (an element that still has a parent cannot be added again).
                     _badge = new TextBlock { Text = _badge.Text, FontSize = 10, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(Colors.White), HorizontalAlignment = HorizontalAlignment.Center };
@@ -537,7 +567,12 @@ public sealed class DockWindow : Window
             }
         }
         var settings = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, L.T("Dock ayarları"));
-        settings.Click += (_, _) => App.Current.ShowDockSettings();
+        settings.Click += (_, _) => Run(() =>
+        {
+            if (App.Current.PanelsFromDock) Panel("settings", settings);
+            else App.Current.ShowDockSettings();
+        });
+        _anchors["settings"] = settings;
         end.Children.Add(settings);
         _end = end;
         Put(end, 2);
@@ -693,9 +728,48 @@ public sealed class DockWindow : Window
 
     private DockEdge PanelSide() => _mode == DockMode.Floating ? FloatingSide() : DockLayout.PanelSide(_edge);
 
+    // ---- dock mode: drop-down panels ----
+
+    /// <summary>The button each panel opens from (rebuilt with the Dock).</summary>
+    private readonly Dictionary<string, FrameworkElement> _anchors = [];
+
+    /// <summary>The Dock is on screen (turned on).</summary>
+    public bool IsOn => _on;
+
+    /// <summary>The server the Dock shows (for the panels).</summary>
+    public WatchedServer? SelectedServer() => Selected();
+
+    /// <summary>Runs a button's action; an error is logged and told, never thrown.</summary>
+    private static void Run(Action action)
+    {
+        try { action(); }
+        catch (Exception e) { App.LogCrash(e); App.Current.Toast(L.F("Açılamadı: {0}", e.Message)); }
+    }
+
+    /// <summary>A panel under (beside) a Dock button; a second click of the button closes it.</summary>
+    private void Panel(string kind, FrameworkElement from, string? arg = null) =>
+        App.Current.ToggleDockPanel(kind, ScreenRect(from), PanelSide(), Selected, arg);
+
+    /// <summary>Where the panel <paramref name="kind"/> opens from: its button, or the WECOMMANDER icon when that part is hidden.</summary>
+    public (PixelRect Anchor, DockEdge Side) AnchorFor(string kind)
+    {
+        var from = kind == "server" && _meters.Length > 0 ? _meters[0].Root.Parent as FrameworkElement : null;
+        from ??= _anchors.TryGetValue(kind, out var b) ? b : _appButton;
+        return (ScreenRect(from), PanelSide());
+    }
+
+    /// <summary>The tray icon's left click in dock mode: the quick panel at the WECOMMANDER icon.</summary>
+    public void OpenQuickPanelFromTray()
+    {
+        if (_appButton is { } app) OpenQuickPanel(app);
+    }
+
     /// <summary>The WECOMMANDER icon, like the Start button: the start panel (server search, tiles, account, settings, exit).</summary>
-    private void OpenQuickPanel(FrameworkElement from) =>
+    private void OpenQuickPanel(FrameworkElement from)
+    {
+        App.Current.CloseDockPanels();
         App.Current.ToggleQuickPanelFromDock(ScreenRect(from), PanelSide(), Selected);
+    }
 
     /// <summary>A floating Dock opens its panel toward the larger free side of the screen.</summary>
     private DockEdge FloatingSide()

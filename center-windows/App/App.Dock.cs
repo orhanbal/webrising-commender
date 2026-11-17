@@ -122,6 +122,7 @@ public partial class App
         _monitorFlyout = null;
         try { _quickPanel?.Close(); } catch (Exception) { }
         _quickPanel = null;
+        try { ForgetDockPanels(); } catch (Exception e) { LogCrash(e); }
         try
         {
             var oldPanel = _window;

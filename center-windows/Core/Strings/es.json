@@ -1317,5 +1317,18 @@
  "WECOMMANDER görevleri": "Tareas de WECOMMANDER",
  "Windows zamanlayıcıları": "Temporizadores de Windows",
  "Sunucu ara (ad, adres, grup)": "Buscar servidores (nombre, dirección, grupo)",
- "{0}: terminal aç": "{0}: abrir un terminal"
+ "{0}: terminal aç": "{0}: abrir un terminal",
+ "Bağlantı kapandı.": "La conexión se cerró.",
+ "Başka sunucu seç": "Elegir otro servidor",
+ "Bu sunucu için giriş bilgisi gerekiyor; ana pencerede sorulur.": "Este servidor necesita datos de acceso; la ventana principal los pide.",
+ "Bu sunucunun anahtarını onaylamak gerekiyor; onay ana pencerede sorulur.": "Hay que aprobar la clave de este servidor; la ventana principal lo pide.",
+ "Dock düğmeleri ayrı pencereler açar.": "Los botones del Dock abren ventanas separadas.",
+ "Dock modu": "Modo Dock",
+ "Her şey Dock'tan açılan panellerde; pencere açılmaz.": "Todo se abre en paneles desde el Dock; no se abren ventanas.",
+ "Klasik mod": "Modo clásico",
+ "Pencerede aç": "Abrir en ventana",
+ "Terminal açılacak sunucuyu seç": "Elige el servidor en el que abrir un terminal",
+ "Tüm ayarlar…": "Toda la configuración…",
+ "Uygulama modu": "Modo de la aplicación",
+ "{0}: bağlanılıyor…": "{0}: conectando…"
 }

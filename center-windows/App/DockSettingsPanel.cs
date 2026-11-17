@@ -24,6 +24,39 @@ public static class DockSettingsPanel
         on.Toggled += (_, _) => { details.Visibility = on.IsOn ? Visibility.Visible : Visibility.Collapsed; App.Current.SetDock(on.IsOn); };
         body.Children.Add(on);
 
+        // How the app works while the Dock is on: everything in panels under the Dock, or windows as before.
+        var appModes = new RadioButtons { Header = L.T("Uygulama modu"), MaxColumns = 1 };
+        foreach (var (tag, name, help) in new[]
+        {
+            (AppModes.Dock, L.T("Dock modu"), L.T("Her şey Dock'tan açılan panellerde; pencere açılmaz.")),
+            (AppModes.Classic, L.T("Klasik mod"), L.T("Dock düğmeleri ayrı pencereler açar.")),
+        })
+        {
+            var text = new StackPanel();
+            text.Children.Add(new TextBlock { Text = name });
+            text.Children.Add(new TextBlock
+            {
+                Text = help,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            });
+            var radio = new RadioButton { Content = text, Tag = tag };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(radio, name);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(radio, help);
+            appModes.Items.Add(radio);
+        }
+        appModes.SelectedIndex = AppModes.Parse(s.AppMode) == AppModes.Classic ? 1 : 0;
+        appModes.SelectionChanged += (_, _) =>
+        {
+            try
+            {
+                if ((appModes.SelectedItem as RadioButton)?.Tag is string tag && tag != AppModes.Parse(s.AppMode)) App.Current.SetAppMode(tag);
+            }
+            catch (Exception e) { App.LogCrash(e); }
+        };
+        body.Children.Add(appModes);
+
         var modes = new[] { ("fixed", L.T("Sabit: kenarda durur, pencereler altına girmez")), ("autohide", L.T("Otomatik gizlenen: fare kenara gelince açılır")), ("floating", L.T("Yüzen: istediğin yere sürükle")) };
         var mode = Combo(L.T("Görünüm"), modes.Select(m => m.Item2), Array.FindIndex(modes, m => m.Item1 == s.DockModeName));
         var onTop = new CheckBox { Content = L.T("Her zaman üstte (yüzen)"), IsChecked = s.DockOnTop };

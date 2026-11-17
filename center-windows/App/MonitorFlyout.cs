@@ -32,7 +32,7 @@ public sealed class MonitorFlyout : Window
     {
         _monitor = monitor;
         Title = L.T("WECOMMANDER Sunucularım");
-        SystemBackdrop = new DesktopAcrylicBackdrop();
+        SystemBackdrop = new TaskbarBackdrop();
         AppWindow.IsShownInSwitchers = false;
         // No title bar at all (the presenter removes it). Extending content into
         // it made the top ~32 px a drag area that swallowed clicks there.

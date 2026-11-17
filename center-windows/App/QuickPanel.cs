@@ -46,7 +46,7 @@ public sealed class QuickPanel : Window
     public QuickPanel()
     {
         Title = L.T("WECOMMANDER hızlı panel");
-        SystemBackdrop = new DesktopAcrylicBackdrop();
+        SystemBackdrop = new TaskbarBackdrop();
         AppWindow.IsShownInSwitchers = false;
         ExtendsContentIntoTitleBar = false;
         if (AppWindow.Presenter is OverlappedPresenter p)
@@ -101,17 +101,18 @@ public sealed class QuickPanel : Window
 
         var tiles = new Grid { ColumnSpacing = 6, RowSpacing = 6 };
         for (var c = 0; c < 3; c++) tiles.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        // Dock mode: the same drop-down panels as the Dock's buttons; classic: the windows.
         var entries = new (string Glyph, string Text, Action Open, TextBlock? Detail)[]
         {
             ("", L.T("Sunucularım"), () => App.Current.ToggleMonitorPanelFromDock(_anchor, _side), null),
             ("", L.T("Terminaller"), () => App.Current.ShowTerminals(files: false), null),
             ("", L.T("Dosya yöneticisi"), () => App.Current.ShowTerminals(files: true), null),
-            ("", L.T("Görev Yöneticisi"), () => TaskManagerWindow.Open(), null),
-            ("", L.T("WECOMMANDER görevleri"), () => App.Current.ShowScheduledTasks(), null),
-            ("", L.T("Windows zamanlayıcıları"), () => TaskSchedulerWindow.Open(), null),
-            ("", L.T("Sunucu zamanlayıcıları"), () => OpenServer("timers"), null),
-            ("", L.T("Disk ve temizlik"), () => OpenServer("disk"), null),
-            ("", L.T("Bildirimler / Bekleyen onaylar"), () => App.Current.ShowApprovals(), _approvals),
+            ("", L.T("Görev Yöneticisi"), () => Either("taskmanager", null, () => TaskManagerWindow.Open()), null),
+            ("", L.T("WECOMMANDER görevleri"), () => Either("tasks", "scheduled", () => App.Current.ShowScheduledTasks()), null),
+            ("", L.T("Windows zamanlayıcıları"), () => Either("tasks", "windows", () => TaskSchedulerWindow.Open()), null),
+            ("", L.T("Sunucu zamanlayıcıları"), () => Either("tasks", "server", () => OpenServer("timers")), null),
+            ("", L.T("Disk ve temizlik"), () => Either(_selected() is null ? null : "server", "disk", () => OpenServer("disk")), null),
+            ("", L.T("Bildirimler / Bekleyen onaylar"), () => Either("approvals", null, () => App.Current.ShowApprovals()), _approvals),
         };
         for (var i = 0; i < entries.Length; i++)
         {
@@ -143,7 +144,7 @@ public sealed class QuickPanel : Window
         account.HorizontalContentAlignment = HorizontalAlignment.Left;
         account.Padding = new Thickness(6, 4, 10, 4);
         bar.Children.Add(account);
-        var settings = BarButton(new FontIcon { Glyph = "", FontSize = 16 }, L.T("Ayarlar"), () => App.Current.ShowDockSettings());
+        var settings = BarButton(new FontIcon { Glyph = "", FontSize = 16 }, L.T("Ayarlar"), () => Either("settings", null, () => App.Current.ShowDockSettings()));
         Grid.SetColumn(settings, 1);
         bar.Children.Add(settings);
         var power = new Button { Content = new FontIcon { Glyph = "", FontSize = 16 }, Width = 40, Height = 40, Padding = new Thickness(0),
@@ -274,6 +275,13 @@ public sealed class QuickPanel : Window
 
     /// <summary>The same as connecting from the server list: a terminal to the saved server in the main window.</summary>
     private void Connect(CoreHost host) => Run(() => App.Current.OpenHostTerminal(host.Id));
+
+    /// <summary>Dock mode: the Dock's panel <paramref name="kind"/> (null: the window anyway); classic: <paramref name="window"/>.</summary>
+    private static void Either(string? kind, string? arg, Action window)
+    {
+        if (kind is not null && App.Current.PanelsFromDock) App.Current.OpenDockPanel(kind, arg);
+        else window();
+    }
 
     /// <summary>A server screen (timers, disk) for the server the Dock shows; without one the server panel opens to add it.</summary>
     private void OpenServer(string section)

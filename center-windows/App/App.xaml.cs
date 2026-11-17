@@ -1021,7 +1021,8 @@ public partial class App : Application
             ContextMenuMode = ContextMenuMode.PopupMenu,
             ContextFlyout = menu,
             NoLeftClickDelay = true,
-            LeftClickCommand = new RelayCommand(() => _window?.TogglePanel()),
+            // Dock mode with the Dock on: the quick panel at the Dock's icon (TrayClicked).
+            LeftClickCommand = new RelayCommand(TrayClicked),
         };
         _tray.ForceCreate(enablesEfficiencyMode: false);
         ShowTrayIconOnce();

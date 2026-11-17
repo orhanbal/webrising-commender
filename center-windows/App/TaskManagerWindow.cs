@@ -9,14 +9,42 @@ using Wecommander.Center.Core;
 namespace Wecommander.Center;
 
 /// <summary>
-/// Task Manager: this computer's processes (live CPU, memory, disk, tree,
-/// details, end with guards). A server is chosen from the device list and
-/// opens in its own process screen: local and remote are never one list.
+/// The Task Manager window: <see cref="TaskManagerView"/> in a window of its
+/// own (classic mode, "Pencerede aç" from the Dock's panel).
 /// </summary>
 public sealed class TaskManagerWindow : Window
 {
     private static TaskManagerWindow? _open;
+    private readonly TaskManagerView _view = new(showTitle: true);
 
+    /// <summary>Opens the Task Manager (one window; a second call brings it forward).</summary>
+    public static void Open()
+    {
+        _open ??= new TaskManagerWindow();
+        _open.AppWindow.Show();
+        _open.Activate();
+    }
+
+    private TaskManagerWindow()
+    {
+        Title = L.T("Görev Yöneticisi");
+        SystemBackdrop = new Microsoft.UI.Xaml.Media.MicaBackdrop();
+        AppWindow.Resize(new Windows.Graphics.SizeInt32(1080, 760));
+        try { AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "icon.ico")); } catch (Exception) { }
+        Content = _view;
+        _view.Resume();
+        Closed += (_, _) => { _view.Pause(); _open = null; };
+    }
+}
+
+/// <summary>
+/// Task Manager: this computer's processes (live CPU, memory, disk, tree,
+/// details, end with guards). A server is chosen from the device list and
+/// opens in its own process screen: local and remote are never one list.
+/// One implementation for the window and the Dock's drop-down panel.
+/// </summary>
+public sealed class TaskManagerView : UserControl
+{
     private readonly ComboBox _device = new() { MinWidth = 280 };
     private readonly TextBlock _summary = new() { VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBox _search = new() { Width = 260 };
@@ -39,22 +67,9 @@ public sealed class TaskManagerWindow : Window
     private static Brush Secondary => (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
     private const int MaxRows = 250;
 
-    /// <summary>Opens the Task Manager (one window; a second call brings it forward).</summary>
-    public static void Open()
+    public TaskManagerView(bool showTitle)
     {
-        _open ??= new TaskManagerWindow();
-        _open.AppWindow.Show();
-        _open.Activate();
-    }
-
-    private TaskManagerWindow()
-    {
-        Title = L.T("Görev Yöneticisi");
-        SystemBackdrop = new Microsoft.UI.Xaml.Media.MicaBackdrop();
-        AppWindow.Resize(new Windows.Graphics.SizeInt32(1080, 760));
-        try { AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "icon.ico")); } catch (Exception) { }
-
-        var root = new Grid { Padding = new Thickness(24, 16, 24, 16), RowSpacing = 10 };
+        var root = new Grid { Padding = showTitle ? new Thickness(24, 16, 24, 16) : new Thickness(12, 4, 12, 12), RowSpacing = 10 };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -66,7 +81,8 @@ public sealed class TaskManagerWindow : Window
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var title = new StackPanel { Spacing = 2 };
-        title.Children.Add(new TextBlock { Text = L.T("Görev Yöneticisi"), Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] });
+        // In the Dock's panel its header already names it.
+        if (showTitle) title.Children.Add(new TextBlock { Text = L.T("Görev Yöneticisi"), Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] });
         title.Children.Add(_summary);
         _summary.Foreground = Secondary;
         top.Children.Add(title);
@@ -123,10 +139,18 @@ public sealed class TaskManagerWindow : Window
         _timer = DispatcherQueue.CreateTimer();
         _timer.Interval = TimeSpan.FromSeconds(2);
         _timer.Tick += (_, _) => _ = Refresh();
+    }
+
+    /// <summary>On screen: reads every two seconds (and once now).</summary>
+    public void Resume()
+    {
+        if (_timer.IsRunning) return;
         _timer.Start();
-        Closed += (_, _) => { _timer.Stop(); _open = null; };
         _ = Refresh();
     }
+
+    /// <summary>Hidden or closed: stops reading.</summary>
+    public void Pause() => _timer.Stop();
 
     private static Border Card(UIElement content, Thickness padding) => new()
     {
