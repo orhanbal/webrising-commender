@@ -18,20 +18,7 @@ namespace Wecommander.Center;
 public sealed class TaskSchedulerWindow : Window
 {
     private static TaskSchedulerWindow? _open;
-
-    private readonly TextBlock _summary = new() { VerticalAlignment = VerticalAlignment.Center };
-    private readonly TextBox _search = new() { Width = 260 };
-    private readonly ToggleSwitch _windowsSwitch = new() { OnContent = null, OffContent = null };
-    private readonly StackPanel _rows = new();
-    private readonly InfoBar _info = new() { IsClosable = true, Margin = new Thickness(0, 0, 0, 8) };
-    private readonly StackPanel _details = new() { Spacing = 6 };
-    private readonly ProgressRing _busy = new() { Width = 20, Height = 20, IsActive = false };
-    private List<LocalTask> _all = [];
-    private string? _selected;
-    private bool _reading;
-
-    private static Brush Secondary => (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
-    private static readonly FontFamily Mono = new("Cascadia Mono, Consolas");
+    private readonly TaskSchedulerView _view = new(showTitle: true);
 
     /// <summary>Opens the window (one window; a second call brings it forward).</summary>
     public static void Open()
@@ -47,8 +34,35 @@ public sealed class TaskSchedulerWindow : Window
         SystemBackdrop = new MicaBackdrop();
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1120, 780));
         try { AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "icon.ico")); } catch (Exception) { }
+        Content = _view;
+        _view.Reload();
+        Closed += (_, _) => _open = null;
+    }
+}
 
-        var root = new Grid { Padding = new Thickness(24, 16, 24, 16), RowSpacing = 10 };
+/// <summary>
+/// The Zamanlayıcılar content (this computer's Windows Task Scheduler): one
+/// implementation for its window and the Dock's "Görevler" panel.
+/// </summary>
+public sealed class TaskSchedulerView : UserControl
+{
+    private readonly TextBlock _summary = new() { VerticalAlignment = VerticalAlignment.Center };
+    private readonly TextBox _search = new() { Width = 260 };
+    private readonly ToggleSwitch _windowsSwitch = new() { OnContent = null, OffContent = null };
+    private readonly StackPanel _rows = new();
+    private readonly InfoBar _info = new() { IsClosable = true, Margin = new Thickness(0, 0, 0, 8) };
+    private readonly StackPanel _details = new() { Spacing = 6 };
+    private readonly ProgressRing _busy = new() { Width = 20, Height = 20, IsActive = false };
+    private List<LocalTask> _all = [];
+    private string? _selected;
+    private bool _reading;
+
+    private static Brush Secondary => (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
+    private static readonly FontFamily Mono = new("Cascadia Mono, Consolas");
+
+    public TaskSchedulerView(bool showTitle)
+    {
+        var root = new Grid { Padding = showTitle ? new Thickness(24, 16, 24, 16) : new Thickness(12, 4, 12, 12), RowSpacing = 10 };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -56,7 +70,7 @@ public sealed class TaskSchedulerWindow : Window
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         var title = new StackPanel { Spacing = 2 };
-        title.Children.Add(new TextBlock { Text = L.T("Zamanlayıcılar"), Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] });
+        if (showTitle) title.Children.Add(new TextBlock { Text = L.T("Zamanlayıcılar"), Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] });
         title.Children.Add(_summary);
         _summary.Foreground = Secondary;
         _summary.Text = L.F("Görev Zamanlayıcı · bu bilgisayar ({0})", Environment.MachineName);
@@ -99,9 +113,10 @@ public sealed class TaskSchedulerWindow : Window
         ShowDetails();
 
         Content = root;
-        Closed += (_, _) => _open = null;
-        _ = Refresh();
     }
+
+    /// <summary>Reads the tasks again (when it is shown).</summary>
+    public void Reload() => _ = Refresh();
 
     private static Border Card(UIElement content, Thickness padding) => new()
     {

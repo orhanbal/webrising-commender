@@ -878,12 +878,7 @@ public sealed partial class ServersWindow : Window
 
     // ---- settings ----
 
-    private string TerminalSettingsJson() => JsonSerializer.Serialize(new
-    {
-        type = "settings",
-        fontSize = App.Current.Settings.TerminalFontSize,
-        theme = App.Current.Settings.TerminalTheme,
-    });
+    private static string TerminalSettingsJson() => TerminalSurface.SettingsJson();
 
     private void ApplyTerminalSettings()
     {
@@ -2064,63 +2059,14 @@ public sealed partial class ServersWindow : Window
         _ = OpenHost(host).ContinueWith(_ => DispatcherQueue.TryEnqueue(() => _splitTarget = null));
     }
 
-    private async Task InitTerminal(TerminalTab tab)
+    /// <summary>The terminal page (xterm.js in WebView2); typing goes to every pane of a broadcasting tab.</summary>
+    private Task InitTerminal(TerminalTab tab) => TerminalSurface.InitAsync(tab, _c, DispatcherQueue, (t, input) =>
     {
-        await tab.View.EnsureCoreWebView2Async();
-        var core = tab.View.CoreWebView2;
-        core.Settings.AreDefaultContextMenusEnabled = false;
-        core.Settings.IsStatusBarEnabled = false;
-        core.Settings.AreDevToolsEnabled = false;
-        core.SetVirtualHostNameToFolderMapping("wecommander.terminal",
-            Path.Combine(AppContext.BaseDirectory, "Assets", "terminal"), CoreWebView2HostResourceAccessKind.Allow);
-        core.PermissionRequested += (_, e) =>
-        {
-            if (e.PermissionKind == CoreWebView2PermissionKind.ClipboardRead) e.State = CoreWebView2PermissionState.Allow;
-        };
-        core.WebMessageReceived += (sender, e) =>
-        {
-            JsonObject? m;
-            try { m = JsonNode.Parse(e.TryGetWebMessageAsString()) as JsonObject; } catch (JsonException) { return; }
-            switch ((string?)m?["type"])
-            {
-                case "ready":
-                    tab.Ready = true;
-                    tab.Post(TerminalSettingsJson());
-                    _c.Resize(tab, (int?)m!["cols"] ?? 100, (int?)m["rows"] ?? 30);
-                    tab.Flush();
-                    _ = SendCommands(tab);
-                    break;
-                case "command":
-                    _ = _c.AddCommand(tab.Host.Id, (string?)m!["line"] ?? "", (string?)m["prompt"] ?? "");
-                    break;
-                case "input":
-                    var input = (string?)m!["data"] ?? "";
-                    if (tab.Page is { Broadcast: true } bp)
-                        foreach (var pane in bp.Panes) _c.Write(pane, input);
-                    else
-                        _c.Write(tab, input);
-                    break;
-                case "resize":
-                    _c.Resize(tab, (int?)m!["cols"] ?? 100, (int?)m["rows"] ?? 30);
-                    break;
-                case "fontSize":
-                    // Ctrl+= / Ctrl+- in a terminal: remembered for the next ones.
-                    var size = (int?)m!["size"] ?? 13;
-                    DispatcherQueue.TryEnqueue(() => { App.Current.Settings.TerminalFontSize = size; App.Current.SaveSettings(); });
-                    break;
-            }
-        };
-        core.Navigate("https://wecommander.terminal/index.html");
-    }
-
-    /// <summary>Autocomplete: this host's commands and the snippets, for the terminal page.</summary>
-    private async Task SendCommands(TerminalTab tab)
-    {
-        if (tab.Guest is not null) return; // a teammate's terminal: not ours to remember
-        var list = await _c.Commands(tab.Host.Id);
-        var snippets = (await _c.Snippets()).Select(s => s.Command.Trim()).Where(c => c.Length > 0).ToList();
-        tab.Post(JsonSerializer.Serialize(new { type = "commands", list, snippets }));
-    }
+        if (t.Page is { Broadcast: true } bp)
+            foreach (var pane in bp.Panes) _c.Write(pane, input);
+        else
+            _c.Write(t, input);
+    });
 
     /// <summary>Closes one terminal; the tab goes when its last pane does.</summary>
     private void CloseTab(TerminalTab tab)

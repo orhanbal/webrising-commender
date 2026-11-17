@@ -1317,5 +1317,22 @@
  "WECOMMANDER görevleri": "WECOMMANDER tasks",
  "Windows zamanlayıcıları": "Windows timers",
  "Sunucu ara (ad, adres, grup)": "Search servers (name, address, group)",
- "{0}: terminal aç": "{0}: open a terminal"
+ "{0}: terminal aç": "{0}: open a terminal",
+ "Bağlantı kapandı.": "The connection closed.",
+ "Başka sunucu seç": "Choose another server",
+ "Bu sunucu için giriş bilgisi gerekiyor; ana pencerede sorulur.": "This server needs sign-in details; the main window asks for them.",
+ "Bu sunucunun anahtarını onaylamak gerekiyor; onay ana pencerede sorulur.": "This server's key needs to be approved; the main window asks for it.",
+ "Dock düğmeleri ayrı pencereler açar.": "Dock buttons open separate windows.",
+ "Dock modu": "Dock mode",
+ "Her şey Dock'tan açılan panellerde; pencere açılmaz.": "Everything opens in panels from the Dock; no windows open.",
+ "Klasik mod": "Classic mode",
+ "Pencerede aç": "Open in window",
+ "Terminal açılacak sunucuyu seç": "Choose a server to open a terminal to",
+ "Tüm ayarlar…": "All settings…",
+ "Uygulama modu": "App mode",
+ "{0}: bağlanılıyor…": "{0}: connecting…",
+ "Dock ekranın kenarında durur; her şey Dock'tan açılan panellerde.": "The Dock sits on a screen edge; everything opens in panels from the Dock.",
+ "Dock kapalı; uygulama pencerelerle çalışır.": "No Dock; the app works in windows.",
+ "Klasik moda geç": "Switch to classic mode",
+ "Klasik moda geçildi; Dock kapandı ve ekran alanı geri verildi. Dock moduna dönmek için: tepsi simgesine sağ tıkla → Dock modu.": "Switched to classic mode; the Dock is closed and the screen space is back. To return to dock mode: right-click the tray icon → Dock mode."
 }

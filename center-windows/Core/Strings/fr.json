@@ -1317,5 +1317,22 @@
  "WECOMMANDER görevleri": "Tâches WECOMMANDER",
  "Windows zamanlayıcıları": "Planifications Windows",
  "Sunucu ara (ad, adres, grup)": "Rechercher un serveur (nom, adresse, groupe)",
- "{0}: terminal aç": "{0} : ouvrir un terminal"
+ "{0}: terminal aç": "{0} : ouvrir un terminal",
+ "Bağlantı kapandı.": "La connexion a été fermée.",
+ "Başka sunucu seç": "Choisir un autre serveur",
+ "Bu sunucu için giriş bilgisi gerekiyor; ana pencerede sorulur.": "Ce serveur demande des identifiants ; la fenêtre principale les demande.",
+ "Bu sunucunun anahtarını onaylamak gerekiyor; onay ana pencerede sorulur.": "La clé de ce serveur doit être approuvée ; la fenêtre principale le demande.",
+ "Dock düğmeleri ayrı pencereler açar.": "Les boutons du Dock ouvrent des fenêtres séparées.",
+ "Dock modu": "Mode Dock",
+ "Her şey Dock'tan açılan panellerde; pencere açılmaz.": "Tout s'ouvre dans des panneaux depuis le Dock ; aucune fenêtre ne s'ouvre.",
+ "Klasik mod": "Mode classique",
+ "Pencerede aç": "Ouvrir dans une fenêtre",
+ "Terminal açılacak sunucuyu seç": "Choisissez le serveur où ouvrir un terminal",
+ "Tüm ayarlar…": "Tous les paramètres…",
+ "Uygulama modu": "Mode de l'application",
+ "{0}: bağlanılıyor…": "{0} : connexion…",
+ "Dock ekranın kenarında durur; her şey Dock'tan açılan panellerde.": "Le Dock reste sur un bord de l'écran ; tout s'ouvre dans des panneaux depuis le Dock.",
+ "Dock kapalı; uygulama pencerelerle çalışır.": "Pas de Dock ; l'application fonctionne avec des fenêtres.",
+ "Klasik moda geç": "Passer en mode classique",
+ "Klasik moda geçildi; Dock kapandı ve ekran alanı geri verildi. Dock moduna dönmek için: tepsi simgesine sağ tıkla → Dock modu.": "Mode classique activé ; le Dock est fermé et l'espace écran est rendu. Pour revenir au mode Dock : clic droit sur l'icône de la zone de notification → Mode Dock."
 }

@@ -1317,5 +1317,22 @@
  "WECOMMANDER görevleri": "WECOMMANDER-Aufgaben",
  "Windows zamanlayıcıları": "Windows-Zeitpläne",
  "Sunucu ara (ad, adres, grup)": "Server suchen (Name, Adresse, Gruppe)",
- "{0}: terminal aç": "{0}: Terminal öffnen"
+ "{0}: terminal aç": "{0}: Terminal öffnen",
+ "Bağlantı kapandı.": "Die Verbindung wurde geschlossen.",
+ "Başka sunucu seç": "Anderen Server wählen",
+ "Bu sunucu için giriş bilgisi gerekiyor; ana pencerede sorulur.": "Dieser Server benötigt Anmeldedaten; das Hauptfenster fragt danach.",
+ "Bu sunucunun anahtarını onaylamak gerekiyor; onay ana pencerede sorulur.": "Der Schlüssel dieses Servers muss bestätigt werden; das Hauptfenster fragt danach.",
+ "Dock düğmeleri ayrı pencereler açar.": "Dock-Schaltflächen öffnen eigene Fenster.",
+ "Dock modu": "Dock-Modus",
+ "Her şey Dock'tan açılan panellerde; pencere açılmaz.": "Alles öffnet sich in Bereichen am Dock; es werden keine Fenster geöffnet.",
+ "Klasik mod": "Klassischer Modus",
+ "Pencerede aç": "Im Fenster öffnen",
+ "Terminal açılacak sunucuyu seç": "Server für das Terminal wählen",
+ "Tüm ayarlar…": "Alle Einstellungen…",
+ "Uygulama modu": "App-Modus",
+ "{0}: bağlanılıyor…": "{0}: Verbindung wird hergestellt…",
+ "Dock ekranın kenarında durur; her şey Dock'tan açılan panellerde.": "Das Dock sitzt am Bildschirmrand; alles öffnet sich in Panels aus dem Dock.",
+ "Dock kapalı; uygulama pencerelerle çalışır.": "Kein Dock; die App arbeitet mit Fenstern.",
+ "Klasik moda geç": "Zum klassischen Modus wechseln",
+ "Klasik moda geçildi; Dock kapandı ve ekran alanı geri verildi. Dock moduna dönmek için: tepsi simgesine sağ tıkla → Dock modu.": "Zum klassischen Modus gewechselt; das Dock ist geschlossen und der Bildschirmplatz frei. Zurück zum Dock-Modus: Rechtsklick auf das Taskleistensymbol → Dock-Modus."
 }

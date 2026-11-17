@@ -164,6 +164,18 @@ public static class DockLayout
         return new PixelRect(x, y, Math.Max(1, width), Math.Max(1, height));
     }
 
+    /// <summary>
+    /// A panel's size as a share of the work area (the terminal: 60 % × 50 %),
+    /// at least <paramref name="minWidth"/> × <paramref name="minHeight"/> and never
+    /// larger than the work area.
+    /// </summary>
+    public static (int Width, int Height) PanelSize(PixelRect work, double widthShare, double heightShare, int minWidth, int minHeight)
+    {
+        var w = Math.Max(minWidth, (int)Math.Round(work.Width * widthShare));
+        var h = Math.Max(minHeight, (int)Math.Round(work.Height * heightShare));
+        return (Math.Min(w, work.Width), Math.Min(h, work.Height));
+    }
+
     public static DockEdge ParseEdge(string? value) => value?.ToLowerInvariant() switch
     {
         "bottom" => DockEdge.Bottom,

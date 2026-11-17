@@ -16,6 +16,37 @@ namespace Wecommander.Center;
 /// </summary>
 public sealed class ServerWindow : Window
 {
+    private readonly ServerManagementView _view;
+
+    public ServerWindow(ServersController controller, string sessionId, string label)
+    {
+        Title = L.F("Sunucu yönetimi — {0}", label);
+        SystemBackdrop = new MicaBackdrop();
+        AppWindow.Resize(new Windows.Graphics.SizeInt32(1060, 780));
+        try { AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "icon.ico")); } catch (Exception) { }
+        _view = new ServerManagementView(controller, sessionId, label);
+        Content = _view;
+        Closed += (_, _) => _view.Stop();
+    }
+
+    /// <summary>Shows the window for another visit (or the first).</summary>
+    public void Bring()
+    {
+        AppWindow.Show();
+        Activate();
+    }
+
+    /// <summary>Opens on one section (from the Dock: processes, disk, cleanup, timers).</summary>
+    public void GoTo(string section) => _view.GoTo(section);
+}
+
+/// <summary>
+/// The server management content (overview, disk, cleanup, processes, timers)
+/// for one connection: one implementation for <see cref="ServerWindow"/> and
+/// the Dock's drop-down panel.
+/// </summary>
+public sealed class ServerManagementView : UserControl
+{
     private readonly ServersController _c;
     private readonly string _sessionId;
     private readonly string _label;
@@ -35,15 +66,11 @@ public sealed class ServerWindow : Window
     private static Brush Secondary => (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
     private static readonly FontFamily Mono = new("Cascadia Mono, Consolas");
 
-    public ServerWindow(ServersController controller, string sessionId, string label)
+    public ServerManagementView(ServersController controller, string sessionId, string label)
     {
         _c = controller;
         _sessionId = sessionId;
         _label = label;
-        Title = L.F("Sunucu yönetimi — {0}", label);
-        SystemBackdrop = new MicaBackdrop();
-        AppWindow.Resize(new Windows.Graphics.SizeInt32(1060, 780));
-        try { AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "icon.ico")); } catch (Exception) { }
 
         _nav.PaneDisplayMode = NavigationViewPaneDisplayMode.Top;
         _nav.IsBackButtonVisible = NavigationViewBackButtonVisible.Collapsed;
@@ -77,16 +104,14 @@ public sealed class ServerWindow : Window
         _nav.Content = root;
         Content = _nav;
         _nav.SelectedItem = _nav.MenuItems[0];
-        Closed += (_, _) => { _live?.Stop(); _generation++; };
         _ = Load();
     }
 
-    /// <summary>Shows the window for another visit (or the first).</summary>
-    public void Bring()
-    {
-        AppWindow.Show();
-        Activate();
-    }
+    /// <summary>The connection this view uses (the monitor's or a terminal's).</summary>
+    public string SessionId => _sessionId;
+
+    /// <summary>Closed or hidden for good: live sampling stops and pending reads are dropped.</summary>
+    public void Stop() { _live?.Stop(); _generation++; }
 
     private void Show(string text, InfoBarSeverity severity)
     {
@@ -471,7 +496,7 @@ public sealed class ServerWindow : Window
             page.Children.Add(Banner(L.T("Bazı klasörler okunamadı"), L.T("Bu kullanıcının erişemediği klasörler sayılmadı; boyutlar gerçekte daha büyük olabilir (root ile bağlan)."), InfoBarSeverity.Informational));
         if (u.Entries.Count > 0)
         {
-            var top = u.Entries.Take(7).Select(e => (Name(u.Path, e.Path), (double)e.Kb, Sizes.Kb(e.Kb))).ToList();
+            var top = u.Entries.Take(7).Select(e => (EntryName(u.Path, e.Path), (double)e.Kb, Sizes.Kb(e.Kb))).ToList();
             var rest = u.TotalKb > (ulong)u.Entries.Take(7).Sum(e => (decimal)e.Kb) ? u.TotalKb - (ulong)u.Entries.Take(7).Sum(e => (decimal)e.Kb) : 0;
             if (rest > 0) top.Add((L.T("Diğer"), rest, Sizes.Kb(rest)));
             page.Children.Add(Card(Charts.Donut(top, Sizes.Kb(u.TotalKb))));
@@ -486,7 +511,7 @@ public sealed class ServerWindow : Window
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
-            var name = Name(u.Path, e.Path);
+            var name = EntryName(u.Path, e.Path);
             var nameCell = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             nameCell.Children.Add(new TextBlock { Text = name, FontFamily = Mono, TextTrimming = TextTrimming.CharacterEllipsis });
             // A Docker daemon's storage (or the folder holding it): say whose, so its cleanup is found.
@@ -536,7 +561,7 @@ public sealed class ServerWindow : Window
         return page;
     }
 
-    private static string Name(string parent, string path) =>
+    private static string EntryName(string parent, string path) =>
         path.Length > parent.Length && path.StartsWith(parent) ? path[parent.Length..].TrimStart('/') : path;
 
     // ---- cleanup ----

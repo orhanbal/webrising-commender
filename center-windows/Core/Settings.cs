@@ -88,6 +88,11 @@ public sealed class Settings
     [JsonPropertyName("dockServer")] public string? DockServer { get; set; }
     /// <summary>Like a locked Windows taskbar: the Dock is not moved and its buttons are not reordered by dragging.</summary>
     [JsonPropertyName("dockLocked")] public bool DockLocked { get; set; } = true;
+    /// <summary>
+    /// "dock": with the Dock on, its buttons open drop-down panels anchored to it
+    /// (no separate windows); "classic": they open the windows as before.
+    /// </summary>
+    [JsonPropertyName("appMode")] public string AppMode { get; set; } = AppModes.Dock;
 }
 
 public sealed class SettingsStore(string directory)

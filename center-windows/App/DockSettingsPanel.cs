@@ -19,10 +19,43 @@ public static class DockSettingsPanel
             Text = L.T("Ekranın bir kenarında WECOMMANDER'a ait bir çubuk: canlı CPU, RAM ve disk; süreçler, terminal ve onaylara tek tıkla geçiş. Windows görev çubuğuna dokunmaz; kapatınca ekran alanı geri verilir."),
         });
         var details = new StackPanel { Spacing = 10 };
-        var on = new ToggleSwitch { Header = L.T("Dock'u göster"), IsOn = s.Dock };
         void Save() { App.Current.SaveSettings(); App.Current.ApplyDock(); }
-        on.Toggled += (_, _) => { details.Visibility = on.IsOn ? Visibility.Visible : Visibility.Collapsed; App.Current.SetDock(on.IsOn); };
-        body.Children.Add(on);
+
+        // The app's two modes: the Dock with panels, or classic windows without a Dock.
+        var appModes = new RadioButtons { Header = L.T("Uygulama modu"), MaxColumns = 1 };
+        foreach (var (tag, name, help) in new[]
+        {
+            (AppModes.Dock, L.T("Dock modu"), L.T("Dock ekranın kenarında durur; her şey Dock'tan açılan panellerde.")),
+            (AppModes.Classic, L.T("Klasik mod"), L.T("Dock kapalı; uygulama pencerelerle çalışır.")),
+        })
+        {
+            var text = new StackPanel();
+            text.Children.Add(new TextBlock { Text = name });
+            text.Children.Add(new TextBlock
+            {
+                Text = help,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            });
+            var radio = new RadioButton { Content = text, Tag = tag };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(radio, name);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(radio, help);
+            appModes.Items.Add(radio);
+        }
+        appModes.SelectedIndex = s.Dock ? 0 : 1;
+        appModes.SelectionChanged += (_, _) =>
+        {
+            try
+            {
+                if ((appModes.SelectedItem as RadioButton)?.Tag is not string tag) return;
+                var dock = tag == AppModes.Dock;
+                details.Visibility = dock ? Visibility.Visible : Visibility.Collapsed;
+                if (dock != s.Dock) App.Current.SetAppMode(tag);
+            }
+            catch (Exception e) { App.LogCrash(e); }
+        };
+        body.Children.Add(appModes);
 
         var modes = new[] { ("fixed", L.T("Sabit: kenarda durur, pencereler altına girmez")), ("autohide", L.T("Otomatik gizlenen: fare kenara gelince açılır")), ("floating", L.T("Yüzen: istediğin yere sürükle")) };
         var mode = Combo(L.T("Görünüm"), modes.Select(m => m.Item2), Array.FindIndex(modes, m => m.Item1 == s.DockModeName));
