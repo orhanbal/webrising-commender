@@ -24,6 +24,9 @@ public sealed class GatewayException(GatewayErrorKind kind, int status, string c
 /// </summary>
 public sealed class GatewayClient(HttpClient http, string baseUrl)
 {
+    /// <summary>This app's version, sent with /api/center/me for the console's usage breakdown.</summary>
+    public static string AppVersion { get; set; } = "";
+
     private readonly string _base = baseUrl.TrimEnd('/');
 
     private async Task<JsonNode?> SendAsync(HttpMethod method, string path, string? token, object? body, CancellationToken ct)
@@ -79,7 +82,7 @@ public sealed class GatewayClient(HttpClient http, string baseUrl)
         Read<LinkPoll>(await SendAsync(HttpMethod.Post, "/api/center-link/poll", null, new { requestId = id, requestSecret = secret }, ct).ConfigureAwait(false));
 
     public async Task<CenterMe> MeAsync(string token, CancellationToken ct = default) =>
-        Read<CenterMe>(await SendAsync(HttpMethod.Get, "/api/center/me?platform=windows", token, null, ct).ConfigureAwait(false));
+        Read<CenterMe>(await SendAsync(HttpMethod.Get, "/api/center/me?platform=windows&version=" + Uri.EscapeDataString(AppVersion) + "&lang=" + Uri.EscapeDataString(L.Current), token, null, ct).ConfigureAwait(false));
 
     /// <summary>The person's next marketing message or survey (null: none).</summary>
     public async Task<InAppMessage?> MessageAsync(string token, CancellationToken ct = default) =>

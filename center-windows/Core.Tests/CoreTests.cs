@@ -237,7 +237,7 @@ public class CoreTests
         using (var doc = JsonDocument.Parse(handler.Calls.Last().Body!))
             Assert.Equal("windows", doc.RootElement.GetProperty("platform").GetString());
         await client.MeAsync("t");
-        Assert.EndsWith("/api/center/me?platform=windows", handler.Calls.Last().Url);
+        Assert.Contains("/api/center/me?platform=windows&version=", handler.Calls.Last().Url);
 
         static string? Text(string status, DecidedVia? via) =>
             Texts.DecidedElsewhere(new ApprovalOutcome { Id = "x", Status = status, DecidedVia = via });
