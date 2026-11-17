@@ -290,6 +290,67 @@ impl Sftp {
         }
     }
 
+    /// Metadata of `path` itself (a link is not followed), or `None` when
+    /// nothing is there.
+    pub async fn lstat(&self, path: &str) -> Result<Option<Entry>, SshError> {
+        let meta = match self.session.symlink_metadata(path).await {
+            Ok(meta) => meta,
+            Err(russh_sftp::client::error::Error::Status(s))
+                if s.status_code == russh_sftp::protocol::StatusCode::NoSuchFile =>
+            {
+                return Ok(None)
+            }
+            Err(e) => return Err(sftp_err(e)),
+        };
+        let kind = match meta.file_type() {
+            t if t.is_symlink() => "link",
+            t if t.is_dir() => "dir",
+            t if t.is_file() => "file",
+            _ => "other",
+        };
+        let trimmed = path.trim_end_matches('/');
+        let name = trimmed.rsplit('/').next().unwrap_or("").to_owned();
+        Ok(Some(Entry {
+            name: if name.is_empty() { "/".into() } else { name },
+            path: path.to_owned(),
+            kind,
+            size: meta.len(),
+            modified: meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map(|d| d.as_secs()),
+            permissions: mode_string(meta.permissions.unwrap_or(0)),
+        }))
+    }
+
+    /// Writes `bytes` to `path` (created, or truncated and replaced).
+    pub async fn write_bytes(&self, path: &str, bytes: &[u8]) -> Result<(), SshError> {
+        let mut target = self
+            .session
+            .open_with_flags(
+                path,
+                OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE,
+            )
+            .await
+            .map_err(sftp_err)?;
+        for chunk in bytes.chunks(CHUNK) {
+            target.write_all(chunk).await.map_err(io_err)?;
+        }
+        target.shutdown().await.map_err(io_err)?;
+        Ok(())
+    }
+
+    /// Deletes an empty folder.
+    pub async fn remove_dir(&self, path: &str) -> Result<(), SshError> {
+        self.session.remove_dir(path).await.map_err(sftp_err)
+    }
+
+    /// Deletes a file or a link (never what a link points to).
+    pub async fn remove_file(&self, path: &str) -> Result<(), SshError> {
+        self.session.remove_file(path).await.map_err(sftp_err)
+    }
+
     pub async fn close(&self) -> Result<(), SshError> {
         self.session.close().await.map_err(sftp_err)
     }

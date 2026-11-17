@@ -421,7 +421,7 @@ mod tests {
         let client = request["id"].as_str().unwrap().to_owned();
         // The tool list needs no decision.
         let list = c.call("tools/list", json!({})).await;
-        assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 8);
+        assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 12);
         // A call waits for the person; allowing releases it.
         let pending = c
             .send(
@@ -491,7 +491,7 @@ mod tests {
         }
         // Unsupported tool on SSH.
         let r = c
-            .call("tools/call", tool("fs_write", json!({"target": web})))
+            .call("tools/call", tool("terminal_start", json!({"target": web})))
             .await;
         assert_eq!(code(&r), "unsupported_for_target");
         // Host key forgotten after AI access was turned on: never TOFU.

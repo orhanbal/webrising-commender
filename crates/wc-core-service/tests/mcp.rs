@@ -132,6 +132,141 @@ fn structured(r: &Value) -> &Value {
     &r["result"]["structuredContent"]
 }
 
+/// H3/H4: the calls the app hands over from the gateway (`mcp.remoteCall`)
+/// for a host shared remotely through this computer.
+fn remote_through_this_computer(core: &mut Proc, host: &str, dir: &Path) {
+    let center = "center-e2e";
+    core.call(
+        "hosts.setAiAccess",
+        json!({"id": host, "aiAccess": {"local": true, "remote": true, "connector": center, "preset": "approval"}}),
+    )
+    .unwrap();
+    let published = core
+        .call("mcp.remoteTargets", json!({"centerId": center}))
+        .unwrap();
+    assert_eq!(published.as_array().unwrap().len(), 1);
+    assert_eq!(published[0]["hostId"], json!(host));
+    assert!(!published.to_string().contains("127.0.0.1"));
+    assert_eq!(
+        core.call("mcp.remoteTargets", json!({"centerId": "someone-else"}))
+            .unwrap(),
+        json!([])
+    );
+    let mut n = 0;
+    let mut remote = |core: &mut Proc, tool: &str, args: Value, approved: bool| {
+        n += 1;
+        let mut args = args;
+        args["target"] = json!(host);
+        core.call(
+            "mcp.remoteCall",
+            json!({"callId": format!("call-{n}"), "centerId": center, "client": "ChatGPT", "tool": tool, "args": args, "approved": approved}),
+        )
+        .unwrap()
+    };
+    let p = |name: &str| dir.join(name).to_string_lossy().into_owned();
+    let r = remote(core, "fs_read", json!({"path": p("note.txt")}), false);
+    assert_eq!(r["result"]["content"], "hybrid access works\n", "{r}");
+    // A command without the gateway's approval is refused; with it, it runs.
+    let r = remote(
+        core,
+        "process_exec",
+        json!({"command": "echo remote-$((1+1))"}),
+        false,
+    );
+    assert_eq!(r["error"], "approval_required", "{r}");
+    let r = remote(
+        core,
+        "process_exec",
+        json!({"command": "echo remote-$((1+1))"}),
+        true,
+    );
+    assert!(
+        r["result"]["output"].as_str().unwrap().contains("remote-2"),
+        "{r}"
+    );
+    // Writes: create, refuse a link (never followed), move, delete.
+    let outside = dir.join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("keep.txt"), "keep").unwrap();
+    let r = remote(
+        core,
+        "fs_write",
+        json!({"path": p("w/a.txt"), "content_base64": "YQ==", "create_parents": true}),
+        true,
+    );
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(std::fs::read_to_string(dir.join("w/a.txt")).unwrap(), "a");
+    std::os::unix::fs::symlink(outside.join("keep.txt"), dir.join("w/link.txt")).unwrap();
+    let r = remote(
+        core,
+        "fs_write",
+        json!({"path": p("w/link.txt"), "content_base64": "eA=="}),
+        true,
+    );
+    assert_eq!(r["error"], "symlink_refused", "{r}");
+    assert_eq!(
+        std::fs::read_to_string(outside.join("keep.txt")).unwrap(),
+        "keep"
+    );
+    // A stale write is refused.
+    let r = remote(
+        core,
+        "fs_write",
+        json!({"path": p("w/a.txt"), "content_base64": "Yg==", "expected_sha256": "0".repeat(64)}),
+        true,
+    );
+    assert_eq!(r["error"], "stale_content", "{r}");
+    let r = remote(core, "fs_mkdir", json!({"path": p("w/sub")}), true);
+    assert_eq!(r["result"]["created"], true, "{r}");
+    let r = remote(
+        core,
+        "fs_move",
+        json!({"source": p("w/a.txt"), "destination": p("note.txt")}),
+        true,
+    );
+    assert_eq!(r["error"], "destination_exists", "{r}");
+    let r = remote(
+        core,
+        "fs_move",
+        json!({"source": p("w/a.txt"), "destination": p("w/sub/b.txt")}),
+        true,
+    );
+    assert_eq!(r["ok"], true, "{r}");
+    std::os::unix::fs::symlink(&outside, dir.join("w/sub/outside-link")).unwrap();
+    let r = remote(core, "fs_delete", json!({"path": p("w")}), true);
+    assert_eq!(r["error"], "folder_not_empty", "{r}");
+    let r = remote(
+        core,
+        "fs_delete",
+        json!({"path": p("w"), "recursive": true}),
+        true,
+    );
+    assert_eq!(r["ok"], true, "{r}");
+    assert!(!dir.join("w").exists());
+    // The linked folder outside was not followed.
+    assert_eq!(
+        std::fs::read_to_string(outside.join("keep.txt")).unwrap(),
+        "keep"
+    );
+    let r = remote(
+        core,
+        "fs_delete",
+        json!({"path": "~", "recursive": true}),
+        true,
+    );
+    assert_eq!(r["error"], "protected_path", "{r}");
+    // A call id runs once.
+    let again = core
+        .call(
+            "mcp.remoteCall",
+            json!({"callId": "call-1", "centerId": center, "tool": "targets_list"}),
+        )
+        .unwrap();
+    assert_eq!(again["error"], "duplicate_call");
+    let audit = std::fs::read_to_string(dir.join("data").join("mcp-audit.jsonl")).unwrap();
+    assert!(audit.contains("remote-mcp") && audit.contains("symlink_refused"));
+}
+
 #[test]
 fn local_mcp_through_the_bridge_against_sshd() {
     let Some(sshd) = sshd() else {
@@ -210,7 +345,7 @@ fn local_mcp_through_the_bridge_against_sshd() {
         std::thread::sleep(Duration::from_millis(50));
     }
     assert_eq!(status["enabled"], true, "{status}");
-    assert_eq!(status["remoteSupported"], false);
+    assert_eq!(status["remoteSupported"], true);
     assert_eq!(status["bridgeCommand"][1], "--mcp-stdio");
     use std::os::unix::fs::PermissionsExt;
     assert_eq!(
@@ -372,6 +507,34 @@ fn local_mcp_through_the_bridge_against_sshd() {
         .call("mcp.decide", json!({"approvalId": "nope", "approve": true}))
         .unwrap_err()
         .starts_with("unknown_approval"));
+
+    // H4: a file write through local MCP, approved in the app with the
+    // exact path, size and SHA-256.
+    let new_file = dir.join("made").join("by-ai.txt");
+    let call = bridge.tool(
+        "fs_write",
+        json!({"target": host, "path": new_file.to_string_lossy(), "content_base64": "aGVsbG8gZnJvbSBBSQo=", "create_parents": true}),
+    );
+    let approval = core.event("mcp-approval");
+    assert_eq!(approval["tool"], "fs_write");
+    let shown = approval["command"].as_str().unwrap();
+    assert!(
+        shown.contains("by-ai.txt") && shown.contains("14 B"),
+        "{shown}"
+    );
+    core.call(
+        "mcp.decide",
+        json!({"approvalId": approval["approvalId"], "approve": true}),
+    )
+    .unwrap();
+    let r = bridge.reply(call);
+    assert_eq!(r["result"]["isError"], false, "{r}");
+    assert_eq!(
+        std::fs::read_to_string(&new_file).unwrap(),
+        "hello from AI\n"
+    );
+
+    remote_through_this_computer(&mut core, &host, &dir);
 
     // Guards: sudo, readonly, target not exposed.
     let id = bridge.tool(

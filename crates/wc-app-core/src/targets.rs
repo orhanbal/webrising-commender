@@ -137,11 +137,6 @@ pub fn set_ai_access(
     ai: AiAccess,
 ) -> Result<Vec<HostView>, String> {
     let ai = validate(ai, crate::time::now_unix())?;
-    if ai.remote {
-        return Err(
-            "remote_not_supported: AI access through wecommander.app is not available yet".into(),
-        );
-    }
     {
         let mut data = state.data.lock().map_err(|_| "busy")?;
         let host = data
@@ -219,7 +214,8 @@ pub fn capabilities(preset: &str) -> Capabilities {
     Capabilities {
         exec: preset != "readonly",
         read: true,
-        write: false,
+        // SFTP writes (H4): with an approval, like commands.
+        write: preset != "readonly",
         terminal: false,
         persistent_tasks: false,
         path_policy: "none",
@@ -238,6 +234,68 @@ pub fn local_targets(data: &Data) -> Vec<(SavedHost, AiAccess)> {
                 .map(|a| (h.clone(), a.clone()))
         })
         .collect()
+}
+
+/// Whether a host's remote access is served by the connector `center_id`
+/// (this computer's WECOMMANDER, signed in as that Management Center).
+/// `this-computer` (stored before the app knew its own id) is served by any
+/// signed-in computer that has the host.
+pub fn served_by(ai: &AiAccess, center_id: &str) -> bool {
+    !center_id.is_empty() && (ai.connector == center_id || ai.connector == "this-computer")
+}
+
+/// The hosts exposed to remote AI clients through this computer
+/// (`aiAccess.remote` with this computer as the connector, phase H3).
+pub fn remote_targets(data: &Data, center_id: &str) -> Vec<(SavedHost, AiAccess)> {
+    data.hosts
+        .iter()
+        .filter(|h| h.link.kind() == "ssh")
+        .filter_map(|h| {
+            h.ai_access
+                .as_ref()
+                .filter(|a| a.remote && served_by(a, center_id))
+                .map(|a| (h.clone(), a.clone()))
+        })
+        .collect()
+}
+
+/// What this computer publishes to the gateway for one remote target:
+/// never the address, user or credential (docs/HYBRID_ACCESS.md §5).
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PublishedTarget {
+    pub host_id: String,
+    pub name: String,
+    /// "readonly" or "approval": remote changes always need an approval.
+    pub preset: String,
+    pub sudo: String,
+    pub capabilities: Capabilities,
+}
+
+pub fn published_targets(data: &Data, center_id: &str, now: i64) -> Vec<PublishedTarget> {
+    remote_targets(data, center_id)
+        .iter()
+        .map(|(h, a)| {
+            let preset = remote_preset(a, now);
+            PublishedTarget {
+                host_id: h.id.clone(),
+                name: h.profile.label.clone(),
+                preset: preset.to_owned(),
+                sudo: a.sudo.clone(),
+                capabilities: capabilities(preset),
+            }
+        })
+        .collect()
+}
+
+/// The preset remote calls get: a timed (autonomous) period applies to AI
+/// clients on this computer only; through wecommander.app every command and
+/// every change needs a one-time approval.
+pub fn remote_preset(ai: &AiAccess, now: i64) -> &'static str {
+    match effective_preset(ai, now) {
+        "readonly" => "readonly",
+        _ => "approval",
+    }
 }
 
 pub fn target_view(host: &SavedHost, ai: &AiAccess, now: i64) -> TargetView {
@@ -353,14 +411,32 @@ mod tests {
         let hosts = set_ai_access(&st, id.clone(), on("readonly")).unwrap();
         assert!(hosts[0].ai_access.local);
         assert_eq!(hosts[0].ai_access.preset, "readonly");
-        // Remote MCP (H3) is not available yet.
+        // Remote MCP (H3) through this computer.
         let remote = AiAccess {
             remote: true,
+            connector: "center-1".into(),
+            preset: "timed".into(),
+            timed_until: Some(format_rfc3339(crate::time::now_unix() + 600)),
             ..on("approval")
         };
-        assert!(set_ai_access(&st, id.clone(), remote)
-            .unwrap_err()
-            .starts_with("remote_not_supported:"));
+        let hosts = set_ai_access(&st, id.clone(), remote).unwrap();
+        assert!(hosts[0].ai_access.remote);
+        {
+            let d = st.data.lock().unwrap();
+            assert_eq!(remote_targets(&d, "center-1").len(), 1);
+            // Another computer (another center) does not serve it, nor a signed-out one.
+            assert!(remote_targets(&d, "center-2").is_empty());
+            assert!(remote_targets(&d, "").is_empty());
+            let published = published_targets(&d, "center-1", crate::time::now_unix());
+            let text = serde_json::to_string(&published).unwrap();
+            assert!(
+                !text.contains("srv.example.com") && !text.contains("deploy"),
+                "{text}"
+            );
+            // Timed is local only: remote changes still need approval.
+            assert_eq!(published[0].preset, "approval");
+            assert!(published[0].capabilities.write);
+        }
         // A key that needs a typed passphrase, or a key file that is gone.
         crate::library::host_set_identity(&st, id.clone(), None).unwrap();
         {

@@ -114,5 +114,72 @@
       "additionalProperties": false
     },
     "annotations": { "title": "Server processes", "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
+  },
+  {
+    "name": "fs_write",
+    "title": "Write a file",
+    "description": "Write base64-encoded bytes (at most 4 MiB) to a file on the target over SFTP, creating it or replacing its content. HIGH risk: the person approves this exact write (path, size, SHA-256) in the WECOMMANDER app first, unless the target is in a timed autonomous period; refused on readonly targets. A path that is a symbolic link is refused (the link is never followed). expected_sha256 refuses the write when the current content changed; create_parents creates missing folders.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "target": { "type": "string" },
+        "path": { "type": "string" },
+        "content_base64": { "type": "string" },
+        "create_parents": { "type": "boolean" },
+        "expected_sha256": { "type": "string", "description": "SHA-256 (hex) the current file must have." }
+      },
+      "required": ["path", "content_base64"],
+      "additionalProperties": false
+    },
+    "annotations": { "title": "Write a file", "readOnlyHint": false, "destructiveHint": true, "idempotentHint": true, "openWorldHint": false }
+  },
+  {
+    "name": "fs_mkdir",
+    "title": "Create a folder",
+    "description": "Create a folder on the target over SFTP (recursive creates missing parents). Needs the person's approval like other changes; refused on readonly targets.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "target": { "type": "string" },
+        "path": { "type": "string" },
+        "recursive": { "type": "boolean" }
+      },
+      "required": ["path"],
+      "additionalProperties": false
+    },
+    "annotations": { "title": "Create a folder", "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
+  },
+  {
+    "name": "fs_move",
+    "title": "Move or rename",
+    "description": "Move or rename a file or folder on the target over SFTP; the destination must not exist. A symbolic link is moved as the link itself. HIGH risk: needs the person's approval; refused on readonly targets.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "target": { "type": "string" },
+        "source": { "type": "string" },
+        "destination": { "type": "string" }
+      },
+      "required": ["source", "destination"],
+      "additionalProperties": false
+    },
+    "annotations": { "title": "Move or rename", "readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": false }
+  },
+  {
+    "name": "fs_delete",
+    "title": "Delete",
+    "description": "Delete a file, link or folder on the target over SFTP. A folder needs recursive (at most 10000 entries; links inside are removed, never followed). The root folder and the SSH user's home folder are refused. expected_sha256 deletes a file only if its content is unchanged. HIGH risk: needs the person's approval; refused on readonly targets.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "target": { "type": "string" },
+        "path": { "type": "string" },
+        "recursive": { "type": "boolean" },
+        "expected_sha256": { "type": "string" }
+      },
+      "required": ["path"],
+      "additionalProperties": false
+    },
+    "annotations": { "title": "Delete", "readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": false }
   }
 ]
