@@ -11,11 +11,13 @@ import UniformTypeIdentifiers
 struct ServersView: View {
     @ObservedObject var model: ServersModel
     @State private var editing: EditRequest?
-    @State private var showFiles = false
     @State private var showTunnels = false
     var showPanel: () -> Void = {}
 
     static let hostsPage = "page:hosts"
+    static let terminalsPage = "page:terminals"
+    static let scheduledPage = "page:scheduled"
+    static let settingsPage = "page:settings"
 
     var body: some View {
         NavigationSplitView {
@@ -40,15 +42,20 @@ struct ServersView: View {
 
     private var sidebar: some View {
         List(selection: Binding(get: { model.selection }, set: { model.selection = $0 })) {
+            // The Windows main window's order; settings last, as in its bottom bar.
             Section {
                 Label(L.t("Sunucular"), systemImage: "server.rack").tag(Self.hostsPage)
+                Label(L.t("Terminaller"), systemImage: "terminal").tag(Self.terminalsPage)
                 Label(L.t("Anahtarlar"), systemImage: "key").tag("page:keys")
                 Label(L.t("Kimlikler"), systemImage: "person.crop.circle.badge.checkmark").tag("page:identities")
                 Label(L.t("Parçacıklar"), systemImage: "text.badge.plus").tag("page:snippets")
                 Label(L.t("Tüneller"), systemImage: "point.3.connected.trianglepath.dotted").tag("page:tunnels")
                 Label(L.t("Bilinen sunucular"), systemImage: "checkmark.shield").tag("page:known")
                 Label(L.t("Geçmiş"), systemImage: "clock.arrow.circlepath").tag("page:history")
-                Label(L.t("Ayarlar"), systemImage: "gearshape").tag("page:settings")
+                Label(L.t("Zamanlanmış görevler"), systemImage: "calendar.badge.clock").tag(Self.scheduledPage)
+            }
+            Section {
+                Label(L.t("Ayarlar"), systemImage: "gearshape").tag(Self.settingsPage)
             }
             if !model.sessions.isEmpty {
                 Section(L.t("Açık terminaller")) {
@@ -91,7 +98,7 @@ struct ServersView: View {
                     TerminalHost(model: model, session: session)
                         .id(session.id)
                 }
-                if showFiles {
+                if model.showFiles {
                     Divider()
                     FilesPane(model: model, session: session)
                         .frame(width: 340)
@@ -149,7 +156,7 @@ struct ServersView: View {
                     SnippetMenu(model: model, session: session)
                     Button { showTunnels = true } label: { Label(L.t("Tüneller"), systemImage: "point.3.connected.trianglepath.dotted") }
                         .disabled(session.closed)
-                    Toggle(isOn: $showFiles) { Label(L.t("Dosyalar"), systemImage: "folder") }
+                    Toggle(isOn: $model.showFiles) { Label(L.t("Dosyalar"), systemImage: "folder") }
                         .disabled(session.closed)
                     Button { model.close(session) } label: { Label(L.t("Terminali kapat"), systemImage: "xmark") }
                 }
@@ -163,9 +170,62 @@ struct ServersView: View {
             case "page:tunnels": TunnelsPage(model: model)
             case "page:known": KnownHostsPage(model: model)
             case "page:history": HistoryPage(model: model)
+            case "page:terminals": TerminalsPage(model: model)
+            case "page:scheduled":
+                if let scheduled = model.scheduled { ScheduledTasksPage(model: scheduled) }
             default: HostsPage(model: model, edit: { editing = EditRequest(host: $0) })
             }
         }
+    }
+}
+
+/// "Terminaller": the open terminals (each opens on a click); empty until a server is connected.
+struct TerminalsPage: View {
+    @ObservedObject var model: ServersModel
+
+    var body: some View {
+        Group {
+            if model.sessions.isEmpty {
+                ContentUnavailableCompat(title: L.t("Açık terminal yok"), systemImage: "terminal",
+                                         text: L.t("Sunucular'dan birine tıkla; terminal açılır ve kenar çubuğunda \"Açık terminaller\" altında görünür."))
+            } else {
+                List {
+                    ForEach(model.sessions) { session in
+                        TerminalListRow(model: model, session: session)
+                    }
+                }
+            }
+        }
+        .navigationTitle(L.t("Terminaller"))
+        .toolbar {
+            Button { model.selection = ServersView.hostsPage } label: { Label(L.t("Sunucular"), systemImage: "server.rack") }
+        }
+    }
+}
+
+struct TerminalListRow: View {
+    @ObservedObject var model: ServersModel
+    @ObservedObject var session: TerminalSession
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: session.closed ? "terminal" : "terminal.fill")
+                .foregroundStyle(session.closed ? Color.secondary : Color.accentColor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(session.host.label).fontWeight(.semibold).lineLimit(1).truncationMode(.tail)
+                Text(session.host.target).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            }
+            Spacer(minLength: 8)
+            if session.closed {
+                Text(L.t("Terminal kapalı.")).font(.caption).foregroundStyle(.secondary)
+            }
+            Button(L.t("Terminal aç")) { model.selection = session.id }
+            Button { model.close(session) } label: { Image(systemName: "xmark") }
+                .buttonStyle(.borderless)
+                .help(L.t("Terminali kapat"))
+                .accessibilityLabel(L.t("Terminali kapat"))
+        }
+        .padding(.vertical, 4)
     }
 }
 

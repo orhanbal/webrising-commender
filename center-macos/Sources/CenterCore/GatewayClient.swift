@@ -10,10 +10,12 @@ public struct GatewayError: Error, Equatable, LocalizedError {
     public let status: Int
     public let code: String
     public let message: String
+    /// The server's own explanation of a refused request (the JSON `message`), e.g. why a schedule is invalid.
+    public let serverMessage: String?
     public var errorDescription: String? { message }
 
-    public init(_ kind: GatewayErrorKind, _ status: Int, _ code: String, _ message: String) {
-        self.kind = kind; self.status = status; self.code = code; self.message = message
+    public init(_ kind: GatewayErrorKind, _ status: Int, _ code: String, _ message: String, serverMessage: String? = nil) {
+        self.kind = kind; self.status = status; self.code = code; self.message = message; self.serverMessage = serverMessage
     }
 }
 
@@ -83,12 +85,13 @@ public struct GatewayClient: Sendable {
         }
         guard (200..<300).contains(status) else {
             let code = ((json as? [String: Any])?["error"] as? String) ?? ""
-            throw GatewayError(.http, status, code, Texts.forErrorCode(code, status: status))
+            let explained = (json as? [String: Any])?["message"] as? String
+            throw GatewayError(.http, status, code, Texts.forErrorCode(code, status: status), serverMessage: explained)
         }
         return json
     }
 
-    private func decode<T: Decodable>(_ type: T.Type, _ value: Any?) throws -> T {
+    func decode<T: Decodable>(_ type: T.Type, _ value: Any?) throws -> T {
         guard let value, JSONSerialization.isValidJSONObject(value),
               let data = try? JSONSerialization.data(withJSONObject: value),
               let result = try? GatewayDates.decoder().decode(T.self, from: data) else {
@@ -97,7 +100,7 @@ public struct GatewayClient: Sendable {
         return result
     }
 
-    private func items<T: Decodable>(_ path: String, token: String) async throws -> [T] {
+    func items<T: Decodable>(_ path: String, token: String) async throws -> [T] {
         let json = try await send("GET", path, token: token, body: nil)
         guard let items = (json as? [String: Any])?["items"] else { return [] }
         return try decode([T].self, items)
@@ -113,8 +116,24 @@ public struct GatewayClient: Sendable {
                                                  body: ["requestId": id, "requestSecret": secret]))
     }
 
-    public func me(token: String) async throws -> CenterMe {
-        try decode(CenterMe.self, try await send("GET", "/api/center/me?platform=macos", token: token, body: nil))
+    /// `version` (this app's 0.1.N, "dev" in a developer build) and the interface language go along for the console's usage breakdown.
+    public func me(token: String, version: String? = nil) async throws -> CenterMe {
+        let path = Self.mePath(version: version ?? Self.appVersion, language: L.current)
+        return try decode(CenterMe.self, try await send("GET", path, token: token, body: nil))
+    }
+
+    /// This app's version from its bundle; "dev" when it has none.
+    public static var appVersion: String {
+        let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        return v.isEmpty ? "dev" : v
+    }
+
+    static func mePath(version: String, language: String) -> String {
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+        let v = version.addingPercentEncoding(withAllowedCharacters: allowed) ?? "dev"
+        let lang = language.addingPercentEncoding(withAllowedCharacters: allowed) ?? "en"
+        return "/api/center/me?platform=macos&version=" + v + "&lang=" + lang
     }
 
     /// The person's next marketing message or survey (nil: none).

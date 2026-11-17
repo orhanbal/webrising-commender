@@ -18,19 +18,26 @@ enum ServerWindows {
 
     /// Shows the window of `session` (a new one the first time), optionally on one page.
     static func show(_ servers: ServersModel, session: TerminalSession, page: ServerManagementModel.Page? = nil) {
-        if let entry = open[session.id] {
+        show(servers, sessionId: session.id, label: session.host.label, page: page)
+    }
+
+    /// The window of a connection: a terminal's, or a menu bar monitor's (`monitor.open`), optionally on one page.
+    @discardableResult
+    static func show(_ servers: ServersModel, sessionId: String, label: String, page: ServerManagementModel.Page? = nil) -> NSWindow {
+        if let entry = open[sessionId] {
             if let page { entry.model.go(page) }
             entry.window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
-            return
+            return entry.window
         }
-        let model = ServerManagementModel(servers: servers, sessionId: session.id, label: session.host.label)
+        let model = ServerManagementModel(servers: servers, sessionId: sessionId, label: label)
         let window = NSWindow(contentViewController: NSHostingController(rootView: ServerManagementView(model: model)))
-        window.title = L.f("Sunucu yönetimi — {0}", session.host.label)
+        window.title = L.f("Sunucu yönetimi — {0}", label)
         window.setContentSize(NSSize(width: 1060, height: 780))
+        window.contentMinSize = NSSize(width: 820, height: 560)
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
-        let id = session.id
+        let id = sessionId
         let delegate = ServerWindowDelegate { ServerWindows.closed(id) }
         window.delegate = delegate
         open[id] = (window, model, delegate)
@@ -38,6 +45,7 @@ enum ServerWindows {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         model.go(page ?? .overview)
+        return window
     }
 
     /// Closes the window of a terminal that was closed.
@@ -64,7 +72,7 @@ final class ServerWindowDelegate: NSObject, NSWindowDelegate {
 @MainActor
 final class ServerManagementModel: ObservableObject {
     enum Page: String, CaseIterable, Identifiable {
-        case overview, disk, cleanup, processes
+        case overview, disk, cleanup, processes, timers
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -72,6 +80,7 @@ final class ServerManagementModel: ObservableObject {
             case .disk: return L.t("Disk")
             case .cleanup: return L.t("Temizlik")
             case .processes: return L.t("Süreçler")
+            case .timers: return L.t("Zamanlayıcılar")
             }
         }
         var symbol: String {
@@ -80,8 +89,24 @@ final class ServerManagementModel: ObservableObject {
             case .disk: return "internaldrive"
             case .cleanup: return "sparkles"
             case .processes: return "list.bullet.rectangle"
+            case .timers: return "timer"
             }
         }
+    }
+
+    /// The create / edit form of a timer, with why the last try was refused.
+    struct TimerFormRequest: Identifiable {
+        let id = UUID()
+        let spec: TimerSpec
+        let edit: Bool
+        let error: String?
+    }
+
+    /// A timer's journal as last read.
+    struct TimerLogState: Equatable {
+        var text = ""
+        var note = ""
+        var loading = false
     }
 
     enum Kind { case info, success, warning, error }
@@ -178,6 +203,10 @@ final class ServerManagementModel: ObservableObject {
     @Published private(set) var net = LiveSeries()
     @Published private(set) var io = LiveSeries()
     @Published private(set) var run: CleanupRun?
+    @Published private(set) var timers: ServerTimers?
+    @Published var timerFilter = ""
+    @Published var timerForm: TimerFormRequest?
+    @Published private(set) var timerLogs: [String: TimerLogState] = [:]
 
     private var generation = 0
     private var liveTask: Task<Void, Never>?
@@ -232,6 +261,7 @@ final class ServerManagementModel: ObservableObject {
         case .disk: disk = nil; waiting = L.f("{0} taranıyor", diskPath)
         case .cleanup: cleanup = nil; waiting = L.t("Silinebilecek dosyalar hesaplanıyor…")
         case .processes: processes = nil; waiting = L.t("Süreçler okunuyor…")
+        case .timers: timers = nil; timerLogs = [:]; waiting = L.t("Zamanlayıcılar okunuyor…")
         }
         waitingSince = Date()
         diskProgress = nil
@@ -265,6 +295,10 @@ final class ServerManagementModel: ObservableObject {
                 let list = try await call("server.processes", as: ProcessList.self)
                 guard gen == generation else { return }
                 processes = list
+            case .timers:
+                let list = try await call("server.timers", as: ServerTimers.self)
+                guard gen == generation else { return }
+                timers = list
             }
             waiting = nil
         } catch {
@@ -549,6 +583,142 @@ final class ServerManagementModel: ObservableObject {
             show(friendly(error), .error)
         }
     }
+
+    // MARK: timers
+
+    private func showTimerResult(_ r: TimerResult, _ success: String) {
+        if r.ok { show(success, .success); return }
+        show(L.f("Komut başarısız oldu: {0}", r.output.isEmpty ? r.command : r.output), .error)
+    }
+
+    /// Enable, disable, run now or stop, after the exact command was confirmed.
+    func askTimerAction(_ t: ServerTimer, _ action: String) {
+        guard let command = TimerView.actionCommand(t, action) else { return }
+        let title: String
+        let text: String
+        let primary: String
+        switch action {
+        case "enable":
+            title = L.f("{0} etkinleştirilsin mi?", t.unit)
+            text = L.t("Zamanlayıcı hemen başlar ve sunucu açılışında da başlar; görev takvimine göre kendiliğinden çalışır.")
+            primary = L.t("Etkinleştir")
+        case "disable":
+            title = L.f("{0} devre dışı bırakılsın mı?", t.unit)
+            text = L.t("Zamanlayıcı durdurulur ve açılışta başlamaz; görev artık kendiliğinden çalışmaz. O anda çalışan iş yarıda kesilmez.")
+            primary = L.t("Devre dışı bırak")
+        case "start-now":
+            title = L.f("{0} şimdi çalıştırılsın mı?", t.service)
+            text = L.t("Görev beklemeden bir kez başlatılır; zamanlayıcının takvimi değişmez.")
+            primary = L.t("Şimdi çalıştır")
+        default:
+            title = L.f("{0} durdurulsun mu?", t.service)
+            text = L.t("Çalışmakta olan görev durdurulur; zamanlayıcı olduğu gibi kalır ve görev bir sonraki zamanında yeniden çalışır.")
+            primary = L.t("Durdur")
+        }
+        let destructive = action == "disable" || action == "stop"
+        confirmation = Confirmation(title: title, text: text, command: command, primary: primary, destructive: destructive) { [weak self] in
+            await self?.timerAction(t, action)
+        }
+    }
+
+    private func timerAction(_ t: ServerTimer, _ action: String) async {
+        do {
+            let r = try await call("server.timerAction", ["unit": t.unit, "action": action], as: TimerResult.self)
+            load()
+            let name = action == "start-now" || action == "stop" ? t.service : t.unit
+            showTimerResult(r, L.f("{0}: tamamlandı.", name))
+        } catch {
+            show(friendly(error), .error)
+        }
+    }
+
+    /// The journal of a timer's service (last 200 lines).
+    func loadTimerLogs(_ t: ServerTimer) {
+        var state = timerLogs[t.unit] ?? TimerLogState()
+        state.loading = true
+        state.note = L.t("Günlük okunuyor…")
+        timerLogs[t.unit] = state
+        Task {
+            var next = TimerLogState()
+            do {
+                let r = try await call("server.timerLogs", ["unit": t.unit, "lines": 200], as: TimerLogs.self)
+                next.text = r.lines.joined(separator: "\n")
+                next.note = (r.note.isEmpty ? "" : r.note + "\n") + "$ " + r.command
+            } catch {
+                next.note = friendly(error)
+            }
+            timerLogs[t.unit] = next
+        }
+    }
+
+    /// Creates a timer (nil) or edits one WECOMMANDER created: the form first.
+    func editTimer(_ existing: ServerTimer?) {
+        if existing != nil && existing?.managed == nil { return }
+        let m = existing?.managed
+        let spec = TimerSpec(name: m?.name ?? "", description: m?.description ?? "", command: m?.command ?? "",
+                             user: m?.user ?? "root", calendar: m?.calendar ?? "daily")
+        timerForm = TimerFormRequest(spec: spec, edit: existing != nil, error: nil)
+    }
+
+    /// The form's "Devam": its checks, then the exact commands to confirm (shown once the form has closed).
+    func submitTimer(_ spec: TimerSpec, edit: Bool) {
+        let s = spec.trimmed
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard let self else { return }
+            if let problem = TimerView.check(s) {
+                self.timerForm = TimerFormRequest(spec: s, edit: edit, error: problem)
+                return
+            }
+            let unit = s.name + ".timer"
+            let title = edit ? L.f("{0} düzenlensin mi?", unit) : L.f("{0} oluşturulsun mu?", unit)
+            let text = edit
+                ? L.t("İki birim dosyası yeniden yazılır ve systemd yeniden yüklenir; zamanlayıcı çalışıyorsa yeni takvimle yeniden başlar.")
+                : L.t("/etc/systemd/system içine WECOMMANDER işaretli bir .service ve bir .timer dosyası yazılır, systemd yeniden yüklenir ve zamanlayıcı etkinleştirilir. Takvim önce systemd-analyze ile denetlenir.")
+            self.confirmation = Confirmation(title: title, text: text, command: TimerView.writeCommand(s, edit: edit),
+                                             primary: edit ? L.t("Kaydet") : L.t("Oluştur"), destructive: false) { [weak self] in
+                await self?.writeTimer(s, edit: edit)
+            }
+        }
+    }
+
+    private func writeTimer(_ s: TimerSpec, edit: Bool) async {
+        waiting = L.t("Zamanlayıcı yazılıyor…")
+        waitingSince = Date()
+        let params: [String: Any] = ["name": s.name, "description": s.description, "command": s.command, "user": s.user, "calendar": s.calendar]
+        let unit = s.name + ".timer"
+        do {
+            let r = try await call(edit ? "server.timerEdit" : "server.timerCreate", params, as: TimerResult.self)
+            load()
+            showTimerResult(r, edit ? L.f("{0} güncellendi.", unit) : L.f("{0} oluşturuldu ve etkinleştirildi.", unit))
+        } catch {
+            // Refused by the server (calendar, user, name taken…): the form again, with why.
+            let why = friendly(error)
+            load()
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            timerForm = TimerFormRequest(spec: s, edit: edit, error: why)
+        }
+    }
+
+    func askDeleteTimer(_ t: ServerTimer) {
+        guard t.isManaged else { return }
+        confirmation = Confirmation(
+            title: L.f("{0} silinsin mi?", t.unit),
+            text: L.t("Zamanlayıcı durdurulur, devre dışı bırakılır ve iki birim dosyası silinir. Geri alınamaz."),
+            command: TimerView.deleteCommand(TimerView.nameOf(t)),
+            primary: L.t("Sil")
+        ) { [weak self] in await self?.deleteTimer(t) }
+    }
+
+    private func deleteTimer(_ t: ServerTimer) async {
+        do {
+            let r = try await call("server.timerDelete", ["unit": t.unit], as: TimerResult.self)
+            load()
+            showTimerResult(r, L.f("{0} silindi.", t.unit))
+        } catch {
+            show(friendly(error), .error)
+        }
+    }
 }
 
 // MARK: - colours
@@ -626,6 +796,9 @@ struct ServerManagementView: View {
                 Task { await model.applyInit(request.zombie, token: token) }
             }
         }
+        .sheet(item: $model.timerForm) { request in
+            TimerFormSheet(request: request) { spec in model.submitTimer(spec, edit: request.edit) }
+        }
         .frame(minWidth: 820, minHeight: 560)
     }
 
@@ -646,6 +819,8 @@ struct ServerManagementView: View {
                 if let scan = model.cleanup { CleanupPage(model: model, scan: scan) }
             case .processes:
                 if let list = model.processes { ProcessesPage(model: model, list: list) }
+            case .timers:
+                if let s = model.timers { TimersPage(model: model, s: s) } else { TimersIntro() }
             }
         }
     }
