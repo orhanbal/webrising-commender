@@ -467,7 +467,7 @@ export function pageJsonLd(page: PublicPage, origin: string) {
 
 /** Paths that must never be indexed (account and admin areas, API, MCP transport). */
 export const privatePrefixes = [
-  "/api/", "/mcp", "/console", "/dashboard", "/account", "/billing", "/devices", "/terminal", "/files", "/tasks",
+  "/api/", "/mcp", "/console", "/dashboard", "/account", "/billing", "/devices", "/terminal", "/files", "/tasks", "/scheduled-tasks",
   "/usage", "/approvals", "/team", "/audit", "/invite", "/checkout", "/connect-device", "/connect-center",
   "/login", "/register", "/forgot-password", "/reset-password", "/verify", "/oauth/", "/authorize", "/token",
 ];
