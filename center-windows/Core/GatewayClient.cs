@@ -7,12 +7,14 @@ namespace Wecommander.Center.Core;
 
 public enum GatewayErrorKind { Unauthorized, Http, Network }
 
-public sealed class GatewayException(GatewayErrorKind kind, int status, string code, string message)
+public sealed class GatewayException(GatewayErrorKind kind, int status, string code, string message, string? serverMessage = null)
     : Exception(message)
 {
     public GatewayErrorKind Kind { get; } = kind;
     public int Status { get; } = status;
     public string Code { get; } = code;
+    /// <summary>The server's own explanation (<c>message</c> in the error body), e.g. why a cron expression is invalid.</summary>
+    public string? ServerMessage { get; } = serverMessage;
 }
 
 /// <summary>
@@ -53,7 +55,8 @@ public sealed class GatewayClient(HttpClient http, string baseUrl)
             if (!response.IsSuccessStatusCode)
             {
                 var code = json?["error"]?.GetValueKind() == JsonValueKind.String ? json["error"]!.GetValue<string>() : "";
-                throw new GatewayException(GatewayErrorKind.Http, status, code, Texts.ForErrorCode(code, status));
+                var serverMessage = json?["message"]?.GetValueKind() == JsonValueKind.String ? json["message"]!.GetValue<string>() : null;
+                throw new GatewayException(GatewayErrorKind.Http, status, code, Texts.ForErrorCode(code, status), serverMessage);
             }
             return json;
         }
@@ -181,6 +184,48 @@ public sealed class GatewayClient(HttpClient http, string baseUrl)
             return (false, new LibraryState(team.Revision, team.Envelope));
         }
     }
+
+    // ---- WECOMMANDER scheduled tasks (owner/admin change them; viewer reads) ----
+
+    public Task<List<ScheduledTask>> ScheduledTasksAsync(string token, CancellationToken ct = default) =>
+        ItemsAsync<ScheduledTask>("/api/scheduled-tasks", token, ct);
+
+    public async Task<ScheduledTask> CreateScheduledTaskAsync(string token, ScheduledTaskDraft draft, CancellationToken ct = default) =>
+        Read<ScheduledTask>((await SendAsync(HttpMethod.Post, "/api/scheduled-tasks", token, draft.ToJson(), ct).ConfigureAwait(false))?["item"]);
+
+    /// <summary>PATCH with only the fields to change (e.g. <c>{"enabled": false}</c>).</summary>
+    public async Task<ScheduledTask> UpdateScheduledTaskAsync(string token, string id, JsonObject changes, CancellationToken ct = default) =>
+        Read<ScheduledTask>((await SendAsync(HttpMethod.Patch, "/api/scheduled-tasks/" + Uuid(id), token, changes, ct).ConfigureAwait(false))?["item"]);
+
+    public async Task DeleteScheduledTaskAsync(string token, string id, CancellationToken ct = default) =>
+        await SendAsync(HttpMethod.Delete, "/api/scheduled-tasks/" + Uuid(id), token, null, ct).ConfigureAwait(false);
+
+    /// <summary>Run now (trigger = manual); the run is queued on the server.</summary>
+    public async Task<TaskRun> RunScheduledTaskAsync(string token, string id, CancellationToken ct = default) =>
+        Read<TaskRun>((await SendAsync(HttpMethod.Post, $"/api/scheduled-tasks/{Uuid(id)}/run", token, new { }, ct).ConfigureAwait(false))?["run"]);
+
+    public Task<List<TaskRun>> ScheduledTaskRunsAsync(string token, string id, int limit = 50, CancellationToken ct = default) =>
+        ItemsAsync<TaskRun>($"/api/scheduled-tasks/{Uuid(id)}/runs?limit={Math.Clamp(limit, 1, 200)}", token, ct);
+
+    /// <summary>The next five run times; an invalid schedule is a 400 whose <see cref="GatewayException.ServerMessage"/> says why.</summary>
+    public async Task<List<DateTimeOffset>> PreviewScheduleAsync(string token, TaskSchedule schedule, string timezone, CancellationToken ct = default)
+    {
+        var node = await SendAsync(HttpMethod.Post, "/api/scheduled-tasks/preview", token,
+            new JsonObject { ["schedule"] = schedule.ToJson(), ["timezone"] = timezone }, ct).ConfigureAwait(false);
+        return node?["next"].Deserialize<List<DateTimeOffset>>(Web) ?? [];
+    }
+
+    /// <summary>Runs queued for saved SSH hosts of this Center, now marked running for it (lease 15 min).</summary>
+    public Task<List<ClaimedRun>> ClaimScheduledRunsAsync(string token, CancellationToken ct = default) =>
+        ItemsAsync<ClaimedRun>("/api/center/scheduled-runs/claim", token, ct);
+
+    public async Task PostScheduledRunResultAsync(string token, string runId, ScheduledRunResult result, CancellationToken ct = default) =>
+        await SendAsync(HttpMethod.Post, $"/api/center/scheduled-runs/{Uuid(runId)}/result", token, result.ToJson(), ct).ConfigureAwait(false);
+
+    /// <summary>Ids are uuids; anything else never reaches the URL.</summary>
+    private static string Uuid(string id) => Guid.TryParse(id, out var guid)
+        ? guid.ToString("D")
+        : throw new GatewayException(GatewayErrorKind.Http, 400, "invalid_request", Texts.ForErrorCode("invalid_request", 400));
 
     // ---- S3 error reports ----
 

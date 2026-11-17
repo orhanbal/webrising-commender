@@ -498,6 +498,8 @@ public partial class App : Application
             // The owner can turn notifications off (or back on) in Windows at
             // any time; pick that up without a restart.
             if (RefreshNotificationSetting()) Publish();
+            // Scheduled tasks on saved SSH hosts: claimed in the background, never awaited here.
+            try { PollScheduledRuns(); } catch (Exception e) { LogCrash(e); }
             if (_link is not null) await PollLinkAsync();
             else if (Token is not null && DateTime.UtcNow - _lastSync >= SyncEvery) await SyncAsync();
             if (DateTime.UtcNow - _lastAgentCheck >= TimeSpan.FromSeconds(10)) await CheckAgentAsync();
@@ -879,6 +881,7 @@ public partial class App : Application
     {
         Token = null;
         Me = null;
+        _lastScheduledClaim = DateTime.MinValue; // the next sign-in claims at once
         Pending = [];
         Devices = [];
         Autonomy = [];

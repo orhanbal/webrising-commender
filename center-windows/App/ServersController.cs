@@ -10,7 +10,7 @@ namespace Wecommander.Center;
 /// Owns wecommander-core for the app's lifetime (so saved tunnels keep
 /// running with the window closed) and routes its events to terminal tabs.
 /// </summary>
-public sealed class ServersController : IDisposable
+public sealed partial class ServersController : IDisposable
 {
     private CoreClient? _core;
     private readonly ConcurrentDictionary<string, (TerminalTab Tab, DispatcherQueue Ui)> _tabs = new();
@@ -60,6 +60,12 @@ public sealed class ServersController : IDisposable
             case "terminal-output":
             {
                 var sid = (string?)data?["sessionId"];
+                if (sid is not null && _captures.TryGetValue(sid, out var capture))
+                {
+                    // A scheduled task's hidden session (ServersController.Exec.cs).
+                    try { capture(Convert.FromBase64String((string?)data?["data"] ?? "")); } catch (FormatException) { }
+                    break;
+                }
                 if (sid is not null && _tabs.TryGetValue(sid, out var t))
                 {
                     var b64 = (string?)data?["data"] ?? "";
@@ -72,6 +78,11 @@ public sealed class ServersController : IDisposable
             case "terminal-exit":
             {
                 var sid = (string?)data?["sessionId"];
+                if (sid is not null && _captures.TryGetValue(sid, out var capture))
+                {
+                    capture(null);
+                    break;
+                }
                 if (sid is not null && _tabs.TryGetValue(sid, out var t))
                 {
                     var code = data?["code"] is JsonValue v && v.TryGetValue(out int c) ? L.F(", çıkış kodu {0}", c) : "";

@@ -159,6 +159,8 @@ public class DockLayoutTests
         Assert.Empty(DockLayout.Move([], 0, 1));
         // The input is not changed.
         Assert.Equal("servers", order[0]);
+        Assert.Equal(["terminal", "servers", "processes", "approvals", "tasks"], DockLayout.Modules(["terminal", "bogus", "servers", "terminal"], null));
+        Assert.Equal(["servers", "terminal", "tasks"], DockLayout.Modules(null, ["processes", "approvals"]));
     }
 
     [Fact]
@@ -183,6 +185,7 @@ public class DockLayoutTests
             Assert.Equal(300, back.DockFloatX);
             Assert.Equal(@"\\.\DISPLAY2", back.DockMonitor);
             Assert.Equal(["approvals", "servers", "processes", "timers"], DockLayout.Modules(back.DockModules, back.DockHiddenModules));
+            Assert.Equal(["approvals", "servers", "processes", "tasks"], DockLayout.Modules(back.DockModules, back.DockHiddenModules));
         }
         finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
     }

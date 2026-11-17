@@ -178,6 +178,7 @@ public static class DockLayout
 
     /// <summary>The Dock's parts, in the default order.</summary>
     public static readonly string[] AllModules = ["servers", "processes", "timers", "terminal", "approvals"];
+    public static readonly string[] AllModules = ["servers", "processes", "terminal", "approvals", "tasks"];
 
     /// <summary>The saved order with unknown names dropped and missing ones (added in a later version) appended, hidden ones left out.</summary>
     public static List<string> Modules(IEnumerable<string>? order, IEnumerable<string>? hidden)
