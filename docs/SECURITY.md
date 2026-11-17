@@ -56,6 +56,18 @@ When a new approval request is created, admins and owners receive one e-mail
 with a link to Devices → Approvals. Approving still requires their browser
 session, so the e-mail itself grants nothing.
 
+## Scheduled tasks
+
+An owner or admin creating a scheduled task (docs/SCHEDULED_TASKS.md) is the
+approval for its runs: after a confirmation step that shows the exact command
+and target, the gateway issues the one-use device approval for exactly that
+command at each due time, without a per-run approval request. Changing the
+command is a new approval (owner/admin, audited with the old and new command).
+Viewers and operators can only read tasks. Runs are audited as actor
+`scheduled-task:<taskId>`; device-local capabilities (restricted mode, no
+commands) still refuse them on the agent. SSH targets are run only by the
+owner's desktop app, which holds the credentials; the server never sees them.
+
 ## Logging
 
 Never intentionally log:
@@ -271,7 +283,9 @@ owner, and the app, which alone holds the request secret, redeems it once with
 `POST /api/center-link/poll` for a `wmc_` token. No password reaches the app.
 The token acts as that user with the user's current role, and only for:
 pending approvals (list, approve, deny), the device list, autonomous mode
-(enabling still needs the password) and `/api/center/me|disconnect`. Anything
+(enabling still needs the password), `/api/center/me|disconnect`, and the
+scheduled task routes (`/api/scheduled-tasks…`, `/api/center/scheduled-runs…`,
+see SCHEDULED_TASKS.md) with the user's role. Anything
 else, `/mcp` included, answers 403 `center_scope`: the tray app manages
 approvals, it never runs device tools. Audit entries it causes carry
 `via: {center, centerId}`. The token is stored in Windows Credential Manager or

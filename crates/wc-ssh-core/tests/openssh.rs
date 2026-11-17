@@ -182,6 +182,39 @@ async fn openssh_host_key_auth_and_exec() {
     assert_eq!(out.stdout, b"hi\n");
     assert_eq!(out.stderr, b"err\n");
     assert_eq!(out.exit_status, Some(3));
+
+    // 3b. exec_tail: no PTY, stdout and stderr in arrival order, the tail
+    // kept, stdin closed, and a timeout that closes the channel.
+    let tail = conn
+        .exec_tail(
+            "echo one; sleep 0.2; echo two >&2; sleep 0.2; echo three; [ -t 0 ] && echo tty; cat; exit 4",
+            1 << 16,
+            Duration::from_secs(20),
+        )
+        .await
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&tail.output), "one\ntwo\nthree\n");
+    assert_eq!(
+        (tail.exit_status, tail.timed_out, tail.truncated),
+        (Some(4), false, false)
+    );
+    let capped = conn
+        .exec_tail("seq 1 2000", 10, Duration::from_secs(20))
+        .await
+        .unwrap();
+    assert_eq!(capped.output, b"1999\n2000\n");
+    assert!(capped.truncated);
+    let started = std::time::Instant::now();
+    let slow = conn
+        .exec_tail("echo started; sleep 30", 1024, Duration::from_secs(1))
+        .await
+        .unwrap();
+    assert!(slow.timed_out);
+    assert_eq!(slow.exit_status, None);
+    assert_eq!(slow.output, b"started\n");
+    assert!(started.elapsed() < Duration::from_secs(10));
+    // The connection still works after a timed-out command.
+    assert_eq!(conn.exec("true", 64).await.unwrap().exit_status, Some(0));
     conn.close().await.unwrap();
 
     // 4. RSA keys sign with rsa-sha2 (OpenSSH rejects ssh-rsa/SHA-1).

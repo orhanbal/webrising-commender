@@ -107,6 +107,59 @@ pub struct ExecOutput {
     pub exit_status: Option<u32>,
 }
 
+/// Output of [`Connection::exec_tail`]: stdout and stderr interleaved as
+/// they arrived, only the last bytes kept.
+#[derive(Debug, Default)]
+pub struct ExecTail {
+    pub output: Vec<u8>,
+    /// Earlier output was dropped to stay within the cap.
+    pub truncated: bool,
+    /// `None` when there was no exit status (timed out, killed by a signal).
+    pub exit_status: Option<u32>,
+    /// The command did not finish in time; its channel was closed.
+    pub timed_out: bool,
+}
+
+/// Keeps the last `cap` bytes of a stream without copying on every chunk.
+#[derive(Debug)]
+pub struct TailBuffer {
+    buf: Vec<u8>,
+    cap: usize,
+    truncated: bool,
+}
+
+impl TailBuffer {
+    pub fn new(cap: usize) -> Self {
+        Self {
+            buf: Vec::new(),
+            cap,
+            truncated: false,
+        }
+    }
+
+    pub fn push(&mut self, data: &[u8]) {
+        self.buf.extend_from_slice(data);
+        // Trim only once twice the cap is reached: amortised linear.
+        if self.buf.len() > self.cap.saturating_mul(2).max(1) {
+            self.trim();
+        }
+    }
+
+    fn trim(&mut self) {
+        if self.buf.len() > self.cap {
+            let cut = self.buf.len() - self.cap;
+            self.buf.drain(..cut);
+            self.truncated = true;
+        }
+    }
+
+    /// The last `cap` bytes and whether anything was dropped.
+    pub fn finish(mut self) -> (Vec<u8>, bool) {
+        self.trim();
+        (self.buf, self.truncated)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ConnectOptions {
     /// Covers TCP connect, key exchange and authentication.
@@ -499,6 +552,48 @@ impl Connection {
         Ok(out)
     }
 
+    /// Runs `command` non-interactively (exec channel, no pseudo-terminal,
+    /// standard input closed) and keeps the last `max_output` bytes of its
+    /// output, stdout and stderr interleaved as received. When `timeout`
+    /// passes first, the command is sent SIGTERM (servers that support it)
+    /// and its channel is closed.
+    pub async fn exec_tail(
+        &self,
+        command: &str,
+        max_output: usize,
+        timeout: Duration,
+    ) -> Result<ExecTail, SshError> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        let mut channel = self
+            .handle
+            .channel_open_session()
+            .await
+            .map_err(map_error)?;
+        channel.exec(true, command).await.map_err(map_error)?;
+        channel.eof().await.map_err(map_error)?;
+        let mut out = ExecTail::default();
+        let mut tail = TailBuffer::new(max_output);
+        loop {
+            match tokio::time::timeout_at(deadline, channel.wait()).await {
+                Err(_) => {
+                    out.timed_out = true;
+                    let _ = channel.signal(russh::Sig::TERM).await;
+                    let _ = channel.close().await;
+                    break;
+                }
+                Ok(None) => break,
+                Ok(Some(russh::ChannelMsg::Data { data })) => tail.push(&data),
+                Ok(Some(russh::ChannelMsg::ExtendedData { data, .. })) => tail.push(&data),
+                Ok(Some(russh::ChannelMsg::ExitStatus { exit_status })) => {
+                    out.exit_status = Some(exit_status)
+                }
+                Ok(Some(_)) => {}
+            }
+        }
+        (out.output, out.truncated) = tail.finish();
+        Ok(out)
+    }
+
     /// Opens an interactive login shell on a pseudo-terminal of `cols` x
     /// `rows` with the given `TERM` (for example `xterm-256color`).
     /// `env` is sent as environment variables (the server's `AcceptEnv`
@@ -793,6 +888,24 @@ fn append_capped(buf: &mut Vec<u8>, data: &[u8], cap: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tail_buffer_keeps_the_last_bytes() {
+        let mut t = TailBuffer::new(10);
+        t.push(b"hello ");
+        t.push(b"world");
+        assert_eq!(t.finish(), (b"ello world".to_vec(), true));
+
+        let mut small = TailBuffer::new(10);
+        small.push(b"short");
+        assert_eq!(small.finish(), (b"short".to_vec(), false));
+
+        let mut many = TailBuffer::new(4);
+        for i in 0..1000u32 {
+            many.push(i.to_string().as_bytes());
+        }
+        assert_eq!(many.finish(), (b"8999".to_vec(), true));
+    }
 
     #[test]
     fn credential_debug_hides_secrets() {

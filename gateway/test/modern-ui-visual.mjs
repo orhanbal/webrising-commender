@@ -47,6 +47,11 @@ const fixtures={
  "/api/pairing":{pairingCode:"wc-ci-pairing-code",expiresInSeconds:600},
  "/api/approvals":{approvalToken:"approved-ci-token"},
  "/api/trust/autonomy":{items:[{id:"11111111-1111-4111-8111-111111111111",name:"Test Windows Device",trust_full_until:null}]},
+ "/api/scheduled-tasks":{items:[
+  {id:"88888888-8888-4888-8888-888888888888",name:"Nightly backup",target:{kind:"device",deviceId:"11111111-1111-4111-8111-111111111111"},targetLabel:"Test Windows Device",command:"robocopy C:\\data D:\\backup /MIR",schedule:{kind:"cron",expr:"0 3 * * *"},timezone:"Europe/Istanbul",enabled:true,timeoutSec:600,notify:"failure",createdBy:"user:x",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),nextRunAt:new Date(Date.now()+3600e3).toISOString(),lastRun:{id:"99999999-9999-4999-8999-999999999999",taskId:"88888888-8888-4888-8888-888888888888",scheduledFor:new Date().toISOString(),status:"failed",exitCode:2,runner:"agent",trigger:"schedule"}},
+  {id:"88888888-8888-4888-8888-888888888889",name:"Disk report",target:{kind:"ssh",centerId:"33333333-3333-4333-8333-333333333333",hostId:"h1",hostLabel:"web-1.example.test"},command:"df -h",schedule:{kind:"interval",minutes:120},timezone:"UTC",enabled:false,timeoutSec:60,notify:"always",createdBy:"user:x",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),nextRunAt:null}]},
+ "/api/scheduled-tasks/preview":{next:[1,2,3,4,5].map(n=>new Date(Date.UTC(2026,10,17+n,0,0)).toISOString())},
+ "/api/scheduled-tasks/88888888-8888-4888-8888-888888888888/runs":{items:[{id:"99999999-9999-4999-8999-999999999999",taskId:"88888888-8888-4888-8888-888888888888",scheduledFor:new Date().toISOString(),startedAt:new Date().toISOString(),finishedAt:new Date().toISOString(),status:"failed",exitCode:2,output:"ERROR 2: access denied",runner:"agent",trigger:"schedule"}]},
  "/api/centers":{items:[{id:"33333333-3333-4333-8333-333333333333",name:"Ofis-PC",email:"owner@example.test",created_at:new Date().toISOString(),last_seen_at:new Date().toISOString(),revoked_at:null}]},
 
 };
@@ -311,6 +316,31 @@ try{
  await visit("/how-it-works","Ready in two minutes.","modern-how-it-works");
  assert.equal(await evalJs("document.querySelectorAll('.steps-grid .step').length"),3,"Landing content cards must be present");
  assert.ok(await evalJs("([...document.querySelectorAll('.steps-grid .step')].every(el=>{const css=getComputedStyle(el);return css.opacity==='1'&&css.display!=='none'&&css.visibility!=='hidden'}))"),"Landing cards must never be hidden by reveal effects");
+ // WECOMMANDER scheduled tasks: list, schedule in words, history, required confirmation.
+ await visit("/scheduled-tasks","Nightly backup","modern-scheduled-tasks");
+ assert.equal(await evalJs("document.querySelector('.dash-nav a[href=\"/scheduled-tasks\"]')?.getAttribute('aria-current')"),"page","Scheduled tasks nav item must be current");
+ assert.ok(await evalJs("document.querySelector('#root').textContent.includes('Every day at 03:00')"),"Cron schedule must be shown in words");
+ assert.ok(await evalJs("document.querySelector('#root').textContent.includes('Every 2 hours')"),"Interval schedule must be shown in words");
+ assert.ok(await evalJs("document.querySelector('#root').textContent.includes('web-1.example.test')"),"SSH host must be shown");
+ await evalJs("[...document.querySelectorAll('button')].find(b=>b.getAttribute('aria-label')==='History: Nightly backup').click()");
+ await sleep(400);
+ await evalJs("[...document.querySelectorAll('[role=dialog] button[aria-expanded]')][0].click()");
+ await sleep(150);
+ assert.ok(await evalJs("document.querySelector('[role=dialog]')?.textContent.includes('ERROR 2: access denied')"),"Run output must be viewable");
+ await evalJs("document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
+ await sleep(300);
+ await evalJs("[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='New task').click()");
+ await sleep(900);
+ assert.equal(await evalJs("document.querySelectorAll('[role=dialog] ol li').length"),5,"Live preview must list the next five runs");
+ await evalJs("(()=>{const set=(el,v)=>{Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),'value').set.call(el,v);el.dispatchEvent(new Event('input',{bubbles:true}))};const d=document.querySelector('[role=dialog]');set(d.querySelector('input'),'Cleanup');set(d.querySelector('textarea'),'find /var/tmp/cache -mtime +7 -delete');})()");
+ await sleep(200);
+ await evalJs("[...document.querySelectorAll('[role=dialog] button')].find(b=>b.textContent.trim()==='Continue').click()");
+ await sleep(200);
+ assert.ok(await evalJs("document.querySelector('[role=dialog] pre')?.textContent==='find /var/tmp/cache -mtime +7 -delete'"),"Confirmation must show the exact command");
+ assert.ok(await evalJs("document.querySelector('[role=dialog]').textContent.includes('Test Windows Device')"),"Confirmation must show the target");
+ assert.ok(await evalJs("[...document.querySelectorAll('[role=dialog] button')].some(b=>b.textContent.includes('Confirm and save'))"),"Saving needs the confirmation step");
+ const scheduledShot=await call("Page.captureScreenshot",{format:"png",captureBeyondViewport:false});
+ writeFileSync(join(artifacts,"modern-scheduled-task-confirm.png"),Buffer.from(scheduledShot.data,"base64"));
  // Approvals inbox and device policy (v1.1 item 5c).
  await visit("/approvals","Pending approvals","modern-approvals");
  assert.equal(await evalJs("document.querySelectorAll('.approval-item').length"),1,"Pending approval must be listed");
@@ -362,7 +392,7 @@ try{
  // Smallest supported width (v1.1 item 5): no horizontal overflow on any shell.
  await call("Emulation.setDeviceMetricsOverride",{width:360,height:740,deviceScaleFactor:1,mobile:true});
  const clipped=()=>evalJs("(()=>{document.querySelectorAll('[data-reveal]').forEach(e=>e.classList.add('visible'));return [...document.querySelectorAll('.site-header *, .dash-topbar *, .hero-copy, .hero-copy *, .session-preview, .compare-wrap, .dash-content > *')].filter(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.right>innerWidth+1}).map(e=>e.tagName+'.'+String(e.className).slice(0,30)).slice(0,5)})()");
- for(const [page,keyword,shot] of [["/","in one app.","modern-landing-360"],["/install","Use it where you","modern-install-360"],["/dashboard","Welcome back","modern-dashboard-360"],["/devices","Connected machines","modern-devices-360"],["/billing","Plans & billing","modern-billing-360"],["/approvals","Pending approvals","modern-approvals-360"],["/console/users","Search accounts","modern-console-users-360"],["/team","Manage members","modern-team-360"],["/audit","Audit log","modern-audit-360"]]){await visit(page,keyword,shot);assert.deepEqual(await clipped(),[],page+" has elements wider than 360 px");}
+ for(const [page,keyword,shot] of [["/","in one app.","modern-landing-360"],["/install","Use it where you","modern-install-360"],["/dashboard","Welcome back","modern-dashboard-360"],["/devices","Connected machines","modern-devices-360"],["/billing","Plans & billing","modern-billing-360"],["/approvals","Pending approvals","modern-approvals-360"],["/scheduled-tasks","Nightly backup","modern-scheduled-tasks-360"],["/console/users","Search accounts","modern-console-users-360"],["/team","Manage members","modern-team-360"],["/audit","Audit log","modern-audit-360"]]){await visit(page,keyword,shot);assert.deepEqual(await clipped(),[],page+" has elements wider than 360 px");}
  assert.equal(await evalJs("getComputedStyle(document.querySelector('.console-table thead')).display"),"none","Console tables collapse to cards on phones");
  assert.ok(await evalJs("[...document.querySelectorAll('.console-table td[data-label]')].length>0"),"Console card fields are labelled");
  await visit("/approvals","Pending approvals","modern-approvals-360-again");

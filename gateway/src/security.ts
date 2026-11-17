@@ -118,6 +118,12 @@ const secretPatterns = [
   /(postgres(?:ql)?:\/\/[^:]+:)[^@]+@/gi,
 ];
 
+/** Masks secrets in text of any length (command output); `redact` also shortens. */
+export function redactSecrets(text: string) {
+  for (const pattern of secretPatterns) text = text.replace(pattern, "$1[REDACTED]");
+  return text;
+}
+
 export function redact(value: unknown) {
   let text = typeof value === "string" ? value : JSON.stringify(value);
   if (text.length > 2_000) text = text.slice(0, 2_000) + "…";

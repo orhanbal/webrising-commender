@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { db } from "./db.js";
 import { newCenterToken, type Principal } from "./auth.js";
 import { randomToken, sha256 } from "./security.js";
+import { centerMayUseScheduledTasks } from "./scheduled-tasks-api.js";
 
 // Management Center sign-in. The tray app starts a request and opens
 // /connect-center in the browser; the signed-in admin approves it there; the
@@ -127,5 +128,7 @@ export function centerMayAccess(method: string, pathname: string) {
   if (method === "PUT" && (pathname === "/api/center/team/key" || pathname === "/api/center/team/wrapped-key" ||
       pathname === "/api/center/team/library")) return true;
   if (method === "POST" && /^\/api\/approval-requests\/[0-9a-f-]{36}\/(approve|deny)$/i.test(pathname)) return true;
+  // WECOMMANDER scheduled tasks: managed from the app, SSH runs claimed and reported by it.
+  if (centerMayUseScheduledTasks(method, pathname)) return true;
   return false;
 }

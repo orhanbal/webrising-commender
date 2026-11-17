@@ -9,6 +9,7 @@
 #![allow(clippy::too_many_arguments)]
 
 pub mod commands;
+pub mod exec;
 pub mod library;
 pub mod mosh;
 pub mod serial;

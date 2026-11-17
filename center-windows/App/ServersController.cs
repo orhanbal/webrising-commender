@@ -10,7 +10,7 @@ namespace Wecommander.Center;
 /// Owns wecommander-core for the app's lifetime (so saved tunnels keep
 /// running with the window closed) and routes its events to terminal tabs.
 /// </summary>
-public sealed class ServersController : IDisposable
+public sealed partial class ServersController : IDisposable
 {
     private CoreClient? _core;
     private readonly ConcurrentDictionary<string, (TerminalTab Tab, DispatcherQueue Ui)> _tabs = new();

@@ -495,6 +495,11 @@ public sealed class DockWindow : Window
                     term.Click += (_, _) => OpenTerminal();
                     end.Children.Add(term);
                     break;
+                case "tasks":
+                    var tasks = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, L.T("Zamanlanmış görevler"));
+                    tasks.Click += (_, _) => App.Current.ShowScheduledTasks();
+                    end.Children.Add(tasks);
+                    break;
                 case "approvals":
                     var bell = new Grid();
                     var approvals = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, L.T("Bekleyen onaylar"));

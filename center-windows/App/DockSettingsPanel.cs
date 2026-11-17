@@ -151,6 +151,7 @@ public static class DockSettingsPanel
         "timers" => L.T("Zamanlayıcılar kısayolu"),
         "terminal" => L.T("Terminal kısayolu"),
         "approvals" => L.T("Bildirimler ve onaylar"),
+        "tasks" => L.T("Zamanlanmış görevler kısayolu"),
         _ => module,
     };
 

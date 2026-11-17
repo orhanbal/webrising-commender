@@ -670,6 +670,66 @@ export async function migrate() {
       primary key (email_id,user_id)
     );
 
+    -- WECOMMANDER's own scheduled tasks (docs/SCHEDULED_TASKS.md): run by the
+    -- gateway on an agent device, or queued for the owner's desktop app for a
+    -- saved SSH host. The owner's creation of the task is the approval.
+    create table if not exists scheduled_tasks (
+      id uuid primary key default gen_random_uuid(),
+      organization_id uuid not null references organizations(id) on delete cascade,
+      name text not null check (length(name) between 1 and 80),
+      description text not null default '' check (length(description) <= 500),
+      target_kind text not null check (target_kind in ('device','ssh')),
+      device_id uuid references devices(id) on delete cascade,
+      center_id uuid references management_centers(id) on delete cascade,
+      host_id text check (host_id is null or length(host_id) between 1 and 200),
+      host_label text check (host_label is null or length(host_label) between 1 and 200),
+      command text not null check (length(command) between 1 and 4000),
+      schedule jsonb not null,
+      timezone text not null,
+      enabled boolean not null default true,
+      timeout_sec integer not null default 600 check (timeout_sec between 10 and 3600),
+      notify text not null default 'failure' check (notify in ('failure','always','never')),
+      created_by text not null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      next_run_at timestamptz,
+      check ((target_kind='device' and device_id is not null and center_id is null)
+          or (target_kind='ssh' and center_id is not null and host_id is not null and host_label is not null and device_id is null))
+    );
+    create index if not exists scheduled_tasks_org_idx on scheduled_tasks(organization_id,created_at);
+    create index if not exists scheduled_tasks_due_idx on scheduled_tasks(next_run_at)
+      where enabled and next_run_at is not null;
+    create table if not exists scheduled_task_runs (
+      id uuid primary key default gen_random_uuid(),
+      task_id uuid not null references scheduled_tasks(id) on delete cascade,
+      organization_id uuid not null references organizations(id) on delete cascade,
+      scheduled_for timestamptz not null,
+      started_at timestamptz,
+      finished_at timestamptz,
+      status text not null
+        check (status in ('queued','running','succeeded','failed','missed','skipped','cancelled')),
+      exit_code integer,
+      output text,
+      runner text not null check (runner in ('agent','center')),
+      trigger text not null check (trigger in ('schedule','manual')),
+      error text,
+      command text not null,
+      center_id uuid references management_centers(id) on delete set null,
+      agent_task_id text,
+      lease_owner text,
+      lease_until timestamptz,
+      created_at timestamptz not null default now()
+    );
+    create index if not exists scheduled_task_runs_task_idx on scheduled_task_runs(task_id,created_at desc);
+    create index if not exists scheduled_task_runs_org_idx on scheduled_task_runs(organization_id,created_at desc);
+    create index if not exists scheduled_task_runs_open_idx on scheduled_task_runs(runner,status,lease_until)
+      where status in ('queued','running');
+    create index if not exists scheduled_task_runs_center_idx on scheduled_task_runs(center_id,status)
+      where status='queued';
+    -- One scheduled run per due time, even with several gateway instances.
+    create unique index if not exists scheduled_task_runs_due_uidx on scheduled_task_runs(task_id,scheduled_for)
+      where trigger='schedule';
+
     insert into organizations(name)
       select 'Self Hosted'
       where not exists(select 1 from organizations);
@@ -790,6 +850,9 @@ export async function housekeeping() {
   );
   await db.query(
     "delete from approval_requests where created_at < now() - interval '30 days'",
+  );
+  await db.query(
+    "delete from scheduled_task_runs where created_at < now() - interval '90 days' and status not in ('queued','running')",
   );
 
   const retentionDays = auditRetentionDays();

@@ -19,7 +19,7 @@ namespace Wecommander.Center;
 /// computer's agent open the Management Center panel. SSH itself runs in
 /// wecommander-core (Rust).
 /// </summary>
-public sealed class ServersWindow : Window
+public sealed partial class ServersWindow : Window
 {
     private readonly ServersController _c;
     private readonly NavigationView _nav = new();
@@ -91,6 +91,7 @@ public sealed class ServersWindow : Window
         _nav.MenuItems.Add(new NavigationViewItem { Content = L.T("Tüneller"), Tag = "tunnels", Icon = new FontIcon { Glyph = "\uE8AF" } });
         _nav.MenuItems.Add(new NavigationViewItem { Content = L.T("Bilinen sunucular"), Tag = "known", Icon = new FontIcon { Glyph = "\uE72E" } });
         _nav.MenuItems.Add(new NavigationViewItem { Content = L.T("Geçmiş"), Tag = "history", Icon = new FontIcon { Glyph = "\uE81C" } });
+        _nav.MenuItems.Add(new NavigationViewItem { Content = L.T("Zamanlanmış görevler"), Tag = "scheduled", Icon = new FontIcon { Glyph = ScheduledGlyph } });
         // Approvals, autonomous mode and this computer are the panel on the
         // right; settings, the account and quitting are in the bottom bar.
         _nav.ItemInvoked += (_, e) => OnNavInvoked(e.InvokedItemContainer?.Tag);
@@ -687,6 +688,7 @@ public sealed class ServersWindow : Window
             case "tunnels": ShowTunnelsPage(); break;
             case "known": _ = ShowKnown(); break;
             case "history": _ = ShowHistory(); break;
+            case "scheduled": _ = ShowScheduledTasks(); break;
             default:
                 // A fresh page each visit (a page built once, before the
                 // window was first shown, stayed collapsed with no size).

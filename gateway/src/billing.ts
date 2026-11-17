@@ -622,3 +622,18 @@ export async function toolCallQuota(organizationId: string) {
   const { calls, resetAt } = await monthlyToolCalls(organizationId);
   return { exceeded: calls >= cached.limit, limit: cached.limit, used: calls, resetAt };
 }
+
+/** Scheduled tasks: never more than this per workspace, whatever the plan says. */
+export const MAX_SCHEDULED_TASKS = 100;
+/** Scheduled tasks of the free plan unless its metadata says otherwise. */
+export const FREE_SCHEDULED_TASKS_DEFAULT = 10;
+
+/** How many scheduled tasks the workspace may keep (plan metadata `maxScheduledTasks`). */
+export function scheduledTaskLimit(snapshot: QuotaSnapshot): number {
+  if (snapshot.mode === "self_hosted" || snapshot.plan?.key === "internal") return MAX_SCHEDULED_TASKS;
+  const metadata = (snapshot.plan?.metadata ?? {}) as Record<string, unknown>;
+  const configured = Number(metadata.maxScheduledTasks ?? Number.NaN);
+  if (Number.isFinite(configured) && configured >= 0) return Math.min(MAX_SCHEDULED_TASKS, Math.floor(configured));
+  if (snapshot.plan?.key === FREE_PLAN_KEY) return FREE_SCHEDULED_TASKS_DEFAULT;
+  return snapshot.entitled ? MAX_SCHEDULED_TASKS : 0;
+}

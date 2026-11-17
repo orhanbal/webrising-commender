@@ -140,10 +140,10 @@ public class DockLayoutTests
     public void ModulesKeepTheOrderDropUnknownAndAddNewOnes()
     {
         Assert.Equal(DockLayout.AllModules, DockLayout.Modules(null, null));
-        Assert.Equal(["terminal", "servers", "processes", "timers", "approvals"], DockLayout.Modules(["terminal", "bogus", "servers", "terminal"], null));
-        Assert.Equal(["servers", "terminal"], DockLayout.Modules(null, ["processes", "timers", "approvals"]));
+        Assert.Equal(["terminal", "servers", "processes", "timers", "tasks", "approvals"], DockLayout.Modules(["terminal", "bogus", "servers", "terminal"], null));
+        Assert.Equal(["servers", "terminal"], DockLayout.Modules(null, ["processes", "timers", "tasks", "approvals"]));
         // An order saved before the timers shortcut existed gets it at the end.
-        Assert.Equal(["approvals", "terminal", "processes", "servers", "timers"], DockLayout.Modules(["approvals", "terminal", "processes", "servers"], null));
+        Assert.Equal(["approvals", "terminal", "processes", "servers", "timers", "tasks"], DockLayout.Modules(["approvals", "terminal", "processes", "servers"], null));
     }
 
     [Fact]
@@ -182,7 +182,7 @@ public class DockLayoutTests
             Assert.Equal(DockEdge.Left, DockLayout.ParseEdge(back.DockEdgeName));
             Assert.Equal(300, back.DockFloatX);
             Assert.Equal(@"\\.\DISPLAY2", back.DockMonitor);
-            Assert.Equal(["approvals", "servers", "processes", "timers"], DockLayout.Modules(back.DockModules, back.DockHiddenModules));
+            Assert.Equal(["approvals", "servers", "processes", "timers", "tasks"], DockLayout.Modules(back.DockModules, back.DockHiddenModules));
         }
         finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
     }

@@ -15,6 +15,7 @@ const pages={
  Devices:()=>import("./pages/Devices"),
  Workspace:()=>import("./pages/Workspace"),
  Approvals:()=>import("./pages/Approvals"),
+ ScheduledTasks:()=>import("./pages/ScheduledTasks"),
  Team:()=>import("./pages/Team"),
  Audit:()=>import("./pages/Audit"),
  Invite:()=>import("./pages/Invite"),
@@ -34,6 +35,7 @@ const BillingPage=lazy(()=>pages.Billing().then(m=>({default:m.BillingPage})));
 const DevicesPage=lazy(()=>pages.Devices().then(m=>({default:m.DevicesPage})));
 const WorkspacePage=lazy(()=>pages.Workspace().then(m=>({default:m.WorkspacePage})));
 const ApprovalsPage=lazy(()=>pages.Approvals().then(m=>({default:m.ApprovalsPage})));
+const ScheduledTasksPage=lazy(()=>pages.ScheduledTasks().then(m=>({default:m.ScheduledTasksPage})));
 const TeamPage=lazy(()=>pages.Team().then(m=>({default:m.TeamPage})));
 const AuditPage=lazy(()=>pages.Audit().then(m=>({default:m.AuditPage})));
 const InvitePage=lazy(()=>pages.Invite().then(m=>({default:m.InvitePage})));
@@ -51,12 +53,12 @@ export type Nav=(path:string)=>void;
 export type Theme="light"|"dark";
 /** Public docs and guides (text in gateway/src/site-content.ts). */
 const contentPaths=["/docs","/faq","/alternatives","/security","/guides/claude-server-terminal","/guides/remote-mcp-server","/guides/chatgpt-windows-files","/guides/ai-approvals"];
-const routes=new Set(["/download","/console","/console/users","/console/organizations","/console/devices","/console/operations","/console/landing","/console/billing","/console/system","/console/brand","/console/legal","/console/marketing","/console/email","/unsubscribe","/","/features","/how-it-works","/login","/register","/forgot-password","/reset-password","/verify","/pricing","/checkout","/install","/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage","/approvals","/team","/audit","/invite","/privacy","/terms","/refund",...contentPaths]);
+const routes=new Set(["/download","/console","/console/users","/console/organizations","/console/devices","/console/operations","/console/landing","/console/billing","/console/system","/console/brand","/console/legal","/console/marketing","/console/email","/unsubscribe","/","/features","/how-it-works","/login","/register","/forgot-password","/reset-password","/verify","/pricing","/checkout","/install","/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/scheduled-tasks","/mcp","/usage","/approvals","/team","/audit","/invite","/privacy","/terms","/refund",...contentPaths]);
 export function Brand({onClick,subtitle=false}:{onClick?:()=>void;subtitle?:boolean}){return <a href="/" onClick={e=>{if(onClick){e.preventDefault();onClick()}}} aria-label={translate("WECOMMANDER ana sayfa")} className="inline-flex flex-col gap-1 items-start"><img className="logo-light" src="/api/public/brand/logo_light" alt="WECOMMANDER"/><img className="logo-dark" src="/api/public/brand/logo_dark" alt="" aria-hidden="true"/>{subtitle&&<span className="text-[11px] tracking-wide text-[var(--muted)]">SSH · Server management · MCP</span>}</a>}
 export function NavLink({to,nav,children,className}:{to:string;nav:Nav;children:ReactNode;className?:string}){return <a href={to} className={className} onClick={e=>{if(e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey){e.preventDefault();nav(to)}}}>{children}</a>}
 export function ThemeToggle({theme,onToggle}:{theme:Theme;onToggle:()=>void}){return <button type="button" className="theme-button" onClick={onToggle} aria-label={theme==="dark"?translate("Açık temaya geç"):translate("Koyu temaya geç")} title={theme==="dark"?translate("Windows açık tema"):translate("Windows koyu tema")}>{theme==="dark"?<Sun className="size-[19px]"/>:<Moon className="size-[19px]"/>}</button>}
 /** Pages that need a signed-in account; without one they go to the login page. */
-const accountRoutes=new Set(["/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage","/approvals","/team","/audit","/download"]);
+const accountRoutes=new Set(["/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/scheduled-tasks","/mcp","/usage","/approvals","/team","/audit","/download"]);
 function getPath(){const p=window.location.pathname;if(/^#(invite|token)=/.test(window.location.hash))return "/invite";if(p==="/app"||p==="/app/")return "/dashboard";return routes.has(p)?p:"/"}
 export default function App(){
  const chosenLocale=useLocale();
@@ -111,18 +113,19 @@ export default function App(){
   {path==="/devices"&&<DevicesPage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
   {["/terminal","/files","/tasks","/mcp"].includes(path)&&<WorkspacePage nav={navigate} path={path.slice(1) as "terminal"|"files"|"tasks"|"mcp"} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
   {path==="/approvals"&&<ApprovalsPage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
+  {path==="/scheduled-tasks"&&<ScheduledTasksPage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
  {path==="/team"&&<TeamPage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
  {path==="/audit"&&<AuditPage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
  {path==="/invite"&&<InvitePage nav={navigate} refresh={refresh}/>}
  {path==="/download"&&<DownloadPage nav={navigate} account={account} theme={theme} toggle={toggle} logout={logout}/>}
  {path==="/usage"&&<UsagePage nav={navigate} account={account} checking={checking} theme={theme} toggle={toggle} logout={logout}/>}
 
-  {account&&["/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage","/approvals","/team","/audit","/download"].includes(path)&&<InAppMessages/>}
+  {account&&["/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/scheduled-tasks","/mcp","/usage","/approvals","/team","/audit","/download"].includes(path)&&<InAppMessages/>}
   {contentPaths.includes(path)&&<ContentPage path={path} nav={navigate}/>}
   {path==="/unsubscribe"&&<UnsubscribePage/>}
   {(path==="/privacy"||path==="/terms"||path==="/refund")&&<LegalPage page={path==="/privacy"?"privacy":path==="/refund"?"refund":"terms"}/>}
  </>;
- const globalHeader=!path.startsWith("/console")&&!["/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage","/approvals","/team","/audit","/download"].includes(path);
+ const globalHeader=!path.startsWith("/console")&&!["/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/scheduled-tasks","/mcp","/usage","/approvals","/team","/audit","/download"].includes(path);
  return <div className="app-shell">
   {globalHeader&&<header className="site-header"><div className="container-w">
   <Brand onClick={()=>navigate("/")}/>

@@ -32,6 +32,7 @@ import {
   billingSnapshot,
   deploymentMode,
   monthlyToolCallLimit,
+  scheduledTaskLimit,
   upsertBillingPlan,
   upsertSubscription,
   type AllocationResource,
@@ -66,6 +67,9 @@ import {
   verifyRelayRequest,
 } from "./relay-cluster.js";
 import { deviceApprovalKeyForAgent, issueApproval, randomToken, redact, sha256 } from "./security.js";
+import { runMail, ScheduledTaskStore } from "./scheduled-tasks.js";
+import { ScheduledTaskRunner } from "./scheduled-task-runner.js";
+import { handleScheduledTasks } from "./scheduled-tasks-api.js";
 
 const host = process.env.HOST || "0.0.0.0";
 const port = Number(process.env.PORT || 8787);
@@ -183,6 +187,28 @@ const recoveryPollTimer = setInterval(() => {
 recoveryPollTimer.unref();
 await housekeeping();
 startMailWorker();
+
+// WECOMMANDER scheduled tasks: every gateway instance runs the scheduler;
+// due tasks are claimed in the database, so each run happens once.
+const scheduledTaskStore = new ScheduledTaskStore(db);
+const scheduledTaskRunner = new ScheduledTaskRunner({
+  store: scheduledTaskStore,
+  devices: deviceRouter,
+  instanceId: `${currentNodeId()}:${process.pid}:${crypto.randomUUID().slice(0, 8)}`,
+  // The owner's creation of the task approves its runs: a one-use approval for
+  // this exact command, issued by the gateway (no per-run approval request).
+  issueToken: (deviceId, action) => issueApproval(deviceId, action, 120).token,
+  notify: async (task, run) => {
+    if (!mailConfigured()) return;
+    const recipients = await scheduledTaskStore.notifyRecipients(task);
+    const mail = runMail(task, run, publicBaseUrl);
+    for (const to of recipients) await enqueueMail({ to, ...mail });
+  },
+});
+const scheduledTaskRunLimit = new FixedWindowRateLimiter();
+if (process.env.SCHEDULED_TASKS_DISABLED !== "true") {
+  scheduledTaskRunner.start(Math.max(1_000, Number(process.env.SCHEDULED_TASKS_INTERVAL_MS || 30_000)));
+}
 
 // Autonomous mode / time-limited full trust: when it expires, record it,
 // return the device to standard and tell the admins (instead of only
@@ -436,7 +462,7 @@ async function serveBrandSvg(res: ServerResponse, fileName: string) {
 const modernPages = new Set([
   "/", "/features", "/how-it-works", "/login", "/register", "/forgot-password", "/verify",
   "/reset-password", "/pricing", "/checkout", "/install", "/console", "/console/users", "/console/organizations", "/console/devices", "/console/operations", "/console/landing", "/console/billing", "/console/system", "/console/brand", "/console/legal", "/console/marketing", "/console/email", "/unsubscribe", "/dashboard", "/account", "/billing",
-  "/devices", "/terminal", "/files", "/tasks", "/mcp", "/usage", "/approvals", "/team", "/audit", "/invite",
+  "/devices", "/terminal", "/files", "/tasks", "/scheduled-tasks", "/mcp", "/usage", "/approvals", "/team", "/audit", "/invite",
   "/privacy", "/terms", "/refund",
   ...contentPagePaths,
 ]);
@@ -4140,6 +4166,22 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       return void json(res, 201, { pairingCode: code, expiresInSeconds: 600 });
     }
 
+    if (url.pathname.startsWith("/api/scheduled-tasks") || url.pathname.startsWith("/api/center/scheduled-runs")) {
+      const reply = await handleScheduledTasks(req.method || "GET", url, principal!, () => readJson(req), {
+        store: scheduledTaskStore,
+        runner: scheduledTaskRunner,
+        taskLimit: async (organizationId) => {
+          const snapshot = await billingSnapshot(organizationId);
+          return { limit: scheduledTaskLimit(snapshot), entitled: snapshot.entitled };
+        },
+        audit: (who, deviceId, tool, risk, outcome, detail) =>
+          auditForOrganization(who, who.organizationId, deviceId, tool, risk, outcome, detail),
+        allow: (key, limit, windowMs) =>
+          scheduledTaskRunLimit.hit(`${principal!.organizationId}:${key}`, limit, windowMs).allowed,
+      });
+      if (reply) return void json(res, reply.status, reply.body);
+    }
+
     if (req.method === "GET" && url.pathname === "/api/devices") {
       if (!requireRole(principal!, "viewer", res)) return;
       const orgId = principal!.organizationId;
@@ -4762,6 +4804,7 @@ async function shutdown() {
   for (const client of wss.clients) client.close(1001, "shutdown");
   clearInterval(searchStopPollTimer);
   clearInterval(recoveryPollTimer);
+  scheduledTaskRunner.stop();
   await searchPersistence.deactivate();
   await db.end();
   process.exit(0);
