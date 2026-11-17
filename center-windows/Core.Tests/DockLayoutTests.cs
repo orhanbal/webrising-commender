@@ -161,6 +161,56 @@ public class DockLayoutTests
         Assert.Equal("servers", order[0]);
     }
 
+    // Five buttons along the Dock: 40 px wide with 2 px between them, from x = 1000.
+    private static readonly (int Start, int Length)[] Buttons = [(1000, 40), (1042, 40), (1084, 40), (1126, 40), (1168, 40)];
+
+    [Theory]
+    [InlineData(4, 1180, 4)]  // still over itself: stays
+    [InlineData(4, 1146, 4)]  // exactly on the middle of the one before it: still stays
+    [InlineData(4, 1145, 3)]  // before that middle: takes its place
+    [InlineData(4, 1103, 2)]
+    [InlineData(4, 1001, 0)]  // over the first one, left of its middle
+    [InlineData(4, 500, 0)]   // before the Dock's parts
+    [InlineData(0, 1061, 0)]  // the first one, not yet past the second's middle
+    [InlineData(0, 1062, 1)]
+    [InlineData(0, 1150, 3)]
+    [InlineData(0, 5000, 4)]  // past the end: last
+    [InlineData(2, 1104, 2)]
+    [InlineData(2, 1061, 1)]
+    public void DropSlotFollowsThePointerAlongTheDock(int from, int pointer, int slot) =>
+        Assert.Equal(slot, DockLayout.DropSlot(Buttons, from, pointer));
+
+    [Fact]
+    public void DropSlotWorksDownASideDockAndForAnEmptyOrSingleRow()
+    {
+        // A side Dock: the same numbers are y positions; buttons 38 px tall.
+        (int, int)[] column = [(200, 38), (240, 38), (280, 38)];
+        Assert.Equal(2, DockLayout.DropSlot(column, 0, 300));
+        Assert.Equal(0, DockLayout.DropSlot(column, 2, 210));
+        Assert.Equal(0, DockLayout.DropSlot([], 0, 10));
+        Assert.Equal(0, DockLayout.DropSlot([(0, 40)], 0, 900));
+        // Dropped where it was: Move changes nothing.
+        string[] order = ["processes", "timers", "tasks"];
+        Assert.Equal(order, DockLayout.Move(order, 1, DockLayout.DropSlot(column, 1, 259)));
+    }
+
+    [Fact]
+    public void RearrangedKeepsHiddenAndOtherPartsInTheirPlaces()
+    {
+        // Saved order with the server part first and terminal hidden; the Dock shows the other four buttons.
+        string[] saved = ["servers", "processes", "terminal", "timers", "tasks", "approvals"];
+        string[] shown = ["processes", "timers", "tasks", "approvals"];
+        Assert.Equal(["servers", "approvals", "terminal", "processes", "timers", "tasks"], DockLayout.MoveShown(saved, shown, 3, 0));
+        Assert.Equal(["servers", "timers", "terminal", "processes", "tasks", "approvals"], DockLayout.MoveShown(saved, shown, 0, 1));
+        // An empty (default) saved order: the full default order comes back with the move applied.
+        Assert.Equal(["servers", "processes", "timers", "tasks", "approvals", "terminal"],
+            DockLayout.MoveShown(null, ["processes", "timers", "tasks", "terminal", "approvals"], 4, 3));
+        // Unknown and duplicate names in the shown list are ignored.
+        Assert.Equal(DockLayout.AllModules, DockLayout.Rearranged(null, ["processes", "bogus", "processes"]));
+        // Nothing moved: the same order.
+        Assert.Equal(saved, DockLayout.MoveShown(saved, shown, 2, 2));
+    }
+
     [Fact]
     public void DockIsOffByDefaultAndSettingsSurviveARoundTrip()
     {

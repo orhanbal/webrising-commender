@@ -729,6 +729,41 @@ export async function migrate() {
     -- One scheduled run per due time, even with several gateway instances.
     create unique index if not exists scheduled_task_runs_due_uidx on scheduled_task_runs(task_id,scheduled_for)
       where trigger='schedule';
+    -- Growth (console): daily aggregate counters only. No IP addresses, user
+    -- agents, cookies or per-visitor identifiers are ever stored here.
+    create table if not exists analytics_daily (
+      day date not null,
+      kind text not null,
+      key text not null,
+      count bigint not null default 0,
+      primary key (day,kind,key)
+    );
+    create index if not exists analytics_daily_kind_day_idx on analytics_daily(kind,day);
+    -- One row per desktop app (Management Center) and day it called /api/center/me.
+    create table if not exists center_daily (
+      day date not null,
+      center_id uuid not null,
+      platform text,
+      app_version text,
+      language text,
+      primary key (day,center_id)
+    );
+    -- Which AI client an OAuth client is (claude, chatgpt, cursor, vscode, windsurf, other).
+    alter table oauth_clients add column if not exists client_kind text;
+    -- AI app / plugin directories and our submission status, edited in the console.
+    create table if not exists growth_directories (
+      key text primary key,
+      status text not null default 'not_submitted'
+        check (status in ('not_submitted','submitted','listed','rejected')),
+      submitted_at date,
+      listing_url text,
+      note text not null default '',
+      updated_at timestamptz not null default now(),
+      updated_by uuid references users(id) on delete set null
+    );
+    insert into growth_directories(key,status,listing_url,note) values
+      ('mcp_registry','listed','https://registry.modelcontextprotocol.io/v0/servers?search=app.wecommander/wecommander','Published by the gateway as app.wecommander/wecommander.')
+      on conflict (key) do nothing;
 
     insert into organizations(name)
       select 'Self Hosted'
@@ -854,6 +889,10 @@ export async function housekeeping() {
   await db.query(
     "delete from scheduled_task_runs where created_at < now() - interval '90 days' and status not in ('queued','running')",
   );
+
+  // Growth counters: aggregates are kept about two years, app check-ins 400 days.
+  await db.query("delete from analytics_daily where day < current_date - 800");
+  await db.query("delete from center_daily where day < current_date - 400");
 
   const retentionDays = auditRetentionDays();
   if (retentionDays > 0) {

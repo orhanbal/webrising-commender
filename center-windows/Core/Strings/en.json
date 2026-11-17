@@ -1163,5 +1163,6 @@
  "Uygulama çekirdeği komutun sonucunu vermedi.": "The app core did not return the command's result.",
  "Bu sunucunun anahtarı henüz onaylanmadı. Bir kez terminalden bağlanıp anahtarı onayla.": "This server's key has not been approved yet. Connect once from a terminal and approve the key.",
  "Bu sunucunun anahtarı değişti; komut çalıştırılmadı. Sunucuyu yeniden kurmadıysan araya biri girmiş olabilir; terminalden bağlanıp kontrol et.": "This server's key has changed; the command was not run. If you did not reinstall the server, someone may be in between; connect from a terminal and check.",
- "Komut çıkış kodu vermeden bitti (bir sinyalle durdurulmuş olabilir).": "The command ended without an exit code (it may have been stopped by a signal)."
+ "Komut çıkış kodu vermeden bitti (bir sinyalle durdurulmuş olabilir).": "The command ended without an exit code (it may have been stopped by a signal).",
+ "Sürükle veya Alt + ok tuşları: Dock'taki sırasını değiştir": "Drag, or Alt + arrow keys, to change its place on the Dock"
 }

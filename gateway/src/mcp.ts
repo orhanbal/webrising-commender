@@ -12,6 +12,7 @@ import type { DeviceRouter } from "./device-router.js";
 import { issueApproval, redact } from "./security.js";
 import { startSearch, searchPage, listSearches, stopSearch, controlSearch } from "./search-sessions.js";
 import { annotate } from "./tool-annotations.js";
+import { recordMcpCall } from "./growth.js";
 
 type JsonRpcRequest = { jsonrpc?: string; id?: string | number | null; method?: string; params?: any };
 
@@ -346,6 +347,8 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
   if (request.method === "ping") return ok(request.id, {});
   if (request.method === "tools/list") return ok(request.id, { tools: listedTools() });
   if (request.method !== "tools/call") return fail(request.id, -32601, "Method not found");
+  // Growth console: daily tool-call count per AI client (aggregate only).
+  recordMcpCall(principal);
 
   let name = String(request.params?.name || "");
   let args = request.params?.arguments || {};

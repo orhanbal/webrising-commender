@@ -6,6 +6,7 @@ import { csrfCookieName } from "./browser-auth.js";
 import { randomToken, sha256 } from "./crypto-utils.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import { oauthScope } from "./oauth-tokens.js";
+import { clientKind } from "./growth-classify.js";
 import { redirectAllowed, validChallenge, validResource, validClientGrants, validClientResponses, uniqueOAuthQueryParams } from "./oauth-validation.js";
 
 const registerLimiter = new FixedWindowRateLimiter();
@@ -189,8 +190,8 @@ export async function handleOAuthHttp(
       const name = safeClientName(body.client_name);
       const clientId = "wrcoc_" + randomToken(24);
       await db.query(
-        "insert into oauth_clients(client_id,client_name,redirect_uris) values($1,$2,$3::jsonb)",
-        [clientId, name, JSON.stringify(body.redirect_uris)],
+        "insert into oauth_clients(client_id,client_name,redirect_uris,client_kind) values($1,$2,$3::jsonb,$4)",
+        [clientId, name, JSON.stringify(body.redirect_uris), clientKind(name, body.redirect_uris)],
       );
       json(res, 201, {
         client_id: clientId,

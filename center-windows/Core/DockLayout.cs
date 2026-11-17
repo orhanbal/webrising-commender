@@ -203,4 +203,44 @@ public static class DockLayout
         result.Insert(to, item);
         return result;
     }
+
+    /// <summary>
+    /// Where a part dragged along the Dock lands: the position (for <see cref="Move"/>)
+    /// among the parts shown, from the pointer's place along the Dock's axis and
+    /// each part's extent there (start, length; in the order shown, not overlapping).
+    /// The dragged part (<paramref name="from"/>) itself does not count: it goes
+    /// after every other part whose middle the pointer has passed.
+    /// </summary>
+    public static int DropSlot(IReadOnlyList<(int Start, int Length)> items, int from, int pointer)
+    {
+        if (items.Count == 0) return 0;
+        var slot = 0;
+        for (var i = 0; i < items.Count; i++)
+        {
+            if (i == from) continue;
+            // pointer >= start + length / 2, without rounding.
+            if (2L * pointer >= 2L * items[i].Start + items[i].Length) slot++;
+        }
+        return Math.Clamp(slot, 0, items.Count - 1);
+    }
+
+    /// <summary>
+    /// The full saved order after the parts in <paramref name="shown"/> (the Dock's
+    /// movable buttons, in their new order) were rearranged among themselves:
+    /// hidden parts and the others keep their places in the saved order.
+    /// </summary>
+    public static List<string> Rearranged(IEnumerable<string>? order, IReadOnlyList<string> shown)
+    {
+        var full = Modules(order, null);
+        var moved = shown.Where(full.Contains).Distinct().ToList();
+        var set = new HashSet<string>(moved);
+        var next = new Queue<string>(moved);
+        for (var i = 0; i < full.Count; i++)
+            if (set.Contains(full[i])) full[i] = next.Dequeue();
+        return full;
+    }
+
+    /// <summary>One movable Dock part from <paramref name="from"/> to <paramref name="to"/> (positions in <paramref name="shown"/>): the new full saved order.</summary>
+    public static List<string> MoveShown(IEnumerable<string>? order, IReadOnlyList<string> shown, int from, int to) =>
+        Rearranged(order, Move(shown, from, to));
 }

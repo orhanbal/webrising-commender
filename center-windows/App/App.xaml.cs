@@ -288,6 +288,7 @@ public partial class App : Application
         // processes never hold files that an update has to replace.
         Environment.SetEnvironmentVariable("WEBVIEW2_USER_DATA_FOLDER",
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WECOMMANDER", "WebView2"));
+        GatewayClient.AppVersion = AppUpdate.CurrentBuild() is { } build ? $"0.1.{build}" : "dev";
         _window = new MainWindow();
         BuildTray();
         Servers.Changed += () => _ui.TryEnqueue(() => { UpdateServersMenu(); RequestLibrarySync(); });

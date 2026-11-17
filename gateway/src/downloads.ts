@@ -7,7 +7,9 @@
  * lists the same packages from the same releases.
  */
 const releasesPage = "https://github.com/orhanbal/webrising-commender/releases";
-const githubEndpoint = "https://api.github.com/repos/orhanbal/webrising-commender/releases?per_page=40";
+/** The GitHub releases API of the repository (the growth console reads download counts from it too). */
+export const githubReleasesApi = "https://api.github.com/repos/orhanbal/webrising-commender/releases";
+const githubEndpoint = `${githubReleasesApi}?per_page=40`;
 export type DownloadAsset = { name: string; size: number; url: string; platform: "windows" | "macos" | "linux" };
 export type ReleaseInfo = { available: boolean; releaseUrl: string; tagName: string | null; assets: DownloadAsset[] };
 const noRelease: ReleaseInfo = { available: false, releaseUrl: releasesPage, tagName: null, assets: [] };

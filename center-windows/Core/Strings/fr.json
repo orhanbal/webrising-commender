@@ -1163,5 +1163,6 @@
  "Uygulama çekirdeği komutun sonucunu vermedi.": "Le cœur de l'application n'a pas renvoyé le résultat de la commande.",
  "Bu sunucunun anahtarı henüz onaylanmadı. Bir kez terminalden bağlanıp anahtarı onayla.": "La clé de ce serveur n'a pas encore été approuvée. Connectez-vous une fois depuis un terminal et approuvez la clé.",
  "Bu sunucunun anahtarı değişti; komut çalıştırılmadı. Sunucuyu yeniden kurmadıysan araya biri girmiş olabilir; terminalden bağlanıp kontrol et.": "La clé de ce serveur a changé ; la commande n'a pas été exécutée. Si vous n'avez pas réinstallé le serveur, quelqu'un s'est peut-être interposé ; connectez-vous depuis un terminal pour vérifier.",
- "Komut çıkış kodu vermeden bitti (bir sinyalle durdurulmuş olabilir).": "La commande s'est terminée sans code de sortie (elle a peut-être été arrêtée par un signal)."
+ "Komut çıkış kodu vermeden bitti (bir sinyalle durdurulmuş olabilir).": "La commande s'est terminée sans code de sortie (elle a peut-être été arrêtée par un signal).",
+ "Sürükle veya Alt + ok tuşları: Dock'taki sırasını değiştir": "Glissez, ou Alt + flèches, pour changer sa place dans le Dock"
 }

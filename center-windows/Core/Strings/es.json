@@ -1163,5 +1163,6 @@
  "Uygulama çekirdeği komutun sonucunu vermedi.": "El núcleo de la aplicación no devolvió el resultado del comando.",
  "Bu sunucunun anahtarı henüz onaylanmadı. Bir kez terminalden bağlanıp anahtarı onayla.": "La clave de este servidor aún no se ha aprobado. Conéctate una vez desde un terminal y aprueba la clave.",
  "Bu sunucunun anahtarı değişti; komut çalıştırılmadı. Sunucuyu yeniden kurmadıysan araya biri girmiş olabilir; terminalden bağlanıp kontrol et.": "La clave de este servidor ha cambiado; el comando no se ejecutó. Si no reinstalaste el servidor, puede que alguien se haya interpuesto; conéctate desde un terminal y compruébalo.",
- "Komut çıkış kodu vermeden bitti (bir sinyalle durdurulmuş olabilir).": "El comando terminó sin código de salida (puede que lo detuviera una señal)."
+ "Komut çıkış kodu vermeden bitti (bir sinyalle durdurulmuş olabilir).": "El comando terminó sin código de salida (puede que lo detuviera una señal).",
+ "Sürükle veya Alt + ok tuşları: Dock'taki sırasını değiştir": "Arrastra, o usa Alt + flechas, para cambiar su posición en el Dock"
 }

@@ -19,6 +19,8 @@ export type Principal = {
   /** Management Center (tray app) the request came from. */
   centerId?: string;
   centerName?: string;
+  /** AI client of an OAuth access token (claude, chatgpt, cursor, ...), for growth counters. */
+  oauthClientKind?: string;
 };
 
 const roleRank: Record<Role, number> = {

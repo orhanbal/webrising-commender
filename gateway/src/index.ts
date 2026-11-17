@@ -56,6 +56,7 @@ import { handleOAuthHttp, oauthChallenge } from "./oauth.js";
 import { authenticateOAuthAccessToken } from "./oauth-tokens.js";
 import { actionRisk, parseAgentAction } from "./protocol.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
+import { flushCounters, growthConsoleRoute, handleBeacon, recordCenterSeen, recordInstallFetch, recordRequest, recordServerPageView, startGrowthTimers } from "./growth.js";
 import {activePlatformIncidents} from "./platform-incidents.js";
 import { AgentHub } from "./relay.js";
 import {
@@ -243,6 +244,7 @@ const housekeepingTimer = setInterval(() => {
   });
 }, 60 * 60 * 1000);
 housekeepingTimer.unref();
+const stopGrowthTimers = startGrowthTimers((line) => process.stderr.write(line + "\n"));
 
 function securityHeaders() {
   return {
@@ -463,6 +465,8 @@ const modernPages = new Set([
   "/", "/features", "/how-it-works", "/login", "/register", "/forgot-password", "/verify",
   "/reset-password", "/pricing", "/checkout", "/install", "/console", "/console/users", "/console/organizations", "/console/devices", "/console/operations", "/console/landing", "/console/billing", "/console/system", "/console/brand", "/console/legal", "/console/marketing", "/console/email", "/unsubscribe", "/dashboard", "/account", "/billing",
   "/devices", "/terminal", "/files", "/tasks", "/scheduled-tasks", "/mcp", "/usage", "/approvals", "/team", "/audit", "/invite",
+  "/reset-password", "/pricing", "/checkout", "/install", "/console", "/console/users", "/console/organizations", "/console/devices", "/console/operations", "/console/landing", "/console/billing", "/console/system", "/console/brand", "/console/legal", "/console/marketing", "/console/email", "/console/growth", "/console/growth/traffic", "/console/growth/crawlers", "/console/growth/connections", "/console/growth/downloads", "/console/growth/usage", "/console/growth/feedback", "/console/growth/directories", "/unsubscribe", "/dashboard", "/account", "/billing",
+  "/devices", "/terminal", "/files", "/tasks", "/mcp", "/usage", "/approvals", "/team", "/audit", "/invite",
   "/privacy", "/terms", "/refund",
   ...contentPagePaths,
 ]);
@@ -579,6 +583,7 @@ function wantsEventStream(req: IncomingMessage) {
 const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
   try {
     const url = new URL(req.url || "/", publicBaseUrl);
+    recordRequest(req.method || "GET", url.pathname, req.headers);
     if (await handleOAuthHttp(req, res, url, publicBaseUrl)) return;
 
     if (req.method === "GET" && url.pathname.startsWith("/assets/")) {
@@ -652,6 +657,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           };
         }catch { /* Public landing retains safe default metadata if the CMS is unavailable. */ }
       }
+      recordServerPageView(url.pathname, url.search, req.headers, new URL(publicBaseUrl).hostname);
       if (await serveModernFile(res,"index.html",true,seo,req.headers["accept-encoding"])) return;
       if (url.pathname === "/") return void (await serveLanding(res));
       return void json(res,503,{error:"modern_frontend_not_built"});
@@ -660,6 +666,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       const body = await installRoute(url.pathname, publicBaseUrl);
       if (body === "missing") return void json(res, 503, { error: "installer_missing" });
       if (body) {
+        if (req.method === "GET") recordInstallFetch(url.pathname);
         const download = url.pathname.endsWith(".cmd");
         res.writeHead(200, {
           "content-type": download ? "application/octet-stream" : "text/plain; charset=utf-8",
@@ -718,6 +725,15 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       });
     }
 
+    // Cookieless page-view beacon from the web app (route changes). Always 204;
+    // nothing identifying is stored (see growth.ts).
+    if (req.method === "POST" && url.pathname === "/api/t") {
+      let raw = "";
+      try { const body = await readBody(req); raw = body.length <= 2048 ? body.toString("utf8") : ""; } catch { raw = ""; }
+      handleBeacon(raw, req.headers, remoteKey(req), new URL(publicBaseUrl).hostname);
+      res.writeHead(204, securityHeaders());
+      return void res.end();
+    }
     if (req.method === "GET" && url.pathname === "/api/public/downloads") {
       return void json(res,200,await getDownloads());
     }
@@ -1895,6 +1911,11 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           platformRole: "super_admin",
           userId: principal.userId,
         });
+      }
+      if (url.pathname.startsWith("/api/console/growth/")) {
+        const growth = await growthConsoleRoute(req.method || "GET", url, () => readJson(req), principal.userId, publicBaseUrl.replace(/\/$/, ""));
+        if (growth) return void json(res, growth.status, growth.body);
+        return void json(res, 404, { error: "not_found" });
       }
       if (req.method === "GET" && url.pathname === "/api/console/overview") {
         const metrics = await db.query<{
@@ -3880,6 +3901,10 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           [principal!.centerId, platform.data],
         );
       }
+      if (principal!.centerId) {
+        await recordCenterSeen(principal!.centerId, platform.success ? platform.data : null,
+          url.searchParams.get("version"), url.searchParams.get("lang")).catch(() => undefined);
+      }
       const org = await db.query<{ name: string }>("select name from organizations where id=$1", [principal!.organizationId]);
       return void json(res, 200, {
         centerId: principal!.centerId, name: principal!.centerName, email: principal!.email,
@@ -4805,6 +4830,8 @@ async function shutdown() {
   clearInterval(searchStopPollTimer);
   clearInterval(recoveryPollTimer);
   scheduledTaskRunner.stop();
+  stopGrowthTimers();
+  await flushCounters().catch(() => undefined);
   await searchPersistence.deactivate();
   await db.end();
   process.exit(0);
