@@ -85,6 +85,11 @@ public sealed class DockWindow : Window
         };
         Content = _root;
         _root.ContextFlyout = Menu();
+        // Esc while a module button is dragged: it goes back where it was.
+        _root.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler((_, e) =>
+        {
+            if (_reordering && e.Key == Windows.System.VirtualKey.Escape) { CancelReorder("escape"); e.Handled = true; }
+        }), true);
 
         var hwnd = Hwnd;
         _hwnd = hwnd;
@@ -119,6 +124,8 @@ public sealed class DockWindow : Window
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder name, int max);
     [DllImport("shell32.dll")] private static extern int SHQueryUserNotificationState(out int state);
+    [DllImport("user32.dll")] private static extern short GetKeyState(int vk);
+    [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int vk);
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
     [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left, Top, Right, Bottom; }
@@ -388,7 +395,7 @@ public sealed class DockWindow : Window
         GetCursorPos(out var p);
         var now = new PixelRect(AppWindow.Position.X, AppWindow.Position.Y, AppWindow.Size.Width, AppWindow.Size.Height);
         var over = now.Contains(p.X, p.Y) || DockLayout.Wakes(_screen.Work, _edge, p.X, p.Y, Math.Max(2, (int)Math.Round(2 * _screen.Scale)));
-        var want = over || _menuOpen || App.Current.MonitorPanelOpen || App.Current.QuickPanelOpen;
+        var want = over || _menuOpen || _reorderDown || App.Current.MonitorPanelOpen || App.Current.QuickPanelOpen;
         if (want != _wantShown) { _wantShown = want; _wantSince = DateTime.UtcNow; }
         var delay = want ? App.Current.Settings.DockShowDelay : App.Current.Settings.DockHideDelay;
         if ((DateTime.UtcNow - _wantSince).TotalMilliseconds >= Math.Clamp(delay, 0, 5000)) _target = want ? 1 : 0;
@@ -474,7 +481,9 @@ public sealed class DockWindow : Window
         };
         Put(scroll, 1);
 
-        // Right / bottom: quick access.
+        // Right / bottom: quick access (the module buttons move along the Dock by drag or Alt + arrows).
+        ResetReorder();
+        _moduleItems.Clear();
         var end = new StackPanel { Orientation = orientation, Spacing = 2, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
         foreach (var m in modules)
         {
@@ -483,22 +492,22 @@ public sealed class DockWindow : Window
                 case "processes":
                     var procs = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, L.T("Görev Yöneticisi"), _horizontal && !_compact ? L.T("Görev Yöneticisi") : null);
                     procs.Click += (_, _) => TaskManagerWindow.Open();
-                    end.Children.Add(procs);
+                    AddModule(end, m, procs, procs);
                     break;
                 case "timers":
                     var timers = IconButton(new FontIcon { Glyph = "\uE823", FontSize = 16 }, L.T("Zamanlayıcılar"), _horizontal && !_compact ? L.T("Zamanlayıcılar") : null);
                     timers.Click += (_, _) => TaskSchedulerWindow.Open();
-                    end.Children.Add(timers);
+                    AddModule(end, m, timers, timers);
                     break;
                 case "terminal":
                     var term = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, "Terminal", _horizontal && !_compact ? "Terminal" : null);
                     term.Click += (_, _) => OpenTerminal();
-                    end.Children.Add(term);
+                    AddModule(end, m, term, term);
                     break;
                 case "tasks":
                     var tasks = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, L.T("Zamanlanmış görevler"));
                     tasks.Click += (_, _) => App.Current.ShowScheduledTasks();
-                    end.Children.Add(tasks);
+                    AddModule(end, m, tasks, tasks);
                     break;
                 case "approvals":
                     var bell = new Grid();
@@ -508,13 +517,14 @@ public sealed class DockWindow : Window
                     if (_badgeBox.Parent is Panel old) old.Children.Remove(_badgeBox);
                     _badgeBox.Child = _badge;
                     bell.Children.Add(_badgeBox);
-                    end.Children.Add(bell);
+                    AddModule(end, m, bell, approvals);
                     break;
             }
         }
         var settings = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, L.T("Dock ayarları"));
         settings.Click += (_, _) => App.Current.ShowDockSettings();
         end.Children.Add(settings);
+        _end = end;
         Put(end, 2);
     }
 
@@ -746,6 +756,222 @@ public sealed class DockWindow : Window
         };
         Hold(flyout);
         if (_grip is not null) flyout.ShowAt(_grip);
+    }
+
+    // ---- module buttons: drag along the Dock (or Alt + arrows) to change their order ----
+
+    private readonly List<(string Name, FrameworkElement Item, Button Button)> _moduleItems = [];
+    private StackPanel? _end;
+    private bool _reorderDown, _reordering, _reorderStealing;
+    private int _reorderFrom = -1;
+    private uint _reorderPointerId;
+    private POINT _reorderAt;
+    private (int Start, int Length)[] _reorderExtents = [];
+
+    /// <summary>
+    /// One module button on the Dock. It sits in its own holder: a press and a
+    /// move beyond a few pixels takes the pointer from the button (no click
+    /// then) and drags the holder along the Dock; a plain click stays the button's.
+    /// The app icon, the server picker and the settings button are not module buttons.
+    /// </summary>
+    private void AddModule(StackPanel end, string name, FrameworkElement content, Button button)
+    {
+        var holder = new Grid { Background = new SolidColorBrush(Colors.Transparent), RenderTransform = new TranslateTransform() };
+        holder.Children.Add(content);
+        _moduleItems.Add((name, holder, button));
+        end.Children.Add(holder);
+        // The button handles the press itself: these see it anyway.
+        holder.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnModulePressed), true);
+        holder.AddHandler(UIElement.PointerMovedEvent, new PointerEventHandler(OnModuleMoved), true);
+        holder.AddHandler(UIElement.PointerReleasedEvent, new PointerEventHandler(OnModuleReleased), true);
+        holder.AddHandler(UIElement.PointerCaptureLostEvent, new PointerEventHandler(OnModuleCaptureLost), true);
+        holder.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnModuleKey), true);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(button, L.T("Sürükle veya Alt + ok tuşları: Dock'taki sırasını değiştir"));
+    }
+
+    private double Scale => _root.XamlRoot is { RasterizationScale: > 0 } root ? root.RasterizationScale : _screen.Scale;
+    private int Along(POINT p) => _horizontal ? p.X : p.Y;
+    private int Across(POINT p) => _horizontal ? p.Y : p.X;
+
+    private void OnModulePressed(object sender, PointerRoutedEventArgs e)
+    {
+        if (_reordering || sender is not FrameworkElement holder) return;
+        if (!e.GetCurrentPoint(holder).Properties.IsLeftButtonPressed) return;
+        var index = _moduleItems.FindIndex(x => x.Item == holder);
+        if (index < 0) return;
+        _reorderDown = true;
+        _reorderFrom = index;
+        _reorderPointerId = e.Pointer.PointerId;
+        GetCursorPos(out _reorderAt);
+        // Not handled: a press and release without moving stays a click on the button.
+    }
+
+    private void OnModuleMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_reorderDown || e.Pointer.PointerId != _reorderPointerId || _reorderFrom < 0 || _reorderFrom >= _moduleItems.Count) return;
+        var holder = _moduleItems[_reorderFrom].Item;
+        if (!ReferenceEquals(sender, holder)) return;
+        if (!e.GetCurrentPoint(holder).Properties.IsLeftButtonPressed)
+        {
+            // The release was missed (it happened elsewhere): nothing moves.
+            if (_reordering) CancelReorder("button up"); else ResetReorder();
+            return;
+        }
+        GetCursorPos(out var now);
+        if (!_reordering)
+        {
+            var threshold = Math.Max(4, (int)Math.Round(6 * Scale));
+            if (Math.Abs(Along(now) - Along(_reorderAt)) < threshold && Math.Abs(Across(now) - Across(_reorderAt)) < threshold) return;
+            StartReorder(holder, e.Pointer);
+        }
+        if ((GetAsyncKeyState(0x1B /* VK_ESCAPE */) & 0x8000) != 0) { CancelReorder("escape"); e.Handled = true; return; }
+        FollowPointer(now);
+        e.Handled = true;
+    }
+
+    private void StartReorder(FrameworkElement holder, Pointer pointer)
+    {
+        // Where every module button is now (screen pixels along the Dock), before anything moves.
+        _reorderExtents = _moduleItems.Select(x =>
+        {
+            var r = ScreenRect(x.Item);
+            return _horizontal ? (r.X, r.Width) : (r.Y, r.Height);
+        }).ToArray();
+        _reordering = true;
+        _reorderStealing = true;
+        try
+        {
+            // The button lets go of the pointer (so its click does not fire); the holder takes it.
+            _moduleItems[_reorderFrom].Button.ReleasePointerCaptures();
+            if (!holder.CapturePointer(pointer)) App.DebugLayout("dock: module drag could not capture the pointer");
+        }
+        finally { _reorderStealing = false; }
+        Canvas.SetZIndex(holder, 10);
+        holder.Opacity = 0.8;
+        App.DebugLayout($"dock: module drag {_moduleItems[_reorderFrom].Name} from {_reorderFrom} at {_reorderAt.X},{_reorderAt.Y}");
+    }
+
+    /// <summary>The dragged button follows the pointer along the Dock; the others step aside to show where it lands.</summary>
+    private void FollowPointer(POINT now)
+    {
+        if (_reorderExtents.Length != _moduleItems.Count || _reorderExtents.Length == 0) return;
+        var scale = Scale;
+        var from = _reorderFrom;
+        var (start, length) = _reorderExtents[from];
+        var first = _reorderExtents[0].Start;
+        var last = _reorderExtents[^1].Start + _reorderExtents[^1].Length;
+        var delta = Math.Clamp(Along(now) - Along(_reorderAt), Math.Min(0, first - start), Math.Max(0, last - (start + length)));
+        Shift(_moduleItems[from].Item, delta / scale);
+        var slot = DockLayout.DropSlot(_reorderExtents, from, Along(now));
+        var step = length / scale + (_end?.Spacing ?? 0);
+        for (var i = 0; i < _moduleItems.Count; i++)
+        {
+            if (i == from) continue;
+            var offset = from < slot && i > from && i <= slot ? -step
+                : from > slot && i >= slot && i < from ? step
+                : 0;
+            Shift(_moduleItems[i].Item, offset);
+        }
+    }
+
+    private void Shift(FrameworkElement e, double by)
+    {
+        if (e.RenderTransform is not TranslateTransform t)
+        {
+            t = new TranslateTransform();
+            e.RenderTransform = t;
+        }
+        if (_horizontal) { t.X = by; t.Y = 0; } else { t.X = 0; t.Y = by; }
+    }
+
+    private void OnModuleReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_reorderDown || e.Pointer.PointerId != _reorderPointerId) return;
+        if (!_reordering) { ResetReorder(); return; } // a plain click: the button handles it
+        e.Handled = true;
+        GetCursorPos(out var now);
+        var from = _reorderFrom;
+        var slot = DockLayout.DropSlot(_reorderExtents, from, Along(now));
+        var holder = _moduleItems[from].Item;
+        ResetReorder();
+        try { holder.ReleasePointerCapture(e.Pointer); } catch (Exception) { }
+        App.DebugLayout($"dock: module drag dropped at {now.X},{now.Y} slot {slot}");
+        MoveModule(from, slot, keyboard: false);
+    }
+
+    private void OnModuleCaptureLost(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_reordering || _reorderStealing || e.Pointer.PointerId != _reorderPointerId) return;
+        // The button's own capture going away (handed to the holder) bubbles here too: only the holder's counts.
+        if (_reorderFrom >= 0 && _reorderFrom < _moduleItems.Count
+            && _moduleItems[_reorderFrom].Item.PointerCaptures?.Any(p => p.PointerId == _reorderPointerId) == true) return;
+        CancelReorder("capture lost");
+    }
+
+    private void CancelReorder(string why)
+    {
+        if (!_reordering) { ResetReorder(); return; }
+        var holder = _reorderFrom >= 0 && _reorderFrom < _moduleItems.Count ? _moduleItems[_reorderFrom].Item : null;
+        ResetReorder();
+        try { holder?.ReleasePointerCaptures(); } catch (Exception) { }
+        App.DebugLayout($"dock: module drag cancelled ({why})");
+    }
+
+    /// <summary>No drag going on: every module button back in its own place.</summary>
+    private void ResetReorder()
+    {
+        _reorderDown = false;
+        _reordering = false;
+        _reorderFrom = -1;
+        _reorderExtents = [];
+        foreach (var (_, item, _) in _moduleItems)
+        {
+            Shift(item, 0);
+            item.Opacity = 1;
+            Canvas.SetZIndex(item, 0);
+        }
+    }
+
+    /// <summary>Alt + Left / Right (a row) or Alt + Up / Down (a column) on a focused module button moves it one place.</summary>
+    private void OnModuleKey(object sender, KeyRoutedEventArgs e)
+    {
+        if (_reordering || GetKeyState(0x12 /* VK_MENU */) >= 0) return;
+        var step = (e.Key, _horizontal) switch
+        {
+            (Windows.System.VirtualKey.Left, true) or (Windows.System.VirtualKey.Up, false) => -1,
+            (Windows.System.VirtualKey.Right, true) or (Windows.System.VirtualKey.Down, false) => 1,
+            _ => 0,
+        };
+        if (step == 0) return;
+        var index = _moduleItems.FindIndex(x => ReferenceEquals(x.Item, sender));
+        if (index < 0) return;
+        e.Handled = true;
+        MoveModule(index, index + step, keyboard: true);
+    }
+
+    /// <summary>
+    /// The same move as Settings → Dock: the saved order changes (hidden parts
+    /// keep their places), it is saved and the Dock is built again.
+    /// </summary>
+    private void MoveModule(int from, int to, bool keyboard)
+    {
+        var shown = _moduleItems.Select(x => x.Name).ToList();
+        if (from < 0 || from >= shown.Count) return;
+        to = Math.Clamp(to, 0, shown.Count - 1);
+        if (from == to) return;
+        var name = shown[from];
+        var s = App.Current.Settings;
+        s.DockModules = DockLayout.MoveShown(s.DockModules, shown, from, to);
+        App.Current.SaveSettings();
+        App.DebugLayout($"dock: module {name} moved {from} -> {to}; order {string.Join(",", s.DockModules)}");
+        // Built again after this pointer or key event is over (its element is replaced).
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            App.Current.ApplyDock();
+            if (!keyboard) return;
+            var moved = _moduleItems.FirstOrDefault(x => x.Name == name).Button;
+            moved?.Focus(FocusState.Keyboard);
+        });
     }
 
     // ---- right click ----

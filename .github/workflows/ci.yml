@@ -1375,7 +1375,7 @@ jobs:
           if ($test.ExitCode -ne 0) { throw "Task Scheduler self-test failed (exit $($test.ExitCode))" }
           if ($left) { throw "the self-test task was left behind" }
           Write-Host "PASS the Task Scheduler self-test"
-      - name: Dock check (AppBar edges, work area, Explorer restart, full screen, floating, auto-hide)
+      - name: Dock check (AppBar edges, work area, Explorer restart, full screen, floating, reorder by drag, auto-hide)
         shell: powershell
         run: |
           # Real window management on Windows: the Dock reserves its strip
@@ -1571,6 +1571,54 @@ jobs:
             Shot 'dock-floating-snap'
           }
           Quit-App
+
+          # 6. Reorder on the Dock itself: a real mouse drag of the approvals button onto the terminal button
+          #    (a row on top, a column on the left) saves the new order and keeps the others in place.
+          Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+          foreach ($edge in 'top','left') {
+            $script:case = "reorder $edge"
+            Settings "{`"dock`":true,`"dockMode`":`"fixed`",`"dockEdge`":`"$edge`",`"deskChip`":true,`"watchChosen`":true}"
+            Start-App
+            $uiRoot = [System.Windows.Automation.AutomationElement]::RootElement
+            $dockCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'WECOMMANDER Dock')
+            $dockEl = $uiRoot.FindFirst([System.Windows.Automation.TreeScope]::Children, $dockCond)
+            $scope = if ($dockEl) { $dockEl } else { $uiRoot }
+            $fromEl = $scope.FindFirst([System.Windows.Automation.TreeScope]::Descendants, (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'Bekleyen onaylar')))
+            $toEl = $scope.FindFirst([System.Windows.Automation.TreeScope]::Descendants, (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'Terminal')))
+            if (-not $fromEl -or -not $toEl) { $fail += "reorder ${edge}: approvals or terminal button not found on the Dock" }
+            else {
+              $a = $fromEl.Current.BoundingRectangle; $b = $toEl.Current.BoundingRectangle
+              $sx = [int]($a.Left + $a.Width / 2); $sy = [int]($a.Top + $a.Height / 2)
+              # The drop point: just inside the terminal button, before its middle.
+              if ($edge -eq 'top') { $tx = [int]($b.Left + 4); $ty = $sy } else { $tx = $sx; $ty = [int]($b.Top + 4) }
+              Write-Host "reorder ${edge}: drag approvals from $sx,$sy to $tx,$ty (terminal at $([int]$b.Left),$([int]$b.Top))"
+              [D]::SetCursorPos($sx, $sy); [D]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero); Start-Sleep -Milliseconds 150
+              for ($i = 1; $i -le 20; $i++) {
+                $mx = $sx + [int](($tx - $sx) * $i / 20); $my = $sy + [int](($ty - $sy) * $i / 20)
+                [D]::mouse_event(0x8001, [uint32]($mx * 65535 / ($screen.Width - 1)), [uint32]($my * 65535 / ($screen.Height - 1)), 0, [IntPtr]::Zero)
+                Start-Sleep -Milliseconds 40
+              }
+              Start-Sleep -Milliseconds 200
+              if ($edge -eq 'top') { Shot 'dock-reorder-dragging' }
+              [D]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero)
+              $want = 'servers,processes,timers,tasks,approvals,terminal'
+              $script:order = ''
+              $saved = WaitFor { try { $script:order = (@((Get-Content $settingsFile -Raw | ConvertFrom-Json).dockModules) -join ','); $script:order -eq $want } catch { $false } } 8
+              Write-Host "reorder ${edge}: saved order '$($script:order)'"
+              if ($saved) { $passed += "dragging a module button on the $edge Dock saves the new order" } else { $fail += "reorder ${edge}: saved order '$($script:order)', expected '$want'" }
+              Start-Sleep -Seconds 1
+              # Built again in the new order: approvals now comes before terminal along the Dock.
+              $fromEl = $scope.FindFirst([System.Windows.Automation.TreeScope]::Descendants, (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'Bekleyen onaylar')))
+              $toEl = $scope.FindFirst([System.Windows.Automation.TreeScope]::Descendants, (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'Terminal')))
+              if ($fromEl -and $toEl) {
+                $a = $fromEl.Current.BoundingRectangle; $b = $toEl.Current.BoundingRectangle
+                $before = if ($edge -eq 'top') { $a.Left -lt $b.Left } else { $a.Top -lt $b.Top }
+                if ($before) { $passed += "the $edge Dock shows the new order" } else { $fail += "reorder ${edge}: the Dock was not rebuilt in the new order" }
+              } else { $fail += "reorder ${edge}: buttons missing after the drop" }
+              if ($edge -eq 'top') { Shot 'dock-reorder-dropped' }
+            }
+            Quit-App
+          }
 
           # 3. Auto-hide: out of sight until the mouse reaches the edge; no work area taken.
           $script:case = 'autohide'

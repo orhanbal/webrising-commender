@@ -1163,5 +1163,6 @@
  "Uygulama çekirdeği komutun sonucunu vermedi.": "Der App-Kern hat das Ergebnis des Befehls nicht geliefert.",
  "Bu sunucunun anahtarı henüz onaylanmadı. Bir kez terminalden bağlanıp anahtarı onayla.": "Der Schlüssel dieses Servers wurde noch nicht bestätigt. Verbinde dich einmal über ein Terminal und bestätige den Schlüssel.",
  "Bu sunucunun anahtarı değişti; komut çalıştırılmadı. Sunucuyu yeniden kurmadıysan araya biri girmiş olabilir; terminalden bağlanıp kontrol et.": "Der Schlüssel dieses Servers hat sich geändert; der Befehl wurde nicht ausgeführt. Wenn du den Server nicht neu installiert hast, könnte sich jemand dazwischengeschaltet haben; verbinde dich über ein Terminal und prüfe es.",
- "Komut çıkış kodu vermeden bitti (bir sinyalle durdurulmuş olabilir).": "Der Befehl endete ohne Exit-Code (er wurde vielleicht durch ein Signal beendet)."
+ "Komut çıkış kodu vermeden bitti (bir sinyalle durdurulmuş olabilir).": "Der Befehl endete ohne Exit-Code (er wurde vielleicht durch ein Signal beendet).",
+ "Sürükle veya Alt + ok tuşları: Dock'taki sırasını değiştir": "Ziehen oder Alt + Pfeiltasten: Position im Dock ändern"
 }
