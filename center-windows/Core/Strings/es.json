@@ -1123,12 +1123,7 @@
  "Bu sunucu bu bilgisayarın kayıtlı sunucuları arasında yok (silinmiş olabilir).": "Este servidor no está entre los servidores guardados de este equipo (puede que se haya eliminado).",
  "Zamanlanmış görevler yalnız SSH ile bağlanılan sunucularda çalışır.": "Las tareas programadas solo se ejecutan en servidores a los que se accede por SSH.",
  "Sunucuya bağlanılamadı: ": "No se pudo conectar con el servidor: ",
- "Sunucuya bağlanılamadı: bağlantı iki dakikada kurulamadı.": "No se pudo conectar con el servidor: sin conexión en dos minutos.",
- "Bu sunucunun anahtarı henüz onaylanmadı ya da değişti. Bir kez terminalden bağlanıp anahtarı onayla.": "La clave de este servidor aún no se ha aprobado o ha cambiado. Conéctate una vez desde un terminal y aprueba la clave.",
- "Sunucuda terminal oturumu açılamadı.": "No se pudo abrir una sesión de terminal en el servidor.",
  "Zaman aşımı: komut {0} saniyede bitmedi ve durduruldu.": "Tiempo límite: el comando no terminó en {0} segundos y se detuvo.",
- "Bağlantı komut bitmeden kapandı.": "La conexión se cerró antes de que terminara el comando.",
- "Komut başlatılamadı.": "No se pudo iniciar el comando.",
  "Komut çalıştırılamadı: ": "No se pudo ejecutar el comando: ",
  "Ad 1 ile 80 karakter arasında olmalı.": "El nombre debe tener entre 1 y 80 caracteres.",
  "Görevin çalışacağı hedefi seç.": "Elige dónde se ejecuta la tarea.",
@@ -1164,5 +1159,9 @@
  "Her çalışmada bildir": "Notificar en cada ejecución",
  "Bildirme": "No notificar",
  "Yalnız başarısız olunca bildir": "Notificar solo si falla",
- "Bu çalışma bir SSH sunucusu için değil; Yönetim Merkezi çalıştırmadı.": "Esta ejecución no es para un servidor SSH; el Management Center no la ejecutó."
+ "Bu çalışma bir SSH sunucusu için değil; Yönetim Merkezi çalıştırmadı.": "Esta ejecución no es para un servidor SSH; el Management Center no la ejecutó.",
+ "Uygulama çekirdeği komutun sonucunu vermedi.": "El núcleo de la aplicación no devolvió el resultado del comando.",
+ "Bu sunucunun anahtarı henüz onaylanmadı. Bir kez terminalden bağlanıp anahtarı onayla.": "La clave de este servidor aún no se ha aprobado. Conéctate una vez desde un terminal y aprueba la clave.",
+ "Bu sunucunun anahtarı değişti; komut çalıştırılmadı. Sunucuyu yeniden kurmadıysan araya biri girmiş olabilir; terminalden bağlanıp kontrol et.": "La clave de este servidor ha cambiado; el comando no se ejecutó. Si no reinstalaste el servidor, puede que alguien se haya interpuesto; conéctate desde un terminal y compruébalo.",
+ "Komut çıkış kodu vermeden bitti (bir sinyalle durdurulmuş olabilir).": "El comando terminó sin código de salida (puede que lo detuviera una señal)."
 }

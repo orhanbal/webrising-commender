@@ -1123,12 +1123,7 @@
  "Bu sunucu bu bilgisayarın kayıtlı sunucuları arasında yok (silinmiş olabilir).": "Dieser Server gehört nicht zu den gespeicherten Servern dieses Computers (er wurde vielleicht gelöscht).",
  "Zamanlanmış görevler yalnız SSH ile bağlanılan sunucularda çalışır.": "Geplante Aufgaben laufen nur auf Servern, die über SSH erreicht werden.",
  "Sunucuya bağlanılamadı: ": "Verbindung zum Server fehlgeschlagen: ",
- "Sunucuya bağlanılamadı: bağlantı iki dakikada kurulamadı.": "Verbindung zum Server fehlgeschlagen: innerhalb von zwei Minuten keine Verbindung.",
- "Bu sunucunun anahtarı henüz onaylanmadı ya da değişti. Bir kez terminalden bağlanıp anahtarı onayla.": "Der Schlüssel dieses Servers wurde noch nicht bestätigt oder hat sich geändert. Verbinde dich einmal über ein Terminal und bestätige den Schlüssel.",
- "Sunucuda terminal oturumu açılamadı.": "Auf dem Server konnte keine Terminalsitzung geöffnet werden.",
  "Zaman aşımı: komut {0} saniyede bitmedi ve durduruldu.": "Zeitlimit: Der Befehl war nach {0} Sekunden nicht fertig und wurde gestoppt.",
- "Bağlantı komut bitmeden kapandı.": "Die Verbindung wurde geschlossen, bevor der Befehl fertig war.",
- "Komut başlatılamadı.": "Der Befehl konnte nicht gestartet werden.",
  "Komut çalıştırılamadı: ": "Der Befehl konnte nicht ausgeführt werden: ",
  "Ad 1 ile 80 karakter arasında olmalı.": "Der Name muss 1 bis 80 Zeichen lang sein.",
  "Görevin çalışacağı hedefi seç.": "Wähle aus, wo die Aufgabe läuft.",
@@ -1164,5 +1159,9 @@
  "Her çalışmada bildir": "Bei jeder Ausführung benachrichtigen",
  "Bildirme": "Nicht benachrichtigen",
  "Yalnız başarısız olunca bildir": "Nur bei Fehlschlag benachrichtigen",
- "Bu çalışma bir SSH sunucusu için değil; Yönetim Merkezi çalıştırmadı.": "Diese Ausführung ist nicht für einen SSH-Server; das Management Center hat sie nicht ausgeführt."
+ "Bu çalışma bir SSH sunucusu için değil; Yönetim Merkezi çalıştırmadı.": "Diese Ausführung ist nicht für einen SSH-Server; das Management Center hat sie nicht ausgeführt.",
+ "Uygulama çekirdeği komutun sonucunu vermedi.": "Der App-Kern hat das Ergebnis des Befehls nicht geliefert.",
+ "Bu sunucunun anahtarı henüz onaylanmadı. Bir kez terminalden bağlanıp anahtarı onayla.": "Der Schlüssel dieses Servers wurde noch nicht bestätigt. Verbinde dich einmal über ein Terminal und bestätige den Schlüssel.",
+ "Bu sunucunun anahtarı değişti; komut çalıştırılmadı. Sunucuyu yeniden kurmadıysan araya biri girmiş olabilir; terminalden bağlanıp kontrol et.": "Der Schlüssel dieses Servers hat sich geändert; der Befehl wurde nicht ausgeführt. Wenn du den Server nicht neu installiert hast, könnte sich jemand dazwischengeschaltet haben; verbinde dich über ein Terminal und prüfe es.",
+ "Komut çıkış kodu vermeden bitti (bir sinyalle durdurulmuş olabilir).": "Der Befehl endete ohne Exit-Code (er wurde vielleicht durch ein Signal beendet)."
 }

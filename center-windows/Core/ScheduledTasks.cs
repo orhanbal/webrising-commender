@@ -349,7 +349,6 @@ public static class ScheduleText
 public static class RunOutput
 {
     public const int MaxBytes = 64 * 1024;
-    private static readonly Regex Ansi = new(@"\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1B]*(?:\x07|\x1B\\)|[@-Z\\-_])", RegexOptions.Compiled);
 
     public static string Cap(string text, int maxBytes = MaxBytes)
     {
@@ -370,115 +369,52 @@ public static class RunOutput
         return marker + text[start..];
     }
 
-    /// <summary>Terminal output as plain text: colour and cursor codes removed, CRLF as LF.</summary>
-    public static string Plain(string text) =>
-        Ansi.Replace(text, "").Replace("\r\n", "\n").Replace('\r', '\n');
 }
 
 /// <summary>
-/// One command run through a login shell (wecommander-core has no plain
-/// "exec" call): the typed line replaces the shell with <c>sh -c</c>, prints a
-/// begin marker, runs the command with stdin closed and prints an end marker
-/// with the exit code. The markers are built by printf from two words, so the
-/// shell's echo of the typed line never contains them.
+/// Texts for wecommander-core's <c>hosts.exec</c> (docs/CORE_PROTOCOL.md): its
+/// errors start with a code (needs_credential, host_key_unknown, ...).
 /// </summary>
-public sealed class MarkedCommand
+public static class HostExecText
 {
-    private const string Begin = "__WC_B_";
-    private const string End = "__WC_E_";
-    /// <summary>Raw text kept before the begin marker shows up, and around the body (the end is kept).</summary>
-    private const int PreambleLimit = 16 * 1024;
-    private const int BodyLimit = 512 * 1024;
+    public static string NeedsSavedLogin =>
+        L.T("Bu sunucuya parola sorulmadan bağlanılamıyor. Zamanlanmış görevler için girişi bu bilgisayarda kaydet (parolayı sakla ya da SSH anahtarı kullan).");
 
-    private readonly Decoder _decoder = new UTF8Encoding(false).GetDecoder();
-    private readonly StringBuilder _pre = new();
-    private readonly StringBuilder _body = new();
-    private readonly Regex _end;
-    private bool _begun, _trimmed;
+    public static string NoAnswer => L.T("Uygulama çekirdeği komutun sonucunu vermedi.");
 
-    public string Nonce { get; }
-    public bool Finished { get; private set; }
-    public int? ExitCode { get; private set; }
-
-    public MarkedCommand(string? nonce = null)
+    /// <summary>The error code and the rest of the core's error text.</summary>
+    public static (string Code, string Detail) Split(string raw)
     {
-        Nonce = nonce ?? Guid.NewGuid().ToString("N")[..12];
-        _end = new Regex(@"(?:\r?\n)?" + Regex.Escape(End + Nonce) + @"_(\d+)", RegexOptions.Compiled);
+        var i = raw.IndexOf(": ", StringComparison.Ordinal);
+        if (i <= 0 || raw[..i].Any(c => !(char.IsAsciiLetterLower(c) || c == '_'))) return ("", raw);
+        return (raw[..i], raw[(i + 2)..]);
     }
 
-    /// <summary>Single quotes for POSIX shells (also fine in bash, zsh and fish).</summary>
-    public static string Quote(string text) => "'" + text.Replace("'", "'\\''") + "'";
-
-    /// <summary>The line typed into the shell (ends with Enter).</summary>
-    public string Line(string command)
+    public static string Error(string raw)
     {
-        var body = command.Replace("\r\n", "\n").Replace('\r', '\n');
-        var script = $"printf '\\n%s%s\\n' {Begin} {Nonce}; ( {body}\n) </dev/null 2>&1; printf '\\n%s%s_%s\\n' {End} {Nonce} $?";
-        return " exec sh -c " + Quote(script) + "\r";
-    }
-
-    public void Append(byte[] bytes)
-    {
-        var chars = new char[_decoder.GetCharCount(bytes, 0, bytes.Length)];
-        _decoder.GetChars(bytes, 0, bytes.Length, chars, 0);
-        Append(new string(chars));
-    }
-
-    public void Append(string text)
-    {
-        if (Finished) return;
-        if (!_begun)
+        var (code, detail) = Split(raw);
+        var why = string.IsNullOrWhiteSpace(detail) ? "" : " (" + CoreText.Turkish(detail) + ")";
+        return code switch
         {
-            _pre.Append(text);
-            var all = _pre.ToString();
-            var i = all.IndexOf(Begin + Nonce, StringComparison.Ordinal);
-            if (i < 0)
-            {
-                if (_pre.Length > PreambleLimit) _pre.Remove(0, _pre.Length - PreambleLimit);
-                return;
-            }
-            _begun = true;
-            var rest = all[(i + Begin.Length + Nonce.Length)..];
-            // The newline printed after the marker.
-            if (rest.StartsWith("\r\n", StringComparison.Ordinal)) rest = rest[2..];
-            else if (rest.StartsWith('\n')) rest = rest[1..];
-            _pre.Clear();
-            text = rest;
-        }
-        _body.Append(text);
-        var body = _body.ToString();
-        var m = _end.Match(body);
-        if (m.Success && body.IndexOf('\n', m.Index + m.Length) is var nl && (nl >= 0 || body.Length > m.Index + m.Length))
-        {
-            ExitCode = int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
-            _body.Length = m.Index;
-            Finished = true;
-            return;
-        }
-        if (_body.Length > BodyLimit)
-        {
-            _body.Remove(0, _body.Length - BodyLimit / 2);
-            _trimmed = true;
-        }
+            "needs_credential" => NeedsSavedLogin + why,
+            "host_key_unknown" => L.T("Bu sunucunun anahtarı henüz onaylanmadı. Bir kez terminalden bağlanıp anahtarı onayla."),
+            "host_key_changed" => L.T("Bu sunucunun anahtarı değişti; komut çalıştırılmadı. Sunucuyu yeniden kurmadıysan araya biri girmiş olabilir; terminalden bağlanıp kontrol et."),
+            "host_not_found" => L.T("Bu sunucu bu bilgisayarın kayıtlı sunucuları arasında yok (silinmiş olabilir)."),
+            "not_ssh" => L.T("Zamanlanmış görevler yalnız SSH ile bağlanılan sunucularda çalışır."),
+            "connect_failed" => L.T("Sunucuya bağlanılamadı: ") + CoreText.Turkish(detail),
+            _ => L.T("Komut çalıştırılamadı: ") + CoreText.Turkish(detail),
+        };
     }
 
-    /// <summary>The shell ended: an end marker at the very end of the output still counts.</summary>
-    public void Close()
+    /// <summary>The run as the Center reports it.</summary>
+    public static RemoteExecResult Result(int? exitCode, string output, bool timedOut, int timeoutSec)
     {
-        if (Finished || !_begun) return;
-        var body = _body.ToString();
-        var m = _end.Match(body);
-        if (!m.Success) return;
-        ExitCode = int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
-        _body.Length = m.Index;
-        Finished = true;
+        if (timedOut)
+            return new RemoteExecResult(null, output, L.F("Zaman aşımı: komut {0} saniyede bitmedi ve durduruldu.", timeoutSec), TimedOut: true);
+        if (exitCode is null)
+            return new RemoteExecResult(null, output, L.T("Komut çıkış kodu vermeden bitti (bir sinyalle durdurulmuş olabilir)."));
+        return new RemoteExecResult(exitCode, output, null);
     }
-
-    /// <summary>Whether the command started (its begin marker was seen).</summary>
-    public bool Started => _begun;
-
-    /// <summary>The command's own output so far, as plain text (capped, end kept).</summary>
-    public string Output => RunOutput.Cap((_trimmed ? "…\n" : "") + RunOutput.Plain(_body.ToString()));
 }
 
 /// <summary>

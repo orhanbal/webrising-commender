@@ -153,6 +153,14 @@ struct HostArg {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct ExecArg {
+    host_id: String,
+    command: String,
+    #[serde(default)]
+    timeout_sec: u64,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct MonitorArg {
     monitor_id: String,
 }
@@ -429,6 +437,10 @@ async fn dispatch(
         }
         "monitor.open" => {
             ok(core::server::monitor_open(state, p::<HostArg>(params)?.host_id).await?)
+        }
+        "hosts.exec" => {
+            let a: ExecArg = p(params)?;
+            ok(core::exec::host_exec(state, a.host_id, a.command, a.timeout_sec).await?)
         }
         "monitor.close" => ok(core::server::monitor_close(
             state,

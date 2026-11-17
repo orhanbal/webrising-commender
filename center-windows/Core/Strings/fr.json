@@ -1123,12 +1123,7 @@
  "Bu sunucu bu bilgisayarın kayıtlı sunucuları arasında yok (silinmiş olabilir).": "Ce serveur ne fait pas partie des serveurs enregistrés de cet ordinateur (il a peut-être été supprimé).",
  "Zamanlanmış görevler yalnız SSH ile bağlanılan sunucularda çalışır.": "Les tâches planifiées ne s'exécutent que sur les serveurs joints en SSH.",
  "Sunucuya bağlanılamadı: ": "Impossible de se connecter au serveur : ",
- "Sunucuya bağlanılamadı: bağlantı iki dakikada kurulamadı.": "Impossible de se connecter au serveur : aucune connexion en deux minutes.",
- "Bu sunucunun anahtarı henüz onaylanmadı ya da değişti. Bir kez terminalden bağlanıp anahtarı onayla.": "La clé de ce serveur n'a pas encore été approuvée ou a changé. Connectez-vous une fois depuis un terminal et approuvez la clé.",
- "Sunucuda terminal oturumu açılamadı.": "Impossible d'ouvrir une session de terminal sur le serveur.",
  "Zaman aşımı: komut {0} saniyede bitmedi ve durduruldu.": "Délai dépassé : la commande ne s'est pas terminée en {0} secondes et a été arrêtée.",
- "Bağlantı komut bitmeden kapandı.": "La connexion s'est fermée avant la fin de la commande.",
- "Komut başlatılamadı.": "La commande n'a pas pu être lancée.",
  "Komut çalıştırılamadı: ": "Impossible d'exécuter la commande : ",
  "Ad 1 ile 80 karakter arasında olmalı.": "Le nom doit comporter de 1 à 80 caractères.",
  "Görevin çalışacağı hedefi seç.": "Choisissez où la tâche s'exécute.",
@@ -1164,5 +1159,9 @@
  "Her çalışmada bildir": "Notifier à chaque exécution",
  "Bildirme": "Ne pas notifier",
  "Yalnız başarısız olunca bildir": "Notifier uniquement en cas d'échec",
- "Bu çalışma bir SSH sunucusu için değil; Yönetim Merkezi çalıştırmadı.": "Cette exécution ne concerne pas un serveur SSH ; le Management Center ne l'a pas exécutée."
+ "Bu çalışma bir SSH sunucusu için değil; Yönetim Merkezi çalıştırmadı.": "Cette exécution ne concerne pas un serveur SSH ; le Management Center ne l'a pas exécutée.",
+ "Uygulama çekirdeği komutun sonucunu vermedi.": "Le cœur de l'application n'a pas renvoyé le résultat de la commande.",
+ "Bu sunucunun anahtarı henüz onaylanmadı. Bir kez terminalden bağlanıp anahtarı onayla.": "La clé de ce serveur n'a pas encore été approuvée. Connectez-vous une fois depuis un terminal et approuvez la clé.",
+ "Bu sunucunun anahtarı değişti; komut çalıştırılmadı. Sunucuyu yeniden kurmadıysan araya biri girmiş olabilir; terminalden bağlanıp kontrol et.": "La clé de ce serveur a changé ; la commande n'a pas été exécutée. Si vous n'avez pas réinstallé le serveur, quelqu'un s'est peut-être interposé ; connectez-vous depuis un terminal pour vérifier.",
+ "Komut çıkış kodu vermeden bitti (bir sinyalle durdurulmuş olabilir).": "La commande s'est terminée sans code de sortie (elle a peut-être été arrêtée par un signal)."
 }

@@ -248,48 +248,33 @@ public class ScheduledTasksTests
     }
 
     [Fact]
-    public void MarkedCommandFindsTheOutputBetweenTheMarkersInTerminalText()
+    public void HostExecErrorsBecomeClearTexts()
     {
-        var m = new MarkedCommand("abc123");
-        var line = m.Line("echo 'hi'");
-        Assert.StartsWith(" exec sh -c '", line);
-        Assert.EndsWith("\r", line);
-        // The typed line is echoed back but never contains a joined marker.
-        Assert.DoesNotContain("__WC_B_abc123", line);
-        Assert.DoesNotContain("__WC_E_abc123", line);
-        m.Append("Welcome to Ubuntu\r\nuser@web:~$ " + line.TrimEnd('\r') + "\r\n> \r\n");
-        Assert.False(m.Started);
-        m.Append("\r\n__WC_B_abc");
-        m.Append("123\r\nhi\r\n\u001b[31mred\u001b[0m\r\n");
-        Assert.True(m.Started);
-        Assert.False(m.Finished);
-        m.Append("\r\n__WC_E_abc123_4");
-        Assert.False(m.Finished); // the exit code may go on in the next chunk
-        m.Append("2\r\n");
-        Assert.True(m.Finished);
-        Assert.Equal(42, m.ExitCode);
-        Assert.Equal("hi\nred\n", m.Output);
+        Assert.Equal(("needs_credential", "web: no saved credential; connect to it once and save it"),
+            HostExecText.Split("needs_credential: web: no saved credential; connect to it once and save it"));
+        Assert.Equal(("", "core stopped"), HostExecText.Split("core stopped"));
+        Assert.Equal(("", "Web: x"), HostExecText.Split("Web: x"));
+        Assert.StartsWith(HostExecText.NeedsSavedLogin, HostExecText.Error("needs_credential: web: no saved credential; connect to it once and save it"));
+        Assert.Contains("onaylanmadı", HostExecText.Error("host_key_unknown: web: connect to it once in a terminal to approve its host key"));
+        Assert.Contains("değişti", HostExecText.Error("host_key_changed: web: HOST KEY CHANGED: trusted A, server presented B"));
+        Assert.Contains("kayıtlı sunucuları", HostExecText.Error("host_not_found: host not found"));
+        Assert.StartsWith("Sunucuya bağlanılamadı: ", HostExecText.Error("connect_failed: web: connection failed: refused"));
+        Assert.StartsWith("Komut çalıştırılamadı: ", HostExecText.Error("exec_failed: ssh error: x"));
+        Assert.Equal("Komut çalıştırılamadı: Uygulama çekirdeği çalışmıyor.", HostExecText.Error(CoreException.Stopped));
     }
 
     [Fact]
-    public void MarkedCommandDecodesSplitUtf8AndFinishesOnClose()
+    public void HostExecResultsMapToRunResults()
     {
-        var m = new MarkedCommand("n1");
-        var bytes = Encoding.UTF8.GetBytes("\r\n__WC_B_n1\r\nçalıştı\r\n__WC_E_n1_0");
-        // Split inside the two-byte "ç".
-        m.Append(bytes[..14]);
-        m.Append(bytes[14..]);
-        Assert.False(m.Finished);
-        m.Close();
-        Assert.True(m.Finished);
-        Assert.Equal(0, m.ExitCode);
-        Assert.Equal("çalıştı", m.Output);
-    }
-
-    [Fact]
-    public void QuotingSurvivesSingleQuotes()
-    {
-        Assert.Equal("'it'\\''s'", MarkedCommand.Quote("it's"));
+        Assert.Equal(new RemoteExecResult(0, "ok", null), HostExecText.Result(0, "ok", false, 600));
+        Assert.Equal(new RemoteExecResult(2, "bad", null), HostExecText.Result(2, "bad", false, 600));
+        var slow = HostExecText.Result(null, "started", true, 30);
+        Assert.True(slow.TimedOut);
+        Assert.Contains("30", slow.Error);
+        Assert.Equal("failed", ScheduledRunResult.From(slow).Status);
+        var killed = HostExecText.Result(null, "", false, 30);
+        Assert.NotNull(killed.Error);
+        Assert.Equal("failed", ScheduledRunResult.From(killed).Status);
     }
 
     private sealed class FakeTransport(List<ClaimedRun> claims) : IScheduledRunTransport
