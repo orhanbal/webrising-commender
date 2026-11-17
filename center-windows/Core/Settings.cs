@@ -45,6 +45,8 @@ public sealed class Settings
     [JsonPropertyName("watchChosen")] public bool WatchChosen { get; set; }
     /// <summary>The server box at the bottom left of the screen, above the taskbar.</summary>
     [JsonPropertyName("deskChip")] public bool DeskChip { get; set; } = true;
+    /// <summary>The Management Center icon was put next to the clock once (later the person decides).</summary>
+    [JsonPropertyName("trayShown")] public bool TrayShown { get; set; }
     /// <summary>On: in front of every window. Off: only on the desktop (behind the windows).</summary>
     [JsonPropertyName("deskChipOnTop")] public bool DeskChipOnTop { get; set; } = true;
     /// <summary>Hidden while a full-screen app (game, video, presentation) runs.</summary>

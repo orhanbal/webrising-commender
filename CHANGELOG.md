@@ -14,6 +14,7 @@ WECOMMANDER 1.0 is one desktop app (Windows, macOS) plus a non-root agent (Linux
 
 ## Unreleased
 
+- **Windows tray icon always visible:** Windows 11 hides a new notification icon in the overflow (^). The first time Windows lists the Management Center icon, the app marks it shown next to the clock (the same switch as Settings › Personalization › Taskbar); after that the person's own choice wins.
 - **Windows notification area:** only the Management Center icon stays there. The second live-server icon next to the clock and the server box at the bottom left are removed; the live servers and their panel are in the Dock.
 - **macOS UI snapshots:** `--snapshot` opens every page of the main window and the panel, saves a PNG of each as the app draws it (no Screen Recording permission needed) and lists the texts each page shows. The macOS CI runs it in Turkish and English and fails when a page does not open or draw.
 - **macOS fix:** the main window's sidebar (Servers, Keys, Identities, Tunnels, Settings…) and the server management sidebar did not react to clicks on macOS 26: their rows were tagged with an optional value the list no longer matches. Rows now carry the plain value.
