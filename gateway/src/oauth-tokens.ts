@@ -1,6 +1,7 @@
 import { db } from "./db.js";
 import { sha256 } from "./crypto-utils.js";
 import type { Principal, Role } from "./auth.js";
+import { clientKind } from "./growth-classify.js";
 
 export const oauthScope = "mcp:tools";
 
@@ -11,8 +12,12 @@ export async function authenticateOAuthAccessToken(token: string, resource: stri
     organization_id: string;
     role: Role;
     email: string;
+    client_kind: string | null;
+    client_name: string;
+    redirect_uris: unknown;
   }>(
-    "select s.user_id,s.organization_id,m.role,u.email from oauth_sessions s " +
+    "select s.user_id,s.organization_id,m.role,u.email,c.client_kind,c.client_name,c.redirect_uris from oauth_sessions s " +
+    "join oauth_clients c on c.client_id=s.client_id " +
     "join users u on u.id=s.user_id and u.disabled_at is null " +
     "join organization_members m on m.user_id=s.user_id and m.organization_id=s.organization_id " +
     "where s.access_hash=$1 and s.resource=$2 and s.scope=$3 " +
@@ -29,5 +34,6 @@ export async function authenticateOAuthAccessToken(token: string, resource: stri
     role: row.role,
     global: false,
     authKind: "oauth",
+    oauthClientKind: row.client_kind ?? clientKind(row.client_name, row.redirect_uris),
   };
 }

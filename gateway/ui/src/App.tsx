@@ -1,5 +1,5 @@
 import {InAppMessages} from "./components/MessageCard";
-import {lazy,startTransition,Suspense,useEffect,useState} from "react";
+import {lazy,startTransition,Suspense,useEffect,useRef,useState} from "react";
 import type {ReactNode} from "react";
 import {ArrowUpRight,Menu,Moon,Sun,X} from "lucide-react";
 import {Button,Spinner} from "./components/ui";
@@ -54,6 +54,7 @@ export type Theme="light"|"dark";
 /** Public docs and guides (text in gateway/src/site-content.ts). */
 const contentPaths=["/docs","/faq","/alternatives","/security","/guides/claude-server-terminal","/guides/remote-mcp-server","/guides/chatgpt-windows-files","/guides/ai-approvals"];
 const routes=new Set(["/download","/console","/console/users","/console/organizations","/console/devices","/console/operations","/console/landing","/console/billing","/console/system","/console/brand","/console/legal","/console/marketing","/console/email","/unsubscribe","/","/features","/how-it-works","/login","/register","/forgot-password","/reset-password","/verify","/pricing","/checkout","/install","/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/scheduled-tasks","/mcp","/usage","/approvals","/team","/audit","/invite","/privacy","/terms","/refund",...contentPaths]);
+const routes=new Set(["/download","/console","/console/users","/console/organizations","/console/devices","/console/operations","/console/landing","/console/billing","/console/system","/console/brand","/console/legal","/console/marketing","/console/email","/console/growth","/console/growth/traffic","/console/growth/crawlers","/console/growth/connections","/console/growth/downloads","/console/growth/usage","/console/growth/feedback","/console/growth/directories","/unsubscribe","/","/features","/how-it-works","/login","/register","/forgot-password","/reset-password","/verify","/pricing","/checkout","/install","/dashboard","/account","/billing","/devices","/terminal","/files","/tasks","/mcp","/usage","/approvals","/team","/audit","/invite","/privacy","/terms","/refund",...contentPaths]);
 export function Brand({onClick,subtitle=false}:{onClick?:()=>void;subtitle?:boolean}){return <a href="/" onClick={e=>{if(onClick){e.preventDefault();onClick()}}} aria-label={translate("WECOMMANDER ana sayfa")} className="inline-flex flex-col gap-1 items-start"><img className="logo-light" src="/api/public/brand/logo_light" alt="WECOMMANDER"/><img className="logo-dark" src="/api/public/brand/logo_dark" alt="" aria-hidden="true"/>{subtitle&&<span className="text-[11px] tracking-wide text-[var(--muted)]">SSH · Server management · MCP</span>}</a>}
 export function NavLink({to,nav,children,className}:{to:string;nav:Nav;children:ReactNode;className?:string}){return <a href={to} className={className} onClick={e=>{if(e.button===0&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey){e.preventDefault();nav(to)}}}>{children}</a>}
 export function ThemeToggle({theme,onToggle}:{theme:Theme;onToggle:()=>void}){return <button type="button" className="theme-button" onClick={onToggle} aria-label={theme==="dark"?translate("Açık temaya geç"):translate("Koyu temaya geç")} title={theme==="dark"?translate("Windows açık tema"):translate("Windows koyu tema")}>{theme==="dark"?<Sun className="size-[19px]"/>:<Moon className="size-[19px]"/>}</button>}
@@ -86,6 +87,15 @@ export default function App(){
     requestAnimationFrame(()=>document.getElementById(u.pathname.slice(1))?.scrollIntoView({behavior:"smooth",block:"start"}))
   }else window.scrollTo({top:0,behavior:"instant"});
  };
+ // Cookieless page-view count for public pages: the server counts the first
+ // page it renders; later in-app navigations send one tiny beacon (path and
+ // query string only, no identifiers). Private pages are never reported.
+ const firstView=useRef(true);
+ useEffect(()=>{
+  if(firstView.current){firstView.current=false;return}
+  if(path.startsWith("/console")||accountRoutes.has(path))return;
+  try{navigator.sendBeacon?.("/api/t",JSON.stringify({p:path,r:location.origin+"/",q:location.search.slice(0,1000)}))}catch{/* counting is best effort */}
+ },[path]);
  useEffect(()=>{if(path==="/features"||path==="/how-it-works"){requestAnimationFrame(()=>document.getElementById(path.slice(1))?.scrollIntoView({behavior:"smooth",block:"start"}))}},[path]);
  // Signed out (never signed in, logged out, or the session expired on the
  // server): account pages go to the login page and come back afterwards.

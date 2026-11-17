@@ -14,6 +14,11 @@ is copy and paste.
 | Bing / Copilot / ChatGPT search | IndexNow announcement after each deploy (`/<key>.txt`) | automatic |
 | Smithery, Glama, PulseMCP, mcp.so | Most read the official registry; the rest take a short form | after the registry listing |
 
+The current status of every directory (submitted on which date, listed with
+which URL, rejected with which note) is kept in the platform console:
+Growth → Directories (`/console/growth/directories`), which also checks the
+MCP Registry listing live. See `docs/GROWTH_ANALYTICS.md`.
+
 ## Shared facts
 
 - **Name:** WECOMMANDER

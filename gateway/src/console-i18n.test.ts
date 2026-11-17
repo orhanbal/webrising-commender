@@ -4,7 +4,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 
-const console = readFileSync(new URL("../ui/src/pages/Console.tsx", import.meta.url), "utf8");
+// Console pages that translate with ui() (consoleText).
+const console = ["Console", "Growth"]
+  .map((page) => readFileSync(new URL(`../ui/src/pages/${page}.tsx`, import.meta.url), "utf8")).join("\n");
 const dictionary = readFileSync(new URL("../ui/src/console-text.ts", import.meta.url), "utf8");
 const turkish = new Set([...dictionary.matchAll(/^\s*"((?:[^"\\]|\\.)*)":/gm)].map(m => m[1]));
 

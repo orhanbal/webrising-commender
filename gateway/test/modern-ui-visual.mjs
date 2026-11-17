@@ -9,6 +9,7 @@ const root=resolve(new URL("../ui/dist/",import.meta.url).pathname);
 const artifacts=resolve(new URL("../test-artifacts/",import.meta.url).pathname);
 mkdirSync(artifacts,{recursive:true});
 assert.ok(existsSync(join(root,"index.html")),"Frontend must be built before browser tests");
+const growthDays=Array.from({length:7},(_,i)=>new Date(Date.now()-(6-i)*864e5).toISOString().slice(0,10));
 const fixtures={
  "/api/auth/me":{email:"test@example.com",actor:"test-user",role:"owner",authKind:"session",global:false,organizationId:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"},
  "/api/public/plans":{mode:"saas",paddle:{clientToken:null,checkoutEnabled:false,environment:"sandbox"},plans:[{key:"pro",name:"Pro",description:"Example test plan",featured:true,priceLabel:"$12 / month",priceId:null,features:["5 devices"],maxDevices:5,maxMembers:2,maxApiTokens:4}]},
@@ -41,6 +42,14 @@ const fixtures={
  "/api/console/incidents":{items:[]},
  "/api/console/site-content":{items:[]},
  "/api/console/media":{items:[]},
+ "/api/console/growth/overview":{days:7,range:growthDays,visits:{total:120,series:[10,20,15,30,12,18,15]},pageViews:300,aiVisits:{total:22,series:[1,3,2,5,4,3,4]},downloads:{total:40,series:[5,6,7,4,8,5,5],byPlatform:[],allTime:1800},signups:{total:9,series:[1,2,1,0,3,1,1]},active:{dau:5,wau:20,mau:61},devices:{online:3,active7d:11},nps:{score:42,responses:17}},
+ "/api/console/growth/traffic":{days:7,range:growthDays,visits:{total:120,series:[10,20,15,30,12,18,15]},pageViews:{total:300,series:[30,40,35,60,42,48,45]},buckets:[{key:"search",count:60},{key:"ai",count:22},{key:"direct",count:30}],ai:[{key:"ChatGPT",count:12},{key:"Claude",count:8},{key:"Perplexity",count:2}],aiSeries:[1,3,2,5,4,3,4],sources:[{bucket:"search",source:"Google",count:55},{bucket:"ai",source:"ChatGPT",count:12},{bucket:"other",source:"a-very-long-referrer-host-name-that-should-wrap.example.com",count:1}],pages:[{key:"/",count:200},{key:"/pricing",count:60}],landings:[{key:"/",count:90}],utmSource:[{key:"chatgpt.com",count:9}],utmMedium:[],utmCampaign:[]},
+ "/api/console/growth/crawlers":{days:7,range:growthDays,total:90,series:[10,12,14,11,15,13,15],crawlers:[{key:"GPTBot",count:40,series:[5,6,7,5,6,5,6]},{key:"ClaudeBot",count:30,series:[4,4,4,5,4,4,5]}],paths:[{key:"/llms.txt",count:20},{key:"/sitemap.xml",count:10}],detail:[{crawler:"GPTBot",path:"/llms.txt",count:12}]},
+ "/api/console/growth/connections":{days:7,range:growthDays,clients:[{kind:"claude",users:14,workspaces:11,newUsers:3,lastConnected:new Date().toISOString()},{kind:"chatgpt",users:6,workspaces:6,newUsers:1,lastConnected:new Date().toISOString()}],calls:[{key:"claude",count:420,series:[50,60,70,60,60,60,60]}],callSeries:[50,60,70,60,60,60,60]},
+ "/api/console/growth/downloads":{days:7,range:growthDays,live:{total:1800,byPlatform:{windows:1200,macos:400,linux:200},byFormat:{"windows:zip":1200,"macos:zip":400,"linux:deb":200},byVersion:[{tag:"ubuntu-preview-1835",total:300,publishedAt:new Date().toISOString()}]},daily:{total:40,series:[5,6,7,4,8,5,5],byPlatform:[{key:"windows",count:30}]},installs:{total:12,series:[1,2,2,1,3,2,1],byScript:[{key:"/install.sh",count:8}]}},
+ "/api/console/growth/usage":{days:7,range:growthDays,active:{dau:5,wau:20,mau:61},signups:{total:9,series:[1,2,1,0,3,1,1]},appsDaily:[3,4,5,4,6,5,5],appsByPlatform:[{key:"windows",count:6}],appsByVersion:[{key:"windows 1.2.3",count:6}],appsByLanguage:[{key:"tr",count:4}],devices:[{platform:"linux",total:9,online:3,active7d:7}],retention:[{week:"2026-10-05",signups:4,d7Eligible:4,d7:2,d7Rate:50,d30Eligible:4,d30:1,d30Rate:25}],funnel:[{step:"visits",count:120},{step:"downloads",count:52},{step:"signups",count:9},{step:"first_device",count:4},{step:"paid",count:1}]},
+ "/api/console/growth/feedback":{days:7,nps:{score:42,responses:17,distribution:[{score:9,n:10},{score:3,n:2}],trend:[{week:"2026-11-09",score:40,responses:8}]},csat:{average:4.4,responses:12},comments:[{kind:"nps",title:"How likely",score:9,comment:"Works great with Claude",platform:"windows",updatedAt:new Date().toISOString()}],errors:[{message:"Connection reset while reading the terminal stream from the agent",total:3,lastAt:new Date().toISOString(),breakdown:[{platform:"windows",build:"1.2.3",count:3}]}]},
+ "/api/console/growth/directories":{items:[{key:"mcp_registry",name:"Official MCP Registry",url:"https://registry.modelcontextprotocol.io",status:"listed",submittedAt:null,listingUrl:"https://registry.modelcontextprotocol.io/v0/servers?search=app.wecommander/wecommander",note:"",updatedAt:null},{key:"smithery",name:"Smithery",url:"https://smithery.ai",status:"not_submitted",submittedAt:null,listingUrl:null,note:"",updatedAt:null}],registry:{listed:true,version:"1.0.0",status:"active",publishedAt:new Date().toISOString(),updatedAt:null,checkedAt:new Date().toISOString(),error:null},kitUrl:"https://github.com/orhanbal/webrising-commender/blob/main/docs/DIRECTORY_SUBMISSIONS.md",kit:null},
  "/api/auth/organizations":{items:[{id:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",name:"Test Workspace",role:"owner"}]},
  "/api/organization":{item:{id:"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",name:"Test Workspace"}},
  "/api/tokens":{items:[{id:"22222222-2222-4222-8222-222222222222",name:"Test MCP",role:"operator",created_at:new Date().toISOString(),last_used_at:null,revoked_at:null}]},
@@ -55,6 +64,7 @@ const fixtures={
  "/api/centers":{items:[{id:"33333333-3333-4333-8333-333333333333",name:"Ofis-PC",email:"owner@example.test",created_at:new Date().toISOString(),last_seen_at:new Date().toISOString(),revoked_at:null}]},
 
 };
+const growthPages=[["/console/growth","AI-referred visits"],["/console/growth/traffic","Where visits come from"],["/console/growth/crawlers","What they read"],["/console/growth/connections","Connected AI clients"],["/console/growth/downloads","Install script fetches"],["/console/growth/usage","Retention by sign-up week"],["/console/growth/feedback","NPS score distribution"],["/console/growth/directories","AI app and plugin directories"]];
 const contentType={".js":"text/javascript",".css":"text/css",".svg":"image/svg+xml",".png":"image/png",".woff2":"font/woff2"};
 const server=createServer((req,res)=>{
  const pathname=new URL(req.url,"http://localhost").pathname;
@@ -203,7 +213,7 @@ try{
  await visit("/usage","Usage & reports","modern-usage");
  await visit("/account","Change password","modern-account");
  await visit("/console","Platform Overview","modern-console-overview");
- assert.equal(await evalJs("document.querySelectorAll('aside .dash-nav button').length"),12,"Console navigation should expose all configured sections");
+ assert.equal(await evalJs("document.querySelectorAll('aside .dash-nav button').length"),20,"Console navigation should expose all configured sections");
  await evalJs("document.querySelector('.dash-toolbar .locale-trigger').click()");
  await evalJs("document.querySelector('.dash-toolbar .locale-option[role=menuitemradio]:nth-of-type(2)').click()");
  await sleep(120);
@@ -265,6 +275,8 @@ try{
  assert.ok(await evalJs("document.body.textContent.includes('Active browser sessions')"),"System view must show live operational counters");
  assert.ok(await evalJs("document.body.textContent.includes('Incident triage')"),"System view must expose audited incident triage");
  assert.ok(await evalJs("document.body.textContent.includes('Branded SMTP')"),"System view must show a credential-safe configuration summary");
+ for(const [page,keyword] of growthPages)await visit(page,keyword,"modern-"+page.slice(1).replaceAll("/","-"));
+ assert.ok(await evalJs("document.body.textContent.includes('Smithery')"),"Directory statuses are listed");
  await visit("/console/devices","Devices","modern-console-devices");
  assert.ok(await evalJs("document.querySelector('input[aria-label=\"Search devices\"]')!==null"),"Device inventory should have a name/platform/workspace search");
  assert.equal(await evalJs("document.querySelectorAll('select[aria-label=\"Device status\"] option').length"),3,"Device state filtering must be explicit");
@@ -388,6 +400,8 @@ try{
  await visit("/account","Change password","modern-account-mobile");
  await visit("/console","Platform Overview","modern-console-mobile");
  assert.ok(await evalJs("document.querySelector('.mobile-dash-open')!==null"),"Mobile console navigation toggle must exist");
+ // Growth pages on a phone: charts, bar lists and tables must not overflow.
+ for(const [page,keyword] of growthPages)await visit(page,keyword,"modern-"+page.slice(1).replaceAll("/","-")+"-mobile");
 
  // Smallest supported width (v1.1 item 5): no horizontal overflow on any shell.
  await call("Emulation.setDeviceMetricsOverride",{width:360,height:740,deviceScaleFactor:1,mobile:true});
