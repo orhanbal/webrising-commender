@@ -1754,10 +1754,17 @@ for (const advertised of advertisedTools) {
   // online device is used when omitted); every other device tool requires it.
   const dcCompatible = ["read_file", "read_multiple_files", "write_file", "list_directory",
     "create_directory", "move_file", "get_file_info", "edit_block", "url_fetch"];
+  // Tools that also run on SSH targets (Hybrid Access H3) take device_id or target.
+  const sshCapable = ["process_exec", "fs_list", "fs_read", "fs_stat", "server_overview", "server_disk_usage",
+    "server_processes", "fs_write", "fs_mkdir", "fs_move", "fs_delete"];
   if (dcCompatible.includes(advertised.name)) {
     assert.ok(!required.includes("device_id"), advertised.name);
     assert.equal(schema.properties.device_id.type, "string", advertised.name);
-  } else if (advertised.name !== "devices_list" && advertised.name !== "app_errors") {
+  } else if (sshCapable.includes(advertised.name)) {
+    assert.ok(!required.includes("device_id"), advertised.name);
+    assert.equal(schema.properties.device_id.type, "string", advertised.name);
+    assert.equal(schema.properties.target.type, "string", advertised.name);
+  } else if (advertised.name !== "devices_list" && advertised.name !== "app_errors" && advertised.name !== "targets_list") {
     assert.ok(required.includes("device_id"), `Device routing not required: ${advertised.name}`);
     assert.equal(schema.properties.device_id.type, "string", advertised.name);
   }

@@ -17,7 +17,7 @@ const snakeToCamel = (key: string) => key.replace(/_([a-z0-9])/g, (_, c: string)
 export function genericAction(name: string, args: Record<string, unknown>) {
   const out: Record<string, unknown> = { kind: name };
   for (const [key, value] of Object.entries(args)) {
-    if (key === "device_id" || key === "approval_token") continue;
+    if (key === "device_id" || key === "approval_token" || key === "target") continue;
     out[snakeToCamel(key)] = value;
   }
   return out;
@@ -47,8 +47,8 @@ export const LOCAL_ALIASES = ["read_file", "read_multiple_files", "write_file", 
 
 const withoutGatewayFields = (tool: Tool): Tool => {
   const properties = { ...(tool.inputSchema.properties ?? {}) };
-  delete properties.device_id; delete properties.approval_token;
-  const required = (tool.inputSchema.required ?? []).filter((r) => r !== "device_id" && r !== "approval_token");
+  delete properties.device_id; delete properties.approval_token; delete properties.target;
+  const required = (tool.inputSchema.required ?? []).filter((r) => r !== "device_id" && r !== "approval_token" && r !== "target");
   const annotations = toolAnnotations(tool.name);
   return { name: tool.name, title: annotations.title, description: tool.description, inputSchema: { type: "object", properties, required, additionalProperties: false } as Schema, annotations };
 };

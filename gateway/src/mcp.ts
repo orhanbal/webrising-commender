@@ -13,6 +13,10 @@ import { issueApproval, redact } from "./security.js";
 import { startSearch, searchPage, listSearches, stopSearch, controlSearch } from "./search-sessions.js";
 import { annotate } from "./tool-annotations.js";
 import { recordMcpCall } from "./growth.js";
+import { isSshTargetId, listSshTargets, SSH_TARGET_TOOLS, sshTargetCall, targetView } from "./ssh-connector.js";
+
+const SSH_CAPABLE = new Set<string>(SSH_TARGET_TOOLS);
+const TARGET_HELP = "Where to run: a target_id from targets_list, either an agent device (same as device_id) or a saved SSH server shared through the person's own computer (runs over SSH/SFTP from there; commands and file changes need the person's approval every time).";
 
 type JsonRpcRequest = { jsonrpc?: string; id?: string | number | null; method?: string; params?: any };
 
@@ -24,6 +28,12 @@ export const tools = [
   {
     name: "devices_list",
     description: "List enrolled WebRising Commender devices and online state.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    ...(process.env.MCP_OAUTH_ENABLED === "true" ? { securitySchemes: [{ type: "oauth2", scopes: ["mcp:tools"] }] } : {}),
+  },
+  {
+    name: "targets_list",
+    description: "List every place this account's AI tools can act on: agent devices (kind \"agent\", folder limits enforced by the agent) and the person's saved SSH servers shared with remote AI through WECOMMANDER on their own computer (kind \"ssh\", path_policy \"none\": a command reaches everything the SSH user can). Each has target_id, name, kind, online, capabilities and, for SSH, preset (readonly or approval) and the tools it supports. Pass target_id as `target` to the tools. SSH servers answer only while that computer is on and WECOMMANDER runs there; every command and file change on them needs the person's one-time approval. Read-only.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     ...(process.env.MCP_OAUTH_ENABLED === "true" ? { securitySchemes: [{ type: "oauth2", scopes: ["mcp:tools"] }] } : {}),
   },
@@ -219,7 +229,18 @@ export const tools = [
     {},
   ),
 ].map((entry) => {
-  if (entry.name === "devices_list" || entry.name === "app_errors") return entry;
+  if (entry.name === "devices_list" || entry.name === "app_errors" || entry.name === "targets_list") return entry;
+  if (SSH_CAPABLE.has(entry.name)) {
+    // Agent devices and SSH targets: device_id or target (one of them).
+    return {
+      ...entry,
+      inputSchema: {
+        ...entry.inputSchema,
+        properties: { device_id: str(), target: { type: "string", description: TARGET_HELP }, ...(entry.inputSchema as any).properties },
+        required: [...((entry.inputSchema as any).required || [])],
+      },
+    };
+  }
   return {
     ...entry,
     inputSchema: {
@@ -370,6 +391,10 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
     }, true));
   }
 
+  // `target` (from targets_list) names an agent device or an SSH target;
+  // device_id stays the name agent devices are known by.
+  if (typeof args.target === "string" && args.target && !args.device_id) args = { ...args, device_id: args.target };
+
   // Desktop Commander-compatible surface: url_fetch runs on the gateway,
   // edit_block is a guarded read+write, the rest are pure aliases.
   if (name === "url_fetch") {
@@ -393,17 +418,50 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
     }
     args = { ...args, device_id: onlineIds[0] };
   }
-  if (name === "edit_block") {
+  if (name === "edit_block" && !isSshTargetId(args.device_id)) {
     return ok(request.id, await editBlock(args, router, principal));
   }
   const alias = DC_ALIAS_NAMES.has(name) ? translateAlias(name, args) : null;
   if (alias) { name = alias.name; args = alias.args; }
+  // SSH targets run on the person's computer (ssh-connector.ts).
+  if (isSshTargetId(args.device_id) && name !== "targets_list") {
+    const { device_id: target, target: _alias, approval_token: _token, ...rest } = args;
+    const outcome = await sshTargetCall(principal, name, rest, String(target),
+      (tool, risk, result, detail) => audit(orgIdEarly, principal.actor, null, tool, risk, result, JSON.stringify(detail)));
+    return ok(request.id, toolResult(outcome.data, outcome.isError));
+  }
   // Reject unknown MCP tools before attempting device/tenant database access.
   // This also avoids reporting a misleading missing-device error for typos.
   if (!tools.some((entry) => entry.name === name)) {
     return ok(request.id, toolResult({ error: "unknown_tool" }, true));
   }
   const orgId = principal.organizationId;
+
+  if (name === "targets_list") {
+    if (!roleAtLeast(principal, "viewer")) return ok(request.id, toolResult({ error: "forbidden" }, true));
+    const devices = await db.query<{ id: string; name: string; platform: string | null; trust: string }>(
+      `select id,name,platform,
+              case when trust_level='full' and trust_full_until is not null and trust_full_until<=now()
+                   then 'standard' else trust_level end as trust
+         from devices where organization_id=$1 and revoked_at is null order by created_at desc`,
+      [orgId],
+    );
+    const online = await router.onlineStatuses(devices.rows.map((row) => row.id));
+    const ssh = await listSshTargets(principal);
+    await audit(orgId, principal.actor, null, name, "low", "success",
+      JSON.stringify({ agents: devices.rowCount ?? 0, ssh: ssh.length }));
+    return ok(request.id, toolResult({
+      targets: [
+        ...devices.rows.map((d) => ({
+          target_id: d.id, name: d.name, kind: "agent", online: online.has(d.id), platform: d.platform,
+          capabilities: { exec: true, read: true, write: true, terminal: true, persistent_tasks: true, path_policy: "enforced" },
+          trust: d.trust,
+        })),
+        ...ssh.map(targetView),
+      ],
+      note: "Pass target_id as `target`. SSH targets have no folder boundary (path_policy none); commands and file changes on them need the person's approval every time.",
+    }));
+  }
 
   if (name === "devices_list") {
     const result = await db.query(

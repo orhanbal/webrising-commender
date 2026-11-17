@@ -26,6 +26,7 @@ type Kind = "read" | "write" | "destructive" | "control";
 // the state of a WECOMMANDER session (searches, terminal size), not user data.
 const KINDS: Record<string, [Kind, string]> = {
   devices_list: ["read", "List devices"],
+  targets_list: ["read", "List targets"],
   app_errors: ["read", "Recent app errors"],
   system_info: ["read", "System information"],
   health_snapshot: ["read", "Health snapshot"],

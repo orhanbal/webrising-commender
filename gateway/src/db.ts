@@ -400,6 +400,52 @@ export async function migrate() {
     -- The Management Center that decided a request (null: the web panel).
     alter table approval_requests add column if not exists decided_center_id uuid
       references management_centers(id) on delete set null;
+
+    -- Hybrid Access H3 (docs/HYBRID_ACCESS.md): saved SSH hosts shared with
+    -- remote AI through the owner's own computer (the app is the connector).
+    -- Only a name, the preset and sudo mode are published; never an address,
+    -- user or credential. Calls are queued for that computer and fail closed
+    -- when it does not pick them up; answered calls are deleted.
+    alter table management_centers add column if not exists connector_seen_at timestamptz;
+    create table if not exists connector_targets (
+      organization_id uuid not null references organizations(id) on delete cascade,
+      center_id uuid not null references management_centers(id) on delete cascade,
+      host_id text not null check (length(host_id) between 1 and 200),
+      target_id text not null,
+      name text not null check (length(name) between 1 and 200),
+      preset text not null check (preset in ('readonly','approval')),
+      sudo text not null check (sudo in ('never','sudoers')),
+      updated_at timestamptz not null default now(),
+      primary key (center_id,host_id)
+    );
+    create unique index if not exists connector_targets_target_uidx on connector_targets(organization_id,target_id);
+    create table if not exists connector_calls (
+      id uuid primary key default gen_random_uuid(),
+      organization_id uuid not null references organizations(id) on delete cascade,
+      center_id uuid not null references management_centers(id) on delete cascade,
+      host_id text not null,
+      target_id text not null,
+      tool text not null,
+      args jsonb not null,
+      approved boolean not null default false,
+      client text not null,
+      status text not null default 'queued' check (status in ('queued','running','done')),
+      result jsonb,
+      claim_by timestamptz not null,
+      deadline timestamptz not null,
+      claimed_at timestamptz,
+      finished_at timestamptz,
+      created_at timestamptz not null default now()
+    );
+    create index if not exists connector_calls_queued_idx on connector_calls(center_id,created_at)
+      where status='queued';
+    -- Approvals of SSH target operations: bound to the computer and target
+    -- instead of an agent device.
+    alter table approval_requests alter column device_id drop not null;
+    alter table approval_requests add column if not exists center_id uuid
+      references management_centers(id) on delete cascade;
+    alter table approval_requests add column if not exists target_id text;
+    alter table approval_requests add column if not exists target_label text;
     create table if not exists device_command_allowlist (
       id uuid primary key default gen_random_uuid(),
       organization_id uuid not null references organizations(id) on delete cascade,
@@ -889,6 +935,8 @@ export async function housekeeping() {
   await db.query(
     "delete from scheduled_task_runs where created_at < now() - interval '90 days' and status not in ('queued','running')",
   );
+  // Remote SSH calls are answered within minutes; nothing of them is kept.
+  await db.query("delete from connector_calls where deadline < now() - interval '10 minutes'");
 
   // Growth counters: aggregates are kept about two years, app check-ins 400 days.
   await db.query("delete from analytics_daily where day < current_date - 800");

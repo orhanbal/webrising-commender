@@ -52,6 +52,7 @@ import { PgSearchPersistence } from "./search-persistence.js";
 import { RelayCancellationRegistry } from "./relay-cancellation.js";
 import { enqueueMail, mailConfigured, publicSignupSetting, startMailWorker } from "./mail.js";
 import { handleMcp } from "./mcp.js";
+import { claimCalls, finishCall, parseResult, parseTargets, publishTargets } from "./ssh-connector.js";
 import { handleOAuthHttp, oauthChallenge } from "./oauth.js";
 import { authenticateOAuthAccessToken } from "./oauth-tokens.js";
 import { actionRisk, parseAgentAction } from "./protocol.js";
@@ -134,6 +135,7 @@ const centerLinkStartRateLimit = new FixedWindowRateLimiter();
 const errorReportRateLimit = new FixedWindowRateLimiter();
 
 const centerLinkPollRateLimit = new FixedWindowRateLimiter();
+const connectorClaimRateLimit = new FixedWindowRateLimiter();
 const enrollRateLimit = new FixedWindowRateLimiter();
 const agentRouteRateLimit = new FixedWindowRateLimiter();
 const pairingRateLimit = new FixedWindowRateLimiter();
@@ -4191,6 +4193,33 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       return void json(res, 201, { pairingCode: code, expiresInSeconds: 600 });
     }
 
+    // Hybrid Access H3: this computer as the connector for its shared SSH hosts.
+    if (url.pathname.startsWith("/api/center/connector/")) {
+      if (principal!.authKind !== "center" || !principal!.centerId) return void json(res, 403, { error: "center_token_required" });
+      const orgId = principal!.organizationId;
+      const centerId = principal!.centerId;
+      if (req.method === "PUT" && url.pathname === "/api/center/connector/targets") {
+        const targets = parseTargets(await readJson(req));
+        if (!targets) return void json(res, 400, { error: "invalid_targets" });
+        const published = await publishTargets(orgId, centerId, targets);
+        return void json(res, 200, { items: published });
+      }
+      if (req.method === "GET" && url.pathname === "/api/center/connector/claim") {
+        const rate = connectorClaimRateLimit.hit("center:" + centerId, 600, 60_000);
+        if (!rate.allowed) return void json(res, 429, { error: "rate_limited" });
+        const wait = Math.min(15_000, Math.max(0, Number(url.searchParams.get("waitMs") || 0) || 0));
+        return void json(res, 200, { items: await claimCalls(orgId, centerId, wait) });
+      }
+      const resultMatch = url.pathname.match(/^\/api\/center\/connector\/calls\/([0-9a-f-]{36})\/result$/i);
+      if (req.method === "POST" && resultMatch) {
+        const result = parseResult(await readJson(req));
+        if (!result) return void json(res, 400, { error: "invalid_result" });
+        if (!(await finishCall(orgId, centerId, resultMatch[1]!, result))) return void json(res, 404, { error: "call_not_found" });
+        return void json(res, 200, { ok: true });
+      }
+      return void json(res, 404, { error: "not_found" });
+    }
+
     if (url.pathname.startsWith("/api/scheduled-tasks") || url.pathname.startsWith("/api/center/scheduled-runs")) {
       const reply = await handleScheduledTasks(req.method || "GET", url, principal!, () => readJson(req), {
         store: scheduledTaskStore,
@@ -4458,15 +4487,20 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         return void json(res, 400, { error: "invalid_status" });
       }
       const limit = queryLimit(url, 100, 200);
+      // SSH target requests (Hybrid Access H3) are personal: only the owner of
+      // the computer sees them. device_id is '' for them (older apps expect a string).
       const result = await db.query(
-        `select id,device_id,requested_by,action_kind,action,status,expires_at,
-                decided_by,decided_at,consumed_at,created_at
-           from approval_requests
-          where organization_id=$1 and status=$2
-            and ($2<>'pending' or expires_at>now())
-          order by created_at desc
+        `select r.id,coalesce(r.device_id::text,'') as device_id,r.requested_by,r.action_kind,r.action,r.status,r.expires_at,
+                r.decided_by,r.decided_at,r.consumed_at,r.created_at,
+                case when r.center_id is null then 'agent' else 'ssh' end as target_kind,r.target_id,r.target_label
+           from approval_requests r
+           left join management_centers c on c.id=r.center_id
+          where r.organization_id=$1 and r.status=$2
+            and ($2<>'pending' or r.expires_at>now())
+            and (r.center_id is null or c.user_id is not distinct from $4::uuid)
+          order by r.created_at desc
           limit $3`,
-        [principal!.organizationId, parsedStatus.data, limit],
+        [principal!.organizationId, parsedStatus.data, limit, principal!.userId ?? null],
       );
       return void json(res, 200, { items: result.rows });
     }
@@ -4481,12 +4515,14 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         decided_at: Date | null; decided_by: string | null; decided_center_id: string | null;
         center_name: string | null; center_platform: string | null;
       }>(
-        `select r.id,r.device_id,r.action_kind,r.status,r.expires_at,r.decided_at,r.decided_by,
+        `select r.id,coalesce(r.device_id::text,'') as device_id,r.action_kind,r.status,r.expires_at,r.decided_at,r.decided_by,
                 r.decided_center_id,c.name as center_name,c.platform as center_platform
            from approval_requests r
            left join management_centers c on c.id=r.decided_center_id
-          where r.id=$1 and r.organization_id=$2`,
-        [approvalItemMatch[1], principal!.organizationId],
+           left join management_centers owner on owner.id=r.center_id
+          where r.id=$1 and r.organization_id=$2
+            and (r.center_id is null or owner.user_id is not distinct from $3::uuid)`,
+        [approvalItemMatch[1], principal!.organizationId, principal!.userId ?? null],
       );
       const row = found.rows[0];
       if (!row) return void json(res, 404, { error: "approval_request_not_found" });
@@ -4520,6 +4556,17 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       const requestId = approvalDecisionMatch[1]!;
       const decision = approvalDecisionMatch[2]!.toLowerCase() as "approve" | "deny";
       const nextStatus = decision === "approve" ? "approved" : "denied";
+      // An SSH target's request (Hybrid Access H3) is decided only by the owner
+      // of the computer that holds the server's credentials.
+      const owned = await db.query<{ owner: string | null }>(
+        `select c.user_id::text as owner from approval_requests r
+           join management_centers c on c.id=r.center_id
+          where r.id=$1 and r.organization_id=$2`,
+        [requestId, principal!.organizationId],
+      );
+      if (owned.rowCount && owned.rows[0]!.owner !== (principal!.userId ?? null)) {
+        return void json(res, 403, { error: "approval_owner_only", message: "only the owner of this computer can decide its server operations" });
+      }
 
       const updated = await db.query(
         `update approval_requests
@@ -4536,8 +4583,8 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
             and organization_id=$2
             and status='pending'
             and expires_at>now()
-          returning id,device_id,requested_by,action_kind,action,status,expires_at,
-                    decided_by,decided_at,created_at`,
+          returning id,coalesce(device_id::text,'') as device_id,requested_by,action_kind,action,status,expires_at,
+                    decided_by,decided_at,created_at,target_id,target_label`,
         [requestId, principal!.organizationId, nextStatus, principal!.actor,
          principal!.authKind === "center" ? principal!.centerId ?? null : null],
       );
@@ -4562,7 +4609,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
 
       await auditControl(
         principal!,
-        item.device_id,
+        item.device_id || null,
         `approval_request.${decision}`,
         "high",
         "success",
@@ -4570,6 +4617,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           approvalRequestId: requestId,
           action: item.action_kind,
           requestedBy: item.requested_by,
+          ...(item.target_id ? { target: item.target_id, targetLabel: item.target_label } : {}),
         }),
       );
       return void json(res, 200, { ok: true, item });

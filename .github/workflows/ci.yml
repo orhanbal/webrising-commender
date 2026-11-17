@@ -309,6 +309,8 @@ jobs:
         run: node test/rbac-matrix-e2e.mjs
       - name: Scheduled tasks (REST contract, scheduler claim, agent runs, app claim/result)
         run: node test/scheduled-tasks-e2e.mjs
+      - name: Remote MCP to SSH hosts through the app (Hybrid Access H3/H4, fake app connector)
+        run: node test/ssh-connector-e2e.mjs
       - name: Verify backup restore in disposable CI database
         working-directory: .
         run: bash scripts/ci-postgres-restore.sh
