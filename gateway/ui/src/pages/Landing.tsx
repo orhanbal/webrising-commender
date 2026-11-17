@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState} from "react";
 import { t as translate,useLocale } from "../i18n";
-import {Activity,ArrowRight,ArrowUpRight,Check,CheckCheck,ChevronRight,ClipboardCheck,Copy,Database,Download,EyeOff,HardDrive,KeyRound,LockKeyhole,MousePointerClick,Plug2,RefreshCw,Server,ShieldCheck,Sparkles,TerminalSquare,Zap} from "lucide-react";
+import {Activity,ArrowRight,CalendarClock,ArrowUpRight,Check,CheckCheck,ChevronRight,ClipboardCheck,Copy,Database,Download,EyeOff,HardDrive,KeyRound,LockKeyhole,MousePointerClick,Plug2,RefreshCw,Server,ShieldCheck,Sparkles,TerminalSquare,Zap} from "lucide-react";
 import type{Nav}from"../App";import type{Pricing}from"../api";
 import{Button,Card,Badge}from"../components/ui";
 import {api} from "../api";import{Brand,NavLink}from"../App";import{planText}from"./Plans";import{clientLogos}from"../components/ClientLogos";
@@ -8,13 +8,13 @@ import {api} from "../api";import{Brand,NavLink}from"../App";import{planText}fro
 // Every literal below is a CMS key (see landing-copy-sections.ts) and has an
 // English entry in i18n-marketing.ts.
 const features=[
-{icon:TerminalSquare,tone:"sky",title:"SSH, SFTP ve tüneller",text:"Kayıtlı sunucular, gruplar ve etiketler; sekmeli ve bölünmüş terminaller; sürükle-bırak SFTP; yerel, uzak ve SOCKS tüneller, jump host. Telnet, seri port ve Mosh da dahil."},
+{icon:TerminalSquare,tone:"sky",title:"SSH, SFTP ve tüneller",text:"Kayıtlı sunucular, gruplar ve etiketler; sekmeli ve bölünmüş terminaller; sürükle-bırak SFTP; yerel, uzak ve SOCKS tüneller, jump host. Telnet, seri port ve Mosh da dahil. Parçacıklar, otomatik tamamlama ve oturum kayıtları."},
 {icon:HardDrive,tone:"amber",title:"Sunucu yönetimi",text:"Diski ne dolduruyor gör, güvenle temizle: eski loglar, paket önbelleği, Docker build önbelleği ve kullanılmayan imajlar (rootless Docker dahil). Süreçler ve zombi düzeltme. Sunucuya hiçbir şey kurmadan."},
-{icon:Activity,tone:"green",title:"Canlı sunucu izleme",text:"Masaüstünün köşesinde ya da ekran kenarındaki WECOMMANDER Dock'ta CPU, bellek ve disk için akan çizgi grafikler. Bir değer yükselince renk değişir; tıkla, süreçler ve disk analizi açılsın."},
+{icon:Activity,tone:"green",title:"Canlı izleme ve Dock",text:"Windows'ta ekran kenarındaki WECOMMANDER Dock'ta, macOS'ta menü çubuğunda CPU, bellek ve disk için akan grafikler. Hızlı panel, bu bilgisayarın Görev Yöneticisi ve zamanlayıcılar bir tık uzakta."},
 {icon:Sparkles,tone:"violet",title:"Yapay zekâ için tek MCP adresi",text:"Claude, ChatGPT ve Cursor'ı tek MCP adresiyle tüm makinelerine bağla: terminal, dosya, görevler ve sunucu yönetimi araçları. Gelen bağlantı portu açman gerekmez."},
 {icon:ShieldCheck,tone:"green",title:"Her riskli adım senin onayınla",text:"Komut, silme ve servis yeniden başlatma gibi işlemler tek kullanımlık onay ister: web panelinden, e-postadan ya da masaüstü uygulamasının bildiriminden. İzinli komutlar ve süreli otonom mod da var."},
 {icon:RefreshCw,tone:"sky",title:"Uçtan uca şifreli senkronizasyon",text:"Sunucuların, anahtarların ve parçacıkların tüm cihazlarında eşitlenir; şifrelemeyi senin cihazın yapar, sunucumuz okuyamaz. Ekip kitaplığı ve canlı paylaşılan terminaller."},
-{icon:Zap,tone:"amber",title:"Parçacıklar ve akıllı terminal",text:"Sık kullandığın komutlar tek tıkla; geçmişten otomatik tamamlama; tüm sekmelere aynı anda yazma; oturum kayıtları ve terminal temaları."},
+{icon:CalendarClock,tone:"amber",title:"Zamanlanmış görevler",text:"Komutun her gece 03:00'te ya da her 15 dakikada bir çalışsın: zamanı gelince WECOMMANDER onu cihazdaki ajana gönderir, bilgisayarın kapalıyken bile. Sonuç ve çıktı geçmişte; başarısız olursa e-posta gelir."},
 {icon:LockKeyhole,tone:"violet",title:"Root olmayan agent",text:"Agent ayrı bir servis kullanıcısıyla, yalnızca izin verdiğin klasörlerde çalışır. Yazma ve komut yetkileri cihazda ayrıca açılır; çıktıdaki parola ve anahtarlar maskelenir."},
 {icon:Database,tone:"rose",title:"Eksiksiz denetim kaydı ve geri alma",text:"Kim, hangi yapay zekâyla, hangi cihazda ne yaptı: her çağrı kaydedilir. Dosya düzenlemelerinin sürümleri tutulur, tek tıkla geri alınır."}
 ];
