@@ -117,7 +117,8 @@ public class LocalTasksTests
         Assert.Empty(LocalTasks.ParseXml(""));
         Assert.Empty(LocalTasks.ParseXml("<Tasks><broken"));
         // One unreadable task (an error line in the middle) does not lose the others.
-        var damaged = Xml.Replace("<Settings>\n    <Enabled>false</Enabled>", "ERROR: Access is denied. <Settings");
+        // (Line endings normalised: a Windows checkout gives this file CRLF.)
+        var damaged = Xml.Replace("\r\n", "\n").Replace("<Settings>\n    <Enabled>false</Enabled>", "ERROR: Access is denied. <Settings");
         Assert.Equal([@"\WECOMMANDER\yedek", @"\Updater"], LocalTasks.ParseXml(damaged).Select(t => t.Path));
     }
 
