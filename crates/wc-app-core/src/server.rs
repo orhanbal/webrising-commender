@@ -11,6 +11,9 @@ pub use wc_server::{
     Cleanup, CleanupResult, CleanupScan, Disk, DiskUsage, DockerUsage, Overview, Owner, Process,
     ProcessList, Sample, UsageEntry, ZombieGroup,
 };
+pub use wc_server::{
+    CronEntry, ManagedTimer, Timer, TimerLogs, TimerResult, TimerSpec, Timers, MANAGED_MARK,
+};
 use wc_ssh_core::client::Connection;
 
 use crate::AppState;
@@ -189,6 +192,55 @@ pub async fn restart_owner(
     id: String,
 ) -> Result<String, String> {
     wc_server::restart_owner(&shell(state, &session_id)?, kind, id).await
+}
+
+// ---- scheduled tasks: systemd timers and cron (read only) -----------------
+
+pub async fn timers(state: &Arc<AppState>, session_id: String) -> Result<Timers, String> {
+    wc_server::timers(&shell(state, &session_id)?).await
+}
+
+/// `action`: enable, disable, start-now, stop.
+pub async fn timer_action(
+    state: &Arc<AppState>,
+    session_id: String,
+    unit: String,
+    action: String,
+) -> Result<TimerResult, String> {
+    wc_server::timer_action(&shell(state, &session_id)?, unit, action).await
+}
+
+pub async fn timer_logs(
+    state: &Arc<AppState>,
+    session_id: String,
+    unit: String,
+    lines: Option<u32>,
+) -> Result<TimerLogs, String> {
+    wc_server::timer_logs(&shell(state, &session_id)?, unit, lines.unwrap_or(200)).await
+}
+
+pub async fn timer_create(
+    state: &Arc<AppState>,
+    session_id: String,
+    spec: TimerSpec,
+) -> Result<TimerResult, String> {
+    wc_server::timer_create(&shell(state, &session_id)?, spec).await
+}
+
+pub async fn timer_edit(
+    state: &Arc<AppState>,
+    session_id: String,
+    spec: TimerSpec,
+) -> Result<TimerResult, String> {
+    wc_server::timer_edit(&shell(state, &session_id)?, spec).await
+}
+
+pub async fn timer_delete(
+    state: &Arc<AppState>,
+    session_id: String,
+    unit: String,
+) -> Result<TimerResult, String> {
+    wc_server::timer_delete(&shell(state, &session_id)?, unit).await
 }
 
 // ---- Coolify: the lasting zombie fix ---------------------------------------

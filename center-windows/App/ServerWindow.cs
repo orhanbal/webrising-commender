@@ -26,6 +26,7 @@ public sealed class ServerWindow : Window
     private string _diskPath = "/";
     private string _processSort = "cpu";
     private string _processFilter = "";
+    private string _timerFilter = "";
     private ProcessList? _processes;
     private int _generation;
     private DispatcherQueueTimer? _live;
@@ -53,6 +54,7 @@ public sealed class ServerWindow : Window
             ("disk", "Disk", ""),
             ("cleanup", L.T("Temizlik"), ""),
             ("processes", L.T("Süreçler"), ""),
+            ("timers", L.T("Zamanlayıcılar"), "\uE823"),
         })
             _nav.MenuItems.Add(new NavigationViewItem { Content = text, Tag = tag, Icon = new FontIcon { Glyph = glyph } });
         var refresh = new NavigationViewItem { Content = L.T("Yenile"), Tag = "refresh", SelectsOnInvoked = false, Icon = new SymbolIcon(Symbol.Refresh) };
@@ -93,7 +95,7 @@ public sealed class ServerWindow : Window
         _info.IsOpen = true;
     }
 
-    /// <summary>Opens on one section (from the Dock: processes, disk, cleanup).</summary>
+    /// <summary>Opens on one section (from the Dock: processes, disk, cleanup, timers).</summary>
     public void GoTo(string section) => Go(section);
 
     private void Go(string section)
@@ -115,6 +117,7 @@ public sealed class ServerWindow : Window
             "disk" => L.T("Disk taranıyor. Büyük disklerde bir iki dakika sürebilir…"),
             "cleanup" => L.T("Silinebilecek dosyalar hesaplanıyor…"),
             "processes" => L.T("Süreçler okunuyor…"),
+            "timers" => L.T("Zamanlayıcılar okunuyor…"),
             _ => L.T("Sunucu bilgileri okunuyor…"),
         });
         try
@@ -124,6 +127,7 @@ public sealed class ServerWindow : Window
                 "disk" => DiskPage(await _c.Server<DiskUsage>("server.disk", new { sessionId = _sessionId, path = _diskPath })),
                 "cleanup" => CleanupPage(await _c.Server<CleanupScan>("server.cleanupScan", new { sessionId = _sessionId })),
                 "processes" => ProcessesPage(_processes = await _c.Server<ProcessList>("server.processes", new { sessionId = _sessionId })),
+                "timers" => TimersPage(await _c.Server<ServerTimers>("server.timers", new { sessionId = _sessionId })),
                 _ => OverviewPage(await _c.Server<ServerOverview>("server.overview", new { sessionId = _sessionId })),
             };
             if (generation == _generation) _scroll.Content = page;
@@ -1094,5 +1098,345 @@ public sealed class ServerWindow : Window
         {
             Show(Friendly(ex), InfoBarSeverity.Error);
         }
+    }
+
+    // ---- timers ----
+
+    /// <summary>
+    /// systemd timers (disabled ones too, shown as "Pasif") with their next and
+    /// last run, the service's user and command, its journal; enable, disable,
+    /// run now, stop; WECOMMANDER's own timers can be created, edited and
+    /// deleted. Cron is listed read only. Every change shows the exact command.
+    /// </summary>
+    private UIElement TimersPage(ServerTimers s)
+    {
+        var page = new StackPanel { Spacing = 12 };
+        var head = new Grid();
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        head.Children.Add(new TextBlock { Text = L.T("Zamanlayıcılar"), Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] });
+        var create = Action(L.T("Yeni zamanlayıcı"), () => EditTimer(null), accent: true);
+        create.IsEnabled = s.CanChange && s.Systemd;
+        create.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(create, 1);
+        head.Children.Add(create);
+        page.Children.Add(head);
+        page.Children.Add(Note(L.T("Sunucudaki systemd zamanlayıcıları; devre dışı (pasif) olanlar da listelenir. Her değişiklikten önce sunucuda çalışacak komut gösterilir. Yalnız WECOMMANDER'ın oluşturduğu zamanlayıcılar düzenlenip silinebilir.")));
+        if (!s.CanChange)
+            page.Children.Add(Banner(L.T("Yalnız görüntüleme"), L.T("Bu kullanıcı root değil ve parolasız sudo yok: zamanlayıcılar görünür ama etkinleştirme, çalıştırma ve düzenleme yapılamaz."), InfoBarSeverity.Informational));
+
+        if (!s.Systemd)
+        {
+            page.Children.Add(Banner(L.T("systemd bulunamadı"), L.T("Bu sunucuda systemctl yok; yalnız cron görevleri listelenir."), InfoBarSeverity.Informational));
+        }
+        else
+        {
+            var search = new TextBox { PlaceholderText = L.T("Ara (ad, açıklama, komut, kullanıcı)"), Width = 360, Text = _timerFilter, HorizontalAlignment = HorizontalAlignment.Left };
+            page.Children.Add(search);
+            var rows = new StackPanel { Spacing = 10 };
+            page.Children.Add(rows);
+            void Fill()
+            {
+                rows.Children.Clear();
+                var shown = TimerView.Ordered(s.Timers, _timerFilter);
+                var system = shown.Where(t => t.IsSystem).ToList();
+                var user = shown.Where(t => !t.IsSystem).ToList();
+                var passive = system.Count(t => TimerView.State(t) == "passive");
+                rows.Children.Add(Heading(L.F("Sistem zamanlayıcıları ({0})", system.Count)));
+                if (passive > 0) rows.Children.Add(Note(L.F("{0} zamanlayıcı pasif: kendiliğinden çalışmaz.", passive)));
+                foreach (var t in system) rows.Children.Add(TimerCard(t, s.CanChange));
+                if (user.Count > 0)
+                {
+                    rows.Children.Add(Heading(L.F("{0} kullanıcısının zamanlayıcıları ({1})", s.LoginUser, user.Count)));
+                    rows.Children.Add(Note(L.T("systemctl --user ile çalışan zamanlayıcılar; burada yalnız gösterilir.")));
+                    foreach (var t in user) rows.Children.Add(TimerCard(t, false));
+                }
+                if (shown.Count == 0) rows.Children.Add(Note(L.T("Eşleşen zamanlayıcı yok.")));
+            }
+            search.TextChanged += (_, _) => { _timerFilter = search.Text; Fill(); };
+            Fill();
+        }
+
+        page.Children.Add(Heading(L.T("Cron (salt okunur)")));
+        page.Children.Add(Note(L.T("Cron görevleri yalnız gösterilir; buradan değiştirilmez.")));
+        var crontab = TimerView.CrontabNote(s);
+        if (crontab.Length > 0)
+            page.Children.Add(Note(crontab + (string.IsNullOrEmpty(s.CrontabMessage) ? "" : "  ·  " + s.CrontabMessage)));
+        var cron = new StackPanel { Spacing = 0 };
+        cron.Children.Add(CronRow(null));
+        foreach (var e in s.Cron) cron.Children.Add(CronRow(e));
+        if (s.Cron.Count == 0) cron.Children.Add(Note(L.T("Cron görevi bulunamadı.")));
+        page.Children.Add(Card(cron));
+        return page;
+    }
+
+    private static Border Badge(string text, Brush brush) => new()
+    {
+        Child = new TextBlock { Text = text, Foreground = brush, FontSize = 12, FontWeight = FontWeights.SemiBold },
+        BorderBrush = brush,
+        BorderThickness = new Thickness(1),
+        CornerRadius = new CornerRadius(4),
+        Padding = new Thickness(6, 1, 6, 1),
+        VerticalAlignment = VerticalAlignment.Center,
+    };
+
+    private static Brush StateBrush(ServerTimer t) => TimerView.State(t) switch
+    {
+        "active" => (Brush)Application.Current.Resources["SystemFillColorSuccessBrush"],
+        "failed" => (Brush)Application.Current.Resources["SystemFillColorCriticalBrush"],
+        "passive" => (Brush)Application.Current.Resources["SystemFillColorCautionBrush"],
+        _ => Secondary,
+    };
+
+    private UIElement TimerCard(ServerTimer t, bool canChange)
+    {
+        var p = new StackPanel { Spacing = 6 };
+        var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        title.Children.Add(new TextBlock { Text = t.Unit, FontFamily = Mono, FontSize = 15, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, IsTextSelectionEnabled = true });
+        title.Children.Add(Badge(TimerView.StateText(t), StateBrush(t)));
+        if (t.IsManaged) title.Children.Add(Badge("WECOMMANDER", (Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"]));
+        p.Children.Add(title);
+        if (!string.IsNullOrEmpty(t.Description))
+            p.Children.Add(new TextBlock { Text = t.Description, TextWrapping = TextWrapping.Wrap });
+        p.Children.Add(new TextBlock { Text = L.F("Zamanlama: {0}", TimerView.Schedule(t)), TextWrapping = TextWrapping.Wrap });
+        var now = DateTimeOffset.UtcNow;
+        string When(long? unix)
+        {
+            var relative = TimerView.Relative(unix, now);
+            return TimerView.Time(unix) + (relative.Length > 0 ? $" ({relative})" : "");
+        }
+        p.Children.Add(Note(L.F("Sonraki çalışma: {0}  ·  Son çalışma: {1}  ·  Son sonuç: {2}", When(t.NextRun), When(t.LastRun), TimerView.Result(t))));
+        p.Children.Add(new TextBlock
+        {
+            Text = L.F("Kullanıcı: {0}  ·  Servis: {1}  ·  Birim dosyası: {2}", string.IsNullOrEmpty(t.User) ? "—" : t.User, t.Service, string.IsNullOrEmpty(t.UnitFileState) ? "—" : t.UnitFileState),
+            FontFamily = Mono, FontSize = 12, Foreground = Secondary, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true,
+        });
+        if (!string.IsNullOrEmpty(t.Command))
+            p.Children.Add(new TextBlock { Text = t.Command, FontFamily = Mono, FontSize = 12, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true });
+
+        // Details: where it is defined, the service's state and its journal (loaded when opened).
+        var details = new StackPanel { Spacing = 6, Visibility = Visibility.Collapsed, Margin = new Thickness(0, 6, 0, 0) };
+        details.Children.Add(new TextBlock
+        {
+            Text = L.F("Dosya: {0}  ·  Kaçırılanı telafi et (Persistent): {1}  ·  Servis durumu: {2}  ·  Son bitiş: {3}",
+                string.IsNullOrEmpty(t.FragmentPath) ? "—" : t.FragmentPath, t.Persistent ? L.T("evet") : L.T("hayır"),
+                string.IsNullOrEmpty(t.ServiceState) ? "—" : t.ServiceState, TimerView.Time(t.LastExit)),
+            FontFamily = Mono, FontSize = 12, Foreground = Secondary, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true,
+        });
+        if (!string.IsNullOrEmpty(t.ServiceDescription) && t.ServiceDescription != t.Description)
+            details.Children.Add(Note(t.ServiceDescription));
+        var logNote = new TextBlock { Foreground = Secondary, FontSize = 12, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
+        var logText = new TextBlock { FontFamily = Mono, FontSize = 12, TextWrapping = TextWrapping.NoWrap, IsTextSelectionEnabled = true };
+        var logs = new ScrollViewer
+        {
+            Content = logText,
+            MaxHeight = 320,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
+        if (t.IsSystem)
+        {
+            var logHead = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            logHead.Children.Add(new TextBlock { Text = L.T("Günlük (son 200 satır)"), FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+            logHead.Children.Add(Action(L.T("Yenile"), () => LoadTimerLogs(t, logText, logNote)));
+            details.Children.Add(logHead);
+            details.Children.Add(logNote);
+            details.Children.Add(Card(logs));
+        }
+
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 4, 0, 0) };
+        var logsLoaded = false;
+        buttons.Children.Add(Action(L.T("Ayrıntılar ve günlük"), async () =>
+        {
+            details.Visibility = details.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+            if (details.Visibility == Visibility.Visible && t.IsSystem && !logsLoaded)
+            {
+                logsLoaded = true;
+                await LoadTimerLogs(t, logText, logNote);
+            }
+        }));
+        if (t.IsSystem)
+        {
+            Button Act(string text, string action, bool accent = false)
+            {
+                var b = Action(text, () => TimerAction(t, action), accent);
+                b.IsEnabled = canChange;
+                if (!canChange) ToolTipService.SetToolTip(b, L.T("Bu işlem için sunucuda root ya da parolasız sudo gerekir."));
+                return b;
+            }
+            if (TimerView.CanEnable(t)) buttons.Children.Add(Act(L.T("Etkinleştir"), "enable", accent: TimerView.State(t) == "passive"));
+            if (TimerView.CanDisable(t)) buttons.Children.Add(Act(L.T("Devre dışı bırak"), "disable"));
+            if (TimerView.CanRunNow(t)) buttons.Children.Add(Act(L.T("Şimdi çalıştır"), "start-now"));
+            if (TimerView.CanStop(t)) buttons.Children.Add(Act(L.T("Durdur"), "stop"));
+            if (t.IsManaged)
+            {
+                var edit = Action(L.T("Düzenle"), () => EditTimer(t));
+                edit.IsEnabled = canChange;
+                buttons.Children.Add(edit);
+                var delete = Action(L.T("Sil"), () => DeleteTimer(t));
+                delete.IsEnabled = canChange;
+                buttons.Children.Add(delete);
+            }
+        }
+        p.Children.Add(buttons);
+        p.Children.Add(details);
+        return Card(p);
+    }
+
+    private async Task LoadTimerLogs(ServerTimer t, TextBlock text, TextBlock note)
+    {
+        note.Text = L.T("Günlük okunuyor…");
+        try
+        {
+            var r = await _c.Server<TimerLogs>("server.timerLogs", new { sessionId = _sessionId, unit = t.Unit, lines = 200 });
+            text.Text = string.Join("\n", r.Lines);
+            note.Text = (r.Note.Length > 0 ? r.Note + "\n" : "") + "$ " + r.Command;
+        }
+        catch (Exception ex)
+        {
+            note.Text = Friendly(ex);
+        }
+    }
+
+    private void ShowTimerResult(TimerResult r, string success)
+    {
+        if (r.Ok) Show(success, InfoBarSeverity.Success);
+        else Show(L.F("Komut başarısız oldu: {0}", string.IsNullOrEmpty(r.Output) ? r.Command : r.Output), InfoBarSeverity.Error);
+    }
+
+    private async Task TimerAction(ServerTimer t, string action)
+    {
+        var command = TimerView.ActionCommand(t, action);
+        var (title, text, primary) = action switch
+        {
+            "enable" => (L.F("{0} etkinleştirilsin mi?", t.Unit), L.T("Zamanlayıcı hemen başlar ve sunucu açılışında da başlar; görev takvimine göre kendiliğinden çalışır."), L.T("Etkinleştir")),
+            "disable" => (L.F("{0} devre dışı bırakılsın mı?", t.Unit), L.T("Zamanlayıcı durdurulur ve açılışta başlamaz; görev artık kendiliğinden çalışmaz. O anda çalışan iş yarıda kesilmez."), L.T("Devre dışı bırak")),
+            "start-now" => (L.F("{0} şimdi çalıştırılsın mı?", t.Service), L.T("Görev beklemeden bir kez başlatılır; zamanlayıcının takvimi değişmez."), L.T("Şimdi çalıştır")),
+            _ => (L.F("{0} durdurulsun mu?", t.Service), L.T("Çalışmakta olan görev durdurulur; zamanlayıcı olduğu gibi kalır ve görev bir sonraki zamanında yeniden çalışır."), L.T("Durdur")),
+        };
+        if (!await Confirm(title, text, command, primary)) return;
+        try
+        {
+            var r = await _c.Server<TimerResult>("server.timerAction", new { sessionId = _sessionId, unit = t.Unit, action });
+            await Load();
+            ShowTimerResult(r, L.F("{0}: tamamlandı.", action == "start-now" || action == "stop" ? t.Service : t.Unit));
+        }
+        catch (Exception ex)
+        {
+            Show(Friendly(ex), InfoBarSeverity.Error);
+        }
+    }
+
+    /// <summary>Creates a timer (existing = null) or edits one WECOMMANDER created: the form, its checks, the exact commands, then the core.</summary>
+    private async Task EditTimer(ServerTimer? existing)
+    {
+        var m = existing?.Managed;
+        var edit = existing is not null;
+        if (edit && m is null) return;
+        var spec = new TimerSpec(m?.Name ?? "", m?.Description ?? "", m?.Command ?? "", m?.User ?? "root", m?.Calendar ?? "daily");
+        string? error = null;
+        while (true)
+        {
+            if (await TimerForm(spec, edit, error) is not { } next) return;
+            spec = TimerView.Trimmed(next);
+            error = TimerView.Check(spec);
+            if (error is not null) continue;
+            var unit = spec.Name + ".timer";
+            if (!await Confirm(edit ? L.F("{0} düzenlensin mi?", unit) : L.F("{0} oluşturulsun mu?", unit),
+                    edit ? L.T("İki birim dosyası yeniden yazılır ve systemd yeniden yüklenir; zamanlayıcı çalışıyorsa yeni takvimle yeniden başlar.")
+                         : L.T("/etc/systemd/system içine WECOMMANDER işaretli bir .service ve bir .timer dosyası yazılır, systemd yeniden yüklenir ve zamanlayıcı etkinleştirilir. Takvim önce systemd-analyze ile denetlenir."),
+                    TimerView.WriteCommand(spec, edit), edit ? L.T("Kaydet") : L.T("Oluştur")))
+                return;
+            try
+            {
+                _scroll.Content = Waiting(L.T("Zamanlayıcı yazılıyor…"));
+                var r = await _c.Server<TimerResult>(edit ? "server.timerEdit" : "server.timerCreate",
+                    new { sessionId = _sessionId, name = spec.Name, description = spec.Description, command = spec.Command, user = spec.User, calendar = spec.Calendar });
+                await Load();
+                ShowTimerResult(r, edit ? L.F("{0} güncellendi.", unit) : L.F("{0} oluşturuldu ve etkinleştirildi.", unit));
+                return;
+            }
+            catch (Exception ex)
+            {
+                // Refused by the server (calendar, user, name taken…): the form again, with why.
+                error = Friendly(ex);
+                await Load();
+            }
+        }
+    }
+
+    private async Task<TimerSpec?> TimerForm(TimerSpec spec, bool edit, string? error)
+    {
+        var body = new StackPanel { Spacing = 10, MaxWidth = 560 };
+        if (!string.IsNullOrEmpty(error))
+            body.Children.Add(new InfoBar { Message = error, Severity = InfoBarSeverity.Error, IsOpen = true, IsClosable = false });
+        var name = new TextBox { Header = L.T("Ad (birim dosyalarının adı)"), Text = spec.Name, IsEnabled = !edit, PlaceholderText = "nightly-backup", FontFamily = Mono };
+        var description = new TextBox { Header = L.T("Açıklama"), Text = spec.Description };
+        var command = new TextBox { Header = L.T("Komut"), Text = spec.Command, PlaceholderText = "/usr/local/bin/backup.sh --full", FontFamily = Mono };
+        var user = new TextBox { Header = L.T("Çalıştıran kullanıcı"), Text = spec.User, PlaceholderText = "root", FontFamily = Mono };
+        var calendar = new TextBox { Header = L.T("Takvim (OnCalendar)"), Text = spec.Calendar, PlaceholderText = "daily", FontFamily = Mono };
+        body.Children.Add(name);
+        body.Children.Add(description);
+        body.Children.Add(command);
+        body.Children.Add(Note(L.T("Komut /bin/sh -c ile çalışır; | ve && kullanılabilir.")));
+        body.Children.Add(user);
+        body.Children.Add(calendar);
+        body.Children.Add(Note(L.T("Örnekler: hourly, daily, weekly, Mon..Fri *-*-* 03:00, *-*-* 04:30:00, *:0/15 (15 dakikada bir).")));
+        var dialog = new ContentDialog
+        {
+            Title = edit ? L.F("{0} düzenle", spec.Name + ".timer") : L.T("Yeni zamanlayıcı"),
+            Content = new ScrollViewer { Content = body, MaxHeight = 520 },
+            PrimaryButtonText = L.T("Devam"),
+            CloseButtonText = L.T("Vazgeç"),
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = Content.XamlRoot,
+        };
+        try
+        {
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return null;
+        }
+        catch (Exception) { return null; }
+        return new TimerSpec(edit ? spec.Name : name.Text, description.Text, command.Text, user.Text, calendar.Text);
+    }
+
+    private async Task DeleteTimer(ServerTimer t)
+    {
+        if (!t.IsManaged) return;
+        if (!await Confirm(L.F("{0} silinsin mi?", t.Unit), L.T("Zamanlayıcı durdurulur, devre dışı bırakılır ve iki birim dosyası silinir. Geri alınamaz."),
+                TimerView.DeleteCommand(TimerView.NameOf(t)), L.T("Sil")))
+            return;
+        try
+        {
+            var r = await _c.Server<TimerResult>("server.timerDelete", new { sessionId = _sessionId, unit = t.Unit });
+            await Load();
+            ShowTimerResult(r, L.F("{0} silindi.", t.Unit));
+        }
+        catch (Exception ex)
+        {
+            Show(Friendly(ex), InfoBarSeverity.Error);
+        }
+    }
+
+    private static UIElement CronRow(CronEntry? e)
+    {
+        var row = new Grid { ColumnSpacing = 12, Padding = new Thickness(4, 4, 4, 4) };
+        foreach (var w in new[] { 130.0, 100, -1, 190 })
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = w < 0 ? new GridLength(1, GridUnitType.Star) : new GridLength(w) });
+        var cells = e is null
+            ? new[] { L.T("Zaman"), L.T("Kullanıcı"), L.T("Komut"), L.T("Kaynak") }
+            : e.Unreadable
+                ? new[] { "—", "—", L.T("okunamadı (izin yok)"), e.Source }
+                : new[] { e.Schedule, e.User, e.Command, e.Source };
+        for (var i = 0; i < cells.Length; i++)
+        {
+            var t = new TextBlock { Text = cells[i], TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, IsTextSelectionEnabled = e is not null };
+            if (e is null) { t.Foreground = Secondary; t.FontWeight = FontWeights.SemiBold; }
+            else if (i != 1) { t.FontFamily = Mono; t.FontSize = 12; }
+            if (e is not null && i == 2) ToolTipService.SetToolTip(t, cells[i]);
+            if (e is not null && i == 3) t.Foreground = Secondary;
+            Grid.SetColumn(t, i);
+            row.Children.Add(t);
+        }
+        return row;
     }
 }

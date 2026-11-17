@@ -47,6 +47,11 @@ connection.
 | `server.processes` | `sessionId` | `{processes:[{pid, ppid, user, state, cpu, mem, rssKb, elapsedSecs, name, command}], zombies:[{parent, count, owner:{kind, id, name}, protected}], privilege}` |
 | `server.signal` | `sessionId, pid, name, action` (`reap`, `term`, `kill`), `confirmDatabase?` | `""`; refused when `name` no longer matches, for system processes, and (error `database`) for databases until confirmed |
 | `server.restartOwner` | `sessionId, kind` (`container`, `service`), `id` | `""`; never sshd, Docker itself or the agent |
+| `server.timers` | `sessionId` | `{privilege, loginUser, systemd, timers:[{unit, scope (system\|user), description, unitFileState, activeState, subState, calendar[], monotonic[], schedule, nextRun?, lastRun? (unix s), service, serviceDescription, command, user, result, exitStatus?, lastExit?, serviceState, fragmentPath, persistent, managed?: {name, description, command, user, calendar}}], cron:[{source, schedule, user, command}], crontab (ok\|empty\|not-readable\|missing), crontabMessage}`; disabled, not-loaded timers included; cron read only |
+| `server.timerAction` | `sessionId, unit, action` (`enable`, `disable`, `start-now`, `stop`) | `{command, ok, output}`; root or sudo; only a timer systemd lists; start-now / stop act on its service |
+| `server.timerLogs` | `sessionId, unit, lines?` (default 200, max 2000) | `{command, lines, note}`: `journalctl -u <service> -n N --no-pager -o short-iso`; `note` says when the journal is not readable |
+| `server.timerCreate` / `server.timerEdit` | `sessionId, name, description, command, user, calendar` | `{command, ok, output}`; writes /etc/systemd/system/<name>.timer and .service (first line `# Managed by WECOMMANDER`), daemon-reload, enable --now (edit: try-restart); calendar checked with `systemd-analyze calendar`; edit only WECOMMANDER's timers |
+| `server.timerDelete` | `sessionId, unit` | `{command, ok, output}`; only WECOMMANDER's timers: disable --now, both files removed, daemon-reload |
 | `files.download` | `sessionId, remote, local, transferId` | bytes |
 | `files.upload` | `sessionId, local, remoteDir, transferId` | bytes |
 | `files.mkdir` / `files.delete` | `sessionId, path` | `null` |
