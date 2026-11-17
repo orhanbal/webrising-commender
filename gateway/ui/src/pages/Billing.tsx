@@ -1,6 +1,6 @@
 import {useEffect,useState} from "react";
 import { t as translate,useLocale } from "../i18n";
-import{ArrowRight,CalendarDays,CheckCircle2,CreditCard,ExternalLink,LockKeyhole,ReceiptText,RefreshCw,ShieldCheck}from"lucide-react";
+import{ArrowRight,CalendarDays,CheckCircle2,CreditCard,ExternalLink,LockKeyhole,ReceiptText,RefreshCw,ShieldCheck}from "../components/icons";
 import{Button,Card,CardContent,CardDescription,CardHeader,CardTitle,Badge}from"../components/ui";
 import{api,type Account,type Billing,type Pricing}from"../api";import{dateText}from"../lib";
 import{DashboardShell}from"./Dashboard";import type{Nav,Theme}from"../App";

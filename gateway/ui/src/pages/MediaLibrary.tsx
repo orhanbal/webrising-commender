@@ -1,5 +1,5 @@
 import {useEffect,useState} from "react";
-import {ImagePlus} from "lucide-react";
+import {ImagePlus} from "../components/icons";
 import {api} from "../api";
 import {useLocale} from "../i18n";
 import {consoleText} from "../console-text";

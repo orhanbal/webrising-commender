@@ -1,5 +1,5 @@
 import {useEffect,useState} from "react";
-import {ArrowRight} from "lucide-react";
+import {ArrowRight} from "../components/icons";
 import {api} from "../api";
 import {NavLink,type Nav} from "../App";
 import {Spinner} from "../components/ui";

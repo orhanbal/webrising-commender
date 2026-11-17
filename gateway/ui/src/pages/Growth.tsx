@@ -1,5 +1,5 @@
 import {useEffect,useState,type ReactNode} from "react";
-import {ExternalLink} from "lucide-react";
+import {ExternalLink} from "../components/icons";
 import {api} from "../api";
 import {useLocale} from "../i18n";
 import {consoleText} from "../console-text";

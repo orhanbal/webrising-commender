@@ -1,5 +1,5 @@
 import {useState} from "react";
-import {UserPlus} from "lucide-react";
+import {UserPlus} from "../components/icons";
 import {t as translate,useLocale} from "../i18n";
 import {Alert,Button,Card,CardContent,CardDescription,CardHeader,CardTitle,Input,Spinner} from "../components/ui";
 import type {Nav} from "../App";

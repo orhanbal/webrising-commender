@@ -1,5 +1,5 @@
 import {useCallback,useEffect,useState} from "react";
-import {Copy,Globe2,MailPlus,Trash2,UserMinus,Users} from "lucide-react";
+import {Copy,Globe2,MailPlus,Trash2,UserMinus,Users} from "../components/icons";
 import {t as translate,useLocale,localizedDate} from "../i18n";
 import {api,type Account} from "../api";
 import {Alert,Badge,Button,Card,CardContent,CardDescription,CardHeader,CardTitle,Dialog,DialogContent,DialogDescription,DialogTitle,EmptyState,Input,PageHeader,Skeleton,Spinner} from "../components/ui";

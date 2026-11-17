@@ -1,7 +1,7 @@
 import {useEffect,useState} from "react";
 import { t as translate,useLocale } from "../i18n";
 import type{ReactNode}from"react";
-import {ArrowRight,ArrowUpRight,Check,ChevronDown,ChevronRight,ClipboardCheck,Code2,Copy,Download,ExternalLink,FolderOpen,Info,Laptop,LockKeyhole,Monitor,Plug2,ShieldCheck,TerminalSquare,Usb} from "lucide-react";
+import {ArrowRight,ArrowUpRight,Check,ChevronDown,ChevronRight,ClipboardCheck,Code2,Copy,Download,ExternalLink,FolderOpen,Info,Laptop,LockKeyhole,Monitor,Plug2,ShieldCheck,TerminalSquare,Usb,iconVariant} from "../components/icons";
 import {Badge,Button,Card,Dialog,DialogContent,DialogDescription,DialogTitle} from "../components/ui";
 import type{Nav}from"../App";
 
@@ -86,7 +86,7 @@ export function InstallPage({nav}:{nav:Nav}){
   </section>
   <section className="install-download-section" id="download-agent"><div className="container-w">
    <div className="install-download-heading"><div><span className="eyebrow">{translate("CİHAZ BAĞLANTISI")}</span><h2>{translate("Bilgisayarına WECOMMANDER'ı kur.")}</h2><p>{translate("Windows ve Mac'te tek uygulama: kur, tarayıcıda hesabınla giriş yap, gerisi arka planda. Ajan uygulamanın içinde gelir ve cihazından güvenli dış bağlantı kurar; açık inbound port gerekmez. Linux sunucular için tek satırlık ajan kurulumu aşağıda.")}</p></div><Badge><ShieldCheck size={14}/> {translate("Açık kaynak agent")}</Badge></div>
-   <div className="install-platforms">{platforms.map(p=><button key={p.key} type="button" className={"install-platform "+(platform===p.key?"active":"")} aria-pressed={platform===p.key} onClick={()=>setPlatform(p.key)}><p.icon size={22}/><span><strong>{p.name}</strong><small>{p.kind}</small></span>{platform===p.key&&<Check size={18} className="install-platform-check"/>}</button>)}</div>
+   <div className="install-platforms">{platforms.map(p=><button key={p.key} type="button" className={"install-platform "+(platform===p.key?"active":"")} aria-pressed={platform===p.key} onClick={()=>setPlatform(p.key)}><p.icon size={22} variant={iconVariant(platform===p.key)} aria-hidden="true"/><span><strong>{p.name}</strong><small>{p.kind}</small></span>{platform===p.key&&<Check size={18} className="install-platform-check"/>}</button>)}</div>
    <Card className="install-download-card"><div className="install-download-grid">{platform!=="linux"?<div><div className="flex gap-2 items-center"><Badge><Check size={14}/> {translate("Tek uygulama, ajan içinde")}</Badge></div><h3>{platform==="windows"?translate("Windows için WECOMMANDER"):translate("macOS için WECOMMANDER")}</h3><p>{platform==="windows"
      ?translate("Kurulum dosyasını indir ve çift tıkla. Yönetici izni istemez; uygulama açılınca tarayıcıda hesabınla giriş yaparsın ve bu bilgisayar kendiliğinden bağlanır. İstersen yandaki tek satırı PowerShell'e yapıştırarak da kurabilirsin.")
      :translate("Yandaki tek satırı Terminal'e yapıştır. Parola istemez; uygulama açılınca tarayıcıda hesabınla giriş yaparsın ve bu Mac kendiliğinden bağlanır.")}</p>

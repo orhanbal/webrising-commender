@@ -1,6 +1,6 @@
 import {useEffect,useState} from "react";
 import { t as translate,useLocale,locale } from "../i18n";
-import {Activity,ArrowRight,BarChart3,CalendarDays,RefreshCw,Zap}from"lucide-react";
+import {Activity,ArrowRight,BarChart3,CalendarDays,RefreshCw,Zap}from "../components/icons";
 import{api,type Account,type Usage}from"../api";
 import{formatCount}from"../lib";
 import{Badge,Button,Card,CardContent,CardDescription,CardHeader,CardTitle}from"../components/ui";

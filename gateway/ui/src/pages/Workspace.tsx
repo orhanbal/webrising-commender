@@ -1,6 +1,6 @@
 import {useEffect,useState}from"react";
 import { t as translate,useLocale,locale } from "../i18n";
-import{ArrowRight,Copy,FileText,KeyRound,LockKeyhole,Monitor,RefreshCw,ShieldCheck,TerminalSquare,Workflow,Play,Info}from"lucide-react";
+import{ArrowRight,Copy,FileText,KeyRound,LockKeyhole,Monitor,RefreshCw,ShieldCheck,TerminalSquare,Workflow,Play,Info}from "../components/icons";
 import{api,type Account,type Device}from"../api";
 import{Button,Card,CardContent,CardDescription,CardHeader,CardTitle,Input}from"../components/ui";
 import{DashboardShell}from"./Dashboard";

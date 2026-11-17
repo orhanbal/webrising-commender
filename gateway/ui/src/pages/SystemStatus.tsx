@@ -1,4 +1,4 @@
-import {AlertTriangle,CheckCircle2,Database,Mail,ShieldCheck,RadioTower,Users,ClipboardCheck} from "lucide-react";
+import {AlertTriangle,CheckCircle2,Database,Mail,ShieldCheck,RadioTower,Users,ClipboardCheck} from "../components/icons";
 import {useLocale,intlLocale} from "../i18n";
 import {useEffect,useState} from "react";
 import {api} from "../api";

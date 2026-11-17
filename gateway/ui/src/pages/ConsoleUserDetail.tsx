@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from "react";
-import {ShieldCheck,Users,Monitor,CalendarClock,X} from "lucide-react";
+import {ShieldCheck,Users,Monitor,CalendarClock,X} from "../components/icons";
 import {api} from "../api";
 import {useLocale} from "../i18n";
 import {consoleText} from "../console-text";

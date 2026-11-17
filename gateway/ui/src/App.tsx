@@ -1,7 +1,7 @@
 import {InAppMessages} from "./components/MessageCard";
 import {lazy,startTransition,Suspense,useEffect,useRef,useState} from "react";
 import type {ReactNode} from "react";
-import {ArrowUpRight,Menu,Moon,Sun,X} from "lucide-react";
+import {ArrowUpRight,Menu,Moon,Sun,X} from "./components/icons";
 import {Button,Spinner} from "./components/ui";
 import {getMe,api,type Account,type Pricing} from "./api";
 import {Landing} from "./pages/Landing";

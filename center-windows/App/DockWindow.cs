@@ -137,6 +137,7 @@ public sealed class DockWindow : Window
     [DllImport("shell32.dll")] private static extern int SHQueryUserNotificationState(out int state);
     [DllImport("user32.dll")] private static extern short GetKeyState(int vk);
     [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int vk);
+    [DllImport("user32.dll")] private static extern int GetSystemMetrics(int index);
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
     [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left, Top, Right, Bottom; }
@@ -334,6 +335,10 @@ public sealed class DockWindow : Window
     {
         var value = round ? 2 /* DWMWCP_ROUND */ : 1 /* DWMWCP_DONOTROUND */;
         try { DwmSetWindowAttribute(Hwnd, 33, ref value, sizeof(int)); } catch (Exception) { }
+        // Windows 11 draws a frame line around every window; on an edge it showed as a thick
+        // line under the Dock. Fixed and auto-hide: none, like the taskbar; floating: the system's.
+        var border = round ? unchecked((int)0xFFFFFFFF) /* DWMWA_COLOR_DEFAULT */ : unchecked((int)0xFFFFFFFE) /* DWMWA_COLOR_NONE */;
+        try { DwmSetWindowAttribute(Hwnd, 34 /* DWMWA_BORDER_COLOR */, ref border, sizeof(int)); } catch (Exception) { }
     }
 
     private void SetTopMost(bool on)
@@ -792,6 +797,8 @@ public sealed class DockWindow : Window
     // ---- moving the Dock like the Windows taskbar (unlocked only) ----
 
     private bool _moveDown, _moving, _moveStealing;
+    private DispatcherQueueTimer? _moveTimer;
+    private POINT _moveLast;
     private uint _movePointerId;
     private POINT _moveAt;
     private PointInt32 _moveGrab;
@@ -841,21 +848,17 @@ public sealed class DockWindow : Window
         if (!_moveDown || e.Pointer.PointerId != _movePointerId) return;
         try
         {
-            if (!e.GetCurrentPoint(_root).Properties.IsLeftButtonPressed)
-            {
-                // The release was missed (it happened elsewhere).
-                if (_moving) CancelMove("button up"); else _moveDown = false;
-                return;
-            }
+            // Once moving, the move timer follows the mouse: moving the window under the pointer
+            // makes Windows send synthetic moves whose button state is unreliable (a slow drag
+            // was taken for a release and the Dock jumped back).
+            if (_moving) { e.Handled = true; return; }
+            if (!e.GetCurrentPoint(_root).Properties.IsLeftButtonPressed) { _moveDown = false; return; }
             GetCursorPos(out var now);
-            if (!_moving)
-            {
-                var threshold = Math.Max(4, (int)Math.Round(6 * Scale));
-                if (Math.Abs(now.X - _moveAt.X) < threshold && Math.Abs(now.Y - _moveAt.Y) < threshold) return;
-                StartMove(e.Pointer);
-            }
-            if ((GetAsyncKeyState(0x1B /* VK_ESCAPE */) & 0x8000) != 0) { CancelMove("escape"); e.Handled = true; return; }
+            var threshold = Math.Max(4, (int)Math.Round(6 * Scale));
+            if (Math.Abs(now.X - _moveAt.X) < threshold && Math.Abs(now.Y - _moveAt.Y) < threshold) return;
+            StartMove(e.Pointer);
             FollowMove(now);
+            _moveLast = now;
             e.Handled = true;
         }
         catch (Exception ex) { App.LogCrash(ex); CancelMove("error"); }
@@ -882,6 +885,14 @@ public sealed class DockWindow : Window
         }
         finally { _moveStealing = false; }
         SetTopMost(true);
+        if (_moveTimer is null)
+        {
+            _moveTimer = DispatcherQueue.CreateTimer();
+            _moveTimer.Interval = TimeSpan.FromMilliseconds(15);
+            _moveTimer.IsRepeating = true;
+            _moveTimer.Tick += (_, _) => MoveTick();
+        }
+        _moveTimer.Start();
         App.DebugLayout($"dock: move started at {_moveAt.X},{_moveAt.Y} from {_mode} {_edge}");
     }
 
@@ -933,14 +944,42 @@ public sealed class DockWindow : Window
         Place(new PixelRect(now.X - gx, now.Y - gy, width, height));
     }
 
+    /// <summary>
+    /// While the Dock is moved: the real mouse, read directly (cursor position and the
+    /// physical button), every 15 ms. Slow or fast, it follows; the button going up drops it.
+    /// </summary>
+    private void MoveTick()
+    {
+        if (!_moving) { _moveTimer?.Stop(); return; }
+        try
+        {
+            if ((GetAsyncKeyState(0x1B /* VK_ESCAPE */) & 0x8000) != 0) { CancelMove("escape"); return; }
+            var button = GetSystemMetrics(23 /* SM_SWAPBUTTON */) != 0 ? 0x02 /* VK_RBUTTON */ : 0x01 /* VK_LBUTTON */;
+            if ((GetAsyncKeyState(button) & 0x8000) == 0) { FinishMove(); return; }
+            GetCursorPos(out var now);
+            if (now.X == _moveLast.X && now.Y == _moveLast.Y) return;
+            _moveLast = now;
+            FollowMove(now);
+        }
+        catch (Exception ex) { App.LogCrash(ex); CancelMove("error"); }
+    }
+
     private void OnRootReleased(object sender, PointerRoutedEventArgs e)
     {
         if (!_moveDown || e.Pointer.PointerId != _movePointerId) return;
-        _moveDown = false;
-        if (!_moving) return; // a plain click: the button handles it
+        if (!_moving) { _moveDown = false; return; } // a plain click: the button handles it
         e.Handled = true;
+        FinishMove();
+    }
+
+    /// <summary>The button went up while moving: dropped where the mouse is (once).</summary>
+    private void FinishMove()
+    {
+        if (!_moving) return;
         _moving = false;
-        try { _root.ReleasePointerCapture(e.Pointer); } catch (Exception) { }
+        _moveDown = false;
+        _moveTimer?.Stop();
+        try { _root.ReleasePointerCaptures(); } catch (Exception) { }
         try { DropMove(); }
         catch (Exception ex)
         {
@@ -980,10 +1019,9 @@ public sealed class DockWindow : Window
 
     private void OnRootCaptureLost(object sender, PointerRoutedEventArgs e)
     {
-        if (!_moving || _moveStealing || e.Pointer.PointerId != _movePointerId) return;
-        // A child's capture going away bubbles here too: only the Dock's own counts.
-        if (_root.PointerCaptures?.Any(p => p.PointerId == _movePointerId) == true) return;
-        CancelMove("capture lost");
+        // While moving, the move timer reads the mouse itself: a lost XAML capture (the window
+        // moved or was rebuilt under the pointer) does not end the move.
+        if (_moving || _moveStealing || e.Pointer.PointerId != _movePointerId) return;
     }
 
     /// <summary>Esc, a lost pointer or an error mid-drag: the Dock goes back to its saved place.</summary>
@@ -992,6 +1030,7 @@ public sealed class DockWindow : Window
         var was = _moving;
         _moveDown = false;
         _moving = false;
+        _moveTimer?.Stop();
         if (!was) return;
         try { _root.ReleasePointerCaptures(); } catch (Exception) { }
         App.DebugLayout($"dock: move cancelled ({why})");

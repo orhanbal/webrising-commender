@@ -1,5 +1,5 @@
 import {useCallback,useEffect,useMemo,useState} from "react";
-import {ScrollText} from "lucide-react";
+import {ScrollText} from "../components/icons";
 import {t as translate,useLocale,localizedDate} from "../i18n";
 import {api,type Account,type Device} from "../api";
 import {Alert,Badge,Button,Card,CardContent,EmptyState,Input,PageHeader,Skeleton} from "../components/ui";
