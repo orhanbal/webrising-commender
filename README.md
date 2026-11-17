@@ -2,7 +2,7 @@
 
 Secure, persistent remote computer control for AI clients through MCP.
 
-WECOMMANDER is a self-hostable control plane plus native device agent. It is designed for AI clients that need reliable terminal, filesystem, process and long-running task access without exposing an inbound port on the controlled machine.
+WECOMMANDER is a hosted control plane (wecommander.app) plus a native device agent and desktop apps. It is designed for AI clients that need reliable terminal, filesystem, process and long-running task access without exposing an inbound port on the controlled machine.
 
 > Pre-release software. The core is implemented and continuously tested, but production acceptance still requires a real deployment and device enrollment.
 
@@ -17,8 +17,7 @@ Typical remote MCP agents are useful while their relay and local process stay co
 - explicit approval for high-risk operations
 - filesystem allowlists enforced by the native agent
 - audit records with secret redaction
-- self-hosting with no paid service dependency
-- a path to SaaS without removing the self-hosted edition
+- SSH servers without an agent, reachable by AI clients on this computer through the desktop app (Hybrid Access, see [docs/HYBRID_ACCESS.md](docs/HYBRID_ACCESS.md))
 
 ## Architecture
 
@@ -84,7 +83,7 @@ The agent initiates the connection. Controlled devices do not need an inbound fi
 - bounded in-flight request concurrency and retention housekeeping
 - liveness/readiness endpoints
 
-### Self-hosted console
+### Web console
 - device enrollment code generation
 - online/offline device view
 - system information
@@ -124,24 +123,19 @@ The native filesystem policy is the final path boundary. Gateway requests cannot
 
 See [docs/QUICKSTART.md](docs/QUICKSTART.md).
 
-Minimal self-hosted flow:
+Use WECOMMANDER through wecommander.app: sign in, create a pairing code, download the agent and enroll the device.
 
-```bash
-cp .env.example .env
-# set CONTROL_API_KEY and APPROVAL_SIGNING_SECRET
-docker compose up -d --build
-```
-
-Then open the gateway console, create a pairing code, build/download the agent and enroll the device.
+Development note (not an offered edition): the gateway can be run locally for development and CI with Docker Compose (`cp .env.example .env`, set `CONTROL_API_KEY` and `APPROVAL_SIGNING_SECRET`, `docker compose up -d --build`). WECOMMANDER does not offer or support self-hosting.
 
 ## MCP
 
-Self-hosted endpoint:
+Remote endpoint (wecommander.app; OAuth or an API token):
 
 ```text
-POST https://YOUR-GATEWAY/mcp
-Authorization: Bearer CONTROL_API_KEY
+POST https://wecommander.app/mcp
 ```
+
+Local endpoint for AI clients on the same computer as the desktop app: `wecommander-core --mcp-stdio` (Settings → AI adds it to Claude Desktop, Claude Code, Cursor and Codex). See [docs/HYBRID_ACCESS.md](docs/HYBRID_ACCESS.md).
 
 Core methods:
 - `initialize`
@@ -177,7 +171,7 @@ Task state lives in the native agent process. PTY sessions follow the same princ
 - install scripts are explicit; no silent persistence installation
 - uninstall scripts are provided
 
-Read [docs/SECURITY.md](docs/SECURITY.md) before exposing a gateway publicly.
+Security model: [docs/SECURITY.md](docs/SECURITY.md).
 
 ## Project status
 
@@ -185,12 +179,7 @@ The canonical roadmap is [plans/WEBRISING_COMMENDER_MASTER_PLAN.md](plans/WEBRIS
 
 Current phase tracking is in [plans/PHASE_STATUS.md](plans/PHASE_STATUS.md).
 
-The product is being built in two compatible modes:
-
-- **Community / self-hosted** — free core control plane and agent
-- **Cloud / SaaS** — multi-user organizations, managed relay and commercial administration layers
-
-Core remote-control capabilities remain available to self-hosted users.
+WECOMMANDER is offered as a hosted service (wecommander.app) with Free, Pro and Team plans, together with the desktop apps and the agent. Self-hosting is not an offered edition; the Docker Compose setup in this repository exists for development and CI only.
 
 ## License
 

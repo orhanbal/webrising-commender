@@ -622,9 +622,11 @@ pub fn backup_of(data: &Data) -> Backup {
             .iter()
             .cloned()
             .map(|mut h| {
-                // A key file path or app key belongs to this computer.
+                // A key file path or app key belongs to this computer; AI
+                // access is switched on again by the person after a restore.
                 h.key_path = None;
                 h.key_id = None;
+                h.ai_access = None;
                 h
             })
             .collect(),
@@ -686,6 +688,8 @@ pub fn merge_backup(data: &mut Data, backup: Backup) -> Result<ImportSummary, St
         }
         h.key_path = None;
         h.key_id = None;
+        // A backup never exposes a server to AI clients by itself.
+        h.ai_access = None;
         h.group = clean_group(h.group);
         data.hosts.push(h);
         summary.hosts += 1;
@@ -765,6 +769,7 @@ mod tests {
             team: false,
             link: Default::default(),
             session_log: false,
+            ai_access: None,
         }
     }
 

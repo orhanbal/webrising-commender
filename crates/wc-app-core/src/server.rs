@@ -62,7 +62,7 @@ pub fn monitor_close(state: &Arc<AppState>, monitor_id: String) -> Result<(), St
 
 /// Runs the scripts with `sh` over the SSH connection (whatever the user's
 /// login shell is).
-struct Ssh(Arc<Connection>);
+pub(crate) struct Ssh(pub(crate) Arc<Connection>);
 
 impl Shell for Ssh {
     async fn run_script(&self, script: &str, secs: u64) -> Result<String, String> {

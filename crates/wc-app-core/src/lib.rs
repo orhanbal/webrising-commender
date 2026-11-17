@@ -11,6 +11,7 @@
 pub mod commands;
 pub mod exec;
 pub mod library;
+pub mod mcp;
 pub mod mosh;
 pub mod serial;
 pub mod server;
@@ -18,8 +19,10 @@ pub mod session_log;
 pub mod store;
 pub mod stream;
 pub mod sync;
+pub mod targets;
 pub mod team;
 pub mod telnet;
+pub mod time;
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -76,6 +79,7 @@ pub fn open(data_dir: &Path, keyring_service: &str, events: Arc<dyn EventSink>) 
         background: Background::default(),
         sync_pending: sync::Pending::default(),
         team_pending: team::TeamPending::default(),
+        mcp: mcp::Hub::new(data_dir),
         events,
     })
 }
@@ -114,6 +118,8 @@ pub struct AppState {
     pub sync_pending: sync::Pending,
     /// A22: the merged team library waiting for the server.
     pub team_pending: team::TeamPending,
+    /// Local MCP (Hybrid Access H2): AI clients, approvals, endpoint.
+    pub mcp: mcp::Hub,
     events: Arc<dyn EventSink>,
 }
 
@@ -144,7 +150,7 @@ pub fn app_info(state: &Arc<AppState>, version: &str) -> AppInfo {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct HostView {
     pub id: String,
@@ -171,6 +177,8 @@ pub struct HostView {
     pub serial: Option<store::SerialSettings>,
     /// Terminals of this host are written to the logs folder.
     pub session_log: bool,
+    /// Hybrid Access: AI access of this host (all off when never set).
+    pub ai_access: store::AiAccess,
 }
 
 /// What the host list shows under the name.
@@ -232,6 +240,7 @@ pub fn host_views(state: &AppState) -> Result<Vec<HostView>, String> {
             startup_command: h.startup_command.clone(),
             env: h.env.clone(),
             agent_forwarding: h.agent_forwarding,
+            ai_access: own.ai_access.clone().unwrap_or_default(),
         })
         .collect())
 }
@@ -275,6 +284,7 @@ pub fn add_host(
             team: false,
             link: Default::default(),
             session_log: false,
+            ai_access: None,
         });
         state.save(&data)?;
     }
@@ -333,6 +343,7 @@ pub fn import_ssh_config(state: &Arc<AppState>) -> Result<ImportResult, String> 
                 team: false,
                 link: Default::default(),
                 session_log: false,
+                ai_access: None,
             });
             added += 1;
         }

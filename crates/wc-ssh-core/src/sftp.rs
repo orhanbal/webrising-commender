@@ -26,6 +26,14 @@ pub struct Entry {
     pub permissions: String,
 }
 
+/// Result of [`Sftp::read_limited`].
+#[derive(Debug, PartialEq, Eq)]
+pub enum ReadLimit {
+    Read(Vec<u8>),
+    /// The file is larger than the limit (its size, or at least this many bytes).
+    TooLarge(u64),
+}
+
 pub struct Sftp {
     session: SftpSession,
 }
@@ -206,6 +214,58 @@ impl Sftp {
         }
         target.shutdown().await.map_err(io_err)?;
         Ok(done)
+    }
+
+    /// Metadata of `path` (links followed), as one [`Entry`].
+    pub async fn stat(&self, path: &str) -> Result<Entry, SshError> {
+        let meta = self.session.metadata(path).await.map_err(sftp_err)?;
+        let kind = match meta.file_type() {
+            t if t.is_dir() => "dir",
+            t if t.is_symlink() => "link",
+            t if t.is_file() => "file",
+            _ => "other",
+        };
+        let trimmed = path.trim_end_matches('/');
+        let name = trimmed.rsplit('/').next().unwrap_or("").to_owned();
+        Ok(Entry {
+            name: if name.is_empty() { "/".into() } else { name },
+            path: path.to_owned(),
+            kind,
+            size: meta.len(),
+            modified: meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map(|d| d.as_secs()),
+            permissions: mode_string(meta.permissions.unwrap_or(0)),
+        })
+    }
+
+    /// The whole content of the regular file `path`, or
+    /// [`ReadLimit::TooLarge`] when it is longer than `limit` bytes (nothing
+    /// past `limit + 1` bytes is read).
+    pub async fn read_limited(&self, path: &str, limit: usize) -> Result<ReadLimit, SshError> {
+        let meta = self.session.metadata(path).await.map_err(sftp_err)?;
+        if !meta.file_type().is_file() {
+            return Err(SshError::Protocol("sftp: not a regular file".into()));
+        }
+        if meta.len() > limit as u64 {
+            return Ok(ReadLimit::TooLarge(meta.len()));
+        }
+        let mut file = self.session.open(path).await.map_err(sftp_err)?;
+        let mut bytes = Vec::with_capacity((meta.len() as usize).min(limit));
+        let mut buf = vec![0u8; CHUNK.min(limit + 1)];
+        loop {
+            let n = file.read(&mut buf).await.map_err(io_err)?;
+            if n == 0 {
+                break;
+            }
+            bytes.extend_from_slice(&buf[..n]);
+            if bytes.len() > limit {
+                return Ok(ReadLimit::TooLarge(bytes.len() as u64));
+            }
+        }
+        Ok(ReadLimit::Read(bytes))
     }
 
     pub async fn mkdir(&self, path: &str) -> Result<(), SshError> {
