@@ -1,0 +1,118 @@
+[
+  {
+    "name": "targets_list",
+    "title": "List targets",
+    "description": "The servers the person made visible to AI clients on this computer (WECOMMANDER → server → AI access). Each has target_id, name, kind (ssh), online, capabilities {exec, read, write, terminal, persistent_tasks, path_policy} and preset (readonly, approval, timed). SSH targets have path_policy \"none\": a command can reach everything the SSH user can. Pass target to describe one.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "target": { "type": "string", "description": "A target_id (optional)." }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": { "title": "List targets", "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
+  },
+  {
+    "name": "process_exec",
+    "title": "Run a command",
+    "description": "Run a shell command on the target over SSH (no terminal, stdin closed). HIGH risk: unless the target is in a timed autonomous period, the person approves this exact command in the WECOMMANDER app first (the call waits up to 5 minutes). Refused on readonly targets, and sudo/su/doas are refused unless the person allowed sudoers. Output is stdout and stderr interleaved, at most the last 64 KiB, with passwords, keys and tokens masked.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "target": { "type": "string", "description": "target_id from targets_list (may be omitted when there is exactly one target)." },
+        "command": { "type": "string" },
+        "cwd": { "type": "string", "description": "Folder on the server to run in." },
+        "timeout_ms": { "type": "integer", "description": "1000-600000, default 30000." }
+      },
+      "required": ["command"],
+      "additionalProperties": false
+    },
+    "annotations": { "title": "Run a command", "readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": false }
+  },
+  {
+    "name": "fs_list",
+    "title": "List a folder",
+    "description": "List a folder on the target over SFTP (at most 1000 entries). \"~\" or an empty path is the SSH user's home folder.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "target": { "type": "string" },
+        "path": { "type": "string" }
+      },
+      "required": ["path"],
+      "additionalProperties": false
+    },
+    "annotations": { "title": "List a folder", "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
+  },
+  {
+    "name": "fs_read",
+    "title": "Read a file",
+    "description": "Read a file on the target over SFTP as UTF-8 text or base64 (max_bytes default 1 MiB, at most 4 MiB; larger files are refused).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "target": { "type": "string" },
+        "path": { "type": "string" },
+        "max_bytes": { "type": "integer" }
+      },
+      "required": ["path"],
+      "additionalProperties": false
+    },
+    "annotations": { "title": "Read a file", "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
+  },
+  {
+    "name": "fs_stat",
+    "title": "File information",
+    "description": "Metadata of a file or folder on the target over SFTP: kind, size, modified time, permissions.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "target": { "type": "string" },
+        "path": { "type": "string" }
+      },
+      "required": ["path"],
+      "additionalProperties": false
+    },
+    "annotations": { "title": "File information", "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
+  },
+  {
+    "name": "server_overview",
+    "title": "Server overview",
+    "description": "Linux server overview of the target, read-only: hostname, OS, kernel, uptime, load, CPU %, memory and swap, disks, whether a reboot is required, pending updates, process and zombie counts, and the SSH user's privilege.",
+    "inputSchema": {
+      "type": "object",
+      "properties": { "target": { "type": "string" } },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": { "title": "Server overview", "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
+  },
+  {
+    "name": "server_disk_usage",
+    "title": "Disk usage",
+    "description": "What fills a Linux disk on the target, read-only: the 40 largest folders directly inside path (default /), sizes in KB, never crossing into another disk, plus Docker's own usage at /.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "target": { "type": "string" },
+        "path": { "type": "string", "description": "Absolute folder (default /)." }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": { "title": "Disk usage", "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
+  },
+  {
+    "name": "server_processes",
+    "title": "Server processes",
+    "description": "Linux processes of the target, read-only: every process (pid, parent, user, state, CPU, memory, run time, command; secrets in command lines masked) and the zombie processes grouped by parent.",
+    "inputSchema": {
+      "type": "object",
+      "properties": { "target": { "type": "string" } },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": { "title": "Server processes", "readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false }
+  }
+]

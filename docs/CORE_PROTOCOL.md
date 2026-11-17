@@ -6,8 +6,15 @@ terminals, SFTP, jump hosts, tunnels) as a helper process. The native apps
 Linux app links the same code (`crates/wc-app-core`) directly.
 
 ```bash
-wecommander-core --data-dir <app data folder> [--keyring-service app.wecommander]
+wecommander-core --data-dir <app data folder> [--keyring-service app.wecommander] [--no-mcp] [--mcp-endpoint <path>]
+wecommander-core --mcp-stdio [--mcp-endpoint <path>]   # what AI clients start (Hybrid Access H2)
 ```
+
+The running core also serves local MCP on a per-user endpoint (see
+[Local MCP](#local-mcp-hybrid-access-h2)); `--no-mcp` turns that off and
+`--mcp-endpoint` moves it (tests). `--mcp-stdio` is the bridge AI clients
+start: it opens no data folder, keyring or SSH connection and only moves MCP
+lines between stdio and the endpoint.
 
 One JSON object per line, UTF-8, in both directions.
 
@@ -105,7 +112,16 @@ connection.
 | `library.export` | – | `{json}`: hosts (groups, tunnels, terminal options), snippets, trusted host keys; no passwords, no private keys, no key files |
 | `library.import` | `json` | `{hosts, snippets, knownHosts, skipped}`; only adds what is new |
 
-`Host` = `{id, label, target, authKind, savedSecret, keyPath, jumpId, trustedKey}`.
+| `hosts.setAiAccess` | `id, aiAccess: {local, remote, connector ("this-computer"\|id), preset ("readonly"\|"approval"\|"timed"), timedUntil (RFC 3339\|null), sudo ("never"\|"sudoers")}` (missing fields: defaults, all off) | `[Host]`. Switching `local`/`remote` on is refused unless the host is SSH (`not_ssh:`; Telnet, serial and Mosh never), its host key is already trusted (`host_key_untrusted:`; never trust-on-first-use) and it logs in without asking (`needs_credential:`: a saved password, a key that opens without a typed passphrase, or, for a host without a key of its own and without a jump host, this computer's unencrypted `~/.ssh` keys or SSH agent; a missing key file or a key needing a passphrase is refused). `remote: true` answers `remote_not_supported:` until phase H3. `timed` needs `timedUntil` in the future and at most 8 h ahead (`invalid_timed_until:`); other presets drop it. Also `invalid_preset:`, `invalid_sudo:`, `invalid_connector:`, `host_not_found:`. Turning access off always works; the default is not stored. Host has `aiAccess` (always present, all off when never set). Synced with the personal E2E library (whole host, same three-way merge as other host options); never part of the team library or a backup file (imports arrive with AI access off) |
+| `mcp.status` | – | `{enabled, remoteSupported (false until H3), endpoint, error?, bridgeCommand: [exe, "--mcp-stdio", ...], clients: [Client], targets}`; `enabled` is true when this core listens on the endpoint; `error` says why not (another core owns it, `--no-mcp`, folder not private) |
+| `mcp.clients` | – | `[Client]` = `[{id, name, version, allowed, decided, firstSeen, lastSeen}]` (times RFC 3339). A client is identified by the `clientInfo` name it sent in `initialize` (self-declared); `version` is the last one it reported and is updated on each connection, a new version does not ask again |
+| `mcp.allowClient` | `id, allow` | `[Client]`; remembered in `<data dir>/mcp-clients.json`. A denied client is refused at once (`client_denied`) until forgotten. Unknown id: `unknown_client:` |
+| `mcp.forgetClient` | `id` | `[Client]`; the client is asked about again on its next connection |
+| `mcp.configFor` | `client` (`claude-desktop`, `claude-code`, `cursor`, `codex`) | `{path, before, after, changed}`: the client's MCP config and what `mcp.writeConfig` would make of it (nothing written). Claude Desktop `%APPDATA%\Claude\claude_desktop_config.json` / `~/Library/Application Support/Claude/claude_desktop_config.json` / `~/.config/Claude/…`; Claude Code `~/.claude.json` (user scope, `{type: "stdio", command, args, env}`); Cursor `~/.cursor/mcp.json`; Codex `$CODEX_HOME/config.toml` or `~/.codex/config.toml` (`[mcp_servers.wecommander]`). The entry is `mcpServers.wecommander = {command: bridgeCommand[0], args: bridgeCommand[1..]}`; every other entry and setting stays (JSON keeps its key order and the exact text of every other value, so the diff shows only our entry; TOML keeps its comments and layout). Errors: `unknown_client:`, `config_unreadable:`, `config_invalid:` (not valid JSON/TOML, or `mcpServers` not an object: the file is never overwritten) |
+| `mcp.writeConfig` | `client, before?` | `{path, backup, changed}`: writes the merged file atomically (temp file + rename) after copying the old one to `<file>.bak`. With `before` (the text `mcp.configFor` returned and the person saw) a file changed meanwhile is refused with `config_changed:`. `config_write_failed:` on I/O errors |
+| `mcp.decide` | `approvalId, approve` | `null`; the person's answer to `mcp-approval`. Errors: `unknown_approval:`, `approval_expired:`, `approval_used:`, `approval_decided:` |
+
+`Host` = `{id, label, target, authKind, savedSecret, keyPath, jumpId, trustedKey, aiAccess, ...}`.
 
 `auth` = `{kind, secret, passphrase, remember, keyPath}`. An empty `secret` uses
 the saved credential (keyring, or the host's key file). Show `hostKeyUnknown`
@@ -122,11 +138,67 @@ only after they approve.
 | `transfer-progress` | `{transferId, done, total}` |
 | `tunnels-changed` | – |
 | `changed` | – hosts or saved tunnels changed (refresh lists and tray menus) |
+| `mcp-client-request` | `{id, name, version}`: an AI client that was never answered connected (sent at its `initialize`, and again when one of its calls starts waiting). Its `tools/call` requests wait up to 2 minutes for `mcp.allowClient`, then fail with `client_not_allowed`. The same `id` can arrive more than once: show one prompt per id |
+| `mcp-approval` | `{approvalId, clientName, clientId, targetId, targetLabel, tool, summary, command, cwd, timeoutMs, expiresAt}` (`expiresAt` RFC 3339, always present, 5 minutes): a `process_exec` needs the person. Show the exact `command` and server; answer with `mcp.decide`. One approval covers exactly that call (client, server, command, folder, timeout) once |
+| `mcp-config-stale` | `{client, path, command}`: sent once at start (unless `--no-mcp`) for each known AI client (`claude-desktop`, `claude-code`, `cursor`, `codex`) whose config at `path` has a `wecommander` entry starting a `command` that no longer exists (a bare name found through PATH is not checked). Nothing is rewritten: offer `mcp.configFor` / `mcp.writeConfig` |
+| `mcp-activity` | `{clientName, targetId, targetLabel, tool, outcome, at}`: every local MCP call as it ends (`outcome` `success` or the error code); `at` RFC 3339 |
 
 Errors are short English texts with stable prefixes the apps map to their own
 language (`no saved credential`, `authentication failed`, `key file `,
 `jump host `, `did not start SFTP`, `cannot listen on`).
 
+## Local MCP (Hybrid Access H2)
+
+Plan and contract: [HYBRID_ACCESS.md](HYBRID_ACCESS.md). AI clients on this
+computer start `wecommander-core --mcp-stdio`; the bridge connects to the
+running core's endpoint:
+
+| OS | Endpoint |
+|---|---|
+| Windows | named pipe `\\.\pipe\wecommander-mcp-<user SID>`, DACL: current user only, remote clients rejected, first instance owns the name |
+| macOS | `~/Library/Application Support/app.wecommander/mcp.sock` |
+| Linux | `$XDG_RUNTIME_DIR/wecommander-mcp.sock` (else `~/.wecommander/mcp.sock`) |
+
+Unix sockets are 0600 in a 0700 folder owned by the user, one core holds the
+lock file next to the socket, and each connection's peer uid is checked.
+Without a running core the bridge answers `initialize` and `tools/list`, and
+every `tools/call` with `wecommander_not_running: WECOMMANDER'ı aç; yerel
+yapay zekâ erişimi uygulama açıkken çalışır. (Open WECOMMANDER: …)`; it tries
+the endpoint again on each call.
+
+MCP: `initialize` (serverInfo `{name: "WECOMMANDER", title: "WECOMMANDER"}`),
+`ping`, `tools/list`, `tools/call`, `notifications/cancelled`. Tools (gateway
+names and arguments, each with an optional `target`; `device_id` is accepted
+as an alias, and with exactly one exposed host `target` may be omitted):
+`targets_list {target?}` → `{targets: [{target_id, name, kind: "ssh", online,
+capabilities: {exec, read, write, terminal, persistent_tasks, path_policy:
+"none"}, preset, timed_until?, sudo}]}` (only hosts with `aiAccess.local`;
+never the address, user or credential); `fs_list {path}` (≤ 1000 entries;
+`~` = home), `fs_read {path, max_bytes}` (1 MiB default, 4 MiB cap),
+`fs_stat {path}` over SFTP; `server_overview`, `server_disk_usage {path}`,
+`server_processes` (the fixed `wc-server` scripts); `process_exec {command,
+cwd, timeout_ms}` (1–600 s, default 30 s; last 64 KiB of output; secrets
+masked). `list_directory`, `read_file`, `get_file_info` are accepted as
+aliases. Tool errors are `isError` results whose text reads `code: sentence`
+and whose `structuredContent` is `{error: code, message}`.
+
+Tool error codes: `target_not_exposed` (unknown or not exposed, same answer),
+`target_required`, `host_key_untrusted`, `readonly_preset`,
+`sudo_not_allowed`, `invalid_command`, `invalid_cwd`, `approval_denied`,
+`approval_expired`, `client_not_allowed`, `client_denied`,
+`unsupported_for_target`, `unknown_tool`, `needs_credential`,
+`host_key_unknown`, `host_key_changed`, `connect_failed`, `exec_failed`,
+`sftp_failed`, `fs_error`, `file_too_large`, `server_error`,
+`wecommander_not_running` (bridge). Reserved for later phases:
+`connector_offline` (H3).
+
+Local audit: `<data dir>/mcp-audit.jsonl`, one JSON object per call
+`{time, origin: "local-mcp", client, clientVersion, tool, target,
+targetLabel, risk, outcome}`; never file contents, command text or output.
+
 The end-to-end test `crates/wc-core-service/tests/sidecar.rs` drives the real
 binary over this protocol against sshd (host key prompt, terminal, SFTP,
-forward, exit status).
+forward, exit status). `crates/wc-core-service/tests/mcp.rs` drives the
+local MCP through the real bridge process against sshd (not running, allow
+list, targets, SFTP reads, approval, redaction, sudo/readonly/not-exposed
+refusals, TOFU refused, audit, app closing).

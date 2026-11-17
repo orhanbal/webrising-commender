@@ -1,8 +1,10 @@
 import AppKit
 import CenterCore
 
-/// `--snapshot`: opens every page of the main window (and the panel), saves
-/// a PNG of each and a text list of what each page shows, then keeps running.
+/// `--snapshot`: opens every page of the main window, the panel, the quick
+/// panel (the server monitor's panel with its tiles), the Task Manager and the
+/// server timers page, saves a PNG of each and a text list of what each shows,
+/// then keeps running.
 /// The app draws its own windows, so no Screen Recording permission is needed.
 /// Used by the macOS CI and to look at the app on a person's Mac.
 @MainActor
@@ -17,10 +19,11 @@ enum Snapshots {
             .appendingPathComponent("Documents/WECOMMANDER/snapshots", isDirectory: true)
     }
 
-    static let pages = ["page:hosts", "page:keys", "page:identities", "page:snippets", "page:tunnels",
-                        "page:known", "page:history", "page:settings"]
+    static let pages = ["page:hosts", "page:terminals", "page:keys", "page:identities", "page:snippets", "page:tunnels",
+                        "page:known", "page:history", "page:scheduled", "page:settings"]
 
-    static func run(servers: ServersModel, showServers: @escaping () -> NSWindow?, panel: @escaping () -> NSView?) {
+    static func run(servers: ServersModel, showServers: @escaping () -> NSWindow?, panel: @escaping () -> NSView?,
+                    quick: @escaping () -> NSView?, windows: [(String, () -> NSWindow?)]) {
         Task { @MainActor in
             let dir = directory
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -39,6 +42,21 @@ enum Snapshots {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 let ok = save(view, to: dir.appendingPathComponent("\(L.current)-panel.png"))
                 report.append("panel: image=\(ok) texts=\(texts(view).joined(separator: " | "))")
+            }
+            if let view = quick() {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                let ok = save(view, to: dir.appendingPathComponent("\(L.current)-quick.png"))
+                report.append("quick: image=\(ok) texts=\(texts(view).joined(separator: " | "))")
+            } else {
+                report.append("quick: image=false")
+            }
+            for (name, open) in windows {
+                guard let window = open() else { report.append("\(name): image=false"); continue }
+                // Two readings (the Task Manager's CPU) or the core's answer (the server page).
+                try? await Task.sleep(nanoseconds: 4_500_000_000)
+                let ok = save(window.contentView, to: dir.appendingPathComponent("\(L.current)-\(name).png"))
+                report.append("\(name): image=\(ok) texts=\(texts(window.contentView).joined(separator: " | "))")
+                window.close()
             }
             servers.selection = pages[0]
             try? report.joined(separator: "\n").appending("\n")

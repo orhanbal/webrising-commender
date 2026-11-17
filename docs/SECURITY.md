@@ -293,3 +293,63 @@ the macOS Keychain (a 0600 file on Linux). Revoke a center from Approvals →
 Management Centers, or "Bağlantıyı kes" in the app; a disabled user's centers
 stop working at once.
 
+
+## Hybrid Access: SSH targets for AI clients (local MCP, H2)
+
+Plan and contract: [HYBRID_ACCESS.md](HYBRID_ACCESS.md). AI clients on the
+person's computer (Claude Desktop, Claude Code, Cursor, Codex) can use saved
+SSH hosts through the running desktop app (`wecommander-core`), without an
+agent on the server. Commands and output go from this computer straight to
+the server; nothing passes through wecommander.app.
+
+What it guarantees:
+
+- **Off unless the person turns it on, per host.** `aiAccess` is absent on
+  existing hosts (= off). Only `hosts.setAiAccess` (the app) changes it; no
+  MCP tool can change AI access, presets or connectors. Backups and the team
+  library never carry it; the personal E2E sync does.
+- **Preconditions:** SSH only (not Telnet, serial or Mosh); the host key must
+  already be trusted (never trust-on-first-use for AI, also re-checked on
+  every call; a changed key is refused); a silent login only (saved
+  password, a key that opens without a typed passphrase, or this computer's
+  own keys/agent). Nothing is ever prompted on behalf of an AI.
+- **Local endpoint for this user only:** a named pipe whose DACL grants only
+  the current user's SID (remote clients rejected), or a 0600 Unix socket in
+  a 0700 folder with a peer-uid check. One core owns it. The bridge
+  (`--mcp-stdio`) holds no hosts, keys or passwords; if the app is closed it
+  only answers `wecommander_not_running`.
+- **Client allow-list:** each client (by its `clientInfo` name; a new version is not asked again)
+  is shown once in the app and must be allowed; decisions are remembered and
+  can be revoked. The name is self-declared, so this is consent, not
+  authentication: the endpoint ACL and the per-call approvals are the
+  boundary.
+- **Approvals:** `process_exec` needs a one-time approval in the app, shown
+  with the exact command and server, bound by a SHA-256 hash to (client,
+  target, exact command, folder, timeout), used once, valid 5 minutes. A
+  changed byte means a new approval; replay is refused. `readonly` refuses
+  commands outright; `timed` (≤ 8 h) skips approvals until `timedUntil`, then
+  behaves as `approval`. Calls stop when the client disconnects or cancels,
+  so an approved command never runs after the AI gave up (the approval stays
+  usable once for the identical retry).
+- **Output redaction** (same patterns as the agent) on command output and
+  process lists; output is capped to the last 64 KiB, file reads to 4 MiB.
+- **Audit:** `<data dir>/mcp-audit.jsonl` (0600) records time, client, tool,
+  target, risk and outcome for every call, never command text, output or
+  file contents; `mcp-activity` events feed the in-app list.
+
+What it does **not** guarantee:
+
+- **No folder boundary on SSH** (`path_policy: "none"`): a command, and the
+  SFTP read tools, reach everything the SSH user can. For a tighter limit
+  install the agent (allowed roots are enforced there) or use a separate SSH
+  user with only the rights needed.
+- **The sudo guard is a guard, not a sandbox.** With `sudo: "never"`, commands
+  containing the words `sudo`, `su`, `doas`, `pkexec` or `run0` are refused;
+  a shell can still build such a word at run time. The real limit is the SSH
+  user's rights and the server's sudoers. WECOMMANDER never stores or passes
+  a sudo password.
+- Redaction is best effort; an approved command can still print a secret in
+  a form the patterns do not know.
+- Any program running as the same user on this computer can reach the
+  endpoint and claim any client name; it still needs the allow-list decision
+  and, for commands, the person's approval.

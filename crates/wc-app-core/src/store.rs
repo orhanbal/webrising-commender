@@ -53,6 +53,58 @@ pub struct SavedHost {
     /// Keep what this host's terminals show in a text file (logs folder).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub session_log: bool,
+    /// Hybrid Access (docs/HYBRID_ACCESS.md): which AI clients may use this
+    /// host. Absent = all off; old files load unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai_access: Option<AiAccess>,
+}
+
+/// AI access of one SSH host. Only the person changes it (`hosts.setAiAccess`);
+/// no MCP tool can.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiAccess {
+    /// AI clients on this computer (local MCP).
+    #[serde(default)]
+    pub local: bool,
+    /// AI clients through wecommander.app (remote MCP, phase H3).
+    #[serde(default)]
+    pub remote: bool,
+    /// "this-computer" or a connector device id (remote only).
+    #[serde(default = "this_computer")]
+    pub connector: String,
+    /// "readonly", "approval" or "timed".
+    #[serde(default = "approval")]
+    pub preset: String,
+    /// RFC 3339; with preset "timed", no approvals until then.
+    #[serde(default)]
+    pub timed_until: Option<String>,
+    /// "never" or "sudoers".
+    #[serde(default = "never")]
+    pub sudo: String,
+}
+
+impl Default for AiAccess {
+    fn default() -> Self {
+        Self {
+            local: false,
+            remote: false,
+            connector: this_computer(),
+            preset: approval(),
+            timed_until: None,
+            sudo: never(),
+        }
+    }
+}
+
+fn this_computer() -> String {
+    "this-computer".into()
+}
+fn approval() -> String {
+    "approval".into()
+}
+fn never() -> String {
+    "never".into()
 }
 
 /// The connection kind of a host: SSH (empty), "telnet", "serial" or "mosh".
@@ -288,6 +340,7 @@ mod tests {
             team: false,
             link: Default::default(),
             session_log: false,
+            ai_access: None,
         });
         data.known_hosts
             .insert("srv.example.com:22".into(), "SHA256:x".into());

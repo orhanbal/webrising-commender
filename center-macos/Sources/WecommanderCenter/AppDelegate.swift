@@ -24,6 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var monitorItem: NSStatusItem?
     private let monitorPopover = NSPopover()
     private lazy var messages = MessageCenter(app: model)
+    /// WECOMMANDER's scheduled tasks: the main window's page and the runner for this Mac's SSH hosts.
+    private lazy var scheduled = ScheduledTasksModel(app: model, servers: servers)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -53,6 +55,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             return (self.model.gateway, token)
         }
         servers.startLibrarySync()
+        servers.scheduled = scheduled
+        scheduled.start()
         monitorPopover.behavior = .transient
         monitorPopover.animates = true
         monitorPopover.contentViewController = monitorController()
@@ -68,9 +72,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         // Opened by the person: the main window (hosts and terminals); not
         // signed in yet: the sign-in panel. Started at login: menu bar only.
         if Snapshots.requested {
+            let servers = self.servers
             Snapshots.run(servers: servers,
                           showServers: { [weak self] in self?.showServers(); return self?.serversWindow },
-                          panel: { [weak self] in self?.showPanel(); return self?.popover.contentViewController?.view })
+                          panel: { [weak self] in self?.showPanel(); return self?.popover.contentViewController?.view },
+                          quick: { [weak self] in self?.showQuickPanel(); return self?.monitorPopover.contentViewController?.view },
+                          windows: [
+                              ("taskmanager", { TaskManagerWindows.show() }),
+                              ("server-timers", { ServerWindows.show(servers, sessionId: "snapshot", label: "WECOMMANDER", page: .timers) }),
+                          ])
         } else if model.phase != .signedIn { showPanel() }
         else if !CommandLine.arguments.contains("--hidden") && !Self.launchedAtLogin { showServers() }
     }
@@ -89,6 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        scheduled.stop()
         monitor.stop()
         servers.stop()
         model.stopEmbeddedAgent()
@@ -200,9 +211,82 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     private func monitorController() -> NSViewController {
         NSHostingController(rootView: MonitorView(
-            monitor: monitor, servers: servers,
+            monitor: monitor, servers: servers, app: model,
             openTerminal: { [weak self] host in self?.monitorPopover.performClose(nil); self?.showServers(); self?.servers.open(host) },
-            openServers: { [weak self] in self?.monitorPopover.performClose(nil); self?.showServers() }))
+            actions: quickActions()))
+    }
+
+    // MARK: quick panel (the menu bar is the Mac's Dock)
+
+    /// What the quick tiles open; each closes the panel first.
+    private func quickActions() -> QuickActions {
+        var a = QuickActions()
+        a.servers = { [weak self] in self?.quick { $0.openPage(ServersView.hostsPage) } }
+        a.terminals = { [weak self] in self?.quick { $0.openTerminals() } }
+        a.files = { [weak self] in self?.quick { $0.openFiles() } }
+        a.taskManager = { [weak self] in self?.quick { _ in TaskManagerWindows.show() } }
+        a.scheduled = { [weak self] in self?.quick { $0.openPage(ServersView.scheduledPage) } }
+        a.timers = { [weak self] in self?.quick { $0.openServerSection(.timers) } }
+        a.disk = { [weak self] in self?.quick { $0.openServerSection(.disk) } }
+        a.approvals = { [weak self] in self?.quick { $0.showPanel() } }
+        a.settings = { [weak self] in self?.quick { $0.openPage(ServersView.settingsPage) } }
+        a.openMain = { [weak self] in self?.quick { $0.showServers() } }
+        return a
+    }
+
+    private func quick(_ open: (AppDelegate) -> Void) {
+        monitorPopover.performClose(nil)
+        open(self)
+    }
+
+    /// The server monitor's panel with the quick tiles, under its own item (or the main one).
+    func showQuickPanel() {
+        guard let button = monitorItem?.button ?? statusItem.button else { return }
+        if popover.isShown { popover.performClose(nil) }
+        if !monitorPopover.isShown {
+            monitorPopover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        monitorPopover.contentViewController?.view.window?.makeKey()
+    }
+
+    /// A page of the main window.
+    func openPage(_ page: String) {
+        servers.selection = page
+        showServers()
+    }
+
+    /// The newest terminal, or the terminals page when none is open.
+    func openTerminals() {
+        servers.selection = servers.sessions.last?.id ?? ServersView.terminalsPage
+        showServers()
+    }
+
+    /// The file manager next to an open SSH terminal.
+    func openFiles() {
+        if let session = servers.liveSshSession {
+            servers.selection = session.id
+            servers.showFiles = true
+            showServers()
+        } else {
+            servers.selection = ServersView.hostsPage
+            showServers()
+            servers.notice = L.t("Dosya yöneticisi açık bir terminalin bağlantısını kullanır: önce bir sunucuya bağlan.")
+        }
+    }
+
+    /// A server management page for a watched server (its monitor connection) or an open terminal.
+    func openServerSection(_ page: ServerManagementModel.Page) {
+        if let watched = monitor.servers.first(where: { $0.live }), let id = watched.monitorId {
+            ServerWindows.show(servers, sessionId: id, label: watched.label, page: page)
+            return
+        }
+        if let session = servers.liveSshSession {
+            ServerWindows.show(servers, session: session, page: page)
+            return
+        }
+        model.notifier.showPlain("WECOMMANDER", L.t("İzlenen sunucu yok: Sunucularım panelinden bir sunucu ekle."))
+        showQuickPanel()
     }
 
     /// "● 42%" next to the clock, coloured by the worst server; hidden when nothing is watched.
@@ -243,6 +327,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         let signedIn = model.phase == .signedIn
         menu.addItem(item(L.t("Yönetim Merkezini aç"), #selector(menuOpen)))
         menu.addItem(item(L.t("WECOMMANDER'ı aç"), #selector(menuServers), key: "s"))
+        menu.addItem(.separator())
+        // The same entries as the quick panel (the Windows Dock).
+        menu.addItem(item(L.t("Sunucularım"), #selector(menuQuickPanel)))
+        menu.addItem(item(L.t("Terminaller"), #selector(menuTerminals)))
+        menu.addItem(item(L.t("Dosyalar"), #selector(menuFiles)))
+        menu.addItem(item(L.t("Görev Yöneticisi"), #selector(menuTaskManager)))
+        menu.addItem(item(L.t("Zamanlanmış görevler"), #selector(menuScheduled)))
+        menu.addItem(item(L.t("Sunucu zamanlayıcıları"), #selector(menuServerTimers)))
+        menu.addItem(item(L.t("Disk ve temizlik"), #selector(menuDisk)))
+        menu.addItem(item(L.t("Onaylar"), #selector(menuOpen)))
+        menu.addItem(item(L.t("Ayarlar"), #selector(menuSettings)))
+        menu.addItem(.separator())
         let connectMenu = NSMenu()
         for host in servers.hosts {
             let entry = item(host.label, #selector(menuConnectHost(_:)))
@@ -303,6 +399,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     @objc private func menuOpen() { showPanel() }
     @objc private func menuServers() { showServers() }
+    @objc private func menuQuickPanel() { showQuickPanel() }
+    @objc private func menuTerminals() { openTerminals() }
+    @objc private func menuFiles() { openFiles() }
+    @objc private func menuTaskManager() { TaskManagerWindows.show() }
+    @objc private func menuScheduled() { openPage(ServersView.scheduledPage) }
+    @objc private func menuServerTimers() { openServerSection(.timers) }
+    @objc private func menuDisk() { openServerSection(.disk) }
+    @objc private func menuSettings() { openPage(ServersView.settingsPage) }
 
     @objc private func menuConnectHost(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String, let host = servers.hosts.first(where: { $0.id == id }) else { return }

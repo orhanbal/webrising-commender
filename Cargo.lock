@@ -1879,6 +1879,8 @@ checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
 dependencies = [
  "equivalent",
  "hashbrown 0.17.1",
+ "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -4054,6 +4056,7 @@ dependencies = [
  "indexmap",
  "toml_datetime",
  "toml_parser",
+ "toml_writer",
  "winnow",
 ]
 
@@ -4065,6 +4068,12 @@ checksum = "baa693a8032d7e1cada7d0041e96126df243179ff061456783ac7f12bda4744c"
 dependencies = [
  "winnow",
 ]
+
+[[package]]
+name = "toml_writer"
+version = "1.2.0+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "009dbb7700f11c55ef83aebbe4c0e9cf1f1ac0844bd8d6f00dc38f302026e13a"
 
 [[package]]
 name = "tower"
@@ -4473,18 +4482,23 @@ dependencies = [
  "curve25519-dalek",
  "flate2",
  "getrandom 0.3.4",
+ "indexmap",
+ "libc",
  "ocb3",
  "rand 0.9.5",
+ "regex",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "tokio",
  "tokio-serial",
+ "toml_edit",
  "uuid",
  "vt100",
  "wc-server",
  "wc-ssh-core",
  "wc-vault",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

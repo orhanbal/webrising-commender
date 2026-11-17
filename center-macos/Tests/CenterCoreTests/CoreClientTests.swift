@@ -24,6 +24,19 @@ final class CoreClientTests: XCTestCase {
         XCTAssertEqual(listed.first?.label, "Prod web")
         let tunnels = try await core.call("tunnels.saved", as: [SavedTunnel].self)
         XCTAssertEqual(tunnels, [])
+        // hosts.exec (scheduled tasks): its errors start with a code the app turns into a clear text.
+        do {
+            _ = try await core.call("hosts.exec", ["hostId": "no-such-host", "command": "uptime", "timeoutSec": 30])
+            XCTFail("expected host_not_found")
+        } catch CoreClient.Failure.core(let raw) {
+            XCTAssertEqual(HostExecText.split(raw).code, "host_not_found")
+        }
+        do {
+            _ = try await core.call("hosts.exec", ["hostId": listed[0].id, "command": "", "timeoutSec": 30])
+            XCTFail("expected invalid_command")
+        } catch CoreClient.Failure.core(let raw) {
+            XCTAssertEqual(HostExecText.split(raw).code, "invalid_command")
+        }
         do {
             _ = try await core.call("no.such.method")
             XCTFail("expected an error")

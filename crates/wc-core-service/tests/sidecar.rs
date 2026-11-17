@@ -133,7 +133,7 @@ fn native_app_flow_over_json_lines() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_wecommander-core"))
         .args(["--data-dir"])
         .arg(dir.join("data"))
-        .args(["--keyring-service", "app.wecommander.test"])
+        .args(["--keyring-service", "app.wecommander.test", "--no-mcp"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()

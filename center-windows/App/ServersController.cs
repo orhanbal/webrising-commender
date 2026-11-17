@@ -96,6 +96,11 @@ public sealed partial class ServersController : IDisposable
             case "tunnels-changed":
                 _ = Reload();
                 break;
+            case "mcp-client-request":
+            case "mcp-approval":
+            case "mcp-activity":
+                OnMcpEvent(name, data);
+                break;
         }
     }
 

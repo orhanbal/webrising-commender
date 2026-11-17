@@ -3,12 +3,14 @@ import CenterCore
 import SwiftUI
 
 /// The menu bar server monitor's panel: each watched server with live
-/// CPU, memory, disk and network, and a CPU history line.
+/// CPU, memory, disk and network, and a CPU history line; then the quick
+/// tiles of the Windows Dock's quick panel.
 struct MonitorView: View {
     @ObservedObject var monitor: ServerMonitor
     @ObservedObject var servers: ServersModel
+    @ObservedObject var app: AppModel
     var openTerminal: (CoreHost) -> Void
-    var openServers: () -> Void
+    var actions: QuickActions
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -31,12 +33,13 @@ struct MonitorView: View {
                                                                     unwatch: { monitor.unwatch(s.id) }, openTerminal: openTerminal) }
                     }
                 }
+                .frame(maxHeight: 300)
             }
             Divider()
-            Button(L.t("Sunucular penceresi")) { openServers() }.buttonStyle(.link)
+            QuickTiles(app: app, actions: actions)
         }
         .padding(14)
-        .frame(width: 340)
+        .frame(width: 360)
     }
 
     private var addMenu: some View {
@@ -66,7 +69,7 @@ private struct ServerCard: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Circle().fill(MonitorColors.tint(server.live ? server.reading.worst : nil)).frame(width: 8, height: 8)
-                Text(server.label).font(.callout.weight(.semibold)).lineLimit(1)
+                Text(server.label).font(.callout.weight(.semibold)).lineLimit(1).truncationMode(.tail)
                 Spacer()
                 Menu {
                     if let host { Button(L.t("Terminal aç")) { openTerminal(host) } }
@@ -108,7 +111,7 @@ private struct Meter: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(title).font(.caption).frame(width: 64, alignment: .leading)
+            Text(title).font(.caption).lineLimit(1).truncationMode(.tail).frame(width: 78, alignment: .leading)
             ProgressView(value: min(max(value ?? 0, 0), 100), total: 100)
                 .tint(MonitorColors.tint(value))
             Text(value.map { Percent.text($0) } ?? L.t("ölçülüyor"))

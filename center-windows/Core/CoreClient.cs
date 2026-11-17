@@ -12,7 +12,7 @@ namespace Wecommander.Center.Core;
 /// (docs/CORE_PROTOCOL.md). Requests run concurrently and are matched by id;
 /// events arrive through <see cref="Event"/> on a background thread.
 /// </summary>
-public sealed class CoreClient : IDisposable
+public sealed class CoreClient : IDisposable, ICoreTransport
 {
     /// <summary>The start of the "this server takes only SSH keys" login error (the app offers to install the key).</summary>
     public static string KeyOnlyLogin => L.T("Giriş reddedildi. Bu sunucu parolayla girişi kabul etmiyor, yalnız SSH anahtarı kabul ediyor. ");
@@ -184,6 +184,8 @@ public static class CoreText
     public static string Turkish(string text)
     {
         if (text == CoreException.Stopped) return L.T("Uygulama çekirdeği çalışmıyor.");
+        // AI access and local MCP codes (host_key_untrusted, needs_credential, not_ssh, …).
+        if (AiAccessText.Error(text) is { } ai) return ai;
         if (text.Contains("no saved credential; connect to it once")) return L.T("Kayıtlı giriş bilgisi yok: bu sunucuya bir kez terminalden bağlan ve giriş bilgisini kaydet.");
         if (text.Contains("approve its host key")) return L.T("Bu sunucuya önce bir kez terminalden bağlanıp sunucu anahtarını onayla.");
         if (text == "monitor closed") return L.T("Bağlantı koptu; yeniden bağlanılıyor.");
@@ -239,7 +241,7 @@ public sealed record CoreHost(string Id, string Label, string Target, string Aut
     string? KeyPath, string? JumpId, string? TrustedKey, string? Group = null, string User = "", string Host = "", int Port = 22,
     string? KeyId = null, string? StartupCommand = null, Dictionary<string, string>? Env = null,
     bool AgentForwarding = false, string? IdentityId = null, bool Team = false,
-    string Protocol = "ssh", SerialSettings? Serial = null, bool SessionLog = false)
+    string Protocol = "ssh", SerialSettings? Serial = null, bool SessionLog = false, AiAccess? AiAccess = null)
 {
     /// <summary>Logs in with SSH (SSH and Mosh hosts); Telnet and serial hosts open straight away.</summary>
     public bool IsSsh => Protocol is "ssh" or "mosh" or "" or null;

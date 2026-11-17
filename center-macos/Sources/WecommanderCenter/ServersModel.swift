@@ -54,6 +54,10 @@ final class ServersModel: ObservableObject {
     @Published var splitVertical: Set<String> = []
     /// Split groups where typing goes to every terminal.
     @Published var broadcast: Set<String> = []
+    /// The file manager next to the selected terminal.
+    @Published var showFiles = false
+    /// WECOMMANDER's scheduled tasks (the "Zamanlanmış görevler" page); set by the app delegate.
+    var scheduled: ScheduledTasksModel?
     /// Set while connecting a host for a split: it joins this terminal.
     private var splitTarget: (primary: String, vertical: Bool)?
 
@@ -329,6 +333,29 @@ final class ServersModel: ObservableObject {
     func coreCall(_ method: String, _ params: [String: Any] = [:]) async throws {
         guard let core else { throw CoreClient.Failure.stopped }
         try await core.call(method, params)
+    }
+
+    // MARK: scheduled tasks
+
+    /// Runs one command on a saved SSH host over its own connection (`hosts.exec`), for scheduled tasks.
+    func hostExec(hostId: String, command: String, timeoutSec: Int) async -> RemoteExecResult {
+        guard let core else {
+            return RemoteExecResult(exitCode: nil, output: "", error: L.t("Komut çalıştırılamadı: ") + L.t("Uygulama çekirdeği çalışmıyor."))
+        }
+        let params: [String: Any] = ["hostId": hostId, "command": command, "timeoutSec": timeoutSec]
+        do {
+            let r = try await core.call("hosts.exec", params, as: HostExecReply.self)
+            return HostExecText.result(exitCode: r.exitCode, output: r.output, timedOut: r.timedOut, timeoutSec: timeoutSec)
+        } catch CoreClient.Failure.core(let raw) {
+            return RemoteExecResult(exitCode: nil, output: "", error: HostExecText.error(raw))
+        } catch {
+            return RemoteExecResult(exitCode: nil, output: "", error: L.t("Komut çalıştırılamadı: ") + error.localizedDescription)
+        }
+    }
+
+    /// The first open SSH terminal (server screens and the file manager use its connection).
+    var liveSshSession: TerminalSession? {
+        sessions.last { !$0.closed && $0.host.isSsh && watching[$0.id] == nil }
     }
 
     // MARK: files

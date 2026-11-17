@@ -8,6 +8,10 @@
 //! Requests run concurrently; responses may come back out of order (match
 //! them by `id`). The process exits when stdin closes, closing every SSH
 //! connection. Method and field names: docs/CORE_PROTOCOL.md.
+//!
+//! The running core also serves local MCP for AI clients on this computer
+//! (Hybrid Access, docs/HYBRID_ACCESS.md); `wecommander-core --mcp-stdio` is
+//! the bridge those clients start.
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -380,6 +384,33 @@ struct ImportArg {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct AiAccessArg {
+    id: String,
+    #[serde(default)]
+    ai_access: core::store::AiAccess,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AllowClient {
+    id: String,
+    allow: bool,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpClient {
+    client: String,
+    /// `mcp.writeConfig`: the `before` text the person saw.
+    #[serde(default)]
+    before: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Decide {
+    approval_id: String,
+    approve: bool,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct TunnelRef {
     host_id: String,
     index: usize,
@@ -714,6 +745,38 @@ async fn dispatch(
             core::commands::clear(state, &c.host_id)?;
             ok(())
         }
+        "hosts.setAiAccess" => {
+            let a: AiAccessArg = p(params)?;
+            ok(core::targets::set_ai_access(state, a.id, a.ai_access)?)
+        }
+        "mcp.status" => ok(core::mcp::status(state)),
+        "mcp.clients" => ok(state.mcp.clients()),
+        "mcp.allowClient" => {
+            let a: AllowClient = p(params)?;
+            ok(state.mcp.allow(&a.id, a.allow)?)
+        }
+        "mcp.forgetClient" => ok(state.mcp.forget(&p::<Id>(params)?.id)?),
+        "mcp.configFor" | "mcp.writeConfig" => {
+            use core::mcp::clientconfig::{self, Client, Dirs};
+            let a: McpClient = p(params)?;
+            let client = Client::parse(&a.client)?;
+            let command = state.mcp.bridge_command();
+            if method == "mcp.configFor" {
+                ok(clientconfig::plan(client, &Dirs::current(), &command)?)
+            } else {
+                ok(clientconfig::write(
+                    client,
+                    &Dirs::current(),
+                    &command,
+                    a.before.as_deref(),
+                )?)
+            }
+        }
+        "mcp.decide" => {
+            let a: Decide = p(params)?;
+            core::mcp::decide(state, &a.approval_id, a.approve)?;
+            ok(())
+        }
         "history.list" => ok(core::library::history_list(state)?),
         "history.clear" => ok(core::library::history_clear(state)?),
         other => Err(format!("unknown method {other}")),
@@ -724,10 +787,15 @@ async fn dispatch(
 async fn main() {
     let mut args = std::env::args().skip(1);
     let (mut data_dir, mut service) = (None, "app.wecommander".to_owned());
+    let (mut mcp_stdio, mut mcp_endpoint, mut mcp) = (false, None, true);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--data-dir" => data_dir = args.next(),
             "--keyring-service" => service = args.next().unwrap_or(service),
+            // What AI clients start: a bridge to the running app's endpoint.
+            "--mcp-stdio" => mcp_stdio = true,
+            "--mcp-endpoint" => mcp_endpoint = args.next(),
+            "--no-mcp" => mcp = false,
             "--version" => {
                 println!("wecommander-core {}", env!("CARGO_PKG_VERSION"));
                 return;
@@ -735,8 +803,16 @@ async fn main() {
             _ => {}
         }
     }
+    let endpoint = mcp_endpoint
+        .clone()
+        .unwrap_or_else(core::mcp::endpoint::default_path);
+    if mcp_stdio {
+        // No data folder, keyring or host list here: only lines move.
+        core::mcp::bridge::run(endpoint, tokio::io::stdin(), tokio::io::stdout()).await;
+        return;
+    }
     let Some(data_dir) = data_dir else {
-        eprintln!("usage: wecommander-core --data-dir <folder> [--keyring-service <name>]");
+        eprintln!("usage: wecommander-core --data-dir <folder> [--keyring-service <name>] [--no-mcp] [--mcp-endpoint <path>]\n       wecommander-core --mcp-stdio [--mcp-endpoint <path>]");
         std::process::exit(2);
     };
     let out = Arc::new(Stdout(Mutex::new(std::io::stdout())));
@@ -745,9 +821,34 @@ async fn main() {
         &service,
         Arc::new(Events(out.clone())),
     );
+    let exe = std::env::current_exe()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "wecommander-core".into());
+    let mut bridge = vec![exe, "--mcp-stdio".to_owned()];
+    if let Some(path) = &mcp_endpoint {
+        bridge.extend(["--mcp-endpoint".to_owned(), path.clone()]);
+    }
+    state.mcp.set_bridge_command(bridge);
+    if mcp {
+        tokio::spawn(core::mcp::endpoint::serve(state.clone(), endpoint));
+    } else {
+        state.mcp.set_endpoint(core::mcp::EndpointInfo {
+            listening: false,
+            path: endpoint,
+            error: Some("local MCP is off (--no-mcp)".into()),
+        });
+    }
     out.line(
         &json!({ "event": "ready", "data": core::app_info(&state, env!("CARGO_PKG_VERSION")) }),
     );
+    if mcp {
+        // WECOMMANDER entries in AI clients' configs that point at a program
+        // that is gone: the app offers to fix them (nothing is rewritten here).
+        let dirs = core::mcp::clientconfig::Dirs::current();
+        for stale in core::mcp::clientconfig::stale_entries(&dirs) {
+            state.emit("mcp-config-stale", stale);
+        }
+    }
 
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     while let Ok(Some(line)) = lines.next_line().await {

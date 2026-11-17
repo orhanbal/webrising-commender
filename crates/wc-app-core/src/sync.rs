@@ -133,6 +133,9 @@ pub fn local_doc(state: &AppState, data: &Data, scope: Scope) -> Doc {
                     h.key_id = None;
                     h.identity_id = None;
                     h.jump_id = h.jump_id.filter(|j| team_ids.contains(j));
+                    // AI access is each person's own decision: never shared
+                    // through the team library.
+                    h.ai_access = None;
                 }
                 (h.id.clone(), h)
             })
@@ -535,12 +538,16 @@ fn apply(state: &Arc<AppState>, local: &Doc, merged: &Doc, scope: Scope) -> Resu
                 if team {
                     h.key_id = c.key_id.clone();
                     h.identity_id = c.identity_id.clone();
+                    h.ai_access = c.ai_access.clone();
                     if h.jump_id.is_none() {
                         h.jump_id = c.jump_id.clone();
                     }
                 }
             } else {
                 h.key_path = None;
+                if team {
+                    h.ai_access = None;
+                }
             }
         }
         hosts.retain(|h| h.profile.validate().is_ok());
@@ -648,6 +655,7 @@ mod tests {
             team: false,
             link: Default::default(),
             session_log: false,
+            ai_access: None,
         }
     }
 
@@ -701,6 +709,37 @@ mod tests {
             (m.hosts["a"].jump_id.clone(), m.hosts["a"].key_id.clone()),
             (None, None)
         );
+    }
+
+    #[test]
+    fn ai_access_merges_last_writer_wins_per_host() {
+        use crate::store::AiAccess;
+        let base = base_of(&doc(&[host("a", "A"), host("b", "B")]));
+        let mut a_here = host("a", "A");
+        a_here.ai_access = Some(AiAccess {
+            local: true,
+            ..Default::default()
+        });
+        let mut b_there = host("b", "B");
+        b_there.ai_access = Some(AiAccess {
+            local: true,
+            preset: "readonly".into(),
+            ..Default::default()
+        });
+        let m = merge_docs(
+            &doc(&[a_here.clone(), host("b", "B")]),
+            &doc(&[host("a", "A"), b_there.clone()]),
+            &base,
+        );
+        assert_eq!(m.hosts["a"].ai_access, a_here.ai_access);
+        assert_eq!(m.hosts["b"].ai_access, b_there.ai_access);
+        // Both sides changed a: the server's version wins, as for other options.
+        let mut a_there = host("a", "A");
+        a_there.ai_access = Some(AiAccess::default());
+        let m = merge_docs(&doc(&[a_here]), &doc(&[a_there.clone()]), &base);
+        assert_eq!(m.hosts["a"].ai_access, a_there.ai_access);
+        // Hosts without AI access hash as before (no spurious changes).
+        assert_eq!(hash(&host("a", "A")), base.0["hosts"]["a"]);
     }
 
     #[test]
