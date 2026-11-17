@@ -86,6 +86,8 @@ public sealed class Settings
     [JsonPropertyName("dockHiddenModules")] public List<string> DockHiddenModules { get; set; } = [];
     /// <summary>The watched server shown in the Dock (null: the busiest).</summary>
     [JsonPropertyName("dockServer")] public string? DockServer { get; set; }
+    /// <summary>Like a locked Windows taskbar: the Dock is not moved and its buttons are not reordered by dragging.</summary>
+    [JsonPropertyName("dockLocked")] public bool DockLocked { get; set; } = true;
 }
 
 public sealed class SettingsStore(string directory)

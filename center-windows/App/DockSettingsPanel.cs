@@ -52,6 +52,19 @@ public static class DockSettingsPanel
             Save();
         };
 
+        // Like the Windows taskbar's "Lock the taskbar": on by default.
+        var locked = new ToggleSwitch { Header = L.T("Dock'u kilitle"), IsOn = s.DockLocked };
+        locked.Toggled += (_, _) => { s.DockLocked = locked.IsOn; App.Current.SaveSettings(); };
+        var lockedHelp = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 460,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0, -6, 0, 0),
+            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            Text = L.T("Kilitliyken Dock taşınamaz ve düğmelerin sırası değişmez. Kilidi açınca Dock'u boş bir yerinden ya da WECOMMANDER simgesinden tutup bir kenara (sabitlenir) ya da istediğin yere (yüzer) sürükle."),
+        };
+
         var size = Combo(L.T("Boyut"), ["Normal", L.T("Kompakt")], s.DockCompact ? 1 : 0);
         size.SelectionChanged += (_, _) => { s.DockCompact = size.SelectedIndex == 1; Save(); };
 
@@ -137,7 +150,7 @@ public static class DockSettingsPanel
         try { startup.IsChecked = LocalStore.AutostartEnabled; } catch (Exception) { startup.IsEnabled = false; }
         startup.Click += (_, _) => { try { LocalStore.AutostartEnabled = startup.IsChecked == true; } catch (Exception e) { App.LogCrash(e); } };
 
-        foreach (var e in new UIElement[] { mode, onTop, edge, screen, size, showDelay, hideDelay, fullscreen, theme, modulesTitle, modulesList, startup })
+        foreach (var e in new UIElement[] { mode, onTop, edge, screen, locked, lockedHelp, size, showDelay, hideDelay, fullscreen, theme, modulesTitle, modulesList, startup })
             details.Children.Add(e);
         details.Visibility = s.Dock ? Visibility.Visible : Visibility.Collapsed;
         body.Children.Add(details);
@@ -148,10 +161,9 @@ public static class DockSettingsPanel
     {
         "servers" => L.T("Sunucu ve canlı grafikler"),
         "processes" => L.T("Görev Yöneticisi kısayolu"),
-        "timers" => L.T("Zamanlayıcılar kısayolu"),
         "terminal" => L.T("Terminal kısayolu"),
         "approvals" => L.T("Bildirimler ve onaylar"),
-        "tasks" => L.T("Zamanlanmış görevler kısayolu"),
+        "tasks" => L.T("Görevler kısayolu (WECOMMANDER görevleri ve zamanlayıcılar)"),
         _ => module,
     };
 

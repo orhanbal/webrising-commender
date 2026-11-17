@@ -1309,5 +1309,13 @@
  "{0} satır eklenir; mevcut satırların hiçbiri silinmez.": "{0} lines are added; none of the existing lines is removed.",
  "{0} satır eklenir, {1} satır değişir (yalnız WECOMMANDER girdisi ve çevresindeki biçim).": "{0} lines are added, {1} lines change (only the WECOMMANDER entry and the formatting around it).",
  "{0} onay istiyor · {1}": "{0} asks for approval · {1}",
- "{0} · yerel yapay zekâ · yalnız bu komut, bir kez": "{0} · local AI · only this command, once"
+ "{0} · yerel yapay zekâ · yalnız bu komut, bir kez": "{0} · local AI · only this command, once",
+ "Dock'u kilitle": "Lock the Dock",
+ "Kilitliyken Dock taşınamaz ve düğmelerin sırası değişmez. Kilidi açınca Dock'u boş bir yerinden ya da WECOMMANDER simgesinden tutup bir kenara (sabitlenir) ya da istediğin yere (yüzer) sürükle.": "While locked, the Dock can't be moved and its buttons keep their order. Unlock it, then drag the Dock by an empty spot or the WECOMMANDER icon to an edge (it docks there) or anywhere else (it floats).",
+ "Görevler kısayolu (WECOMMANDER görevleri ve zamanlayıcılar)": "Tasks shortcut (WECOMMANDER tasks and timers)",
+ "Görevler": "Tasks",
+ "WECOMMANDER görevleri": "WECOMMANDER tasks",
+ "Windows zamanlayıcıları": "Windows timers",
+ "Sunucu ara (ad, adres, grup)": "Search servers (name, address, group)",
+ "{0}: terminal aç": "{0}: open a terminal"
 }

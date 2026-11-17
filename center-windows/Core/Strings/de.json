@@ -1309,5 +1309,13 @@
  "{0} satır eklenir; mevcut satırların hiçbiri silinmez.": "{0} Zeilen werden hinzugefügt; keine bestehende Zeile wird entfernt.",
  "{0} satır eklenir, {1} satır değişir (yalnız WECOMMANDER girdisi ve çevresindeki biçim).": "{0} Zeilen werden hinzugefügt, {1} Zeilen ändern sich (nur der WECOMMANDER-Eintrag und die Formatierung darum).",
  "{0} onay istiyor · {1}": "{0} bittet um Freigabe · {1}",
- "{0} · yerel yapay zekâ · yalnız bu komut, bir kez": "{0} · lokale KI · nur dieser Befehl, einmal"
+ "{0} · yerel yapay zekâ · yalnız bu komut, bir kez": "{0} · lokale KI · nur dieser Befehl, einmal",
+ "Dock'u kilitle": "Dock fixieren",
+ "Kilitliyken Dock taşınamaz ve düğmelerin sırası değişmez. Kilidi açınca Dock'u boş bir yerinden ya da WECOMMANDER simgesinden tutup bir kenara (sabitlenir) ya da istediğin yere (yüzer) sürükle.": "Solange es fixiert ist, lässt sich das Dock nicht verschieben und die Reihenfolge der Schaltflächen bleibt. Hebe die Fixierung auf und ziehe das Dock an einer freien Stelle oder am WECOMMANDER-Symbol an einen Rand (dort angedockt) oder an eine beliebige Stelle (schwebend).",
+ "Görevler kısayolu (WECOMMANDER görevleri ve zamanlayıcılar)": "Aufgaben-Verknüpfung (WECOMMANDER-Aufgaben und Zeitpläne)",
+ "Görevler": "Aufgaben",
+ "WECOMMANDER görevleri": "WECOMMANDER-Aufgaben",
+ "Windows zamanlayıcıları": "Windows-Zeitpläne",
+ "Sunucu ara (ad, adres, grup)": "Server suchen (Name, Adresse, Gruppe)",
+ "{0}: terminal aç": "{0}: Terminal öffnen"
 }
