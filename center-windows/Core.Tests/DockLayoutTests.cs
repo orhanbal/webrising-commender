@@ -140,8 +140,25 @@ public class DockLayoutTests
     public void ModulesKeepTheOrderDropUnknownAndAddNewOnes()
     {
         Assert.Equal(DockLayout.AllModules, DockLayout.Modules(null, null));
-        Assert.Equal(["terminal", "servers", "processes", "approvals"], DockLayout.Modules(["terminal", "bogus", "servers", "terminal"], null));
-        Assert.Equal(["servers", "terminal"], DockLayout.Modules(null, ["processes", "approvals"]));
+        Assert.Equal(["terminal", "servers", "processes", "timers", "approvals"], DockLayout.Modules(["terminal", "bogus", "servers", "terminal"], null));
+        Assert.Equal(["servers", "terminal"], DockLayout.Modules(null, ["processes", "timers", "approvals"]));
+        // An order saved before the timers shortcut existed gets it at the end.
+        Assert.Equal(["approvals", "terminal", "processes", "servers", "timers"], DockLayout.Modules(["approvals", "terminal", "processes", "servers"], null));
+    }
+
+    [Fact]
+    public void MoveTakesOnePartToItsNewPlace()
+    {
+        string[] order = ["servers", "processes", "timers", "terminal", "approvals"];
+        Assert.Equal(["processes", "timers", "servers", "terminal", "approvals"], DockLayout.Move(order, 0, 2));
+        Assert.Equal(["approvals", "servers", "processes", "timers", "terminal"], DockLayout.Move(order, 4, 0));
+        Assert.Equal(["servers", "processes", "timers", "approvals", "terminal"], DockLayout.Move(order, 3, 99));
+        Assert.Equal(order, DockLayout.Move(order, 2, 2));
+        Assert.Equal(order, DockLayout.Move(order, -1, 0));
+        Assert.Equal(order, DockLayout.Move(order, 5, 0));
+        Assert.Empty(DockLayout.Move([], 0, 1));
+        // The input is not changed.
+        Assert.Equal("servers", order[0]);
     }
 
     [Fact]
@@ -165,7 +182,7 @@ public class DockLayoutTests
             Assert.Equal(DockEdge.Left, DockLayout.ParseEdge(back.DockEdgeName));
             Assert.Equal(300, back.DockFloatX);
             Assert.Equal(@"\\.\DISPLAY2", back.DockMonitor);
-            Assert.Equal(["approvals", "servers", "processes"], DockLayout.Modules(back.DockModules, back.DockHiddenModules));
+            Assert.Equal(["approvals", "servers", "processes", "timers"], DockLayout.Modules(back.DockModules, back.DockHiddenModules));
         }
         finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
     }

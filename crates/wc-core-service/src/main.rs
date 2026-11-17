@@ -165,6 +165,40 @@ struct InitArg {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct TimerArg {
+    session_id: String,
+    unit: String,
+    #[serde(default)]
+    action: String,
+    lines: Option<u32>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TimerSpecArg {
+    session_id: String,
+    name: String,
+    #[serde(default)]
+    description: String,
+    command: String,
+    user: String,
+    calendar: String,
+}
+impl TimerSpecArg {
+    fn spec(self) -> (String, core::server::TimerSpec) {
+        (
+            self.session_id,
+            core::server::TimerSpec {
+                name: self.name,
+                description: self.description,
+                command: self.command,
+                user: self.user,
+                calendar: self.calendar,
+            },
+        )
+    }
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct OwnerArg {
     session_id: String,
     kind: String,
@@ -434,6 +468,27 @@ async fn dispatch(
         "server.restartOwner" => {
             let a: OwnerArg = p(params)?;
             ok(core::server::restart_owner(state, a.session_id, a.kind, a.id).await?)
+        }
+        "server.timers" => ok(core::server::timers(state, p::<Session>(params)?.session_id).await?),
+        "server.timerAction" => {
+            let a: TimerArg = p(params)?;
+            ok(core::server::timer_action(state, a.session_id, a.unit, a.action).await?)
+        }
+        "server.timerLogs" => {
+            let a: TimerArg = p(params)?;
+            ok(core::server::timer_logs(state, a.session_id, a.unit, a.lines).await?)
+        }
+        "server.timerCreate" => {
+            let (id, spec) = p::<TimerSpecArg>(params)?.spec();
+            ok(core::server::timer_create(state, id, spec).await?)
+        }
+        "server.timerEdit" => {
+            let (id, spec) = p::<TimerSpecArg>(params)?.spec();
+            ok(core::server::timer_edit(state, id, spec).await?)
+        }
+        "server.timerDelete" => {
+            let a: TimerArg = p(params)?;
+            ok(core::server::timer_delete(state, a.session_id, a.unit).await?)
         }
         "files.list" => {
             let f: FilesList = p(params)?;

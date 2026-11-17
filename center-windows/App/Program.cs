@@ -34,6 +34,12 @@ public static class Program
             var log = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WECOMMANDER", "taskmanager-selftest.log");
             return LocalProcessReader.SelfTest(log) ? 0 : 1;
         }
+        // CI: the Zamanlayıcılar commands and guards on the real machine (create, run, turn off/on, delete), no window.
+        if (args.Contains("--task-scheduler-selftest"))
+        {
+            var log = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WECOMMANDER", "taskscheduler-selftest.log");
+            return LocalTaskReader.SelfTest(log) ? 0 : 1;
+        }
         // Must run before any window or notification API is touched.
         // The Store copy has its package's identity; only the zip copy names itself.
         if (!Packaging.IsPackaged) _ = SetCurrentProcessExplicitAppUserModelID(AppUserModelId);

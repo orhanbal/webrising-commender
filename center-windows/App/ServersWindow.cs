@@ -475,6 +475,23 @@ public sealed class ServersWindow : Window
         _info.IsOpen = true;
     }
 
+    /// <summary>
+    /// From the Dock's quick panel: the terminals page; with <paramref name="files"/>
+    /// the files of the selected terminal open beside it (none: a hint to connect first).
+    /// </summary>
+    public void ShowTerminals(bool files)
+    {
+        Navigate("terminals");
+        if (!files) return;
+        if (Current is { Closed: false, Guest: null })
+        {
+            _filesButton.IsChecked = true;
+            _filesPane.Visibility = Visibility.Visible;
+            _ = LoadFiles(null);
+        }
+        else Show(L.T("Dosya yöneticisi açık bir terminalin bağlantısını kullanır: önce bir sunucuya bağlan."), InfoBarSeverity.Informational);
+    }
+
     /// <summary>Opens a terminal to saved host <paramref name="hostId"/> (from the taskbar panel).</summary>
     public void ConnectHost(string hostId)
     {

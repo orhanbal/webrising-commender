@@ -6,6 +6,7 @@ namespace Wecommander.Center;
 public partial class App
 {
     private DockWindow? _dock;
+    private QuickPanel? _quickPanel;
     private bool _dockExitHooked;
 
     /// <summary>Creates the Dock when it is turned on (it is off until the owner turns it on).</summary>
@@ -57,6 +58,23 @@ public partial class App
     /// <summary>The panel is on screen (an auto-hidden Dock stays out meanwhile).</summary>
     public bool MonitorPanelOpen => _monitorFlyout?.AppWindow.IsVisible == true;
 
+    /// <summary>From the Dock's WECOMMANDER icon: the quick panel, next to the icon and away from the Dock's edge.</summary>
+    public void ToggleQuickPanelFromDock(PixelRect anchor, DockEdge side, Func<WatchedServer?> selected)
+    {
+        _quickPanel ??= new QuickPanel();
+        _quickPanel.ToggleFrom(anchor, side, selected);
+    }
+
+    /// <summary>The quick panel is on screen (an auto-hidden Dock stays out meanwhile).</summary>
+    public bool QuickPanelOpen => _quickPanel?.AppWindow.IsVisible == true;
+
+    /// <summary>The main window on its terminals page; with <paramref name="files"/> the current terminal's files open beside it.</summary>
+    public void ShowTerminals(bool files)
+    {
+        ShowServers();
+        _servers?.ShowTerminals(files);
+    }
+
     /// <summary>Server management for a watched server, opened on one section (processes, disk, cleanup).</summary>
     public void OpenServerManagement(WatchedServer s, string section)
     {
@@ -102,6 +120,8 @@ public partial class App
         try { _dock?.RebuildTexts(); } catch (Exception e) { LogCrash(e); }
         try { _monitorFlyout?.Close(); } catch (Exception) { }
         _monitorFlyout = null;
+        try { _quickPanel?.Close(); } catch (Exception) { }
+        _quickPanel = null;
         try
         {
             var oldPanel = _window;

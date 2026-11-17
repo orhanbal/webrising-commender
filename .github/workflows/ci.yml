@@ -1353,6 +1353,26 @@ jobs:
             else { Write-Host "PASS the Management Center icon is shown next to the clock" }
           } else { Write-Host "no NotifyIconSettings on this Windows (icons are not hidden there)" }
           Write-Host "PASS the Task Manager window lists WecommanderCenter.exe with its PID $($app.Id)"
+      - name: Task Scheduler (Zamanlayicilar - list, create, run, turn off and on, delete; guards)
+        shell: powershell
+        run: |
+          # schtasks on the real machine, no window: the app lists the tasks, creates
+          # \WECOMMANDER\wc-selftest (cmd /c exit 0, daily), finds it, runs it, turns it
+          # off and on, edits it, refuses unsafe names and arguments, refuses to delete
+          # a task outside \WECOMMANDER\, then deletes its own task.
+          $exe = (Resolve-Path "center-windows\publish\WecommanderCenter.exe").Path
+          $log = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'WECOMMANDER\taskscheduler-selftest.log'
+          Remove-Item $log -ErrorAction SilentlyContinue
+          $test = Start-Process -FilePath $exe -ArgumentList '--task-scheduler-selftest' -PassThru -Wait
+          if (Test-Path $log) { Get-Content $log | ForEach-Object { Write-Host $_ } } else { Write-Host "no self-test log" }
+          # Nothing is left behind (cmd keeps schtasks' "not found" off PowerShell's error stream).
+          cmd /c "schtasks /query /tn \WECOMMANDER\wc-selftest >nul 2>&1"
+          $left = ($LASTEXITCODE -eq 0)
+          if ($left) { cmd /c "schtasks /delete /tn \WECOMMANDER\wc-selftest /f >nul 2>&1" }
+          $global:LASTEXITCODE = 0
+          if ($test.ExitCode -ne 0) { throw "Task Scheduler self-test failed (exit $($test.ExitCode))" }
+          if ($left) { throw "the self-test task was left behind" }
+          Write-Host "PASS the Task Scheduler self-test"
       - name: Dock check (AppBar edges, work area, Explorer restart, full screen, floating, auto-hide)
         shell: powershell
         run: |
@@ -1445,25 +1465,40 @@ jobs:
               if ($edge -eq 'left') { Shot 'dock-left' }
             }
             if ($edge -eq 'top' -and $d) {
-              # 5. The icon opens the panel just below a top Dock.
+              # 5. The icon opens the quick panel just below a top Dock; its "Sunucularim" tile opens the server panel.
               Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
               $root = [System.Windows.Automation.AutomationElement]::RootElement
-              $iconName = 'WECOMMANDER: Sunucular' + [char]0x0131 + 'm paneli'  # this script file is read as ANSI: no non-ASCII literals
+              $dl = [string][char]0x0131  # this script file is read as ANSI: no non-ASCII literals
+              $iconName = 'WECOMMANDER: h' + $dl + 'zl' + $dl + ' panel'
               $cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $iconName)
               $btn = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
               if (-not $btn) { $fail += 'Dock icon button not found' }
               else {
                 $r = $btn.Current.BoundingRectangle
                 [D]::SetCursorPos([int]($r.Left + $r.Width / 2), [int]($r.Top + $r.Height / 2)); [D]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero); Start-Sleep -Milliseconds 60; [D]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero)
-                $panelTitle = "WECOMMANDER Sunucular" + [char]0x0131 + "m"
-                if (WaitFor { [D]::Find([uint32]$app.Id, $panelTitle) } 8) {
-                  $p = Rect ([D]::Find([uint32]$app.Id, $panelTitle))
-                  Write-Host "panel from the Dock icon at $($p.L),$($p.T),$($p.R),$($p.B)"
-                  if ($p.T -ge $d.B -and $p.T -le $d.B + 40 -and [math]::Abs($p.L - [int]$r.Left) -le 40) { $passed += 'icon opens the panel below the top Dock' } else { $fail += 'panel did not open just below the Dock icon' }
-                  Shot 'dock-top-panel'
+                $quickTitle = 'WECOMMANDER h' + $dl + 'zl' + $dl + ' panel'
+                if (WaitFor { [D]::Find([uint32]$app.Id, $quickTitle) } 8) {
+                  $q = Rect ([D]::Find([uint32]$app.Id, $quickTitle))
+                  Write-Host "quick panel from the Dock icon at $($q.L),$($q.T),$($q.R),$($q.B)"
+                  if ($q.T -ge $d.B -and $q.T -le $d.B + 40 -and [math]::Abs($q.L - [int]$r.Left) -le 40) { $passed += 'icon opens the quick panel below the top Dock' } else { $fail += 'quick panel did not open just below the Dock icon' }
+                  Shot 'dock-top-quick-panel'
+                  $tileCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, ('Sunucular' + $dl + 'm'))
+                  $tile = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $tileCond)
+                  if (-not $tile) { $fail += 'quick panel: Sunucularim tile not found' }
+                  else {
+                    $t = $tile.Current.BoundingRectangle
+                    [D]::SetCursorPos([int]($t.Left + $t.Width / 2), [int]($t.Top + $t.Height / 2)); [D]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero); Start-Sleep -Milliseconds 60; [D]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero)
+                    $panelTitle = 'WECOMMANDER Sunucular' + $dl + 'm'
+                    if (WaitFor { [D]::Find([uint32]$app.Id, $panelTitle) } 8) {
+                      $p = Rect ([D]::Find([uint32]$app.Id, $panelTitle))
+                      Write-Host "server panel from the quick panel at $($p.L),$($p.T),$($p.R),$($p.B)"
+                      if ($p.T -ge $d.B -and $p.T -le $d.B + 40) { $passed += 'the quick panel opens the server panel below the top Dock' } else { $fail += 'server panel did not open just below the Dock' }
+                      Shot 'dock-top-panel'
+                    } else { $fail += 'the Sunucularim tile did not open the server panel' }
+                  }
                   [D]::SetCursorPos([int]($screen.Width / 2), [int]($screen.Height / 2)); [D]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero); [D]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero)
                   Start-Sleep -Seconds 1
-                } else { $fail += 'clicking the Dock icon did not open the panel' }
+                } else { $fail += 'clicking the Dock icon did not open the quick panel' }
               }
               # 8. Explorer restarts: the Dock registers again and keeps its strip.
               if ($explorer) {
@@ -1555,7 +1590,7 @@ jobs:
           Quit-App
 
           Write-Host '--- layout.log (dock) ---'
-          if (Test-Path $layout) { Get-Content $layout | Where-Object { $_ -match 'dock|monitor panel' } | ForEach-Object { Write-Host $_ } }
+          if (Test-Path $layout) { Get-Content $layout | Where-Object { $_ -match 'dock|monitor panel|quick panel' } | ForEach-Object { Write-Host $_ } }
           if (Test-Path $errors) { Write-Host '--- errors.log ---'; Get-Content $errors | ForEach-Object { Write-Host $_ }; $fail += 'the app logged an error' }
           Remove-Item $settingsFile -ErrorAction SilentlyContinue
           Write-Host '--- PASS ---'; $passed | ForEach-Object { Write-Host "PASS $_" }
