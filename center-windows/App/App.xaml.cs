@@ -1011,6 +1011,35 @@ public partial class App : Application
             LeftClickCommand = new RelayCommand(() => _window?.TogglePanel()),
         };
         _tray.ForceCreate(enablesEfficiencyMode: false);
+        ShowTrayIconOnce();
+    }
+
+    /// <summary>
+    /// Windows 11 puts a new notification icon in the hidden overflow (^).
+    /// The Management Center is meant to stay next to the clock: the first
+    /// time Windows lists our icon, it is marked "show" (the same switch as
+    /// Settings, Personalization, Taskbar). Done once, so the person's own
+    /// choice there wins afterwards.
+    /// </summary>
+    private void ShowTrayIconOnce()
+    {
+        if (Settings.TrayShown) return;
+        var timer = _ui!.CreateTimer();
+        var tries = 0;
+        timer.Interval = TimeSpan.FromSeconds(2);
+        timer.Tick += (_, _) =>
+        {
+            tries++;
+            var done = false;
+            try { done = TrayIconSettings.Show(Environment.ProcessPath ?? ""); }
+            catch (Exception e) { LogCrash(e); done = true; }
+            if (done || tries >= 15)
+            {
+                timer.Stop();
+                if (done) { Settings.TrayShown = true; SaveSettings(); }
+            }
+        };
+        timer.Start();
     }
 
     private void UpdateTray()

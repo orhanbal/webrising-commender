@@ -1344,6 +1344,14 @@ jobs:
           Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
           Get-Process -Name 'wecommander-core','webrising-commender' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
           if (-not $found) { throw "the Task Manager window did not list this app's own process" }
+          # The Management Center icon is put next to the clock (Windows 11 hides new icons in ^).
+          $icons = 'HKCU:\Control Panel\NotifyIconSettings'
+          if (Test-Path $icons) {
+            $ours = Get-ChildItem $icons | ForEach-Object { Get-ItemProperty $_.PSPath } | Where-Object { $_.ExecutablePath -eq $exe }
+            if (-not $ours) { Write-Host "notification icon not listed by this Windows yet" }
+            elseif (@($ours | Where-Object { $_.IsPromoted -eq 1 }).Count -eq 0) { throw "the Management Center icon was left in the hidden overflow" }
+            else { Write-Host "PASS the Management Center icon is shown next to the clock" }
+          } else { Write-Host "no NotifyIconSettings on this Windows (icons are not hidden there)" }
           Write-Host "PASS the Task Manager window lists WecommanderCenter.exe with its PID $($app.Id)"
       - name: Dock check (AppBar edges, work area, Explorer restart, full screen, floating, auto-hide)
         shell: powershell
