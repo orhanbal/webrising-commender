@@ -292,6 +292,7 @@ public partial class App : Application
         _window = new MainWindow();
         BuildTray();
         Servers.Changed += () => _ui.TryEnqueue(() => { UpdateServersMenu(); RequestLibrarySync(); });
+        StartLocalMcpPrompts();
         Servers.Start();
         // Nothing optional may stop the start (a monitor icon error once left
         // the app without its window, agent and sync).
@@ -398,6 +399,8 @@ public partial class App : Application
     {
         arguments.TryGetValue("action", out var action);
         arguments.TryGetValue("id", out var id);
+        // Local AI apps (mcp-*): answered through the core, not the gateway.
+        if (await HandleMcpNotification(action, id)) return;
         if (action is "approve" or "deny" && id is not null)
         {
             var approve = action == "approve";

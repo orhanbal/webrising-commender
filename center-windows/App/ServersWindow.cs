@@ -92,6 +92,7 @@ public sealed partial class ServersWindow : Window
         _nav.MenuItems.Add(new NavigationViewItem { Content = L.T("Bilinen sunucular"), Tag = "known", Icon = new FontIcon { Glyph = "\uE72E" } });
         _nav.MenuItems.Add(new NavigationViewItem { Content = L.T("Geçmiş"), Tag = "history", Icon = new FontIcon { Glyph = "\uE81C" } });
         _nav.MenuItems.Add(new NavigationViewItem { Content = L.T("Zamanlanmış görevler"), Tag = "scheduled", Icon = new FontIcon { Glyph = ScheduledGlyph } });
+        _nav.MenuItems.Add(new NavigationViewItem { Content = AiAccessText.PageTitle, Tag = "ai", Icon = new FontIcon { Glyph = "\uE99A" } });
         // Approvals, autonomous mode and this computer are the panel on the
         // right; settings, the account and quitting are in the bottom bar.
         _nav.ItemInvoked += (_, e) => OnNavInvoked(e.InvokedItemContainer?.Tag);
@@ -159,14 +160,17 @@ public sealed partial class ServersWindow : Window
 
         Action onChanged = () => DispatcherQueue.TryEnqueue(() => { RenderHosts(); });
         Action<string> onNotice = text => DispatcherQueue.TryEnqueue(() => Show(text, InfoBarSeverity.Warning));
+        Action<McpActivity> onActivity = _ => DispatcherQueue.TryEnqueue(RenderAiActivity);
         _c.Changed += onChanged;
         _c.Notice += onNotice;
+        _c.McpActivityAdded += onActivity;
         Closed += (_, e) =>
         {
             // Closing only hides it; a language change closes it for real and builds a new one.
             if (!_closingForLanguage) { e.Handled = true; AppWindow.Hide(); return; }
             _c.Changed -= onChanged;
             _c.Notice -= onNotice;
+            _c.McpActivityAdded -= onActivity;
         };
         // The window shows the navigation (menu + current section).
         // Pages never move between parents (WinUI may still hold an element in
@@ -689,6 +693,7 @@ public sealed partial class ServersWindow : Window
             case "known": _ = ShowKnown(); break;
             case "history": _ = ShowHistory(); break;
             case "scheduled": _ = ShowScheduledTasks(); break;
+            case "ai": _ = ShowAiPage(); break;
             default:
                 // A fresh page each visit (a page built once, before the
                 // window was first shown, stayed collapsed with no size).
@@ -756,7 +761,7 @@ public sealed partial class ServersWindow : Window
         foreach (var group in hosts.GroupBy(h => h.GroupName).OrderBy(g => g.Key == CoreHost.NoGroup ? "\uFFFF" : g.Key, StringComparer.CurrentCultureIgnoreCase))
         {
             _hostGroups.Children.Add(new TextBlock { Text = $"{group.Key}  ·  {group.Count()}", Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"] });
-            var wrap = new VariableSizedWrapGrid { Orientation = Orientation.Horizontal, ItemWidth = 260, ItemHeight = 86 };
+            var wrap = new VariableSizedWrapGrid { Orientation = Orientation.Horizontal, ItemWidth = 260, ItemHeight = 108 };
             foreach (var host in group.OrderBy(h => h.Label, StringComparer.CurrentCultureIgnoreCase)) wrap.Children.Add(HostCard(host));
             _hostGroups.Children.Add(wrap);
         }
@@ -779,6 +784,7 @@ public sealed partial class ServersWindow : Window
         text.Children.Add(new TextBlock { Text = host.Label, Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], TextTrimming = TextTrimming.CharacterEllipsis });
         text.Children.Add(new TextBlock { Text = host.Target + (via is null ? "" : $" ↪ {via}"), Foreground = Secondary, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis });
         text.Children.Add(new TextBlock { Text = (host.Team ? L.T("👥 Ekip · ") : "") + (host.CanConnectSilently ? (host.AuthKind == "password" ? L.T("Parola kayıtlı") : L.T("Anahtar hazır")) : L.T("Giriş bilgisi sorulacak")), Foreground = Secondary, FontSize = 11 });
+        text.Children.Add(HostBadgeRow(host));
         Grid.SetColumn(text, 1);
         grid.Children.Add(text);
         var card = new Button
@@ -790,7 +796,7 @@ public sealed partial class ServersWindow : Window
             Margin = new Thickness(0, 0, 10, 10),
             Padding = new Thickness(12),
         };
-        ToolTipService.SetToolTip(card, host.Target + (host.TrustedKey is null ? "" : L.F("\nSunucu anahtarı: {0}", host.TrustedKey)));
+        ToolTipService.SetToolTip(card, host.Target + (host.TrustedKey is null ? "" : L.F("\nSunucu anahtarı: {0}", host.TrustedKey)) + "\n" + HostBadges.Explain(host));
         card.Click += async (_, _) => await OpenHost(host);
         var flyout = new MenuFlyout();
         flyout.Items.Add(Item(L.T("Bağlan"), () => _ = OpenHost(host)));
@@ -948,6 +954,8 @@ public sealed partial class ServersWindow : Window
         };
         var center = new HyperlinkButton { Content = L.T("Bildirimler, otonom mod ve bu bilgisayarın ajanı: Yönetim Merkezi panelini aç") };
         center.Click += (_, _) => App.Current.ShowPanel();
+        var ai = new HyperlinkButton { Content = L.T("Yapay zekâ: yerel MCP, bağlanan yapay zekâ uygulamaları ve kurulum") };
+        ai.Click += (_, _) => Navigate("ai");
         var backupTitle = new TextBlock { Text = L.T("Yedekleme"), Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], Margin = new Thickness(0, 8, 0, 0) };
         var backupHelp = new TextBlock
         {
@@ -988,7 +996,7 @@ public sealed partial class ServersWindow : Window
             if (chosen == settings.Language) return;
             DispatcherQueue.TryEnqueue(() => App.Current.SetLanguage(chosen));
         };
-        foreach (var e in new UIElement[] { language, font, theme, keys, logsButton, dock, syncTitle, syncPanel, teamTitle, teamPanel, backupTitle, backupHelp, backupRow, center }) body.Children.Add(e);
+        foreach (var e in new UIElement[] { language, font, theme, keys, logsButton, dock, syncTitle, syncPanel, teamTitle, teamPanel, backupTitle, backupHelp, backupRow, ai, center }) body.Children.Add(e);
         var scroll = new ScrollViewer { Content = body };
         SetPage(Page(L.T("Ayarlar"), L.T("Terminal görünümü ve Dock; değişiklikler hemen uygulanır."), scroll));
         if (_settingsAtDock)
@@ -1527,9 +1535,46 @@ public sealed partial class ServersWindow : Window
         }
         protocol.SelectionChanged += (_, _) => SyncProtocol();
         SyncProtocol();
+        // The connection method comes first, each with what it does and needs:
+        // SSH (nothing installed), the agent (its own install flow) or another protocol.
+        var method = BuildMethodChooser(existing?.Protocol);
+        var fields = new StackPanel { Spacing = 10 };
+        foreach (var e in new UIElement[] { protocol, label, host, serialPanel, user, port, group, identity, kind, keyChoice, jump, terminalOptions }) fields.Children.Add(e);
         var panel = new StackPanel { Spacing = 10, MinWidth = 400 };
-        foreach (var e in new UIElement[] { protocol, label, host, serialPanel, user, port, group, identity, kind, keyChoice, jump, terminalOptions, error }) panel.Children.Add(e);
+        foreach (var e in new UIElement[] { method.View, method.AgentPanel, fields, error }) panel.Children.Add(e);
         var dialog = Dialog(existing is null ? L.T("Yeni sunucu") : L.T("Sunucuyu düzenle"), new ScrollViewer { Content = panel, MaxHeight = 560 }, L.T("Kaydet"));
+        void SyncMethod()
+        {
+            var agentChosen = method.Agent.IsChecked == true;
+            fields.Visibility = agentChosen ? Visibility.Collapsed : Visibility.Visible;
+            method.AgentPanel.Visibility = agentChosen ? Visibility.Visible : Visibility.Collapsed;
+            protocol.Visibility = method.Other.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+            if (method.Ssh.IsChecked == true && protocol.SelectedIndex != 0) protocol.SelectedIndex = 0;
+            if (method.Other.IsChecked == true && protocol.SelectedIndex <= 0) protocol.SelectedIndex = 1;
+            // The agent is not saved here: it is installed on the server with its own flow.
+            dialog.IsPrimaryButtonEnabled = !agentChosen;
+        }
+        foreach (var choice in new[] { method.Ssh, method.Agent, method.Other }) choice.Checked += (_, _) => SyncMethod();
+        protocol.SelectionChanged += (_, _) => { if (protocol.SelectedIndex == 0 && method.Other.IsChecked == true) method.Ssh.IsChecked = true; };
+        SyncMethod();
+        // AI access: off until the owner turns it on, per host; fixes run after the dialog closes.
+        Func<Task>? afterClose = null;
+        (UIElement View, Func<CoreHost, Task> Save)? aiEditor = null;
+        if (existing is not null)
+        {
+            aiEditor = BuildAiAccessEditor(existing, dialog, fix => afterClose = fix, () => method.Ssh.IsChecked = true);
+            fields.Children.Add(aiEditor.Value.View);
+        }
+        else
+        {
+            fields.Children.Add(new TextBlock
+            {
+                Text = L.T("Yapay zekâ erişimi kapalı başlar: hiçbir yapay zekâ bu sunucuyu göremez. Kaydedip bir kez bağlandıktan sonra Düzenle… → Yapay zekâ erişimi'nden açabilirsin."),
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = Secondary,
+                FontSize = 12,
+            });
+        }
         dialog.PrimaryButtonClick += async (d, args) =>
         {
             var deferral = args.GetDeferral();
@@ -1592,6 +1637,8 @@ public sealed partial class ServersWindow : Window
                         || old.Count != vars.Count || old.Any(kv => !vars.TryGetValue(kv.Key, out var v) || v != kv.Value);
                     if (changed) await _c.SetHostOptions(saved, cmd.Length == 0 ? null : cmd, vars, agent.IsChecked == true, sessionLog.IsChecked == true);
                 }
+                // Last, so the host's new protocol and login count for its pre-conditions.
+                if (aiEditor is { } ai && saved is not null) await ai.Save(_c.Hosts.FirstOrDefault(h => h.Id == saved.Id) ?? saved);
             }
             catch (CoreException e)
             {
@@ -1602,6 +1649,7 @@ public sealed partial class ServersWindow : Window
         };
         await ShowDialog(dialog);
         RenderHosts();
+        if (afterClose is not null) await afterClose();
     }
 
     // ---- connect ----
@@ -1614,11 +1662,13 @@ public sealed partial class ServersWindow : Window
     private readonly SemaphoreSlim _dialogGate = new(1, 1);
     private readonly HashSet<string> _connecting = [];
 
-    private async Task<ContentDialogResult> ShowDialog(ContentDialog dialog)
+    private async Task<ContentDialogResult> ShowDialog(ContentDialog dialog, Func<bool>? stillWanted = null)
     {
         await _dialogGate.WaitAsync();
         try
         {
+            // A prompt that waited for another dialog may have been answered meanwhile (a notification).
+            if (stillWanted is not null && !stillWanted()) return ContentDialogResult.None;
             dialog.XamlRoot ??= Content.XamlRoot;
             return await dialog.ShowAsync();
         }

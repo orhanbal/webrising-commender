@@ -61,6 +61,42 @@ public static class ToastContent
                "</actions></toast>";
     }
 
+    /// <summary>
+    /// A local AI app's risky action (mcp-approval): which app, which server,
+    /// the exact command, a countdown and Onayla / Reddet. Nothing is approved
+    /// without a click; the buttons carry action=mcp-approve / mcp-deny.
+    /// </summary>
+    public static string McpApproval(McpApproval item, bool urgent)
+    {
+        string Button(string label, string action) =>
+            $"<action content=\"{Escape(label)}\" activationType=\"foreground\" arguments=\"" +
+            Escape(EncodeArgs([new("action", action), new("id", item.ApprovalId), new("client", item.ClientName)])) + "\"/>";
+        var what = string.IsNullOrWhiteSpace(item.Command) ? item.Summary : item.Command;
+        return $"<toast scenario=\"{(urgent ? "urgent" : "reminder")}\" launch=\"{Escape(EncodeArgs([new("action", "mcp-open"), new("id", item.ApprovalId)]))}\">" +
+               "<visual><binding template=\"ToastGeneric\">" +
+               $"<text>{Escape(L.F("{0} onay istiyor · {1}", item.ClientName, item.TargetLabel))}</text>" +
+               $"<text>{Escape(what)}</text>" +
+               $"<text>{Escape(L.F("{0} · yerel yapay zekâ · yalnız bu komut, bir kez", Texts.KindLabel(item.Tool)))}</text>" +
+               $"<progress title=\"{{{ProgressTitle}}}\" value=\"{{{ProgressValue}}}\" " +
+               $"valueStringOverride=\"{{{ProgressValueString}}}\" status=\"{{{ProgressStatus}}}\"/>" +
+               "</binding></visual><actions>" + Button(L.T("Onayla"), "mcp-approve") + Button(L.T("Reddet"), "mcp-deny") +
+               "</actions></toast>";
+    }
+
+    /// <summary>An unknown local AI app asks to connect: İzin ver / Reddet (action=mcp-allow / mcp-block).</summary>
+    public static string McpClientRequest(McpClientRequest request)
+    {
+        string Button(string label, string action) =>
+            $"<action content=\"{Escape(label)}\" activationType=\"foreground\" arguments=\"" +
+            Escape(EncodeArgs([new("action", action), new("id", request.Id), new("client", request.Name)])) + "\"/>";
+        return $"<toast scenario=\"reminder\" launch=\"{Escape(EncodeArgs([new("action", "mcp-client"), new("id", request.Id)]))}\">" +
+               "<visual><binding template=\"ToastGeneric\">" +
+               $"<text>{Escape(AiAccessText.ClientRequestTitle(request.Name))}</text>" +
+               $"<text>{Escape(AiAccessText.ClientRequestHelp)}</text>" +
+               "</binding></visual><actions>" + Button(L.T("İzin ver"), "mcp-allow") + Button(L.T("Reddet"), "mcp-block") +
+               "</actions></toast>";
+    }
+
     /// <summary>Values for the countdown bar at <paramref name="now"/>.</summary>
     public static Dictionary<string, string> Countdown(DateTimeOffset createdAt, DateTimeOffset expiresAt, DateTimeOffset now)
     {
