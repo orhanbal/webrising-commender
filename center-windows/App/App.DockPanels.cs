@@ -23,18 +23,18 @@ public partial class App
     private PixelRect _panelAnchor;
     private DockEdge _panelSide;
 
-    /// <summary>Dock buttons open panels (the Dock is on and the app mode is "dock").</summary>
-    public bool PanelsFromDock => AppModes.PanelsFromDock(Settings.Dock, Settings.AppMode) && _dock is not null;
+    /// <summary>Dock buttons open panels (dock mode: the Dock is on).</summary>
+    public bool PanelsFromDock => Settings.Dock && _dock is not null;
 
     /// <summary>A Dock panel is on screen (an auto-hidden Dock stays out meanwhile).</summary>
     public bool DockPanelOpen => _dockPanels.Values.Any(p => p.IsOpen);
 
-    /// <summary>Settings → app mode ("dock" or "classic"): saved; open panels close in classic mode.</summary>
+    /// <summary>The app mode: "dock" turns the Dock on (panels), "classic" turns it off (windows).</summary>
     public void SetAppMode(string mode)
     {
-        Settings.AppMode = AppModes.Parse(mode);
-        SaveSettings();
-        if (Settings.AppMode == AppModes.Classic) CloseDockPanels();
+        var dock = AppModes.Parse(mode) == AppModes.Dock;
+        if (!dock) CloseDockPanels();
+        SetDock(dock);
     }
 
     /// <summary>Every Dock panel closes (one opens, the quick panel opens, the language changes).</summary>

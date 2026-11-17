@@ -95,12 +95,10 @@ public class TaskbarLookTests
     public void AppModeDefaultsToDock(string? value, string expected) => Assert.Equal(expected, AppModes.Parse(value));
 
     [Fact]
-    public void PanelsOpenFromTheDockOnlyWhenItIsOnInDockMode()
+    public void TheModeIsTheDockBeingOnOrOff()
     {
-        Assert.True(AppModes.PanelsFromDock(true, "dock"));
-        Assert.True(AppModes.PanelsFromDock(true, null));
-        Assert.False(AppModes.PanelsFromDock(true, "classic"));
-        Assert.False(AppModes.PanelsFromDock(false, "dock"));
+        Assert.Equal("dock", AppModes.Of(true));
+        Assert.Equal("classic", AppModes.Of(false));
     }
 
     [Fact]

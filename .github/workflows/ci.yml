@@ -1648,45 +1648,43 @@ jobs:
             Quit-App
           }
 
-          # 7. App mode. Dock mode (the default): the Dock's Task Manager button opens a drop-down panel
-          #    just below a top Dock (no window), Esc closes it. Classic mode: the same click opens the window.
+          # 7. App mode. Dock mode: the Dock's Task Manager button opens a drop-down panel
+          #    just below a top Dock (no window), Esc closes it. Classic mode: no Dock at all
+          #    and no work area taken (the app works in its windows).
           $ou = [string][char]0x00F6  # this script file is read as ANSI: no non-ASCII literals
           $tmName = 'G' + $ou + 'rev Y' + $ou + 'neticisi'
           $tmPanelTitle = 'WECOMMANDER ' + $tmName
-          foreach ($appMode in 'dock','classic') {
-            $script:case = "app mode $appMode"
-            Settings "{`"dock`":true,`"dockMode`":`"fixed`",`"dockEdge`":`"top`",`"appMode`":`"$appMode`",`"deskChip`":true,`"watchChosen`":true}"
-            Start-App
-            $d = Dock
-            $uiRoot = [System.Windows.Automation.AutomationElement]::RootElement
-            $dockCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'WECOMMANDER Dock')
-            $dockEl = $uiRoot.FindFirst([System.Windows.Automation.TreeScope]::Children, $dockCond)
-            $scope = if ($dockEl) { $dockEl } else { $uiRoot }
-            $tmEl = $scope.FindFirst([System.Windows.Automation.TreeScope]::Descendants, (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $tmName)))
-            if (-not $d -or -not $tmEl) { $fail += "app mode ${appMode}: the Task Manager button was not found on the Dock" }
-            else {
-              $r = $tmEl.Current.BoundingRectangle
-              [D]::SetCursorPos([int]($r.Left + $r.Width / 2), [int]($r.Top + $r.Height / 2)); [D]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero); Start-Sleep -Milliseconds 60; [D]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero)
-              if ($appMode -eq 'dock') {
-                if (WaitFor { [D]::Find([uint32]$app.Id, $tmPanelTitle) } 8) {
-                  $p = Rect ([D]::Find([uint32]$app.Id, $tmPanelTitle))
-                  Write-Host "dock mode: Task Manager panel at $($p.L),$($p.T),$($p.R),$($p.B) (button at $([int]$r.Left)..$([int]$r.Right))"
-                  # Below the Dock, over the button (kept inside the work area, so its left edge may be further left).
-                  if ($p.T -ge $d.B -and $p.T -le $d.B + 40 -and $p.L -le [int]$r.Right -and $p.R -ge [int]$r.Left) { $passed += 'dock mode: the Task Manager button opens its panel just below the top Dock' } else { $fail += 'dock mode: the Task Manager panel did not open just below its Dock button' }
-                  if ([D]::Find([uint32]$app.Id, $tmName)) { $fail += 'dock mode: the Task Manager window opened as well as the panel' }
-                  Shot 'dock-mode-task-manager-panel'
-                  Start-Sleep -Milliseconds 900
-                  [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
-                  if (WaitFor { -not [D]::Find([uint32]$app.Id, $tmPanelTitle) } 5) { $passed += 'dock mode: Esc closes the panel' } else { $fail += 'dock mode: Esc did not close the Task Manager panel' }
-                } else { $fail += 'dock mode: clicking the Task Manager button did not open its panel' }
-              } else {
-                if (WaitFor { [D]::Find([uint32]$app.Id, $tmName) } 10) { $passed += 'classic mode: the Task Manager button opens the Task Manager window' } else { $fail += 'classic mode: clicking the Task Manager button did not open the window' }
-                if ([D]::Find([uint32]$app.Id, $tmPanelTitle)) { $fail += 'classic mode: a Dock panel opened instead of the window' }
-                Shot 'classic-mode-task-manager-window'
-              }
-            }
-            Quit-App
+          $script:case = 'app mode dock'
+          Settings '{"dock":true,"dockMode":"fixed","dockEdge":"top","appMode":"dock","deskChip":true,"watchChosen":true}'
+          Start-App
+          $d = Dock
+          $uiRoot = [System.Windows.Automation.AutomationElement]::RootElement
+          $dockCond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'WECOMMANDER Dock')
+          $dockEl = $uiRoot.FindFirst([System.Windows.Automation.TreeScope]::Children, $dockCond)
+          $scope = if ($dockEl) { $dockEl } else { $uiRoot }
+          $tmEl = $scope.FindFirst([System.Windows.Automation.TreeScope]::Descendants, (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $tmName)))
+          if (-not $d -or -not $tmEl) { $fail += 'app mode dock: the Task Manager button was not found on the Dock' }
+          else {
+            $r = $tmEl.Current.BoundingRectangle
+            [D]::SetCursorPos([int]($r.Left + $r.Width / 2), [int]($r.Top + $r.Height / 2)); [D]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero); Start-Sleep -Milliseconds 60; [D]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero)
+            if (WaitFor { [D]::Find([uint32]$app.Id, $tmPanelTitle) } 8) {
+              $p = Rect ([D]::Find([uint32]$app.Id, $tmPanelTitle))
+              Write-Host "dock mode: Task Manager panel at $($p.L),$($p.T),$($p.R),$($p.B) (button at $([int]$r.Left)..$([int]$r.Right))"
+              # Below the Dock, over the button (kept inside the work area, so its left edge may be further left).
+              if ($p.T -ge $d.B -and $p.T -le $d.B + 40 -and $p.L -le [int]$r.Right -and $p.R -ge [int]$r.Left) { $passed += 'dock mode: the Task Manager button opens its panel just below the top Dock' } else { $fail += 'dock mode: the Task Manager panel did not open just below its Dock button' }
+              if ([D]::Find([uint32]$app.Id, $tmName)) { $fail += 'dock mode: the Task Manager window opened as well as the panel' }
+              Shot 'dock-mode-task-manager-panel'
+              Start-Sleep -Milliseconds 900
+              [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
+              if (WaitFor { -not [D]::Find([uint32]$app.Id, $tmPanelTitle) } 5) { $passed += 'dock mode: Esc closes the panel' } else { $fail += 'dock mode: Esc did not close the Task Manager panel' }
+            } else { $fail += 'dock mode: clicking the Task Manager button did not open its panel' }
           }
+          Quit-App
+          $script:case = 'app mode classic'
+          Settings '{"dock":false,"appMode":"classic","deskChip":true,"watchChosen":true}'
+          $script:app = Start-Process -FilePath $exe -ArgumentList '--hidden' -PassThru; Start-Sleep -Seconds 8
+          if (-not $app.HasExited -and -not (Dock) -and (Fmt ([D]::Work())) -eq (Fmt $base)) { $passed += 'classic mode: no Dock and no work area taken' } else { $fail += 'classic mode: a Dock appeared (or the app exited, or work area was taken)' }
+          Quit-App
 
           # 3. Auto-hide: out of sight until the mouse reaches the edge; no work area taken.
           $script:case = 'autohide'

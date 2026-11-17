@@ -33,6 +33,7 @@ public partial class App
     public void SetDock(bool on)
     {
         Settings.Dock = on;
+        Settings.AppMode = AppModes.Of(on);
         SaveSettings();
         ApplyDock();
     }

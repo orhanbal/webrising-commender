@@ -999,11 +999,19 @@ public partial class App : Application
         menu.Items.Add(_autonomyItem);
         menu.Items.Add(_stopAutonomyItem);
         menu.Items.Add(new MenuFlyoutSeparator());
-        // The Dock is turned on or off right here as well as on the settings page.
-        var dockItem = new ToggleMenuFlyoutItem { Text = L.T("Dock'u göster"), IsChecked = Settings.Dock };
-        dockItem.Click += (_, _) => SetDock(dockItem.IsChecked);
-        menu.Opening += (_, _) => dockItem.IsChecked = Settings.Dock;
-        menu.Items.Add(dockItem);
+        // The app's two modes, chosen right here as well as on the settings page.
+        var dockMode = new RadioMenuFlyoutItem { Text = L.T("Dock modu"), GroupName = "appMode", IsChecked = Settings.Dock };
+        var classicMode = new RadioMenuFlyoutItem { Text = L.T("Klasik mod"), GroupName = "appMode", IsChecked = !Settings.Dock };
+        void Mode(string mode)
+        {
+            menu.Hide();
+            _ui.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => { try { SetAppMode(mode); } catch (Exception e) { LogCrash(e); } });
+        }
+        dockMode.Click += (_, _) => Mode(AppModes.Dock);
+        classicMode.Click += (_, _) => Mode(AppModes.Classic);
+        menu.Opening += (_, _) => { dockMode.IsChecked = Settings.Dock; classicMode.IsChecked = !Settings.Dock; };
+        menu.Items.Add(dockMode);
+        menu.Items.Add(classicMode);
         menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(new MenuFlyoutItem { Text = L.T("Paneli tarayıcıda aç"), Command = new RelayCommand(OpenDashboard) });
         menu.Items.Add(_notifyItem);

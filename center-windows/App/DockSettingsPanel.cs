@@ -19,17 +19,14 @@ public static class DockSettingsPanel
             Text = L.T("Ekranın bir kenarında WECOMMANDER'a ait bir çubuk: canlı CPU, RAM ve disk; süreçler, terminal ve onaylara tek tıkla geçiş. Windows görev çubuğuna dokunmaz; kapatınca ekran alanı geri verilir."),
         });
         var details = new StackPanel { Spacing = 10 };
-        var on = new ToggleSwitch { Header = L.T("Dock'u göster"), IsOn = s.Dock };
         void Save() { App.Current.SaveSettings(); App.Current.ApplyDock(); }
-        on.Toggled += (_, _) => { details.Visibility = on.IsOn ? Visibility.Visible : Visibility.Collapsed; App.Current.SetDock(on.IsOn); };
-        body.Children.Add(on);
 
-        // How the app works while the Dock is on: everything in panels under the Dock, or windows as before.
+        // The app's two modes: the Dock with panels, or classic windows without a Dock.
         var appModes = new RadioButtons { Header = L.T("Uygulama modu"), MaxColumns = 1 };
         foreach (var (tag, name, help) in new[]
         {
-            (AppModes.Dock, L.T("Dock modu"), L.T("Her şey Dock'tan açılan panellerde; pencere açılmaz.")),
-            (AppModes.Classic, L.T("Klasik mod"), L.T("Dock düğmeleri ayrı pencereler açar.")),
+            (AppModes.Dock, L.T("Dock modu"), L.T("Dock ekranın kenarında durur; her şey Dock'tan açılan panellerde.")),
+            (AppModes.Classic, L.T("Klasik mod"), L.T("Dock kapalı; uygulama pencerelerle çalışır.")),
         })
         {
             var text = new StackPanel();
@@ -46,12 +43,15 @@ public static class DockSettingsPanel
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(radio, help);
             appModes.Items.Add(radio);
         }
-        appModes.SelectedIndex = AppModes.Parse(s.AppMode) == AppModes.Classic ? 1 : 0;
+        appModes.SelectedIndex = s.Dock ? 0 : 1;
         appModes.SelectionChanged += (_, _) =>
         {
             try
             {
-                if ((appModes.SelectedItem as RadioButton)?.Tag is string tag && tag != AppModes.Parse(s.AppMode)) App.Current.SetAppMode(tag);
+                if ((appModes.SelectedItem as RadioButton)?.Tag is not string tag) return;
+                var dock = tag == AppModes.Dock;
+                details.Visibility = dock ? Visibility.Visible : Visibility.Collapsed;
+                if (dock != s.Dock) App.Current.SetAppMode(tag);
             }
             catch (Exception e) { App.LogCrash(e); }
         };

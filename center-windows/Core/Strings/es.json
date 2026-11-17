@@ -1330,5 +1330,9 @@
  "Terminal açılacak sunucuyu seç": "Elige el servidor en el que abrir un terminal",
  "Tüm ayarlar…": "Toda la configuración…",
  "Uygulama modu": "Modo de la aplicación",
- "{0}: bağlanılıyor…": "{0}: conectando…"
+ "{0}: bağlanılıyor…": "{0}: conectando…",
+ "Dock ekranın kenarında durur; her şey Dock'tan açılan panellerde.": "El Dock queda en un borde de la pantalla; todo se abre en paneles desde el Dock.",
+ "Dock kapalı; uygulama pencerelerle çalışır.": "Sin Dock; la aplicación funciona con ventanas.",
+ "Klasik moda geç": "Cambiar al modo clásico",
+ "Klasik moda geçildi; Dock kapandı ve ekran alanı geri verildi. Dock moduna dönmek için: tepsi simgesine sağ tıkla → Dock modu.": "Cambiado al modo clásico; el Dock se cerró y se devolvió el espacio de pantalla. Para volver al modo Dock: clic derecho en el icono de la bandeja → Modo Dock."
 }

@@ -88,7 +88,7 @@ public static class TaskbarLook
     };
 }
 
-/// <summary>How the app works with the Dock on: "dock" (panels open from the Dock) or "classic" (Dock buttons open windows).</summary>
+/// <summary>The app's two modes: "dock" (the Dock is on and everything opens in panels from it) or "classic" (no Dock; windows).</summary>
 public static class AppModes
 {
     public const string Dock = "dock", Classic = "classic";
@@ -96,6 +96,6 @@ public static class AppModes
     public static string Parse(string? value) =>
         string.Equals(value, Classic, StringComparison.OrdinalIgnoreCase) ? Classic : Dock;
 
-    /// <summary>Dock buttons open drop-down panels: the Dock is on and the mode is not classic.</summary>
-    public static bool PanelsFromDock(bool dockOn, string? appMode) => dockOn && Parse(appMode) == Dock;
+    /// <summary>The mode follows the Dock: on is dock mode, off is classic mode.</summary>
+    public static string Of(bool dockOn) => dockOn ? Dock : Classic;
 }

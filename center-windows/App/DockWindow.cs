@@ -1299,7 +1299,7 @@ public sealed class DockWindow : Window
             var app = new MenuFlyoutItem { Text = L.T("WECOMMANDER penceresi"), Icon = new FontIcon { Glyph = "" } };
             app.Click += (_, _) => App.Current.ShowServers();
             menu.Items.Add(app);
-            var off = new MenuFlyoutItem { Text = L.T("Dock'u gizle"), Icon = new FontIcon { Glyph = "" } };
+            var off = new MenuFlyoutItem { Text = L.T("Klasik moda geç"), Icon = new FontIcon { Glyph = "" } };
             off.Click += (_, _) =>
             {
                 // Hidden after the menu has closed (the same reason as Later).
@@ -1308,8 +1308,8 @@ public sealed class DockWindow : Window
                 {
                     try
                     {
-                        App.Current.SetDock(false);
-                        App.Current.Toast(L.T("Dock kapandı ve ekran alanı geri verildi. Yeniden açmak için: Ayarlar → Dock."));
+                        App.Current.SetAppMode(AppModes.Classic);
+                        App.Current.Toast(L.T("Klasik moda geçildi; Dock kapandı ve ekran alanı geri verildi. Dock moduna dönmek için: tepsi simgesine sağ tıkla → Dock modu."));
                     }
                     catch (Exception ex) { App.LogCrash(ex); }
                 });
