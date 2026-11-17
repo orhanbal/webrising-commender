@@ -18,6 +18,15 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository }}
     runs-on: ubuntu-latest
     steps:
+      # Only the release notes and their script: the newest macOS "Yenilikler" entry goes into the release text.
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            release-notes
+            scripts/gen-release-notes.py
+          sparse-checkout-cone-mode: false
       - name: Retrieve the macOS installer built and tested by the macos workflow
         env:
           GH_TOKEN: ${{ github.token }}
@@ -43,11 +52,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="macos-preview-${{ github.event.workflow_run.run_number }}"
+          # The newest macOS "Yenilikler" entry (release-notes/notes.json, Turkish and English) under the fixed text.
+          {
+            echo "macOS universal agent PKG the Management Center app (WECOMMANDER-Center-macos.zip) and the WECOMMANDER Desktop preview (WECOMMANDER-Desktop-macos.zip, ad-hoc signed) built and tested by the macos workflow (run ${{ github.event.workflow_run.id }}) for ${{ github.event.workflow_run.head_sha }}. Must pass physical-device acceptance before production approval."
+            echo
+            python3 scripts/gen-release-notes.py --release-body macos || true
+          } > release-body.md
           gh release create "$TAG" dist/*.pkg dist/*.zip dist/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "${{ github.event.workflow_run.head_sha }}" \
             --title "WECOMMANDER macOS preview #${{ github.event.workflow_run.run_number }}" \
-            --prerelease --notes "macOS universal agent PKG the Management Center app (WECOMMANDER-Center-macos.zip) and the WECOMMANDER Desktop preview (WECOMMANDER-Desktop-macos.zip, ad-hoc signed) built and tested by the macos workflow (run ${{ github.event.workflow_run.id }}) for ${{ github.event.workflow_run.head_sha }}. Must pass physical-device acceptance before production approval."
+            --prerelease --notes-file release-body.md
       - name: Refresh the fixed macos-center-latest release used by the one-line installer
         env:
           GH_TOKEN: ${{ github.token }}

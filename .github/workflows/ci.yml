@@ -179,6 +179,8 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: gateway/package-lock.json
+      - name: Release notes (release-notes/notes.json) are valid and their copies up to date
+        run: python3 ../scripts/gen-release-notes.py --check
       - run: npm ci
       - run: npm run typecheck
       - run: npm test

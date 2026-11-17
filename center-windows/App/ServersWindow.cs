@@ -960,6 +960,8 @@ public sealed partial class ServersWindow : Window
         center.Click += (_, _) => App.Current.ShowPanel();
         var ai = new HyperlinkButton { Content = L.T("Yapay zekâ: yerel MCP, bağlanan yapay zekâ uygulamaları ve kurulum") };
         ai.Click += (_, _) => Navigate("ai");
+        var whatsNew = new HyperlinkButton { Content = L.T("Yenilikler: bu sürümde neler değişti") };
+        whatsNew.Click += (_, _) => App.Current.ShowWhatsNew();
         var backupTitle = new TextBlock { Text = L.T("Yedekleme"), Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], Margin = new Thickness(0, 8, 0, 0) };
         var backupHelp = new TextBlock
         {
@@ -1000,7 +1002,7 @@ public sealed partial class ServersWindow : Window
             if (chosen == settings.Language) return;
             DispatcherQueue.TryEnqueue(() => App.Current.SetLanguage(chosen));
         };
-        foreach (var e in new UIElement[] { language, font, theme, keys, logsButton, dock, syncTitle, syncPanel, teamTitle, teamPanel, backupTitle, backupHelp, backupRow, ai, center }) body.Children.Add(e);
+        foreach (var e in new UIElement[] { language, font, theme, keys, logsButton, dock, syncTitle, syncPanel, teamTitle, teamPanel, backupTitle, backupHelp, backupRow, ai, center, whatsNew }) body.Children.Add(e);
         var scroll = new ScrollViewer { Content = body };
         SetPage(Page(L.T("Ayarlar"), L.T("Terminal görünümü ve Dock; değişiklikler hemen uygulanır."), scroll));
         if (_settingsAtDock)

@@ -3,6 +3,8 @@
 // without running JavaScript), the JSON-LD, /llms.txt, /llms-full.txt and the
 // sitemap. Keep it factual: assistants quote it.
 
+import { releaseNotes } from "./release-notes.gen.js";
+
 export type Block =
   | { h2: string }
   | { p: string }
@@ -11,6 +13,13 @@ export type Block =
   | { table: { head: string[]; rows: string[][] } };
 
 export type Faq = { q: string; a: string };
+
+/** The English release notes, newest first: one heading and list per app update. */
+function changelogBlocks(): Block[] {
+  const app = (platforms: string[]) =>
+    platforms.length === 0 || platforms.length === 2 ? "Windows and macOS" : platforms.includes("macos") ? "macOS" : "Windows";
+  return releaseNotes.flatMap((note): Block[] => [{ h2: `${note.date} · ${app(note.platforms)}` }, { ul: note.items.en }]);
+}
 
 export type PublicPage = {
   path: string;
@@ -351,6 +360,15 @@ export const publicPages: PublicPage[] = [
         "Approve from the dashboard, the e-mail, or Windows notifications of the Management Center app.",
       ] },
     ],
+  },
+  {
+    path: "/changelog",
+    section: "Product",
+    title: "What's new · WECOMMANDER",
+    description: "What changed in each WECOMMANDER desktop app update for Windows and macOS, in plain words.",
+    heading: "What's new",
+    intro: "The same notes the Windows and macOS apps show once after an update, newest first.",
+    blocks: changelogBlocks(),
   },
   {
     path: "/privacy",

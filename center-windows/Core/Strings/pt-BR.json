@@ -1334,5 +1334,9 @@
  "Dock ekranın kenarında durur; her şey Dock'tan açılan panellerde.": "O Dock fica em uma borda da tela; tudo abre em painéis a partir do Dock.",
  "Dock kapalı; uygulama pencerelerle çalışır.": "Sem Dock; o aplicativo funciona com janelas.",
  "Klasik moda geç": "Mudar para o modo clássico",
- "Klasik moda geçildi; Dock kapandı ve ekran alanı geri verildi. Dock moduna dönmek için: tepsi simgesine sağ tıkla → Dock modu.": "Modo clássico ativado; o Dock foi fechado e o espaço da tela devolvido. Para voltar ao modo Dock: clique com o botão direito no ícone da bandeja → Modo Dock."
+ "Klasik moda geçildi; Dock kapandı ve ekran alanı geri verildi. Dock moduna dönmek için: tepsi simgesine sağ tıkla → Dock modu.": "Modo clássico ativado; o Dock foi fechado e o espaço da tela devolvido. Para voltar ao modo Dock: clique com o botão direito no ícone da bandeja → Modo Dock.",
+ "Yenilikler": "Novidades",
+ "Henüz yenilik notu yok.": "Ainda não há novidades.",
+ "WECOMMANDER'da yenilikler": "Novidades do WECOMMANDER",
+ "Yenilikler: bu sürümde neler değişti": "Novidades: o que mudou nesta versão"
 }

@@ -14,7 +14,7 @@ final class LocalizationTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Sources")
         let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
-            .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" && !["LStrings.swift", "L.swift"].contains($0.lastPathComponent) } ?? []
+            .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" && !["LStrings.swift", "L.swift", "ReleaseNotesData.swift"].contains($0.lastPathComponent) } ?? []
         return files.map { ($0.lastPathComponent, (try? String(contentsOf: $0, encoding: .utf8)) ?? "") }
     }
 

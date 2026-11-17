@@ -467,7 +467,7 @@ const modernPages = new Set([
   "/devices", "/terminal", "/files", "/tasks", "/scheduled-tasks", "/mcp", "/usage", "/approvals", "/team", "/audit", "/invite",
   "/reset-password", "/pricing", "/checkout", "/install", "/console", "/console/users", "/console/organizations", "/console/devices", "/console/operations", "/console/landing", "/console/billing", "/console/system", "/console/brand", "/console/legal", "/console/marketing", "/console/email", "/console/growth", "/console/growth/traffic", "/console/growth/crawlers", "/console/growth/connections", "/console/growth/downloads", "/console/growth/usage", "/console/growth/feedback", "/console/growth/directories", "/unsubscribe", "/dashboard", "/account", "/billing",
   "/devices", "/terminal", "/files", "/tasks", "/mcp", "/usage", "/approvals", "/team", "/audit", "/invite",
-  "/privacy", "/terms", "/refund",
+  "/privacy", "/terms", "/refund", "/changelog",
   ...contentPagePaths,
 ]);
 /** Last-modified date for the sitemap: the day this gateway build started. */

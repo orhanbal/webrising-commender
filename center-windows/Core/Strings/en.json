@@ -1334,5 +1334,9 @@
  "Dock ekranın kenarında durur; her şey Dock'tan açılan panellerde.": "The Dock sits on a screen edge; everything opens in panels from the Dock.",
  "Dock kapalı; uygulama pencerelerle çalışır.": "No Dock; the app works in windows.",
  "Klasik moda geç": "Switch to classic mode",
- "Klasik moda geçildi; Dock kapandı ve ekran alanı geri verildi. Dock moduna dönmek için: tepsi simgesine sağ tıkla → Dock modu.": "Switched to classic mode; the Dock is closed and the screen space is back. To return to dock mode: right-click the tray icon → Dock mode."
+ "Klasik moda geçildi; Dock kapandı ve ekran alanı geri verildi. Dock moduna dönmek için: tepsi simgesine sağ tıkla → Dock modu.": "Switched to classic mode; the Dock is closed and the screen space is back. To return to dock mode: right-click the tray icon → Dock mode.",
+ "Yenilikler": "What's new",
+ "Henüz yenilik notu yok.": "No release notes yet.",
+ "WECOMMANDER'da yenilikler": "What's new in WECOMMANDER",
+ "Yenilikler: bu sürümde neler değişti": "What's new: what changed in this version"
 }
