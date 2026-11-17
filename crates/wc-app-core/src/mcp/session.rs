@@ -1,7 +1,7 @@
 //! MCP (JSON-RPC 2.0, one message per line) on one endpoint connection.
 //!
 //! `initialize` answers at once and records the client (`clientInfo`
-//! name + version); an unknown client raises `mcp-client-request` and its
+//! name, version kept as information); an unknown client raises `mcp-client-request` and its
 //! `tools/call` requests wait up to 2 minutes for `mcp.allowClient`.
 //! `tools/list` is static and needs no decision. Requests run concurrently;
 //! when the connection closes (or the client cancels one), its running

@@ -43,7 +43,8 @@ pub const APPROVAL_SECS: i64 = 300;
 const CLIENTS_FILE: &str = "mcp-clients.json";
 pub const AUDIT_FILE: &str = "mcp-audit.jsonl";
 
-/// One AI client as it introduced itself (`clientInfo` of `initialize`).
+/// One AI client as it introduced itself (`clientInfo` of `initialize`),
+/// identified by its name; `version` is the last one it reported.
 /// Self-declared: the allow-list is consent, not authentication.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -60,9 +61,10 @@ pub struct ClientRecord {
     pub last_seen: String,
 }
 
-/// Stable id of a client: its name and version.
-pub fn client_id(name: &str, version: &str) -> String {
-    let digest = Sha256::digest(format!("{name}\0{version}").as_bytes());
+/// Stable id of a client: its name (the version is kept as information; a
+/// new version of an allowed client is not asked about again).
+pub fn client_id(name: &str) -> String {
+    let digest = Sha256::digest(name.as_bytes());
     let hex: String = digest.iter().take(8).map(|b| format!("{b:02x}")).collect();
     format!("client-{hex}")
 }
@@ -113,12 +115,13 @@ impl Hub {
     /// A client said hello: known clients get `lastSeen`, unknown ones are
     /// recorded as not allowed (the caller asks the person).
     pub fn hello(&self, name: &str, version: &str) -> Result<ClientRecord, String> {
-        let id = client_id(name, version);
+        let id = client_id(name);
         let now = format_rfc3339(now_unix());
         let mut list = self.clients.lock().map_err(|_| "busy")?;
         let record = match list.iter_mut().find(|c| c.id == id) {
             Some(c) => {
                 c.last_seen = now;
+                c.version = version.to_owned();
                 c.clone()
             }
             None => {
@@ -617,7 +620,11 @@ mod tests {
         // Remembered across restarts, per name and version.
         let again = Hub::new(&dir);
         assert!(again.hello("Claude Desktop", "1.0").unwrap().allowed);
-        assert!(!again.hello("Claude Desktop", "1.1").unwrap().allowed);
+        // Per name: an update keeps the decision and records the new version.
+        let updated = again.hello("Claude Desktop", "1.1").unwrap();
+        assert!(updated.allowed && updated.id == c.id && updated.version == "1.1");
+        assert_eq!(again.clients()[0].version, "1.1");
+        assert!(!again.hello("Cursor", "1.0").unwrap().allowed);
         // Denied: refused at once.
         again.allow(&c.id, false).unwrap();
         assert!(again

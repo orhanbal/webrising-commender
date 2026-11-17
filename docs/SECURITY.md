@@ -318,7 +318,7 @@ What it guarantees:
   a 0700 folder with a peer-uid check. One core owns it. The bridge
   (`--mcp-stdio`) holds no hosts, keys or passwords; if the app is closed it
   only answers `wecommander_not_running`.
-- **Client allow-list:** each client (by its `clientInfo` name and version)
+- **Client allow-list:** each client (by its `clientInfo` name; a new version is not asked again)
   is shown once in the app and must be allowed; decisions are remembered and
   can be revoked. The name is self-declared, so this is consent, not
   authentication: the endpoint ACL and the per-call approvals are the

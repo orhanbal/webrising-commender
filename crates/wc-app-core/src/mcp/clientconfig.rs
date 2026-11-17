@@ -10,11 +10,13 @@
 //!
 //! A file that is not valid JSON/TOML is never overwritten
 //! (`config_invalid`). Writing keeps a `.bak` copy of the old file and
-//! replaces the file atomically. JSON keys come back sorted (serde_json);
-//! TOML keeps its formatting and comments.
+//! replaces the file atomically. JSON keeps its key order and the text of
+//! every other value; TOML keeps its formatting and comments.
 use std::path::{Path, PathBuf};
 
+use indexmap::IndexMap;
 use serde::Serialize;
+use serde_json::value::RawValue;
 use serde_json::{json, Value};
 
 pub const SERVER_NAME: &str = "wecommander";
@@ -28,6 +30,22 @@ pub enum Client {
 }
 
 impl Client {
+    pub const ALL: [Client; 4] = [
+        Client::ClaudeDesktop,
+        Client::ClaudeCode,
+        Client::Cursor,
+        Client::Codex,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::ClaudeDesktop => "claude-desktop",
+            Self::ClaudeCode => "claude-code",
+            Self::Cursor => "cursor",
+            Self::Codex => "codex",
+        }
+    }
+
     pub fn parse(name: &str) -> Result<Self, String> {
         Ok(match name {
             "claude-desktop" => Self::ClaudeDesktop,
@@ -103,30 +121,70 @@ pub struct Plan {
     pub changed: bool,
 }
 
+/// A JSON value kept as it was written (`Raw`) or an object whose entries
+/// keep their order (`Map`): only the objects on the way to our entry are
+/// rebuilt, everything else is written back byte for byte.
+#[derive(Serialize)]
+#[serde(untagged)]
+enum Node {
+    Raw(Box<RawValue>),
+    Map(IndexMap<String, Node>),
+    List(Vec<Node>),
+}
+
+fn object(text: &str, what: &str) -> Result<IndexMap<String, Node>, String> {
+    let map: IndexMap<String, Box<RawValue>> = serde_json::from_str(text)
+        .map_err(|e| format!("config_invalid: {what} is not a JSON object ({e}); fix it first"))?;
+    Ok(map.into_iter().map(|(k, v)| (k, Node::Raw(v))).collect())
+}
+
+fn raw(value: Value) -> Result<Node, String> {
+    RawValue::from_string(value.to_string())
+        .map(Node::Raw)
+        .map_err(|e| e.to_string())
+}
+
 fn merge_json(client: Client, before: &str, command: &[String]) -> Result<String, String> {
-    let mut root: Value = if before.trim().is_empty() {
-        json!({})
+    let mut root = if before.trim().is_empty() {
+        IndexMap::new()
     } else {
-        serde_json::from_str(before).map_err(|e| {
-            format!("config_invalid: the file is not valid JSON ({e}); fix it first")
-        })?
+        object(before, "the file")?
     };
-    let obj = root
-        .as_object_mut()
-        .ok_or("config_invalid: the file is not a JSON object")?;
-    let servers = obj
-        .entry("mcpServers")
-        .or_insert_with(|| json!({}))
-        .as_object_mut()
-        .ok_or("config_invalid: mcpServers is not an object")?;
+    let mut servers = match root.shift_remove("mcpServers") {
+        Some(Node::Raw(r)) => object(r.get(), "mcpServers")?,
+        _ => IndexMap::new(),
+    };
     let (exe, args) = command.split_first().ok_or("no bridge command")?;
-    let entry = if client == Client::ClaudeCode {
-        json!({ "type": "stdio", "command": exe, "args": args, "env": {} })
+    let mut entry = IndexMap::new();
+    if client == Client::ClaudeCode {
+        entry.insert("type".to_owned(), raw(json!("stdio"))?);
+    }
+    entry.insert("command".to_owned(), raw(json!(exe))?);
+    let args = args
+        .iter()
+        .map(|a| raw(json!(a)))
+        .collect::<Result<_, _>>()?;
+    entry.insert("args".to_owned(), Node::List(args));
+    if client == Client::ClaudeCode {
+        entry.insert("env".to_owned(), raw(json!({}))?);
+    }
+    // An existing entry is replaced in place; a new one goes last.
+    servers.insert(SERVER_NAME.to_owned(), Node::Map(entry));
+    let had_servers = !before.trim().is_empty() && before.contains("\"mcpServers\"");
+    let position = if had_servers {
+        // Put mcpServers back where it was.
+        let original: IndexMap<String, Box<RawValue>> =
+            serde_json::from_str(before).map_err(|e| e.to_string())?;
+        original.get_index_of("mcpServers")
     } else {
-        json!({ "command": exe, "args": args })
+        None
     };
-    servers.insert(SERVER_NAME.into(), entry);
-    let mut text = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+    root.insert("mcpServers".to_owned(), Node::Map(servers));
+    if let Some(i) = position {
+        let last = root.len() - 1;
+        root.move_index(last, i.min(last));
+    }
+    let mut text = serde_json::to_string_pretty(&Node::Map(root)).map_err(|e| e.to_string())?;
     text.push('\n');
     Ok(text)
 }
@@ -240,6 +298,57 @@ pub fn write(
     })
 }
 
+/// A WECOMMANDER entry in a client's config whose program is gone (the app
+/// moved or was reinstalled elsewhere): event `mcp-config-stale`.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Stale {
+    pub client: &'static str,
+    /// The config file.
+    pub path: String,
+    /// The program the entry starts, which no longer exists.
+    pub command: String,
+}
+
+/// The `command` of our entry in `text` (the client's config), if any.
+fn entry_command(client: Client, text: &str) -> Option<String> {
+    if client == Client::Codex {
+        let doc: toml_edit::DocumentMut = text.parse().ok()?;
+        return doc
+            .get("mcp_servers")?
+            .get(SERVER_NAME)?
+            .get("command")?
+            .as_str()
+            .map(str::to_owned);
+    }
+    let v: Value = serde_json::from_str(text).ok()?;
+    v.get("mcpServers")?
+        .get(SERVER_NAME)?
+        .get("command")?
+        .as_str()
+        .map(str::to_owned)
+}
+
+/// Known clients whose WECOMMANDER entry points at a program that is gone.
+/// Only reported: the person decides whether to rewrite the entry. A bare
+/// program name (found through PATH) is not checked.
+pub fn stale_entries(dirs: &Dirs) -> Vec<Stale> {
+    Client::ALL
+        .iter()
+        .filter_map(|&client| {
+            let path = config_path(client, dirs);
+            let text = std::fs::read_to_string(&path).ok()?;
+            let command = entry_command(client, &text)?;
+            let is_path = command.contains('/') || command.contains('\\');
+            (is_path && !Path::new(&command).exists()).then(|| Stale {
+                client: client.name(),
+                path: path.to_string_lossy().into_owned(),
+                command,
+            })
+        })
+        .collect()
+}
+
 fn backup_path(path: &Path) -> PathBuf {
     let mut name = path.file_name().unwrap_or_default().to_os_string();
     name.push(".bak");
@@ -326,6 +435,63 @@ mod tests {
             assert!(!write(client, &d, &cmd(), None).unwrap().changed);
             let _ = std::fs::remove_dir_all(&d.home);
         }
+    }
+
+    #[test]
+    fn json_merge_keeps_order_and_other_text() {
+        let d = dirs("order", "linux");
+        let before = "{\n  \"zeta\": 1,\n  \"mcpServers\": {\n    \"zz\": {\n      \"command\": \"z\"\n    },\n    \"aa\": {\n      \"command\": \"a\"\n    }\n  },\n  \"alpha\": [\n    1,\n    2\n  ]\n}\n";
+        let path = config_path(Client::Cursor, &d);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, before).unwrap();
+        let after = plan(Client::Cursor, &d, &cmd()).unwrap().after;
+        let expected = format!(
+            "{{\n  \"zeta\": 1,\n  \"mcpServers\": {{\n    \"zz\": {{\n      \"command\": \"z\"\n    }},\n    \"aa\": {{\n      \"command\": \"a\"\n    }},\n    \"wecommander\": {{\n      \"command\": {},\n      \"args\": [\n        \"--mcp-stdio\"\n      ]\n    }}\n  }},\n  \"alpha\": [\n    1,\n    2\n  ]\n}}\n",
+            serde_json::to_string(&cmd()[0]).unwrap()
+        );
+        assert_eq!(after, expected);
+        // Writing it again changes nothing; an existing entry stays in place.
+        std::fs::write(&path, &after).unwrap();
+        assert!(!plan(Client::Cursor, &d, &cmd()).unwrap().changed);
+        let _ = std::fs::remove_dir_all(&d.home);
+    }
+
+    #[test]
+    fn stale_entries_are_reported_not_rewritten() {
+        let d = dirs("stale", "linux");
+        let exe = d.home.join("wecommander-core");
+        std::fs::write(&exe, "").unwrap();
+        let here = vec![exe.to_string_lossy().into_owned(), "--mcp-stdio".into()];
+        let gone = vec![
+            d.home
+                .join("old")
+                .join("wecommander-core")
+                .to_string_lossy()
+                .into_owned(),
+            "--mcp-stdio".into(),
+        ];
+        write(Client::Cursor, &d, &here, None).unwrap();
+        write(Client::Codex, &d, &gone, None).unwrap();
+        write(Client::ClaudeCode, &d, &gone, None).unwrap();
+        let desktop = config_path(Client::ClaudeDesktop, &d);
+        std::fs::create_dir_all(desktop.parent().unwrap()).unwrap();
+        // Found through PATH: not checked.
+        std::fs::write(
+            &desktop,
+            r#"{"mcpServers":{"wecommander":{"command":"wecommander-core"}}}"#,
+        )
+        .unwrap();
+        let before = std::fs::read_to_string(config_path(Client::Codex, &d)).unwrap();
+        let stale = stale_entries(&d);
+        let names: Vec<_> = stale.iter().map(|s| s.client).collect();
+        assert_eq!(names, ["claude-code", "codex"]);
+        assert_eq!(stale[1].command, gone[0]);
+        assert!(stale[1].path.ends_with("config.toml"));
+        assert_eq!(
+            std::fs::read_to_string(config_path(Client::Codex, &d)).unwrap(),
+            before
+        );
+        let _ = std::fs::remove_dir_all(&d.home);
     }
 
     #[test]

@@ -841,6 +841,14 @@ async fn main() {
     out.line(
         &json!({ "event": "ready", "data": core::app_info(&state, env!("CARGO_PKG_VERSION")) }),
     );
+    if mcp {
+        // WECOMMANDER entries in AI clients' configs that point at a program
+        // that is gone: the app offers to fix them (nothing is rewritten here).
+        let dirs = core::mcp::clientconfig::Dirs::current();
+        for stale in core::mcp::clientconfig::stale_entries(&dirs) {
+            state.emit("mcp-config-stale", stale);
+        }
+    }
 
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     while let Ok(Some(line)) = lines.next_line().await {
