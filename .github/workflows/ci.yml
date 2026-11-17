@@ -1608,6 +1608,15 @@ jobs:
               if ($saved) { $passed += "dragging a module button on the $edge Dock saves the new order" } else { $fail += "reorder ${edge}: saved order '$($script:order)', expected '$want'" }
               Start-Sleep -Seconds 1
               # Built again in the new order: approvals now comes before terminal along the Dock.
+              # The rebuilt Dock is looked up again (the old UI Automation element is stale), retrying briefly.
+              $fromEl = $null; $toEl = $null
+              for ($r = 0; $r -lt 10 -and -not ($fromEl -and $toEl); $r++) {
+                $dockEl = $uiRoot.FindFirst([System.Windows.Automation.TreeScope]::Children, $dockCond)
+                $scope = if ($dockEl) { $dockEl } else { $uiRoot }
+                $fromEl = $scope.FindFirst([System.Windows.Automation.TreeScope]::Descendants, (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'Bekleyen onaylar')))
+                $toEl = $scope.FindFirst([System.Windows.Automation.TreeScope]::Descendants, (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'Terminal')))
+                if (-not ($fromEl -and $toEl)) { Start-Sleep -Milliseconds 500 }
+              }
               $fromEl = $scope.FindFirst([System.Windows.Automation.TreeScope]::Descendants, (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'Bekleyen onaylar')))
               $toEl = $scope.FindFirst([System.Windows.Automation.TreeScope]::Descendants, (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'Terminal')))
               if ($fromEl -and $toEl) {
