@@ -52,8 +52,8 @@ public sealed class DockWindow : Window
     private TextBlock _serverName = new() { FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
     private TextBlock _serverState = new() { FontSize = 11 };
     private Ellipse _serverDot = new() { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center };
-    private readonly TextBlock _badge = new() { FontSize = 10, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(Colors.White), HorizontalAlignment = HorizontalAlignment.Center };
-    private readonly Border _badgeBox = new() { CornerRadius = new CornerRadius(8), MinWidth = 16, Height = 16, Padding = new Thickness(4, 0, 4, 0),
+    private TextBlock _badge = new() { FontSize = 10, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(Colors.White), HorizontalAlignment = HorizontalAlignment.Center };
+    private Border _badgeBox = new() { CornerRadius = new CornerRadius(8), MinWidth = 16, Height = 16, Padding = new Thickness(4, 0, 4, 0),
         Background = new SolidColorBrush(ColorHelper.FromArgb(255, 0xEF, 0x44, 0x44)), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
         Margin = new Thickness(0, 2, 2, 0), Visibility = Visibility.Collapsed, IsHitTestVisible = false };
     private FrameworkElement? _appButton, _grip;
@@ -514,8 +514,11 @@ public sealed class DockWindow : Window
                     var approvals = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, L.T("Bekleyen onaylar"));
                     approvals.Click += (_, _) => App.Current.ShowApprovals();
                     bell.Children.Add(approvals);
-                    if (_badgeBox.Parent is Panel old) old.Children.Remove(_badgeBox);
-                    _badgeBox.Child = _badge;
+                    // Fresh badge on every build (an element that still has a parent cannot be added again).
+                    _badge = new TextBlock { Text = _badge.Text, FontSize = 10, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(Colors.White), HorizontalAlignment = HorizontalAlignment.Center };
+                    _badgeBox = new Border { CornerRadius = new CornerRadius(8), MinWidth = 16, Height = 16, Padding = new Thickness(4, 0, 4, 0),
+                        Background = new SolidColorBrush(ColorHelper.FromArgb(255, 0xEF, 0x44, 0x44)), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
+                        Margin = new Thickness(0, 2, 2, 0), Visibility = _badgeBox.Visibility, IsHitTestVisible = false, Child = _badge };
                     bell.Children.Add(_badgeBox);
                     AddModule(end, m, bell, approvals);
                     break;
