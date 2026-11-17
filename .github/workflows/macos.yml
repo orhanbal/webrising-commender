@@ -222,6 +222,8 @@ jobs:
         run: python3 scripts/gen-macos-strings.py --check
       - name: Icon outlines are up to date (Vuesax icons, scripts/gen-icons.py)
         run: python3 scripts/gen-icons.py --check
+      - name: Release notes copy is up to date
+        run: python3 scripts/gen-release-notes.py --check
       - name: Core unit tests (CoreClient against the real wecommander-core)
         env:
           WECOMMANDER_CORE_BIN: ${{ github.workspace }}/center-macos/core/wecommander-core

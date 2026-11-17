@@ -822,6 +822,9 @@ struct SettingsPage: View {
         Form {
             if let app = (NSApp.delegate as? AppDelegate)?.model {
                 Section(L.t("Dil")) { LanguagePicker(model: app) }
+                Section(L.t("Yenilikler")) {
+                    Button(L.t("Yenilikler: bu sürümde neler değişti")) { WhatsNew.showAll(model: app) }
+                }
             }
             Section("Terminal") {
                 Stepper(value: $fontSize, in: 8...32, step: 1) { Text(L.f("Yazı boyutu: {0}", Int(fontSize))) }

@@ -14,6 +14,8 @@ final class AppModel: ObservableObject {
     private static let syncEvery: TimeInterval = 4
 
     @Published private(set) var settings: CenterSettings
+    /// settings.json was there at start (false: first start after installing; WhatsNew.swift).
+    private(set) var settingsExisted = true
     @Published private(set) var token: String?
     @Published private(set) var me: CenterMe?
     @Published private(set) var pending: [ApprovalRequest] = []
@@ -79,6 +81,7 @@ final class AppModel: ObservableObject {
     init() {
         let (loaded, existed) = store.load()
         settings = loaded
+        settingsExisted = existed
         // WECOMMANDER_LANGUAGE overrides the setting (CI screenshots per language).
         L.use(L.resolve(ProcessInfo.processInfo.environment["WECOMMANDER_LANGUAGE"] ?? loaded.language))
         token = Keychain.load(server: loaded.server)
@@ -467,6 +470,13 @@ final class AppModel: ObservableObject {
 
     private func saveSettings() {
         try? store.save(settings)
+    }
+
+    /// The newest "Yenilikler" entry shown (WhatsNew.swift); saved without the side effects of `update`.
+    func rememberNotes(_ id: String) {
+        guard settings.lastSeenNotes != id else { return }
+        settings.lastSeenNotes = id
+        saveSettings()
     }
 
     func sendTestNotification() {

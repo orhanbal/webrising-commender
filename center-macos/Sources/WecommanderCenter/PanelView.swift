@@ -515,6 +515,7 @@ private struct SettingsView: View {
             HStack {
                 Button(L.t("Paneli tarayıcıda aç")) { model.openDashboard() }
                 Button(L.t("Oturumu kapat")) { Task { await model.signOut() } }
+                Button(L.t("Yenilikler")) { WhatsNew.showAll(model: model) }
             }
             let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
             Text(L.f("Sürüm {0}{1} · {2}", version, model.me.map { L.f(" · bu merkez: {0}", $0.name) } ?? "", model.settings.server))

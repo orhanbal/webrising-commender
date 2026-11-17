@@ -268,6 +268,7 @@ public partial class App : Application
         _ui = DispatcherQueue.GetForCurrentThread();
         var (settings, existed) = _settingsStore.Load();
         Settings = settings;
+        _settingsExisted = existed;
         // The interface language before any window is built.
         // WECOMMANDER_LANGUAGE (CI) wins over the saved choice.
         L.Use(L.Resolve(Environment.GetEnvironmentVariable("WECOMMANDER_LANGUAGE") ?? Settings.Language));
@@ -308,6 +309,7 @@ public partial class App : Application
         if (Environment.GetCommandLineArgs().Contains("--open-task-manager")) TaskManagerWindow.Open(); // CI smoke test
         else if (Token is null) _window.ShowPanel();
         else if (!hidden) ShowServers();
+        if (!hidden) MaybeShowWhatsNew(); // once after an update (App.WhatsNew.cs)
 
         _timer = _ui.CreateTimer();
         _timer.Interval = TimeSpan.FromSeconds(2);
@@ -1013,6 +1015,7 @@ public partial class App : Application
         menu.Items.Add(dockMode);
         menu.Items.Add(classicMode);
         menu.Items.Add(new MenuFlyoutSeparator());
+        menu.Items.Add(new MenuFlyoutItem { Text = L.T("Yenilikler"), Command = new RelayCommand(ShowWhatsNew) });
         menu.Items.Add(new MenuFlyoutItem { Text = L.T("Paneli tarayıcıda aç"), Command = new RelayCommand(OpenDashboard) });
         menu.Items.Add(_notifyItem);
         menu.Items.Add(_allowNotifyItem);
@@ -1108,6 +1111,7 @@ public partial class App : Application
         Servers.Start();
         _servers ??= new ServersWindow(Servers);
         _servers.ShowWindow();
+        MaybeShowWhatsNew();
     }
 
     private void UpdateServersMenu()

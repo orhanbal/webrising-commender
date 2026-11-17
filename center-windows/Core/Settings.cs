@@ -93,6 +93,8 @@ public sealed class Settings
     /// (no separate windows); "classic": they open the windows as before.
     /// </summary>
     [JsonPropertyName("appMode")] public string AppMode { get; set; } = AppModes.Dock;
+    /// <summary>The newest "Yenilikler" entry already shown (ReleaseNotes); null: none yet.</summary>
+    [JsonPropertyName("lastSeenNotes")] public string? LastSeenNotes { get; set; }
 }
 
 public sealed class SettingsStore(string directory)

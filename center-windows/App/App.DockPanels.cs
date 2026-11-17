@@ -263,6 +263,9 @@ public partial class App
             try { ShowDockSettings(); } catch (Exception e) { LogCrash(e); ReportError(e); }
         };
         body.Children.Add(all);
+        var whatsNew = new HyperlinkButton { Content = L.T("Yenilikler") };
+        whatsNew.Click += (_, _) => { CloseDockPanels(); ShowWhatsNew(); };
+        body.Children.Add(whatsNew);
         return new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     }
 }

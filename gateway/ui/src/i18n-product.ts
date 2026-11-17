@@ -520,5 +520,7 @@ export const productEnglish:Record<string,string> = {
   "Her pazartesi 09:00": "Mondays 09:00",
   "Her ayın 1'i 00:00": "1st of the month 00:00",
   "Aralıkla": "Interval",
-  "Bir kez": "Once"
+  "Bir kez": "Once",
+  "Yenilikler": "What's new",
+  "Windows ve macOS uygulamaları her güncellemeden sonra bu notları bir kez gösterir. En yenisi en üstte.": "The Windows and macOS apps show these notes once after each update. Newest first."
 };

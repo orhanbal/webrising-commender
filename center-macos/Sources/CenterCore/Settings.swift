@@ -22,10 +22,12 @@ public struct CenterSettings: Codable, Equatable {
     public var watchedHosts: [String] = []
     /// The person chose the watched servers (else the first few are watched).
     public var watchChosen: Bool = false
+    /// The newest "Yenilikler" entry already shown (ReleaseNotes); nil: none yet.
+    public var lastSeenNotes: String?
 
     public init() {}
 
-    enum CodingKeys: String, CodingKey { case server, notifications, notificationIntroShown, openPanelOnRequest, agentKeepRunning, language, watchedHosts, watchChosen }
+    enum CodingKeys: String, CodingKey { case server, notifications, notificationIntroShown, openPanelOnRequest, agentKeepRunning, language, watchedHosts, watchChosen, lastSeenNotes }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -37,6 +39,7 @@ public struct CenterSettings: Codable, Equatable {
         language = try c.decodeIfPresent(String.self, forKey: .language)
         watchedHosts = try c.decodeIfPresent([String].self, forKey: .watchedHosts) ?? []
         watchChosen = try c.decodeIfPresent(Bool.self, forKey: .watchChosen) ?? false
+        lastSeenNotes = try c.decodeIfPresent(String.self, forKey: .lastSeenNotes)
     }
 }
 

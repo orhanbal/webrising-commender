@@ -83,6 +83,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                           ])
         } else if model.phase != .signedIn { showPanel() }
         else if !CommandLine.arguments.contains("--hidden") && !Self.launchedAtLogin { showServers() }
+        // "Yenilikler" once after an update (WhatsNew.swift); at login it waits for the main window.
+        if !Snapshots.requested && !CommandLine.arguments.contains("--hidden") && !Self.launchedAtLogin {
+            WhatsNew.showIfUpdated(model: model)
+        }
     }
 
     /// Opened by macOS at login (Login Items) rather than by the person.
@@ -132,6 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         serversWindow?.makeKeyAndOrderFront(nil)
         if model.phase == .signedIn { messages.fetchOnce() }
         NSApp.activate(ignoringOtherApps: true)
+        if !Snapshots.requested { WhatsNew.showIfUpdated(model: model) }
     }
 
     /// The interface language changed: rebuild what is on screen in it.
@@ -338,6 +343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         menu.addItem(item(L.t("Disk ve temizlik"), #selector(menuDisk)))
         menu.addItem(item(L.t("Onaylar"), #selector(menuOpen)))
         menu.addItem(item(L.t("Ayarlar"), #selector(menuSettings)))
+        menu.addItem(item(L.t("Yenilikler"), #selector(menuWhatsNew)))
         menu.addItem(.separator())
         let connectMenu = NSMenu()
         for host in servers.hosts {
@@ -407,6 +413,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     @objc private func menuServerTimers() { openServerSection(.timers) }
     @objc private func menuDisk() { openServerSection(.disk) }
     @objc private func menuSettings() { openPage(ServersView.settingsPage) }
+    @objc private func menuWhatsNew() { WhatsNew.showAll(model: model) }
 
     @objc private func menuConnectHost(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String, let host = servers.hosts.first(where: { $0.id == id }) else { return }

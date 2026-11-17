@@ -11,5 +11,7 @@
   <ItemGroup>
     <!-- Interface languages (L.cs): Turkish source text -> translation. -->
     <EmbeddedResource Include="Strings\*.json" LogicalName="Wecommander.Center.Core.Strings.%(Filename).json" />
+    <!-- "Yenilikler" (what's new): the one source shared with macOS and the website (ReleaseNotes.cs). -->
+    <EmbeddedResource Include="..\..\release-notes\notes.json" LogicalName="Wecommander.Center.Core.ReleaseNotes.notes.json" Link="ReleaseNotes\notes.json" />
   </ItemGroup>
 </Project>

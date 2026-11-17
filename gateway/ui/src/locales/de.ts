@@ -1158,5 +1158,7 @@ export const table:Record<string,string> = {
  "Her pazartesi 09:00": "Montags 09:00",
  "Her ayın 1'i 00:00": "Am 1. des Monats 00:00",
  "Aralıkla": "Intervall",
- "Bir kez": "Einmalig"
+ "Bir kez": "Einmalig",
+ "Yenilikler": "Neuigkeiten",
+ "Windows ve macOS uygulamaları her güncellemeden sonra bu notları bir kez gösterir. En yenisi en üstte.": "Die Windows- und macOS-Apps zeigen diese Hinweise nach jedem Update einmal an. Die neuesten stehen oben."
 };
