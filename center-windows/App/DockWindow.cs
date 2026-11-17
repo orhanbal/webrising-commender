@@ -45,6 +45,7 @@ public sealed class DockWindow : Window
     private DateTime _wantSince = DateTime.UtcNow;
     private bool _abnFullscreen, _fullscreen, _menuOpen, _on;
     private string? _lastApplied;
+    private string? _builtModules;
 
     // The parts shown (rebuilt when the edge or size changes).
     private LiveMeter[] _meters = [];
@@ -221,8 +222,11 @@ public sealed class DockWindow : Window
         _edge = edge;
         _screen = Monitors.Pick(s.DockMonitor);
         var horizontal = DockLayout.IsHorizontal(edge);
-        if (!_built || horizontal != _horizontal || s.DockCompact != _compact)
+        // The parts were reordered or hidden (settings): built again at once.
+        var modules = string.Join(",", DockLayout.Modules(s.DockModules, s.DockHiddenModules));
+        if (!_built || horizontal != _horizontal || s.DockCompact != _compact || modules != _builtModules)
         {
+            _builtModules = modules;
             _horizontal = horizontal;
             _compact = s.DockCompact;
             Build();
@@ -384,7 +388,7 @@ public sealed class DockWindow : Window
         GetCursorPos(out var p);
         var now = new PixelRect(AppWindow.Position.X, AppWindow.Position.Y, AppWindow.Size.Width, AppWindow.Size.Height);
         var over = now.Contains(p.X, p.Y) || DockLayout.Wakes(_screen.Work, _edge, p.X, p.Y, Math.Max(2, (int)Math.Round(2 * _screen.Scale)));
-        var want = over || _menuOpen || App.Current.MonitorPanelOpen;
+        var want = over || _menuOpen || App.Current.MonitorPanelOpen || App.Current.QuickPanelOpen;
         if (want != _wantShown) { _wantShown = want; _wantSince = DateTime.UtcNow; }
         var delay = want ? App.Current.Settings.DockShowDelay : App.Current.Settings.DockHideDelay;
         if ((DateTime.UtcNow - _wantSince).TotalMilliseconds >= Math.Clamp(delay, 0, 5000)) _target = want ? 1 : 0;
@@ -432,8 +436,8 @@ public sealed class DockWindow : Window
         grip.PointerCaptureLost += (_, _) => { if (_gripDown && _dragging) { _gripDown = false; _dragging = false; try { DroppedFloating(); } catch (Exception ex) { App.LogCrash(ex); } } else _gripDown = false; };
         _grip = grip;
         start.Children.Add(grip);
-        var app = IconButton(AppIcon(), L.T("WECOMMANDER: Sunucularım paneli"));
-        app.Click += (_, _) => OpenPanel(app);
+        var app = IconButton(AppIcon(), L.T("WECOMMANDER: hızlı panel"));
+        app.Click += (_, _) => OpenQuickPanel(app);
         _appButton = app;
         start.Children.Add(app);
         if (modules.Contains("servers")) start.Children.Add(ServerPicker());
@@ -480,6 +484,11 @@ public sealed class DockWindow : Window
                     var procs = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, L.T("Görev Yöneticisi"), _horizontal && !_compact ? L.T("Görev Yöneticisi") : null);
                     procs.Click += (_, _) => TaskManagerWindow.Open();
                     end.Children.Add(procs);
+                    break;
+                case "timers":
+                    var timers = IconButton(new FontIcon { Glyph = "\uE823", FontSize = 16 }, L.T("Zamanlayıcılar"), _horizontal && !_compact ? L.T("Zamanlayıcılar") : null);
+                    timers.Click += (_, _) => TaskSchedulerWindow.Open();
+                    end.Children.Add(timers);
                     break;
                 case "terminal":
                     var term = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, "Terminal", _horizontal && !_compact ? "Terminal" : null);
@@ -612,7 +621,7 @@ public sealed class DockWindow : Window
 
     private void OpenSection(string section)
     {
-        if (Selected() is not { } s) { App.Current.ToggleMonitorPanelFromDock(ScreenRect(_appButton), DockLayout.PanelSide(_edge)); return; }
+        if (Selected() is not { } s) { App.Current.ToggleMonitorPanelFromDock(ScreenRect(_appButton), PanelSide()); return; }
         App.Current.OpenServerManagement(s, section);
     }
 
@@ -622,8 +631,11 @@ public sealed class DockWindow : Window
         else App.Current.ShowServers();
     }
 
-    private void OpenPanel(FrameworkElement from) =>
-        App.Current.ToggleMonitorPanelFromDock(ScreenRect(from), _mode == DockMode.Floating ? FloatingSide() : DockLayout.PanelSide(_edge));
+    private DockEdge PanelSide() => _mode == DockMode.Floating ? FloatingSide() : DockLayout.PanelSide(_edge);
+
+    /// <summary>The WECOMMANDER icon: the quick panel (servers, terminals, files, timers, approvals, settings).</summary>
+    private void OpenQuickPanel(FrameworkElement from) =>
+        App.Current.ToggleQuickPanelFromDock(ScreenRect(from), PanelSide(), Selected);
 
     /// <summary>A floating Dock opens its panel toward the larger free side of the screen.</summary>
     private DockEdge FloatingSide()

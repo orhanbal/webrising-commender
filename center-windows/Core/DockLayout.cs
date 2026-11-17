@@ -177,7 +177,7 @@ public static class DockLayout
     public static string Name(DockMode mode) => mode.ToString().ToLowerInvariant();
 
     /// <summary>The Dock's parts, in the default order.</summary>
-    public static readonly string[] AllModules = ["servers", "processes", "terminal", "approvals"];
+    public static readonly string[] AllModules = ["servers", "processes", "timers", "terminal", "approvals"];
 
     /// <summary>The saved order with unknown names dropped and missing ones (added in a later version) appended, hidden ones left out.</summary>
     public static List<string> Modules(IEnumerable<string>? order, IEnumerable<string>? hidden)
@@ -186,5 +186,21 @@ public static class DockLayout
         var result = (order ?? []).Where(m => AllModules.Contains(m)).Distinct().ToList();
         result.AddRange(AllModules.Where(m => !result.Contains(m)));
         return result.Where(m => !off.Contains(m)).ToList();
+    }
+
+    /// <summary>
+    /// The order after one part was dragged from <paramref name="from"/> to
+    /// <paramref name="to"/> (positions in <paramref name="order"/>; out of range: clamped).
+    /// </summary>
+    public static List<string> Move(IReadOnlyList<string> order, int from, int to)
+    {
+        var result = order.ToList();
+        if (result.Count == 0 || from < 0 || from >= result.Count) return result;
+        to = Math.Clamp(to, 0, result.Count - 1);
+        if (from == to) return result;
+        var item = result[from];
+        result.RemoveAt(from);
+        result.Insert(to, item);
+        return result;
     }
 }

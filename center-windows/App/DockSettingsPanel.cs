@@ -67,37 +67,70 @@ public static class DockSettingsPanel
         var theme = Combo(L.T("Tema"), themes.Select(t => t.Item2), Array.FindIndex(themes, t => t.Item1 == s.DockTheme));
         theme.SelectionChanged += (_, _) => { s.DockTheme = themes[Math.Max(0, theme.SelectedIndex)].Item1; Save(); };
 
-        // The parts and their order (up / down; drag and drop comes with the Dock's quick panel).
-        var modulesTitle = new TextBlock { Text = L.T("Gösterilecek bölümler ve sırası"), Margin = new Thickness(0, 6, 0, 0) };
-        var modulesList = new StackPanel { Spacing = 4 };
+        // The parts and their order: drag a row (or use the arrows), untick to hide. Saved and applied to the Dock at once.
+        var modulesTitle = new TextBlock { Text = L.T("Gösterilecek bölümler ve sırası (sürükleyip bırak)"), Margin = new Thickness(0, 6, 0, 0) };
+        var modulesList = new ListView
+        {
+            SelectionMode = ListViewSelectionMode.None,
+            CanDragItems = true,
+            CanReorderItems = true,
+            AllowDrop = true,
+            MaxWidth = 460,
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        void SaveOrder(List<string> order)
+        {
+            s.DockModules = order;
+            Save();
+        }
         void RenderModules()
         {
-            modulesList.Children.Clear();
+            modulesList.Items.Clear();
             var order = DockLayout.Modules(s.DockModules, null);
             for (var i = 0; i < order.Count; i++)
             {
                 var name = order[i];
                 var index = i;
-                var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-                var check = new CheckBox { Content = ModuleName(name), IsChecked = !s.DockHiddenModules.Contains(name), MinWidth = 220 };
+                var row = new Grid { ColumnSpacing = 6 };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                var grip = new FontIcon { Glyph = "\uE76F", FontSize = 14, Opacity = 0.6, VerticalAlignment = VerticalAlignment.Center };
+                ToolTipService.SetToolTip(grip, L.T("Sürükle: sırayı değiştir"));
+                var check = new CheckBox { Content = ModuleName(name), IsChecked = !s.DockHiddenModules.Contains(name) };
                 check.Click += (_, _) =>
                 {
                     s.DockHiddenModules.Remove(name);
                     if (check.IsChecked != true) s.DockHiddenModules.Add(name);
                     Save();
                 };
-                var up = new Button { Content = new FontIcon { Glyph = "", FontSize = 12 }, IsEnabled = index > 0 };
+                var up = new Button { Content = new FontIcon { Glyph = "\uE70E", FontSize = 12 }, IsEnabled = index > 0 };
                 ToolTipService.SetToolTip(up, L.T("Yukarı / sola"));
-                var down = new Button { Content = new FontIcon { Glyph = "", FontSize = 12 }, IsEnabled = index < order.Count - 1 };
+                var down = new Button { Content = new FontIcon { Glyph = "\uE70D", FontSize = 12 }, IsEnabled = index < order.Count - 1 };
                 ToolTipService.SetToolTip(down, L.T("Aşağı / sağa"));
-                up.Click += (_, _) => { Swap(order, index, index - 1); s.DockModules = order; Save(); RenderModules(); };
-                down.Click += (_, _) => { Swap(order, index, index + 1); s.DockModules = order; Save(); RenderModules(); };
+                up.Click += (_, _) => { SaveOrder(DockLayout.Move(order, index, index - 1)); RenderModules(); };
+                down.Click += (_, _) => { SaveOrder(DockLayout.Move(order, index, index + 1)); RenderModules(); };
+                Grid.SetColumn(check, 1);
+                Grid.SetColumn(up, 2);
+                Grid.SetColumn(down, 3);
+                row.Children.Add(grip);
                 row.Children.Add(check);
                 row.Children.Add(up);
                 row.Children.Add(down);
-                modulesList.Children.Add(row);
+                modulesList.Items.Add(new ListViewItem { Content = row, Tag = name, HorizontalContentAlignment = HorizontalAlignment.Stretch });
             }
         }
+        // After a drag the rows are already in their new place: read the order from them.
+        modulesList.DragItemsCompleted += (_, e) =>
+        {
+            if (e.DropResult == Windows.ApplicationModel.DataTransfer.DataPackageOperation.None) return;
+            var order = modulesList.Items.OfType<ListViewItem>().Select(i => i.Tag as string).OfType<string>().ToList();
+            if (order.SequenceEqual(DockLayout.Modules(s.DockModules, null))) return;
+            SaveOrder(DockLayout.Modules(order, null));
+            // The arrows' enabled state follows the new places.
+            modulesList.DispatcherQueue.TryEnqueue(RenderModules);
+        };
         RenderModules();
 
         var startup = new CheckBox { Content = L.T("Windows ile başlat (oturum açınca WECOMMANDER ve Dock açılır)") };
@@ -115,12 +148,11 @@ public static class DockSettingsPanel
     {
         "servers" => L.T("Sunucu ve canlı grafikler"),
         "processes" => L.T("Görev Yöneticisi kısayolu"),
+        "timers" => L.T("Zamanlayıcılar kısayolu"),
         "terminal" => L.T("Terminal kısayolu"),
         "approvals" => L.T("Bildirimler ve onaylar"),
         _ => module,
     };
-
-    private static void Swap(List<string> list, int a, int b) => (list[a], list[b]) = (list[b], list[a]);
 
     private static ComboBox Combo(string header, IEnumerable<string> items, int selected) => new()
     {
