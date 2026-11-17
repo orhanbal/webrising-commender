@@ -2,6 +2,7 @@
 //! MCP endpoint in a temp folder, an AI client talks to it through a second
 //! process (`wecommander-core --mcp-stdio`, the bridge), and the tools run
 //! against a real sshd on 127.0.0.1 (Linux with sshd; skipped elsewhere).
+#![cfg(unix)]
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
