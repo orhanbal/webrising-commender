@@ -50,8 +50,8 @@ struct MessageCard: View {
                     HStack(alignment: .top) {
                         Text(icon(m.kind) + m.title).font(.callout.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
                         Spacer()
-                        Button { center.respond(m, "dismissed"); center.close() } label: { Image(systemName: "xmark") }
-                            .buttonStyle(.borderless).help(L.t("Kapat"))
+                        Button { center.respond(m, "dismissed"); center.close() } label: { WCIcon(.close) }
+                            .buttonStyle(.borderless).help(L.t("Kapat")).accessibilityLabel(L.t("Kapat"))
                     }
                     if !m.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Text(m.body).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

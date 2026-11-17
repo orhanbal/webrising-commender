@@ -1012,6 +1012,8 @@ jobs:
         env:
           WECOMMANDER_VERSION: 0.1.${{ github.run_number }}
         run: cargo build --locked --release -p webrising-commender-agent
+      - name: Icon outlines are up to date (Vuesax icons, scripts/gen-icons.py)
+        run: python scripts/gen-icons.py --check
       - name: Core unit tests (CoreClient against the real wecommander-core)
         env:
           WECOMMANDER_CORE_BIN: ${{ github.workspace }}\target\release\wecommander-core.exe

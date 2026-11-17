@@ -51,11 +51,12 @@ struct MonitorView: View {
                 ForEach(candidates) { h in Button(h.label) { monitor.watch(h) } }
             }
         } label: {
-            Image(systemName: "plus")
+            WCIcon(.add)
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
         .help(L.t("İzlenecek sunucu ekle"))
+        .accessibilityLabel(L.t("İzlenecek sunucu ekle"))
     }
 }
 
@@ -74,7 +75,7 @@ private struct ServerCard: View {
                 Menu {
                     if let host { Button(L.t("Terminal aç")) { openTerminal(host) } }
                     Button(L.t("İzlemeyi bırak"), role: .destructive) { unwatch() }
-                } label: { Image(systemName: "ellipsis") }
+                } label: { WCIcon(.more) }
                 .menuStyle(.borderlessButton).fixedSize()
             }
             if let error = server.error {

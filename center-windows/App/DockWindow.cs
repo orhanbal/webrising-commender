@@ -512,13 +512,14 @@ public sealed class DockWindow : Window
         ResetReorder();
         _moduleItems.Clear();
         _anchors.Clear();
+        _moduleIcons.Clear();
         var end = new StackPanel { Orientation = orientation, Spacing = 2, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
         foreach (var m in modules)
         {
             switch (m)
             {
                 case "processes":
-                    var procs = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, L.T("Görev Yöneticisi"), _horizontal && !_compact ? L.T("Görev Yöneticisi") : null);
+                    var procs = IconButton(ModuleIcon("taskmanager", IconName.Activity), L.T("Görev Yöneticisi"), _horizontal && !_compact ? L.T("Görev Yöneticisi") : null);
                     procs.Click += (_, _) => Run(() =>
                     {
                         if (App.Current.PanelsFromDock) Panel("taskmanager", procs);
@@ -528,7 +529,7 @@ public sealed class DockWindow : Window
                     AddModule(end, m, procs, procs);
                     break;
                 case "terminal":
-                    var term = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, "Terminal", _horizontal && !_compact ? "Terminal" : null);
+                    var term = IconButton(ModuleIcon("terminal", IconName.Terminal), "Terminal", _horizontal && !_compact ? "Terminal" : null);
                     term.Click += (_, _) => Run(() =>
                     {
                         if (App.Current.PanelsFromDock) Panel("terminal", term);
@@ -539,7 +540,7 @@ public sealed class DockWindow : Window
                     break;
                 case "tasks":
                     // One button for both kinds of schedule (it replaced separate timers and tasks buttons).
-                    var tasks = IconButton(new FontIcon { Glyph = "\uE787", FontSize = 16 }, L.T("Görevler"), _horizontal && !_compact ? L.T("Görevler") : null);
+                    var tasks = IconButton(ModuleIcon("tasks", IconName.Calendar), L.T("Görevler"), _horizontal && !_compact ? L.T("Görevler") : null);
                     var tasksMenu = TasksMenu();
                     tasks.Click += (_, _) =>
                     {
@@ -553,7 +554,7 @@ public sealed class DockWindow : Window
                     break;
                 case "approvals":
                     var bell = new Grid();
-                    var approvals = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, L.T("Bekleyen onaylar"));
+                    var approvals = IconButton(ModuleIcon("approvals", IconName.Notification), L.T("Bekleyen onaylar"));
                     approvals.Click += (_, _) => Run(() =>
                     {
                         if (App.Current.PanelsFromDock) Panel("approvals", approvals);
@@ -571,7 +572,7 @@ public sealed class DockWindow : Window
                     break;
             }
         }
-        var settings = IconButton(new FontIcon { Glyph = "", FontSize = 16 }, L.T("Dock ayarları"));
+        var settings = IconButton(ModuleIcon("settings", IconName.Settings), L.T("Dock ayarları"));
         settings.Click += (_, _) => Run(() =>
         {
             if (App.Current.PanelsFromDock) Panel("settings", settings);
@@ -618,15 +619,15 @@ public sealed class DockWindow : Window
     {
         var menu = new MenuFlyout();
         Hold(menu);
-        void Add(string glyph, string text, Action open)
+        void Add(IconName icon, string text, Action open)
         {
-            var item = new MenuFlyoutItem { Text = text, Icon = new FontIcon { Glyph = glyph } };
+            var item = new MenuFlyoutItem { Text = text, Icon = Icons.Make(icon) };
             item.Click += (_, _) => { try { open(); } catch (Exception ex) { App.LogCrash(ex); } };
             menu.Items.Add(item);
         }
-        Add("\uE787", L.T("WECOMMANDER görevleri"), () => App.Current.ShowScheduledTasks());
-        Add("\uE823", L.T("Windows zamanlayıcıları"), () => TaskSchedulerWindow.Open());
-        Add("\uE968", L.T("Sunucu zamanlayıcıları"), () => OpenSection("timers"));
+        Add(IconName.Calendar, L.T("WECOMMANDER görevleri"), () => App.Current.ShowScheduledTasks());
+        Add(IconName.Clock, L.T("Windows zamanlayıcıları"), () => TaskSchedulerWindow.Open());
+        Add(IconName.Server, L.T("Sunucu zamanlayıcıları"), () => OpenSection("timers"));
         return menu;
     }
 
@@ -737,6 +738,22 @@ public sealed class DockWindow : Window
 
     /// <summary>The button each panel opens from (rebuilt with the Dock).</summary>
     private readonly Dictionary<string, FrameworkElement> _anchors = [];
+
+    /// <summary>The icons of the buttons that open a panel (dock mode): Bold while their panel is open.</summary>
+    private readonly Dictionary<string, IconElement> _moduleIcons = [];
+
+    private IconElement ModuleIcon(string panel, IconName name)
+    {
+        var icon = Icons.Make(name, active: App.Current.IsDockPanelOpen(panel));
+        _moduleIcons[panel] = icon;
+        return icon;
+    }
+
+    /// <summary>A Dock panel opened or closed: its button's icon follows (Bold while open).</summary>
+    public void PanelOpenChanged(string panel, bool open)
+    {
+        if (_moduleIcons.TryGetValue(panel, out var icon)) Icons.SetActive(icon, open);
+    }
 
     /// <summary>The Dock is on screen (turned on).</summary>
     public bool IsOn => _on;
@@ -1284,7 +1301,7 @@ public sealed class DockWindow : Window
             var s = App.Current.Settings;
             menu.Items.Clear();
             // Mutually exclusive choices are radio items in a group (a toggle item checks itself on every click).
-            var mode = new MenuFlyoutSubItem { Text = L.T("Görünüm"), Icon = new FontIcon { Glyph = "" } };
+            var mode = new MenuFlyoutSubItem { Text = L.T("Görünüm"), Icon = Icons.Make(IconName.ViewMode) };
             foreach (var (m, text) in new[] { (DockMode.Fixed, L.T("Sabit")), (DockMode.AutoHide, L.T("Otomatik gizlenen")), (DockMode.Floating, L.T("Yüzen")) })
             {
                 var item = new RadioMenuFlyoutItem { Text = text, GroupName = "dock-mode", IsChecked = DockLayout.ParseMode(s.DockModeName) == m };
@@ -1292,7 +1309,7 @@ public sealed class DockWindow : Window
                 mode.Items.Add(item);
             }
             menu.Items.Add(mode);
-            var edge = new MenuFlyoutSubItem { Text = L.T("Konum"), Icon = new FontIcon { Glyph = "" } };
+            var edge = new MenuFlyoutSubItem { Text = L.T("Konum"), Icon = Icons.Make(IconName.DockPosition) };
             foreach (var (e, text) in new[] { (DockEdge.Top, L.T("Üst")), (DockEdge.Bottom, L.T("Alt")), (DockEdge.Left, L.T("Sol")), (DockEdge.Right, L.T("Sağ")) })
             {
                 var item = new RadioMenuFlyoutItem { Text = text, GroupName = "dock-edge", IsChecked = DockLayout.ParseEdge(s.DockEdgeName) == e };
@@ -1303,7 +1320,7 @@ public sealed class DockWindow : Window
             var monitors = Monitors.All();
             if (monitors.Count > 1)
             {
-                var screen = new MenuFlyoutSubItem { Text = L.T("Ekran"), Icon = new FontIcon { Glyph = "" } };
+                var screen = new MenuFlyoutSubItem { Text = L.T("Ekran"), Icon = Icons.Make(IconName.Monitor) };
                 var number = 0;
                 foreach (var m in monitors)
                 {
@@ -1332,13 +1349,13 @@ public sealed class DockWindow : Window
             locked.Click += (_, _) => { s.DockLocked = locked.IsChecked; App.Current.SaveSettings(); };
             menu.Items.Add(locked);
             menu.Items.Add(new MenuFlyoutSeparator());
-            var settings = new MenuFlyoutItem { Text = L.T("Dock ayarları…"), Icon = new FontIcon { Glyph = "" } };
+            var settings = new MenuFlyoutItem { Text = L.T("Dock ayarları…"), Icon = Icons.Make(IconName.Settings) };
             settings.Click += (_, _) => App.Current.ShowDockSettings();
             menu.Items.Add(settings);
-            var app = new MenuFlyoutItem { Text = L.T("WECOMMANDER penceresi"), Icon = new FontIcon { Glyph = "" } };
+            var app = new MenuFlyoutItem { Text = L.T("WECOMMANDER penceresi"), Icon = Icons.Make(IconName.OpenWindow) };
             app.Click += (_, _) => App.Current.ShowServers();
             menu.Items.Add(app);
-            var off = new MenuFlyoutItem { Text = L.T("Klasik moda geç"), Icon = new FontIcon { Glyph = "" } };
+            var off = new MenuFlyoutItem { Text = L.T("Klasik moda geç"), Icon = Icons.Make(IconName.Close) };
             off.Click += (_, _) =>
             {
                 // Hidden after the menu has closed (the same reason as Later).

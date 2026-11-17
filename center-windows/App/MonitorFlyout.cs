@@ -77,7 +77,7 @@ public sealed class MonitorFlyout : Window
         title.Children.Add(new TextBlock { Text = L.T("Canlı · 3 saniyede bir"), Foreground = Secondary, FontSize = 12 });
         Grid.SetColumn(title, 1);
         head.Children.Add(title);
-        var add = new Button { Content = new SymbolIcon(Symbol.Add), Padding = new Thickness(8) };
+        var add = new Button { Content = Icons.Make(IconName.Add, size: 20), Padding = new Thickness(8) };
         ToolTipService.SetToolTip(add, L.T("İzlenecek sunucu ekle"));
         add.Flyout = AddMenu();
         Grid.SetColumn(add, 2);
@@ -268,13 +268,13 @@ internal sealed class ServerCard
         names.Children.Add(_status);
         Grid.SetColumn(names, 1);
         head.Children.Add(names);
-        var more = new Button { Content = new SymbolIcon(Symbol.More), Padding = new Thickness(6), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0) };
+        var more = new Button { Content = Icons.Make(IconName.More, size: 20), Padding = new Thickness(6), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0) };
         var menu = new MenuFlyout();
-        var manage = new MenuFlyoutItem { Text = L.T("Sunucu yönetimini aç"), Icon = new FontIcon { Glyph = "" } };
+        var manage = new MenuFlyoutItem { Text = L.T("Sunucu yönetimini aç"), Icon = Icons.Make(IconName.Activity) };
         manage.Click += (_, _) => { flyout.Hide(); App.Current.OpenServerManagement(s); };
-        var terminal = new MenuFlyoutItem { Text = L.T("Terminal aç"), Icon = new FontIcon { Glyph = "" } };
+        var terminal = new MenuFlyoutItem { Text = L.T("Terminal aç"), Icon = Icons.Make(IconName.Terminal) };
         terminal.Click += (_, _) => { flyout.Hide(); App.Current.OpenHostTerminal(s.HostId); };
-        var stop = new MenuFlyoutItem { Text = L.T("İzlemeyi bırak"), Icon = new SymbolIcon(Symbol.Cancel) };
+        var stop = new MenuFlyoutItem { Text = L.T("İzlemeyi bırak"), Icon = Icons.Make(IconName.CloseCircle) };
         stop.Click += (_, _) => monitor.Unwatch(s.HostId);
         menu.Items.Add(manage);
         menu.Items.Add(terminal);

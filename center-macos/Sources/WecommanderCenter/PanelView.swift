@@ -62,29 +62,29 @@ private struct Banners: View {
     var body: some View {
         VStack(spacing: 6) {
             if model.phase == .signedIn && model.notificationsBlocked {
-                Callout(symbol: "bell.slash.fill", tint: .orange, title: L.t("macOS bildirimleri kapalı"),
+                Callout(icon: .notification, tint: .orange, title: L.t("macOS bildirimleri kapalı"),
                         text: Texts.notificationBlockedMessage(model.notificationState)) {
                     Button(L.t("Bildirimlere izin ver")) { Notifier.openSettings() }
                 }
             } else if model.phase == .signedIn && model.settings.notifications && model.notificationState == "notDetermined" {
-                Callout(symbol: "bell.badge", tint: .blue, title: L.t("Bildirim izni"),
+                Callout(icon: .notificationBadge, tint: .blue, title: L.t("Bildirim izni"),
                         text: Texts.notificationBlockedMessage("notDetermined")) {
                     Button(L.t("Bildirimlere izin ver")) { model.notifier.requestPermission() }
                 }
             }
             if model.phase == .signedIn, let agent = model.agent, agent.state == .stopped, !model.agentBusy {
-                Callout(symbol: "bolt.horizontal.circle", tint: .red,
+                Callout(icon: .flashOff, tint: .red,
                         title: agent.enabled ? L.t("Bu Mac'teki ajan çalışmıyor") : L.t("Bu Mac'teki ajan kapalı"),
                         text: Texts.agentOffWarning) {
                     Button(L.t("Ajanı başlat")) { Task { await model.setAgentEnabled(true) } }
                 }
             }
             if model.phase == .signedIn && !model.autonomy.isEmpty {
-                Callout(symbol: "bolt.fill", tint: .orange, title: L.t("Otonom mod açık"),
+                Callout(icon: .flash, tint: .orange, title: L.t("Otonom mod açık"),
                         text: L.f("{0} cihazda onay istenmiyor.", model.autonomy.count)) { EmptyView() }
             }
             if let error = model.error {
-                Callout(symbol: "exclamationmark.triangle.fill", tint: .red, title: L.t("Hata"), text: error) {
+                Callout(icon: .warning, tint: .red, title: L.t("Hata"), text: error) {
                     Button(L.t("Kapat")) { model.error = nil }
                 }
             }
@@ -93,7 +93,7 @@ private struct Banners: View {
 }
 
 private struct Callout<Actions: View>: View {
-    let symbol: String
+    let icon: WCIconName
     let tint: Color
     let title: String
     let text: String
@@ -101,7 +101,7 @@ private struct Callout<Actions: View>: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: symbol).foregroundStyle(tint).font(.system(size: 13))
+            WCIcon(icon, size: 15).foregroundStyle(tint)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title).font(.callout.weight(.semibold))
                 if !text.isEmpty { Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
@@ -200,7 +200,7 @@ private struct ApprovalsView: View {
         VStack(spacing: 8) {
             if model.pending.isEmpty {
                 VStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle").font(.system(size: 28)).foregroundStyle(.secondary)
+                    WCIcon(.check, size: 32).foregroundStyle(.secondary)
                     Text(L.t("Bekleyen onay yok. Yapay zekâ yüksek riskli bir işlem istediğinde bildirim gelir; oradan ya da buradan onaylarsın."))
                         .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 }

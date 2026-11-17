@@ -83,13 +83,13 @@ final class ServerManagementModel: ObservableObject {
             case .timers: return L.t("Zamanlayıcılar")
             }
         }
-        var symbol: String {
+        var icon: WCIconName {
             switch self {
-            case .overview: return "gauge.medium"
-            case .disk: return "internaldrive"
-            case .cleanup: return "sparkles"
-            case .processes: return "list.bullet.rectangle"
-            case .timers: return "timer"
+            case .overview: return .activity
+            case .disk: return .disk
+            case .cleanup: return .cleanup
+            case .processes: return .cpu
+            case .timers: return .timer
             }
         }
     }
@@ -755,7 +755,7 @@ struct ServerManagementView: View {
         NavigationSplitView {
             List(selection: Binding(get: { model.page }, set: { if let p = $0 { model.go(p) } })) {
                 ForEach(ServerManagementModel.Page.allCases) { p in
-                    Label(p.title, systemImage: p.symbol).tag(p)
+                    Label(p.title, icon: p.icon, active: model.page == p).tag(p)
                 }
             }
             .listStyle(.sidebar)
@@ -776,7 +776,7 @@ struct ServerManagementView: View {
             .navigationSubtitle(model.label)
             .toolbar {
                 ToolbarItem {
-                    Button { model.load() } label: { Label(L.t("Yenile"), systemImage: "arrow.clockwise") }
+                    Button { model.load() } label: { Label(L.t("Yenile"), icon: .refresh) }
                         .keyboardShortcut("r", modifiers: .command)
                         .disabled(model.isRunning)
                 }
@@ -846,18 +846,18 @@ struct ServerNotice: View {
         }
     }
 
-    private var symbol: String {
+    private var icon: WCIconName {
         switch kind {
-        case .info: return "info.circle.fill"
-        case .success: return "checkmark.circle.fill"
-        case .warning: return "exclamationmark.triangle.fill"
-        case .error: return "xmark.octagon.fill"
+        case .info: return .info
+        case .success: return .check
+        case .warning: return .warning
+        case .error: return .error
         }
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: symbol).foregroundStyle(color).font(.title3)
+            WCIcon(icon, size: 20).foregroundStyle(color)
             VStack(alignment: .leading, spacing: 4) {
                 if let title { Text(title).fontWeight(.semibold) }
                 Text(text).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
@@ -867,7 +867,7 @@ struct ServerNotice: View {
             }
             Spacer(minLength: 0)
             if let onClose {
-                Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.borderless)
+                Button(action: onClose) { WCIcon(.close) }.buttonStyle(.borderless).accessibilityLabel(L.t("Kapat"))
             }
         }
         .padding(12)
@@ -1162,8 +1162,9 @@ struct DiskPage: View {
         let biggest = max(1, u.entries.map(\.kb).max() ?? 1)
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                Button { model.diskUp() } label: { Image(systemName: "arrow.up") }
+                Button { model.diskUp() } label: { WCIcon(.arrowUp) }
                     .help(L.t("Üst klasör"))
+                    .accessibilityLabel(L.t("Üst klasör"))
                     .disabled(u.path == "/")
                 Text(u.path).font(.title3.monospaced()).textSelection(.enabled)
                 Text(L.f("toplam {0}", Sizes.kb(u.totalKb))).foregroundStyle(.secondary)
@@ -1268,7 +1269,7 @@ struct DockerHeader: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Label(env.label, systemImage: env.rootless ? "person.crop.square" : "shippingbox")
+            Label(env.label, icon: env.rootless ? .user : .docker)
                 .font(.title3.weight(.semibold))
             Text(L.f("{0} · kullanıcı: {1} · soket: {2}", env.rootless ? "Rootless Docker" : L.t("Sistem Docker"), env.user,
                      env.socket.isEmpty ? L.t("varsayılan") : env.socket))
@@ -1479,10 +1480,10 @@ struct CleanupRunView: View {
     @ViewBuilder
     private func stateIcon(_ state: ServerManagementModel.CleanupRun.State) -> some View {
         switch state {
-        case .waiting: Image(systemName: "clock").foregroundStyle(.secondary)
+        case .waiting: WCIcon(.clock).foregroundStyle(.secondary)
         case .working: ProgressView().controlSize(.small)
-        case .done: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-        case .failed: Image(systemName: "xmark.octagon.fill").foregroundStyle(.red)
+        case .done: WCIcon(.check).foregroundStyle(.green)
+        case .failed: WCIcon(.error).foregroundStyle(.red)
         }
     }
 }
@@ -1605,7 +1606,7 @@ struct ProcessRow: View {
                     Button(L.t("Sonlandır (kibarca)")) { model.askSignal(p, kill: false) }
                     Button(L.t("Zorla durdur"), role: .destructive) { model.askSignal(p, kill: true) }
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    WCIcon(.moreCircle)
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)

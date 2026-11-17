@@ -29,6 +29,16 @@ public partial class App
     /// <summary>A Dock panel is on screen (an auto-hidden Dock stays out meanwhile).</summary>
     public bool DockPanelOpen => _dockPanels.Values.Any(p => p.IsOpen);
 
+    /// <summary>The panel <paramref name="kind"/> is on screen (its Dock button shows the Bold icon).</summary>
+    public bool IsDockPanelOpen(string kind) => _dockPanels.TryGetValue(kind, out var p) && p.IsOpen;
+
+    /// <summary>From a panel: it opened or closed, so its Dock button's icon follows.</summary>
+    public void DockPanelOpenChanged(string kind, bool open)
+    {
+        try { _dock?.PanelOpenChanged(kind, open); }
+        catch (Exception e) { LogCrash(e); }
+    }
+
     /// <summary>The app mode: "dock" turns the Dock on (panels), "classic" turns it off (windows).</summary>
     public void SetAppMode(string mode)
     {

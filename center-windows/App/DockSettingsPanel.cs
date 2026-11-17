@@ -142,7 +142,9 @@ public static class DockSettingsPanel
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                var grip = new FontIcon { Glyph = "\uE76F", FontSize = 14, Opacity = 0.6, VerticalAlignment = VerticalAlignment.Center };
+                var grip = Icons.Make(IconName.Grip, size: 14);
+                grip.Opacity = 0.6;
+                grip.VerticalAlignment = VerticalAlignment.Center;
                 ToolTipService.SetToolTip(grip, L.T("Sürükle: sırayı değiştir"));
                 var check = new CheckBox { Content = ModuleName(name), IsChecked = !s.DockHiddenModules.Contains(name) };
                 check.Click += (_, _) =>
@@ -151,9 +153,9 @@ public static class DockSettingsPanel
                     if (check.IsChecked != true) s.DockHiddenModules.Add(name);
                     Save();
                 };
-                var up = new Button { Content = new FontIcon { Glyph = "\uE70E", FontSize = 12 }, IsEnabled = index > 0 };
+                var up = new Button { Content = Icons.Make(IconName.ChevronUp, size: 12), IsEnabled = index > 0 };
                 ToolTipService.SetToolTip(up, L.T("Yukarı / sola"));
-                var down = new Button { Content = new FontIcon { Glyph = "\uE70D", FontSize = 12 }, IsEnabled = index < order.Count - 1 };
+                var down = new Button { Content = Icons.Make(IconName.ChevronDown, size: 12), IsEnabled = index < order.Count - 1 };
                 ToolTipService.SetToolTip(down, L.T("Aşağı / sağa"));
                 up.Click += (_, _) => { SaveOrder(DockLayout.Move(order, index, index - 1)); RenderModules(); };
                 down.Click += (_, _) => { SaveOrder(DockLayout.Move(order, index, index + 1)); RenderModules(); };
