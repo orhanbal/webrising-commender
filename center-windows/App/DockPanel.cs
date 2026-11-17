@@ -115,7 +115,7 @@ public sealed class DockPanel : Window
         header.Children.Add(_title);
 
         var openRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        openRow.Children.Add(new FontIcon { Glyph = "", FontSize = 13 });
+        openRow.Children.Add(Icons.Make(IconName.OpenWindow, size: 13));
         openRow.Children.Add(new TextBlock { Text = L.T("Pencerede aç"), FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
         _openWindow = new Button { Content = openRow, Padding = new Thickness(8, 4, 8, 4), Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0) };
         ToolTipService.SetToolTip(_openWindow, L.T("Pencerede aç"));
@@ -129,7 +129,7 @@ public sealed class DockPanel : Window
         Grid.SetColumn(_openWindow, 1);
         header.Children.Add(_openWindow);
 
-        var close = new Button { Content = new FontIcon { Glyph = "", FontSize = 12 }, Width = 32, Height = 32, Padding = new Thickness(0),
+        var close = new Button { Content = Icons.Make(IconName.Close, size: 12), Width = 32, Height = 32, Padding = new Thickness(0),
             Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0) };
         ToolTipService.SetToolTip(close, L.T("Kapat"));
         AutomationProperties.SetName(close, L.T("Kapat"));
@@ -201,6 +201,7 @@ public sealed class DockPanel : Window
         {
             Animate(side == DockEdge.Bottom ? -30 : side == DockEdge.Top ? 30 : 0, side == DockEdge.Right ? -30 : side == DockEdge.Left ? 30 : 0);
             try { Shown?.Invoke(); } catch (Exception e) { App.LogCrash(e); }
+            App.Current.DockPanelOpenChanged(Kind, true);
         }
         // The keyboard starts in the panel: on "Pencerede aç" (Tab goes on into the content, Esc closes it).
         if (!FocusContent)
@@ -217,6 +218,7 @@ public sealed class DockPanel : Window
         _hiddenAt = DateTime.UtcNow;
         AppWindow.Hide();
         App.DebugLayout($"dock panel {Kind}: closed");
+        App.Current.DockPanelOpenChanged(Kind, false);
         try { Hidden?.Invoke(); } catch (Exception e) { App.LogCrash(e); }
     }
 

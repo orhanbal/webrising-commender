@@ -36,14 +36,14 @@ public sealed class TasksPanelView : UserControl
     {
         _servers = servers;
         _selected = selected;
-        foreach (var (tag, glyph, text) in new[]
+        foreach (var (tag, icon, text) in new[]
         {
-            ("scheduled", "", L.T("WECOMMANDER görevleri")),
-            ("windows", "", L.T("Windows zamanlayıcıları")),
-            ("server", "", L.T("Sunucu zamanlayıcıları")),
+            ("scheduled", IconName.Calendar, L.T("WECOMMANDER görevleri")),
+            ("windows", IconName.Clock, L.T("Windows zamanlayıcıları")),
+            ("server", IconName.Server, L.T("Sunucu zamanlayıcıları")),
         })
         {
-            var item = new SelectorBarItem { Text = text, Icon = new FontIcon { Glyph = glyph }, Tag = tag };
+            var item = new SelectorBarItem { Text = text, Icon = Icons.Make(icon), Tag = tag };
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(item, text);
             _items[tag] = item;
             _bar.Items.Add(item);
@@ -64,6 +64,7 @@ public sealed class TasksPanelView : UserControl
         Grid.SetRow(_body, 1);
         root.Children.Add(_body);
         Content = root;
+        Icons.FollowSelection(_bar);
         _bar.SelectedItem = _items[_tab];
     }
 

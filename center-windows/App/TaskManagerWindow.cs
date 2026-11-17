@@ -261,10 +261,18 @@ public sealed class TaskManagerView : UserControl
         public readonly TextBlock Cpu = Num();
         public readonly TextBlock Memory = Num();
         public readonly TextBlock Disk = Num();
-        public readonly FontIcon Lock = new() { Glyph = "", FontSize = 12, Opacity = 0.6, Visibility = Visibility.Collapsed };
+        public readonly PathIcon Lock = LockIcon();
         public LocalProcessRow? Row;
 
         private static TextBlock Num() => new() { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, };
+
+        private static PathIcon LockIcon()
+        {
+            var icon = Icons.Make(IconName.Lock, size: 12);
+            icon.Opacity = 0.6;
+            icon.Visibility = Visibility.Collapsed;
+            return icon;
+        }
 
         public RowView(Action<RowView> select)
         {

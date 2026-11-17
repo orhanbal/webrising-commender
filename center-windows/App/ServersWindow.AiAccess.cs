@@ -231,7 +231,10 @@ public sealed partial class ServersWindow
         foreach (var line in AiAccessText.Guarantees)
         {
             var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-            row.Children.Add(new FontIcon { Glyph = "", FontSize = 12, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 3, 0, 0) });
+            var lockIcon = Icons.Make(IconName.Lock, size: 12);
+            lockIcon.VerticalAlignment = VerticalAlignment.Top;
+            lockIcon.Margin = new Thickness(0, 3, 0, 0);
+            row.Children.Add(lockIcon);
             row.Children.Add(new TextBlock { Text = line, TextWrapping = TextWrapping.Wrap, MaxWidth = 440 });
             guarantees.Children.Add(row);
         }
@@ -313,7 +316,7 @@ public sealed partial class ServersWindow
         var visit = ++_aiVisit;
         var body = new StackPanel { Spacing = 18, MaxWidth = 720, HorizontalAlignment = HorizontalAlignment.Left };
         SetPage(Page(AiAccessText.PageTitle, AiAccessText.PageSubtitle, new ScrollViewer { Content = body },
-            ActionButton(L.T("Yenile"), Symbol.Refresh, () => _ = ShowAiPage())));
+            ActionButton(L.T("Yenile"), IconName.Refresh, () => _ = ShowAiPage())));
         body.Children.Add(new TextBlock { Text = AiAccessText.WhatIsLocal, TextWrapping = TextWrapping.Wrap });
 
         // Status of local MCP.

@@ -84,7 +84,7 @@ public sealed class TaskSchedulerView : UserControl
         _search.TextChanged += (_, _) => Render();
         var windowsLabel = new TextBlock { Text = L.T("Windows görevlerini göster"), VerticalAlignment = VerticalAlignment.Center };
         _windowsSwitch.Toggled += (_, _) => Render();
-        var refresh = new Button { Content = new SymbolIcon(Symbol.Refresh) };
+        var refresh = new Button { Content = Icons.Make(IconName.Refresh, size: 20) };
         ToolTipService.SetToolTip(refresh, L.T("Yenile"));
         refresh.Click += (_, _) => _ = Refresh();
         var create = new Button { Content = L.T("Yeni görev"), Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
@@ -211,7 +211,9 @@ public sealed class TaskSchedulerView : UserControl
             var result = Cell(LocalTasks.ResultText(t.LastResult), 5, true);
             ToolTipService.SetToolTip(result, LocalTasks.ResultText(t.LastResult));
             g.Children.Add(result);
-            var mark = new FontIcon { FontSize = 12, Opacity = 0.7, Glyph = t.IsOurs ? "\uE73E" : "\uE72E", Visibility = t.IsOurs || LocalTaskReader.NeedsAdmin(t) ? Visibility.Visible : Visibility.Collapsed };
+            var mark = Icons.Make(t.IsOurs ? IconName.Check : IconName.Lock, size: 12);
+            mark.Opacity = 0.7;
+            mark.Visibility = t.IsOurs || LocalTaskReader.NeedsAdmin(t) ? Visibility.Visible : Visibility.Collapsed;
             ToolTipService.SetToolTip(mark, t.IsOurs ? L.T("WECOMMANDER'ın oluşturduğu görev") : L.T("Değiştirmek için yönetici izni gerekiyor"));
             Grid.SetColumn(mark, 6);
             g.Children.Add(mark);

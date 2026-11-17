@@ -220,6 +220,8 @@ jobs:
           center-macos/core/webrising-commender --version | grep -q "0.1.${{ github.run_number }}$"
       - name: Translation table is up to date
         run: python3 scripts/gen-macos-strings.py --check
+      - name: Icon outlines are up to date (Vuesax icons, scripts/gen-icons.py)
+        run: python3 scripts/gen-icons.py --check
       - name: Core unit tests (CoreClient against the real wecommander-core)
         env:
           WECOMMANDER_CORE_BIN: ${{ github.workspace }}/center-macos/core/wecommander-core

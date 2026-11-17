@@ -326,9 +326,9 @@ struct ScheduledTasksPage: View {
         .navigationTitle(L.t("Zamanlanmış görevler"))
         .toolbar {
             ToolbarItemGroup {
-                Button { model.reload() } label: { Label(L.t("Yenile"), systemImage: "arrow.clockwise") }
+                Button { model.reload() } label: { Label(L.t("Yenile"), icon: .refresh) }
                     .disabled(model.loading)
-                Button { model.edit(nil) } label: { Label(L.t("Yeni görev"), systemImage: "plus") }
+                Button { model.edit(nil) } label: { Label(L.t("Yeni görev"), icon: .add) }
                     .disabled(!model.signedIn || !model.canEdit)
             }
         }
@@ -433,17 +433,17 @@ struct ScheduledTaskRow: View {
                 Toggle("", isOn: Binding(get: { task.enabled }, set: { model.setEnabled(task, $0) }))
                     .toggleStyle(.switch).labelsHidden().disabled(!canEdit)
                     .help(task.enabled ? L.t("Açık") : L.t("Kapalı"))
-                icon("play.fill", L.t("Şimdi çalıştır"), enabled: canEdit) { model.runNow(task) }
-                icon("clock.arrow.circlepath", L.t("Çalışma geçmişi"), enabled: true) { model.sheet = .history(UUID(), task) }
-                icon("pencil", L.t("Düzenle"), enabled: canEdit) { model.edit(task) }
-                icon("trash", L.t("Sil"), enabled: canEdit) { model.deleting = task }
+                icon(.play, L.t("Şimdi çalıştır"), enabled: canEdit) { model.runNow(task) }
+                icon(.history, L.t("Çalışma geçmişi"), enabled: true) { model.sheet = .history(UUID(), task) }
+                icon(.edit, L.t("Düzenle"), enabled: canEdit) { model.edit(task) }
+                icon(.delete, L.t("Sil"), enabled: canEdit) { model.deleting = task }
             }
             .padding(6)
         }
     }
 
-    private func icon(_ symbol: String, _ tip: String, enabled: Bool, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) { Image(systemName: symbol) }
+    private func icon(_ name: WCIconName, _ tip: String, enabled: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) { WCIcon(name) }
             .buttonStyle(.borderless)
             .help(tip)
             .accessibilityLabel(tip)

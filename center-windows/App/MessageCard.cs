@@ -42,7 +42,7 @@ internal static class MessageCard
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var icon = m.Kind switch { "tip" => "💡 ", "announcement" => "📣 ", _ => "👋 " };
         head.Children.Add(new TextBlock { Text = icon + m.Title, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
-        var x = new Button { Content = new SymbolIcon(Symbol.Cancel), Padding = new Thickness(4), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0) };
+        var x = new Button { Content = Icons.Make(IconName.Close, size: 20), Padding = new Thickness(4), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0) };
         ToolTipService.SetToolTip(x, L.T("Kapat"));
         x.Click += (_, _) => { _ = Respond(m, "dismissed"); close(); };
         Grid.SetColumn(x, 1);

@@ -1,0 +1,222 @@
+{
+  "source": {
+    "package": "Vuesax icons (Iconsax), MIT licence",
+    "npm": {
+      "iconsax-react": "0.0.8",
+      "react": "18.3.1",
+      "react-dom": "18.3.1"
+    }
+  },
+  "note": "Our name -> Iconsax component name (iconsax-react). rotate: degrees about the centre; bold: another Iconsax icon for the Bold variant. After a change: python3 scripts/gen-icons.py --fetch && python3 scripts/gen-icons.py",
+  "icons": {
+    "activity": {
+      "iconsax": "Activity"
+    },
+    "add": {
+      "iconsax": "Add"
+    },
+    "ai": {
+      "iconsax": "MagicStar"
+    },
+    "app": {
+      "iconsax": "Category"
+    },
+    "approvals": {
+      "iconsax": "Verify"
+    },
+    "arrow-right": {
+      "iconsax": "ArrowRight"
+    },
+    "arrow-up": {
+      "iconsax": "ArrowUp"
+    },
+    "broadcast": {
+      "iconsax": "Brodcast"
+    },
+    "calendar": {
+      "iconsax": "Calendar"
+    },
+    "check": {
+      "iconsax": "TickCircle"
+    },
+    "chevron-down": {
+      "iconsax": "ArrowDown2"
+    },
+    "chevron-up": {
+      "iconsax": "ArrowUp2"
+    },
+    "cleanup": {
+      "iconsax": "Broom"
+    },
+    "clock": {
+      "iconsax": "Clock"
+    },
+    "close": {
+      "iconsax": "Add",
+      "rotate": 45,
+      "bold": "CloseCircle"
+    },
+    "close-circle": {
+      "iconsax": "CloseCircle"
+    },
+    "cpu": {
+      "iconsax": "Cpu"
+    },
+    "delete": {
+      "iconsax": "Trash"
+    },
+    "disk": {
+      "iconsax": "ExternalDrive"
+    },
+    "dock-position": {
+      "iconsax": "SidebarBottom"
+    },
+    "docker": {
+      "iconsax": "Box"
+    },
+    "edit": {
+      "iconsax": "Edit2"
+    },
+    "error": {
+      "iconsax": "Warning2"
+    },
+    "export": {
+      "iconsax": "Export"
+    },
+    "file": {
+      "iconsax": "Document"
+    },
+    "flash": {
+      "iconsax": "Flash"
+    },
+    "flash-off": {
+      "iconsax": "FlashSlash"
+    },
+    "folder": {
+      "iconsax": "Folder"
+    },
+    "folder-add": {
+      "iconsax": "FolderAdd"
+    },
+    "globe": {
+      "iconsax": "Global"
+    },
+    "grip": {
+      "iconsax": "HambergerMenu"
+    },
+    "history": {
+      "iconsax": "ArrowRotateLeft"
+    },
+    "identity": {
+      "iconsax": "UserTick"
+    },
+    "import": {
+      "iconsax": "Import"
+    },
+    "info": {
+      "iconsax": "InfoCircle"
+    },
+    "key": {
+      "iconsax": "Key"
+    },
+    "known-hosts": {
+      "iconsax": "ShieldTick"
+    },
+    "link": {
+      "iconsax": "Link"
+    },
+    "lock": {
+      "iconsax": "Lock"
+    },
+    "minimize": {
+      "iconsax": "Minus"
+    },
+    "monitor": {
+      "iconsax": "Monitor"
+    },
+    "more": {
+      "iconsax": "More"
+    },
+    "more-circle": {
+      "iconsax": "MoreCircle"
+    },
+    "notification": {
+      "iconsax": "Notification"
+    },
+    "notification-badge": {
+      "iconsax": "NotificationBing"
+    },
+    "open-window": {
+      "iconsax": "ExportSquare"
+    },
+    "play": {
+      "iconsax": "Play"
+    },
+    "power": {
+      "iconsax": "Logout"
+    },
+    "refresh": {
+      "iconsax": "ArrowRotateRight"
+    },
+    "search": {
+      "iconsax": "SearchNormal1"
+    },
+    "server": {
+      "iconsax": "Driver"
+    },
+    "settings": {
+      "iconsax": "Setting2"
+    },
+    "share": {
+      "iconsax": "Share"
+    },
+    "shield-lock": {
+      "iconsax": "SecuritySafe"
+    },
+    "side-panel": {
+      "iconsax": "SidebarRight"
+    },
+    "sign-in": {
+      "iconsax": "Login"
+    },
+    "sign-out": {
+      "iconsax": "LogoutCurve"
+    },
+    "snippet": {
+      "iconsax": "DocumentCode"
+    },
+    "split": {
+      "iconsax": "RowHorizontal"
+    },
+    "stop": {
+      "iconsax": "StopCircle"
+    },
+    "sync": {
+      "iconsax": "Refresh"
+    },
+    "team": {
+      "iconsax": "Profile2User"
+    },
+    "terminal": {
+      "iconsax": "Code1"
+    },
+    "timer": {
+      "iconsax": "Timer1"
+    },
+    "tunnel": {
+      "iconsax": "Routing2"
+    },
+    "upload": {
+      "iconsax": "DocumentUpload"
+    },
+    "user": {
+      "iconsax": "User"
+    },
+    "view-mode": {
+      "iconsax": "Category2"
+    },
+    "warning": {
+      "iconsax": "Danger"
+    }
+  }
+}

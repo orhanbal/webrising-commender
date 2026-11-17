@@ -15,7 +15,6 @@ namespace Wecommander.Center;
 /// </summary>
 public sealed partial class ServersWindow
 {
-    private const string ScheduledGlyph = "";
     private static readonly FontFamily MonoFont = new("Cascadia Mono, Consolas");
     private int _scheduledVisit;
 
@@ -63,7 +62,7 @@ public sealed partial class ServersWindow
         if (App.Current.Credentials() is not { } creds)
         {
             var signedOut = new TextBlock { Text = L.T("Zamanlanmış görevleri görmek için oturum aç."), TextWrapping = TextWrapping.Wrap, Foreground = Secondary };
-            SetPage(Page(title, subtitle, signedOut, ActionButton(L.T("Oturum aç…"), Symbol.Contact, () => App.Current.ShowPanel(), accent: true)));
+            SetPage(Page(title, subtitle, signedOut, ActionButton(L.T("Oturum aç…"), IconName.SignIn, () => App.Current.ShowPanel(), accent: true)));
             return;
         }
         SetPage(Page(title, subtitle, new ProgressRing { IsActive = true, Width = 32, Height = 32, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top }));
@@ -76,7 +75,7 @@ public sealed partial class ServersWindow
         {
             if (!OnScheduledPage(visit)) return;
             var failed = new TextBlock { Text = ScheduledError(e), TextWrapping = TextWrapping.Wrap, Foreground = Secondary };
-            SetPage(Page(title, subtitle, failed, ActionButton(L.T("Yenile"), Symbol.Refresh, () => _ = ShowScheduledTasks())));
+            SetPage(Page(title, subtitle, failed, ActionButton(L.T("Yenile"), IconName.Refresh, () => _ = ShowScheduledTasks())));
             return;
         }
         if (!OnScheduledPage(visit)) return;
@@ -94,8 +93,8 @@ public sealed partial class ServersWindow
             });
         foreach (var t in tasks.OrderBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase))
             list.Children.Add(ScheduledRow(t, canEdit));
-        var actions = new List<UIElement> { ActionButton(L.T("Yenile"), Symbol.Refresh, () => _ = ShowScheduledTasks()) };
-        if (canEdit) actions.Add(ActionButton(L.T("Yeni görev"), Symbol.Add, () => _ = EditScheduledTask(null), accent: true));
+        var actions = new List<UIElement> { ActionButton(L.T("Yenile"), IconName.Refresh, () => _ = ShowScheduledTasks()) };
+        if (canEdit) actions.Add(ActionButton(L.T("Yeni görev"), IconName.Add, () => _ = EditScheduledTask(null), accent: true));
         SetPage(Page(title, subtitle, new ScrollViewer { Content = list }, actions.ToArray()));
     }
 
@@ -131,9 +130,9 @@ public sealed partial class ServersWindow
         };
     }
 
-    private static Button IconAction(Symbol icon, string tip, bool enabled = true)
+    private static Button IconAction(IconName icon, string tip, bool enabled = true)
     {
-        var b = new Button { Content = new SymbolIcon(icon), IsEnabled = enabled, VerticalAlignment = VerticalAlignment.Center };
+        var b = new Button { Content = Icons.Make(icon, size: 20), IsEnabled = enabled, VerticalAlignment = VerticalAlignment.Center };
         ToolTipService.SetToolTip(b, tip);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(b, tip);
         return b;
@@ -188,7 +187,7 @@ public sealed partial class ServersWindow
         };
         Grid.SetColumn(toggle, 2); row.Children.Add(toggle);
 
-        var run = IconAction(Symbol.Play, L.T("Şimdi çalıştır"), canEdit);
+        var run = IconAction(IconName.Play, L.T("Şimdi çalıştır"), canEdit);
         run.Click += async (_, _) => await Scheduled(async () =>
         {
             if (ScheduledCredentials() is not { } c) return;
@@ -200,15 +199,15 @@ public sealed partial class ServersWindow
         });
         Grid.SetColumn(run, 3); row.Children.Add(run);
 
-        var history = IconAction(Symbol.Clock, L.T("Çalışma geçmişi"));
+        var history = IconAction(IconName.History, L.T("Çalışma geçmişi"));
         history.Click += async (_, _) => await Scheduled(() => ShowScheduledRuns(t));
         Grid.SetColumn(history, 4); row.Children.Add(history);
 
-        var edit = IconAction(Symbol.Edit, L.T("Düzenle"), canEdit);
+        var edit = IconAction(IconName.Edit, L.T("Düzenle"), canEdit);
         edit.Click += async (_, _) => await Scheduled(() => EditScheduledTask(t));
         Grid.SetColumn(edit, 5); row.Children.Add(edit);
 
-        var del = IconAction(Symbol.Delete, L.T("Sil"), canEdit);
+        var del = IconAction(IconName.Delete, L.T("Sil"), canEdit);
         del.Click += async (_, _) => await Scheduled(async () =>
         {
             var dialog = Dialog(L.F("{0} silinsin mi?", t.Name), new TextBlock { Text = L.T("Görev ve çalışma geçmişi silinir; bu geri alınamaz."), TextWrapping = TextWrapping.Wrap }, L.T("Sil"));

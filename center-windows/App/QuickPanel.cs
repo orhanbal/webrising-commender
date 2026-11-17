@@ -25,7 +25,7 @@ public sealed class QuickPanel : Window
 {
     private readonly Grid _root = new();
     private readonly TranslateTransform _slide = new();
-    private readonly AutoSuggestBox _search = new() { QueryIcon = new SymbolIcon(Symbol.Find) };
+    private readonly AutoSuggestBox _search = new() { QueryIcon = Icons.Make(IconName.Search, size: 12) };
     private readonly ScrollViewer _tiles = new() { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     private readonly StackPanel _results = new() { Spacing = 2, XYFocusKeyboardNavigation = XYFocusKeyboardNavigationMode.Enabled };
     private readonly ScrollViewer _resultsScroll = new() { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Visibility = Visibility.Collapsed };
@@ -102,23 +102,23 @@ public sealed class QuickPanel : Window
         var tiles = new Grid { ColumnSpacing = 6, RowSpacing = 6 };
         for (var c = 0; c < 3; c++) tiles.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         // Dock mode: the same drop-down panels as the Dock's buttons; classic: the windows.
-        var entries = new (string Glyph, string Text, Action Open, TextBlock? Detail)[]
+        var entries = new (IconName Icon, string Text, Action Open, TextBlock? Detail)[]
         {
-            ("", L.T("Sunucularım"), () => App.Current.ToggleMonitorPanelFromDock(_anchor, _side), null),
-            ("", L.T("Terminaller"), () => App.Current.ShowTerminals(files: false), null),
-            ("", L.T("Dosya yöneticisi"), () => App.Current.ShowTerminals(files: true), null),
-            ("", L.T("Görev Yöneticisi"), () => Either("taskmanager", null, () => TaskManagerWindow.Open()), null),
-            ("", L.T("WECOMMANDER görevleri"), () => Either("tasks", "scheduled", () => App.Current.ShowScheduledTasks()), null),
-            ("", L.T("Windows zamanlayıcıları"), () => Either("tasks", "windows", () => TaskSchedulerWindow.Open()), null),
-            ("", L.T("Sunucu zamanlayıcıları"), () => Either("tasks", "server", () => OpenServer("timers")), null),
-            ("", L.T("Disk ve temizlik"), () => Either(_selected() is null ? null : "server", "disk", () => OpenServer("disk")), null),
-            ("", L.T("Bildirimler / Bekleyen onaylar"), () => Either("approvals", null, () => App.Current.ShowApprovals()), _approvals),
+            (IconName.Server, L.T("Sunucularım"), () => App.Current.ToggleMonitorPanelFromDock(_anchor, _side), null),
+            (IconName.Terminal, L.T("Terminaller"), () => App.Current.ShowTerminals(files: false), null),
+            (IconName.Folder, L.T("Dosya yöneticisi"), () => App.Current.ShowTerminals(files: true), null),
+            (IconName.Activity, L.T("Görev Yöneticisi"), () => Either("taskmanager", null, () => TaskManagerWindow.Open()), null),
+            (IconName.Calendar, L.T("WECOMMANDER görevleri"), () => Either("tasks", "scheduled", () => App.Current.ShowScheduledTasks()), null),
+            (IconName.Clock, L.T("Windows zamanlayıcıları"), () => Either("tasks", "windows", () => TaskSchedulerWindow.Open()), null),
+            (IconName.Timer, L.T("Sunucu zamanlayıcıları"), () => Either("tasks", "server", () => OpenServer("timers")), null),
+            (IconName.Disk, L.T("Disk ve temizlik"), () => Either(_selected() is null ? null : "server", "disk", () => OpenServer("disk")), null),
+            (IconName.Notification, L.T("Bildirimler / Bekleyen onaylar"), () => Either("approvals", null, () => App.Current.ShowApprovals()), _approvals),
         };
         for (var i = 0; i < entries.Length; i++)
         {
-            var (glyph, text, open, detail) = entries[i];
+            var (icon, text, open, detail) = entries[i];
             if (tiles.RowDefinitions.Count <= i / 3) tiles.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            var tile = Tile(glyph, text, detail, open);
+            var tile = Tile(icon, text, detail, open);
             Grid.SetRow(tile, i / 3);
             Grid.SetColumn(tile, i % 3);
             tiles.Children.Add(tile);
@@ -144,16 +144,16 @@ public sealed class QuickPanel : Window
         account.HorizontalContentAlignment = HorizontalAlignment.Left;
         account.Padding = new Thickness(6, 4, 10, 4);
         bar.Children.Add(account);
-        var settings = BarButton(new FontIcon { Glyph = "", FontSize = 16 }, L.T("Ayarlar"), () => Either("settings", null, () => App.Current.ShowDockSettings()));
+        var settings = BarButton(Icons.Make(IconName.Settings), L.T("Ayarlar"), () => Either("settings", null, () => App.Current.ShowDockSettings()));
         Grid.SetColumn(settings, 1);
         bar.Children.Add(settings);
-        var power = new Button { Content = new FontIcon { Glyph = "", FontSize = 16 }, Width = 40, Height = 40, Padding = new Thickness(0),
+        var power = new Button { Content = Icons.Make(IconName.Power), Width = 40, Height = 40, Padding = new Thickness(0),
             Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0) };
         ToolTipService.SetToolTip(power, L.T("WECOMMANDER'dan çık"));
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(power, L.T("WECOMMANDER'dan çık"));
         // A menu, not a direct exit (one stray click must not close the app); kept inside the panel's window.
         var powerMenu = new MenuFlyout { ShouldConstrainToRootBounds = true };
-        var quit = new MenuFlyoutItem { Text = L.T("WECOMMANDER'dan çık"), Icon = new FontIcon { Glyph = "" } };
+        var quit = new MenuFlyoutItem { Text = L.T("WECOMMANDER'dan çık"), Icon = Icons.Make(IconName.Power) };
         quit.Click += (_, _) =>
         {
             Hide();
@@ -168,10 +168,12 @@ public sealed class QuickPanel : Window
         Content = _root;
     }
 
-    private Button Tile(string glyph, string text, TextBlock? detail, Action open)
+    private Button Tile(IconName icon, string text, TextBlock? detail, Action open)
     {
         var p = new StackPanel { Spacing = 6, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        p.Children.Add(new FontIcon { Glyph = glyph, FontSize = 20, HorizontalAlignment = HorizontalAlignment.Center });
+        var glyph = Icons.Make(icon, size: 20);
+        glyph.HorizontalAlignment = HorizontalAlignment.Center;
+        p.Children.Add(glyph);
         p.Children.Add(new TextBlock { Text = text, FontSize = 12, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center });
         if (detail is not null)
         {
@@ -252,7 +254,9 @@ public sealed class QuickPanel : Window
         var row = new Grid { ColumnSpacing = 12 };
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        row.Children.Add(new FontIcon { Glyph = "", FontSize = 16, VerticalAlignment = VerticalAlignment.Center });
+        var terminal = Icons.Make(IconName.Terminal);
+        terminal.VerticalAlignment = VerticalAlignment.Center;
+        row.Children.Add(terminal);
         var text = new StackPanel();
         text.Children.Add(new TextBlock { Text = host.Label, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
         text.Children.Add(new TextBlock { Text = host.Target, FontSize = 12, Foreground = Secondary, TextTrimming = TextTrimming.CharacterEllipsis });

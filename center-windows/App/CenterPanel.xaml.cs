@@ -32,6 +32,7 @@ public sealed partial class CenterPanel : UserControl
     {
         InitializeComponent();
         XamlText.Apply(this);
+        CloseButton.Content = Icons.Make(IconName.Close, size: 12);
         Root.KeyDown += (_, e) =>
         {
             if (e.Key == Windows.System.VirtualKey.Escape) CloseRequested?.Invoke();

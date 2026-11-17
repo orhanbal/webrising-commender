@@ -260,7 +260,7 @@ struct TaskManagerView: View {
                 .frame(width: 170)
                 Toggle(L.t("Ağaç görünümü"), isOn: $model.tree).toggleStyle(.checkbox)
                 Spacer(minLength: 0)
-                Button { model.refresh() } label: { Label(L.t("Yenile"), systemImage: "arrow.clockwise") }
+                Button { model.refresh() } label: { Label(L.t("Yenile"), icon: .refresh) }
             }
         }
     }
@@ -321,8 +321,7 @@ private struct LocalProcessRowView: View {
         if let row {
             HStack(spacing: 4) {
                 if depth > 0 { Color.clear.frame(width: CGFloat(min(depth, 12)) * 12, height: 1) }
-                Image(systemName: row.canEnd ? "app" : "lock.fill")
-                    .font(.caption)
+                WCIcon(row.canEnd ? .app : .lock, size: 12)
                     .foregroundStyle(.secondary)
                 Text(row.name).lineLimit(1).truncationMode(.tail)
             }

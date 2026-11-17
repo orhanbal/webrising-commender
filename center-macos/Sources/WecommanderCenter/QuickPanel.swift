@@ -23,7 +23,7 @@ struct QuickActions {
 
 struct QuickTile: Identifiable {
     let id: String
-    let symbol: String
+    let icon: WCIconName
     let title: String
     var detail: String?
     var alert = false
@@ -38,15 +38,15 @@ struct QuickTiles: View {
         let pending = app.pending.count
         let waiting: String = pending == 0 ? L.t("Bekleyen onay yok") : L.f("{0} onay bekliyor", pending)
         return [
-            QuickTile(id: "servers", symbol: "server.rack", title: L.t("Sunucularım"), action: actions.servers),
-            QuickTile(id: "terminals", symbol: "terminal", title: L.t("Terminaller"), action: actions.terminals),
-            QuickTile(id: "files", symbol: "folder", title: L.t("Dosyalar"), action: actions.files),
-            QuickTile(id: "tasks", symbol: "list.bullet.rectangle", title: L.t("Görev Yöneticisi"), action: actions.taskManager),
-            QuickTile(id: "scheduled", symbol: "calendar.badge.clock", title: L.t("Zamanlanmış görevler"), action: actions.scheduled),
-            QuickTile(id: "timers", symbol: "timer", title: L.t("Sunucu zamanlayıcıları"), action: actions.timers),
-            QuickTile(id: "disk", symbol: "internaldrive", title: L.t("Disk ve temizlik"), action: actions.disk),
-            QuickTile(id: "approvals", symbol: "checkmark.seal", title: L.t("Onaylar"), detail: waiting, alert: pending > 0, action: actions.approvals),
-            QuickTile(id: "settings", symbol: "gearshape", title: L.t("Ayarlar"), action: actions.settings),
+            QuickTile(id: "servers", icon: .server, title: L.t("Sunucularım"), action: actions.servers),
+            QuickTile(id: "terminals", icon: .terminal, title: L.t("Terminaller"), action: actions.terminals),
+            QuickTile(id: "files", icon: .folder, title: L.t("Dosyalar"), action: actions.files),
+            QuickTile(id: "tasks", icon: .activity, title: L.t("Görev Yöneticisi"), action: actions.taskManager),
+            QuickTile(id: "scheduled", icon: .calendar, title: L.t("Zamanlanmış görevler"), action: actions.scheduled),
+            QuickTile(id: "timers", icon: .timer, title: L.t("Sunucu zamanlayıcıları"), action: actions.timers),
+            QuickTile(id: "disk", icon: .disk, title: L.t("Disk ve temizlik"), action: actions.disk),
+            QuickTile(id: "approvals", icon: .approvals, title: L.t("Onaylar"), detail: waiting, alert: pending > 0, action: actions.approvals),
+            QuickTile(id: "settings", icon: .settings, title: L.t("Ayarlar"), action: actions.settings),
         ]
     }
 
@@ -72,8 +72,7 @@ private struct QuickTileButton: View {
     var body: some View {
         Button(action: tile.action) {
             VStack(alignment: .leading, spacing: 5) {
-                Image(systemName: tile.symbol)
-                    .font(.system(size: 17))
+                WCIcon(tile.icon, size: 20)
                     .foregroundStyle(Color.accentColor)
                 Text(tile.title)
                     .font(.callout)

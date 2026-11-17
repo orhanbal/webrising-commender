@@ -30,9 +30,7 @@
                                  HorizontalAlignment="Right" Click="SignOut_Click" />
             </StackPanel>
             <Button x:Name="CloseButton" Grid.Column="2" Click="Close_Click" Background="Transparent" BorderThickness="0"
-                    Width="32" Height="32" Padding="0" VerticalAlignment="Top" ToolTipService.ToolTip="Kapat (Esc)">
-                <FontIcon Glyph="&#xE711;" FontSize="12" />
-            </Button>
+                    Width="32" Height="32" Padding="0" VerticalAlignment="Top" ToolTipService.ToolTip="Kapat (Esc)" />
         </Grid>
 
         <StackPanel Grid.Row="1" Spacing="6">

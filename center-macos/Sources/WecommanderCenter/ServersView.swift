@@ -44,23 +44,24 @@ struct ServersView: View {
         List(selection: Binding(get: { model.selection }, set: { model.selection = $0 })) {
             // The Windows main window's order; settings last, as in its bottom bar.
             Section {
-                Label(L.t("Sunucular"), systemImage: "server.rack").tag(Self.hostsPage)
-                Label(L.t("Terminaller"), systemImage: "terminal").tag(Self.terminalsPage)
-                Label(L.t("Anahtarlar"), systemImage: "key").tag("page:keys")
-                Label(L.t("Kimlikler"), systemImage: "person.crop.circle.badge.checkmark").tag("page:identities")
-                Label(L.t("Parçacıklar"), systemImage: "text.badge.plus").tag("page:snippets")
-                Label(L.t("Tüneller"), systemImage: "point.3.connected.trianglepath.dotted").tag("page:tunnels")
-                Label(L.t("Bilinen sunucular"), systemImage: "checkmark.shield").tag("page:known")
-                Label(L.t("Geçmiş"), systemImage: "clock.arrow.circlepath").tag("page:history")
-                Label(L.t("Zamanlanmış görevler"), systemImage: "calendar.badge.clock").tag(Self.scheduledPage)
+                Label(L.t("Sunucular"), icon: .server, active: model.selection == Self.hostsPage).tag(Self.hostsPage)
+                Label(L.t("Terminaller"), icon: .terminal, active: model.selection == Self.terminalsPage).tag(Self.terminalsPage)
+                Label(L.t("Anahtarlar"), icon: .key, active: model.selection == "page:keys").tag("page:keys")
+                Label(L.t("Kimlikler"), icon: .identity, active: model.selection == "page:identities").tag("page:identities")
+                Label(L.t("Parçacıklar"), icon: .snippet, active: model.selection == "page:snippets").tag("page:snippets")
+                Label(L.t("Tüneller"), icon: .tunnel, active: model.selection == "page:tunnels").tag("page:tunnels")
+                Label(L.t("Bilinen sunucular"), icon: .knownHosts, active: model.selection == "page:known").tag("page:known")
+                Label(L.t("Geçmiş"), icon: .history, active: model.selection == "page:history").tag("page:history")
+                Label(L.t("Zamanlanmış görevler"), icon: .calendar, active: model.selection == Self.scheduledPage).tag(Self.scheduledPage)
             }
             Section {
-                Label(L.t("Ayarlar"), systemImage: "gearshape").tag(Self.settingsPage)
+                Label(L.t("Ayarlar"), icon: .settings, active: model.selection == Self.settingsPage).tag(Self.settingsPage)
             }
             if !model.sessions.isEmpty {
                 Section(L.t("Açık terminaller")) {
                     ForEach(model.sessions) { session in
-                        Label(session.host.label, systemImage: session.closed ? "terminal" : "terminal.fill")
+                        // Bold: a live terminal, or the selected one.
+                        Label(session.host.label, icon: .terminal, active: !session.closed || model.selection == session.id)
                             .foregroundStyle(session.closed ? .secondary : .primary)
                             .tag(session.id)
                             .contextMenu { Button(L.t("Terminali kapat")) { model.close(session) } }
@@ -71,10 +72,10 @@ struct ServersView: View {
         .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom) {
             VStack(alignment: .leading, spacing: 6) {
-                Button { showPanel() } label: { Label(L.t("Onaylar ve bu Mac"), systemImage: "checkmark.seal") }
+                Button { showPanel() } label: { Label(L.t("Onaylar ve bu Mac"), icon: .approvals) }
                     .buttonStyle(.borderless)
                 if !model.vaultLabel.isEmpty {
-                    Label(L.f("Giriş bilgileri: {0}", model.vaultLabel), systemImage: "key")
+                    Label(L.f("Giriş bilgileri: {0}", model.vaultLabel), icon: .key)
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -86,7 +87,7 @@ struct ServersView: View {
     @ViewBuilder
     private var detail: some View {
         if let error = model.coreError {
-            ContentUnavailableCompat(title: L.t("Uygulama çekirdeği çalışmıyor"), systemImage: "exclamationmark.triangle", text: error)
+            ContentUnavailableCompat(title: L.t("Uygulama çekirdeği çalışmıyor"), icon: .warning, text: error)
         } else if let session = model.selectedSession {
             let primary = model.primaryId(of: session.id)
             let group = model.group(primary)
@@ -119,12 +120,12 @@ struct ServersView: View {
                                 }
                             }
                         }
-                    } label: { Label(L.t("Böl"), systemImage: "rectangle.split.2x1") }
+                    } label: { Label(L.t("Böl"), icon: .split) }
                         .help(L.t("Bu terminalin yanına ya da altına ikinci bir terminal aç (en fazla 4)"))
                         .disabled(group.count >= 4)
                     Toggle(isOn: Binding(get: { model.broadcast.contains(primary) },
                                          set: { on in if on { model.broadcast.insert(primary) } else { model.broadcast.remove(primary) } })) {
-                        Label(L.t("Tümüne yaz"), systemImage: "dot.radiowaves.left.and.right")
+                        Label(L.t("Tümüne yaz"), icon: .broadcast, active: model.broadcast.contains(primary))
                     }
                     .help(L.t("Yazdığın her şey bu bölmedeki tüm terminallere gider"))
                     .disabled(group.count < 2)
@@ -144,21 +145,21 @@ struct ServersView: View {
                                 Button(L.t("Paylaş: yazabilsinler de")) { Task { await model.startSharing(session, allowInput: true) } }
                             }
                         } label: {
-                            Label(model.hosting[session.id] != nil ? L.t("Paylaşılıyor") : L.t("Ekiple paylaş"), systemImage: "person.2.wave.2")
+                            Label(model.hosting[session.id] != nil ? L.t("Paylaşılıyor") : L.t("Ekiple paylaş"), icon: .share)
                         }
                         .disabled(session.closed)
                     }
                     Button { ServerWindows.show(model, session: session) } label: {
-                        Label(L.t("Sunucu yönetimi"), systemImage: "gauge.medium")
+                        Label(L.t("Sunucu yönetimi"), icon: .activity)
                     }
                     .help(L.t("Bu sunucunun disk, bellek, süreç ve temizlik ekranı"))
                     .disabled(session.closed || model.watching[session.id] != nil || !session.host.isSsh)
                     SnippetMenu(model: model, session: session)
-                    Button { showTunnels = true } label: { Label(L.t("Tüneller"), systemImage: "point.3.connected.trianglepath.dotted") }
+                    Button { showTunnels = true } label: { Label(L.t("Tüneller"), icon: .tunnel) }
                         .disabled(session.closed)
-                    Toggle(isOn: $model.showFiles) { Label(L.t("Dosyalar"), systemImage: "folder") }
+                    Toggle(isOn: $model.showFiles) { Label(L.t("Dosyalar"), icon: .folder, active: model.showFiles) }
                         .disabled(session.closed)
-                    Button { model.close(session) } label: { Label(L.t("Terminali kapat"), systemImage: "xmark") }
+                    Button { model.close(session) } label: { Label(L.t("Terminali kapat"), icon: .close) }
                 }
             }
         } else {
@@ -186,7 +187,7 @@ struct TerminalsPage: View {
     var body: some View {
         Group {
             if model.sessions.isEmpty {
-                ContentUnavailableCompat(title: L.t("Açık terminal yok"), systemImage: "terminal",
+                ContentUnavailableCompat(title: L.t("Açık terminal yok"), icon: .terminal,
                                          text: L.t("Sunucular'dan birine tıkla; terminal açılır ve kenar çubuğunda \"Açık terminaller\" altında görünür."))
             } else {
                 List {
@@ -198,7 +199,7 @@ struct TerminalsPage: View {
         }
         .navigationTitle(L.t("Terminaller"))
         .toolbar {
-            Button { model.selection = ServersView.hostsPage } label: { Label(L.t("Sunucular"), systemImage: "server.rack") }
+            Button { model.selection = ServersView.hostsPage } label: { Label(L.t("Sunucular"), icon: .server) }
         }
     }
 }
@@ -209,7 +210,7 @@ struct TerminalListRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: session.closed ? "terminal" : "terminal.fill")
+            WCIcon(.terminal, active: !session.closed)
                 .foregroundStyle(session.closed ? Color.secondary : Color.accentColor)
             VStack(alignment: .leading, spacing: 2) {
                 Text(session.host.label).fontWeight(.semibold).lineLimit(1).truncationMode(.tail)
@@ -220,9 +221,10 @@ struct TerminalListRow: View {
                 Text(L.t("Terminal kapalı.")).font(.caption).foregroundStyle(.secondary)
             }
             Button(L.t("Terminal aç")) { model.selection = session.id }
-            Button { model.close(session) } label: { Image(systemName: "xmark") }
+            Button { model.close(session) } label: { WCIcon(.close) }
                 .buttonStyle(.borderless)
                 .help(L.t("Terminali kapat"))
+                .accessibilityLabel(L.t("Terminali kapat"))
                 .accessibilityLabel(L.t("Terminali kapat"))
         }
         .padding(.vertical, 4)
@@ -266,7 +268,7 @@ struct HostsPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 if model.hosts.isEmpty {
-                    ContentUnavailableCompat(title: L.t("Henüz sunucu yok"), systemImage: "server.rack",
+                    ContentUnavailableCompat(title: L.t("Henüz sunucu yok"), icon: .server,
                                              text: L.t("\"Yeni sunucu\" ile ekle ya da ~/.ssh/config dosyandan içe aktar."))
                         .frame(maxWidth: .infinity).padding(.top, 60)
                 } else if filtered.isEmpty {
@@ -303,9 +305,9 @@ struct HostsPage: View {
         .onSubmit(of: .search) { Task { await quickConnect() } }
         .toolbar {
             ToolbarItemGroup {
-                Button { showShares = true } label: { Label(L.t("Ortak terminaller"), systemImage: "person.2") }
-                Button { Task { await model.importSSHConfig() } } label: { Label(L.t("İçe aktar"), systemImage: "square.and.arrow.down") }
-                Button { edit(nil) } label: { Label(L.t("Yeni sunucu"), systemImage: "plus") }
+                Button { showShares = true } label: { Label(L.t("Ortak terminaller"), icon: .team) }
+                Button { Task { await model.importSSHConfig() } } label: { Label(L.t("İçe aktar"), icon: .import) }
+                Button { edit(nil) } label: { Label(L.t("Yeni sunucu"), icon: .add) }
             }
         }
     }
@@ -369,8 +371,7 @@ struct HostCard: View {
     let via: String?
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "server.rack")
-                .font(.system(size: 17))
+            WCIcon(.server, size: 20)
                 .foregroundStyle(.white)
                 .frame(width: 38, height: 38)
                 .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 8))
@@ -400,7 +401,7 @@ struct SnippetMenu: View {
         Menu {
             if snippets.isEmpty { Text(L.t("Kayıtlı parçacık yok")) }
             ForEach(snippets) { s in Button(s.label) { model.send(s, to: session) } }
-        } label: { Label(L.t("Parçacık"), systemImage: "text.badge.plus") }
+        } label: { Label(L.t("Parçacık"), icon: .snippet) }
         .disabled(session.closed)
         .task { snippets = await model.snippets() }
     }
@@ -435,7 +436,7 @@ struct SnippetsPage: View {
             }
         }
         .navigationTitle(L.t("Parçacıklar"))
-        .toolbar { Button { adding = true } label: { Label(L.t("Yeni parçacık"), systemImage: "plus") } }
+        .toolbar { Button { adding = true } label: { Label(L.t("Yeni parçacık"), icon: .add) } }
         .sheet(item: $editing) { s in SnippetSheet(model: model, snippet: s) { snippets = $0 } }
         .sheet(isPresented: $adding) { SnippetSheet(model: model, snippet: nil) { snippets = $0 } }
         .task { snippets = await model.snippets() }
@@ -508,13 +509,13 @@ struct KeysPage: View {
         .navigationTitle(L.t("Anahtarlar"))
         .toolbar {
             ToolbarItemGroup {
-                Button { importing = true } label: { Label(L.t("İçe aktar"), systemImage: "square.and.arrow.down") }
+                Button { importing = true } label: { Label(L.t("İçe aktar"), icon: .import) }
                 Button {
                     Task {
                         do { keys = try await model.generateKey(label: (Host.current().localizedName ?? "Mac") + L.t(" anahtarı")); error = nil }
                         catch { self.error = error.localizedDescription }
                     }
-                } label: { Label(L.t("Yeni anahtar"), systemImage: "plus") }
+                } label: { Label(L.t("Yeni anahtar"), icon: .add) }
             }
         }
         .sheet(isPresented: $importing) { ImportKeySheet(model: model) { keys = $0 } }
@@ -626,7 +627,7 @@ struct HistoryPage: View {
             }
         }
         .navigationTitle(L.t("Geçmiş"))
-        .toolbar { Button { Task { await model.clearHistory(); history = [] } } label: { Label(L.t("Temizle"), systemImage: "trash") } }
+        .toolbar { Button { Task { await model.clearHistory(); history = [] } } label: { Label(L.t("Temizle"), icon: .delete) } }
         .task { history = await model.history() }
     }
 }
@@ -634,11 +635,11 @@ struct HistoryPage: View {
 /// `ContentUnavailableView` is macOS 14+; this works on 13.
 struct ContentUnavailableCompat: View {
     let title: String
-    let systemImage: String
+    let icon: WCIconName
     let text: String
     var body: some View {
         VStack(spacing: 10) {
-            Image(systemName: systemImage).font(.system(size: 38)).foregroundStyle(.secondary)
+            WCIcon(icon, size: 44).foregroundStyle(.secondary)
             Text(title).font(.title3.weight(.semibold))
             Text(text).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 380)
         }
@@ -658,7 +659,8 @@ struct HostRow: View {
             }
             Spacer()
             if host.savedSecret || host.keyPath != nil {
-                Image(systemName: "key.fill").foregroundStyle(.secondary).help(L.t("Giriş bilgisi kayıtlı"))
+                WCIcon(.key).foregroundStyle(.secondary).help(L.t("Giriş bilgisi kayıtlı"))
+                    .accessibilityLabel(L.t("Giriş bilgisi kayıtlı"))
             }
         }
         .help(host.trustedKey.map { L.f("Sunucu anahtarı: {0}", $0) } ?? L.t("Sunucu anahtarı henüz onaylanmadı"))
@@ -688,9 +690,10 @@ struct SplitTerminals: View {
                 HStack {
                     Text(session.host.label + (session.closed ? L.t(" (kapandı)") : "")).font(.caption).lineLimit(1)
                     Spacer()
-                    Button { model.close(session) } label: { Image(systemName: "xmark") }
+                    Button { model.close(session) } label: { WCIcon(.close) }
                         .buttonStyle(.borderless)
                         .help(L.t("Bu bölmeyi kapat"))
+                        .accessibilityLabel(L.t("Bu bölmeyi kapat"))
                 }
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(.bar)
@@ -727,12 +730,13 @@ struct IdentitiesPage: View {
                     }
                     Spacer()
                     Button(L.t("Düzenle")) { editing = IdentityEdit(identity: i) }
-                    Button(role: .destructive) { Task { identities = await model.deleteIdentity(i) } } label: { Image(systemName: "trash") }
+                    Button(role: .destructive) { Task { identities = await model.deleteIdentity(i) } } label: { WCIcon(.delete) }
+                        .accessibilityLabel(L.t("Sil"))
                 }
             }
         }
         .navigationTitle(L.t("Kimlikler"))
-        .toolbar { Button { editing = IdentityEdit(identity: nil) } label: { Label(L.t("Yeni kimlik"), systemImage: "plus") } }
+        .toolbar { Button { editing = IdentityEdit(identity: nil) } label: { Label(L.t("Yeni kimlik"), icon: .add) } }
         .sheet(item: $editing) { e in
             IdentitySheet(model: model, identity: e.identity, keys: keys) { identities = $0 }
         }
@@ -1311,7 +1315,7 @@ struct ConnectSheet: View {
                 credentialForm
             }
             if let message = request.message {
-                Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.red).font(.callout)
+                Label(message, icon: .warning).foregroundStyle(.red).font(.callout)
             }
             HStack {
                 Spacer()
@@ -1387,7 +1391,7 @@ struct ConnectSheet: View {
         let changed = result.status == "hostKeyChanged"
         return VStack(alignment: .leading, spacing: 8) {
             Label(changed ? L.t("Bu sunucunun anahtarı değişti") : L.t("Bu sunucuya ilk kez bağlanıyorsun"),
-                  systemImage: changed ? "exclamationmark.octagon.fill" : "lock.shield")
+                  icon: changed ? .error : .shieldLock)
                 .font(.headline)
                 .foregroundStyle(changed ? .red : .primary)
             Text(changed
@@ -1425,14 +1429,14 @@ struct FilesPane: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
-                Button { load(listing?.parent) } label: { Image(systemName: "arrow.up") }.help(L.t("Üst klasör"))
+                Button { load(listing?.parent) } label: { WCIcon(.arrowUp) }.help(L.t("Üst klasör")).accessibilityLabel(L.t("Üst klasör"))
                 Text(listing?.path ?? "…").font(.caption.monospaced()).lineLimit(1).truncationMode(.head)
                 Spacer()
-                Button { load(listing?.path) } label: { Image(systemName: "arrow.clockwise") }.help(L.t("Yenile"))
+                Button { load(listing?.path) } label: { WCIcon(.refresh) }.help(L.t("Yenile")).accessibilityLabel(L.t("Yenile"))
                 Menu {
                     Button(L.t("Dosya yükle…")) { upload() }
                     Button(L.t("Yeni klasör…")) { newFolder() }
-                } label: { Image(systemName: "plus") }
+                } label: { WCIcon(.add) }
                 .menuStyle(.borderlessButton).fixedSize()
             }
             .padding(8)
@@ -1443,7 +1447,7 @@ struct FilesPane: View {
             } else {
                 List(listing?.entries ?? []) { entry in
                     HStack {
-                        Image(systemName: entry.isFolder ? "folder.fill" : entry.kind == "link" ? "link" : "doc")
+                        WCIcon(entry.isFolder ? .folder : entry.kind == "link" ? .link : .file)
                             .foregroundStyle(entry.isFolder ? Color.accentColor : .secondary)
                         Text(entry.name).lineLimit(1)
                         Spacer()
@@ -1641,7 +1645,7 @@ struct TunnelsSheet: View {
                 HStack {
                     TextField(L.t("Sunucu adresi"), text: $remoteHost)
                     TextField(L.t("Sunucu portu (0 = seçsin)"), text: $remotePort).frame(width: 170)
-                    Image(systemName: "arrow.right")
+                    WCIcon(.arrowRight)
                     TextField(L.t("Bu Mac'teki adres"), text: $localHost)
                     TextField("Port", text: $localPort).frame(width: 70)
                 }
@@ -1650,7 +1654,7 @@ struct TunnelsSheet: View {
             default:
                 HStack {
                     TextField(L.t("Yerel port (0 = boş)"), text: $localPort).frame(width: 140)
-                    Image(systemName: "arrow.right")
+                    WCIcon(.arrowRight)
                     TextField(L.t("Uzak adres"), text: $remoteHost)
                     TextField("Port", text: $remotePort).frame(width: 70)
                 }

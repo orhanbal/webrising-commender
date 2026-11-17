@@ -75,16 +75,16 @@ public sealed class ServerManagementView : UserControl
         _nav.PaneDisplayMode = NavigationViewPaneDisplayMode.Top;
         _nav.IsBackButtonVisible = NavigationViewBackButtonVisible.Collapsed;
         _nav.IsSettingsVisible = false;
-        foreach (var (tag, text, glyph) in new[]
+        foreach (var (tag, text, icon) in new[]
         {
-            ("overview", L.T("Genel bakış"), ""),
-            ("disk", "Disk", ""),
-            ("cleanup", L.T("Temizlik"), ""),
-            ("processes", L.T("Süreçler"), ""),
-            ("timers", L.T("Zamanlayıcılar"), "\uE823"),
+            ("overview", L.T("Genel bakış"), IconName.Activity),
+            ("disk", "Disk", IconName.Disk),
+            ("cleanup", L.T("Temizlik"), IconName.Cleanup),
+            ("processes", L.T("Süreçler"), IconName.Cpu),
+            ("timers", L.T("Zamanlayıcılar"), IconName.Timer),
         })
-            _nav.MenuItems.Add(new NavigationViewItem { Content = text, Tag = tag, Icon = new FontIcon { Glyph = glyph } });
-        var refresh = new NavigationViewItem { Content = L.T("Yenile"), Tag = "refresh", SelectsOnInvoked = false, Icon = new SymbolIcon(Symbol.Refresh) };
+            _nav.MenuItems.Add(new NavigationViewItem { Content = text, Tag = tag, Icon = Icons.Make(icon) });
+        var refresh = new NavigationViewItem { Content = L.T("Yenile"), Tag = "refresh", SelectsOnInvoked = false, Icon = Icons.Make(IconName.Refresh) };
         _nav.FooterMenuItems.Add(refresh);
         _nav.ItemInvoked += (sender, e) =>
         {
@@ -103,6 +103,7 @@ public sealed class ServerManagementView : UserControl
         root.Children.Add(_scroll);
         _nav.Content = root;
         Content = _nav;
+        Icons.FollowSelection(_nav);
         _nav.SelectedItem = _nav.MenuItems[0];
         _ = Load();
     }
@@ -479,7 +480,7 @@ public sealed class ServerManagementView : UserControl
     {
         var page = new StackPanel { Spacing = 12 };
         var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        var up = new Button { Content = new SymbolIcon(Symbol.Up), IsEnabled = u.Path != "/" };
+        var up = new Button { Content = Icons.Make(IconName.ArrowUp, size: 20), IsEnabled = u.Path != "/" };
         ToolTipService.SetToolTip(up, L.T("Üst klasör"));
         up.Click += (_, _) =>
         {
@@ -571,7 +572,7 @@ public sealed class ServerManagementView : UserControl
     {
         var p = new StackPanel { Spacing = 4 };
         var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-        title.Children.Add(new FontIcon { Glyph = env.Rootless ? "\uE77B" : "\uE7F4", FontSize = 18 });
+        title.Children.Add(Icons.Make(env.Rootless ? IconName.User : IconName.Docker, size: 18));
         title.Children.Add(new TextBlock { Text = env.Label, Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"] });
         p.Children.Add(title);
         var kind = env.Rootless ? "Rootless Docker" : L.T("Sistem Docker");
@@ -767,7 +768,7 @@ public sealed class ServerManagementView : UserControl
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var state = new ContentControl { Content = new FontIcon { Glyph = "\uE823", FontSize = 16, Foreground = Secondary }, VerticalAlignment = VerticalAlignment.Center };
+            var state = new ContentControl { Content = Icons.Make(IconName.Clock, foreground: Secondary), VerticalAlignment = VerticalAlignment.Center };
             row.Children.Add(state);
             var text = new StackPanel { Spacing = 4 };
             text.Children.Add(new TextBlock { Text = item.Title, FontWeight = FontWeights.SemiBold });
@@ -815,12 +816,8 @@ public sealed class ServerManagementView : UserControl
                 catch (Exception ex) { result = new CleanupResult(item.Id, false, Friendly(ex)); }
                 results.Add(result);
                 bar.Visibility = Visibility.Collapsed;
-                state.Content = new FontIcon
-                {
-                    Glyph = result.Ok ? "\uE73E" : "\uE783",
-                    FontSize = 16,
-                    Foreground = (Brush)Application.Current.Resources[result.Ok ? "SystemFillColorSuccessBrush" : "SystemFillColorCriticalBrush"],
-                };
+                state.Content = Icons.Make(result.Ok ? IconName.Check : IconName.Error,
+                    foreground: (Brush)Application.Current.Resources[result.Ok ? "SystemFillColorSuccessBrush" : "SystemFillColorCriticalBrush"]);
                 note.Text = result.Ok ? L.T("Temizlendi") : L.T("Temizlenemedi") + (string.IsNullOrEmpty(result.Message) ? "" : ": " + result.Message);
                 doneKb += item.Kb;
                 Overall(i + 1 < states.Count ? L.F("{0}/{1} tamam", i + 1, states.Count) : L.T("Bitti"));
@@ -1080,15 +1077,15 @@ public sealed class ServerManagementView : UserControl
         }
         if (p is not null && canChange)
         {
-            var more = new Button { Content = new SymbolIcon(Symbol.More), Padding = new Thickness(6), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0) };
+            var more = new Button { Content = Icons.Make(IconName.More, size: 20), Padding = new Thickness(6), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0) };
             var menu = new MenuFlyout();
-            var stop = new MenuFlyoutItem { Text = L.T("Sonlandır (kibarca)"), Icon = new SymbolIcon(Symbol.Stop) };
+            var stop = new MenuFlyoutItem { Text = L.T("Sonlandır (kibarca)"), Icon = Icons.Make(IconName.Stop) };
             stop.Click += async (_, _) =>
             {
                 if (await Confirm(L.F("{0} sonlandırılsın mı?", p.Name), L.T("Sürece kapanması söylenir (SIGTERM); program açık işlerini bitirip kapanır. Bir servisin parçasıysa servis onu yeniden başlatabilir."), $"kill -TERM {p.Pid}", L.T("Sonlandır")))
                     await Signal(p, "term", false);
             };
-            var kill = new MenuFlyoutItem { Text = L.T("Zorla durdur"), Icon = new SymbolIcon(Symbol.Cancel) };
+            var kill = new MenuFlyoutItem { Text = L.T("Zorla durdur"), Icon = Icons.Make(IconName.CloseCircle) };
             kill.Click += async (_, _) =>
             {
                 if (await Confirm(L.F("{0} zorla durdurulsun mı?", p.Name), L.T("Süreç anında durdurulur (SIGKILL); kaydedilmemiş işleri kaybolur. Önce kibarca sonlandırmayı dene."), $"kill -KILL {p.Pid}", L.T("Zorla durdur")))
