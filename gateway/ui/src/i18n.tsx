@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown } from "./components/icons";
 import { Flag } from "./components/Flag";
 import { commonEnglish } from "./i18n-common";
 import { marketingEnglish } from "./i18n-marketing";

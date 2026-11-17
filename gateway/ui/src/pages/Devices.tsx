@@ -1,6 +1,6 @@
 import {useEffect,useMemo,useState} from "react";
 import { t as translate,useLocale } from "../i18n";
-import {ArrowRight,Check,Clock3,Copy,Info,Monitor,MoreHorizontal,Plus,RefreshCw,Search,ShieldCheck,Wifi,WifiOff,Trash2} from "lucide-react";
+import {ArrowRight,Check,Clock3,Copy,Info,Monitor,MoreHorizontal,Plus,RefreshCw,Search,ShieldCheck,Wifi,WifiOff,Trash2} from "../components/icons";
 import {api,type Account,type Device} from "../api";
 import {Badge,Button,Card,CardContent,CardHeader,CardTitle,Dialog,DialogContent,DialogDescription,DialogTitle,Input} from "../components/ui";
 import {DashboardShell} from "./Dashboard";

@@ -1,6 +1,6 @@
 import {useEffect,useState} from "react";
 import { t as translate,useLocale,paddleLocale,tIn,isLocale } from "../i18n";
-import {ArrowLeft,ArrowRight,Check,CheckCheck,CreditCard,ExternalLink,KeyRound,LockKeyhole,ShieldCheck,Sparkles} from "lucide-react";
+import {ArrowLeft,ArrowRight,Check,CheckCheck,CreditCard,ExternalLink,KeyRound,LockKeyhole,ShieldCheck,Sparkles} from "../components/icons";
 import{Button,Card,Badge}from"../components/ui";
 import{api,type Account,type Billing,type Plan,type Pricing}from"../api";import type{Nav,Theme}from"../App";import{NavLink}from"../App";import{loadPaddle}from"../paddle";
 // Plan texts come from the server in Turkish; on the English site the known

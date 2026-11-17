@@ -1,6 +1,6 @@
 import {useState} from "react";
 import { t as translate,useLocale } from "../i18n";
-import {Check,Copy,Download,Laptop,Monitor,TerminalSquare} from "lucide-react";
+import {Check,Copy,Download,Laptop,Monitor,TerminalSquare,iconVariant} from "../components/icons";
 import type{Account}from"../api";
 import{Badge,Button,Card}from"../components/ui";
 import{DashboardShell}from"./Dashboard";import type{Nav,Theme}from"../App";
@@ -27,7 +27,7 @@ export function DownloadPage({nav,account,theme,toggle,logout}:{nav:Nav;account:
   :[translate("Sunucuda kurulum komutunu çalıştır."),translate("Komutun verdiği bağlantıyı tarayıcıda açıp cihazı onayla."),translate("Ajan, root olmayan bir servis kullanıcısıyla arka planda çalışır.")];
  return <DashboardShell nav={nav} path="/download" account={account} theme={theme} toggle={toggle} logout={logout}>
   <div><span className="dash-kicker">{translate("KURULUM")}</span><h1 className="dash-title mt-2">{translate("Uygulamayı indir")}<span className="text-[var(--accent)]">.</span></h1><p className="muted text-sm mt-2">{translate("Tek uygulama: kur, tarayıcıda giriş yap, gerisi arka planda. Ajan uygulamanın içinde gelir.")}</p></div>
-  <div className="install-platforms mt-6">{platforms.map(p=><button key={p.key} type="button" className={"install-platform "+(platform===p.key?"active":"")} aria-pressed={platform===p.key} onClick={()=>setPlatform(p.key)}><p.icon size={22}/><span><strong>{p.name}</strong><small>{p.kind}</small></span>{platform===p.key&&<Check size={18} className="install-platform-check"/>}</button>)}</div>
+  <div className="install-platforms mt-6">{platforms.map(p=><button key={p.key} type="button" className={"install-platform "+(platform===p.key?"active":"")} aria-pressed={platform===p.key} onClick={()=>setPlatform(p.key)}><p.icon size={22} variant={iconVariant(platform===p.key)} aria-hidden="true"/><span><strong>{p.name}</strong><small>{p.kind}</small></span>{platform===p.key&&<Check size={18} className="install-platform-check"/>}</button>)}</div>
   <Card className="p-6 mt-5">
    <Badge><Check size={14}/> {platform==="linux"?translate("Sunucu ajanı"):translate("Tek uygulama, ajan içinde")}</Badge>
    <ol className="mt-4 grid gap-2 text-sm">{steps.map((s,i)=><li key={i} className="flex gap-3"><span className="font-semibold text-[var(--accent)]">{i+1}.</span><span>{s}</span></li>)}</ol>

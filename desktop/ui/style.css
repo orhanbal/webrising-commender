@@ -84,7 +84,9 @@ textarea{font:12px ui-monospace,Consolas,monospace;resize:vertical}
 .host .via{display:block;font-size:11px;color:var(--muted)}
 
 /* ---- platform looks: Windows 11 (Fluent) and macOS --------------------- */
-.ws{display:grid;place-items:center;gap:1px;height:50px}.ws svg{width:20px;height:20px}.ws span{font-size:10px;font-weight:600}
+.ws{display:grid;place-items:center;gap:1px;height:50px}.ws svg{width:20px;height:20px}
+/* Iconsax (Vuesax) icons: Linear normally, Bold for the active workspace. */
+.ws .ic-bold,.ws.active .ic-linear{display:none}.ws.active .ic-bold{display:inline}.ws span{font-size:10px;font-weight:600}
 .sub{font-size:13px;margin:6px 0 0}
 
 body.os-windows{--bg:#f3f3f3;--surface:#fbfbfb;--stroke:#e5e5e5;--accent:#005fb8;--accent-ink:#fff;--muted:#5f5f5f;font-family:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif}

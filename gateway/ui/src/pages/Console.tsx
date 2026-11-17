@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from "react";
-import {Activity,ArrowLeft,Building2,ChevronDown,LayoutDashboard,LogOut,Menu,Monitor,Settings2,ShieldCheck,FileText,CreditCard,Image as ImageIcon,Users,X,Mail,ClipboardCheck,UserPlus,Scale,Megaphone,TrendingUp,Globe,Bot,Plug,Download,UserCheck,MessageSquareText,ListChecks} from "lucide-react";
+import {Activity,ArrowLeft,Building2,ChevronDown,LayoutDashboard,LogOut,Menu,Monitor,Settings2,ShieldCheck,FileText,CreditCard,Image as ImageIcon,Users,X,Mail,ClipboardCheck,UserPlus,Scale,Megaphone,TrendingUp,Globe,Bot,Plug,Download,UserCheck,MessageSquareText,ListChecks,iconVariant} from "../components/icons";
 import {AdminTable,Panel,Pill,ShortId,Stat,Toolbar,When,fieldClass,smallButton,type Column,type Tone} from "./ConsoleParts";
 import {PageHeader} from "../components/ui";
 import {api} from "../api";
@@ -396,7 +396,7 @@ export function ConsolePage({nav,path,theme,toggle,logout}:{nav:Nav;path:string;
   <aside className={"dashboard-sidebar "+(menu?"open":"")} aria-label={ui("Platform administration")}>
    <div className="px-3 pt-2"><Brand onClick={()=>nav("/")}/></div>
    <div className="px-3 pt-4"><span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--accent-soft)] px-2.5 py-1 text-[11px] font-bold tracking-wider text-[var(--accent)]"><ShieldCheck size={14}/> {ui("SUPER ADMIN")}</span></div>
-   <nav className="dash-nav console-nav">{groups.map((group,gi)=><div key={gi} className="grid gap-0.5">{group.title&&<div className="console-nav-heading">{ui(group.title)}</div>}{group.items.map(item=><button type="button" key={item.label} onClick={()=>go(item.label)} className={"dash-link text-left "+(section===item.label?"active":"")} aria-current={section===item.label?"page":undefined}><item.icon size={18}/><span>{ui(item.label)}</span></button>)}</div>)}</nav>
+   <nav className="dash-nav console-nav">{groups.map((group,gi)=><div key={gi} className="grid gap-0.5">{group.title&&<div className="console-nav-heading">{ui(group.title)}</div>}{group.items.map(item=><button type="button" key={item.label} onClick={()=>go(item.label)} className={"dash-link text-left "+(section===item.label?"active":"")} aria-current={section===item.label?"page":undefined}><item.icon size={18} variant={iconVariant(section===item.label)} aria-hidden="true"/><span>{ui(item.label)}</span></button>)}</div>)}</nav>
    <div className="mt-auto pt-4 border-t border-[var(--stroke)]"><button className="dash-link w-full" onClick={()=>nav("/dashboard")}><ArrowLeft size={18}/><span>{ui("User dashboard")}</span></button><p className="px-3 pt-2 text-xs text-[var(--faint)]">{ui("Platform administration is separate from workspace ownership.")}</p></div>
   </aside>
   <div className="dash-main">

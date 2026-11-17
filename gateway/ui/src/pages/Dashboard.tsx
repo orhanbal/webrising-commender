@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState} from "react";import type React from "react";import type{ReactNode}from"react";
 import { t as translate,useLocale,locale,LanguageSwitcher } from "../i18n";
-import {Activity,ArrowRight,CalendarClock,Download,Bell,ChevronDown,Clock3,Command,CreditCard,FileText,HardDrive,LayoutDashboard,LockKeyhole,LogOut,Menu,Monitor,Plus,Search,Server,Settings2,ShieldCheck,TerminalSquare,Users,Workflow,Zap}from"lucide-react";
+import {Activity,ArrowRight,CalendarClock,Download,Bell,ChevronDown,Clock3,Command,CreditCard,FileText,HardDrive,LayoutDashboard,LockKeyhole,LogOut,Menu,Monitor,Plus,Search,Server,Settings2,ShieldCheck,TerminalSquare,Users,Workflow,Zap,iconVariant}from "../components/icons";
 import{Button,Card,CardContent,CardDescription,CardHeader,CardTitle,Badge}from"../components/ui";
 import{api,type Account,type Device,type Usage,type Billing}from"../api";
 import{dateText,formatCount}from"../lib";
@@ -63,12 +63,12 @@ export function DashboardShell({nav,path,account,theme,toggle,logout,children}:{
    <div className="px-3 pt-2"><Brand subtitle onClick={()=>navTo("/")}/></div>
    <nav className="dash-nav" aria-label={translate("Uygulama menüsü")}>{sections.map(sec=>{
     const badge=(href:string)=>href==="/scheduled-tasks"&&failedTasks>0?<span className="ml-auto min-w-5 h-5 px-1.5 rounded-full bg-[var(--warning-soft)] text-[var(--warning)] border border-[var(--warning)] text-[11px] font-bold grid place-items-center"><span aria-hidden="true">{failedTasks}</span><span className="sr-only">{failedTasks} {translate("görevde sorun var")}</span></span>:href==="/approvals"&&pendingApprovals>0?<span className="ml-auto min-w-5 h-5 px-1.5 rounded-full bg-[var(--danger-strong)] text-[var(--danger-ink)] text-[11px] font-bold grid place-items-center"><span aria-hidden="true">{pendingApprovals}</span><span className="sr-only">{pendingApprovals} {translate("bekleyen onay")}</span></span>:null;
-    if(!sec.children){const href=sec.href!;return <a key={sec.title} href={href} onClick={e=>follow(e,href)} aria-current={href===path?"page":undefined} className={"dash-link text-left "+(href===path?"active":"")}><sec.icon aria-hidden="true"/>{translate(sec.title)}</a>}
+    if(!sec.children){const href=sec.href!;return <a key={sec.title} href={href} onClick={e=>follow(e,href)} aria-current={href===path?"page":undefined} className={"dash-link text-left "+(href===path?"active":"")}><sec.icon variant={iconVariant(href===path)} aria-hidden="true"/>{translate(sec.title)}</a>}
     const open=openGroups.has(sec.title);
     const hasActive=sec.children.some(c=>c.href===path);
     const groupBadge=!open&&sec.children.some(c=>c.href==="/approvals")?badge("/approvals"):!open&&sec.children.some(c=>c.href==="/scheduled-tasks")?badge("/scheduled-tasks"):null;
     return <div key={sec.title} className="dash-group">
-     <button type="button" aria-expanded={open} onClick={()=>toggleGroup(sec.title)} className={"dash-link dash-group-head text-left "+(hasActive&&!open?"active":"")}><sec.icon aria-hidden="true"/>{translate(sec.title)}{groupBadge}<ChevronDown aria-hidden="true" className={"dash-group-chevron "+(groupBadge?"":"ml-auto ")+(open?"open":"")}/></button>
+     <button type="button" aria-expanded={open} onClick={()=>toggleGroup(sec.title)} className={"dash-link dash-group-head text-left "+(hasActive&&!open?"active":"")}><sec.icon variant={iconVariant(hasActive)} aria-hidden="true"/>{translate(sec.title)}{groupBadge}<ChevronDown aria-hidden="true" className={"dash-group-chevron "+(groupBadge?"":"ml-auto ")+(open?"open":"")}/></button>
      {open&&<div className="dash-subnav">{sec.children.map(p=><a key={p.href} href={p.href} onClick={e=>follow(e,p.href)} aria-current={p.href===path?"page":undefined} className={"dash-link dash-sublink text-left "+(p.href===path?"active":"")}>{translate(p.title)}{badge(p.href)}</a>)}</div>}
     </div>})}</nav>
   </aside>

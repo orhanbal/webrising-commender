@@ -1,6 +1,6 @@
 import{useEffect,useState}from"react";
 import { t as translate,useLocale } from "../i18n";
-import{ArrowRight,CheckCircle2,KeyRound,LockKeyhole,Mail,Plus,ShieldCheck,Users}from"lucide-react";
+import{ArrowRight,CheckCircle2,KeyRound,LockKeyhole,Mail,Plus,ShieldCheck,Users}from "../components/icons";
 import{api,type Account}from"../api";
 import{Badge,Button,Card,CardContent,CardDescription,CardHeader,CardTitle,Input}from"../components/ui";
 import{DashboardShell}from"./Dashboard";import type{Nav,Theme}from"../App";

@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState} from "react";
 import { t as translate,useLocale } from "../i18n";
-import {Activity,ArrowRight,CalendarClock,ArrowUpRight,Check,CheckCheck,ChevronRight,ClipboardCheck,Copy,Database,Download,EyeOff,HardDrive,KeyRound,LockKeyhole,MousePointerClick,Plug2,RefreshCw,Server,ShieldCheck,Sparkles,TerminalSquare,Zap} from "lucide-react";
+import {Activity,ArrowRight,CalendarClock,ArrowUpRight,Check,CheckCheck,ChevronRight,ClipboardCheck,Copy,Database,Download,EyeOff,HardDrive,KeyRound,LockKeyhole,MousePointerClick,Plug2,RefreshCw,Server,ShieldCheck,Sparkles,TerminalSquare,Zap,iconVariant} from "../components/icons";
 import type{Nav}from"../App";import type{Pricing}from"../api";
 import{Button,Card,Badge}from"../components/ui";
 import {api} from "../api";import{Brand,NavLink}from"../App";import{planText}from"./Plans";import{clientLogos}from"../components/ClientLogos";
@@ -131,7 +131,7 @@ function Showcase({copy}:{copy:(s:string)=>string}){
  const cleanup:[string,string,number][]=[["Docker build önbelleği","33.8 GB",69],["Kullanılmayan imajlar","13.9 GB",28],["Eski loglar","1.2 GB",3],["Paket önbelleği","0.4 GB",1]];
  return <section className="section-modern showcase" id="product"><div className="container-w">
   <div className="section-heading" data-reveal><span className="eyebrow">{copy("UYGULAMANIN İÇİ")}</span><h2 className="h2 mt-4">{copy("Her şey tek pencerede.")}</h2><p>{copy("Terminal, sunucu bakımı ve canlı izleme; yapay zekâ olmadan da eksiksiz bir araç.")}</p></div>
-  <div className="showcase-tabs" role="tablist" aria-label={copy("Uygulama ekranları")} data-reveal>{tabs.map(([key,label,Icon])=><button key={key} role="tab" aria-selected={tab===key} className={tab===key?"active":""} onClick={()=>setTab(key)}><Icon size={16} aria-hidden="true"/>{copy(label)}</button>)}</div>
+  <div className="showcase-tabs" role="tablist" aria-label={copy("Uygulama ekranları")} data-reveal>{tabs.map(([key,label,Icon])=><button key={key} role="tab" aria-selected={tab===key} className={tab===key?"active":""} onClick={()=>setTab(key)}><Icon size={16} variant={iconVariant(tab===key)} aria-hidden="true"/>{copy(label)}</button>)}</div>
   <div className="app-window" data-reveal role="tabpanel" aria-label={copy(tabs.find(t=>t[0]===tab)![1])}>
    <div className="window-top"><span className="window-dot"/><span className="window-dot"/><span className="window-dot"/><span className="window-title">WECOMMANDER</span></div>
    {tab==="server"&&<div className="app-body">

@@ -1,5 +1,5 @@
 import {useCallback,useEffect,useMemo,useState,type ReactNode} from "react";
-import {CalendarClock,Check,ChevronLeft,History,Monitor,Pencil,Play,Plus,RefreshCw,Server,Trash2,X} from "lucide-react";
+import {CalendarClock,Check,ChevronLeft,History,Monitor,Pencil,Play,Plus,RefreshCw,Server,Trash2,X} from "../components/icons";
 import {t as translate,useLocale,localizedDate,intlLocale} from "../i18n";
 import {api,type Account,type Device} from "../api";
 import {Alert,Badge,Button,Card,CardContent,CardDescription,CardHeader,CardTitle,Dialog,DialogContent,DialogDescription,DialogTitle,EmptyState,Input,PageHeader,Skeleton,Spinner} from "../components/ui";

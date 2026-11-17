@@ -1,5 +1,5 @@
 import {useState} from "react";
-import {MailX} from "lucide-react";
+import {MailX} from "../components/icons";
 import {api} from "../api";
 import {useLocale} from "../i18n";
 

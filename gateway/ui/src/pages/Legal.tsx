@@ -1,5 +1,5 @@
 import {useEffect,useState} from "react";
-import {FileText,ReceiptText,ShieldCheck} from "lucide-react";
+import {FileText,ReceiptText,ShieldCheck} from "../components/icons";
 import {api} from "../api";
 import {useLocale} from "../i18n";
 
