@@ -12,6 +12,12 @@ namespace Wecommander.Center;
 /// </summary>
 public sealed partial class ServersWindow
 {
+    /// <summary>
+    /// Off in this release: opening the tip logged an InvalidCastException on the CI runner
+    /// (Windows App SDK). The steps, settings and ring stay in place for the next release.
+    /// </summary>
+    private const bool TutorialEnabled = false;
+
     private Coach? _coach;
     private Button? _newHostButton;
     private FrameworkElement? _firstHostCard;
@@ -50,6 +56,7 @@ public sealed partial class ServersWindow
 
     private void TutorialShow()
     {
+        if (!TutorialEnabled) return;
         if (_coach is null || !AppWindow.IsVisible) { App.DebugLayout("tutorial: window not shown yet"); return; }
         var settings = App.Current.Settings;
         // CI walks the window with UI Automation, which the tip's popup gets in the way of.
@@ -117,6 +124,7 @@ public sealed partial class ServersWindow
     /// <summary>Settings: show the tutorial or not; start it again.</summary>
     private IEnumerable<UIElement> TutorialSettings()
     {
+        if (!TutorialEnabled) return [];
         var settings = App.Current.Settings;
         var title = new TextBlock { Text = L.T("Öğretici"), Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], Margin = new Thickness(0, 8, 0, 0) };
         var show = new ToggleSwitch { Header = L.T("Öğreticiyi göster"), IsOn = !settings.TutorialOff };

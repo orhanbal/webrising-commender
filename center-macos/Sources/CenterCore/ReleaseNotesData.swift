@@ -12,27 +12,21 @@ enum ReleaseNotesData {
    ],
    "items": {
     "tr": [
-     "İlk açılışta kısa bir öğretici: ilk sunucunu ekleme, bağlanma, Dock'taki canlı durum ve yapay zekâ bağlantısı. Gideceğin düğme yeşil bir çerçeveyle dalgalanır. Sağ tık → \"Öğreticiyi kapat\"; Ayarlar'dan yeniden açılır.",
      "Bu bilgisayarın ajanı birkaç kez üst üste durursa artık vazgeçilmiyor: WECOMMANDER her 5 dakikada bir yeniden başlatmayı deniyor, bilgisayar kendiliğinden yeniden bağlanıyor."
     ],
     "en": [
-     "A short tutorial on first launch: add your first server, connect, the live status on the Dock and connecting your AI. The button to press pulses with a green ring. Right-click → \"Turn off the tutorial\"; turn it back on in Settings.",
      "If this computer's agent stops several times in a row, WECOMMANDER no longer gives up: it tries to restart it every 5 minutes and the computer reconnects by itself."
     ],
     "de": [
-     "Ein kurzes Tutorial beim ersten Start: ersten Server hinzufügen, verbinden, der Live-Status im Dock und die KI verbinden. Die zu drückende Schaltfläche pulsiert mit einem grünen Ring. Rechtsklick → „Tutorial ausschalten“; in den Einstellungen wieder einschalten.",
      "Wenn der Agent dieses Computers mehrmals hintereinander stoppt, gibt WECOMMANDER nicht mehr auf: Es versucht alle 5 Minuten einen Neustart, und der Computer verbindet sich selbst wieder."
     ],
     "fr": [
-     "Un court tutoriel au premier lancement : ajouter ton premier serveur, te connecter, l'état en direct dans le Dock et connecter ton IA. Le bouton à utiliser pulse avec un anneau vert. Clic droit → « Désactiver le tutoriel » ; réactivable dans les Réglages.",
      "Si l'agent de cet ordinateur s'arrête plusieurs fois de suite, WECOMMANDER n'abandonne plus : il tente de le redémarrer toutes les 5 minutes et l'ordinateur se reconnecte seul."
     ],
     "es": [
-     "Un breve tutorial al abrir por primera vez: añadir tu primer servidor, conectarte, el estado en vivo en el Dock y conectar tu IA. El botón que debes pulsar late con un anillo verde. Clic derecho → «Desactivar el tutorial»; se reactiva en Ajustes.",
      "Si el agente de este equipo se detiene varias veces seguidas, WECOMMANDER ya no se rinde: intenta reiniciarlo cada 5 minutos y el equipo se vuelve a conectar solo."
     ],
     "pt-BR": [
-     "Um tutorial curto na primeira abertura: adicionar seu primeiro servidor, conectar, o status ao vivo no Dock e conectar sua IA. O botão a usar pulsa com um anel verde. Clique direito → \"Desativar o tutorial\"; reative nas Configurações.",
      "Se o agente deste computador parar várias vezes seguidas, o WECOMMANDER não desiste mais: tenta reiniciá-lo a cada 5 minutos e o computador se reconecta sozinho."
     ]
    }
