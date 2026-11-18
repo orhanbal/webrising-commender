@@ -4,6 +4,66 @@ export type ReleaseNote = { id: string; date: string; platforms: ("windows" | "m
 /** Newest first; platforms empty: both apps. */
 export const releaseNotes: ReleaseNote[] = [
  {
+  "id": "2026-11-18-windows-tutorial",
+  "date": "2026-11-18",
+  "platforms": [
+   "windows"
+  ],
+  "items": {
+   "tr": [
+    "Bu bilgisayarın ajanı birkaç kez üst üste durursa artık vazgeçilmiyor: WECOMMANDER her 5 dakikada bir yeniden başlatmayı deniyor, bilgisayar kendiliğinden yeniden bağlanıyor."
+   ],
+   "en": [
+    "If this computer's agent stops several times in a row, WECOMMANDER no longer gives up: it tries to restart it every 5 minutes and the computer reconnects by itself."
+   ],
+   "de": [
+    "Wenn der Agent dieses Computers mehrmals hintereinander stoppt, gibt WECOMMANDER nicht mehr auf: Es versucht alle 5 Minuten einen Neustart, und der Computer verbindet sich selbst wieder."
+   ],
+   "fr": [
+    "Si l'agent de cet ordinateur s'arrête plusieurs fois de suite, WECOMMANDER n'abandonne plus : il tente de le redémarrer toutes les 5 minutes et l'ordinateur se reconnecte seul."
+   ],
+   "es": [
+    "Si el agente de este equipo se detiene varias veces seguidas, WECOMMANDER ya no se rinde: intenta reiniciarlo cada 5 minutos y el equipo se vuelve a conectar solo."
+   ],
+   "pt-BR": [
+    "Se o agente deste computador parar várias vezes seguidas, o WECOMMANDER não desiste mais: tenta reiniciá-lo a cada 5 minutos e o computador se reconecta sozinho."
+   ]
+  }
+ },
+ {
+  "id": "2026-11-18-macos",
+  "date": "2026-11-18",
+  "platforms": [
+   "macos"
+  ],
+  "items": {
+   "tr": [
+    "Pencereler macOS'un kendi uygulamaları gibi: yan menü pencerenin tepesine kadar uzanır, kapatma düğmeleri menünün içinde, sayfa başlığı araç çubuğunda.",
+    "İlk açılışta kısa bir öğretici: ilk sunucunu ekleme, bağlanma, menü çubuğundaki canlı durum ve onaylar. Gideceğin düğme yeşil bir çerçeveyle dalgalanır. Sağ tık → \"Öğreticiyi kapat\"; Ayarlar'dan yeniden açılır."
+   ],
+   "en": [
+    "Windows look like macOS's own apps: the sidebar runs to the top of the window, the close buttons sit inside it, and the page title is in the toolbar.",
+    "A short tutorial on first launch: add your first server, connect, the live status in the menu bar and approvals. The button to press pulses with a green ring. Right-click → \"Turn off the tutorial\"; turn it back on in Settings."
+   ],
+   "de": [
+    "Die Fenster sehen aus wie die macOS-eigenen Apps: Die Seitenleiste reicht bis oben, die Fenstertasten sitzen darin, der Seitentitel steht in der Symbolleiste.",
+    "Ein kurzes Tutorial beim ersten Start: ersten Server hinzufügen, verbinden, der Live-Status in der Menüleiste und Freigaben. Die zu drückende Schaltfläche pulsiert mit einem grünen Ring. Rechtsklick → „Tutorial ausschalten“; in den Einstellungen wieder einschalten."
+   ],
+   "fr": [
+    "Les fenêtres ressemblent aux apps de macOS : la barre latérale monte jusqu'en haut, les boutons de fermeture sont dedans et le titre de la page est dans la barre d'outils.",
+    "Un court tutoriel au premier lancement : ajouter ton premier serveur, te connecter, l'état en direct dans la barre des menus et les approbations. Le bouton à utiliser pulse avec un anneau vert. Clic droit → « Désactiver le tutoriel » ; réactivable dans les Réglages."
+   ],
+   "es": [
+    "Las ventanas se ven como las apps de macOS: la barra lateral llega arriba del todo, los botones de cerrar están dentro y el título de la página va en la barra de herramientas.",
+    "Un breve tutorial al abrir por primera vez: añadir tu primer servidor, conectarte, el estado en vivo en la barra de menús y las aprobaciones. El botón que debes pulsar late con un anillo verde. Clic derecho → «Desactivar el tutorial»; se reactiva en Ajustes."
+   ],
+   "pt-BR": [
+    "As janelas parecem os apps do próprio macOS: a barra lateral vai até o topo, os botões de fechar ficam dentro dela e o título da página fica na barra de ferramentas.",
+    "Um tutorial curto na primeira abertura: adicionar seu primeiro servidor, conectar, o status ao vivo na barra de menus e as aprovações. O botão a usar pulsa com um anel verde. Clique direito → \"Desativar o tutorial\"; reative nas Configurações."
+   ]
+  }
+ },
+ {
   "id": "2026-11-18-windows-tabs",
   "date": "2026-11-18",
   "platforms": [

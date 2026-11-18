@@ -95,6 +95,9 @@ public sealed class Settings
     [JsonPropertyName("appMode")] public string AppMode { get; set; } = AppModes.Dock;
     /// <summary>The newest "Yenilikler" entry already shown (ReleaseNotes); null: none yet.</summary>
     [JsonPropertyName("lastSeenNotes")] public string? LastSeenNotes { get; set; }
+    /// <summary>The getting-started tutorial: its step (0 not started yet, see <see cref="Tutorial"/>) and whether it is turned off.</summary>
+    [JsonPropertyName("tutorialStep")] public int TutorialStep { get; set; }
+    [JsonPropertyName("tutorialOff")] public bool TutorialOff { get; set; }
 }
 
 public sealed class SettingsStore(string directory)

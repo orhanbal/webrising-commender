@@ -1007,6 +1007,9 @@ jobs:
       # The window checks look controls up by their Turkish names; the
       # "languages" step below runs the app in other languages.
       WECOMMANDER_LANGUAGE: tr
+      # The tutorial's tip covers the window for UI Automation: checked once on the first launch,
+      # off for the rest (the smoke step turns it on for that launch only).
+      WECOMMANDER_NO_TUTORIAL: '1'
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -1069,6 +1072,8 @@ jobs:
             $shot.Save((Join-Path (Resolve-Path center-windows\screens) 'main-window.png'), [System.Drawing.Imaging.ImageFormat]::Png)
             $g.Dispose(); $shot.Dispose()
           } catch { Write-Host "screenshot failed: $_" }
+          # The tutorial's first-launch check comes back when the Windows tutorial is turned on again
+          # (ServersWindow.Tutorial.cs, TutorialEnabled).
           # Walk every section and press the terminal tab strip's "+": an error
           # there must never reach users (it once did).
           # Found AND drawn: a collapsed page still has its elements in the

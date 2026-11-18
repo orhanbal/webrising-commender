@@ -31,11 +31,12 @@ enum ServerWindows {
             return entry.window
         }
         let model = ServerManagementModel(servers: servers, sessionId: sessionId, label: label)
-        let window = NSWindow(contentViewController: NSHostingController(rootView: ServerManagementView(model: model)))
+        let hosting = NSHostingController(rootView: ServerManagementView(model: model))
+        let window = NSWindow(contentViewController: hosting)
         window.title = L.f("Sunucu yönetimi — {0}", label)
         window.setContentSize(NSSize(width: 1060, height: 780))
         window.contentMinSize = NSSize(width: 820, height: 560)
-        window.toolbarStyle = .unified
+        WindowChrome.apply(window, hosting: hosting, id: "server")
         window.isReleasedWhenClosed = false
         let id = sessionId
         let delegate = ServerWindowDelegate { ServerWindows.closed(id) }

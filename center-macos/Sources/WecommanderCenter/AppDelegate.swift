@@ -55,6 +55,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             return (self.model.gateway, token)
         }
         servers.startLibrarySync()
+        servers.loadTutorial(step: model.settings.tutorialStep, off: model.settings.tutorialOff)
+        servers.onTutorialChange = { [weak self] step, off in self?.model.rememberTutorial(step: step, off: off) }
         servers.scheduled = scheduled
         scheduled.start()
         monitorPopover.behavior = .transient
@@ -120,13 +122,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             serversStale = false
         }
         if serversWindow == nil {
-            let window = NSWindow(contentViewController: NSHostingController(rootView: ServersView(model: servers, showPanel: { [weak self] in self?.showPanel() })
-                .overlay(alignment: .bottomLeading) { MessageCard(center: self.messages) }))
+            let hosting = NSHostingController(rootView: ServersView(model: servers, showPanel: { [weak self] in self?.showPanel() })
+                .overlay(alignment: .bottomLeading) { MessageCard(center: self.messages) })
+            let window = NSWindow(contentViewController: hosting)
             window.title = "WECOMMANDER"
             window.setContentSize(NSSize(width: 1100, height: 700))
-            window.styleMask.insert(.fullSizeContentView)
-            window.titlebarAppearsTransparent = false
-            window.toolbarStyle = .unified
+            WindowChrome.apply(window, hosting: hosting, id: "servers")
             window.isReleasedWhenClosed = false
             window.setFrameAutosaveName("WecommanderServers")
             window.delegate = self

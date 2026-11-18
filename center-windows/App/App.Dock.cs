@@ -6,6 +6,14 @@ namespace Wecommander.Center;
 public partial class App
 {
     private DockWindow? _dock;
+
+    /// <summary>The tutorial's status step on the Dock (a ring around its meters); false when there is no Dock.</summary>
+    public bool DockTutorialRing(bool on)
+    {
+        if (_dock is null || !Settings.Dock) return false;
+        _dock.TutorialRing(on);
+        return true;
+    }
     private QuickPanel? _quickPanel;
     private bool _dockExitHooked;
 

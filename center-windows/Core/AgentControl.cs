@@ -272,11 +272,14 @@ public enum WatchdogAction { None, Start, GiveUp }
 
 /// <summary>
 /// Keeps the agent running while the owner wants it on: restarts it after
-/// 0 s, 30 s and 2 min, then gives up and says so once, until it runs again.
+/// 0 s, 30 s and 2 min, then says once that it keeps failing and goes on
+/// trying every 5 minutes (it never stays down until the app restarts).
 /// </summary>
 public sealed class AgentWatchdog
 {
     private static readonly TimeSpan[] Backoff = [TimeSpan.Zero, TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(2)];
+    /// <summary>After the backoff: one more try this often, for as long as it is wanted.</summary>
+    public static readonly TimeSpan Retry = TimeSpan.FromMinutes(5);
     public int Failures { get; private set; }
     private DateTimeOffset _lastAttempt = DateTimeOffset.MinValue;
     private bool _gaveUp;
@@ -290,9 +293,15 @@ public sealed class AgentWatchdog
         }
         if (Failures >= Backoff.Length)
         {
-            if (_gaveUp) return WatchdogAction.None;
-            _gaveUp = true;
-            return WatchdogAction.GiveUp;
+            if (!_gaveUp)
+            {
+                _gaveUp = true;
+                _lastAttempt = now;
+                return WatchdogAction.GiveUp;
+            }
+            if (now - _lastAttempt < Retry) return WatchdogAction.None;
+            _lastAttempt = now;
+            return WatchdogAction.Start;
         }
         if (now - _lastAttempt < Backoff[Failures]) return WatchdogAction.None;
         _lastAttempt = now;

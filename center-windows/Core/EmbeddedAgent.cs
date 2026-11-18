@@ -31,9 +31,9 @@ public sealed class HiddenProcessLauncher : IAgentLauncher
     public IAgentProcess Start(ProcessStartInfo info)
     {
         var process = Process.Start(info) ?? throw new InvalidOperationException("agent did not start");
-        // Its log goes to its own file; drain the pipes so it never blocks.
-        if (info.RedirectStandardOutput) { process.OutputDataReceived += (_, _) => { }; process.BeginOutputReadLine(); }
-        if (info.RedirectStandardError) { process.ErrorDataReceived += (_, _) => { }; process.BeginErrorReadLine(); }
+        // Its output goes to agent.log (kept under 1 MB, one older copy); the pipes are always drained so it never blocks.
+        if (info.RedirectStandardOutput) { process.OutputDataReceived += (_, e) => AgentLog.Write(e.Data); process.BeginOutputReadLine(); }
+        if (info.RedirectStandardError) { process.ErrorDataReceived += (_, e) => AgentLog.Write(e.Data); process.BeginErrorReadLine(); }
         return new Running(process);
     }
 
@@ -226,4 +226,35 @@ public sealed class EmbeddedAgent : IDisposable
     public void ResetWatchdog() => _watchdog.Reset();
 
     public void Dispose() => Stop();
+}
+
+
+/// <summary>
+/// %LOCALAPPDATA%\WECOMMANDER\agent.log: what the embedded agent prints
+/// (connects, disconnects, errors), so a computer that shows as offline can
+/// be explained. Kept under 1 MB with one older copy (agent.log.1). Never throws.
+/// </summary>
+public static class AgentLog
+{
+    private const long MaxBytes = 1024 * 1024;
+    private static readonly object Gate = new();
+
+    public static string PathName => System.IO.Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WECOMMANDER", "agent.log");
+
+    public static void Write(string? line)
+    {
+        if (string.IsNullOrWhiteSpace(line)) return;
+        try
+        {
+            lock (Gate)
+            {
+                var file = PathName;
+                Directory.CreateDirectory(System.IO.Path.GetDirectoryName(file)!);
+                if (File.Exists(file) && new FileInfo(file).Length > MaxBytes) File.Move(file, file + ".1", overwrite: true);
+                File.AppendAllText(file, $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss} {line}\n");
+            }
+        }
+        catch (Exception) { }
+    }
 }
