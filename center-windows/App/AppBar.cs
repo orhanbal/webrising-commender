@@ -125,7 +125,12 @@ public sealed class AppBar
     /// lets the shell move it off other AppBars (the taskbar), and reserves the
     /// strip; returns where the window must go.
     /// </summary>
-    public PixelRect Reserve(PixelRect monitor, DockEdge edge, int thickness)
+    public PixelRect Reserve(PixelRect monitor, DockEdge edge, int thickness) =>
+        // The work area changes: Explorer lays the desktop icons out again (and may push them
+        // onto another monitor). They are put back where they were, off the Dock's strip.
+        DesktopIcons.Keep(() => ReserveNow(monitor, edge, thickness), strip => strip, edge);
+
+    private PixelRect ReserveNow(PixelRect monitor, DockEdge edge, int thickness)
     {
         var d = Data();
         d.uEdge = Abe(edge);
@@ -194,7 +199,7 @@ public sealed class AppBar
             if (AutoHideRegistered) SetAutoHide(false, _autoHideMonitor, _autoHideEdge);
             if (!Registered) return;
             var d = Data();
-            SHAppBarMessage(AbmRemove, ref d);
+            DesktopIcons.Keep(() => SHAppBarMessage(AbmRemove, ref d), _ => null, DockEdge.Top);
             Registered = false;
             App.DebugLayout("dock: appbar removed");
         }

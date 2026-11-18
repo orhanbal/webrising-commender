@@ -1747,7 +1747,7 @@ jobs:
           Quit-App
 
           Write-Host '--- layout.log (dock) ---'
-          if (Test-Path $layout) { Get-Content $layout | Where-Object { $_ -match 'dock|monitor panel|quick panel' } | ForEach-Object { Write-Host $_ } }
+          if (Test-Path $layout) { Get-Content $layout | Where-Object { $_ -match 'dock|monitor panel|quick panel|desktop icons' } | ForEach-Object { Write-Host $_ } }
           if (Test-Path $errors) { Write-Host '--- errors.log ---'; Get-Content $errors | ForEach-Object { Write-Host $_ }; $fail += 'the app logged an error' }
           Remove-Item $settingsFile -ErrorAction SilentlyContinue
           Write-Host '--- PASS ---'; $passed | ForEach-Object { Write-Host "PASS $_" }
