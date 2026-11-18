@@ -13,10 +13,10 @@ namespace Wecommander.Center;
 public sealed partial class ServersWindow
 {
     /// <summary>
-    /// Off in this release: opening the tip logged an InvalidCastException on the CI runner
-    /// (Windows App SDK). The steps, settings and ring stay in place for the next release.
+    /// On. (It was off for a release: WinUI's TeachingTip threw an InvalidCastException on the
+    /// CI runner; <see cref="Coach"/> now draws its own card and ring in the window's tree.)
     /// </summary>
-    private const bool TutorialEnabled = false;
+    private const bool TutorialEnabled = true;
 
     private Coach? _coach;
     private Button? _newHostButton;
@@ -59,7 +59,7 @@ public sealed partial class ServersWindow
         if (!TutorialEnabled) return;
         if (_coach is null || !AppWindow.IsVisible) { App.DebugLayout("tutorial: window not shown yet"); return; }
         var settings = App.Current.Settings;
-        // CI walks the window with UI Automation, which the tip's popup gets in the way of.
+        // CI walks the window with UI Automation; the tip would sit over the controls it presses.
         if (Environment.GetEnvironmentVariable("WECOMMANDER_NO_TUTORIAL") == "1") { _coach.Hide(); return; }
         var step = Tutorial.Current(TutorialStep, settings.TutorialOff, _c.Hosts.Count);
         TutorialStep = step;
