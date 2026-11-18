@@ -29,6 +29,14 @@ services:
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
     volumes:
       - commender-backups:/backups
+    # Healthy only while a dump from the last 26 hours exists and its restore
+    # drill did not fail: a failing backup shows as unhealthy in Coolify.
+    healthcheck:
+      test: ["CMD-SHELL", "find /backups -name 'commender-*.dump' -mmin -1560 | grep -q . && ! test -e /backups/LAST_DRILL_FAILED"]
+      interval: 5m
+      timeout: 10s
+      retries: 1
+      start_period: 15m
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -48,8 +56,10 @@ services:
                && pg_restore -h postgres -U commender -d commender_restore_drill --no-owner --no-acl --exit-on-error "$$f" \
                && restored=$$(q -d commender_restore_drill -c "$$tables") && [ "$$restored" = "$$live" ]; then
               echo "backup ok: $$f ($$(du -h "$$f" | cut -f1)), restore drill ok: $$restored tables"
+              rm -f /backups/LAST_DRILL_FAILED
             else
               echo "backup WARNING: $$f was written but the restore drill failed (live $$live tables, restored $${restored:-?})"
+              echo "$$ts" > /backups/LAST_DRILL_FAILED
             fi
             q -d postgres -c "drop database if exists commender_restore_drill" || true
             find /backups -name 'commender-*.dump*' -type f -mtime +"$$BACKUP_RETENTION_DAYS" -delete
