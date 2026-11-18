@@ -10,7 +10,7 @@ import {api} from "../api";import{Brand,NavLink}from"../App";import{planText}fro
 const features=[
 {icon:TerminalSquare,tone:"sky",title:"SSH, SFTP ve tüneller",text:"Kayıtlı sunucular, gruplar ve etiketler; sekmeli ve bölünmüş terminaller; sürükle-bırak SFTP; yerel, uzak ve SOCKS tüneller, jump host. Telnet, seri port ve Mosh da dahil. Parçacıklar, otomatik tamamlama ve oturum kayıtları."},
 {icon:HardDrive,tone:"amber",title:"Sunucu yönetimi",text:"Diski ne dolduruyor gör, güvenle temizle: eski loglar, paket önbelleği, Docker build önbelleği ve kullanılmayan imajlar (rootless Docker dahil). Süreçler ve zombi düzeltme. Sunucuya hiçbir şey kurmadan."},
-{icon:Activity,tone:"green",title:"Canlı izleme ve Dock",text:"Windows'ta ekran kenarındaki WECOMMANDER Dock'ta, macOS'ta menü çubuğunda CPU, bellek ve disk için akan grafikler. Hızlı panel, bu bilgisayarın Görev Yöneticisi ve zamanlayıcılar bir tık uzakta."},
+{icon:Activity,tone:"green",title:"Canlı izleme ve Dock",text:"Windows'ta WECOMMANDER Dock, görev çubuğu gibi ekranın kenarında durur: sunucunun CPU, bellek ve disk grafikleri; Görev Yöneticisi, Görevler, Terminal ve onaylar Dock'tan açılan panellerde. Dock istemezsen Klasik modda uygulama pencerelerle çalışır. macOS'ta canlı izleme menü çubuğunda."},
 {icon:Sparkles,tone:"violet",title:"Yapay zekâ için tek MCP adresi",text:"Claude, ChatGPT ve Cursor'ı tek MCP adresiyle tüm makinelerine bağla: terminal, dosya, görevler ve sunucu yönetimi araçları. Gelen bağlantı portu açman gerekmez."},
 {icon:ShieldCheck,tone:"green",title:"Her riskli adım senin onayınla",text:"Komut, silme ve servis yeniden başlatma gibi işlemler tek kullanımlık onay ister: web panelinden, e-postadan ya da masaüstü uygulamasının bildiriminden. İzinli komutlar ve süreli otonom mod da var."},
 {icon:RefreshCw,tone:"sky",title:"Uçtan uca şifreli senkronizasyon",text:"Sunucuların, anahtarların ve parçacıkların tüm cihazlarında eşitlenir; şifrelemeyi senin cihazın yapar, sunucumuz okuyamaz. Ekip kitaplığı ve canlı paylaşılan terminaller."},
@@ -145,8 +145,8 @@ function Showcase({copy}:{copy:(s:string)=>string}){
    {tab==="dock"&&<div className="app-body dock-demo">
     <div className="dock-bar"><img className="dock-logo" src="/api/public/brand/favicon" alt="" aria-hidden="true"/><span className="dock-server"><i className="dot ok"/>ubuntu-prod<small>{copy("çevrimiçi")}</small></span>
      {[["CPU","%62","var(--success)"],["RAM","%78","#f59e0b"],["Disk","%91","#ef4444"]].map(([n,v,c],i)=><span key={n} className="dock-meter"><small>{n} {v}</small><div className="spark-track"><div className="spark-flow"><Spark points={i===0?ago:i===1?ago.map(x=>x+16):ago.map(x=>x+38)} color={c}/><Spark points={i===0?ago:i===1?ago.map(x=>x+16):ago.map(x=>x+38)} color={c}/></div></div></span>)}
-     <span className="dock-btn"><Activity size={15} aria-hidden="true"/>{copy("Süreçler")}</span><span className="dock-btn"><TerminalSquare size={15} aria-hidden="true"/>Terminal</span></div>
-    <div className="dock-caption"><p>{copy("Ekranın kenarında kendi çubuğun: sabit, otomatik gizlenen ya da yüzen. Grafiğe tıkla, ilgili ekran açılsın.")}</p></div>
+     <span className="dock-btn"><Activity size={15} aria-hidden="true"/>{copy("Görev Yöneticisi")}</span><span className="dock-btn"><CalendarClock size={15} aria-hidden="true"/>{copy("Görevler")}</span><span className="dock-btn"><TerminalSquare size={15} aria-hidden="true"/>Terminal</span></div>
+    <div className="dock-caption"><p>{copy("Windows görev çubuğu gibi ekranın kenarında: sabit, otomatik gizlenen ya da yüzen. Görev Yöneticisi, Görevler ve Terminal Dock'tan açılan panellerde.")}</p></div>
    </div>}
    {tab==="terminal"&&<div className="app-body term-demo">
     <div className="term-tabs"><span className="on">ubuntu-prod</span><span>coolify-01</span><span>+</span></div>

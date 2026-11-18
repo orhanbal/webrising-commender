@@ -1,6 +1,6 @@
 import {useState} from "react";
 import { t as translate,useLocale } from "../i18n";
-import {Check,Copy,Download,Laptop,Monitor,TerminalSquare,iconVariant} from "../components/icons";
+import {Check,Copy,Download,Laptop,Monitor,Sparkles,TerminalSquare,iconVariant} from "../components/icons";
 import type{Account}from"../api";
 import{Badge,Button,Card}from"../components/ui";
 import{DashboardShell}from"./Dashboard";import type{Nav,Theme}from"../App";
@@ -38,5 +38,6 @@ export function DownloadPage({nav,account,theme,toggle,logout}:{nav:Nav;account:
    </div>
    <div className="install-code-wrap mt-5"><div className="install-code-top"><span>{platform==="windows"?translate("Ya da PowerShell'e yapıştır"):translate("Komut")}</span><button type="button" className="install-code-copy" onClick={()=>void copy()}><Copy size={14}/> {copied?translate("Kopyalandı"):translate("Kopyala")}</button></div><pre className="install-code">{command(platform)}</pre></div>
   </Card>
+  <p className="text-sm mt-5"><a href="/changelog" className="inline-flex items-center gap-2 text-[var(--accent)] font-semibold" onClick={e=>{e.preventDefault();nav("/changelog")}}><Sparkles size={16} aria-hidden="true"/>{translate("Her güncellemede neler değişti: Yenilikler")}</a></p>
  </DashboardShell>;
 }
