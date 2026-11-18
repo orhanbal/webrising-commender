@@ -63,6 +63,7 @@ public sealed class Coach
         _host.Children.Add(tip);
         _tip = tip;
         tip.IsOpen = true;
+        App.DebugLayout($"tutorial: tip '{title}' open={tip.IsOpen} target={(target is null ? "none" : target.GetType().Name)}");
         if (target is not null) Ring(target);
     }
 

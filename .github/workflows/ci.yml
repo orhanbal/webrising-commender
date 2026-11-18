@@ -1057,6 +1057,18 @@ jobs:
             throw "Main window did not show its sections (found: $($found -join ', '))"
           }
           Write-Host "Main window shows: $($found -join ', ')"
+          # A picture of the main window as it opened, to check the design.
+          try {
+            Add-Type -AssemblyName System.Drawing, System.Windows.Forms
+            Start-Sleep -Seconds 2
+            $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $shot = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height
+            $g = [System.Drawing.Graphics]::FromImage($shot)
+            $g.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
+            New-Item -ItemType Directory -Force -Path center-windows\screens | Out-Null
+            $shot.Save((Join-Path (Resolve-Path center-windows\screens) 'main-window.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+            $g.Dispose(); $shot.Dispose()
+          } catch { Write-Host "screenshot failed: $_" }
           # First launch: the tutorial's first step points at "Yeni sunucu" (this script is read as ANSI: no non-ASCII literals).
           $tutorialTitle = [string][char]0x0130 + 'lk sunucunu ekleyelim'
           $tip = $null
@@ -1071,25 +1083,13 @@ jobs:
           }
           if (-not $tip) {
             if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force }
-            $tlog = Join-Path $env:LOCALAPPDATA 'WECOMMANDER\layout.log'
+            $tlog = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'WECOMMANDER\layout.log'
             if (Test-Path $tlog) { Get-Content $tlog | Where-Object { $_ -match 'tutorial' } | ForEach-Object { Write-Host $_ } }
-            $terr = Join-Path $env:LOCALAPPDATA 'WECOMMANDER\errors.log'
+            $terr = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'WECOMMANDER\errors.log'
             if (Test-Path $terr) { Get-Content $terr | Select-Object -First 40 | ForEach-Object { Write-Host $_ } }
             throw "first launch: the tutorial did not show its first step"
           }
           Write-Host "first launch: the tutorial shows its first step"
-          # A picture of the main window as it opened, to check the design.
-          try {
-            Add-Type -AssemblyName System.Drawing, System.Windows.Forms
-            Start-Sleep -Seconds 2
-            $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-            $shot = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height
-            $g = [System.Drawing.Graphics]::FromImage($shot)
-            $g.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
-            New-Item -ItemType Directory -Force -Path center-windows\screens | Out-Null
-            $shot.Save((Join-Path (Resolve-Path center-windows\screens) 'main-window.png'), [System.Drawing.Imaging.ImageFormat]::Png)
-            $g.Dispose(); $shot.Dispose()
-          } catch { Write-Host "screenshot failed: $_" }
           # Walk every section and press the terminal tab strip's "+": an error
           # there must never reach users (it once did).
           # Found AND drawn: a collapsed page still has its elements in the
