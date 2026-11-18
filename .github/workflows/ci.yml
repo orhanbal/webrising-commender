@@ -1495,9 +1495,17 @@ jobs:
                   if (-not $tile) { $fail += 'quick panel: Sunucularim tile not found' }
                   else {
                     $t = $tile.Current.BoundingRectangle
-                    [D]::SetCursorPos([int]($t.Left + $t.Width / 2), [int]($t.Top + $t.Height / 2)); [D]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero); Start-Sleep -Milliseconds 60; [D]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero)
                     $panelTitle = 'WECOMMANDER Sunucular' + $dl + 'm'
-                    if (WaitFor { [D]::Find([uint32]$app.Id, $panelTitle) } 8) {
+                    # A real click; on a slow runner the panel may still be animating in, so
+                    # the click is tried again (then through UI Automation) before failing.
+                    $opened = $false
+                    for ($try = 0; $try -lt 3 -and -not $opened; $try++) {
+                      if ($try -lt 2) { [D]::SetCursorPos([int]($t.Left + $t.Width / 2), [int]($t.Top + $t.Height / 2)); [D]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero); Start-Sleep -Milliseconds 60; [D]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero) }
+                      else { try { $tile.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() } catch { Write-Host "tile invoke failed: $_" } }
+                      $opened = WaitFor { [D]::Find([uint32]$app.Id, $panelTitle) } 8
+                      if (-not $opened) { Write-Host "Sunucularim tile: no server panel after try $($try + 1)" }
+                    }
+                    if ($opened) {
                       $p = Rect ([D]::Find([uint32]$app.Id, $panelTitle))
                       Write-Host "server panel from the quick panel at $($p.L),$($p.T),$($p.R),$($p.B)"
                       if ($p.T -ge $d.B -and $p.T -le $d.B + 40) { $passed += 'the quick panel opens the server panel below the top Dock' } else { $fail += 'server panel did not open just below the Dock' }
