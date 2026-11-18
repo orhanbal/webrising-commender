@@ -108,15 +108,36 @@ public sealed class Coach
         var grid = new Grid { IsHitTestVisible = false };
         grid.Children.Add(wave);
         grid.Children.Add(still);
-        var popup = new Popup { Child = grid, XamlRoot = target.XamlRoot, IsHitTestVisible = false, ShouldConstrainToRootBounds = false };
-        _ring = popup;
-        _target = target;
-        Place();
-        popup.IsOpen = true;
-        target.LayoutUpdated += Follow;
-        target.Unloaded += TargetGone;
+        Popup popup;
+        try
+        {
+            popup = new Popup { Child = grid, XamlRoot = target.XamlRoot, IsHitTestVisible = false };
+            _ring = popup;
+            _target = target;
+            Place();
+            popup.IsOpen = true;
+            target.LayoutUpdated += Follow;
+            target.Unloaded += TargetGone;
+        }
+        catch (Exception e) { App.DebugLayout($"tutorial: ring not shown ({e.GetType().Name}: {e.Message})"); return; }
 
-        if (!new Windows.UI.ViewManagement.UISettings().AnimationsEnabled) { wave.Opacity = 0; return; }
+        if (!AnimationsOn()) { wave.Opacity = 0; return; }
+        try
+        {
+            Pulse(scale, wave);
+        }
+        catch (Exception e) { App.DebugLayout($"tutorial: ring still ({e.GetType().Name}: {e.Message})"); wave.Opacity = 0; }
+    }
+
+    /// <summary>Windows "Animation effects" (Settings → Accessibility → Visual effects); on when it cannot be read.</summary>
+    private static bool AnimationsOn()
+    {
+        try { return new Windows.UI.ViewManagement.UISettings().AnimationsEnabled; }
+        catch (Exception) { return true; }
+    }
+
+    private void Pulse(ScaleTransform scale, Border wave)
+    {
         var story = new Storyboard { RepeatBehavior = RepeatBehavior.Forever };
         var duration = new Duration(TimeSpan.FromMilliseconds(1300));
         foreach (var property in new[] { "ScaleX", "ScaleY" })
