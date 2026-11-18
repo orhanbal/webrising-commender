@@ -331,7 +331,7 @@ public class CoreTests
     }
 
     [Fact]
-    public void WatchdogRestartsWithBackoffThenGivesUpOnce()
+    public void WatchdogRestartsWithBackoffThenSaysSoOnceAndKeepsTrying()
     {
         var dog = new AgentWatchdog();
         var stopped = new AgentStatus(AgentRunState.Stopped, AgentMode.Task, true);
@@ -343,6 +343,9 @@ public class CoreTests
         Assert.Equal(WatchdogAction.Start, dog.Next(true, stopped, t.AddSeconds(31)));
         Assert.Equal(WatchdogAction.Start, dog.Next(true, stopped, t.AddSeconds(200)));
         Assert.Equal(WatchdogAction.GiveUp, dog.Next(true, stopped, t.AddSeconds(400)));
+        // It keeps trying every 5 minutes (it never stays down until the app restarts).
+        Assert.Equal(WatchdogAction.None, dog.Next(true, stopped, t.AddSeconds(600)));
+        Assert.Equal(WatchdogAction.Start, dog.Next(true, stopped, t.AddSeconds(700)));
         Assert.Equal(WatchdogAction.None, dog.Next(true, stopped, t.AddSeconds(800)));
         Assert.Equal(WatchdogAction.None, dog.Next(true, running, t.AddSeconds(900)));
         Assert.Equal(0, dog.Failures);

@@ -121,7 +121,9 @@ public class EmbeddedAgentTests : IDisposable
         Assert.Equal(WatchdogAction.Start, agent.Tick(true, now.AddMinutes(3)));
         launcher.Processes[^1].HasExited = true;
         Assert.Equal(WatchdogAction.GiveUp, agent.Tick(true, now.AddMinutes(10)));
-        Assert.Equal(WatchdogAction.None, agent.Tick(true, now.AddMinutes(20)));
+        Assert.Equal(WatchdogAction.None, agent.Tick(true, now.AddMinutes(12)));
+        Assert.Equal(WatchdogAction.Start, agent.Tick(true, now.AddMinutes(16))); // and again every 5 minutes
+        launcher.Processes[^1].HasExited = true;
 
         // Switched off: never started.
         var count = launcher.Started.Count;

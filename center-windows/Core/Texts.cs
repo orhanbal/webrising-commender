@@ -66,7 +66,7 @@ public static class Texts
 
     public static string AgentRestartedText => L.T("Bu bilgisayardaki ajan durmuştu; yeniden başlatıldı.");
     public static string AgentGaveUpText =>
-        L.T("Bu bilgisayardaki ajan durdu ve yeniden başlatılamadı. Yapay zekâ bu bilgisayara erişemez. Paneli açıp \"Ajan çalışsın\"ı yeniden dene.");
+        L.T("Bu bilgisayardaki ajan durdu ve şimdilik yeniden başlatılamadı; WECOMMANDER her 5 dakikada bir yeniden deniyor. O sırada yapay zekâ bu bilgisayara erişemez.");
     public static string AgentServiceStoppedText =>
         L.T("Bu bilgisayardaki ajan (Windows hizmeti) durdu. Başlatmak için paneldeki \"Ajan çalışsın\"ı aç; Windows yönetici onayı isteyecek.");
     public static string AgentUpdateStarted =>

@@ -1369,5 +1369,6 @@
  "Bitir": "Concluir",
  "Öğretici": "Tutorial",
  "Öğreticiyi göster": "Mostrar o tutorial",
- "Baştan başlat": "Recomeçar"
+ "Baştan başlat": "Recomeçar",
+ "Bu bilgisayardaki ajan durdu ve şimdilik yeniden başlatılamadı; WECOMMANDER her 5 dakikada bir yeniden deniyor. O sırada yapay zekâ bu bilgisayara erişemez.": "O agente deste computador parou e ainda não pôde ser reiniciado; o WECOMMANDER tenta de novo a cada 5 minutos. Enquanto isso, a IA não consegue acessar este computador."
 }
