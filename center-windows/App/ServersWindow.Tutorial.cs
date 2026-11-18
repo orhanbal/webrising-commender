@@ -16,7 +16,7 @@ public sealed partial class ServersWindow
     private Button? _newHostButton;
     private FrameworkElement? _firstHostCard;
     private int _shownStep = -1;
-    private bool _tutorialQueued;
+    private int _tutorialTicket;
 
     private static int TutorialStep
     {
@@ -32,12 +32,12 @@ public sealed partial class ServersWindow
     /// <summary>After the page settles (the target must be on screen to point at it).</summary>
     private void TutorialSoon()
     {
-        if (_tutorialQueued) return;
-        _tutorialQueued = true;
+        // Only the latest request runs (one made before the window was shown must not swallow later ones).
+        var ticket = ++_tutorialTicket;
         DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, async () =>
         {
             await Task.Delay(400);
-            _tutorialQueued = false;
+            if (ticket != _tutorialTicket) return;
             try { TutorialShow(); } catch (Exception e) { App.LogCrash(e); }
         });
     }
@@ -50,7 +50,7 @@ public sealed partial class ServersWindow
 
     private void TutorialShow()
     {
-        if (_coach is null || !AppWindow.IsVisible) return;
+        if (_coach is null || !AppWindow.IsVisible) { App.DebugLayout("tutorial: window not shown yet"); return; }
         var settings = App.Current.Settings;
         var step = Tutorial.Current(TutorialStep, settings.TutorialOff, _c.Hosts.Count);
         TutorialStep = step;
@@ -62,6 +62,7 @@ public sealed partial class ServersWindow
             _ => null,
         };
         // The first two steps point at things on the Servers page: shown when it is on screen.
+        App.DebugLayout($"tutorial: step {step}, target {(target is null ? "none" : target.GetType().Name)}");
         if (step is Tutorial.AddServer or Tutorial.Connect && target is null) { _coach.Hide(); _shownStep = -1; return; }
         if (step == _shownStep && _coach.IsShown) return;
         _shownStep = step;

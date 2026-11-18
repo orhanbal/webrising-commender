@@ -1071,6 +1071,10 @@ jobs:
           }
           if (-not $tip) {
             if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force }
+            $tlog = Join-Path $env:LOCALAPPDATA 'WECOMMANDER\layout.log'
+            if (Test-Path $tlog) { Get-Content $tlog | Where-Object { $_ -match 'tutorial' } | ForEach-Object { Write-Host $_ } }
+            $terr = Join-Path $env:LOCALAPPDATA 'WECOMMANDER\errors.log'
+            if (Test-Path $terr) { Get-Content $terr | Select-Object -First 40 | ForEach-Object { Write-Host $_ } }
             throw "first launch: the tutorial did not show its first step"
           }
           Write-Host "first launch: the tutorial shows its first step"
