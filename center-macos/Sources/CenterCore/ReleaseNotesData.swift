@@ -5,6 +5,33 @@ enum ReleaseNotesData {
 {
  "releases": [
   {
+   "id": "2026-11-18-windows-tutorial",
+   "date": "2026-11-18",
+   "platforms": [
+    "windows"
+   ],
+   "items": {
+    "tr": [
+     "İlk açılışta kısa bir öğretici: ilk sunucunu ekleme, bağlanma, Dock'taki canlı durum ve yapay zekâ bağlantısı. Gideceğin düğme yeşil bir çerçeveyle dalgalanır. Sağ tık → \"Öğreticiyi kapat\"; Ayarlar'dan yeniden açılır."
+    ],
+    "en": [
+     "A short tutorial on first launch: add your first server, connect, the live status on the Dock and connecting your AI. The button to press pulses with a green ring. Right-click → \"Turn off the tutorial\"; turn it back on in Settings."
+    ],
+    "de": [
+     "Ein kurzes Tutorial beim ersten Start: ersten Server hinzufügen, verbinden, der Live-Status im Dock und die KI verbinden. Die zu drückende Schaltfläche pulsiert mit einem grünen Ring. Rechtsklick → „Tutorial ausschalten“; in den Einstellungen wieder einschalten."
+    ],
+    "fr": [
+     "Un court tutoriel au premier lancement : ajouter ton premier serveur, te connecter, l'état en direct dans le Dock et connecter ton IA. Le bouton à utiliser pulse avec un anneau vert. Clic droit → « Désactiver le tutoriel » ; réactivable dans les Réglages."
+    ],
+    "es": [
+     "Un breve tutorial al abrir por primera vez: añadir tu primer servidor, conectarte, el estado en vivo en el Dock y conectar tu IA. El botón que debes pulsar late con un anillo verde. Clic derecho → «Desactivar el tutorial»; se reactiva en Ajustes."
+    ],
+    "pt-BR": [
+     "Um tutorial curto na primeira abertura: adicionar seu primeiro servidor, conectar, o status ao vivo no Dock e conectar sua IA. O botão a usar pulsa com um anel verde. Clique direito → \"Desativar o tutorial\"; reative nas Configurações."
+    ]
+   }
+  },
+  {
    "id": "2026-11-18-macos",
    "date": "2026-11-18",
    "platforms": [

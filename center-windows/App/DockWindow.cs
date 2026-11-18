@@ -501,6 +501,7 @@ public sealed class DockWindow : Window
 
         // Middle: the live meters (click: the matching management screen).
         var middle = new StackPanel { Orientation = orientation, Spacing = _horizontal ? 14 : 8, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+        _metersPanel = middle;
         var meterWidth = _horizontal ? (_compact ? 64 : 90) : (_compact ? 74 : 98);
         var meterHeight = _compact ? 16 : 22;
         _meters = [new("CPU", meterWidth, meterHeight), new("RAM", meterWidth, meterHeight), new("Disk", meterWidth, meterHeight)];
@@ -647,6 +648,21 @@ public sealed class DockWindow : Window
         button.AddHandler(UIElement.PointerReleasedEvent, new Microsoft.UI.Xaml.Input.PointerEventHandler((_, _) => To(1, 160)), true);
         button.AddHandler(UIElement.PointerCaptureLostEvent, new Microsoft.UI.Xaml.Input.PointerEventHandler((_, _) => To(1, 160)), true);
         button.AddHandler(UIElement.PointerExitedEvent, new Microsoft.UI.Xaml.Input.PointerEventHandler((_, _) => To(1, 160)), true);
+    }
+
+    private StackPanel? _metersPanel;
+    private Coach? _coach;
+
+    /// <summary>The tutorial's status step: a green ring around the live meters (or none).</summary>
+    public void TutorialRing(bool on)
+    {
+        try
+        {
+            _coach ??= new Coach(_root);
+            if (on && _metersPanel is { } meters) _coach.RingOnly(meters);
+            else _coach.Hide();
+        }
+        catch (Exception e) { App.LogCrash(e); }
     }
 
     private static Image AppIcon() => new()

@@ -191,6 +191,7 @@ public sealed partial class ServersWindow : Window
         var app = new Grid();
         app.Children.Add(_nav);
         app.Children.Add(_messageHost);
+        _coach = new Coach(app);
         Content = BuildShell(app);
         SetTitleBar(_titleBar);
         DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, async () =>
@@ -479,6 +480,7 @@ public sealed partial class ServersWindow : Window
         AppWindow.Show();
         Activate();
         SyncPanel();
+        TutorialSoon();
     }
 
     private void Show(string text, InfoBarSeverity severity)
@@ -717,8 +719,9 @@ public sealed partial class ServersWindow : Window
                     _search,
                     ActionButton(L.T("Ortak terminaller"), IconName.Team, () => _ = ShowShares()),
                     ActionButton(L.T("İçe aktar"), IconName.Import, async () => Show(await _c.ImportSshConfig(), InfoBarSeverity.Informational)),
-                    ActionButton(L.T("Yeni sunucu"), IconName.Add, () => _ = EditHost(null), accent: true));
+                    _newHostButton = ActionButton(L.T("Yeni sunucu"), IconName.Add, () => _ = EditHost(null), accent: true));
                 SetPage(_hostsPage);
+                TutorialSoon();
                 break;
         }
     }
@@ -747,6 +750,8 @@ public sealed partial class ServersWindow : Window
     private void RenderHosts()
     {
         _hostGroups.Children.Clear();
+        _firstHostCard = null;
+        TutorialSoon();
         var query = _search.Text?.Trim() ?? "";
         var hosts = _c.Hosts.Where(h => query.Length == 0
             || h.Label.Contains(query, StringComparison.OrdinalIgnoreCase)
@@ -770,7 +775,12 @@ public sealed partial class ServersWindow : Window
         {
             _hostGroups.Children.Add(new TextBlock { Text = $"{group.Key}  ·  {group.Count()}", Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"] });
             var wrap = new VariableSizedWrapGrid { Orientation = Orientation.Horizontal, ItemWidth = 260, ItemHeight = 108 };
-            foreach (var host in group.OrderBy(h => h.Label, StringComparer.CurrentCultureIgnoreCase)) wrap.Children.Add(HostCard(host));
+            foreach (var host in group.OrderBy(h => h.Label, StringComparer.CurrentCultureIgnoreCase))
+            {
+                var card = HostCard(host);
+                _firstHostCard ??= card as FrameworkElement;
+                wrap.Children.Add(card);
+            }
             _hostGroups.Children.Add(wrap);
         }
     }
@@ -1003,6 +1013,7 @@ public sealed partial class ServersWindow : Window
             DispatcherQueue.TryEnqueue(() => App.Current.SetLanguage(chosen));
         };
         foreach (var e in new UIElement[] { language, font, theme, keys, logsButton, dock, syncTitle, syncPanel, teamTitle, teamPanel, backupTitle, backupHelp, backupRow, ai, center, whatsNew }) body.Children.Add(e);
+        foreach (var e in TutorialSettings()) body.Children.Add(e);
         var scroll = new ScrollViewer { Content = body };
         SetPage(Page(L.T("Ayarlar"), L.T("Terminal görünümü ve Dock; değişiklikler hemen uygulanır."), scroll));
         if (_settingsAtDock)
@@ -1870,6 +1881,7 @@ public sealed partial class ServersWindow : Window
         tab.Exited = () => { tab.Caption.Text = host.Label + L.T(" (kapandı)"); if (tab.Page is { } p && p.Item is not null) p.Item.Header = p.Title; SyncCommands(); };
         view.GotFocus += (_, _) => { if (tab.Page is { } p) { p.Focused = tab; SyncCommands(); } };
         _c.Register(tab, DispatcherQueue);
+        TutorialTerminalOpened();
         if (_splitTarget is { } target && _tabs.TabItems.Contains(target.Page.Item) && target.Page.Panes.Count < TabPage.MaxPanes)
         {
             _splitTarget = null;
