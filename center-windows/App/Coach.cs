@@ -43,7 +43,6 @@ public sealed class Coach
             IsLightDismissEnabled = false,
             PreferredPlacement = TeachingTipPlacementMode.Auto,
             CloseButtonContent = L.T("Atla"),
-            ShouldConstrainToRootBounds = false,
         };
         if (primary is not null)
         {
