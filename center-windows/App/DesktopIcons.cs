@@ -124,7 +124,7 @@ internal static class DesktopIcons
     /// would overlap <paramref name="reserved"/> (the Dock's strip, screen pixels) is moved just
     /// out of it, on the side of <paramref name="edge"/>. Returns how many icons were moved back.
     /// </summary>
-    public static int Restore(Layout before, PixelRect? reserved, DockEdge edge)
+    public static int Restore(Layout before, PixelRect? reserved, DockEdge edge, bool apply = true)
     {
         try
         {
@@ -153,11 +153,13 @@ internal static class DesktopIcons
                         }
                     }
                 }
-                if (at.X == x && at.Y == y) continue;
+                // Within half a cell counts as in place (the desktop may snap icons to its grid).
+                if (Math.Abs(at.X - x) <= before.CellW / 2 && Math.Abs(at.Y - y) <= before.CellH / 2) continue;
+                moved++;
+                if (!apply) continue;
                 var index = now.Icons.IndexOf(at);
                 if (index < 0) continue;
                 SendMessage(now.ListView, LvmSetItemPosition, (IntPtr)index, (IntPtr)(((y & 0xFFFF) << 16) | (x & 0xFFFF)));
-                moved++;
             }
             return moved;
         }
@@ -174,20 +176,36 @@ internal static class DesktopIcons
     /// </summary>
     public static T Keep<T>(Func<T> change, Func<T, PixelRect?> reserved, DockEdge edge)
     {
-        var before = Read();
+        // Several changes in a row (the Dock is placed twice when it starts): the positions
+        // from before the first one are the right ones, not those Explorer is moving now.
+        Layout? before;
+        lock (Gate)
+        {
+            if (_kept is { } k && DateTime.UtcNow - _keptAt < TimeSpan.FromSeconds(4)) before = k;
+            else { before = Read(); _kept = before; }
+            _keptAt = DateTime.UtcNow;
+        }
         var result = change();
         if (before is null) return result;
         var strip = reserved(result);
+        var run = ++_run;
         App.DebugLayout($"desktop icons: kept {before.Icons.Count} positions");
-        foreach (var delay in new[] { 700, 2500 })
+        foreach (var delay in new[] { 700, 2500, 4000 })
         {
             _ = Task.Run(async () =>
             {
                 await Task.Delay(delay);
-                var moved = Restore(before, strip, edge);
-                if (moved > 0) App.DebugLayout($"desktop icons: put {moved} back after {delay} ms");
+                if (run != _run) return; // a newer change restores them
+                var moved = Restore(before, strip, edge, apply: delay < 4000);
+                if (delay < 4000) { if (moved > 0) App.DebugLayout($"desktop icons: put {moved} back after {delay} ms"); }
+                else App.DebugLayout($"desktop icons: {moved} not where they should be after {delay} ms");
             });
         }
         return result;
     }
+
+    private static readonly object Gate = new();
+    private static Layout? _kept;
+    private static DateTime _keptAt;
+    private static volatile int _run;
 }
