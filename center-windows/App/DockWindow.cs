@@ -106,6 +106,7 @@ public sealed class DockWindow : Window
         _bar = new AppBar(hwnd);
         _proc = WndProc; // kept alive as long as the window
         SetWindowSubclass(hwnd, _proc, (UIntPtr)0x5743, IntPtr.Zero);
+        NoFrame(hwnd);
 
         var queue = DispatcherQueue.GetForCurrentThread();
         _fast = queue.CreateTimer();
@@ -139,13 +140,15 @@ public sealed class DockWindow : Window
     [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int vk);
     [DllImport("user32.dll")] private static extern int GetSystemMetrics(int index);
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern IntPtr GetWindowLongPtr(IntPtr hwnd, int index);
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] private static extern IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
     [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] private struct MINMAXINFO { public POINT ptReserved, ptMaxSize, ptMaxPosition, ptMinTrackSize, ptMaxTrackSize; }
 
     private static readonly IntPtr HwndTopMost = new(-1), HwndNoTopMost = new(-2), HwndBottom = new(1);
     private const uint SwpNoSize = 0x1, SwpNoMove = 0x2, SwpNoActivate = 0x10;
-    private const uint WmGetMinMaxInfo = 0x0024;
+    private const uint WmGetMinMaxInfo = 0x0024, WmNcCalcSize = 0x0083, WmNcActivate = 0x0086;
     private const uint WmActivate = 0x0006, WmEndSession = 0x0016, WmSettingChange = 0x001A, WmWindowPosChanged = 0x0047,
         WmDisplayChange = 0x007E, WmDpiChanged = 0x02E0;
 
@@ -167,6 +170,10 @@ public sealed class DockWindow : Window
                 _bar.Forget();
                 ScheduleApply();
             }
+            // No non-client area at all: the window is its content edge to edge, so no frame
+            // line (light in dark mode too) can show around the Dock, like the taskbar.
+            if (msg == WmNcCalcSize && w != IntPtr.Zero) return IntPtr.Zero;
+            if (msg == WmNcActivate) return DefSubclassProc(hwnd, msg, w, new IntPtr(-1));
             if (msg == WmGetMinMaxInfo)
             {
                 // WinUI keeps windows at least ~136 px wide; a side Dock is thinner.
@@ -335,10 +342,29 @@ public sealed class DockWindow : Window
     {
         var value = round ? 2 /* DWMWCP_ROUND */ : 1 /* DWMWCP_DONOTROUND */;
         try { DwmSetWindowAttribute(Hwnd, 33, ref value, sizeof(int)); } catch (Exception) { }
-        // Windows 11 draws a frame line around every window; on an edge it showed as a thick
-        // line under the Dock. Fixed and auto-hide: none, like the taskbar; floating: the system's.
-        var border = round ? unchecked((int)0xFFFFFFFF) /* DWMWA_COLOR_DEFAULT */ : unchecked((int)0xFFFFFFFE) /* DWMWA_COLOR_NONE */;
-        try { DwmSetWindowAttribute(Hwnd, 34 /* DWMWA_BORDER_COLOR */, ref border, sizeof(int)); } catch (Exception) { }
+        // Windows 11 draws a frame line around every window: never around the Dock, in any
+        // mode or theme (it showed as a light line in dark mode).
+        // Presenter changes (always on top, mode switches) can give the frame styles back.
+        NoFrame(Hwnd);
+    }
+
+    /// <summary>Takes every frame style off the window (caption, sizing frame, edges) so Windows draws no border.</summary>
+    private static void NoFrame(IntPtr hwnd)
+    {
+        try
+        {
+            const long caption = 0x00C00000, thickFrame = 0x00040000, border = 0x00800000, dlgFrame = 0x00400000;
+            const long exDlgModal = 0x1, exWindowEdge = 0x100, exClientEdge = 0x200, exStaticEdge = 0x20000;
+            var style = (long)GetWindowLongPtr(hwnd, -16);
+            SetWindowLongPtr(hwnd, -16, new IntPtr(style & ~(caption | thickFrame | border | dlgFrame)));
+            var ex = (long)GetWindowLongPtr(hwnd, -20);
+            SetWindowLongPtr(hwnd, -20, new IntPtr(ex & ~(exDlgModal | exWindowEdge | exClientEdge | exStaticEdge)));
+            // SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+            SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0, 0x20 | 0x4 | SwpNoMove | SwpNoSize | SwpNoActivate);
+            var none = unchecked((int)0xFFFFFFFE);
+            DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, ref none, sizeof(int));
+        }
+        catch (Exception) { }
     }
 
     private void SetTopMost(bool on)
