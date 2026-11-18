@@ -4,6 +4,64 @@ export type ReleaseNote = { id: string; date: string; platforms: ("windows" | "m
 /** Newest first; platforms empty: both apps. */
 export const releaseNotes: ReleaseNote[] = [
  {
+  "id": "2026-11-23-v1",
+  "date": "2026-11-23",
+  "platforms": [
+   "windows",
+   "macos"
+  ],
+  "items": {
+   "tr": [
+    "WECOMMANDER 1.0 çıktı. SSH istemcisi tam: sekmeli ve bölünmüş terminaller, sürükle-bırak SFTP, tüneller ve jump host; yapay zekâ ve hesap olmadan da çalışır.",
+    "Sunucu yönetimi: diski neyin doldurduğunu gör; eski günlükleri, paket önbelleklerini ve Docker artıklarını güvenle temizle. Süreçler ve zamanlanmış görevler de burada.",
+    "Windows'ta Dock görev çubuğu gibi ekranın kenarında durur, sunucunun canlı grafiklerini gösterir; Görev Yöneticisi, Görevler ve Terminal ondan açılır. macOS'ta canlı izleme menü çubuğunda.",
+    "Claude, ChatGPT ve Cursor tek MCP adresiyle makinelerinde çalışır. Komut, silme ve yeniden başlatma gibi her riskli adım senin onayını bekler ve denetim kaydına yazılır.",
+    "Sunucuların, anahtarların ve parçacıkların cihazlar arasında uçtan uca şifreli eşitlenir.",
+    "Uygulama altı dilde: Türkçe, İngilizce, Almanca, Fransızca, İspanyolca ve Portekizce (Brezilya)."
+   ],
+   "en": [
+    "WECOMMANDER 1.0 is here. A complete SSH client: tabbed and split terminals, drag-and-drop SFTP, tunnels and jump hosts; it works without AI and without an account.",
+    "Server management: see what fills the disk and safely clean old logs, package caches and Docker leftovers. Processes and scheduled tasks are here too.",
+    "On Windows, the Dock sits on a screen edge like the taskbar with live charts for your server; Task Manager, Tasks and Terminal open from it. On macOS, live monitoring is in the menu bar.",
+    "Claude, ChatGPT and Cursor work on your machines through one MCP address. Every risky step, such as a command, a deletion or a restart, waits for your approval and is written to the audit log.",
+    "Your servers, keys and snippets sync across your devices with end-to-end encryption.",
+    "The app speaks six languages: English, Turkish, German, French, Spanish and Brazilian Portuguese."
+   ],
+   "de": [
+    "WECOMMANDER 1.0 ist da. Ein vollständiger SSH-Client: Terminals in Tabs und geteilter Ansicht, SFTP per Drag-and-drop, Tunnel und Jump-Hosts; er funktioniert auch ohne KI und ohne Konto.",
+    "Serververwaltung: Sieh, was die Festplatte füllt, und räume alte Logs, Paket-Caches und Docker-Reste sicher auf. Prozesse und geplante Aufgaben findest du auch hier.",
+    "Unter Windows sitzt das Dock wie die Taskleiste am Bildschirmrand und zeigt Live-Diagramme deines Servers; Task-Manager, Aufgaben und Terminal öffnen sich daraus. Unter macOS ist die Live-Überwachung in der Menüleiste.",
+    "Claude, ChatGPT und Cursor arbeiten über eine einzige MCP-Adresse auf deinen Rechnern. Jeder riskante Schritt, etwa ein Befehl, ein Löschen oder ein Neustart, wartet auf deine Freigabe und landet im Audit-Log.",
+    "Deine Server, Schlüssel und Snippets werden Ende-zu-Ende-verschlüsselt zwischen deinen Geräten synchronisiert.",
+    "Die App spricht sechs Sprachen: Englisch, Türkisch, Deutsch, Französisch, Spanisch und brasilianisches Portugiesisch."
+   ],
+   "fr": [
+    "WECOMMANDER 1.0 est là. Un client SSH complet : terminaux en onglets et en vue partagée, SFTP par glisser-déposer, tunnels et hôtes de rebond ; il fonctionne sans IA et sans compte.",
+    "Gestion des serveurs : vois ce qui remplit le disque et nettoie en toute sécurité les anciens journaux, les caches de paquets et les restes de Docker. Les processus et les tâches planifiées sont là aussi.",
+    "Sous Windows, le Dock se place sur un bord de l'écran comme la barre des tâches, avec les graphiques en direct de ton serveur ; le Gestionnaire des tâches, les Tâches et le Terminal s'ouvrent depuis lui. Sous macOS, la surveillance en direct est dans la barre des menus.",
+    "Claude, ChatGPT et Cursor travaillent sur tes machines avec une seule adresse MCP. Chaque étape risquée, comme une commande, une suppression ou un redémarrage, attend ton approbation et est inscrite dans le journal d'audit.",
+    "Tes serveurs, clés et extraits se synchronisent entre tes appareils avec un chiffrement de bout en bout.",
+    "L'application parle six langues : anglais, turc, allemand, français, espagnol et portugais du Brésil."
+   ],
+   "es": [
+    "Ya está aquí WECOMMANDER 1.0. Un cliente SSH completo: terminales en pestañas y en vista dividida, SFTP con arrastrar y soltar, túneles y hosts de salto; funciona sin IA y sin cuenta.",
+    "Gestión de servidores: mira qué llena el disco y limpia con seguridad registros antiguos, cachés de paquetes y restos de Docker. Los procesos y las tareas programadas también están aquí.",
+    "En Windows, el Dock se coloca en un borde de la pantalla como la barra de tareas, con gráficos en vivo de tu servidor; el Administrador de tareas, las Tareas y el Terminal se abren desde él. En macOS, la supervisión en vivo está en la barra de menús.",
+    "Claude, ChatGPT y Cursor trabajan en tus equipos con una sola dirección MCP. Cada paso arriesgado, como un comando, un borrado o un reinicio, espera tu aprobación y queda en el registro de auditoría.",
+    "Tus servidores, claves y fragmentos se sincronizan entre tus dispositivos con cifrado de extremo a extremo.",
+    "La aplicación habla seis idiomas: inglés, turco, alemán, francés, español y portugués de Brasil."
+   ],
+   "pt-BR": [
+    "O WECOMMANDER 1.0 chegou. Um cliente SSH completo: terminais em abas e em tela dividida, SFTP com arrastar e soltar, túneis e jump hosts; funciona sem IA e sem conta.",
+    "Gerenciamento de servidores: veja o que enche o disco e limpe com segurança logs antigos, caches de pacotes e sobras do Docker. Processos e tarefas agendadas também estão aqui.",
+    "No Windows, o Dock fica na borda da tela como a barra de tarefas, com gráficos ao vivo do seu servidor; o Gerenciador de Tarefas, as Tarefas e o Terminal abrem a partir dele. No macOS, o monitoramento ao vivo fica na barra de menus.",
+    "Claude, ChatGPT e Cursor trabalham nas suas máquinas com um único endereço MCP. Cada passo arriscado, como um comando, uma exclusão ou uma reinicialização, espera a sua aprovação e vai para o log de auditoria.",
+    "Seus servidores, chaves e snippets são sincronizados entre os seus dispositivos com criptografia de ponta a ponta.",
+    "O app fala seis idiomas: inglês, turco, alemão, francês, espanhol e português do Brasil."
+   ]
+  }
+ },
+ {
   "id": "2026-11-19-windows-window-crash",
   "date": "2026-11-19",
   "platforms": [

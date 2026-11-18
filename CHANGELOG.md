@@ -1,16 +1,22 @@
 # Changelog
 
-## 1.0.0 — release notes (tagged after device acceptance)
+## 1.0.0 — 2026-11-23
 
-WECOMMANDER 1.0 is one desktop app (Windows, macOS) plus a non-root agent (Linux, Windows, macOS):
+WECOMMANDER 1.0 is one desktop app (Windows 10/11, macOS 13 or newer) plus a non-root agent (Linux, Windows, macOS) and the hosted service at wecommander.app (account, approvals, the MCP endpoint). The SSH client works fully without AI and without an account.
 
-- **SSH client:** saved servers with groups and tags, tabs and split view, SFTP, local/remote/SOCKS tunnels, jump hosts, Telnet, serial and Mosh, SSH agent login (OpenSSH agent, Pageant, macOS, FIDO2), session logs, terminal themes, autocomplete from history and snippets, `~/.ssh/config` import, backup export/import.
-- **Server management:** overview, disk analysis and safe cleanup with progress (logs, package caches, Docker per daemon including rootless Docker), processes and zombie fixes, Coolify support.
-- **Live monitoring:** a server box on the desktop (bottom left) with live line charts for CPU, memory and disk, and a tray panel next to the app.
-- **AI over MCP:** one MCP address for Claude, ChatGPT, Cursor and other clients, for every machine. Reads run without approval; commands, deletion, cleanup and restarts need a one-time server-side approval (web, app, e-mail), or autonomous mode for a set time.
-- **Sync and teams:** end-to-end encrypted library sync, team library and shared terminals, audit log with versions and undo.
+- **SSH client:** saved servers with groups and tags, tabs and split view, drag-and-drop SFTP, local/remote/SOCKS tunnels, jump hosts, Telnet, serial and Mosh, SSH agent login (OpenSSH agent, Pageant, macOS, FIDO2), snippets, autocomplete from history and snippets, broadcast typing, session logs, terminal themes, `~/.ssh/config` import, backup export/import.
+- **Server management (nothing to install on the server):** overview, disk analysis and safe cleanup with progress (old logs, package caches, Docker build cache and unused images per daemon including rootless Docker; running containers and volumes are never touched), processes and zombie fixes, Coolify support; every change shows the exact command and asks first.
+- **Scheduled tasks and timers:** WECOMMANDER's own scheduled tasks (cron, every N minutes, once) on agent devices, which run while your computer is off, and on saved SSH servers through the desktop app, with history, output and failure e-mails; server timers (systemd, cron read only) and, on Windows, the Windows Task Scheduler, each change behind a confirmation.
+- **Windows: Dock or Classic mode:** the Dock sits on a screen edge like the taskbar (same material, light/dark and accent colour), can be dragged, locked or left floating, shows live CPU, memory and disk charts for a server, and opens Task Manager, Tasks, Terminal (tabs), approvals and settings as drop-down panels; its icon opens a Start-like panel with server search. Classic mode runs the app in its windows without a Dock. The notification area keeps only the Management Center icon.
+- **macOS:** live server monitoring in the menu bar with a quick panel, Task Manager for the Mac, server management in its own window, scheduled tasks and server timers, macOS-style windows and a short getting-started tutorial on first launch.
+- **AI over MCP:** one MCP address (`https://wecommander.app/mcp`, OAuth) for Claude, ChatGPT, Cursor and other clients, for every machine. The agent keeps one outbound encrypted connection (no inbound ports, VPN or SSH keys), runs as a normal user inside the folders you allow and masks secrets in output. Reads run without approval; commands, deletion, cleanup and restarts need a one-time approval bound to the exact action (web, desktop app notification, e-mail), unless a command pattern is allowed or autonomous mode is on for a set time. Every action is in the audit log; file edits keep undo snapshots.
+- **Hybrid Access (Windows):** saved SSH servers without an agent can be shared with local AI apps (local MCP) and with remote AI through `wecommander.app/mcp` via your own computer; SSH keys never leave it, reads run directly, every command and file change needs a one-time approval. macOS does not have it yet.
+- **Sync and teams:** end-to-end encrypted sync of servers, keys and snippets, team library and live shared terminals, roles, audit log with versions and undo.
+- **Six languages:** the apps, the website and the web app in English, Turkish, German, French, Spanish and Brazilian Portuguese, switched without a restart.
+- **What's new:** after each update the apps show the new notes once; all notes are on `/changelog`.
 - **Plans:** Free, Pro and Team through Paddle (Merchant of Record), 14-day refund; Terms of Service and Privacy Policy on the site and at checkout.
 - **Updates:** the apps update themselves with a progress window; GitHub keeps the newest 10 preview releases per channel (daily clean-up).
+- **Not in 1.0:** the Windows getting-started tutorial (built, switched off), AI access settings in the macOS app, and a self-hosted edition.
 
 ## Unreleased
 
