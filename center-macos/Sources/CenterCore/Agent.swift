@@ -74,7 +74,7 @@ public struct AgentControl: Sendable {
     /// Where the WECOMMANDER PKG installs the agent.
     public static let agentBinary = "/usr/local/bin/webrising-commender"
 
-    /// "0.1.58" from `webrising-commender --version`, or nil when unknown.
+    /// "1.0.58" from `webrising-commender --version`, or nil when unknown.
     public func installedVersion() async -> String? {
         let (code, out) = await runner.run(AgentControl.agentBinary, ["--version"])
         return code == 0 ? AgentControl.parseVersion(out) : nil

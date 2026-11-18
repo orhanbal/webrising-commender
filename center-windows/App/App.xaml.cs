@@ -64,9 +64,9 @@ public partial class App : Application
     /// <summary>The WECOMMANDER agent on this computer (null until first read).</summary>
     public AgentStatus? Agent { get; private set; }
     public bool AgentBusy => _agentBusy;
-    /// <summary>Installed agent version ("0.1.1651"), read every few minutes.</summary>
+    /// <summary>Installed agent version ("1.0.1651"), read every few minutes.</summary>
     public string? AgentVersion { get; private set; }
-    /// <summary>Newest published agent build (the N of 0.1.N), checked every 6 hours.</summary>
+    /// <summary>Newest published agent build (the N of 1.0.N), checked every 6 hours.</summary>
     public int? LatestAgentBuild { get; private set; }
     public bool AgentUpdateAvailable => Embedded ? AppUpdateAvailable : AgentUpdate.IsNewer(LatestAgentBuild, AgentVersion);
     private DateTime _lastReleaseCheck = DateTime.MinValue;
@@ -290,7 +290,7 @@ public partial class App : Application
         // processes never hold files that an update has to replace.
         Environment.SetEnvironmentVariable("WEBVIEW2_USER_DATA_FOLDER",
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WECOMMANDER", "WebView2"));
-        GatewayClient.AppVersion = AppUpdate.CurrentBuild() is { } build ? $"0.1.{build}" : "dev";
+        GatewayClient.AppVersion = AppUpdate.CurrentBuild() is { } build ? AppVersion.Of(build) : "dev";
         _window = new MainWindow();
         BuildTray();
         Servers.Changed += () => _ui.TryEnqueue(() => { UpdateServersMenu(); RequestLibrarySync(); });
@@ -624,7 +624,7 @@ public partial class App : Application
             if (AgentUpdateAvailable && _announcedBuild != LatestAgentBuild)
             {
                 _announcedBuild = LatestAgentBuild;
-                Toast(L.F("Ajan için yeni sürüm var (0.1.{0}). Yönetim Merkezinde \"Ajanı güncelle\" ile kurabilirsin.", LatestAgentBuild));
+                Toast(L.F("Ajan için yeni sürüm var ({0}). Yönetim Merkezinde \"Ajanı güncelle\" ile kurabilirsin.", AppVersion.Of(LatestAgentBuild)));
             }
         }
         if (status.Running) _serviceStopNoticeShown = false;

@@ -81,5 +81,15 @@ final class AgentUpdateTests: XCTestCase {
         XCTAssertFalse(AgentUpdate.isNewer(120, than: "0.1.120"))
         XCTAssertFalse(AgentUpdate.isNewer(nil, than: "0.1.1"))
         XCTAssertEqual(AgentUpdate.build("0.1.58"), 58)
+        // v1.0 changed only the prefix: an old 0.1.N install still updates to 1.0.M by N.
+        XCTAssertEqual(AgentUpdate.build("1.0.58"), 58)
+        XCTAssertTrue(AgentUpdate.isNewer(121, than: "0.1.120"))
+        XCTAssertTrue(AgentUpdate.isNewer(121, than: "1.0.120"))
+        XCTAssertFalse(AgentUpdate.isNewer(120, than: "1.0.120"))
+    }
+
+    func testAppVersionIsPrefixDotBuild() {
+        XCTAssertEqual(AppVersion.of(58), "1.0.58")
+        XCTAssertEqual(AgentUpdate.build(AppVersion.of(58)), 58)
     }
 }

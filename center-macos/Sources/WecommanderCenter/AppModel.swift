@@ -30,10 +30,10 @@ final class AppModel: ObservableObject {
     /// The WECOMMANDER agent on this Mac (nil until first read).
     @Published private(set) var agent: AgentStatus?
     @Published private(set) var agentBusy = false
-    /// Installed agent version ("0.1.58"), read every few minutes.
+    /// Installed agent version ("1.0.58"), read every few minutes.
     @Published private(set) var agentVersion: String?
     private var lastVersionCheck = Date.distantPast
-    /// Newest published agent build (the N of 0.1.N), checked every 6 hours.
+    /// Newest published agent build (the N of 1.0.N), checked every 6 hours.
     @Published private(set) var latestAgentBuild: Int?
     private var lastReleaseCheck = Date.distantPast
     private var announcedBuild: Int?
@@ -45,7 +45,7 @@ final class AppModel: ObservableObject {
     let embedded = EmbeddedAgent.forThisApp()
     /// This build carries the agent and runs it itself.
     var isEmbedded: Bool { embedded.available }
-    /// This app's build (the N of 0.1.N), or nil in a developer build.
+    /// This app's build (the N of 1.0.N), or nil in a developer build.
     let appBuild: Int? = AgentUpdate.build(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)
     @Published private(set) var latestApp: AppUpdate.Release?
     @Published private(set) var pairing = false
@@ -368,7 +368,7 @@ final class AppModel: ObservableObject {
             }
             if agentUpdateAvailable, announcedBuild != latestAgentBuild, let latest = latestAgentBuild {
                 announcedBuild = latest
-                notifier.showPlain("WECOMMANDER", L.f("Ajan için yeni sürüm var (0.1.{0}). Yönetim Merkezinde \"Ajanı güncelle\" ile kurabilirsin.", latest))
+                notifier.showPlain("WECOMMANDER", L.f("Ajan için yeni sürüm var ({0}). Yönetim Merkezinde \"Ajanı güncelle\" ile kurabilirsin.", AppVersion.of(latest)))
             }
         }
         switch watchdog.next(keepRunning: settings.agentKeepRunning && status.enabled, status: status, now: Date()) {
@@ -593,7 +593,7 @@ extension AppModel {
             }
             if agentUpdateAvailable, let latest = latestApp, announcedApp != latest.build {
                 announcedApp = latest.build
-                notifier.showPlain("WECOMMANDER", L.f("WECOMMANDER için yeni sürüm var (0.1.{0}). Panelde \"Uygulamayı güncelle\"ye bas.", latest.build))
+                notifier.showPlain("WECOMMANDER", L.f("WECOMMANDER için yeni sürüm var ({0}). Panelde \"Uygulamayı güncelle\"ye bas.", AppVersion.of(latest.build)))
             }
         }
         if before != agent { publish() }
@@ -642,14 +642,14 @@ extension AppModel {
             }
             latestApp = latest
             if let current = appBuild, latest.build <= current {
-                updateMessage = L.f("Uygulama güncel (0.1.{0}).", current)
+                updateMessage = L.f("Uygulama güncel ({0}).", AppVersion.of(current))
                 updating = false
                 updateProgress = nil
                 publish()
                 return
             }
             // Download 0–85 %, check 85–90 %, unpack 90–98 %.
-            updateMessage = L.f("0.1.{0} indiriliyor…", latest.build)
+            updateMessage = L.f("{0} indiriliyor…", AppVersion.of(latest.build))
             updateProgress = 0
             publish()
             try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
@@ -660,7 +660,7 @@ extension AppModel {
                 guard percent != shown else { return }
                 shown = percent
                 self.updateProgress = fraction * 0.85
-                self.updateMessage = L.f("0.1.{0} indiriliyor… %{1}", latest.build, percent)
+                self.updateMessage = L.f("{0} indiriliyor… %{1}", AppVersion.of(latest.build), percent)
                 self.publish()
             }
             guard (zipResponse as? HTTPURLResponse)?.statusCode == 200 else { throw AgentError(L.t("Paket indirilemedi.")) }

@@ -61,7 +61,7 @@ pub fn label(state: &str, enabled: bool) -> &'static str {
     }
 }
 
-/// "0.1.1676" from `webrising-commender --version`.
+/// "1.0.1676" from `webrising-commender --version`.
 pub fn parse_version(output: &str) -> Option<String> {
     let last = output.split_whitespace().last()?;
     last.chars()

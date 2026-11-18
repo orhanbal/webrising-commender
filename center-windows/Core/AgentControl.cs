@@ -88,7 +88,7 @@ public sealed class AgentControl(ICommandRunner runner, string userSid, string? 
     public string AgentExe { get; } = agentExe ?? Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WECOMMANDER", "webrising-commender.exe");
 
-    /// <summary>"0.1.1651" from `webrising-commender --version`, or null when unknown.</summary>
+    /// <summary>"1.0.1651" from `webrising-commender --version`, or null when unknown.</summary>
     public async Task<string?> InstalledVersionAsync()
     {
         try

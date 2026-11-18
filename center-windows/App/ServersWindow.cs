@@ -440,7 +440,7 @@ public sealed partial class ServersWindow : Window
             _signOutItem.Visibility = Visibility.Collapsed;
         }
         _updateButton.Visibility = center.ShowUpdateOffer && !center.InstallerRunning ? Visibility.Visible : Visibility.Collapsed;
-        _updateButton.Content = L.F("Yeni sürüm: 0.1.{0} · Güncelle", center.LatestAppBuild);
+        _updateButton.Content = L.F("Yeni sürüm: {0} · Güncelle", AppVersion.Of(center.LatestAppBuild));
         var pending = center.Phase == Phase.SignedIn ? center.Pending.Count : 0;
         _panelButton.Content = pending > 0 && !_panelWanted
             ? new InfoBadge { Value = pending }

@@ -142,7 +142,7 @@ pub struct AppInfo {
 
 pub fn app_info(state: &Arc<AppState>, version: &str) -> AppInfo {
     AppInfo {
-        // The installer version (0.1.<CI run>), not the crate version.
+        // The installer version (1.0.<CI run>), not the crate version.
         version: version.to_owned(),
         vault_backend: state.vault.backend().label(),
         vault_persistent: state.vault_persistent,

@@ -54,7 +54,7 @@ use tokio_tungstenite::{
 };
 use tracing::{error, info, warn};
 
-// Package version (0.1.<CI run>) when the release build sets WECOMMANDER_VERSION,
+// Package version (1.0.<CI run>) when the release build sets WECOMMANDER_VERSION,
 // so the console shows the installed package; otherwise the crate version.
 const VERSION: &str = match option_env!("WECOMMANDER_VERSION") {
     Some(version) => version,
