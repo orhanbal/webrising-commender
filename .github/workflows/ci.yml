@@ -1057,6 +1057,23 @@ jobs:
             throw "Main window did not show its sections (found: $($found -join ', '))"
           }
           Write-Host "Main window shows: $($found -join ', ')"
+          # First launch: the tutorial's first step points at "Yeni sunucu" (this script is read as ANSI: no non-ASCII literals).
+          $tutorialTitle = [string][char]0x0130 + 'lk sunucunu ekleyelim'
+          $tip = $null
+          for ($i = 0; $i -lt 20 -and -not $tip; $i++) {
+            Start-Sleep -Milliseconds 500
+            foreach ($window in $root.FindAll([System.Windows.Automation.TreeScope]::Children,
+              (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $app.Id)))) {
+              $tip = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
+                (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $tutorialTitle)))
+              if ($tip) { break }
+            }
+          }
+          if (-not $tip) {
+            if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force }
+            throw "first launch: the tutorial did not show its first step"
+          }
+          Write-Host "first launch: the tutorial shows its first step"
           # A picture of the main window as it opened, to check the design.
           try {
             Add-Type -AssemblyName System.Drawing, System.Windows.Forms
