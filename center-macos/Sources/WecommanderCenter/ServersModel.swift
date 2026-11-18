@@ -66,6 +66,54 @@ final class ServersModel: ObservableObject {
 
     var selectedSession: TerminalSession? { sessions.first { $0.id == selection } }
 
+    // MARK: getting-started tutorial
+
+    /// The tutorial's saved step and "off" switch (Tutorial); the app delegate
+    /// loads them from the settings and saves them through `onTutorialChange`.
+    @Published private(set) var tutorialStep = Tutorial.notStarted
+    @Published private(set) var tutorialOff = false
+    /// hosts.list answered once: until then the host count is not known.
+    @Published private(set) var hostsLoaded = false
+    var onTutorialChange: ((_ step: Int, _ off: Bool) -> Void)?
+
+    /// The tutorial step to show now (Tutorial.done: nothing to show).
+    var tutorial: Int {
+        guard hostsLoaded, coreError == nil, !Snapshots.requested else { return Tutorial.done }
+        return Tutorial.current(tutorialStep, off: tutorialOff, hostCount: hosts.count)
+    }
+
+    func loadTutorial(step: Int, off: Bool) {
+        tutorialStep = step
+        tutorialOff = off
+    }
+
+    private func saveTutorial(step: Int, off: Bool) {
+        guard step != tutorialStep || off != tutorialOff else { return }
+        tutorialStep = step
+        tutorialOff = off
+        onTutorialChange?(step, off)
+    }
+
+    /// Moves the shown step on (the person did what it shows, or pressed its button).
+    private func advanceTutorial(_ move: (Int) -> Int) {
+        let now = tutorial
+        guard now != Tutorial.done else { return }
+        let next = move(now)
+        if next != now { saveTutorial(step: next, off: tutorialOff) }
+    }
+
+    /// The card's own button or "Atla".
+    func tutorialNext() { advanceTutorial(Tutorial.next) }
+
+    /// The card's "Öğreticiyi kapat", Esc, or the Settings switch.
+    func setTutorialOff(_ off: Bool) { saveTutorial(step: tutorialStep, off: off) }
+
+    /// Settings → "Baştan başlat": from the first step, on the Servers page.
+    func restartTutorial() {
+        saveTutorial(step: Tutorial.restart(hostCount: hosts.count), off: false)
+        selection = ServersView.hostsPage
+    }
+
     func start() {
         guard core == nil else { return }
         guard let exe = Bundle.main.url(forAuxiliaryExecutable: "wecommander-core") else {
@@ -148,6 +196,7 @@ final class ServersModel: ObservableObject {
         guard let core else { return }
         do {
             hosts = try await core.call("hosts.list", as: [CoreHost].self)
+            hostsLoaded = true
             savedTunnels = try await core.call("tunnels.saved", as: [SavedTunnel].self)
             onChange?()
         } catch {
@@ -162,6 +211,7 @@ final class ServersModel: ObservableObject {
         var params: [String: Any] = ["label": label, "host": host, "port": port, "user": user, "authKind": authKind]
         if let jumpId { params["jumpId"] = jumpId }
         hosts = try await core.call("hosts.add", params, as: [CoreHost].self)
+        advanceTutorial(Tutorial.hostAdded)
         onChange?()
     }
 
@@ -224,6 +274,7 @@ final class ServersModel: ObservableObject {
             if let sid = result.sessionId {
                 let session = TerminalSession(id: sid, host: host)
                 sessions.append(session)
+                advanceTutorial(Tutorial.terminalOpened)
                 if let target = splitTarget, sessions.contains(where: { $0.id == target.primary }) {
                     splits[target.primary, default: []].append(sid)
                     if target.vertical { splitVertical.insert(target.primary) } else { splitVertical.remove(target.primary) }

@@ -25,6 +25,11 @@ struct ServersView: View {
                 .navigationSplitViewColumnWidth(min: 220, ideal: 240)
         } detail: {
             detail
+                .overlay(alignment: .topTrailing) {
+                    if tutorialShown {
+                        TutorialCard(model: model, step: model.tutorial, showPanel: showPanel)
+                    }
+                }
         }
         .sheet(item: $editing) { request in EditHostSheet(model: model, host: request.host) }
         .sheet(item: $model.connect) { request in ConnectSheet(model: model, request: request) }
@@ -74,6 +79,7 @@ struct ServersView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Button { showPanel() } label: { Label(L.t("Onaylar ve bu Mac"), icon: .approvals) }
                     .buttonStyle(.borderless)
+                    .tutorialRing(model.tutorial == Tutorial.ai)
                 if !model.vaultLabel.isEmpty {
                     Label(L.f("Giriş bilgileri: {0}", model.vaultLabel), icon: .key)
                         .font(.caption).foregroundStyle(.secondary)
@@ -81,6 +87,19 @@ struct ServersView: View {
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// The tutorial card: adding and connecting a server are shown on the
+    /// Servers page; the later steps anywhere but Settings.
+    private var tutorialShown: Bool {
+        switch model.tutorial {
+        case Tutorial.addServer, Tutorial.connect:
+            return model.selectedSession == nil && (model.selection == nil || model.selection == Self.hostsPage)
+        case Tutorial.status, Tutorial.ai, Tutorial.finish:
+            return model.selection != Self.settingsPage
+        default:
+            return false
         }
     }
 
@@ -264,6 +283,9 @@ struct HostsPage: View {
             }
     }
 
+    /// The first card on the page (the tutorial's "connect" ring).
+    private var firstHostId: String? { groups.first?.1.first?.id }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -280,6 +302,7 @@ struct HostsPage: View {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 10)], spacing: 10) {
                         ForEach(group.1) { host in
                             HostCard(host: host, via: model.hosts.first { $0.id == host.jumpId }?.label)
+                                .tutorialRing(model.tutorial == Tutorial.connect && host.id == firstHostId, cornerRadius: 10)
                                 .onTapGesture { model.open(host) }
                                 .contextMenu {
                                     Button(L.t("Bağlan")) { model.open(host) }
@@ -308,6 +331,7 @@ struct HostsPage: View {
                 Button { showShares = true } label: { Label(L.t("Ortak terminaller"), icon: .team) }
                 Button { Task { await model.importSSHConfig() } } label: { Label(L.t("İçe aktar"), icon: .import) }
                 Button { edit(nil) } label: { Label(L.t("Yeni sunucu"), icon: .add) }
+                    .tutorialRing(model.tutorial == Tutorial.addServer)
             }
         }
     }
@@ -825,6 +849,10 @@ struct SettingsPage: View {
                 Section(L.t("Yenilikler")) {
                     Button(L.t("Yenilikler: bu sürümde neler değişti")) { WhatsNew.showAll(model: app) }
                 }
+            }
+            Section(L.t("Öğretici")) {
+                Toggle(L.t("Öğreticiyi göster"), isOn: Binding(get: { !model.tutorialOff }, set: { model.setTutorialOff(!$0) }))
+                Button(L.t("Baştan başlat")) { model.restartTutorial() }
             }
             Section("Terminal") {
                 Stepper(value: $fontSize, in: 8...32, step: 1) { Text(L.f("Yazı boyutu: {0}", Int(fontSize))) }

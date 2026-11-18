@@ -24,10 +24,14 @@ public struct CenterSettings: Codable, Equatable {
     public var watchChosen: Bool = false
     /// The newest "Yenilikler" entry already shown (ReleaseNotes); nil: none yet.
     public var lastSeenNotes: String?
+    /// The getting-started tutorial's step (Tutorial; 0: not started yet).
+    public var tutorialStep: Int = 0
+    /// The tutorial was turned off (Settings, or the card's "Öğreticiyi kapat").
+    public var tutorialOff: Bool = false
 
     public init() {}
 
-    enum CodingKeys: String, CodingKey { case server, notifications, notificationIntroShown, openPanelOnRequest, agentKeepRunning, language, watchedHosts, watchChosen, lastSeenNotes }
+    enum CodingKeys: String, CodingKey { case server, notifications, notificationIntroShown, openPanelOnRequest, agentKeepRunning, language, watchedHosts, watchChosen, lastSeenNotes, tutorialStep, tutorialOff }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -40,6 +44,8 @@ public struct CenterSettings: Codable, Equatable {
         watchedHosts = try c.decodeIfPresent([String].self, forKey: .watchedHosts) ?? []
         watchChosen = try c.decodeIfPresent(Bool.self, forKey: .watchChosen) ?? false
         lastSeenNotes = try c.decodeIfPresent(String.self, forKey: .lastSeenNotes)
+        tutorialStep = try c.decodeIfPresent(Int.self, forKey: .tutorialStep) ?? 0
+        tutorialOff = try c.decodeIfPresent(Bool.self, forKey: .tutorialOff) ?? false
     }
 }
 

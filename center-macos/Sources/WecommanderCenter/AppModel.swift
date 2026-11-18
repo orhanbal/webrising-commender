@@ -479,6 +479,14 @@ final class AppModel: ObservableObject {
         saveSettings()
     }
 
+    /// The getting-started tutorial's step and "off" switch (ServersModel); saved without the side effects of `update`.
+    func rememberTutorial(step: Int, off: Bool) {
+        guard settings.tutorialStep != step || settings.tutorialOff != off else { return }
+        settings.tutorialStep = step
+        settings.tutorialOff = off
+        saveSettings()
+    }
+
     func sendTestNotification() {
         notifier.requestPermission { [weak self] in
             self?.notifier.showPlain(Texts.notificationTestTitle, Texts.notificationTestText)

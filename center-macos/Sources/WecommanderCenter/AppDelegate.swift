@@ -55,6 +55,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             return (self.model.gateway, token)
         }
         servers.startLibrarySync()
+        servers.loadTutorial(step: model.settings.tutorialStep, off: model.settings.tutorialOff)
+        servers.onTutorialChange = { [weak self] step, off in self?.model.rememberTutorial(step: step, off: off) }
         servers.scheduled = scheduled
         scheduled.start()
         monitorPopover.behavior = .transient
