@@ -10,6 +10,8 @@ Production releases: see [RELEASE_POLICY.md](RELEASE_POLICY.md). `main` is not a
 
 ## Backup and restore
 
+**Production (Coolify):** the `backup` service in `docker-compose.coolify.yml` dumps the database once a day into the `commender-backups` volume (custom format, `.sha256` next to each dump), checks the archive with `pg_restore --list`, then runs a restore drill: it restores the dump into a throwaway `commender_restore_drill` database on the same PostgreSQL, compares the table count with the live database and drops the throwaway database. The live database is never written. Each run logs `backup ok … restore drill ok`, `backup WARNING` (dump written, drill failed) or `backup FAILED`; read them in the service logs. Dumps older than `BACKUP_RETENTION_DAYS` (default 14) are removed. The volume is on the same server: copy dumps off the server for disaster recovery.
+
 Durable control-plane state lives in PostgreSQL. The repository includes a verified Compose backup path:
 
 ```bash

@@ -2,7 +2,7 @@
 <!-- The Microsoft Store copy (MSIX). Used only when building with
      WindowsPackageType=MSIX (CI "center-windows-store"); the zip copy stays
      unpackaged. Identity values come from Partner Center (Product identity).
-     The version is set by CI: 0.1.<build>.0. -->
+     The version is set by CI: 1.0.<build>.0. -->
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
@@ -27,15 +27,19 @@
   </Dependencies>
 
   <Resources>
-    <Resource Language="tr-TR" />
     <Resource Language="en-US" />
+    <Resource Language="tr-TR" />
+    <Resource Language="de-DE" />
+    <Resource Language="fr-FR" />
+    <Resource Language="es-ES" />
+    <Resource Language="pt-BR" />
   </Resources>
 
   <Applications>
     <Application Id="App" Executable="$targetnametoken$.exe" EntryPoint="$targetentrypoint$">
       <uap:VisualElements
         DisplayName="WECOMMANDER"
-        Description="SSH terminali, sunucu yönetimi ve yapay zekâ ile bilgisayar yönetimi"
+        Description="SSH client, server management and secure MCP for AI"
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Store\Square150x150Logo.png"
         Square44x44Logo="Assets\Store\Square44x44Logo.png">
