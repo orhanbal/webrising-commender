@@ -1007,6 +1007,9 @@ jobs:
       # The window checks look controls up by their Turkish names; the
       # "languages" step below runs the app in other languages.
       WECOMMANDER_LANGUAGE: tr
+      # The tutorial's tip covers the window for UI Automation: checked once on the first launch,
+      # off for the rest (the smoke step turns it on for that launch only).
+      WECOMMANDER_NO_TUTORIAL: '1'
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -1037,6 +1040,7 @@ jobs:
           $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'smoke-localappdata'
           New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA | Out-Null
           $env:WECOMMANDER_DEBUG_LAYOUT = '1'
+          $env:WECOMMANDER_NO_TUTORIAL = ''
           $app = Start-Process -FilePath "center-windows\publish\WecommanderCenter.exe" -ArgumentList '--open-main' -PassThru
           Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
           $root = [System.Windows.Automation.AutomationElement]::RootElement
@@ -1085,6 +1089,22 @@ jobs:
             throw "first launch: the tutorial did not show its first step"
           }
           Write-Host "first launch: the tutorial shows its first step ($opened)"
+          # The rest of the checks walk the window: start it again without the tutorial.
+          Stop-Process -Id $app.Id -Force
+          Start-Sleep -Seconds 2
+          $env:WECOMMANDER_NO_TUTORIAL = '1'
+          $app = Start-Process -FilePath "center-windows\publish\WecommanderCenter.exe" -ArgumentList '--open-main' -PassThru
+          $back = $null
+          for ($i = 0; $i -lt 40 -and -not $back; $i++) {
+            Start-Sleep -Milliseconds 750
+            foreach ($window in $root.FindAll([System.Windows.Automation.TreeScope]::Children,
+              (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $app.Id)))) {
+              $back = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants,
+                (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'Yeni sunucu')))
+              if ($back) { break }
+            }
+          }
+          if (-not $back) { throw "the main window did not come back after the tutorial check" }
           # Walk every section and press the terminal tab strip's "+": an error
           # there must never reach users (it once did).
           # Found AND drawn: a collapsed page still has its elements in the

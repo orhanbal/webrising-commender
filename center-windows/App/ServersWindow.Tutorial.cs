@@ -52,6 +52,8 @@ public sealed partial class ServersWindow
     {
         if (_coach is null || !AppWindow.IsVisible) { App.DebugLayout("tutorial: window not shown yet"); return; }
         var settings = App.Current.Settings;
+        // CI walks the window with UI Automation, which the tip's popup gets in the way of.
+        if (Environment.GetEnvironmentVariable("WECOMMANDER_NO_TUTORIAL") == "1") { _coach.Hide(); return; }
         var step = Tutorial.Current(TutorialStep, settings.TutorialOff, _c.Hosts.Count);
         TutorialStep = step;
         var target = step switch
