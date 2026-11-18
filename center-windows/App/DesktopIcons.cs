@@ -4,12 +4,13 @@ using Wecommander.Center.Core;
 namespace Wecommander.Center;
 
 /// <summary>
-/// Keeps the desktop icons where they were when the Dock takes or gives back a
+/// Keeps the desktop icons on their monitor when the Dock takes or gives back a
 /// strip of the screen. Explorer lays the icons out again whenever the work
 /// area changes and, with two monitors, can push icons onto the other screen.
-/// The positions are read from Explorer's desktop list view before the change
-/// and put back after it; an icon that would sit under the Dock is moved just
-/// out of its strip. Nothing is done when the desktop auto-arranges its icons.
+/// The positions are read from Explorer's desktop list view before the change;
+/// after it, icons that landed on another monitor are put back (just out of the
+/// Dock's strip). Icons Explorer only moved within their monitor stay as it put
+/// them. Nothing is done when the desktop auto-arranges its icons.
 /// Every step fails quietly: the desktop is never worse off than without this.
 /// </summary>
 internal static class DesktopIcons
@@ -120,9 +121,11 @@ internal static class DesktopIcons
     }
 
     /// <summary>
-    /// Puts the icons of <paramref name="before"/> back where they were. An icon whose cell
-    /// would overlap <paramref name="reserved"/> (the Dock's strip, screen pixels) is moved just
-    /// out of it, on the side of <paramref name="edge"/>. Returns how many icons were moved back.
+    /// Puts back the icons of <paramref name="before"/> that Explorer moved onto another
+    /// monitor. Icons that stayed on their monitor are left where Explorer put them (it moves
+    /// them off the Dock's strip itself). An icon put back whose cell would overlap
+    /// <paramref name="reserved"/> (the Dock's strip, screen pixels) goes just out of it.
+    /// With <paramref name="apply"/> false it only counts them. Returns how many there were.
     /// </summary>
     public static int Restore(Layout before, PixelRect? reserved, DockEdge edge, bool apply = true)
     {
@@ -130,33 +133,40 @@ internal static class DesktopIcons
         {
             var now = Read();
             if (now is null || now.ListView != before.ListView) return 0;
+            var screens = Monitors.All().Select(m => m.Bounds).ToList();
+            int Screen(int x, int y, Layout l, int cw, int ch)
+            {
+                var cx = x + l.OriginX + cw / 2; var cy = y + l.OriginY + ch / 2;
+                return screens.FindIndex(b => cx >= b.X && cx < b.X + b.Width && cy >= b.Y && cy < b.Y + b.Height);
+            }
             var current = now.Icons.ToDictionary(i => i.Key);
             var moved = 0;
             foreach (var icon in before.Icons)
             {
                 if (!current.TryGetValue(icon.Key, out var at)) continue; // deleted meanwhile
-                var (x, y) = (icon.X, icon.Y);
+                var was = Screen(icon.X, icon.Y, before, before.CellW, before.CellH);
+                var isNow = Screen(at.X, at.Y, now, now.CellW, now.CellH);
+                if (was < 0 || was == isNow) continue;
+                moved++;
+                if (!apply) continue;
+                // Back on its monitor, in now's coordinates.
+                var x = icon.X + before.OriginX - now.OriginX;
+                var y = icon.Y + before.OriginY - now.OriginY;
                 if (reserved is { } r)
                 {
-                    // Screen rectangle of the icon's cell.
-                    var left = x + before.OriginX; var top = y + before.OriginY;
-                    var right = left + before.CellW; var bottom = top + before.CellH;
-                    var overlaps = left < r.X + r.Width && right > r.X && top < r.Y + r.Height && bottom > r.Y;
+                    var left = x + now.OriginX; var top = y + now.OriginY;
+                    var overlaps = left < r.X + r.Width && left + now.CellW > r.X && top < r.Y + r.Height && top + now.CellH > r.Y;
                     if (overlaps)
                     {
                         switch (edge)
                         {
-                            case DockEdge.Top: y = r.Y + r.Height - before.OriginY + 2; break;
-                            case DockEdge.Bottom: y = r.Y - before.CellH - before.OriginY - 2; break;
-                            case DockEdge.Left: x = r.X + r.Width - before.OriginX + 2; break;
-                            case DockEdge.Right: x = r.X - before.CellW - before.OriginX - 2; break;
+                            case DockEdge.Top: y = r.Y + r.Height - now.OriginY + 2; break;
+                            case DockEdge.Bottom: y = r.Y - now.CellH - now.OriginY - 2; break;
+                            case DockEdge.Left: x = r.X + r.Width - now.OriginX + 2; break;
+                            case DockEdge.Right: x = r.X - now.CellW - now.OriginX - 2; break;
                         }
                     }
                 }
-                // Within half a cell counts as in place (the desktop may snap icons to its grid).
-                if (Math.Abs(at.X - x) <= before.CellW / 2 && Math.Abs(at.Y - y) <= before.CellH / 2) continue;
-                moved++;
-                if (!apply) continue;
                 var index = now.Icons.IndexOf(at);
                 if (index < 0) continue;
                 SendMessage(now.ListView, LvmSetItemPosition, (IntPtr)index, (IntPtr)(((y & 0xFFFF) << 16) | (x & 0xFFFF)));
@@ -197,8 +207,8 @@ internal static class DesktopIcons
                 await Task.Delay(delay);
                 if (run != _run) return; // a newer change restores them
                 var moved = Restore(before, strip, edge, apply: delay < 4000);
-                if (delay < 4000) { if (moved > 0) App.DebugLayout($"desktop icons: put {moved} back after {delay} ms"); }
-                else App.DebugLayout($"desktop icons: {moved} not where they should be after {delay} ms");
+                if (delay < 4000) { if (moved > 0) App.DebugLayout($"desktop icons: put {moved} back on their monitor after {delay} ms"); }
+                else App.DebugLayout($"desktop icons: {moved} on another monitor than before after {delay} ms");
             });
         }
         return result;

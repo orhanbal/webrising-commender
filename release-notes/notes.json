@@ -9,37 +9,37 @@
      "Dock'taki Terminal panelinde birden çok terminal sekme olarak açılır: \"+\" yeni sekme ekler, her sekme ayrı bir sunucuya bağlanabilir.",
      "Görev Yöneticisi'nde izlenen sunucular en üstte: seçince o sunucuda çalışan süreçler canlı olarak aynı panelde görünür; \"Bu bilgisayar\" listenin sonunda.",
      "Dock'taki WECOMMANDER logosu basınca Başlat düğmesi gibi hafifçe küçülür, bırakınca eski hâline döner.",
-     "Dock ekranın kenarında yer açtığında masaüstü ikonları yerinde kalır; iki monitörde ikonlar artık diğer ekrana kaymaz, Dock'un altında kalacak olanlar hemen altına alınır."
+     "Dock ekranın kenarında yer açtığında masaüstü ikonları kendi monitöründe kalır; iki monitörde ikonlar artık diğer ekrana kaymaz."
     ],
     "en": [
      "The Dock's Terminal panel opens several terminals as tabs: \"+\" adds a tab, and each tab can connect to a different server.",
      "Task Manager lists the watched servers first: choose one to see the processes running on it, live, in the same panel; \"This computer\" is last.",
      "The WECOMMANDER logo on the Dock shrinks slightly while pressed, like the Start button, and springs back when released.",
-     "When the Dock takes its strip of the screen, desktop icons stay where they were; with two monitors they no longer slide onto the other screen, and icons under the Dock move just below it."
+     "When the Dock takes its strip of the screen, desktop icons stay on their monitor; with two monitors they no longer slide onto the other screen."
     ],
     "de": [
      "Das Terminal-Panel des Docks öffnet mehrere Terminals als Tabs: „+“ fügt einen Tab hinzu, jeder Tab kann sich mit einem anderen Server verbinden.",
      "Der Task-Manager zeigt die überwachten Server zuerst: Wähle einen, um seine laufenden Prozesse live im selben Panel zu sehen; „Dieser Computer“ steht am Ende.",
      "Das WECOMMANDER-Logo im Dock wird beim Drücken wie die Start-Schaltfläche etwas kleiner und springt beim Loslassen zurück.",
-     "Wenn das Dock seinen Bildschirmstreifen belegt, bleiben die Desktopsymbole an ihrem Platz; mit zwei Monitoren rutschen sie nicht mehr auf den anderen Bildschirm, und Symbole unter dem Dock rücken direkt darunter."
+     "Wenn das Dock seinen Bildschirmstreifen belegt, bleiben die Desktopsymbole auf ihrem Monitor; mit zwei Monitoren rutschen sie nicht mehr auf den anderen Bildschirm."
     ],
     "fr": [
      "Le panneau Terminal du Dock ouvre plusieurs terminaux en onglets : « + » ajoute un onglet, et chaque onglet peut se connecter à un serveur différent.",
      "Le Gestionnaire des tâches affiche d'abord les serveurs surveillés : choisis-en un pour voir ses processus en direct dans le même panneau ; « Cet ordinateur » est en dernier.",
      "Le logo WECOMMANDER du Dock rétrécit légèrement quand on appuie dessus, comme le bouton Démarrer, et reprend sa taille au relâchement.",
-     "Quand le Dock prend sa bande d'écran, les icônes du bureau restent en place ; avec deux écrans, elles ne glissent plus vers l'autre écran, et celles sous le Dock se placent juste en dessous."
+     "Quand le Dock prend sa bande d'écran, les icônes du bureau restent sur leur écran ; avec deux écrans, elles ne glissent plus vers l'autre."
     ],
     "es": [
      "El panel Terminal del Dock abre varios terminales en pestañas: «+» añade una pestaña y cada una puede conectarse a un servidor distinto.",
      "El Administrador de tareas muestra primero los servidores vigilados: elige uno para ver en vivo sus procesos en el mismo panel; «Este equipo» va al final.",
      "El logotipo de WECOMMANDER en el Dock se encoge un poco al pulsarlo, como el botón Inicio, y vuelve a su tamaño al soltarlo.",
-     "Cuando el Dock ocupa su franja de pantalla, los iconos del escritorio se quedan donde estaban; con dos monitores ya no se desplazan a la otra pantalla y los que quedarían bajo el Dock se colocan justo debajo."
+     "Cuando el Dock ocupa su franja de pantalla, los iconos del escritorio se quedan en su monitor; con dos monitores ya no se desplazan a la otra pantalla."
     ],
     "pt-BR": [
      "O painel Terminal do Dock abre vários terminais em abas: \"+\" adiciona uma aba, e cada aba pode se conectar a um servidor diferente.",
      "O Gerenciador de Tarefas mostra primeiro os servidores monitorados: escolha um para ver ao vivo os processos dele no mesmo painel; \"Este computador\" fica por último.",
      "O logotipo do WECOMMANDER no Dock encolhe um pouco ao ser pressionado, como o botão Iniciar, e volta ao tamanho ao soltar.",
-     "Quando o Dock ocupa sua faixa da tela, os ícones da área de trabalho ficam onde estavam; com dois monitores, eles não passam mais para a outra tela, e os que ficariam sob o Dock vão logo abaixo dele."
+     "Quando o Dock ocupa sua faixa da tela, os ícones da área de trabalho ficam no seu monitor; com dois monitores, eles não passam mais para a outra tela."
     ]
    }
   },
