@@ -10,7 +10,7 @@ import type {Nav,Theme} from "../App";
 // approvals, allowlist and trust panes of the legacy /advanced console. Every
 // decision and policy change goes through the same session-only, CSRF-checked
 // and audited REST routes the legacy console used.
-type ApprovalRequest={id:string;device_id:string;requested_by:string;action_kind:string;action:Record<string,unknown>;status:string;expires_at:string;created_at:string};
+type ApprovalRequest={id:string;device_id:string;target_label?:string|null;requested_by:string;action_kind:string;action:Record<string,unknown>;status:string;expires_at:string;created_at:string};
 type PolicyDevice=Device&{trust_level?:"strict"|"standard"|"full";trust_full_until?:string|null};
 type AllowEntry={id:string;pattern:string;created_by?:string;created_at:string};
 type Trust="strict"|"standard"|"full";
@@ -45,6 +45,8 @@ export function ApprovalsPage({nav,account,checking,theme,toggle,logout}:{nav:Na
  const [busy,setBusy]=useState(false);
  const [notice,setNotice]=useState("");
  const deviceName=useMemo(()=>new Map(devices.map(d=>[d.id,d.name])),[devices]);
+ // SSH servers shared through the person's computer have no device id (Hybrid Access H3).
+ const placeName=(item:ApprovalRequest)=>deviceName.get(item.device_id)||(item.target_label?item.target_label+" · SSH":"")||item.device_id.slice(0,8);
  const load=useCallback(async()=>{
   try{
    const [approvals,deviceList]=await Promise.all([api<{items:ApprovalRequest[]}>("/api/approval-requests?status=pending&limit=100"),api<{items:PolicyDevice[]}>("/api/devices")]);
@@ -68,7 +70,7 @@ export function ApprovalsPage({nav,account,checking,theme,toggle,logout}:{nav:Na
    {!forbidden&&<Card><CardHeader><CardTitle className="flex items-center gap-2"><Clock3 className="size-5 text-[var(--accent)]" aria-hidden="true"/>{translate("Bekleyen onaylar")}{items&&items.length>0&&<Badge className="ml-1">{items.length}</Badge>}</CardTitle><CardDescription>{translate("Her onay tek kullanımlıktır ve yalnızca gösterilen işlem için geçerlidir.")}</CardDescription></CardHeader><CardContent>
     {items===null?<div className="grid gap-3" aria-busy="true"><Spinner/><Skeleton className="h-20"/><Skeleton className="h-20"/></div>
     :items.length===0?<EmptyState icon={Check} title={translate("Bekleyen onay yok")} description={translate("Yapay zekâ onay gerektiren bir işlem istediğinde burada görünür ve yöneticilere e-posta gider.")}/>
-    :<ul className="grid gap-3">{items.map(item=><li key={item.id} className="approval-item"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2 text-sm"><Badge>{item.action_kind}</Badge><span className="font-semibold">{deviceName.get(item.device_id)||item.device_id.slice(0,8)}</span><span className="muted">· {item.requested_by}</span></div>
+    :<ul className="grid gap-3">{items.map(item=><li key={item.id} className="approval-item"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2 text-sm"><Badge>{item.action_kind}</Badge><span className="font-semibold">{placeName(item)}</span><span className="muted">· {item.requested_by}</span></div>
      {operationSummary(item)&&<code className="approval-op">{operationSummary(item)}</code>}
      <details className="mt-2"><summary className="text-xs muted">{translate("Tam işlem ayrıntısı")}</summary><pre className="approval-json">{JSON.stringify(item.action,null,2)}</pre></details>
      <p className="text-xs muted mt-2">{localizedDate(item.created_at,{dateStyle:"short",timeStyle:"short"})} · {translate("Kalan süre")}: {remaining(item.expires_at)}</p></div>
@@ -81,7 +83,7 @@ export function ApprovalsPage({nav,account,checking,theme,toggle,logout}:{nav:Na
   <Dialog open={!!decision} onOpenChange={open=>{if(!open&&!busy)setDecision(null)}}><DialogContent>{decision&&<>
    <DialogTitle className="text-xl font-bold">{decision.kind==="approve"?translate("Bu işlemi onayla?"):translate("Bu işlemi reddet?")}</DialogTitle>
    <DialogDescription className="text-sm muted mt-2">{decision.kind==="approve"?translate("Onay yalnızca aşağıdaki işlem için ve bir kez geçerlidir."):translate("Yapay zekâ bu işlemi çalıştıramaz.")}</DialogDescription>
-   <div className="mt-4 grid gap-2 text-sm"><div><span className="muted">{translate("Cihaz")}: </span><strong>{deviceName.get(decision.item.device_id)||decision.item.device_id}</strong></div><div><span className="muted">{translate("İşlem")}: </span><strong>{decision.item.action_kind}</strong></div>{operationSummary(decision.item)&&<code className="approval-op">{operationSummary(decision.item)}</code>}</div>
+   <div className="mt-4 grid gap-2 text-sm"><div><span className="muted">{translate("Cihaz")}: </span><strong>{placeName(decision.item)}</strong></div><div><span className="muted">{translate("İşlem")}: </span><strong>{decision.item.action_kind}</strong></div>{operationSummary(decision.item)&&<code className="approval-op">{operationSummary(decision.item)}</code>}</div>
    <div className="flex justify-end gap-2 mt-6"><Button variant="outline" onClick={()=>setDecision(null)} disabled={busy}>{translate("Vazgeç")}</Button><Button variant={decision.kind==="approve"?"default":"danger"} onClick={decide} disabled={busy}>{busy?<Spinner label={translate("Gönderiliyor…")}/>:decision.kind==="approve"?translate("Onayla"):translate("Reddet")}</Button></div>
   </>}</DialogContent></Dialog>
  </DashboardShell>;

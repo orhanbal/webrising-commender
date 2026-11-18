@@ -506,6 +506,8 @@ public partial class App : Application
             if (RefreshNotificationSetting()) Publish();
             // Scheduled tasks on saved SSH hosts: claimed in the background, never awaited here.
             try { PollScheduledRuns(); } catch (Exception e) { LogCrash(e); }
+            // Remote AI to shared SSH hosts through this computer (Hybrid Access H3).
+            try { EnsureRemoteConnector(); } catch (Exception e) { LogCrash(e); }
             if (_link is not null) await PollLinkAsync();
             else if (Token is not null && DateTime.UtcNow - _lastSync >= SyncEvery) await SyncAsync();
             if (DateTime.UtcNow - _lastAgentCheck >= TimeSpan.FromSeconds(10)) await CheckAgentAsync();
@@ -728,7 +730,7 @@ public partial class App : Application
                 {
                     var names = Devices.ToDictionary(d => d.Id, d => d.Name);
                     foreach (var item in fresh.Take(5))
-                        NotifyRequest(item, names.GetValueOrDefault(item.DeviceId, L.T("bilinmeyen cihaz")));
+                        NotifyRequest(item, item.PlaceName(names));
                 }
                 // By default only the small Windows notification appears. The
                 // panel opens by itself when the owner asked for it, or when no
@@ -820,7 +822,7 @@ public partial class App : Application
         var names = Devices.ToDictionary(d => d.Id, d => d.Name);
         foreach (var item in others.Take(5))
         {
-            var device = names.GetValueOrDefault(item.DeviceId, L.T("bilinmeyen cihaz"));
+            var device = item.PlaceName(names);
             var what = string.IsNullOrEmpty(item.Summary) ? Texts.KindLabel(item.ActionKind) : item.Summary;
             _ = AnnounceAsync(item.Id, device, what);
         }

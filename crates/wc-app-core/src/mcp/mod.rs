@@ -12,6 +12,9 @@
 //!   approvals) and the audit.
 //! * [`clientconfig`]: adds WECOMMANDER to Claude Desktop, Claude Code,
 //!   Cursor and Codex.
+//! * [`remote`]: remote AI clients through wecommander.app with this
+//!   computer as the connector (H3): what is published, and the calls the
+//!   app hands over from the gateway.
 //!
 //! This module holds the shared state: the client allow-list, pending
 //! approvals and the endpoint status.
@@ -19,6 +22,7 @@ pub mod bridge;
 pub mod clientconfig;
 pub mod endpoint;
 pub mod redact;
+pub mod remote;
 pub mod session;
 pub mod tools;
 
@@ -87,6 +91,8 @@ pub struct Hub {
     endpoint: Mutex<EndpointInfo>,
     bridge_command: Mutex<Vec<String>>,
     audit_lock: Mutex<()>,
+    /// Remote call ids already run (each call runs once), with when.
+    pub(crate) remote_seen: Mutex<HashMap<String, i64>>,
 }
 
 impl Hub {
@@ -103,6 +109,7 @@ impl Hub {
             endpoint: Mutex::new(EndpointInfo::default()),
             bridge_command: Mutex::new(Vec::new()),
             audit_lock: Mutex::new(()),
+            remote_seen: Mutex::new(HashMap::new()),
         }
     }
 
@@ -308,6 +315,18 @@ pub fn binding(
     format!("{:x}", Sha256::digest(canonical.as_bytes()))
 }
 
+/// The exact file change an approval is for: tool, client, target and the
+/// canonical arguments (a written file's content as its SHA-256).
+pub fn binding_call(
+    tool: &str,
+    client_id: &str,
+    target_id: &str,
+    args: &serde_json::Value,
+) -> String {
+    let canonical = serde_json::json!([tool, client_id, target_id, args]).to_string();
+    format!("{:x}", Sha256::digest(canonical.as_bytes()))
+}
+
 #[derive(Debug)]
 struct Approval {
     binding: String,
@@ -427,7 +446,7 @@ impl Approvals {
 #[serde(rename_all = "camelCase")]
 pub struct Status {
     pub enabled: bool,
-    /// Remote MCP through a connector (phase H3) is not built yet.
+    /// Remote MCP with this computer as the connector (phase H3).
     pub remote_supported: bool,
     pub endpoint: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -447,7 +466,7 @@ pub fn status(state: &Arc<AppState>) -> Status {
         .unwrap_or(0);
     Status {
         enabled: info.listening,
-        remote_supported: false,
+        remote_supported: true,
         endpoint: info.path,
         error: info.error,
         bridge_command: state.mcp.bridge_command(),

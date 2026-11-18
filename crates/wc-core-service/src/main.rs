@@ -391,6 +391,12 @@ struct AiAccessArg {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct RemoteTargets {
+    #[serde(default)]
+    center_id: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AllowClient {
     id: String,
     allow: bool,
@@ -771,6 +777,14 @@ async fn dispatch(
                     a.before.as_deref(),
                 )?)
             }
+        }
+        "mcp.remoteTargets" => {
+            let a: RemoteTargets = p(params)?;
+            ok(core::mcp::remote::targets(state, &a.center_id)?)
+        }
+        "mcp.remoteCall" => {
+            let a: core::mcp::remote::RemoteCall = p(params)?;
+            ok(core::mcp::remote::call(state, a).await)
         }
         "mcp.decide" => {
             let a: Decide = p(params)?;

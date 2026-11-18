@@ -353,3 +353,58 @@ What it does **not** guarantee:
 - Any program running as the same user on this computer can reach the
   endpoint and claim any client name; it still needs the allow-list decision
   and, for commands, the person's approval.
+
+## Hybrid Access: remote AI to SSH hosts through the person's computer (H3) and SFTP writes (H4)
+
+Remote AI clients (ChatGPT, Claude.ai through `https://wecommander.app/mcp`)
+can reach a saved SSH host only when the person switched on "Uzak yapay
+zekâlar" for that host. The work is done by WECOMMANDER on the person's own
+computer (the connector); the gateway only routes.
+
+What it guarantees:
+
+- **Keys never leave the computer.** The app publishes a name, the preset
+  (readonly/approval) and the sudo mode per host (`PUT
+  /api/center/connector/targets`, Center token); never the address, user,
+  password or key. The AI sees `target_id = "ssh-" + sha256(center:host)[:24]`.
+- **Personal, not workspace-wide.** SSH targets are listed only to MCP
+  principals acting for the user who owns that computer (OAuth/session user,
+  or the creator of an API token); approval requests for them are listed to
+  and decided only by that user (`approval_owner_only` otherwise).
+- **Approvals on the server, always.** Every `process_exec`, `fs_write`,
+  `fs_mkdir`, `fs_move` and `fs_delete` on an SSH target needs a one-time
+  approval request bound to (client, target, exact arguments: command,
+  folder, timeout; a write by path, size and SHA-256 of the content), 5
+  minutes, single use; a changed byte or another client needs a new one.
+  A timed (autonomous) period never applies remotely. `readonly` targets
+  refuse commands and changes before anything is queued. The core refuses
+  any change the gateway did not mark approved, re-checks preset, sudo guard,
+  host key and exposure itself, and runs each call id once.
+- **Fail closed.** A computer that does not pick a call up within 20 s, or
+  has not polled for 45 s, answers `connector_offline` ("Bu sunucuya erişen
+  bilgisayar şu an kapalı…"); nothing waits to run later. A consumed approval
+  whose call never reached the computer is given back for the identical retry.
+- **Nothing kept.** Queued calls (command, content, output) are deleted as
+  soon as they are answered or given up; leftovers are removed by
+  housekeeping. Results are masked again on the gateway.
+- **Audit.** Every remote call writes `audit_logs` (tool, target, label,
+  computer, decision: denied / approval_pending / approval_consumed /
+  success / error with reason), never command text, file contents or output;
+  the core also writes `mcp-audit.jsonl` with origin `remote-mcp`.
+- **SFTP writes (local and remote):** at most 4 MiB per write locally, 1 MiB
+  remotely; a path that is a symbolic link is refused (never followed);
+  recursive delete lists entries without following links, refuses more than
+  10 000 entries, and never deletes `/` or the SSH user's home folder;
+  `expected_sha256` refuses stale writes/deletes; a move never replaces an
+  existing destination.
+
+What it does **not** guarantee:
+
+- The gateway is trusted to route and to enforce approvals for remote calls:
+  a compromised gateway could ask the connector to run a command on a host
+  the person shared remotely. Hosts not shared remotely are never reachable.
+- No folder boundary over SSH (as for local MCP); checks such as "is a link"
+  happen just before the write, so a process on the server racing the write
+  can still swap a path in between.
+- SFTP writes have no undo yet (H4 leaves undo for later); `expected_sha256`
+  is the guard against overwriting changed content.

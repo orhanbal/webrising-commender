@@ -128,6 +128,10 @@ export function centerMayAccess(method: string, pathname: string) {
   if (method === "PUT" && (pathname === "/api/center/team/key" || pathname === "/api/center/team/wrapped-key" ||
       pathname === "/api/center/team/library")) return true;
   if (method === "POST" && /^\/api\/approval-requests\/[0-9a-f-]{36}\/(approve|deny)$/i.test(pathname)) return true;
+  // Hybrid Access H3: the app publishes its shared SSH hosts and runs remote AI calls for them.
+  if (method === "PUT" && pathname === "/api/center/connector/targets") return true;
+  if (method === "GET" && pathname === "/api/center/connector/claim") return true;
+  if (method === "POST" && /^\/api\/center\/connector\/calls\/[0-9a-f-]{36}\/result$/i.test(pathname)) return true;
   // WECOMMANDER scheduled tasks: managed from the app, SSH runs claimed and reported by it.
   if (centerMayUseScheduledTasks(method, pathname)) return true;
   return false;

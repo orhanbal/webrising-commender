@@ -52,7 +52,7 @@ export function InstallPage({nav}:{nav:Nav}){
  useLocale();
  const [active,setActive]=useState<Client|null>(null);
  const [platform,setPlatform]=useState<Platform>("windows");
- const [expanded,setExpanded]=useState<"other"|"local"|null>(null);
+ const [expanded,setExpanded]=useState<"other"|null>(null);
  const [copied,setCopied]=useState("");
  const [downloads,setDownloads]=useState<ReleaseInfo|null>(null);
  useEffect(()=>{
@@ -77,10 +77,6 @@ export function InstallPage({nav}:{nav:Nav}){
     <div className={"install-option "+(expanded==="other"?"expanded":"")}>
      <button type="button" aria-expanded={expanded==="other"} className="install-option-head" onClick={()=>setExpanded(expanded==="other"?null:"other")}><span className="install-option-symbol"><Usb size={21}/></span><span className="install-option-copy"><strong>{translate("Başka bir MCP istemcisi mi kullanıyorsun?")}</strong><small>{translate("Cursor, VS Code ve özel AI ajanlarını aynı uzak MCP sunucusuna bağlayabilirsin.")}</small></span><ChevronDown size={19} className="install-chevron"/></button>
      {expanded==="other"&&<div className="install-option-body"><p>{translate("İstemcinin uzak HTTPS MCP sunucusu ve bearer token desteğini doğrula. Bağlantı için aşağıdaki adresi kullan; API anahtarını herkese açık dosyalara yazma.")}</p><CopyField label={translate("MCP")} value={endpoint()} onCopy={copy}/><div className="flex gap-3 mt-4 flex-wrap"><Button size="sm" onClick={()=>nav("/mcp")}>{translate("MCP anahtarı oluştur")} <ArrowRight size={15}/></Button><a className="install-link" href={project+"/blob/main/docs/QUICKSTART.md"} target="_blank" rel="noopener noreferrer">{translate("Kurulum rehberi")} <ExternalLink size={14}/></a></div></div>}
-    </div>
-    <div className={"install-option "+(expanded==="local"?"expanded":"")}>
-     <button type="button" aria-expanded={expanded==="local"} className="install-option-head" onClick={()=>setExpanded(expanded==="local"?null:"local")}><span className="install-option-symbol"><TerminalSquare size={21}/></span><span className="install-option-copy"><strong>{translate("Kendi sunucunda çalıştırmayı mı tercih ediyorsun?")}</strong><small>{translate("Ücretsiz ve açık kaynaklı self-hosted altyapıyı kur, verilerini kendi ortamında tut.")}</small></span><ChevronDown size={19} className="install-chevron"/></button>
-     {expanded==="local"&&<div className="install-option-body"><p>{translate("Docker ve Docker Compose kurulu bir sunucu üzerinde gateway'i başlat. Cihazlarına agent'ı ayrıca yükleyip eşleştir.")}</p><pre className="install-code">{"git clone "+project+".git\ncd webrising-commender\ncp .env.example .env\n# .env içindeki sırları yapılandır\ndocker compose up -d --build"}</pre><div className="flex gap-3 items-center flex-wrap mt-4"><Button size="sm" variant="outline" onClick={()=>copy("git clone "+project+".git\ncd webrising-commender\ncp .env.example .env\ndocker compose up -d --build")}><Copy size={15}/> {translate("Komutları kopyala")}</Button><a className="install-link" href={project+"/blob/main/docs/QUICKSTART.md"} target="_blank" rel="noopener noreferrer">{translate("Ayrıntılı dokümantasyon")} <ExternalLink size={14}/></a></div></div>}
     </div>
    </div>
   </section>

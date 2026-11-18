@@ -225,6 +225,20 @@ public sealed class GatewayClient(HttpClient http, string baseUrl)
     public async Task PostScheduledRunResultAsync(string token, string runId, ScheduledRunResult result, CancellationToken ct = default) =>
         await SendAsync(HttpMethod.Post, $"/api/center/scheduled-runs/{Uuid(runId)}/result", token, result.ToJson(), ct).ConfigureAwait(false);
 
+    // ---- Hybrid Access H3: this computer as the connector for its shared SSH hosts ----
+
+    public async Task PublishConnectorTargetsAsync(string token, JsonArray targets, CancellationToken ct = default) =>
+        await SendAsync(HttpMethod.Put, "/api/center/connector/targets", token, new JsonObject { ["targets"] = targets.DeepClone() }, ct).ConfigureAwait(false);
+
+    public async Task<List<ConnectorCall>> ClaimConnectorCallsAsync(string token, int waitMs, CancellationToken ct = default)
+    {
+        var node = await SendAsync(HttpMethod.Get, "/api/center/connector/claim?waitMs=" + Math.Clamp(waitMs, 0, 15_000), token, null, ct).ConfigureAwait(false);
+        return (node?["items"] as JsonArray)?.Select(ConnectorCall.From).Where(c => c is not null).Select(c => c!).ToList() ?? [];
+    }
+
+    public async Task PostConnectorResultAsync(string token, string callId, JsonNode result, CancellationToken ct = default) =>
+        await SendAsync(HttpMethod.Post, $"/api/center/connector/calls/{Uuid(callId)}/result", token, result.DeepClone(), ct).ConfigureAwait(false);
+
     /// <summary>Ids are uuids; anything else never reaches the URL.</summary>
     private static string Uuid(string id) => Guid.TryParse(id, out var guid)
         ? guid.ToString("D")
