@@ -25,11 +25,12 @@ enum TaskManagerWindows {
             return window
         }
         let m = TaskManagerModel()
-        let w = NSWindow(contentViewController: NSHostingController(rootView: TaskManagerView(model: m)))
+        let hosting = NSHostingController(rootView: TaskManagerView(model: m))
+        let w = NSWindow(contentViewController: hosting)
         w.title = L.t("Görev Yöneticisi")
         w.setContentSize(NSSize(width: 1040, height: 680))
         w.contentMinSize = NSSize(width: 760, height: 460)
-        w.toolbarStyle = .unified
+        WindowChrome.apply(w, hosting: hosting, id: "taskmanager")
         w.isReleasedWhenClosed = false
         w.setFrameAutosaveName("WecommanderTaskManager")
         let d = ServerWindowDelegate { TaskManagerWindows.model?.stop() }

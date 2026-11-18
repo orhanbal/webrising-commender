@@ -5,6 +5,33 @@ enum ReleaseNotesData {
 {
  "releases": [
   {
+   "id": "2026-11-18-macos",
+   "date": "2026-11-18",
+   "platforms": [
+    "macos"
+   ],
+   "items": {
+    "tr": [
+     "Pencereler macOS'un kendi uygulamaları gibi: yan menü pencerenin tepesine kadar uzanır, kapatma düğmeleri menünün içinde, sayfa başlığı araç çubuğunda."
+    ],
+    "en": [
+     "Windows look like macOS's own apps: the sidebar runs to the top of the window, the close buttons sit inside it, and the page title is in the toolbar."
+    ],
+    "de": [
+     "Die Fenster sehen aus wie die macOS-eigenen Apps: Die Seitenleiste reicht bis oben, die Fenstertasten sitzen darin, der Seitentitel steht in der Symbolleiste."
+    ],
+    "fr": [
+     "Les fenêtres ressemblent aux apps de macOS : la barre latérale monte jusqu'en haut, les boutons de fermeture sont dedans et le titre de la page est dans la barre d'outils."
+    ],
+    "es": [
+     "Las ventanas se ven como las apps de macOS: la barra lateral llega arriba del todo, los botones de cerrar están dentro y el título de la página va en la barra de herramientas."
+    ],
+    "pt-BR": [
+     "As janelas parecem os apps do próprio macOS: a barra lateral vai até o topo, os botões de fechar ficam dentro dela e o título da página fica na barra de ferramentas."
+    ]
+   }
+  },
+  {
    "id": "2026-11-18-windows-tabs",
    "date": "2026-11-18",
    "platforms": [
