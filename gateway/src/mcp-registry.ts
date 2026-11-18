@@ -49,6 +49,12 @@ export function registryServerJson(origin: string) {
   };
 }
 
+/** Public copy of the listing, for directories and people who want to read it. */
+export const SERVER_JSON_PATH = "/server.json";
+export function serverJsonText(origin: string) {
+  return JSON.stringify(registryServerJson(origin), null, 2) + "\n";
+}
+
 /** Signs the current time as the publisher CLI does (RFC 3339 UTC, Ed25519, hex). */
 export function signedLogin(origin: string, secret: string, now = new Date()) {
   const timestamp = now.toISOString().replace(/\.\d{3}Z$/, "Z");

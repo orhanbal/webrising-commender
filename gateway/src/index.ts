@@ -1,6 +1,6 @@
 import zlib from "node:zlib";
 import { announcePages, indexNowKey, shouldAnnounce } from "./indexnow.js";
-import { publishToRegistry, registryAuthRecord, REGISTRY_LISTING_VERSION } from "./mcp-registry.js";
+import { publishToRegistry, registryAuthRecord, REGISTRY_LISTING_VERSION, SERVER_JSON_PATH, serverJsonText } from "./mcp-registry.js";
 import { contentPagePaths, llmsFullTxt, llmsTxt, pageByPath, pageJsonLd, pageNav, renderPageHtml, robotsTxt, sitemapXml } from "./site-content.js";
 import { notifyAutonomy, notifyPermissionChange, notifyTrustChange } from "./approval-notify.js";
 import { MAX_ALLOWLIST_ENTRIES, normalizePattern } from "./command-allowlist.js";
@@ -681,6 +681,13 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/.well-known/mcp-registry-auth") {
       const body = Buffer.from(registryAuthRecord(process.env.APPROVAL_SIGNING_SECRET || ""), "utf8");
       res.writeHead(200, { ...securityHeaders(), "content-type": "text/plain; charset=utf-8", "content-length": body.length, "cache-control": "public, max-age=3600" });
+      return void res.end(req.method === "HEAD" ? undefined : body);
+    }
+    // The MCP Registry listing (server.json) at a stable public URL.
+    if ((req.method === "GET" || req.method === "HEAD") && url.pathname === SERVER_JSON_PATH) {
+      const body = Buffer.from(serverJsonText(publicBaseUrl.replace(/\/$/, "")), "utf8");
+      res.writeHead(200, { ...securityHeaders(), "content-type": "application/json; charset=utf-8", "content-length": body.length,
+        "cache-control": "public, max-age=3600", "access-control-allow-origin": "*", "content-security-policy": "default-src 'none'; frame-ancestors 'none'" });
       return void res.end(req.method === "HEAD" ? undefined : body);
     }
     // IndexNow ownership proof: the key file Bing fetches after an announcement.

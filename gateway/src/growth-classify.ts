@@ -193,7 +193,7 @@ export function pageViewIncrements(input: { path: string; referrer?: string | nu
 
 /** The part of a crawler request that is counted: discovery files, public pages, MCP, or "other". */
 export function crawlerPathKey(path: string): string {
-  if (["/llms.txt", "/llms-full.txt", "/robots.txt", "/sitemap.xml", "/mcp"].includes(path)) return path;
+  if (["/llms.txt", "/llms-full.txt", "/robots.txt", "/sitemap.xml", "/server.json", "/mcp"].includes(path)) return path;
   if (path.startsWith("/.well-known/")) return "/.well-known/*";
   if (path.startsWith("/assets/") || path.startsWith("/modern/assets/") || path.startsWith("/api/public/brand")) return "assets";
   return normalizePagePath(path) ?? "other";

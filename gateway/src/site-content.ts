@@ -49,6 +49,7 @@ export const productSummary =
   "WECOMMANDER is a desktop SSH client and server management app for Windows and macOS (SSH, SFTP, tunnels, snippets, disk cleanup, live monitoring, scheduled tasks, end-to-end encrypted sync) and a remote MCP (Model Context Protocol) server that lets AI assistants such as Claude, ChatGPT and Cursor use the terminals and files of your own Windows, macOS and Linux machines through one MCP URL, with human approval for risky actions, per-device limits and a full audit log.";
 
 const facts: string[] = [
+  "Current release: WECOMMANDER 1.0 (November 2026), the desktop app for Windows and macOS, the agent and the hosted remote MCP server.",
   "Desktop app for Windows 10/11 and macOS (Linux preview): saved hosts with groups, tabbed and split terminals, SFTP file manager, local/remote/SOCKS tunnels, jump hosts, Telnet, serial ports and Mosh, snippets, autocomplete, broadcast typing, session logs and themes.",
   "Server management without installing anything on the server: overview, what fills the disk, safe cleanup (old logs, package caches, Docker build cache and unused images, per Docker daemon including rootless Docker), processes and zombie fixes.",
   "Two app modes on Windows: Dock mode puts the WECOMMANDER Dock on a screen edge, looking like the Windows taskbar, with live CPU, memory and disk charts for a server; Task Manager, Tasks, Terminal, approvals and settings open as drop-down panels from it. Classic mode runs the app in its windows without a Dock.",
@@ -585,15 +586,19 @@ export function sitemapXml(origin: string, lastModified: string) {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join("\n")}\n</urlset>\n`;
 }
 
+/** app.wecommander/wecommander for https://wecommander.app (same rule as the MCP Registry listing). */
+const registryName = (origin: string) => `${new URL(origin).hostname.split(".").reverse().join(".")}/wecommander`;
+
 /** https://llmstxt.org: a short Markdown map of the site for language models. */
 export function llmsTxt(origin: string) {
   const sections = (["Product", "Docs", "Guides"] as const).map((section) =>
     `## ${section}\n\n` + publicPages.filter((p) => p.section === section && !p.docGroup)
       .map((p) => `- [${p.heading}](${origin}${p.path}): ${p.description}`).join("\n"));
+  const connect = `Remote MCP server: ${origin}/mcp (Streamable HTTP, OAuth 2.1 sign-in). MCP Registry name: ${registryName(origin)} (listing: ${origin}/server.json).`;
   const documentation = `## Documentation (A to Z)\n\nOne page per topic; the index is ${origin}/docs.\n\n` + docGroups.map((group) =>
     `### ${group}\n\n` + docPages.filter((p) => p.docGroup === group)
       .map((p) => `- [${p.heading}](${origin}${p.path}): ${p.description}`).join("\n")).join("\n\n");
-  return `# ${productName}\n\n> ${productSummary}\n\nKey facts:\n\n${facts.map((f) => `- ${f}`).join("\n")}\n\n${sections.join("\n\n")}\n\n${documentation}\n\n## Optional\n\n- [Full text of the public pages and the documentation](${origin}/llms-full.txt)\n- [Privacy](${origin}/privacy)\n- [Terms](${origin}/terms)\n`;
+  return `# ${productName}\n\n> ${productSummary}\n\n${connect}\n\nKey facts:\n\n${facts.map((f) => `- ${f}`).join("\n")}\n\n${sections.join("\n\n")}\n\n${documentation}\n\n## Optional\n\n- [Full text of the public pages and the documentation](${origin}/llms-full.txt)\n- [Privacy](${origin}/privacy)\n- [Terms](${origin}/terms)\n`;
 }
 
 function blockToMarkdown(block: Block, origin: string) {
