@@ -135,11 +135,11 @@ One surface, not `ssh_*` copies.
 
 | ID | Scope |
 |---|---|
-| H0 | This document in docs/; README self-hosting wording aligned with the product policy |
-| H1 | Target model: `aiAccess` on hosts (core + Windows/mac models), `targets_list`, capability map |
-| H2 | Local MCP in wecommander-core: bridge, client allow-list, in-app approvals, SSH read tools + approved exec, audit; Windows UI (AI access section, explanations, setup helper) |
-| H3 | Remote MCP via “Bu bilgisayar” connector: target publish, gateway routing, approvals |
-| H4 | SFTP write tools with approvals and undo where possible |
+| H0 | **Done.** This document in docs/; README self-hosting wording aligned with the product policy |
+| H1 | **Done.** Target model: `aiAccess` on hosts (core + Windows/mac models), `targets_list`, capability map |
+| H2 | **Done.** Local MCP in wecommander-core: bridge, client allow-list, in-app approvals, SSH read tools + approved exec, audit; Windows UI (AI access section, explanations, setup helper) |
+| H3 | **Done.** Remote MCP via “Bu bilgisayar” connector: target publish, gateway routing, approvals (see §8) |
+| H4 | **Done** (no undo yet). SFTP write tools `fs_write`, `fs_mkdir`, `fs_move`, `fs_delete` with approvals, local and remote |
 | H5 | Always-on connector (agent `--ssh-connector`), headless vault |
 | H6 | Unified server inventory + “Ajanı SSH ile kur” |
 | H7 | Central signed audit sync, session recording |
@@ -172,3 +172,36 @@ unknown local client refused until allowed.
 - `mcp.decide { approvalId, approve }`.
 - Local audit: `<data-dir>/mcp-audit.jsonl` (tool, target, risk, outcome, client, time; never file
   contents or command output).
+
+
+## 8. As built: H3 (remote through this computer) and H4 (SFTP writes)
+
+- **Connector id.** Turning remote access on in the Windows app stores this computer's Management
+  Center id as `aiAccess.connector` (an older `this-computer` value is served by any signed-in
+  computer that has the host). `mcp.status.remoteSupported` is `true`.
+- **Core RPC** (CORE_PROTOCOL.md): `mcp.remoteTargets {centerId}` → what to publish
+  (`hostId, name, preset, sudo, capabilities`; no address, user or key); `mcp.remoteCall {callId,
+  centerId, client, tool, args, approved}` → `{ok, result}` / `{ok:false, error, message}`. The
+  core re-checks exposure (`remote` + connector), host key, readonly, sudo guard and limits,
+  refuses changes without `approved` (`approval_required`) and runs each `callId` once.
+- **Gateway** (`gateway/src/ssh-connector.ts`): `PUT /api/center/connector/targets`,
+  `GET /api/center/connector/claim?waitMs≤15000` (long poll; marks the computer online),
+  `POST /api/center/connector/calls/:id/result` (Center token only). MCP: `targets_list` lists
+  agent devices (`kind: "agent"`, `path_policy: "enforced"`) and the caller's own SSH targets
+  (`kind: "ssh"`, `target_id` `ssh-<24 hex>`, `online`, `preset`, `tools`); `fs_list`, `fs_read`,
+  `fs_stat`, `server_overview`, `server_disk_usage`, `server_processes`, `process_exec`,
+  `fs_write`, `fs_mkdir`, `fs_move`, `fs_delete` take `target` (or `device_id`); other tools answer
+  `unsupported_for_target`.
+- **Approvals.** Remote changes always need the owner's one-time approval (5 min, single use,
+  bound to client + target + exact arguments; a write by path, size and SHA-256). Timed autonomy
+  is local only. The request appears in the app's approval notifications and on the web
+  Approvals page with the server's name (`target_label`, `device_id` is `""`).
+- **Offline.** No poll within 45 s, or no claim within 20 s: `connector_offline` with
+  “Bu sunucuya erişen bilgisayar şu an kapalı…”; an approval consumed for an undelivered call is
+  given back.
+- **Limits.** Remote reads ≤ 1 MiB and writes ≤ 1 MiB (gateway body limit); local reads and writes
+  ≤ 4 MiB. Writes refuse a symbolic link as the path, deletes never follow links, refuse `/` and the
+  home folder and more than 10 000 entries.
+- **macOS:** the Mac app has no AI access editor yet (H1/H2 UI is Windows-only); it decodes the
+  new approval rows unchanged (`device_id` stays a string). Remote access for hosts on a Mac
+  needs the Mac connector loop later.

@@ -112,13 +112,15 @@ connection.
 | `library.export` | – | `{json}`: hosts (groups, tunnels, terminal options), snippets, trusted host keys; no passwords, no private keys, no key files |
 | `library.import` | `json` | `{hosts, snippets, knownHosts, skipped}`; only adds what is new |
 
-| `hosts.setAiAccess` | `id, aiAccess: {local, remote, connector ("this-computer"\|id), preset ("readonly"\|"approval"\|"timed"), timedUntil (RFC 3339\|null), sudo ("never"\|"sudoers")}` (missing fields: defaults, all off) | `[Host]`. Switching `local`/`remote` on is refused unless the host is SSH (`not_ssh:`; Telnet, serial and Mosh never), its host key is already trusted (`host_key_untrusted:`; never trust-on-first-use) and it logs in without asking (`needs_credential:`: a saved password, a key that opens without a typed passphrase, or, for a host without a key of its own and without a jump host, this computer's unencrypted `~/.ssh` keys or SSH agent; a missing key file or a key needing a passphrase is refused). `remote: true` answers `remote_not_supported:` until phase H3. `timed` needs `timedUntil` in the future and at most 8 h ahead (`invalid_timed_until:`); other presets drop it. Also `invalid_preset:`, `invalid_sudo:`, `invalid_connector:`, `host_not_found:`. Turning access off always works; the default is not stored. Host has `aiAccess` (always present, all off when never set). Synced with the personal E2E library (whole host, same three-way merge as other host options); never part of the team library or a backup file (imports arrive with AI access off) |
-| `mcp.status` | – | `{enabled, remoteSupported (false until H3), endpoint, error?, bridgeCommand: [exe, "--mcp-stdio", ...], clients: [Client], targets}`; `enabled` is true when this core listens on the endpoint; `error` says why not (another core owns it, `--no-mcp`, folder not private) |
+| `hosts.setAiAccess` | `id, aiAccess: {local, remote, connector ("this-computer"\|id), preset ("readonly"\|"approval"\|"timed"), timedUntil (RFC 3339\|null), sudo ("never"\|"sudoers")}` (missing fields: defaults, all off) | `[Host]`. Switching `local`/`remote` on is refused unless the host is SSH (`not_ssh:`; Telnet, serial and Mosh never), its host key is already trusted (`host_key_untrusted:`; never trust-on-first-use) and it logs in without asking (`needs_credential:`: a saved password, a key that opens without a typed passphrase, or, for a host without a key of its own and without a jump host, this computer's unencrypted `~/.ssh` keys or SSH agent; a missing key file or a key needing a passphrase is refused). `remote: true` has the same preconditions; the app stores its own Management Center id as `connector` (H3). `timed` needs `timedUntil` in the future and at most 8 h ahead (`invalid_timed_until:`); other presets drop it. Also `invalid_preset:`, `invalid_sudo:`, `invalid_connector:`, `host_not_found:`. Turning access off always works; the default is not stored. Host has `aiAccess` (always present, all off when never set). Synced with the personal E2E library (whole host, same three-way merge as other host options); never part of the team library or a backup file (imports arrive with AI access off) |
+| `mcp.status` | – | `{enabled, remoteSupported (true since H3), endpoint, error?, bridgeCommand: [exe, "--mcp-stdio", ...], clients: [Client], targets}`; `enabled` is true when this core listens on the endpoint; `error` says why not (another core owns it, `--no-mcp`, folder not private) |
 | `mcp.clients` | – | `[Client]` = `[{id, name, version, allowed, decided, firstSeen, lastSeen}]` (times RFC 3339). A client is identified by the `clientInfo` name it sent in `initialize` (self-declared); `version` is the last one it reported and is updated on each connection, a new version does not ask again |
 | `mcp.allowClient` | `id, allow` | `[Client]`; remembered in `<data dir>/mcp-clients.json`. A denied client is refused at once (`client_denied`) until forgotten. Unknown id: `unknown_client:` |
 | `mcp.forgetClient` | `id` | `[Client]`; the client is asked about again on its next connection |
 | `mcp.configFor` | `client` (`claude-desktop`, `claude-code`, `cursor`, `codex`) | `{path, before, after, changed}`: the client's MCP config and what `mcp.writeConfig` would make of it (nothing written). Claude Desktop `%APPDATA%\Claude\claude_desktop_config.json` / `~/Library/Application Support/Claude/claude_desktop_config.json` / `~/.config/Claude/…`; Claude Code `~/.claude.json` (user scope, `{type: "stdio", command, args, env}`); Cursor `~/.cursor/mcp.json`; Codex `$CODEX_HOME/config.toml` or `~/.codex/config.toml` (`[mcp_servers.wecommander]`). The entry is `mcpServers.wecommander = {command: bridgeCommand[0], args: bridgeCommand[1..]}`; every other entry and setting stays (JSON keeps its key order and the exact text of every other value, so the diff shows only our entry; TOML keeps its comments and layout). Errors: `unknown_client:`, `config_unreadable:`, `config_invalid:` (not valid JSON/TOML, or `mcpServers` not an object: the file is never overwritten) |
 | `mcp.writeConfig` | `client, before?` | `{path, backup, changed}`: writes the merged file atomically (temp file + rename) after copying the old one to `<file>.bak`. With `before` (the text `mcp.configFor` returned and the person saw) a file changed meanwhile is refused with `config_changed:`. `config_write_failed:` on I/O errors |
+| `mcp.remoteTargets` | `centerId` | `[{hostId, name, preset ("readonly"\|"approval"; timed counts as approval remotely), sudo, capabilities}]`: the hosts with `aiAccess.remote` this computer serves as connector `centerId` (connector equal to it, or `this-computer`). Never the address, user or credential; the app publishes this to the gateway (Hybrid Access H3). Empty `centerId`: `[]` |
+| `mcp.remoteCall` | `callId, centerId, client, tool, args, approved` | `{ok: true, result}` or `{ok: false, error, message}`: one remote AI call the app claimed from the gateway, run like a local MCP call with origin `remote-mcp` (audit, `mcp-activity` with `origin`). The core re-checks that `args.target` is a host shared remotely through `centerId`, the host key, readonly, the sudo guard and limits; a command or file change without `approved: true` answers `approval_required` (approvals for remote calls live on the gateway; timed autonomy never applies remotely). Each `callId` runs once (`duplicate_call`) |
 | `mcp.decide` | `approvalId, approve` | `null`; the person's answer to `mcp-approval`. Errors: `unknown_approval:`, `approval_expired:`, `approval_used:`, `approval_decided:` |
 
 `Host` = `{id, label, target, authKind, savedSecret, keyPath, jumpId, trustedKey, aiAccess, ...}`.
@@ -178,7 +180,14 @@ never the address, user or credential); `fs_list {path}` (≤ 1000 entries;
 `fs_stat {path}` over SFTP; `server_overview`, `server_disk_usage {path}`,
 `server_processes` (the fixed `wc-server` scripts); `process_exec {command,
 cwd, timeout_ms}` (1–600 s, default 30 s; last 64 KiB of output; secrets
-masked). `list_directory`, `read_file`, `get_file_info` are accepted as
+masked); since H4 `fs_write {path, content_base64, create_parents,
+expected_sha256}` (≤ 4 MiB; a symbolic link as the path is refused),
+`fs_mkdir {path, recursive}`, `fs_move {source, destination}` (the
+destination must not exist), `fs_delete {path, recursive, expected_sha256}`
+(links never followed, ≤ 10 000 entries, `/` and the home folder refused):
+each is a change that needs the in-app approval (event `mcp-approval` with
+`tool` and the exact operation in `command`, e.g. `write 11 B to /srv/x
+(sha256 …)`) unless a timed period runs, and is refused on readonly. `list_directory`, `read_file`, `get_file_info` are accepted as
 aliases. Tool errors are `isError` results whose text reads `code: sentence`
 and whose `structuredContent` is `{error: code, message}`.
 
@@ -189,8 +198,11 @@ Tool error codes: `target_not_exposed` (unknown or not exposed, same answer),
 `unsupported_for_target`, `unknown_tool`, `needs_credential`,
 `host_key_unknown`, `host_key_changed`, `connect_failed`, `exec_failed`,
 `sftp_failed`, `fs_error`, `file_too_large`, `server_error`,
-`wecommander_not_running` (bridge). Reserved for later phases:
-`connector_offline` (H3).
+`wecommander_not_running` (bridge); H3/H4: `approval_required`,
+`duplicate_call`, `invalid_call`, `invalid_path`, `invalid_content`,
+`invalid_sha256`, `stale_content`, `symlink_refused`, `destination_exists`,
+`folder_not_empty`, `protected_path`, `too_many_entries`. The gateway adds
+`connector_offline`, `connector_timeout`, `target_not_found` for remote calls.
 
 Local audit: `<data dir>/mcp-audit.jsonl`, one JSON object per call
 `{time, origin: "local-mcp", client, clientVersion, tool, target,
