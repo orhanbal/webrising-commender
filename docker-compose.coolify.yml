@@ -14,6 +14,52 @@ services:
       timeout: 3s
       retries: 20
 
+  # Daily PostgreSQL backup with a restore drill: dump (custom format), check the
+  # archive, restore it into a throwaway database on the same server, compare
+  # the table count with the live database, drop the throwaway database. Never
+  # touches the live database. Keeps BACKUP_RETENTION_DAYS days of its own dumps.
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - commender-backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        umask 077
+        q() { psql -h postgres -U commender -v ON_ERROR_STOP=1 -qtAX "$$@"; }
+        tables="select count(*) from information_schema.tables where table_schema='public'"
+        while true; do
+          ts=$$(date -u +%Y%m%dT%H%M%SZ)
+          f=/backups/commender-$$ts.dump
+          if pg_dump -h postgres -U commender -d commender --format=custom --no-owner --no-acl -f "$$f.partial" \
+             && [ -s "$$f.partial" ] && pg_restore --list "$$f.partial" >/dev/null; then
+            mv "$$f.partial" "$$f"
+            sha256sum "$$f" > "$$f.sha256"
+            live=$$(q -d commender -c "$$tables")
+            if q -d postgres -c "drop database if exists commender_restore_drill" \
+               && q -d postgres -c "create database commender_restore_drill" \
+               && pg_restore -h postgres -U commender -d commender_restore_drill --no-owner --no-acl --exit-on-error "$$f" \
+               && restored=$$(q -d commender_restore_drill -c "$$tables") && [ "$$restored" = "$$live" ]; then
+              echo "backup ok: $$f ($$(du -h "$$f" | cut -f1)), restore drill ok: $$restored tables"
+            else
+              echo "backup WARNING: $$f was written but the restore drill failed (live $$live tables, restored $${restored:-?})"
+            fi
+            q -d postgres -c "drop database if exists commender_restore_drill" || true
+            find /backups -name 'commender-*.dump*' -type f -mtime +"$$BACKUP_RETENTION_DAYS" -delete
+          else
+            rm -f "$$f.partial"
+            echo "backup FAILED at $$ts"
+          fi
+          sleep 86400
+        done
+
   gateway:
     build:
       context: ./gateway
@@ -103,3 +149,4 @@ services:
 
 volumes:
   commender-postgres:
+  commender-backups:
