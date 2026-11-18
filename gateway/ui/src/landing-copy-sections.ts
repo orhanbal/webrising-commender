@@ -53,7 +53,6 @@ export const landingCopySections = [
       "Seçilenleri temizle",
       "çevrimiçi",
       "Görev Yöneticisi",
-      "Görevler",
       "Windows görev çubuğu gibi ekranın kenarında: sabit, otomatik gizlenen ya da yüzen. Görev Yöneticisi, Görevler ve Terminal Dock'tan açılan panellerde.",
       "Sunucu işlerinin hepsi.",
       "Yanında yapay zekâ.",

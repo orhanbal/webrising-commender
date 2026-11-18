@@ -145,7 +145,7 @@ function Showcase({copy}:{copy:(s:string)=>string}){
    {tab==="dock"&&<div className="app-body dock-demo">
     <div className="dock-bar"><img className="dock-logo" src="/api/public/brand/favicon" alt="" aria-hidden="true"/><span className="dock-server"><i className="dot ok"/>ubuntu-prod<small>{copy("çevrimiçi")}</small></span>
      {[["CPU","%62","var(--success)"],["RAM","%78","#f59e0b"],["Disk","%91","#ef4444"]].map(([n,v,c],i)=><span key={n} className="dock-meter"><small>{n} {v}</small><div className="spark-track"><div className="spark-flow"><Spark points={i===0?ago:i===1?ago.map(x=>x+16):ago.map(x=>x+38)} color={c}/><Spark points={i===0?ago:i===1?ago.map(x=>x+16):ago.map(x=>x+38)} color={c}/></div></div></span>)}
-     <span className="dock-btn"><Activity size={15} aria-hidden="true"/>{copy("Görev Yöneticisi")}</span><span className="dock-btn"><CalendarClock size={15} aria-hidden="true"/>{copy("Görevler")}</span><span className="dock-btn"><TerminalSquare size={15} aria-hidden="true"/>Terminal</span></div>
+     <span className="dock-btn"><Activity size={15} aria-hidden="true"/>{copy("Görev Yöneticisi")}</span><span className="dock-btn"><TerminalSquare size={15} aria-hidden="true"/>Terminal</span></div>
     <div className="dock-caption"><p>{copy("Windows görev çubuğu gibi ekranın kenarında: sabit, otomatik gizlenen ya da yüzen. Görev Yöneticisi, Görevler ve Terminal Dock'tan açılan panellerde.")}</p></div>
    </div>}
    {tab==="terminal"&&<div className="app-body term-demo">
