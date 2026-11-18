@@ -8,6 +8,8 @@ public sealed class ApprovalRequest
 {
     [JsonPropertyName("id")] public string Id { get; set; } = "";
     [JsonPropertyName("device_id")] public string DeviceId { get; set; } = "";
+    /// <summary>A saved SSH server shared through a computer (Hybrid Access H3): no device, a label instead.</summary>
+    [JsonPropertyName("target_label")] public string? TargetLabel { get; set; }
     [JsonPropertyName("action_kind")] public string ActionKind { get; set; } = "";
     [JsonPropertyName("action")] public JsonElement Action { get; set; }
     [JsonPropertyName("expires_at")] public DateTimeOffset ExpiresAt { get; set; }
@@ -15,6 +17,12 @@ public sealed class ApprovalRequest
 
     /// <summary>The exact thing the approval allows: command, path or name.</summary>
     public string Summary => ActionSummary.From(Action);
+
+    /// <summary>Where it runs: the device's name, or the SSH server's ("web-1 · SSH").</summary>
+    public string PlaceName(IReadOnlyDictionary<string, string> devices) =>
+        !string.IsNullOrEmpty(DeviceId) && devices.TryGetValue(DeviceId, out var name) ? name
+        : !string.IsNullOrWhiteSpace(TargetLabel) ? TargetLabel + " · SSH"
+        : L.T("bilinmeyen cihaz");
 }
 
 public sealed class Device
@@ -83,6 +91,17 @@ public static class ActionSummary
         if (action.ValueKind != JsonValueKind.Object) return "";
         if (action.TryGetProperty("dataBase64", out var input) && input.ValueKind == JsonValueKind.String)
             return TerminalInput(input.GetString() ?? "");
+        // SSH targets (Hybrid Access H4): a move shows both ends, a write its size and content hash.
+        if (action.TryGetProperty("source", out var from) && from.ValueKind == JsonValueKind.String &&
+            action.TryGetProperty("destination", out var to) && to.ValueKind == JsonValueKind.String)
+            return $"{from.GetString()} → {to.GetString()}";
+        if (action.TryGetProperty("path", out var written) && written.ValueKind == JsonValueKind.String &&
+            action.TryGetProperty("sha256", out var hash) && hash.ValueKind == JsonValueKind.String &&
+            action.TryGetProperty("size", out var size) && size.ValueKind == JsonValueKind.Number)
+        {
+            var h = hash.GetString() ?? "";
+            return $"{written.GetString()} ({size.GetRawText()} B, sha256 {(h.Length > 12 ? h[..12] : h)}…)";
+        }
         foreach (var key in new[] { "command", "path", "source", "name", "pid", "taskId", "sessionId" })
         {
             if (!action.TryGetProperty(key, out var value)) continue;

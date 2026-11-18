@@ -1338,5 +1338,10 @@
  "Yenilikler": "Nouveautés",
  "Henüz yenilik notu yok.": "Pas encore de nouveautés.",
  "WECOMMANDER'da yenilikler": "Nouveautés de WECOMMANDER",
- "Yenilikler: bu sürümde neler değişti": "Nouveautés : ce qui a changé dans cette version"
+ "Yenilikler: bu sürümde neler değişti": "Nouveautés : ce qui a changé dans cette version",
+ "Bilgisayarın açık ve WECOMMANDER çalışıyorken, Claude/ChatGPT bu sunucuya senin bilgisayarın üzerinden erişir; anahtarlar bilgisayarından çıkmaz. Komutlar her seferinde onay ister.": "Tant que ton ordinateur est allumé et que WECOMMANDER tourne, Claude/ChatGPT accèdent à ce serveur via ton ordinateur ; tes clés ne le quittent jamais. Chaque commande demande une approbation.",
+ "Uzak erişim için önce bu uygulamada WECOMMANDER hesabınla oturum aç.": "Pour l'accès à distance, connecte-toi d'abord à ton compte WECOMMANDER dans cette application.",
+ "Bu sunucunun uzak erişimini başka bir bilgisayarındaki WECOMMANDER sağlıyor; o bilgisayar açıkken çalışır.": "L'accès à distance à ce serveur est assuré par WECOMMANDER sur un autre de tes ordinateurs ; il fonctionne tant que cet ordinateur est allumé.",
+ "başka bir bilgisayar": "un autre ordinateur",
+ "Bu sunucuya erişen bilgisayar şu an kapalı; uzak yapay zekâ bu sunucuya şu an ulaşamaz.": "L'ordinateur qui accède à ce serveur est éteint pour le moment ; l'IA distante ne peut pas atteindre ce serveur actuellement."
 }

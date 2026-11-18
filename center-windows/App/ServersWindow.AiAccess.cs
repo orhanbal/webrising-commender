@@ -159,11 +159,21 @@ public sealed partial class ServersWindow
         panel.Children.Add(local);
         panel.Children.Add(HelpText(AiAccessText.LocalHelp));
 
-        var remote = new ToggleSwitch { Header = AiAccessText.RemoteTitle, IsOn = stored.Remote, IsEnabled = canEnable || stored.Remote, OnContent = L.T("Açık"), OffContent = L.T("Kapalı"), Margin = new Thickness(0, 6, 0, 0) };
+        // Remote (H3): through this computer; needs the app signed in (its Center id is the connector).
+        var centerId = App.Current.Me?.CenterId;
+        var signedIn = App.Current.Token is not null;
+        var remoteAllowed = _c.RemoteAiSupported && signedIn;
+        var remote = new ToggleSwitch { Header = AiAccessText.RemoteTitle, IsOn = stored.Remote, IsEnabled = (canEnable && remoteAllowed) || stored.Remote, OnContent = L.T("Açık"), OffContent = L.T("Kapalı"), Margin = new Thickness(0, 6, 0, 0) };
         panel.Children.Add(remote);
         panel.Children.Add(HelpText(AiAccessText.RemoteHelp));
-        if (!_c.RemoteAiSupported)
-            panel.Children.Add(new TextBlock { Text = AiAccessText.RemoteNotYet, TextWrapping = TextWrapping.Wrap, FontSize = 12, FontStyle = Windows.UI.Text.FontStyle.Italic });
+        string? remoteNote = !_c.RemoteAiSupported ? AiAccessText.RemoteNotYet
+            : !signedIn ? AiAccessText.RemoteNeedsSignIn
+            : stored.Remote && !AiAccessRules.ServedHere(stored) ? AiAccessText.RemoteOtherComputer
+            : null;
+        if (_c.RemoteAiSupported)
+            panel.Children.Add(new TextBlock { Text = AiAccessText.RemoteThisComputerHelp, TextWrapping = TextWrapping.Wrap, FontSize = 12 });
+        if (remoteNote is not null)
+            panel.Children.Add(new TextBlock { Text = remoteNote, TextWrapping = TextWrapping.Wrap, FontSize = 12, FontStyle = Windows.UI.Text.FontStyle.Italic });
 
         // Connector: who opens the connection for remote AI (only "this computer" for now).
         var connectorGroup = "connector-" + Guid.NewGuid().ToString("N");
@@ -272,7 +282,7 @@ public sealed partial class ServersWindow
             var now = DateTimeOffset.UtcNow;
             var current = AiAccessRules.Normalize(AiAccessRules.Of(saved));
             var sudo = sudos.First(s => s.Button.IsChecked == true).Id;
-            var access = new AiAccess(local.IsOn, remote.IsOn, AiAccess.ThisComputer, Preset(), current.TimedUntil, sudo);
+            var access = new AiAccess(local.IsOn, remote.IsOn, AiAccessRules.ConnectorFor(current, remote.IsOn, centerId), Preset(), current.TimedUntil, sudo);
             if (access.Preset == AiAccess.Timed && (timedChanged || access.TimedUntilTime is not { } end || end <= now))
                 access = AiAccessRules.TimedFor(access, TimeSpan.FromHours(AiAccessText.TimedHours[Math.Max(0, hours.SelectedIndex)]), now);
             access = AiAccessRules.Normalize(access);

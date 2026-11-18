@@ -14,6 +14,9 @@ namespace Wecommander.Center;
 public sealed partial class ServersController
 {
     private LocalMcpService Mcp => new(Core);
+
+    /// <summary>The running core for the remote connector (H3); null until it started.</summary>
+    public ICoreTransport? CoreTransport => _core;
     private McpStatus? _mcpStatus;
 
     /// <summary>The newest local MCP activity first (in memory, for the Settings → Yapay zekâ page).</summary>

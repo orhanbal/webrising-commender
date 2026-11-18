@@ -241,7 +241,7 @@ public sealed partial class CenterPanel : UserControl
         var names = Center.Devices.ToDictionary(d => d.Id, d => d.Name);
         foreach (var item in Center.Pending)
         {
-            var device = names.GetValueOrDefault(item.DeviceId, L.T("bilinmeyen cihaz"));
+            var device = item.PlaceName(names);
             var expired = item.ExpiresAt <= DateTimeOffset.UtcNow;
             var time = new TextBlock
             {

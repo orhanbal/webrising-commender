@@ -64,6 +64,22 @@ public static class AiAccessRules
     /// <summary>The access stored for a host (absent = off).</summary>
     public static AiAccess Of(CoreHost host) => host.AiAccess ?? AiAccess.Off;
 
+    /// <summary>This app's Management Center id once signed in: the connector id remote access is stored with (H3).</summary>
+    public static string? CurrentCenterId { get; set; }
+
+    /// <summary>Whether this computer serves the host's remote access ("this-computer", or its own Center id).</summary>
+    public static bool ServedHere(AiAccess access) =>
+        access.Connector == AiAccess.ThisComputer || (!string.IsNullOrEmpty(CurrentCenterId) && access.Connector == CurrentCenterId);
+
+    /// <summary>
+    /// The connector to store when remote access is on: kept when it was already on
+    /// (another computer may serve it), else this computer's Center id.
+    /// </summary>
+    public static string ConnectorFor(AiAccess stored, bool remote, string? centerId) =>
+        !remote ? AiAccess.ThisComputer
+        : stored.Remote && !string.IsNullOrWhiteSpace(stored.Connector) ? stored.Connector
+        : string.IsNullOrEmpty(centerId) ? AiAccess.ThisComputer : centerId;
+
     /// <summary>Plain SSH only: Mosh runs its terminal over UDP, Telnet and serial have no SSH at all.</summary>
     public static bool IsPlainSsh(CoreHost host) => host.Protocol is "ssh" or "" or null;
 
@@ -164,7 +180,7 @@ public static class HostBadges
         var ai = AiAccessRules.Of(host);
         if (ai.Local) list.Add(new HostBadge(L.T("Yerel YZ"), "ai-local"));
         if (ai.Remote)
-            list.Add(new HostBadge(ai.Connector == AiAccess.ThisComputer ? L.T("Uzak YZ") : L.F("Uzak YZ · {0}", AiAccessText.ConnectorName(ai.Connector)), "ai-remote"));
+            list.Add(new HostBadge(AiAccessRules.ServedHere(ai) ? L.T("Uzak YZ") : L.F("Uzak YZ · {0}", AiAccessText.ConnectorName(ai.Connector)), "ai-remote"));
         if (!ai.Any) list.Add(new HostBadge(L.T("Yalnız elle"), "manual"));
         return list;
     }
@@ -174,7 +190,7 @@ public static class HostBadges
     {
         var ai = AiAccessRules.Of(host);
         if (!ai.Any) return L.T("Yapay zekâ bu sunucuyu göremez; yalnız sen elle bağlanırsın.");
-        var route = ai.Remote && ai.Connector != AiAccess.ThisComputer && !ai.Local
+        var route = ai.Remote && !AiAccessRules.ServedHere(ai) && !ai.Local
             ? AiAccessText.ConnectorName(ai.Connector)
             : AiAccessText.ConnectorName(AiAccess.ThisComputer);
         var preset = ai.Preset switch
@@ -210,6 +226,10 @@ public static class AiAccessText
     public static string RemoteTitle => L.T("Uzak yapay zekâlar (ChatGPT web ve mobil, Claude.ai)");
     public static string RemoteHelp => L.T("wecommander.app üzerinden bağlanan yapay zekâlar bu sunucuyu kullanabilir. Komut ve çıktı WECOMMANDER sunucusundan geçer (parola ve anahtarlar maskelenir); SSH anahtarın hiçbir zaman buluta gönderilmez, işi aşağıda seçtiğin bağlayıcı yapar.");
     public static string RemoteNotYet => L.T("Uzak yapay zekâ erişimi bir sonraki sürümde gelecek; şimdilik yerel erişim açılabilir.");
+    /// <summary>What connecting through this computer means (H3).</summary>
+    public static string RemoteThisComputerHelp => L.T("Bilgisayarın açık ve WECOMMANDER çalışıyorken, Claude/ChatGPT bu sunucuya senin bilgisayarın üzerinden erişir; anahtarlar bilgisayarından çıkmaz. Komutlar her seferinde onay ister.");
+    public static string RemoteNeedsSignIn => L.T("Uzak erişim için önce bu uygulamada WECOMMANDER hesabınla oturum aç.");
+    public static string RemoteOtherComputer => L.T("Bu sunucunun uzak erişimini başka bir bilgisayarındaki WECOMMANDER sağlıyor; o bilgisayar açıkken çalışır.");
     public static string ConnectorHeader => L.T("Bağlayıcı (uzak erişimi kim kurar)");
     public static string ConnectorThisTitle => L.T("Bu bilgisayar");
     public static string ConnectorThisHelp => L.T("Bağlantıyı bu bilgisayardaki WECOMMANDER kurar. Bilgisayarın kapalıysa ya da uygulama açık değilse uzak yapay zekâ bu sunucuya ulaşamaz.");
@@ -253,7 +273,9 @@ public static class AiAccessText
 
     /// <summary>"bu bilgisayar" or the always-on connector, inside a sentence.</summary>
     public static string ConnectorName(string connector) =>
-        connector == AiAccess.ThisComputer ? L.T("bu bilgisayar") : L.T("sürekli açık bağlayıcı");
+        connector == AiAccess.ThisComputer || (!string.IsNullOrEmpty(AiAccessRules.CurrentCenterId) && connector == AiAccessRules.CurrentCenterId)
+            ? L.T("bu bilgisayar")
+            : Guid.TryParse(connector, out _) ? L.T("başka bir bilgisayar") : L.T("sürekli açık bağlayıcı");
 
     /// <summary>Hours offered for the timed preset (8 at most).</summary>
     public static readonly int[] TimedHours = [1, 2, 4, 8];
@@ -290,7 +312,7 @@ public static class AiAccessText
         if (raw.Contains(AiAccessRules.InvalidPreset, StringComparison.Ordinal)) return L.T("Geçersiz izin seçimi.");
         if (raw.Contains(AiAccessRules.InvalidSudo, StringComparison.Ordinal)) return L.T("Geçersiz sudo seçimi.");
         if (raw.Contains(AiAccessRules.InvalidConnector, StringComparison.Ordinal)) return L.T("Uzak erişim için bir bağlayıcı seç.");
-        if (raw.Contains("connector_offline", StringComparison.Ordinal)) return L.T("Bağlayıcı çevrimdışı; uzak yapay zekâ bu sunucuya şu an ulaşamaz.");
+        if (raw.Contains("connector_offline", StringComparison.Ordinal)) return L.T("Bu sunucuya erişen bilgisayar şu an kapalı; uzak yapay zekâ bu sunucuya şu an ulaşamaz.");
         if (raw.Contains("wecommander_not_running", StringComparison.Ordinal)) return L.T("WECOMMANDER'ı aç; yerel yapay zekâ erişimi uygulama açıkken çalışır.");
         if (raw.Contains("approval_expired", StringComparison.Ordinal)) return L.T("Bu onayın süresi doldu; yapay zekâ isterse yeniden sorulur.");
         if (raw.Contains("unknown_approval", StringComparison.Ordinal) || raw.Contains("approval_not_found", StringComparison.Ordinal))
