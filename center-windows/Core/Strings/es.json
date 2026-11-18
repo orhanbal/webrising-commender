@@ -1343,5 +1343,8 @@
  "Uzak erişim için önce bu uygulamada WECOMMANDER hesabınla oturum aç.": "Para el acceso remoto, primero inicia sesión con tu cuenta de WECOMMANDER en esta aplicación.",
  "Bu sunucunun uzak erişimini başka bir bilgisayarındaki WECOMMANDER sağlıyor; o bilgisayar açıkken çalışır.": "El acceso remoto a este servidor lo proporciona WECOMMANDER en otro de tus ordenadores; funciona mientras ese ordenador esté encendido.",
  "başka bir bilgisayar": "otro ordenador",
- "Bu sunucuya erişen bilgisayar şu an kapalı; uzak yapay zekâ bu sunucuya şu an ulaşamaz.": "El ordenador que accede a este servidor está apagado ahora; la IA remota no puede llegar a este servidor en este momento."
+ "Bu sunucuya erişen bilgisayar şu an kapalı; uzak yapay zekâ bu sunucuya şu an ulaşamaz.": "El ordenador que accede a este servidor está apagado ahora; la IA remota no puede llegar a este servidor en este momento.",
+ "Terminal sekmeleri": "Pestañas de terminal",
+ "Yeni sekme": "Nueva pestaña",
+ "{0}: bağlantı kapandı.": "{0}: conexión cerrada."
 }

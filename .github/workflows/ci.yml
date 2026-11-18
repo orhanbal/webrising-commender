@@ -1684,6 +1684,33 @@ jobs:
               [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
               if (WaitFor { -not [D]::Find([uint32]$app.Id, $tmPanelTitle) } 5) { $passed += 'dock mode: Esc closes the panel' } else { $fail += 'dock mode: Esc did not close the Task Manager panel' }
             } else { $fail += 'dock mode: clicking the Task Manager button did not open its panel' }
+            # The Terminal panel holds terminals in tabs: it opens with one tab, "+" adds another.
+            $termEl = $scope.FindFirst([System.Windows.Automation.TreeScope]::Descendants, (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'Terminal')))
+            if (-not $termEl) { $fail += 'dock mode: the Terminal button was not found on the Dock' }
+            else {
+              $r = $termEl.Current.BoundingRectangle
+              [D]::SetCursorPos([int]($r.Left + $r.Width / 2), [int]($r.Top + $r.Height / 2)); [D]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero); Start-Sleep -Milliseconds 60; [D]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero)
+              if (WaitFor { [D]::Find([uint32]$app.Id, 'WECOMMANDER Terminal') } 8) {
+                Start-Sleep -Seconds 2
+                $tabItem = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::TabItem)
+                $panelEl = $uiRoot.FindFirst([System.Windows.Automation.TreeScope]::Children, (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, 'WECOMMANDER Terminal')))
+                if (-not $panelEl) { $fail += 'dock mode: the Terminal panel window was not found by name' }
+                else {
+                  $before = $panelEl.FindAll([System.Windows.Automation.TreeScope]::Descendants, $tabItem).Count
+                  $buttons = $panelEl.FindAll([System.Windows.Automation.TreeScope]::Descendants, (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)))
+                  $add = $null; foreach ($b in $buttons) { if ($b.Current.AutomationId -eq 'AddButton' -or $b.Current.Name -match 'Add|Ekle') { $add = $b; break } }
+                  Write-Host "terminal panel: $before tab(s), add button: $([bool]$add)"
+                  if ($before -lt 1) { $fail += 'dock mode: the Terminal panel opened with no tab' }
+                  elseif (-not $add) { $fail += 'dock mode: the Terminal panel has no + (new tab) button' }
+                  else {
+                    $add.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+                    if (WaitFor { $panelEl.FindAll([System.Windows.Automation.TreeScope]::Descendants, $tabItem).Count -gt $before } 5) { $passed += 'dock mode: the Terminal panel opens tabs, + adds one' } else { $fail += 'dock mode: + did not add a terminal tab' }
+                    Shot 'dock-mode-terminal-tabs'
+                  }
+                }
+                [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
+              } else { $fail += 'dock mode: clicking the Terminal button did not open its panel' }
+            }
           }
           Quit-App
           $script:case = 'app mode classic'

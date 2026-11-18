@@ -1343,5 +1343,8 @@
  "Uzak erişim için önce bu uygulamada WECOMMANDER hesabınla oturum aç.": "For remote access, first sign in to your WECOMMANDER account in this app.",
  "Bu sunucunun uzak erişimini başka bir bilgisayarındaki WECOMMANDER sağlıyor; o bilgisayar açıkken çalışır.": "Remote access to this server is provided by WECOMMANDER on another of your computers; it works while that computer is on.",
  "başka bir bilgisayar": "another computer",
- "Bu sunucuya erişen bilgisayar şu an kapalı; uzak yapay zekâ bu sunucuya şu an ulaşamaz.": "The computer that reaches this server is off right now; remote AI can't reach this server at the moment."
+ "Bu sunucuya erişen bilgisayar şu an kapalı; uzak yapay zekâ bu sunucuya şu an ulaşamaz.": "The computer that reaches this server is off right now; remote AI can't reach this server at the moment.",
+ "Terminal sekmeleri": "Terminal tabs",
+ "Yeni sekme": "New tab",
+ "{0}: bağlantı kapandı.": "{0}: connection closed."
 }

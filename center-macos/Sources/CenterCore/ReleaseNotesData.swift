@@ -5,6 +5,33 @@ enum ReleaseNotesData {
 {
  "releases": [
   {
+   "id": "2026-11-18-windows-tabs",
+   "date": "2026-11-18",
+   "platforms": [
+    "windows"
+   ],
+   "items": {
+    "tr": [
+     "Dock'taki Terminal panelinde birden çok terminal sekme olarak açılır: \"+\" yeni sekme ekler, her sekme ayrı bir sunucuya bağlanabilir."
+    ],
+    "en": [
+     "The Dock's Terminal panel opens several terminals as tabs: \"+\" adds a tab, and each tab can connect to a different server."
+    ],
+    "de": [
+     "Das Terminal-Panel des Docks öffnet mehrere Terminals als Tabs: „+“ fügt einen Tab hinzu, jeder Tab kann sich mit einem anderen Server verbinden."
+    ],
+    "fr": [
+     "Le panneau Terminal du Dock ouvre plusieurs terminaux en onglets : « + » ajoute un onglet, et chaque onglet peut se connecter à un serveur différent."
+    ],
+    "es": [
+     "El panel Terminal del Dock abre varios terminales en pestañas: «+» añade una pestaña y cada una puede conectarse a un servidor distinto."
+    ],
+    "pt-BR": [
+     "O painel Terminal do Dock abre vários terminais em abas: \"+\" adiciona uma aba, e cada aba pode se conectar a um servidor diferente."
+    ]
+   }
+  },
+  {
    "id": "2026-11-18-windows",
    "date": "2026-11-18",
    "platforms": [
