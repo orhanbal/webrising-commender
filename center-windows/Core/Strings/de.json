@@ -1343,5 +1343,11 @@
  "Uzak erişim için önce bu uygulamada WECOMMANDER hesabınla oturum aç.": "Für den Fernzugriff melde dich zuerst in dieser App mit deinem WECOMMANDER-Konto an.",
  "Bu sunucunun uzak erişimini başka bir bilgisayarındaki WECOMMANDER sağlıyor; o bilgisayar açıkken çalışır.": "Den Fernzugriff auf diesen Server stellt WECOMMANDER auf einem anderen deiner Computer bereit; er funktioniert, solange dieser Computer an ist.",
  "başka bir bilgisayar": "einen anderen Computer",
- "Bu sunucuya erişen bilgisayar şu an kapalı; uzak yapay zekâ bu sunucuya şu an ulaşamaz.": "Der Computer, der diesen Server erreicht, ist gerade aus; entfernte KI kann diesen Server im Moment nicht erreichen."
+ "Bu sunucuya erişen bilgisayar şu an kapalı; uzak yapay zekâ bu sunucuya şu an ulaşamaz.": "Der Computer, der diesen Server erreicht, ist gerade aus; entfernte KI kann diesen Server im Moment nicht erreichen.",
+ "Terminal sekmeleri": "Terminal-Tabs",
+ "Yeni sekme": "Neuer Tab",
+ "{0}: bağlantı kapandı.": "{0}: Verbindung geschlossen.",
+ "Ara (ad, PID, komut)": "Suchen (Name, PID, Befehl)",
+ "Kullanıcı: {0}": "Benutzer: {0}",
+ "{0} (zombi)": "{0} (Zombie)"
 }

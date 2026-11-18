@@ -1343,5 +1343,11 @@
  "Uzak erişim için önce bu uygulamada WECOMMANDER hesabınla oturum aç.": "Para o acesso remoto, primeiro entre na sua conta WECOMMANDER neste aplicativo.",
  "Bu sunucunun uzak erişimini başka bir bilgisayarındaki WECOMMANDER sağlıyor; o bilgisayar açıkken çalışır.": "O acesso remoto a este servidor é fornecido pelo WECOMMANDER em outro dos seus computadores; funciona enquanto esse computador estiver ligado.",
  "başka bir bilgisayar": "outro computador",
- "Bu sunucuya erişen bilgisayar şu an kapalı; uzak yapay zekâ bu sunucuya şu an ulaşamaz.": "O computador que acessa este servidor está desligado agora; a IA remota não consegue alcançar este servidor no momento."
+ "Bu sunucuya erişen bilgisayar şu an kapalı; uzak yapay zekâ bu sunucuya şu an ulaşamaz.": "O computador que acessa este servidor está desligado agora; a IA remota não consegue alcançar este servidor no momento.",
+ "Terminal sekmeleri": "Abas de terminal",
+ "Yeni sekme": "Nova aba",
+ "{0}: bağlantı kapandı.": "{0}: conexão encerrada.",
+ "Ara (ad, PID, komut)": "Pesquisar (nome, PID, comando)",
+ "Kullanıcı: {0}": "Usuário: {0}",
+ "{0} (zombi)": "{0} (zumbi)"
 }

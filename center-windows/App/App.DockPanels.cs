@@ -106,7 +106,7 @@ public partial class App
     private void ForgetDockPanels()
     {
         CloseDockPanels();
-        try { _terminalView?.Disconnect(); } catch (Exception) { }
+        try { _terminalView?.DisconnectAll(); } catch (Exception) { }
         try { _serverView?.Stop(); } catch (Exception) { }
         foreach (var p in _dockPanels.Values)
         {
@@ -177,8 +177,8 @@ public partial class App
                     panel.FocusContent = true;
                     panel.Shown = () =>
                     {
-                        // A terminal still open stays; otherwise the Dock's server (or the list).
-                        if (view.Host is null) view.Show(_dockSelected()?.HostId);
+                        // Open tabs stay as they were; the first time, the Dock's server (or the list).
+                        if (!view.HasTabs) view.Show(_dockSelected()?.HostId);
                         else view.FocusTerminal();
                     };
                     panel.OpenInWindow = () =>
