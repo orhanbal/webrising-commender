@@ -490,7 +490,9 @@ public sealed class DockWindow : Window
         // Left / top: the WECOMMANDER icon (a start menu) and the server. Unlocked, the Dock
         // is moved by dragging any of these, the meters or the background (no separate grip).
         var start = new StackPanel { Orientation = orientation, Spacing = 6, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
-        var app = IconButton(AppIcon(), L.T("WECOMMANDER: hızlı panel"));
+        var appIcon = AppIcon();
+        var app = IconButton(appIcon, L.T("WECOMMANDER: hızlı panel"));
+        PressEffect(app, appIcon);
         app.Click += (_, _) => OpenQuickPanel(app);
         _appButton = app;
         start.Children.Add(app);
@@ -608,6 +610,43 @@ public sealed class DockWindow : Window
         end.Children.Add(settings);
         _end = end;
         Put(end, 2);
+    }
+
+    /// <summary>
+    /// Like the Start button: the icon shrinks a little while pressed and springs back
+    /// when released (or when the pointer leaves).
+    /// </summary>
+    private static void PressEffect(Button button, FrameworkElement icon)
+    {
+        var scale = new Microsoft.UI.Xaml.Media.ScaleTransform { ScaleX = 1, ScaleY = 1 };
+        icon.RenderTransform = scale;
+        icon.RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5);
+        void To(double value, int ms)
+        {
+            try
+            {
+                var story = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
+                foreach (var property in new[] { "ScaleX", "ScaleY" })
+                {
+                    var animation = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
+                    {
+                        To = value,
+                        Duration = TimeSpan.FromMilliseconds(ms),
+                        EasingFunction = new Microsoft.UI.Xaml.Media.Animation.CubicEase { EasingMode = Microsoft.UI.Xaml.Media.Animation.EasingMode.EaseOut },
+                    };
+                    Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(animation, scale);
+                    Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(animation, property);
+                    story.Children.Add(animation);
+                }
+                story.Begin();
+            }
+            catch (Exception) { scale.ScaleX = scale.ScaleY = value; }
+        }
+        // The button handles its own presses: listen to handled ones too.
+        button.AddHandler(UIElement.PointerPressedEvent, new Microsoft.UI.Xaml.Input.PointerEventHandler((_, _) => To(0.84, 90)), true);
+        button.AddHandler(UIElement.PointerReleasedEvent, new Microsoft.UI.Xaml.Input.PointerEventHandler((_, _) => To(1, 160)), true);
+        button.AddHandler(UIElement.PointerCaptureLostEvent, new Microsoft.UI.Xaml.Input.PointerEventHandler((_, _) => To(1, 160)), true);
+        button.AddHandler(UIElement.PointerExitedEvent, new Microsoft.UI.Xaml.Input.PointerEventHandler((_, _) => To(1, 160)), true);
     }
 
     private static Image AppIcon() => new()

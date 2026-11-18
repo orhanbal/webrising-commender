@@ -38,10 +38,12 @@ public sealed class TaskManagerWindow : Window
 }
 
 /// <summary>
-/// Task Manager: this computer's processes (live CPU, memory, disk, tree,
-/// details, end with guards). A server is chosen from the device list and
-/// opens in its own process screen: local and remote are never one list.
-/// One implementation for the window and the Dock's drop-down panel.
+/// Task Manager: the watched servers' processes (live, over their monitor
+/// connection) and this computer's (live CPU, memory, disk, tree, details,
+/// end with guards). The device list puts the servers first and this computer
+/// last; local and remote are never one list. Ending or zombie fixes on a
+/// server open its server management. One implementation for the window and
+/// the Dock's drop-down panel.
 /// </summary>
 public sealed class TaskManagerView : UserControl
 {
@@ -63,6 +65,15 @@ public sealed class TaskManagerView : UserControl
     private string _order = "cpu";
     private bool _tree;
     private bool _reading;
+    // A watched server's processes (null host: this computer).
+    private string? _hostId;
+    private ProcessList? _remote;
+    private uint? _remoteSelected;
+    private bool _remoteReading;
+    private readonly StackPanel _remoteRows = new();
+    private readonly List<RowView> _remoteViews = [];
+    private readonly StackPanel _remoteDetails = new() { Spacing = 6 };
+    private UIElement? _localTools, _localList, _localDetails, _remoteList, _remoteDetailsCard, _treeLabel, _windowsTm;
 
     private static Brush Secondary => (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
     private const int MaxRows = 250;
@@ -76,7 +87,7 @@ public sealed class TaskManagerView : UserControl
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        // Which device: this computer, or a watched server (opens its own screen).
+        // Which device: a watched server (first) or this computer (last).
         var top = new Grid { ColumnSpacing = 12 };
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -92,7 +103,6 @@ public sealed class TaskManagerView : UserControl
         Grid.SetColumn(deviceBox, 1);
         top.Children.Add(deviceBox);
         root.Children.Add(top);
-        FillDevices();
         _device.SelectionChanged += (_, _) => DeviceChosen();
 
         Grid.SetRow(_info, 1);
@@ -101,11 +111,11 @@ public sealed class TaskManagerView : UserControl
         // Search, sort, tree, Windows' own Task Manager.
         var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
         _search.PlaceholderText = L.T("Ara (ad, PID, konum)");
-        _search.TextChanged += (_, _) => Render();
+        _search.TextChanged += (_, _) => { if (_hostId is null) Render(); else RenderRemote(); };
         foreach (var (tag, text) in new[] { ("cpu", L.T("İşlemciye göre")), ("memory", L.T("Belleğe göre")), ("disk", L.T("Diske göre")), ("name", L.T("Ada göre")), ("pid", L.T("PID'e göre")) })
             _sort.Items.Add(new ComboBoxItem { Content = text, Tag = tag });
         _sort.SelectedIndex = 0;
-        _sort.SelectionChanged += (_, _) => { _order = (_sort.SelectedItem as ComboBoxItem)?.Tag as string ?? "cpu"; Render(); };
+        _sort.SelectionChanged += (_, _) => { _order = (_sort.SelectedItem as ComboBoxItem)?.Tag as string ?? "cpu"; if (_hostId is null) Render(); else RenderRemote(); };
         var treeLabel = new TextBlock { Text = L.T("Ağaç görünümü"), VerticalAlignment = VerticalAlignment.Center };
         _treeSwitch.Toggled += (_, _) => { _tree = _treeSwitch.IsOn; Render(); };
         var windowsTm = new Button { Content = L.T("Windows Görev Yöneticisi") };
@@ -117,6 +127,9 @@ public sealed class TaskManagerView : UserControl
         tools.Children.Add(windowsTm);
         Grid.SetRow(tools, 2);
         root.Children.Add(tools);
+        _localTools = tools;
+        _treeLabel = treeLabel;
+        _windowsTm = windowsTm;
 
         // The list: a header and pooled rows (updated in place every two seconds).
         var list = new Grid();
@@ -129,13 +142,35 @@ public sealed class TaskManagerView : UserControl
         var listCard = Card(list, new Thickness(0));
         Grid.SetRow(listCard, 3);
         root.Children.Add(listCard);
+        _localList = listCard;
 
         var detailsCard = Card(_details, new Thickness(16, 12, 16, 12));
         Grid.SetRow(detailsCard, 4);
         root.Children.Add(detailsCard);
+        _localDetails = detailsCard;
         ShowDetails();
 
+        // A server's list: name, PID, CPU, memory, user (no disk per process over SSH).
+        var remote = new Grid();
+        remote.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        remote.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        remote.Children.Add(Header(remote: true));
+        var remoteScroll = new ScrollViewer { Content = _remoteRows, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        Grid.SetRow(remoteScroll, 1);
+        remote.Children.Add(remoteScroll);
+        var remoteCard = Card(remote, new Thickness(0));
+        remoteCard.Visibility = Visibility.Collapsed;
+        Grid.SetRow(remoteCard, 3);
+        root.Children.Add(remoteCard);
+        _remoteList = remoteCard;
+        var remoteDetailsCard = Card(_remoteDetails, new Thickness(16, 12, 16, 12));
+        remoteDetailsCard.Visibility = Visibility.Collapsed;
+        Grid.SetRow(remoteDetailsCard, 4);
+        root.Children.Add(remoteDetailsCard);
+        _remoteDetailsCard = remoteDetailsCard;
+
         Content = root;
+        FillDevices();
         _timer = DispatcherQueue.CreateTimer();
         _timer.Interval = TimeSpan.FromSeconds(2);
         _timer.Tick += (_, _) => _ = Refresh();
@@ -145,6 +180,7 @@ public sealed class TaskManagerView : UserControl
     public void Resume()
     {
         if (_timer.IsRunning) return;
+        FillDevices();
         _timer.Start();
         _ = Refresh();
     }
@@ -164,27 +200,64 @@ public sealed class TaskManagerView : UserControl
 
     // ---- devices ----
 
+    private bool _filling, _filledOnce;
+
+    /// <summary>The watched servers first, this computer last; keeps the current choice when it is still there.</summary>
     private void FillDevices()
     {
-        _device.Items.Clear();
-        _device.Items.Add(new ComboBoxItem { Content = L.F("Bu bilgisayar ({0})", Environment.MachineName), Tag = "" });
-        foreach (var s in App.Current.Monitor.Servers)
-            _device.Items.Add(new ComboBoxItem { Content = L.F("Sunucu: {0}", s.Label), Tag = s.HostId });
-        _device.SelectedIndex = 0;
+        _filling = true;
+        try
+        {
+            var keep = _hostId;
+            var servers = App.Current.Monitor.Servers.ToList();
+            _device.Items.Clear();
+            foreach (var s in servers)
+                _device.Items.Add(new ComboBoxItem { Content = L.F("Sunucu: {0}", s.Label), Tag = s.HostId });
+            _device.Items.Add(new ComboBoxItem { Content = L.F("Bu bilgisayar ({0})", Environment.MachineName), Tag = "" });
+            // First time: the first server. Later: the choice stays (this computer stays this
+            // computer); a server no longer watched falls back to the first one.
+            string? pick = !_filledOnce || (keep is not null && servers.All(s => s.HostId != keep))
+                ? servers.FirstOrDefault()?.HostId
+                : keep;
+            _filledOnce = true;
+            _device.SelectedItem = _device.Items.OfType<ComboBoxItem>().First(i => (i.Tag as string) == (pick ?? ""));
+            Use(pick);
+        }
+        finally { _filling = false; }
     }
 
     private void DeviceChosen()
     {
-        if ((_device.SelectedItem as ComboBoxItem)?.Tag is not string hostId || hostId.Length == 0) return;
-        var server = App.Current.Monitor.Servers.FirstOrDefault(s => s.HostId == hostId);
-        _device.SelectedIndex = 0;
-        if (server is not null) App.Current.OpenServerManagement(server, "processes");
+        if (_filling) return;
+        var tag = (_device.SelectedItem as ComboBoxItem)?.Tag as string;
+        Use(string.IsNullOrEmpty(tag) ? null : tag);
+        _ = Refresh();
     }
+
+    /// <summary>Shows a server's list (hostId) or this computer's (null).</summary>
+    private void Use(string? hostId)
+    {
+        if (hostId != _hostId) { _remote = null; _remoteSelected = null; _info.IsOpen = false; }
+        _hostId = hostId;
+        var remote = hostId is not null;
+        _localList!.Visibility = remote ? Visibility.Collapsed : Visibility.Visible;
+        _localDetails!.Visibility = remote ? Visibility.Collapsed : Visibility.Visible;
+        _remoteList!.Visibility = remote ? Visibility.Visible : Visibility.Collapsed;
+        _remoteDetailsCard!.Visibility = remote ? Visibility.Visible : Visibility.Collapsed;
+        _treeLabel!.Visibility = remote ? Visibility.Collapsed : Visibility.Visible;
+        _treeSwitch.Visibility = remote ? Visibility.Collapsed : Visibility.Visible;
+        _windowsTm!.Visibility = remote ? Visibility.Collapsed : Visibility.Visible;
+        _search.PlaceholderText = remote ? L.T("Ara (ad, PID, komut)") : L.T("Ara (ad, PID, konum)");
+        if (remote) { _summary.Text = "…"; RenderRemote(); ShowRemoteDetails(); }
+    }
+
+    private WatchedServer? CurrentServer => _hostId is null ? null : App.Current.Monitor.Servers.FirstOrDefault(s => s.HostId == _hostId);
 
     // ---- reading ----
 
     private async Task Refresh()
     {
+        if (_hostId is not null) { await RefreshRemote(); return; }
         if (_reading) return;
         _reading = true;
         try
@@ -228,11 +301,11 @@ public sealed class TaskManagerView : UserControl
         return g;
     }
 
-    private UIElement Header()
+    private UIElement Header(bool remote = false)
     {
         var g = Columned();
         g.Padding = new Thickness(12, 10, 12, 8);
-        var names = new[] { (L.T("Ad"), "name"), ("PID", "pid"), (L.T("İşlemci"), "cpu"), (L.T("Bellek"), "memory"), ("Disk", "disk") };
+        var names = new[] { (L.T("Ad"), "name"), ("PID", "pid"), (L.T("İşlemci"), "cpu"), (L.T("Bellek"), "memory"), remote ? (L.T("Kullanıcı"), "user") : ("Disk", "disk") };
         for (var i = 0; i < names.Length; i++)
         {
             var (text, tag) = names[i];
@@ -263,6 +336,7 @@ public sealed class TaskManagerView : UserControl
         public readonly TextBlock Disk = Num();
         public readonly PathIcon Lock = LockIcon();
         public LocalProcessRow? Row;
+        public uint? RemotePid;
 
         private static TextBlock Num() => new() { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, };
 
@@ -331,6 +405,117 @@ public sealed class TaskManagerView : UserControl
         _selectedStarted = row.Info.Started;
         Render();
         ShowDetails();
+    }
+
+    // ---- a server ----
+
+    private async Task RefreshRemote()
+    {
+        if (_remoteReading) return;
+        var server = CurrentServer;
+        if (server is null) { FillDevices(); return; }
+        if (server.MonitorId is not { } id)
+        {
+            _summary.Text = server.Error ?? L.F("{0}: bağlanılıyor…", server.Label);
+            return;
+        }
+        _remoteReading = true;
+        var host = _hostId;
+        try
+        {
+            var list = await App.Current.Servers.Server<ProcessList>("server.processes", new { sessionId = id });
+            if (host != _hostId) return; // another device was chosen meanwhile
+            _remote = list;
+            var used = server.Last is { } l ? (l.MemTotalKb - Math.Min(l.MemTotalKb, l.MemAvailableKb)) * 1024 : 0;
+            var total = server.Last is { } t ? t.MemTotalKb * 1024 : 0;
+            _summary.Text = L.F("İşlemci {0} · Bellek {1} / {2} · {3} süreç",
+                server.Samples > 1 ? $"%{server.Cpu:0}" : "…", total == 0 ? "…" : Sizes.Bytes(used), total == 0 ? "…" : Sizes.Bytes(total), list.Processes.Count);
+            var zombies = list.Zombies.Sum(z => (long)z.Count);
+            if (zombies > 0) Show(L.F("{0} zombi süreç", zombies), InfoBarSeverity.Warning);
+            RenderRemote();
+            ShowRemoteDetails();
+        }
+        catch (Exception e)
+        {
+            if (host == _hostId) _summary.Text = $"{server.Label}: {e.Message}";
+        }
+        finally { _remoteReading = false; }
+    }
+
+    private void RenderRemote()
+    {
+        var all = _remote?.Processes ?? [];
+        var q = _search.Text.Trim();
+        IEnumerable<ServerProcess> shown = q.Length == 0 ? all : all.Where(p =>
+            p.Name.Contains(q, StringComparison.OrdinalIgnoreCase) || p.Command.Contains(q, StringComparison.OrdinalIgnoreCase)
+            || p.Pid.ToString() == q || p.User.Contains(q, StringComparison.OrdinalIgnoreCase));
+        shown = _order switch
+        {
+            "memory" => shown.OrderByDescending(p => p.RssKb),
+            "name" => shown.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase),
+            "pid" => shown.OrderBy(p => p.Pid),
+            _ => shown.OrderByDescending(p => p.Cpu).ThenByDescending(p => p.RssKb),
+        };
+        var lines = shown.Take(MaxRows).ToList();
+        while (_remoteViews.Count < lines.Count)
+        {
+            var view = new RowView(SelectRemote);
+            _remoteViews.Add(view);
+            _remoteRows.Children.Add(view.Root);
+        }
+        var accent = (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"];
+        for (var i = 0; i < _remoteViews.Count; i++)
+        {
+            var v = _remoteViews[i];
+            if (i >= lines.Count) { v.Root.Visibility = Visibility.Collapsed; v.RemotePid = null; continue; }
+            var p = lines[i];
+            v.RemotePid = p.Pid;
+            v.Root.Visibility = Visibility.Visible;
+            v.Name.Text = p.State.StartsWith('Z') ? L.F("{0} (zombi)", p.Name) : p.Name;
+            v.Pid.Text = p.Pid.ToString();
+            v.Cpu.Text = $"%{p.Cpu:0.0}";
+            v.Memory.Text = p.RssKb == 0 ? "—" : Sizes.Kb(p.RssKb);
+            v.Disk.Text = p.User;
+            v.Root.Background = p.Pid == _remoteSelected ? accent : new SolidColorBrush(Colors.Transparent);
+        }
+    }
+
+    private void SelectRemote(RowView view)
+    {
+        if (view.RemotePid is not { } pid) return;
+        _remoteSelected = pid;
+        RenderRemote();
+        ShowRemoteDetails();
+    }
+
+    private void ShowRemoteDetails()
+    {
+        _remoteDetails.Children.Clear();
+        var server = CurrentServer;
+        var row = _remote?.Processes.FirstOrDefault(p => p.Pid == _remoteSelected);
+        if (row is null)
+            _remoteDetails.Children.Add(new TextBlock { Text = L.T("Ayrıntılar ve işlemler için bir süreç seç."), Foreground = Secondary });
+        else
+        {
+            _remoteDetails.Children.Add(new TextBlock { Text = $"{row.Name}  ·  PID {row.Pid}", FontWeight = FontWeights.SemiBold, FontSize = 16 });
+            _remoteDetails.Children.Add(new TextBlock
+            {
+                Text = L.F("Kullanıcı: {0}", row.User) + "   ·   " + L.F("Durum: {0}", row.State) + L.F("  ·  çalışma süresi {0}", Sizes.Duration(row.ElapsedSecs)),
+                Foreground = Secondary, TextWrapping = TextWrapping.Wrap,
+            });
+            _remoteDetails.Children.Add(new TextBlock
+            {
+                Text = row.Command, Foreground = Secondary, FontFamily = new FontFamily("Cascadia Mono, Consolas"), FontSize = 12,
+                TextTrimming = TextTrimming.CharacterEllipsis, IsTextSelectionEnabled = true,
+            });
+        }
+        if (server is not null)
+        {
+            // Ending a process and zombie fixes are done (with their checks) in the server management.
+            var open = new Button { Content = L.T("Sunucu yönetimini aç") };
+            open.Click += (_, _) => { try { App.Current.OpenServerManagement(server, "processes"); } catch (Exception e) { App.LogCrash(e); } };
+            _remoteDetails.Children.Add(open);
+        }
     }
 
     // ---- details and actions ----

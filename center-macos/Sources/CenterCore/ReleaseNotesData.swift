@@ -12,22 +12,34 @@ enum ReleaseNotesData {
    ],
    "items": {
     "tr": [
-     "Dock'taki Terminal panelinde birden çok terminal sekme olarak açılır: \"+\" yeni sekme ekler, her sekme ayrı bir sunucuya bağlanabilir."
+     "Dock'taki Terminal panelinde birden çok terminal sekme olarak açılır: \"+\" yeni sekme ekler, her sekme ayrı bir sunucuya bağlanabilir.",
+     "Görev Yöneticisi'nde izlenen sunucular en üstte: seçince o sunucuda çalışan süreçler canlı olarak aynı panelde görünür; \"Bu bilgisayar\" listenin sonunda.",
+     "Dock'taki WECOMMANDER logosu basınca Başlat düğmesi gibi hafifçe küçülür, bırakınca eski hâline döner."
     ],
     "en": [
-     "The Dock's Terminal panel opens several terminals as tabs: \"+\" adds a tab, and each tab can connect to a different server."
+     "The Dock's Terminal panel opens several terminals as tabs: \"+\" adds a tab, and each tab can connect to a different server.",
+     "Task Manager lists the watched servers first: choose one to see the processes running on it, live, in the same panel; \"This computer\" is last.",
+     "The WECOMMANDER logo on the Dock shrinks slightly while pressed, like the Start button, and springs back when released."
     ],
     "de": [
-     "Das Terminal-Panel des Docks öffnet mehrere Terminals als Tabs: „+“ fügt einen Tab hinzu, jeder Tab kann sich mit einem anderen Server verbinden."
+     "Das Terminal-Panel des Docks öffnet mehrere Terminals als Tabs: „+“ fügt einen Tab hinzu, jeder Tab kann sich mit einem anderen Server verbinden.",
+     "Der Task-Manager zeigt die überwachten Server zuerst: Wähle einen, um seine laufenden Prozesse live im selben Panel zu sehen; „Dieser Computer“ steht am Ende.",
+     "Das WECOMMANDER-Logo im Dock wird beim Drücken wie die Start-Schaltfläche etwas kleiner und springt beim Loslassen zurück."
     ],
     "fr": [
-     "Le panneau Terminal du Dock ouvre plusieurs terminaux en onglets : « + » ajoute un onglet, et chaque onglet peut se connecter à un serveur différent."
+     "Le panneau Terminal du Dock ouvre plusieurs terminaux en onglets : « + » ajoute un onglet, et chaque onglet peut se connecter à un serveur différent.",
+     "Le Gestionnaire des tâches affiche d'abord les serveurs surveillés : choisis-en un pour voir ses processus en direct dans le même panneau ; « Cet ordinateur » est en dernier.",
+     "Le logo WECOMMANDER du Dock rétrécit légèrement quand on appuie dessus, comme le bouton Démarrer, et reprend sa taille au relâchement."
     ],
     "es": [
-     "El panel Terminal del Dock abre varios terminales en pestañas: «+» añade una pestaña y cada una puede conectarse a un servidor distinto."
+     "El panel Terminal del Dock abre varios terminales en pestañas: «+» añade una pestaña y cada una puede conectarse a un servidor distinto.",
+     "El Administrador de tareas muestra primero los servidores vigilados: elige uno para ver en vivo sus procesos en el mismo panel; «Este equipo» va al final.",
+     "El logotipo de WECOMMANDER en el Dock se encoge un poco al pulsarlo, como el botón Inicio, y vuelve a su tamaño al soltarlo."
     ],
     "pt-BR": [
-     "O painel Terminal do Dock abre vários terminais em abas: \"+\" adiciona uma aba, e cada aba pode se conectar a um servidor diferente."
+     "O painel Terminal do Dock abre vários terminais em abas: \"+\" adiciona uma aba, e cada aba pode se conectar a um servidor diferente.",
+     "O Gerenciador de Tarefas mostra primeiro os servidores monitorados: escolha um para ver ao vivo os processos dele no mesmo painel; \"Este computador\" fica por último.",
+     "O logotipo do WECOMMANDER no Dock encolhe um pouco ao ser pressionado, como o botão Iniciar, e volta ao tamanho ao soltar."
     ]
    }
   },

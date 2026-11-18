@@ -1346,5 +1346,8 @@
  "Bu sunucuya erişen bilgisayar şu an kapalı; uzak yapay zekâ bu sunucuya şu an ulaşamaz.": "O computador que acessa este servidor está desligado agora; a IA remota não consegue alcançar este servidor no momento.",
  "Terminal sekmeleri": "Abas de terminal",
  "Yeni sekme": "Nova aba",
- "{0}: bağlantı kapandı.": "{0}: conexão encerrada."
+ "{0}: bağlantı kapandı.": "{0}: conexão encerrada.",
+ "Ara (ad, PID, komut)": "Pesquisar (nome, PID, comando)",
+ "Kullanıcı: {0}": "Usuário: {0}",
+ "{0} (zombi)": "{0} (zumbi)"
 }

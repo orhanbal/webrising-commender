@@ -1346,5 +1346,8 @@
  "Bu sunucuya erişen bilgisayar şu an kapalı; uzak yapay zekâ bu sunucuya şu an ulaşamaz.": "The computer that reaches this server is off right now; remote AI can't reach this server at the moment.",
  "Terminal sekmeleri": "Terminal tabs",
  "Yeni sekme": "New tab",
- "{0}: bağlantı kapandı.": "{0}: connection closed."
+ "{0}: bağlantı kapandı.": "{0}: connection closed.",
+ "Ara (ad, PID, komut)": "Search (name, PID, command)",
+ "Kullanıcı: {0}": "User: {0}",
+ "{0} (zombi)": "{0} (zombie)"
 }
