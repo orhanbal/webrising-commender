@@ -5,6 +5,33 @@ enum ReleaseNotesData {
 {
  "releases": [
   {
+   "id": "2026-11-18-windows",
+   "date": "2026-11-18",
+   "platforms": [
+    "windows"
+   ],
+   "items": {
+    "tr": [
+     "Dock'un etrafındaki çerçeve çizgisi kaldırıldı; açık ve koyu temada artık hiçbir kenar çizgisi yok."
+    ],
+    "en": [
+     "The frame line around the Dock is gone; there is no border in light or dark theme."
+    ],
+    "de": [
+     "Die Rahmenlinie um das Dock ist weg; im hellen und dunklen Design gibt es keinen Rand mehr."
+    ],
+    "fr": [
+     "La ligne de cadre autour du Dock a disparu ; plus aucune bordure en thème clair ou sombre."
+    ],
+    "es": [
+     "La línea de marco alrededor del Dock ha desaparecido; ya no hay borde en el tema claro ni en el oscuro."
+    ],
+    "pt-BR": [
+     "A linha de moldura ao redor do Dock foi removida; não há mais borda no tema claro nem no escuro."
+    ]
+   }
+  },
+  {
    "id": "2026-11-17-windows",
    "date": "2026-11-17",
    "platforms": [

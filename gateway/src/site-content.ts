@@ -52,6 +52,7 @@ const facts: string[] = [
   "End-to-end encrypted sync of hosts, keys and snippets across devices; team library and live shared terminals.",
   "One MCP URL for all your machines: https://wecommander.app/mcp (OAuth sign-in from Claude, ChatGPT and other MCP clients).",
   "A small agent runs on each machine (Windows, macOS, Linux) and keeps one outbound encrypted connection; no inbound ports, VPN or SSH keys are needed.",
+  "Hybrid Access: SSH servers without an agent can be shared with AI from the Windows desktop app (macOS not yet). The connection runs through WECOMMANDER on your own computer, so SSH keys never leave it; you choose which servers are shared, reads run directly, and commands and file changes (SFTP write, move, delete) need a one-time approval every time.",
   "The agent runs as a normal user (not root/SYSTEM) and only inside the folders you allow.",
   "High-risk actions (running commands, deleting or moving files, killing processes, opening terminals) wait for a human approval of that exact action, unless you allow a command pattern or switch a device to autonomous mode for a set time.",
   "Approvals arrive in the web dashboard, by e-mail and in the Management Center desktop app as Windows notifications with Approve / Deny buttons.",
