@@ -104,3 +104,12 @@ test("Windows appearance toggle scripts parse without changing business logic", 
  assert.match(landing,/id="landingThemeToggle"/);
  assert.match(html,/id="wcThemeToggle"/);
 });
+
+test("public docs and guide pages are routes of the web app (not the landing page)", () => {
+  const app = readFileSync(new URL("../ui/src/App.tsx", import.meta.url), "utf8");
+  const content = readFileSync(new URL("../src/site-content.ts", import.meta.url), "utf8");
+  const listed = JSON.parse(app.match(/const contentPaths=(\[[^\]]*\]);/)[1]);
+  assert.match(app, /const routes=new Set\(\[[^\]]*\.\.\.contentPaths\]\);/, "routes must include contentPaths");
+  const routes = [...app.match(/const routes=new Set\((\[[^\]]*)/)[1].matchAll(/"([^"]+)"/g)].map(m => m[1]);
+  for (const p of [...content.matchAll(/path: "([^"]+)"/g)].map(m => m[1])) assert.ok(routes.includes(p) || listed.includes(p), p + " is not a web app route");
+});
