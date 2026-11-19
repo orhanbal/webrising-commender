@@ -64,6 +64,8 @@ pub enum AgentAction {
         ids: Vec<String>,
     },
     ServerProcesses,
+    /// Systemd timers (system and the login user's) and cron entries, read-only.
+    ServerTimersList,
     ServerProcessSignal {
         pid: u32,
         name: String,
@@ -73,6 +75,24 @@ pub enum AgentAction {
     ServerRestartOwner {
         owner_kind: String,
         id: String,
+    },
+    /// Docker containers (Linux): every daemon, as `wc_server` finds them.
+    DockerContainersList {
+        daemon: Option<String>,
+    },
+    /// `container` is an id or name (or `ref@u<uid>`); `daemon` defaults
+    /// to the one the container names, else `system` (see
+    /// `wc_server::container_target`).
+    DockerContainerLogs {
+        daemon: Option<String>,
+        container: String,
+        tail: Option<usize>,
+        since: Option<String>,
+    },
+    DockerContainerAction {
+        daemon: Option<String>,
+        container: String,
+        action: String,
     },
     LogQuery {
         source: String,
@@ -324,8 +344,12 @@ impl AgentAction {
             Self::ServerCleanupScan => "server_cleanup_scan",
             Self::ServerCleanupRun { .. } => "server_cleanup_run",
             Self::ServerProcesses => "server_processes",
+            Self::ServerTimersList => "server_timers_list",
             Self::ServerProcessSignal { .. } => "server_process_signal",
             Self::ServerRestartOwner { .. } => "server_restart_owner",
+            Self::DockerContainersList { .. } => "docker_containers_list",
+            Self::DockerContainerLogs { .. } => "docker_container_logs",
+            Self::DockerContainerAction { .. } => "docker_container_action",
             Self::LogQuery { .. } => "log_query",
             Self::PolicyInfo => "policy_info",
             Self::FsList { .. } => "fs_list",
@@ -378,6 +402,9 @@ impl AgentAction {
             | Self::ServerDiskUsage { .. }
             | Self::ServerCleanupScan
             | Self::ServerProcesses
+            | Self::ServerTimersList
+            | Self::DockerContainersList { .. }
+            | Self::DockerContainerLogs { .. }
             | Self::LogQuery { .. }
             | Self::PolicyInfo
             | Self::FsList { .. }
@@ -416,11 +443,13 @@ impl AgentAction {
             // Typing into a live shell runs whatever is typed: it needs the
             // same exact-payload approval as process_exec, checked here so a
             // request that skipped the gateway is refused too.
-            // Server cleanup, signals and restarts run fixed commands as root.
+            // Server cleanup, signals and restarts run fixed commands as root;
+            // starting, stopping or restarting a container too.
             Self::TerminalInput { .. }
             | Self::ServerCleanupRun { .. }
             | Self::ServerProcessSignal { .. }
             | Self::ServerRestartOwner { .. }
+            | Self::DockerContainerAction { .. }
             | Self::FsDelete { .. }
             | Self::ProcessExec { .. }
             | Self::ProcessKill { .. }

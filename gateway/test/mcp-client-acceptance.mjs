@@ -185,7 +185,13 @@ try {
     for (const r of t.inputSchema.required || []) assert.ok(r in props, `${t.name} requires undeclared ${r}`);
     for (const [k, v] of Object.entries(props)) assert.ok(v && typeof v === "object" && (v.type || v.enum || v.anyOf || v.oneOf), `${t.name}.${k} schema`);
   }
-  for (const t of tools.filter(t => /HIGH risk/i.test(t.description))) assert.ok("approval_token" in (t.inputSchema.properties || {}), `${t.name} exposes approval_token`);
+  // Scheduled-task changes are workspace actions with no device token: the approval
+  // is bound to the exact change and completed by repeating the same call.
+  const retrySameCall = new Set(["scheduled_task_create", "scheduled_task_update", "scheduled_task_delete", "scheduled_task_run_now"]);
+  for (const t of tools.filter(t => /HIGH risk/i.test(t.description))) {
+    if (retrySameCall.has(t.name)) assert.match(t.description, /approval_request_id/, `${t.name} explains its approval`);
+    else assert.ok("approval_token" in (t.inputSchema.properties || {}), `${t.name} exposes approval_token`);
+  }
   step(`tools/list ${tools.length} tools, schemas valid PASSED`);
 
   // 3. Device discovery and read-only operations.

@@ -42,6 +42,14 @@ test("Gateway and Agent agree on the risk of every action", () => {
   }
 });
 
+test("Docker container tools: list and logs are low, start/stop/restart needs approval on both sides", () => {
+  const byKind = new Map([...kinds].map(([variant, kind]) => [kind, risks.get(variant)]));
+  assert.equal(byKind.get("docker_containers_list"), "low");
+  assert.equal(byKind.get("docker_container_logs"), "low");
+  assert.equal(byKind.get("docker_container_action"), "high");
+  assert.equal(actionRisk("docker_container_action"), "high");
+});
+
 test("unknown actions are rejected, never defaulted to low", () => {
   assert.throws(() => actionRisk("fs_format_disk"), /unknown agent action/);
 });

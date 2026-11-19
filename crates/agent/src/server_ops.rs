@@ -40,6 +40,40 @@ impl wc_server::Shell for Local {
     }
 }
 
+/// Runs Docker as an argument vector, no shell: container names and log
+/// windows from the request are separate arguments (validated in
+/// `wc_server` before this runs). Both streams are capped like the scripts'.
+#[cfg(target_os = "linux")]
+impl wc_server::Exec for Local {
+    async fn exec(&self, argv: &[String], secs: u64) -> Result<wc_server::ExecOutput, String> {
+        let (program, args) = argv.split_first().ok_or("empty command")?;
+        let child = tokio::process::Command::new(program)
+            .args(args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|e| format!("{program} could not start: {e}"))?;
+        let out = tokio::time::timeout(
+            std::time::Duration::from_secs(secs),
+            child.wait_with_output(),
+        )
+        .await
+        .map_err(|_| "Docker zamanında yanıt vermedi.".to_owned())?
+        .map_err(|e| e.to_string())?;
+        let text = |mut bytes: Vec<u8>| {
+            bytes.truncate(MAX_OUTPUT);
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        Ok(wc_server::ExecOutput {
+            code: out.status.code().unwrap_or(-1),
+            stdout: text(out.stdout),
+            stderr: text(out.stderr),
+        })
+    }
+}
+
 fn json<T: serde::Serialize>(value: T) -> Result<Value> {
     Ok(serde_json::to_value(value)?)
 }
@@ -71,6 +105,7 @@ pub async fn execute(action: AgentAction) -> Result<Value> {
         AgentAction::ServerProcesses => {
             json(wc_server::processes(&sh).await.map_err(|e| anyhow!(e))?)
         }
+        AgentAction::ServerTimersList => timers_list(&sh).await,
         AgentAction::ServerProcessSignal {
             pid,
             name,
@@ -83,8 +118,50 @@ pub async fn execute(action: AgentAction) -> Result<Value> {
         AgentAction::ServerRestartOwner { owner_kind, id } => {
             done(wc_server::restart_owner(&sh, owner_kind, id).await)
         }
+        AgentAction::DockerContainersList { daemon } => json(
+            wc_server::docker_containers(&sh, daemon.as_deref())
+                .await
+                .map_err(|e| anyhow!(e))?,
+        ),
+        AgentAction::DockerContainerLogs {
+            daemon,
+            container,
+            tail,
+            since,
+        } => json(
+            wc_server::container_logs(&sh, &container, daemon.as_deref(), tail, since.as_deref())
+                .await
+                .map_err(|e| anyhow!(e))?,
+        ),
+        AgentAction::DockerContainerAction {
+            daemon,
+            container,
+            action,
+        } => json(
+            wc_server::container_action(&sh, &container, daemon.as_deref(), &action)
+                .await
+                .map_err(|e| anyhow!(e))?,
+        ),
         other => Err(anyhow!("not a server action: {}", other.kind_name())),
     }
+}
+
+/// Timers and cron entries as the agent's user sees them (no root needed),
+/// with `unreadable`: what could not be read or is never read, so a short
+/// list is not mistaken for a complete one. Unreadable cron files are listed
+/// there instead of as empty entries.
+#[cfg(target_os = "linux")]
+async fn timers_list<S: wc_server::Shell>(sh: &S) -> Result<Value> {
+    let mut timers = wc_server::timers(sh).await.map_err(|e| anyhow!(e))?;
+    let unreadable = wc_server::timers_unreadable(&timers);
+    timers
+        .cron
+        .retain(|entry| !wc_server::cron_unreadable(entry));
+    let mut value = json(&timers)?;
+    if let Some(object) = value.as_object_mut() {
+        object.insert("unreadable".into(), json(unreadable)?);
+    }
+    Ok(value)
 }
 
 /// The scripts are written for Linux (procfs, systemd, GNU find).
@@ -131,6 +208,17 @@ mod tests {
             .unwrap()
             .iter()
             .any(|p| p["pid"].as_u64() == Some(me)));
+
+        let timers = execute(action(serde_json::json!({ "kind": "server_timers_list" })))
+            .await
+            .unwrap();
+        assert!(timers["timers"].is_array(), "{timers}");
+        assert!(timers["cron"].is_array());
+        assert!(timers["unreadable"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|u| u["source"] == "other users"));
     }
 
     #[test]
@@ -148,6 +236,67 @@ mod tests {
         );
         let c = action(serde_json::json!({ "kind": "server_cleanup_run", "ids": ["apt-cache"] }));
         assert_eq!(c.risk(), crate::protocol::Risk::High);
+    }
+
+    #[test]
+    fn docker_actions_carry_the_gateway_field_names_and_risk() {
+        let list = action(serde_json::json!({ "kind": "docker_containers_list" }));
+        assert_eq!(list.risk(), crate::protocol::Risk::Low);
+        let logs = action(serde_json::json!({
+            "kind": "docker_container_logs", "daemon": "u1000", "container": "web", "tail": 50, "since": "10m"
+        }));
+        assert_eq!(logs.kind_name(), "docker_container_logs");
+        assert_eq!(logs.risk(), crate::protocol::Risk::Low);
+        let act = action(serde_json::json!({
+            "kind": "docker_container_action", "daemon": "system", "container": "web", "action": "restart"
+        }));
+        assert_eq!(act.risk(), crate::protocol::Risk::High);
+        assert!(
+            matches!(act, AgentAction::DockerContainerAction { ref action, .. } if action == "restart")
+        );
+        // Local stdio mode passes the MCP arguments as they are: the daemon
+        // may be left out or named by the container (`ref@u<uid>`).
+        let rootless = action(serde_json::json!({
+            "kind": "docker_container_action", "container": "web@u1000", "action": "stop"
+        }));
+        assert!(matches!(
+            rootless,
+            AgentAction::DockerContainerAction { daemon: None, ref container, .. } if container == "web@u1000"
+        ));
+        let one =
+            action(serde_json::json!({ "kind": "docker_containers_list", "daemon": "u1000" }));
+        assert!(
+            matches!(one, AgentAction::DockerContainersList { daemon: Some(ref d) } if d == "u1000")
+        );
+    }
+
+    #[tokio::test]
+    async fn bad_docker_input_is_refused_before_anything_runs() {
+        for (json, expected) in [
+            (
+                serde_json::json!({ "kind": "docker_container_action", "daemon": "system", "container": "web;reboot", "action": "stop" }),
+                "invalid container",
+            ),
+            (
+                serde_json::json!({ "kind": "docker_container_action", "daemon": "system", "container": "web", "action": "rm" }),
+                "invalid action",
+            ),
+            (
+                serde_json::json!({ "kind": "docker_container_logs", "daemon": "system", "container": "web", "since": "$(id)" }),
+                "invalid since",
+            ),
+            (
+                serde_json::json!({ "kind": "docker_container_logs", "daemon": "system", "container": "web@u1000" }),
+                "invalid daemon",
+            ),
+            (
+                serde_json::json!({ "kind": "docker_containers_list", "daemon": "u0" }),
+                "invalid daemon",
+            ),
+        ] {
+            let err = execute(action(json)).await.unwrap_err();
+            assert!(err.to_string().contains(expected), "{err}");
+        }
     }
 
     #[tokio::test]

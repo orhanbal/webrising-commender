@@ -25,15 +25,62 @@ import crypto from "node:crypto";
 import { roleAtLeast, type Principal } from "./auth.js";
 import { db } from "./db.js";
 import { redactSecrets } from "./security.js";
+import { DOCKER_LOG_LINES_MAX, dockerContainerSchema, dockerDaemonSchema, dockerSinceSchema } from "./protocol.js";
 
 /** Tools an SSH target supports (the rest answer unsupported_for_target). */
 export const SSH_TARGET_TOOLS = [
   "process_exec", "fs_list", "fs_read", "fs_stat", "server_overview", "server_disk_usage", "server_processes",
   "fs_write", "fs_mkdir", "fs_move", "fs_delete",
+  // The server tools of agent devices, run with the same wc-server scripts
+  // over SSH from the person's computer.
+  "server_cleanup_scan", "server_cleanup_run", "server_process_signal",
+  "server_timers_list", "docker_containers_list", "docker_container_logs", "docker_container_action",
 ] as const;
 const SSH_TOOLS = new Set<string>(SSH_TARGET_TOOLS);
-/** Commands and file changes: approval every time, refused on readonly. */
-export const SSH_CHANGE_TOOLS = new Set(["process_exec", "fs_write", "fs_mkdir", "fs_move", "fs_delete"]);
+/** Commands, file and server changes: approval every time, refused on readonly. */
+export const SSH_CHANGE_TOOLS = new Set([
+  "process_exec", "fs_write", "fs_mkdir", "fs_move", "fs_delete",
+  "server_cleanup_run", "server_process_signal", "docker_container_action",
+]);
+
+/** How long the computer may take for a call, by tool (default 60 s). */
+const TOOL_TIMEOUT_MS: Record<string, number> = {
+  server_cleanup_scan: 300_000,
+  // Each category may take up to 15 minutes (tens of GB of build cache).
+  server_cleanup_run: 1_800_000,
+  server_timers_list: 180_000,
+  docker_containers_list: 180_000,
+  docker_container_logs: 120_000,
+  docker_container_action: 120_000,
+};
+
+/** How long a queued call may run on the computer, in milliseconds. */
+export function callTimeoutMs(tool: string, args: Record<string, unknown>) {
+  if (tool === "process_exec") return Number(args.timeout_ms);
+  return TOOL_TIMEOUT_MS[tool] ?? 60_000;
+}
+
+/** A cleanup id from server_cleanup_scan (the agent schema's pattern). */
+const CLEANUP_ID = /^[a-z-]{2,40}(@u[0-9]{1,10})?$/;
+/** Docker daemons (system or u<uid>) and container ids or names: the same
+ *  schemas as agent devices (protocol.ts, wc_server::containers). */
+const DOCKER_DAEMON = { test: (s: string) => dockerDaemonSchema.safeParse(s).success };
+const CONTAINER_REF = { test: (s: string) => dockerContainerSchema.safeParse(s).success };
+export const DOCKER_LOG_TAIL_DEFAULT = 200;
+export const DOCKER_LOG_TAIL_MAX = DOCKER_LOG_LINES_MAX;
+
+/** `container` (ref or ref@u<uid>) and `daemon` as one daemon and one ref. */
+function dockerTarget(a: Record<string, any>): { daemon: string; container: string } | null {
+  let ref = str(a.container).trim().replace(/^\//, "");
+  let suffix: string | null = null;
+  const at = ref.indexOf("@");
+  if (at >= 0) { suffix = ref.slice(at + 1); ref = ref.slice(0, at); }
+  const given = a.daemon === undefined || a.daemon === null || str(a.daemon).trim() === "" ? null : str(a.daemon).trim();
+  if (suffix !== null && given !== null && suffix !== given) return null;
+  const daemon = suffix ?? given ?? "system";
+  if (!DOCKER_DAEMON.test(daemon) || !CONTAINER_REF.test(ref)) return null;
+  return { daemon, container: ref };
+}
 
 /** A computer that polled within this many seconds is online. */
 export const CONNECTOR_ONLINE_SECONDS = 45;
@@ -348,6 +395,53 @@ export function normalize(tool: string, a: Record<string, any>, targetId: string
     }
     case "server_disk_usage":
       return { args: a.path === undefined ? {} : { path: str(a.path).slice(0, 4096) }, action: null };
+    case "server_cleanup_run": {
+      const ids = a.ids;
+      if (!Array.isArray(ids) || ids.length < 1 || ids.length > 20 || !ids.every((id) => typeof id === "string" && CLEANUP_ID.test(id))) {
+        return bad("ids must be 1-20 category ids from server_cleanup_scan");
+      }
+      return { args: { ids: [...ids] }, action: { kind: "server_cleanup_run", target: targetId, ids: [...ids] } };
+    }
+    case "server_process_signal": {
+      const pid = a.pid;
+      if (typeof pid !== "number" || !Number.isInteger(pid) || pid < 2 || pid > 4194304) return bad("pid must be a process id (2-4194304)");
+      const name = str(a.name);
+      if (!name || name.length > 64 || /[\n\0]/.test(name)) return bad("name must be the process name from server_processes");
+      const action = a.action;
+      if (action !== "reap" && action !== "term" && action !== "kill") return bad("action must be reap, term or kill");
+      const confirmDatabase = a.confirm_database === true;
+      return {
+        args: { pid, name, action, confirm_database: confirmDatabase },
+        action: { kind: "server_process_signal", target: targetId, pid, name, action, confirmDatabase },
+      };
+    }
+    case "docker_containers_list": {
+      if (a.daemon === undefined || a.daemon === null || str(a.daemon).trim() === "") return { args: {}, action: null };
+      const daemon = str(a.daemon).trim();
+      if (!DOCKER_DAEMON.test(daemon)) return bad("daemon must be system or u<uid>");
+      return { args: { daemon }, action: null };
+    }
+    case "docker_container_logs": {
+      const t = dockerTarget(a);
+      if (!t) return bad("container must be an id or name from docker_containers_list (id@u<uid> or daemon for a rootless one)");
+      let tail = DOCKER_LOG_TAIL_DEFAULT;
+      if (a.tail !== undefined && a.tail !== null) {
+        if (typeof a.tail !== "number" || !Number.isInteger(a.tail) || a.tail < 1 || a.tail > DOCKER_LOG_TAIL_MAX) return bad("tail must be 1-2000");
+        tail = a.tail;
+      }
+      if (a.since === undefined || a.since === null) return { args: { ...t, tail }, action: null };
+      if (typeof a.since !== "string" || !dockerSinceSchema.safeParse(a.since).success) {
+        return bad("since must be a duration like 10m, a Unix time or an RFC 3339 time");
+      }
+      return { args: { ...t, tail, since: a.since }, action: null };
+    }
+    case "docker_container_action": {
+      const t = dockerTarget(a);
+      if (!t) return bad("container must be an id or name from docker_containers_list (id@u<uid> or daemon for a rootless one)");
+      const action = a.action;
+      if (action !== "start" && action !== "stop" && action !== "restart") return bad("action must be start, stop or restart");
+      return { args: { ...t, action }, action: { kind: "docker_container_action", target: targetId, ...t, action } };
+    }
     default:
       return { args: {}, action: null };
   }
@@ -386,7 +480,7 @@ export async function sshTargetCall(principal: Principal, tool: string, rawArgs:
   }
   if (normalized.action && row.preset === "readonly") {
     await audit(tool, risk, "denied", { ...where, reason: "readonly_preset" });
-    return err("readonly_preset", "This server is read-only for AI: commands and file changes are off. The person can change it in WECOMMANDER (server → AI access).");
+    return err("readonly_preset", "This server is read-only for AI: commands, file changes and server changes are off. The person can change it in WECOMMANDER (server → AI access).");
   }
   if (!row.online) {
     await audit(tool, risk, "error", { ...where, reason: "connector_offline" });
@@ -406,7 +500,7 @@ export async function sshTargetCall(principal: Principal, tool: string, rawArgs:
     await audit(tool, risk, "approval_consumed", { ...where, approvalRequestId: approvalId });
   }
 
-  const timeoutMs = tool === "process_exec" ? Number((normalized.args as any).timeout_ms) : 60_000;
+  const timeoutMs = callTimeoutMs(tool, normalized.args);
   const inserted = await db.query<{ id: string }>(
     `insert into connector_calls(organization_id,center_id,host_id,target_id,tool,args,approved,client,claim_by,deadline)
      values($1,$2,$3,$4,$5,$6::jsonb,$7,$8,now()+($9::int * interval '1 millisecond'),now()+($10::int * interval '1 millisecond'))

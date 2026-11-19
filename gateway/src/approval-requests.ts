@@ -1,18 +1,28 @@
 import { db } from "./db.js";
 import type { AgentAction } from "./protocol.js";
 
+/**
+ * A workspace operation the gateway performs itself once a human approved it
+ * (WECOMMANDER scheduled tasks over MCP). It is bound to the task's device
+ * when it has one, else to the workspace (device_id null, no center).
+ */
+export type WorkspaceAction = { kind: `scheduled_task_${string}`; [key: string]: unknown };
+export type ApprovalAction = AgentAction | WorkspaceAction;
+
 export async function ensureApprovalRequest(
   organizationId: string,
   actor: string,
-  deviceId: string,
-  action: AgentAction,
+  deviceId: string | null,
+  action: ApprovalAction,
+  targetLabel: string | null = null,
 ) {
   const actionJson = JSON.stringify(action);
   const existing = await db.query<{ id: string; expires_at: Date }>(
     `select id,expires_at
        from approval_requests
       where organization_id=$1
-        and device_id=$2
+        and device_id is not distinct from $2::uuid
+        and center_id is null
         and requested_by=$3
         and action=$4::jsonb
         and status='pending'
@@ -28,11 +38,11 @@ export async function ensureApprovalRequest(
 
   const created = await db.query<{ id: string; expires_at: Date }>(
     `insert into approval_requests(
-       organization_id,device_id,requested_by,action_kind,action,status,expires_at
+       organization_id,device_id,requested_by,action_kind,action,status,expires_at,target_label
      )
-     values($1,$2,$3,$4,$5::jsonb,'pending',now()+interval '10 minutes')
+     values($1,$2,$3,$4,$5::jsonb,'pending',now()+interval '10 minutes',$6)
      returning id,expires_at`,
-    [organizationId, deviceId, actor, action.kind, actionJson],
+    [organizationId, deviceId, actor, action.kind, actionJson, targetLabel],
   );
 
   return { ...created.rows[0]!, created: true };
@@ -41,8 +51,8 @@ export async function ensureApprovalRequest(
 export async function consumeApprovedRequest(
   organizationId: string,
   actor: string,
-  deviceId: string,
-  action: AgentAction,
+  deviceId: string | null,
+  action: ApprovalAction,
 ) {
   const actionJson = JSON.stringify(action);
   const result = await db.query<{ id: string }>(
@@ -50,7 +60,8 @@ export async function consumeApprovedRequest(
        select id
          from approval_requests
         where organization_id=$1
-          and device_id=$2
+          and device_id is not distinct from $2::uuid
+          and center_id is null
           and requested_by=$3
           and action=$4::jsonb
           and status='approved'
@@ -94,7 +105,7 @@ export const UNDELIVERED_ERRORS = new Set([
 export async function restoreUndeliveredApproval(
   organizationId: string,
   requestId: string,
-  action: AgentAction,
+  action: ApprovalAction,
 ) {
   const result = await db.query(
     `update approval_requests

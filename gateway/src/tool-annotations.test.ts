@@ -47,9 +47,9 @@ test("annotations agree with the enforced risk class", () => {
 });
 
 test("the server-changing tools that need approval are destructive; reads are read-only", () => {
-  for (const name of ["process_exec", "process_kill", "fs_delete", "terminal_input", "terminal_start", "server_cleanup_run", "server_process_signal", "server_restart_owner"])
+  for (const name of ["process_exec", "process_kill", "fs_delete", "terminal_input", "terminal_start", "server_cleanup_run", "server_process_signal", "server_restart_owner", "docker_container_action"])
     assert.deepEqual([toolAnnotations(name).readOnlyHint, toolAnnotations(name).destructiveHint], [false, true], name);
-  for (const name of ["devices_list", "server_overview", "server_cleanup_scan", "server_processes", "fs_read", "log_query", "health_snapshot"])
+  for (const name of ["devices_list", "server_overview", "server_cleanup_scan", "server_processes", "fs_read", "log_query", "health_snapshot", "docker_containers_list", "docker_container_logs"])
     assert.deepEqual([toolAnnotations(name).readOnlyHint, toolAnnotations(name).destructiveHint], [true, false], name);
   assert.equal(toolAnnotations("url_fetch").openWorldHint, true);
   assert.equal(toolAnnotations("fs_read").openWorldHint, false);

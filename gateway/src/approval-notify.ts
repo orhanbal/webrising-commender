@@ -5,11 +5,11 @@
 
 import { db } from "./db.js";
 import { enqueueMail, mailConfigured } from "./mail.js";
-import type { AgentAction } from "./protocol.js";
+import type { ApprovalAction } from "./approval-requests.js";
 
 const MAX_RECIPIENTS = 10;
 
-function describe(action: AgentAction) {
+function describe(action: ApprovalAction) {
   const a = action as Record<string, unknown>;
   const detail = typeof a.dataBase64 === "string"
     ? Buffer.from(a.dataBase64, "base64").toString("utf8").replace(/\r?\n|\r/g, "⏎")
@@ -17,6 +17,7 @@ function describe(action: AgentAction) {
     : typeof a.command === "string" ? a.command
     : typeof a.path === "string" ? a.path
     : typeof a.pid === "number" ? "pid " + a.pid
+    : typeof a.container === "string" && typeof a.daemon === "string" ? `${String(a.action ?? "")} ${a.container} @ ${a.daemon}`.trim()
     : typeof a.taskId === "string" ? a.taskId
     : typeof a.sessionId === "string" ? a.sessionId
     : "";
@@ -26,10 +27,12 @@ function describe(action: AgentAction) {
 
 export async function notifyApprovers(
   organizationId: string,
-  deviceId: string,
-  action: AgentAction,
+  deviceId: string | null,
+  action: ApprovalAction,
   requestId: string,
   expiresAt: Date,
+  /** Shown instead of a device name for a workspace operation. */
+  placeLabel?: string,
 ) {
   if (!mailConfigured()) return 0;
   const base = (process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
@@ -42,11 +45,13 @@ export async function notifyApprovers(
         order by m.role desc, u.email limit $2`,
       [organizationId, MAX_RECIPIENTS],
     ),
-    db.query<{ name: string; hostname: string }>(
-      "select name,hostname from devices where id=$1 and organization_id=$2", [deviceId, organizationId],
-    ),
+    deviceId
+      ? db.query<{ name: string; hostname: string }>(
+        "select name,hostname from devices where id=$1 and organization_id=$2", [deviceId, organizationId],
+      )
+      : Promise.resolve({ rows: [] as Array<{ name: string; hostname: string }> }),
   ]);
-  const deviceName = device.rows[0]?.name || deviceId;
+  const deviceName = device.rows[0]?.name || placeLabel || deviceId || "workspace";
   const link = `${base}/approvals`;
   const detail = describe(action);
   const expires = new Date(expiresAt).toISOString().replace("T", " ").slice(0, 16) + " UTC";

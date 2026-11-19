@@ -218,7 +218,7 @@ mod tests {
         assert_eq!(got.len(), 4, "{got:?}");
         assert_eq!(got[0]["result"]["serverInfo"]["name"], "WECOMMANDER");
         assert_eq!(got[0]["result"]["protocolVersion"], "2024-11-05");
-        assert_eq!(got[1]["result"]["tools"].as_array().unwrap().len(), 12);
+        assert_eq!(got[1]["result"]["tools"].as_array().unwrap().len(), 19);
         assert_eq!(got[2]["result"]["isError"], true);
         assert_eq!(
             got[2]["result"]["structuredContent"]["error"],

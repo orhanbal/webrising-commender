@@ -1756,7 +1756,10 @@ for (const advertised of advertisedTools) {
     "create_directory", "move_file", "get_file_info", "edit_block", "url_fetch"];
   // Tools that also run on SSH targets (Hybrid Access H3) take device_id or target.
   const sshCapable = ["process_exec", "fs_list", "fs_read", "fs_stat", "server_overview", "server_disk_usage",
-    "server_processes", "fs_write", "fs_mkdir", "fs_move", "fs_delete"];
+    "server_processes", "fs_write", "fs_mkdir", "fs_move", "fs_delete", "server_cleanup_scan", "server_cleanup_run",
+    "server_process_signal", "server_timers_list", "docker_containers_list", "docker_container_logs", "docker_container_action"];
+  // Workspace-level scheduled task tools: no device (create names the device it runs on).
+  const workspaceTools = ["scheduled_tasks_list", "scheduled_task_update", "scheduled_task_delete", "scheduled_task_run_now"];
   if (dcCompatible.includes(advertised.name)) {
     assert.ok(!required.includes("device_id"), advertised.name);
     assert.equal(schema.properties.device_id.type, "string", advertised.name);
@@ -1764,6 +1767,8 @@ for (const advertised of advertisedTools) {
     assert.ok(!required.includes("device_id"), advertised.name);
     assert.equal(schema.properties.device_id.type, "string", advertised.name);
     assert.equal(schema.properties.target.type, "string", advertised.name);
+  } else if (workspaceTools.includes(advertised.name)) {
+    assert.ok(!required.includes("device_id"), advertised.name);
   } else if (advertised.name !== "devices_list" && advertised.name !== "app_errors" && advertised.name !== "targets_list") {
     assert.ok(required.includes("device_id"), `Device routing not required: ${advertised.name}`);
     assert.equal(schema.properties.device_id.type, "string", advertised.name);

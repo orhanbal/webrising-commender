@@ -17,6 +17,11 @@ public static class Texts
         "server_cleanup_run" => L.T("Sunucuda yer aç (temizlik)"),
         "server_process_signal" => L.T("Sürece sinyal gönder"),
         "server_restart_owner" => L.T("Servisi yeniden başlat"),
+        "docker_container_action" => L.T("Konteyneri başlat veya durdur"),
+        "scheduled_task_create" => L.T("Zamanlanmış görev oluştur"),
+        "scheduled_task_update" => L.T("Zamanlanmış görevi düzenle"),
+        "scheduled_task_delete" => L.T("Zamanlanmış görevi sil"),
+        "scheduled_task_run_now" => L.T("Zamanlanmış görevi şimdi çalıştır"),
         _ => kind,
     };
 

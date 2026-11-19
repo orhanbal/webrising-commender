@@ -5,7 +5,10 @@
 //! Names and arguments are the gateway's (`process_exec`, `fs_list`,
 //! `fs_read`, `fs_stat`, `server_overview`, `server_disk_usage`,
 //! `server_processes`, and since H4 `fs_write`, `fs_mkdir`, `fs_move`,
-//! `fs_delete`) plus `targets_list`; each takes a `target` (a host the
+//! `fs_delete`; then `server_cleanup_scan`, `server_cleanup_run`,
+//! `server_process_signal`, `server_timers_list`, `docker_containers_list`,
+//! `docker_container_logs`, `docker_container_action`, the same
+//! `wc-server` scripts as the server window) plus `targets_list`; each takes a `target` (a host the
 //! person exposed with `aiAccess.local`, or `aiAccess.remote` for remote
 //! calls). Order of checks for every call: target exposed → host key
 //! trusted → preset (readonly refuses commands and changes) → sudo guard →
@@ -29,7 +32,7 @@ use crate::AppState;
 const TOOLS: &str = include_str!("tools.json");
 
 /// Tools an SSH target supports.
-pub const SSH_TOOLS: [&str; 12] = [
+pub const SSH_TOOLS: [&str; 19] = [
     "targets_list",
     "process_exec",
     "fs_list",
@@ -42,16 +45,33 @@ pub const SSH_TOOLS: [&str; 12] = [
     "fs_mkdir",
     "fs_move",
     "fs_delete",
+    "server_cleanup_scan",
+    "server_cleanup_run",
+    "server_process_signal",
+    "server_timers_list",
+    "docker_containers_list",
+    "docker_container_logs",
+    "docker_container_action",
 ];
 
 /// Tools that change the server: refused on readonly targets, each needs a
 /// one-time approval (locally unless a timed period runs; remotely always).
-pub const CHANGE_TOOLS: [&str; 5] = [
+pub const CHANGE_TOOLS: [&str; 8] = [
     "process_exec",
     "fs_write",
     "fs_mkdir",
     "fs_move",
     "fs_delete",
+    "server_cleanup_run",
+    "server_process_signal",
+    "docker_container_action",
+];
+
+/// The changes that run `wc-server`'s fixed scripts (not SFTP).
+pub const SERVER_CHANGE_TOOLS: [&str; 3] = [
+    "server_cleanup_run",
+    "server_process_signal",
+    "docker_container_action",
 ];
 
 /// Gateway tools an SSH target does not support (yet).
@@ -79,9 +99,6 @@ const NOT_ON_SSH: &[&str] = &[
     "task_cancel",
     "process_list",
     "process_kill",
-    "server_cleanup_scan",
-    "server_cleanup_run",
-    "server_process_signal",
     "server_restart_owner",
     "system_info",
     "write_file",
@@ -521,7 +538,11 @@ pub fn check_change(
 ) -> Result<(Change, bool), Fail> {
     let preset = effective_preset(ai, now);
     if preset == "readonly" {
-        return Err(readonly_fail("file changes"));
+        return Err(readonly_fail(if SERVER_CHANGE_TOOLS.contains(&tool) {
+            "server changes"
+        } else {
+            "file changes"
+        }));
     }
     let change = match tool {
         "fs_write" => {
@@ -609,9 +630,121 @@ pub fn check_change(
                 content: Vec::new(),
             }
         }
+        "server_cleanup_run" | "server_process_signal" | "docker_container_action" => {
+            server_change(tool, args)?
+        }
         other => return Err(Fail::new("unknown_tool", format!("unknown tool {other}"))),
     };
     Ok((change, preset != "timed"))
+}
+
+fn invalid(message: impl Into<String>) -> Fail {
+    Fail::new("invalid_arguments", message)
+}
+
+/// A cleanup id from `server_cleanup_scan`: `apt-cache`, `docker-build@u1000`
+/// (the gateway's `^[a-z-]{2,40}(@u[0-9]{1,10})?$`).
+pub fn valid_cleanup_id(id: &str) -> bool {
+    let (kind, daemon) = match id.split_once('@') {
+        Some((k, d)) => (k, Some(d)),
+        None => (id, None),
+    };
+    (2..=40).contains(&kind.len())
+        && kind.chars().all(|c| c.is_ascii_lowercase() || c == '-')
+        && daemon.is_none_or(|d| {
+            d.strip_prefix('u').is_some_and(|n| {
+                (1..=10).contains(&n.len()) && n.chars().all(|c| c.is_ascii_digit())
+            })
+        })
+}
+
+/// The checks of a server change (`server_cleanup_run`,
+/// `server_process_signal`, `docker_container_action`), as the gateway's
+/// agent schema checks them: the exact operation and its binding.
+fn server_change(tool: &str, args: &Map<String, Value>) -> Result<Change, Fail> {
+    let change = |tool: &'static str, describe: String, bound: Value| Change {
+        tool,
+        describe,
+        bound,
+        content: Vec::new(),
+    };
+    match tool {
+        "server_cleanup_run" => {
+            let list = args
+                .get("ids")
+                .and_then(Value::as_array)
+                .ok_or_else(|| invalid("ids must be a list of ids from server_cleanup_scan"))?;
+            if list.is_empty() || list.len() > 20 {
+                return Err(invalid("ids must have 1-20 ids from server_cleanup_scan"));
+            }
+            let mut ids = Vec::new();
+            for v in list {
+                match v.as_str() {
+                    Some(id) if valid_cleanup_id(id) => ids.push(id.to_owned()),
+                    _ => return Err(invalid("ids must be ids from server_cleanup_scan")),
+                }
+            }
+            Ok(change(
+                "server_cleanup_run",
+                format!("free disk space: {}", ids.join(", ")),
+                json!({ "ids": ids }),
+            ))
+        }
+        "server_process_signal" => {
+            let pid = args
+                .get("pid")
+                .and_then(Value::as_u64)
+                .filter(|p| (2..=4_194_304).contains(p))
+                .ok_or_else(|| invalid("pid must be a process id (2-4194304)"))?;
+            let name = arg_str(args, "name").unwrap_or("").to_owned();
+            if name.is_empty() || name.len() > 64 || name.contains(['\n', '\0']) {
+                return Err(invalid(
+                    "name must be the process name from server_processes",
+                ));
+            }
+            let action = arg_str(args, "action").unwrap_or("");
+            let signal = match action {
+                "reap" => "SIGCHLD (collect its zombies)",
+                "term" => "SIGTERM (ask it to stop)",
+                "kill" => "SIGKILL (stop it at once)",
+                _ => return Err(invalid("action must be reap, term or kill")),
+            };
+            let confirm_database = arg_bool(args, "confirm_database");
+            Ok(change(
+                "server_process_signal",
+                format!(
+                    "send {signal} to process {pid} ({name}){}",
+                    if confirm_database {
+                        ", database confirmed"
+                    } else {
+                        ""
+                    }
+                ),
+                json!({ "pid": pid, "name": name, "action": action, "confirmDatabase": confirm_database }),
+            ))
+        }
+        _ => {
+            let (daemon, container) = wc_server::container_target(
+                arg_str(args, "container").unwrap_or(""),
+                arg_str(args, "daemon"),
+            )
+            .map_err(invalid)?;
+            let action = arg_str(args, "action").unwrap_or("");
+            if !wc_server::CONTAINER_ACTIONS.contains(&action) {
+                return Err(invalid("action must be start, stop or restart"));
+            }
+            let on = if daemon == "system" {
+                "the system Docker".to_owned()
+            } else {
+                format!("the rootless Docker of {daemon}")
+            };
+            Ok(change(
+                "docker_container_action",
+                format!("{action} Docker container {container} on {on}"),
+                json!({ "daemon": daemon, "container": container, "action": action }),
+            ))
+        }
+    }
 }
 
 /// What the person is asked to approve.
@@ -647,6 +780,8 @@ async fn approve(
     if new {
         let what = if ask.tool == "process_exec" {
             "run a command"
+        } else if SERVER_CHANGE_TOOLS.contains(&ask.tool) {
+            "change the server"
         } else {
             "change files"
         };
@@ -737,6 +872,21 @@ async fn run(
             "redactions": redactions,
         }));
     }
+    if SERVER_CHANGE_TOOLS.contains(&name) {
+        let (change, needs_approval) = check_change(ai, name, args, now)?;
+        if needs_approval || remote {
+            let ask = Ask {
+                tool: change.tool,
+                binding: binding_call(change.tool, &caller.id, &host.id, &change.bound),
+                command: &change.describe,
+                cwd: None,
+                timeout_ms: None,
+            };
+            approve(state, caller, origin, host, ask).await?;
+        }
+        let (conn, _jump) = connect(state, host).await?;
+        return server_change_run(guarded(conn, ai), &change).await;
+    }
     if CHANGE_TOOLS.contains(&name) {
         let (change, needs_approval) = check_change(ai, name, args, now)?;
         if needs_approval || remote {
@@ -765,10 +915,14 @@ async fn run(
         let _ = conn.close().await;
         return result;
     }
+    let read = check_server_read(name, args)?;
     let (conn, _jump) = connect(state, host).await?;
     match name {
         "fs_list" | "fs_read" | "fs_stat" => sftp_tool(&conn, name, args).await,
-        _ => server_tool(conn, name, args).await,
+        "server_overview" | "server_disk_usage" | "server_processes" => {
+            server_tool(conn, name, args).await
+        }
+        _ => server_read(guarded(conn, ai), name, read).await,
     }
 }
 
@@ -1087,6 +1241,215 @@ async fn sftp_change(sftp: &Sftp, change: &Change) -> Result<Value, Fail> {
     }
 }
 
+/// A `PRELUDE` without sudo: privileged steps run only when the SSH user is
+/// root. Used when the person did not allow sudoers for AI clients.
+pub const NO_SUDO_PRELUDE: &str = r#"export LC_ALL=C
+R=; if [ "$(id -u)" = 0 ]; then R=root; fi
+r() { "$@"; }
+"#;
+
+/// Runs `wc-server` scripts over SSH; with `sudo: never` the scripts never
+/// raise privileges with sudo (a root login stays root).
+pub(crate) struct Guarded {
+    ssh: crate::server::Ssh,
+    sudo: bool,
+}
+
+fn guarded(conn: Connection, ai: &AiAccess) -> Guarded {
+    Guarded {
+        ssh: crate::server::Ssh(Arc::new(conn)),
+        sudo: ai.sudo == "sudoers",
+    }
+}
+
+/// The script as it runs with sudoers allowed (`sudo`) or not.
+pub fn guard_script(script: &str, sudo: bool) -> String {
+    if sudo {
+        script.to_owned()
+    } else {
+        script.replacen(wc_server::PRELUDE, NO_SUDO_PRELUDE, 1)
+    }
+}
+
+impl wc_server::Shell for Guarded {
+    async fn run_script(&self, script: &str, secs: u64) -> Result<String, String> {
+        wc_server::Shell::run_script(&self.ssh, &guard_script(script, self.sudo), secs).await
+    }
+}
+
+/// Docker calls as quoted argument vectors over SSH. Without sudoers the
+/// discovery never reports `sudo`, so no call starts with it; one that does
+/// anyway is refused.
+impl wc_server::Exec for Guarded {
+    async fn exec(&self, argv: &[String], secs: u64) -> Result<wc_server::ExecOutput, String> {
+        if !self.sudo && argv.first().is_some_and(|p| p == "sudo") {
+            return Err(wc_server::NEEDS_ROOT.into());
+        }
+        wc_server::Exec::exec(&self.ssh, argv, secs).await
+    }
+}
+
+/// Arguments of a read-only server tool, checked before connecting.
+#[derive(Debug, PartialEq)]
+pub enum ServerRead {
+    None,
+    Daemon(Option<String>),
+    Logs {
+        daemon: String,
+        container: String,
+        tail: usize,
+        since: Option<String>,
+    },
+}
+
+pub fn check_server_read(name: &str, args: &Map<String, Value>) -> Result<ServerRead, Fail> {
+    match name {
+        "docker_containers_list" => {
+            match arg_str(args, "daemon")
+                .map(str::trim)
+                .filter(|d| !d.is_empty())
+            {
+                None => Ok(ServerRead::Daemon(None)),
+                Some(d) if wc_server::valid_daemon_id(d) => {
+                    Ok(ServerRead::Daemon(Some(d.to_owned())))
+                }
+                Some(_) => Err(invalid("daemon must be system or u<uid>")),
+            }
+        }
+        "docker_container_logs" => {
+            let (daemon, container) = wc_server::container_target(
+                arg_str(args, "container").unwrap_or(""),
+                arg_str(args, "daemon"),
+            )
+            .map_err(invalid)?;
+            let tail = match args.get("tail") {
+                None | Some(Value::Null) => wc_server::DEFAULT_LOG_LINES,
+                Some(v) => v
+                    .as_u64()
+                    .filter(|n| (1..=wc_server::MAX_LOG_LINES as u64).contains(n))
+                    .map(|n| n as usize)
+                    .ok_or_else(|| invalid("tail must be 1-2000"))?,
+            };
+            let since = match args.get("since") {
+                None | Some(Value::Null) => None,
+                Some(Value::String(s)) if wc_server::valid_since(s) => Some(s.clone()),
+                Some(_) => {
+                    return Err(invalid(
+                        "since must be a duration like 10m, a Unix time or an RFC 3339 time",
+                    ))
+                }
+            };
+            Ok(ServerRead::Logs {
+                daemon,
+                container,
+                tail,
+                since,
+            })
+        }
+        _ => Ok(ServerRead::None),
+    }
+}
+
+fn server_fail(e: String) -> Fail {
+    Fail::new("server_error", e)
+}
+
+fn to_json<T: serde::Serialize>(v: T) -> Result<Value, Fail> {
+    serde_json::to_value(v).map_err(|e| server_fail(e.to_string()))
+}
+
+/// `server_cleanup_scan`, `server_timers_list`, `docker_containers_list`,
+/// `docker_container_logs`.
+async fn server_read(sh: Guarded, name: &str, read: ServerRead) -> Result<Value, Fail> {
+    match (name, read) {
+        ("server_cleanup_scan", _) => {
+            to_json(wc_server::cleanup_scan(&sh).await.map_err(server_fail)?)
+        }
+        ("server_timers_list", _) => {
+            let mut v = to_json(wc_server::timers(&sh).await.map_err(server_fail)?)?;
+            redact::redact_value(&mut v);
+            Ok(v)
+        }
+        ("docker_containers_list", ServerRead::Daemon(only)) => to_json(
+            wc_server::docker_containers(&sh, only.as_deref())
+                .await
+                .map_err(server_fail)?,
+        ),
+        (
+            "docker_container_logs",
+            ServerRead::Logs {
+                daemon,
+                container,
+                tail,
+                since,
+            },
+        ) => {
+            let logs = wc_server::container_logs(
+                &sh,
+                &container,
+                Some(&daemon),
+                Some(tail),
+                since.as_deref(),
+            )
+            .await
+            .map_err(server_fail)?;
+            let (text, redactions) = redact::redact_text(&logs.text);
+            let mut v = to_json(&logs)?;
+            v["text"] = json!(text);
+            v["redactions"] = json!(redactions);
+            Ok(v)
+        }
+        (other, _) => Err(Fail::new("unknown_tool", format!("unknown tool {other}"))),
+    }
+}
+
+/// Runs a checked, approved server change.
+async fn server_change_run(sh: Guarded, change: &Change) -> Result<Value, Fail> {
+    let b = &change.bound;
+    let s = |k: &str| b[k].as_str().unwrap_or("").to_owned();
+    match change.tool {
+        "server_cleanup_run" => {
+            let ids = b["ids"]
+                .as_array()
+                .map(|l| {
+                    l.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                })
+                .unwrap_or_default();
+            let results = wc_server::cleanup_run(&sh, ids)
+                .await
+                .map_err(server_fail)?;
+            Ok(json!({ "results": results }))
+        }
+        "server_process_signal" => {
+            let pid = b["pid"].as_u64().unwrap_or(0) as u32;
+            match wc_server::process_signal(
+                &sh,
+                pid,
+                s("name"),
+                s("action"),
+                b["confirmDatabase"].as_bool() == Some(true),
+            )
+            .await
+            {
+                Ok(_) => Ok(json!({ "ok": true, "pid": pid, "action": s("action") })),
+                Err(e) if e == "database" => Err(Fail::new(
+                    "confirm_database_required",
+                    "this process is a database: pass confirm_database to stop it",
+                )),
+                Err(e) => Err(server_fail(e)),
+            }
+        }
+        _ => to_json(
+            wc_server::container_action(&sh, &s("container"), Some(&s("daemon")), &s("action"))
+                .await
+                .map_err(server_fail)?,
+        ),
+    }
+}
+
 async fn server_tool(
     conn: Connection,
     name: &str,
@@ -1324,5 +1687,197 @@ mod tests {
             Fail::new("needs_credential", "web: no saved credential")
         );
         assert_eq!(Fail::from_coded("Weird: thing", "x").code, "x");
+    }
+
+    #[test]
+    fn server_tools_are_ssh_tools_and_their_changes_need_approval() {
+        for name in [
+            "server_cleanup_scan",
+            "server_cleanup_run",
+            "server_process_signal",
+            "server_timers_list",
+            "docker_containers_list",
+            "docker_container_logs",
+            "docker_container_action",
+        ] {
+            assert!(SSH_TOOLS.contains(&name), "{name}");
+            assert!(!NOT_ON_SSH.contains(&name), "{name}");
+        }
+        for name in SERVER_CHANGE_TOOLS {
+            assert!(CHANGE_TOOLS.contains(&name), "{name}");
+        }
+        for name in [
+            "server_cleanup_scan",
+            "server_timers_list",
+            "docker_containers_list",
+            "docker_container_logs",
+        ] {
+            assert!(!CHANGE_TOOLS.contains(&name), "{name}");
+        }
+    }
+
+    #[test]
+    fn server_changes_check_preset_and_arguments() {
+        let now = 1_800_000_000;
+        let mut ai = AiAccess {
+            local: true,
+            preset: "readonly".into(),
+            ..Default::default()
+        };
+        let cleanup = args(json!({"ids": ["apt-cache", "docker-build@u1000"]}));
+        let signal = args(json!({"pid": 42, "name": "nginx", "action": "term"}));
+        let docker = args(json!({"container": "web@u1000", "action": "restart"}));
+        for (tool, a) in [
+            ("server_cleanup_run", &cleanup),
+            ("server_process_signal", &signal),
+            ("docker_container_action", &docker),
+        ] {
+            let fail = check_change(&ai, tool, a, now).unwrap_err();
+            assert_eq!(fail.code, "readonly_preset", "{tool}");
+            assert!(fail.message.contains("server changes"), "{tool}");
+        }
+        ai.preset = "approval".into();
+        let (c, approval) = check_change(&ai, "server_cleanup_run", &cleanup, now).unwrap();
+        assert!(approval);
+        assert_eq!(c.bound, json!({"ids": ["apt-cache", "docker-build@u1000"]}));
+        assert_eq!(c.describe, "free disk space: apt-cache, docker-build@u1000");
+        let (s, _) = check_change(&ai, "server_process_signal", &signal, now).unwrap();
+        assert_eq!(
+            s.bound,
+            json!({"pid": 42, "name": "nginx", "action": "term", "confirmDatabase": false})
+        );
+        assert!(s.describe.contains("SIGTERM") && s.describe.contains("42"));
+        let (d, _) = check_change(&ai, "docker_container_action", &docker, now).unwrap();
+        assert_eq!(
+            d.bound,
+            json!({"daemon": "u1000", "container": "web", "action": "restart"})
+        );
+        // Another action is another approval.
+        let (d2, _) = check_change(
+            &ai,
+            "docker_container_action",
+            &args(json!({"container": "web", "daemon": "u1000", "action": "stop"})),
+            now,
+        )
+        .unwrap();
+        assert_ne!(
+            binding_call(d.tool, "c", "t", &d.bound),
+            binding_call(d2.tool, "c", "t", &d2.bound)
+        );
+        for (tool, bad) in [
+            ("server_cleanup_run", json!({"ids": []})),
+            ("server_cleanup_run", json!({"ids": "apt-cache"})),
+            (
+                "server_cleanup_run",
+                json!({"ids": ["apt-cache; rm -rf /"]}),
+            ),
+            ("server_cleanup_run", json!({"ids": ["docker-build@root"]})),
+            ("server_cleanup_run", json!({"ids": vec!["journal"; 21]})),
+            (
+                "server_process_signal",
+                json!({"pid": 1, "name": "init", "action": "kill"}),
+            ),
+            (
+                "server_process_signal",
+                json!({"pid": 5_000_000, "name": "x", "action": "kill"}),
+            ),
+            (
+                "server_process_signal",
+                json!({"pid": 42, "name": "", "action": "kill"}),
+            ),
+            (
+                "server_process_signal",
+                json!({"pid": 42, "name": "x", "action": "stop"}),
+            ),
+            (
+                "server_process_signal",
+                json!({"pid": "42", "name": "x", "action": "kill"}),
+            ),
+            (
+                "docker_container_action",
+                json!({"container": "web", "action": "rm"}),
+            ),
+            (
+                "docker_container_action",
+                json!({"container": "web; id", "action": "stop"}),
+            ),
+            (
+                "docker_container_action",
+                json!({"container": "web@u1000", "daemon": "system", "action": "stop"}),
+            ),
+            (
+                "docker_container_action",
+                json!({"container": "web", "daemon": "u0", "action": "stop"}),
+            ),
+        ] {
+            assert_eq!(
+                check_change(&ai, tool, &args(bad.clone()), now)
+                    .unwrap_err()
+                    .code,
+                "invalid_arguments",
+                "{tool} {bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn docker_reads_are_checked_before_connecting() {
+        assert_eq!(
+            check_server_read("docker_container_logs", &args(json!({"container": "web"}))).unwrap(),
+            ServerRead::Logs {
+                daemon: "system".into(),
+                container: "web".into(),
+                tail: 200,
+                since: None,
+            }
+        );
+        assert_eq!(
+            check_server_read(
+                "docker_container_logs",
+                &args(json!({"container": "0123456789ab@u1000", "tail": 2000, "since": "1h30m"}))
+            )
+            .unwrap(),
+            ServerRead::Logs {
+                daemon: "u1000".into(),
+                container: "0123456789ab".into(),
+                tail: 2000,
+                since: Some("1h30m".into()),
+            }
+        );
+        for bad in [
+            json!({"container": "web", "tail": 0}),
+            json!({"container": "web", "tail": 2001}),
+            json!({"container": "web", "since": "1h; id"}),
+            json!({"container": "web", "since": 10}),
+            json!({"container": "web", "tail": "x"}),
+            json!({"container": "$(id)"}),
+            json!({}),
+        ] {
+            assert_eq!(
+                check_server_read("docker_container_logs", &args(bad.clone()))
+                    .unwrap_err()
+                    .code,
+                "invalid_arguments",
+                "{bad}"
+            );
+        }
+        assert_eq!(
+            check_server_read("docker_containers_list", &args(json!({"daemon": "u1000"}))).unwrap(),
+            ServerRead::Daemon(Some("u1000".into()))
+        );
+        assert!(
+            check_server_read("docker_containers_list", &args(json!({"daemon": "x;id"}))).is_err()
+        );
+    }
+
+    #[test]
+    fn sudo_never_keeps_the_scripts_from_using_sudo() {
+        let script = format!("{}echo @@priv; echo \"$R\"\n", wc_server::PRELUDE);
+        assert_eq!(guard_script(&script, true), script);
+        let guarded = guard_script(&script, false);
+        assert!(!guarded.contains("sudo"), "{guarded}");
+        assert!(guarded.starts_with(NO_SUDO_PRELUDE));
+        assert!(valid_cleanup_id("docker-unused@u1000") && valid_cleanup_id("journal"));
+        assert!(!valid_cleanup_id("journal@x") && !valid_cleanup_id("a"));
     }
 }

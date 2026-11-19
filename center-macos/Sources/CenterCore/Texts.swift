@@ -16,6 +16,11 @@ public enum Texts {
         case "server_cleanup_run": return L.t("Sunucuda yer aç (temizlik)")
         case "server_process_signal": return L.t("Sürece sinyal gönder")
         case "server_restart_owner": return L.t("Servisi yeniden başlat")
+        case "docker_container_action": return L.t("Konteyneri başlat veya durdur")
+        case "scheduled_task_create": return L.t("Zamanlanmış görev oluştur")
+        case "scheduled_task_update": return L.t("Zamanlanmış görevi düzenle")
+        case "scheduled_task_delete": return L.t("Zamanlanmış görevi sil")
+        case "scheduled_task_run_now": return L.t("Zamanlanmış görevi şimdi çalıştır")
         default: return kind
         }
     }

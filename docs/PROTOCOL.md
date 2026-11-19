@@ -26,6 +26,7 @@ Transport: JSON messages over authenticated WebSocket.
 - `health_snapshot` (`top` 1–20, default 5): CPU usage and load, memory and swap, disks, network counters, top processes by CPU and memory; carries `observedAt`, `source` and `limitations`. Low risk.
 - Server management (Linux; the same fixed scripts as the apps' Sunucu yönetimi, crate `wc-server`, run with `sh` on the device):
   - `server_overview`, `server_disk_usage` (`path`, default `/`), `server_cleanup_scan`, `server_processes`: read-only. Low risk.
+  - `server_timers_list`: systemd timers (system and the agent user's `--user` ones) and cron entries, as the agent's user (no root); `unreadable` lists what could not be read or is never read (an unreadable crontab or /etc/cron.d file, no systemd, other users' crontabs). Output is redacted like `process_list`. Low risk.
   - `server_cleanup_run` (`ids` from the scan), `server_process_signal` (`pid`, `name`, `action` reap|term|kill, `confirmDatabase`), `server_restart_owner` (`ownerKind` container|service, `id`): fixed commands as root (or sudo without a password); they need the device's command capability and a human approval for the exact call. High risk. SSH, Docker, containerd, journald, logind, D-Bus and WECOMMANDER are never restarted; the processes that keep the server reachable are never signalled.
 - `fs_list`
 - `fs_stat`

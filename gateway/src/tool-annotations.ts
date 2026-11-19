@@ -37,6 +37,17 @@ const KINDS: Record<string, [Kind, string]> = {
   server_processes: ["read", "Server processes"],
   server_process_signal: ["destructive", "Signal a process"],
   server_restart_owner: ["destructive", "Restart a container or service"],
+  server_timers_list: ["read", "Server timers and cron"],
+  // WECOMMANDER scheduled tasks: a task runs a command on a device, so every
+  // change needs a human approval and is marked destructive.
+  scheduled_tasks_list: ["read", "List scheduled tasks"],
+  scheduled_task_create: ["destructive", "Create a scheduled task"],
+  scheduled_task_update: ["destructive", "Change a scheduled task"],
+  scheduled_task_delete: ["destructive", "Delete a scheduled task"],
+  scheduled_task_run_now: ["destructive", "Run a scheduled task now"],
+  docker_containers_list: ["read", "List Docker containers"],
+  docker_container_logs: ["read", "Read container logs"],
+  docker_container_action: ["destructive", "Start, stop or restart a container"],
   log_query: ["read", "Search logs"],
   policy_info: ["read", "Agent policy"],
   get_recent_tool_calls: ["read", "Recent tool calls"],

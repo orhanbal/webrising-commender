@@ -51,14 +51,34 @@ function auditCommand(command: string) {
   return redactSecrets(command).slice(0, 1000);
 }
 
-/** null when the route is not a scheduled-task route. */
+/** What a dry run of a change returns: the change as it would be made. */
+export type DryRun = {
+  dryRun: true;
+  /** The device the task runs on (null: an SSH target). */
+  deviceId: string | null;
+  name: string;
+  /** The command the task runs after the change. */
+  command: string;
+  /** create: the validated input with its defaults; update: the patch. */
+  change?: unknown;
+};
+
+/**
+ * null when the route is not a scheduled-task route. With `dryRun`, a change
+ * (create, update, delete, run) is checked exactly like the real one (role,
+ * workspace, validation, target, plan limit) and answered with a 200
+ * {@link DryRun} body instead of being made: MCP asks a human to approve
+ * only what would succeed.
+ */
 export async function handleScheduledTasks(
   method: string,
   url: URL,
   principal: Principal,
   readBody: () => Promise<unknown>,
   ctx: ScheduledTasksContext,
+  options: { dryRun?: boolean } = {},
 ): Promise<Reply | null> {
+  const dryRun = (body: DryRun): Reply => ({ status: 200, body });
   const path = url.pathname;
   if (!path.startsWith("/api/scheduled-tasks") && !path.startsWith("/api/center/scheduled-runs")) return null;
   const now = ctx.now ?? (() => new Date());
@@ -103,6 +123,10 @@ export async function handleScheduledTasks(
       return limit === 0 && !entitled
         ? { status: 402, body: { error: "billing_required", resource: "scheduled_task", used, limit } }
         : { status: 409, body: { error: "scheduled_task_limit", message: `this plan allows ${limit} scheduled tasks`, used, limit } };
+    }
+    if (options.dryRun) {
+      return dryRun({ dryRun: true, deviceId: input.target.kind === "device" ? input.target.deviceId : null,
+        name: input.name, command: input.command, change: input });
     }
     const task = await ctx.store.create(org, input, principal.actor, initialNextRun(input.schedule, input.timezone, now()));
     await ctx.audit(principal, task.device_id, "scheduled_task.create", "high", "success", JSON.stringify({
@@ -162,6 +186,9 @@ export async function handleScheduledTasks(
     }
     if (!next.enabled) next.next_run_at = null;
     else if (rescheduled) next.next_run_at = initialNextRun(next.schedule, next.timezone, now());
+    if (options.dryRun) {
+      return dryRun({ dryRun: true, deviceId: next.device_id, name: next.name, command: next.command, change: patch });
+    }
     const saved = await ctx.store.update(next);
     const changed = Object.keys(patch).filter((k) => (patch as Record<string, unknown>)[k] !== undefined);
     await ctx.audit(principal, saved.device_id, "scheduled_task.update", "high", "success", JSON.stringify({
@@ -176,7 +203,9 @@ export async function handleScheduledTasks(
   if (taskMatch && method === "DELETE") {
     if (!roleAtLeast(principal, "admin")) return forbidden("admin");
     const current = await ctx.store.get(org, taskMatch[1]!);
-    if (!current || !(await ctx.store.remove(org, current.id))) return notFound;
+    if (!current) return notFound;
+    if (options.dryRun) return dryRun({ dryRun: true, deviceId: current.device_id, name: current.name, command: current.command });
+    if (!(await ctx.store.remove(org, current.id))) return notFound;
     await ctx.audit(principal, current.device_id, "scheduled_task.delete", "high", "success", JSON.stringify({
       taskId: current.id, name: current.name, command: auditCommand(current.command),
     }));
@@ -188,6 +217,7 @@ export async function handleScheduledTasks(
     if (!roleAtLeast(principal, "admin")) return forbidden("admin");
     const task = await ctx.store.get(org, runMatch[1]!);
     if (!task) return notFound;
+    if (options.dryRun) return dryRun({ dryRun: true, deviceId: task.device_id, name: task.name, command: task.command });
     if (!ctx.allow(`run:${task.id}`, 10, 60_000)) return { status: 429, body: { error: "rate_limited" } };
     const run = await ctx.runner.runNow(task);
     await ctx.audit(principal, task.device_id, "scheduled_task.run_now", "high", "success", JSON.stringify({

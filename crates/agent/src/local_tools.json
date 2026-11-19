@@ -148,6 +148,24 @@
   }
  },
  {
+  "name": "server_timers_list",
+  "title": "Server timers and cron",
+  "description": "Scheduled jobs on a Linux server, read-only and without root: systemd timers (system, and the agent user's own) with schedule, next and last run, the service and command they start and its last result, plus cron entries (the user's crontab, /etc/crontab, /etc/cron.d, /etc/cron.hourly to monthly). unreadable lists what could not be read or is never read (other users' crontabs).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "required": [],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "title": "Server timers and cron",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "server_process_signal",
   "title": "Signal a process",
   "description": "Sends a signal to one Linux process: action 'reap' asks a parent to collect its zombies (SIGCHLD, harmless), 'term' asks it to stop, 'kill' stops it at once. name must still match the process (a PID reused by another program is refused); the processes that keep the server reachable are refused; a database needs confirm_database. Needs a human approval for this exact call.",
@@ -215,6 +233,106 @@
   },
   "annotations": {
    "title": "Restart a container or service",
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "docker_containers_list",
+  "title": "List Docker containers",
+  "description": "Linux Docker containers, read-only, per daemon: the system daemon and each user's rootless one (daemon id system or u<uid>, the same daemons as server_cleanup_scan). Each container has id (the full 64-hex id), name, image, state, status, created, ports and restart count. A daemon that cannot be read carries its error instead. daemon limits the list to one daemon. Works on agent devices and SSH targets.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "daemon": {
+     "type": "string",
+     "description": "Docker daemon from docker_containers_list: system (default) or u<uid> for a user's rootless one."
+    }
+   },
+   "required": [],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "title": "List Docker containers",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "docker_container_logs",
+  "title": "Read container logs",
+  "description": "Read-only: the last lines of one container's logs (stdout and stderr merged, timestamped, oldest first). tail 1-2000 (default 200); since limits the window (10m, 1h30m, a Unix time or an RFC 3339 time). At most 256 KiB, newest lines kept; secrets are masked. Works on agent devices and SSH targets.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "container": {
+     "type": "string",
+     "description": "Container id or name from docker_containers_list; ref@u<uid> names a rootless daemon."
+    },
+    "daemon": {
+     "type": "string",
+     "description": "Docker daemon from docker_containers_list: system (default) or u<uid> for a user's rootless one."
+    },
+    "tail": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 2000,
+     "description": "Lines from the end (default 200)."
+    },
+    "since": {
+     "type": "string",
+     "maxLength": 40
+    }
+   },
+   "required": [
+    "container"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "title": "Read container logs",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "docker_container_action",
+  "title": "Start, stop or restart a container",
+  "description": "Starts, stops or restarts one Docker container on the daemon it names (stop and restart wait 10 s before killing); the action runs on the full id Docker resolves the reference to. Never removes containers, images or volumes; WECOMMANDER's own containers are never stopped or restarted. Needs a human approval for every call, also on fully trusted devices; refused on read-only SSH targets.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "container": {
+     "type": "string",
+     "description": "Container id or name from docker_containers_list; ref@u<uid> names a rootless daemon."
+    },
+    "daemon": {
+     "type": "string",
+     "description": "Docker daemon from docker_containers_list: system (default) or u<uid> for a user's rootless one."
+    },
+    "action": {
+     "type": "string",
+     "enum": [
+      "start",
+      "stop",
+      "restart"
+     ]
+    }
+   },
+   "required": [
+    "container",
+    "action"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "title": "Start, stop or restart a container",
    "readOnlyHint": false,
    "destructiveHint": true,
    "idempotentHint": false,

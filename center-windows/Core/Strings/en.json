@@ -1370,5 +1370,9 @@
  "Öğretici": "Tutorial",
  "Öğreticiyi göster": "Show the tutorial",
  "Baştan başlat": "Start over",
- "Bu bilgisayardaki ajan durdu ve şimdilik yeniden başlatılamadı; WECOMMANDER her 5 dakikada bir yeniden deniyor. O sırada yapay zekâ bu bilgisayara erişemez.": "The agent on this computer stopped and could not be restarted yet; WECOMMANDER tries again every 5 minutes. Until then AI cannot reach this computer."
+ "Bu bilgisayardaki ajan durdu ve şimdilik yeniden başlatılamadı; WECOMMANDER her 5 dakikada bir yeniden deniyor. O sırada yapay zekâ bu bilgisayara erişemez.": "The agent on this computer stopped and could not be restarted yet; WECOMMANDER tries again every 5 minutes. Until then AI cannot reach this computer.",
+ "Konteyneri başlat veya durdur": "Start or stop a container",
+ "Zamanlanmış görev oluştur": "Create scheduled task",
+ "Zamanlanmış görevi sil": "Delete scheduled task",
+ "Zamanlanmış görevi şimdi çalıştır": "Run scheduled task now"
 }
