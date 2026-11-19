@@ -1,6 +1,8 @@
 # WECOMMANDER v1.2+ yol haritası (İleri Geliştirme Planı 1'in sürümlere bağlanması)
 
 Oluşturulma: 2026-11-05 · Kaynak: [İleri Geliştirme Planı 1 (v0.3)](ADVANCED_DEVELOPMENT_PLAN_1.md)
+
+**Ayrı ileri geliştirme taslağı:** [UDE — Universal Development Environment](UDE_UNIVERSAL_DEVELOPMENT_ENVIRONMENT_PLAN.md) (19 Kasım 2026). Workspaces opsiyoneldir, Core bağımsız kalır; UDE'ye henüz bir v1.x/v2.x teslim sürümü atanmadı ve mevcut sürüm kapıları değiştirilmedi.
 · Önceki sürüm planı: [v1.1](V1_1_BETTER_THAN_DESKTOP_COMMANDER.md) (kodda tamamlandı)
 
 Bu belge AD1 fikir havuzunu **sıralı, teslim edilebilir sürümlere** bağlar. Fikirlerin
