@@ -5,6 +5,33 @@ enum ReleaseNotesData {
 {
  "releases": [
   {
+   "id": "2026-11-19-windows-window-crash",
+   "date": "2026-11-19",
+   "platforms": [
+    "windows"
+   ],
+   "items": {
+    "tr": [
+     "Windows'ta uygulama, pencereler taşınırken, gizlenirken ya da dil değişiminde kapanırken artık beklenmedik şekilde kapanmıyor; böyle bir hata olursa kaydedilip bize bildiriliyor."
+    ],
+    "en": [
+     "On Windows, the app no longer closes unexpectedly while its windows are moved, hidden or closed during a language change; such an error is now logged and reported to us instead."
+    ],
+    "de": [
+     "Unter Windows schließt sich die App nicht mehr unerwartet, wenn ihre Fenster verschoben, ausgeblendet oder beim Sprachwechsel geschlossen werden; ein solcher Fehler wird jetzt protokolliert und an uns gemeldet."
+    ],
+    "fr": [
+     "Sous Windows, l'application ne se ferme plus de façon inattendue quand ses fenêtres sont déplacées, masquées ou fermées lors d'un changement de langue ; une telle erreur est désormais enregistrée et nous est signalée."
+    ],
+    "es": [
+     "En Windows, la app ya no se cierra inesperadamente al mover, ocultar o cerrar sus ventanas durante un cambio de idioma; ese error ahora se registra y se nos notifica."
+    ],
+    "pt-BR": [
+     "No Windows, o app não fecha mais inesperadamente quando suas janelas são movidas, ocultadas ou fechadas durante uma troca de idioma; esse erro agora é registrado e enviado para nós."
+    ]
+   }
+  },
+  {
    "id": "2026-11-19-macos-title-bar",
    "date": "2026-11-19",
    "platforms": [

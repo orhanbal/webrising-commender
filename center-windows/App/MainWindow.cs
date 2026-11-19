@@ -49,8 +49,12 @@ public sealed class MainWindow : Window
         {
             if (_quitting) return;
             e.Cancel = true; // closing keeps the app in the tray; "Çıkış" quits
-            if (Docked) { HideDocked(); App.Current.PanelDismissed(); }
-            else HidePanel();
+            try
+            {
+                if (Docked) { HideDocked(); App.Current.PanelDismissed(); }
+                else HidePanel();
+            }
+            catch (Exception ex) { App.LogCrash(ex); }
         };
         Activated += (_, e) =>
         {

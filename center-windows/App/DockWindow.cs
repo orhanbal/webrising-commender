@@ -83,7 +83,7 @@ public sealed class DockWindow : Window
         AppWindow.Closing += (_, e) =>
         {
             e.Cancel = true;
-            App.Current.SetDock(false);
+            try { App.Current.SetDock(false); } catch (Exception ex) { App.LogCrash(ex); }
         };
         Content = _root;
         _root.ContextFlyout = Menu();

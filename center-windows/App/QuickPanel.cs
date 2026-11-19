@@ -57,7 +57,7 @@ public sealed class QuickPanel : Window
             p.IsAlwaysOnTop = true;
             p.SetBorderAndTitleBar(true, false);
         }
-        AppWindow.Closing += (_, e) => { e.Cancel = true; Hide(); };
+        AppWindow.Closing += (_, e) => { e.Cancel = true; try { Hide(); } catch (Exception ex) { App.LogCrash(ex); } };
         Closed += (_, _) => _retired = true;
         Activated += (_, e) =>
         {

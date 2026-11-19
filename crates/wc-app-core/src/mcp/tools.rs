@@ -2123,7 +2123,11 @@ mod tests {
                 .stderr(Stdio::piped())
                 .spawn()
                 .unwrap();
-            child.stdin.take().unwrap().write_all(input).unwrap();
+            // A refusal (stale hash, symlink) exits before reading stdin: the write
+            // can then fail with a broken pipe, which is not what is under test.
+            if let Err(e) = child.stdin.take().unwrap().write_all(input) {
+                assert_eq!(e.kind(), std::io::ErrorKind::BrokenPipe, "{e}");
+            }
             child.wait().unwrap().code()
         };
         let file = dir.join("f.conf");
