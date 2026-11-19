@@ -238,7 +238,7 @@ export const publicPages: PublicPage[] = [
       { ul: [
         "Outbound-only: the agent connects out over TLS; no listening port, no SSH key on the machine.",
         "Least privilege: the agent runs as a normal user by default, inside allowed folders only; writes and commands can be switched off per device, on the device. Root needs two keys: the machine owner allows it on the machine, then an admin turns it on with their password.",
-        "Approvals: high-risk actions need a single-use approval bound to the exact action and device, unless an admin put the device on full trust; SSH servers always need one.",
+        "Approvals: high-risk actions need a single-use approval bound to the exact action and device, unless an admin put the device or SSH server on full trust or allowed that command.",
         "Safety net: on by default, it blocks irreversible commands such as wiping disks, rm -rf / and shutdown on every trust level, even as root; turning it off needs a password.",
         "AI clients cannot change their own limits: trust levels, autonomous mode and allowed commands are changed only by an admin in a browser session or the Management Center.",
         "Secret masking: tokens, passwords and private keys in command output are masked before they leave the device.",
@@ -259,7 +259,7 @@ export const publicPages: PublicPage[] = [
       { q: "What is WECOMMANDER?", a: productSummary },
       { q: "Which AI assistants work with it?", a: "Any client that supports remote MCP servers: Claude (web, desktop, Claude Code), ChatGPT connectors, Cursor and others. Local mode also works with stdio-only clients." },
       { q: "Which operating systems are supported?", a: "Windows 10 and 11, macOS 13 or later, and Linux (Ubuntu and Debian packages; other distributions with the binary)." },
-      { q: "Agent or SSH: which way should I connect a server?", a: "With the agent, a small program runs on the machine (Windows, macOS, Linux) and keeps one outbound connection: it works while your own computer is off, has the full tool set, and can be put on full trust or, on Linux, run as root with two keys. Over SSH (Hybrid Access, Windows app), nothing is installed on the server: WECOMMANDER on your computer connects with your SSH keys, which never leave it, so your computer and the app must be on; every command and change needs an approval every time, and commands run with the SSH user's rights. Choose the agent for always-on or autonomous work, SSH to try quickly or where you cannot install anything." },
+      { q: "Agent or SSH: which way should I connect a server?", a: "With the agent, a small program runs on the machine (Windows, macOS, Linux) and keeps one outbound connection: it works while your own computer is off, has the full tool set, and can be put on full trust or, on Linux, run as root with two keys. Over SSH (Hybrid Access, from the Windows, macOS or Linux app), nothing is installed on the server: WECOMMANDER on your computer connects with your SSH keys, which never leave it, so your computer and the app must be on. SSH servers get the same AI permissions as the agent: trust level up to full, allowed commands, root through sudo with two keys, and the safety net. Choose the agent for always-on or autonomous work, SSH to try quickly or where you cannot install anything." },
       { q: "Do I need to open a port or set up a VPN?", a: "No. The agent makes an outbound TLS connection to the gateway; nothing listens on your machine." },
       { q: "Can the AI run any command on my server?", a: "Only inside the folders you allow, as a normal user unless the machine's owner allowed root and an admin turned it on, and every command waits for your approval unless you allowed that command pattern or put the device on full trust. A safety net blocks commands like rm -rf / or reboot unless you switch it off." },
       { q: "How do I approve actions quickly?", a: "In the dashboard, from the approval e-mail, or with the Management Center desktop app on Windows, which shows each request as a notification with Approve and Deny buttons." },
@@ -367,7 +367,7 @@ export const publicPages: PublicPage[] = [
       { ul: [
         "Single-use approvals: valid once, for exactly the command or file shown, on that device.",
         "Allowed command patterns: routine commands such as df -h run without asking.",
-        "Trust levels per device: strict, standard or full; full can be time-limited or have no limit. SSH servers shared through the Windows app always need an approval.",
+        "Trust levels per device and per SSH server: strict, standard or full; full can be time-limited or have no limit. SSH servers shared read-only can never be changed.",
         "Autonomous mode: switch approvals off for all or selected devices for 30 minutes to indefinitely, with automatic expiry and one-click stop; AI clients cannot turn it on.",
         "Approve from the dashboard, the e-mail, or Windows notifications of the Management Center app.",
       ] },
