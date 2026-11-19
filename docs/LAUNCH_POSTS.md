@@ -2,9 +2,9 @@
 
 Drafts for launch day. Nothing here is posted automatically. Facts follow
 `gateway/src/site-content.ts` and `docs/AI_PERMISSIONS.md`: Hybrid Access
-(AI over SSH with nothing installed on the server) is in the Windows app only
-and has no trust levels (every change approved every time); the Dock and its
-terminal tabs are Windows only (macOS: menu bar); root is Linux only, with two
+(AI over SSH with nothing installed on the server) is in the Windows, macOS and
+Linux apps, and each SSH server has its own permissions like an agent device; the Dock and its
+terminal tabs are Windows only (macOS: menu bar); root on an agent device is Linux only, with two
 keys; the getting-started tutorial is in both apps.
 
 Links: public posts point to **https://wecommander.app** (the home page has
@@ -69,7 +69,7 @@ WECOMMANDER 1.0 tek uygulamada üç şey:
 
 • SSH istemcisi: sekmeli ve bölünmüş terminaller, sürükle-bırak SFTP, tüneller, jump host ve uçtan uca şifreli eşitleme. Yapay zekâ ve hesap olmadan da çalışır.
 • Sunucu yönetimi: diski neyin doldurduğunu gör ve güvenle temizle; süreçler, zamanlanmış görevler ve canlı izleme (Windows'ta Dock, macOS'ta menü çubuğu).
-• Kontrolü sende olan yapay zekâ: Claude, ChatGPT ve Cursor için tek MCP adresi; küçük bir ajanla ya da Windows'ta sunucuya hiçbir şey kurmadan SSH ile. Yapay zekânın nereye kadar gidebileceğini cihaz başına sen belirlersin; komut, silme ve yeniden başlatma tek kullanımlık onayını bekler, güvenlik ağı geri dönüşü olmayan komutları engeller, her işlem denetim kaydında.
+• Kontrolü sende olan yapay zekâ: Claude, ChatGPT ve Cursor için tek MCP adresi; küçük bir ajanla ya da sunucuya hiçbir şey kurmadan SSH ile (Windows, macOS ve Linux uygulamalarında). Yapay zekânın nereye kadar gidebileceğini cihaz ve SSH sunucusu başına sen belirlersin; komut, silme ve yeniden başlatma tek kullanımlık onayını bekler, güvenlik ağı geri dönüşü olmayan komutları engeller, her işlem denetim kaydında.
 
 Altı dil. Ücretsiz plan var.
 
@@ -125,7 +125,7 @@ The AI part: you add one MCP URL (https://wecommander.app/mcp, OAuth). A small a
 
 How far the AI may go is set per device in the web panel, never by the AI: strict, standard (allowed command patterns run directly) or full trust, for a set time or without a limit. Root is Linux only and needs two keys: the machine's owner runs the installer with --allow-root on the machine, then an admin turns it on with their password; the agent refuses root actions without both. A safety net, on by default, blocks things like rm -rf /, wiping a disk, reboot or stopping the agent on every level, even as root with full trust. Everything goes to an audit log, and file edits keep undo snapshots.
 
-On Windows there is also an agentless path: you can share a saved SSH server through the desktop app, so the connection and keys stay on your computer. Over SSH every command and change needs an approval each time, and commands run with the SSH user's rights.
+There is also an agentless path in the Windows, macOS and Linux apps: you can share a saved SSH server through the desktop app, so the connection and keys stay on your computer. Each SSH server gets its own permissions like an agent device (trust level, root through passwordless sudo, the same safety net).
 
 Sync of hosts, keys and snippets is end-to-end encrypted. The account, approvals and MCP endpoint are a hosted service; there is a free plan, and a local stdio MCP mode that needs no account. No self-hosted edition right now.
 

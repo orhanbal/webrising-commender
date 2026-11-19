@@ -118,15 +118,16 @@ output, and waits for your approval before risky actions.
 >
 > The same account includes the WECOMMANDER desktop app for Windows and macOS:
 > an SSH client with SFTP, tunnels, snippets, server disk cleanup and live
-> monitoring. On Windows, Hybrid Access can also share SSH servers that have no
-> agent with the AI through the desktop app, keeping SSH keys on your computer;
-> over SSH every change needs an approval each time.
+> monitoring. Hybrid Access (Windows, macOS and Linux apps) can also share SSH
+> servers that have no agent with the AI through the desktop app, keeping SSH
+> keys on your computer; each SSH server gets its own permissions like an agent
+> device.
 >
 > Free, Pro and Team plans. Local mode (stdio, no account) is also available.
 
-Accuracy notes (keep when editing): Hybrid Access is Windows only (not macOS
-yet) and has no trust levels or root mode (every change approved each time,
-the SSH user's rights). Root is Linux only (two keys); trust and the safety
+Accuracy notes (keep when editing): Hybrid Access is in the Windows, macOS and
+Linux apps; each SSH server has its own trust level, root through passwordless
+sudo and the same safety net. Root on an agent device is Linux only (two keys); trust and the safety
 net are set per agent device in the web panel (`docs/AI_PERMISSIONS.md`). The desktop SSH app is Windows and macOS (Linux preview); the agent is
 Windows, macOS and Linux. No self-hosted edition is offered.
 

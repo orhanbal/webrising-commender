@@ -64,16 +64,16 @@ merged, pushed, tagged or deployed. Merging it to `main` ships the apps as
 
 ## TODO before release (not in the texts yet, do not claim until shipped)
 
-> **TODO, in progress, NOT claimed anywhere in this branch.** When one of
+> **Done (landed on `main` in #203 and #202, now in the texts).** Earlier note: When one of
 > these lands on `main` before the launch, add it to the `2026-11-23-v1`
 > entry (six languages), the 1.0.0 section of `CHANGELOG.md`, the launch
 > mail and posts and `docs/DIRECTORY_SUBMISSIONS.md`, and remove the
 > matching "not yet" wording ("macOS does not have it yet", "Windows only",
 > "Not in 1.0").
 >
-> - [ ] **Hybrid Access on macOS:** AI access settings for saved SSH servers
+> - [x] **Hybrid Access on macOS:** AI access settings for saved SSH servers
 >   in the Mac app (local MCP and remote AI through this Mac).
-> - [ ] **Hybrid Access on Linux:** the same for the Linux desktop app.
-> - [ ] **Permissions for SSH targets:** trust levels (or another per-server
+> - [x] **Hybrid Access on Linux:** the same for the Linux desktop app.
+> - [x] **Permissions for SSH targets:** trust levels (or another per-server
 >   permission setting) for SSH servers shared with AI; today every command
 >   and change over SSH needs an approval every time.
