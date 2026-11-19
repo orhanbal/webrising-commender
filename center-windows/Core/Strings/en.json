@@ -1376,5 +1376,19 @@
  "Zamanlanmış görevi sil": "Delete scheduled task",
  "Zamanlanmış görevi şimdi çalıştır": "Run scheduled task now",
  "güvenlik ağı kapalı": "safety net off",
- "Yapay zekâ yetkileri": "AI permissions"
+ "Yapay zekâ yetkileri": "AI permissions",
+ "Yapay zekâya root izni ver (bu sunucuda)": "Give AI root permission (on this server)",
+ "Root iznini kaldır": "Remove root permission",
+ "{0} şu anda bağlanıyor; bitince yeniden dene.": "{0} is connecting right now; try again when it's done.",
+ "Bu sunucuda yeni bir terminal açılır ve aşağıdaki komut çalışır. Komut, WECOMMANDER ajanının servis kullanıcısına sudo izni veren bir sudoers dosyası yazar (/etc/sudoers.d/wecommander-agent) ve servisin sudo'yu engelleyen kısıtlamalarını gevşetir. Ajan kurulu değilse önce kurar.": "A new terminal opens on this server and runs the command below. It writes a sudoers file that gives the WECOMMANDER agent's service user sudo (/etc/sudoers.d/wecommander-agent) and relaxes the service restrictions that block sudo. If the agent isn't installed, it installs it first.",
+ "Bu sunucuda yeni bir terminal açılır ve aşağıdaki komut çalışır. Komut, ajanın sudoers dosyasını siler ve servisin kısıtlamalarını geri getirir. Yapay zekâ bu cihazda artık root olarak çalışamaz.": "A new terminal opens on this server and runs the command below. It deletes the agent's sudoers file and restores the service restrictions. AI can then no longer run as root on this device.",
+ "sudo parolanı terminalde kendin yazarsın; WECOMMANDER parolayı görmez ve saklamaz.": "You type your sudo password in the terminal yourself; WECOMMANDER doesn't see or store it.",
+ "Bu yalnız ilk anahtardır: root, bir yönetici web panelinde parolasıyla açana kadar kapalı kalır. Geri almak için: sunucuya sağ tıkla → Root iznini kaldır.": "This is only the first key: root stays off until an admin turns it on in the web panel with their password. To undo: right-click the server → Remove root permission.",
+ "Çalışacak komut": "Command to run",
+ "{0}: yapay zekâya root izni verilsin mi?": "{0}: give AI root permission?",
+ "{0}: root izni kaldırılsın mı?": "{0}: remove root permission?",
+ "Terminalde çalıştır": "Run in terminal",
+ "Komut terminalde çalışıyor; sudo parolanı orada yaz. Bitince ikinci anahtar: bir yönetici web panelinde root'u açar.": "The command is running in the terminal; type your sudo password there. When it's done, the second key: an admin turns root on in the web panel.",
+ "Web'de yetkileri aç": "Open permissions on the web",
+ "Komut terminalde çalışıyor; sudo parolanı orada yaz. Bitince ajan yeniden bağlanır ve cihaz kullanıcı olarak çalışmaya döner.": "The command is running in the terminal; type your sudo password there. When it's done, the agent reconnects and the device goes back to running as the user."
 }

@@ -12,3 +12,14 @@ export async function allowlistMatch(organizationId: string, deviceId: string, c
   );
   return result.rows.find((row) => patternMatches(row.pattern, command)) ?? null;
 }
+
+/** The same rules for an SSH target (connector computer + host). */
+export async function sshAllowlistMatch(organizationId: string, centerId: string, hostId: string, command: string) {
+  if (!commandTokens(command)) return null;
+  const result = await db.query<{ id: string; pattern: string }>(
+    `select id,pattern from connector_target_command_allowlist
+      where organization_id=$1 and center_id=$2 and host_id=$3 order by created_at`,
+    [organizationId, centerId, hostId],
+  );
+  return result.rows.find((row) => patternMatches(row.pattern, command)) ?? null;
+}

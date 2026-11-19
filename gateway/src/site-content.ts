@@ -4,12 +4,18 @@
 // sitemap. Keep it factual: assistants quote it.
 
 import { releaseNotes } from "./release-notes.gen.js";
+import { docGroups, docPages, docsIndexBlocks } from "./docs-content.js";
 
 export type Block =
   | { h2: string }
+  | { h3: string }
   | { p: string }
   | { ul: string[] }
+  | { ol: string[] }
   | { code: string }
+  | { note: string }
+  /** Links to other public pages (paths), shown with their heading and description. */
+  | { see: string[] }
   | { table: { head: string[]; rows: string[][] } };
 
 export type Faq = { q: string; a: string };
@@ -34,6 +40,8 @@ export type PublicPage = {
   content?: boolean;
   /** Listed in /llms.txt under this section. */
   section: "Product" | "Docs" | "Guides" | "Legal";
+  /** Documentation pages (/docs/<slug>): their sidebar group (docs-content.ts). */
+  docGroup?: string;
 };
 
 export const productName = "WECOMMANDER";
@@ -41,7 +49,7 @@ export const productSummary =
   "WECOMMANDER is a desktop SSH client and server management app for Windows and macOS (SSH, SFTP, tunnels, snippets, disk cleanup, live monitoring, scheduled tasks, end-to-end encrypted sync) and a remote MCP (Model Context Protocol) server that lets AI assistants such as Claude, ChatGPT and Cursor use the terminals and files of your own Windows, macOS and Linux machines through one MCP URL, with human approval for risky actions, per-device limits and a full audit log.";
 
 const facts: string[] = [
-  "Desktop app for Windows 10/11 and macOS (Linux preview): saved hosts with groups and tags, tabbed and split terminals, SFTP file manager, local/remote/SOCKS tunnels, jump hosts, Telnet, serial ports and Mosh, snippets, autocomplete, broadcast typing, session logs and themes.",
+  "Desktop app for Windows 10/11 and macOS (Linux preview): saved hosts with groups, tabbed and split terminals, SFTP file manager, local/remote/SOCKS tunnels, jump hosts, Telnet, serial ports and Mosh, snippets, autocomplete, broadcast typing, session logs and themes.",
   "Server management without installing anything on the server: overview, what fills the disk, safe cleanup (old logs, package caches, Docker build cache and unused images, per Docker daemon including rootless Docker), processes and zombie fixes.",
   "Two app modes on Windows: Dock mode puts the WECOMMANDER Dock on a screen edge, looking like the Windows taskbar, with live CPU, memory and disk charts for a server; Task Manager, Tasks, Terminal, approvals and settings open as drop-down panels from it. Classic mode runs the app in its windows without a Dock.",
   "The Dock is dragged like the taskbar to a screen edge or left floating, can be locked in place, and its app icon opens a Start-like panel with server search, shortcuts, account and settings. The Windows notification area keeps only the Management Center icon. On macOS, live server monitoring is in the menu bar.",
@@ -52,12 +60,12 @@ const facts: string[] = [
   "End-to-end encrypted sync of hosts, keys and snippets across devices; team library and live shared terminals.",
   "One MCP URL for all your machines: https://wecommander.app/mcp (OAuth sign-in from Claude, ChatGPT and other MCP clients).",
   "A small agent runs on each machine (Windows, macOS, Linux) and keeps one outbound encrypted connection; no inbound ports, VPN or SSH keys are needed.",
-  "Two ways to connect a server for AI: with the agent (installed on the machine; works while your own computer is off, full tool set, per-device permissions up to full trust, root on Linux with two keys), or over SSH with nothing installed (Hybrid Access; your computer and the app must be on, every change approved every time, the SSH user's own rights). Choose the agent for always-on or autonomous work, SSH to try quickly or where nothing can be installed.",
-  "Hybrid Access: SSH servers without an agent can be shared with AI from the Windows desktop app (macOS not yet). Nothing is installed on the server; the connection runs through WECOMMANDER on your own computer, so SSH keys never leave it and that computer and the app must be on. You choose which servers are shared. Tools: commands, files (SFTP), overview, disk usage, processes, cleanup, process signals, systemd timers and cron, and the Docker tools. Reads run directly; commands, file changes and server changes (cleanup, signals, container actions) need a one-time approval every time, with no full trust or autonomous mode. Commands run with the SSH user's rights (sudo only if allowed for that server); there is no separate root mode.",
-  "AI permissions per device, set by an admin in the web dashboard (Devices → AI permissions), never by an AI client: trust level strict, standard or full, with full for a set time or with no limit.",
-  "The agent runs as a normal user (not root/SYSTEM) by default and only inside the folders you allow. Running as root is possible on Linux only, with two keys: the machine's owner runs the installer with --allow-root on the machine, then an admin turns it on for that device with their password. Not available on Windows or macOS.",
+  "Two ways to connect a server for AI: with the agent (installed on the machine; works while your own computer is off, root on Linux with two keys), or over SSH with nothing installed (Hybrid Access from the Windows, macOS and Linux apps; your computer and the app must be on, commands run with the SSH user's rights or as root through sudo when allowed). Both get the same AI permissions: trust level up to full, allowed commands and the safety net. Choose the agent for always-on work, SSH to try quickly or where nothing can be installed.",
+  "Hybrid Access: SSH servers without an agent can be shared with AI from the WECOMMANDER app on Windows, macOS or Linux. Nothing is installed on the server; the connection runs through WECOMMANDER on your own computer, so SSH keys never leave it and that computer and the app must be on. You choose which servers are shared. Tools: commands, files (SFTP), overview, disk usage, processes, cleanup, process signals, systemd timers and cron, and the Docker tools. Reads run directly; changes follow that server's AI permissions (approval, allowed commands or full trust); servers shared read-only can never be changed. Root runs through sudo only if the computer's setting for that server allows sudo and an admin turns it on.",
+  "AI permissions per device and per SSH server, set by an admin in the web dashboard (Devices → AI permissions), never by an AI client: trust level strict, standard or full, with full for a set time or with no limit.",
+  "The agent runs as a normal user (not root/SYSTEM) by default and only inside the folders you allow. Running as root is possible on Linux only, with two keys: the machine's owner runs the installer with --allow-root on the machine, then an admin turns it on for that device with their password. Not available on Windows or macOS agents.",
   "A safety net, on by default, blocks irreversible commands (wiping disks, rm -rf /, shutdown and reboot, stopping the agent itself) on every trust level, even as root with full trust; turning it off needs the admin's password.",
-  "High-risk actions (running commands, deleting or moving files, killing processes, opening terminals, starting, stopping or restarting containers, changing scheduled tasks) wait for a human approval of that exact action, unless you allow a command pattern or put the device on full trust (for a set time or with no limit). SSH servers always need an approval.",
+  "High-risk actions (running commands, deleting files, killing processes, opening terminals, starting, stopping or restarting containers, changing scheduled tasks) wait for a human approval of that exact action, unless you allow a command pattern or put the device or SSH server on full trust (for a set time or with no limit).",
   "Approvals arrive in the web dashboard, by e-mail and in the Management Center desktop app as Windows notifications with Approve / Deny buttons.",
   "Secrets in command and terminal output (tokens, passwords, keys) are masked on the device before the result reaches the AI.",
   "Every action is recorded in an audit log; file edits keep undo snapshots.",
@@ -107,7 +115,7 @@ export const publicPages: PublicPage[] = [
       { h2: "Desktop app (SSH client)" },
       {
         ul: [
-          "Saved hosts with groups and tags, import from ~/.ssh/config; tabbed and split terminals; SFTP file manager.",
+          "Saved hosts with groups, import from ~/.ssh/config; tabbed and split terminals; SFTP file manager.",
           "Local, remote and SOCKS tunnels, jump hosts, SSH agent and FIDO2 keys; Telnet, serial ports and Mosh.",
           "Snippets, autocomplete from history, typing into every tab at once, session logs and terminal themes.",
           "End-to-end encrypted sync of hosts, keys and snippets; team library and live shared terminals.",
@@ -206,26 +214,12 @@ export const publicPages: PublicPage[] = [
     section: "Docs",
     content: true,
     title: "Documentation · WECOMMANDER",
-    description: "Set up WECOMMANDER with Claude, ChatGPT, Cursor and other MCP clients, run the agent in local mode, and manage approvals.",
+    description: "The complete WECOMMANDER guide, A to Z: install, the desktop SSH client, server management, scheduled tasks, connecting Claude, ChatGPT, Cursor and VS Code over MCP, every MCP tool, AI permissions, approvals, security and troubleshooting.",
     heading: "Documentation",
-    intro: "Connect your AI client to your machines in a few minutes.",
-    blocks: [
-      { h2: "1. Install the agent" },
-      { p: "Run the one-line installer on each machine (see Install). The device appears in your dashboard after you approve it in the browser." },
-      { h2: "2. Add the MCP server to your AI client" },
-      { ul: [
-        "Claude (web and desktop): Settings → Connectors → Add custom connector → URL https://wecommander.app/mcp → Connect, then allow access with your WECOMMANDER account.",
-        "ChatGPT: Settings → Connectors → create a custom MCP connector with the same URL and OAuth authentication (developer mode may be required depending on the plan).",
-        "Cursor and other clients: add a remote (HTTP) MCP server with the URL https://wecommander.app/mcp.",
-      ] },
-      { h2: "3. Approve risky actions" },
-      { p: "Commands and destructive file operations wait for your approval. Approve them in the dashboard (Approvals), from the e-mail, or from the Management Center on Windows. Each approval is valid once, for exactly the action shown." },
-      { h2: "Local mode (no account, no server)" },
-      { p: "The agent can serve MCP over stdio to a local client. Example for Claude Desktop:" },
-      { code: '{\n  "mcpServers": {\n    "wecommander": {\n      "command": "webrising-commender",\n      "args": ["mcp-stdio", "--allowed-root", "/home/me/projects"]\n    }\n  }\n}' },
-      { p: "Writes and commands are off unless you add --allow-writes or --allow-commands." },
-    ],
+    intro: "Everything WECOMMANDER does, one topic per page. Start with Getting started, or jump to a section below.",
+    blocks: docsIndexBlocks(),
   },
+  ...docPages,
   {
     path: "/security",
     section: "Docs",
@@ -238,7 +232,7 @@ export const publicPages: PublicPage[] = [
       { ul: [
         "Outbound-only: the agent connects out over TLS; no listening port, no SSH key on the machine.",
         "Least privilege: the agent runs as a normal user by default, inside allowed folders only; writes and commands can be switched off per device, on the device. Root needs two keys: the machine owner allows it on the machine, then an admin turns it on with their password.",
-        "Approvals: high-risk actions need a single-use approval bound to the exact action and device, unless an admin put the device on full trust; SSH servers always need one.",
+        "Approvals: high-risk actions need a single-use approval bound to the exact action and device, unless an admin put the device or SSH server on full trust or allowed that command.",
         "Safety net: on by default, it blocks irreversible commands such as wiping disks, rm -rf / and shutdown on every trust level, even as root; turning it off needs a password.",
         "AI clients cannot change their own limits: trust levels, autonomous mode and allowed commands are changed only by an admin in a browser session or the Management Center.",
         "Secret masking: tokens, passwords and private keys in command output are masked before they leave the device.",
@@ -259,7 +253,7 @@ export const publicPages: PublicPage[] = [
       { q: "What is WECOMMANDER?", a: productSummary },
       { q: "Which AI assistants work with it?", a: "Any client that supports remote MCP servers: Claude (web, desktop, Claude Code), ChatGPT connectors, Cursor and others. Local mode also works with stdio-only clients." },
       { q: "Which operating systems are supported?", a: "Windows 10 and 11, macOS 13 or later, and Linux (Ubuntu and Debian packages; other distributions with the binary)." },
-      { q: "Agent or SSH: which way should I connect a server?", a: "With the agent, a small program runs on the machine (Windows, macOS, Linux) and keeps one outbound connection: it works while your own computer is off, has the full tool set, and can be put on full trust or, on Linux, run as root with two keys. Over SSH (Hybrid Access, Windows app), nothing is installed on the server: WECOMMANDER on your computer connects with your SSH keys, which never leave it, so your computer and the app must be on; every command and change needs an approval every time, and commands run with the SSH user's rights. Choose the agent for always-on or autonomous work, SSH to try quickly or where you cannot install anything." },
+      { q: "Agent or SSH: which way should I connect a server?", a: "With the agent, a small program runs on the machine (Windows, macOS, Linux) and keeps one outbound connection: it works while your own computer is off, has the full tool set, and can be put on full trust or, on Linux, run as root with two keys. Over SSH (Hybrid Access, from the Windows, macOS or Linux app), nothing is installed on the server: WECOMMANDER on your computer connects with your SSH keys, which never leave it, so your computer and the app must be on. SSH servers get the same AI permissions as the agent: trust level up to full, allowed commands, root through sudo with two keys, and the safety net. Choose the agent for always-on or autonomous work, SSH to try quickly or where you cannot install anything." },
       { q: "Do I need to open a port or set up a VPN?", a: "No. The agent makes an outbound TLS connection to the gateway; nothing listens on your machine." },
       { q: "Can the AI run any command on my server?", a: "Only inside the folders you allow, as a normal user unless the machine's owner allowed root and an admin turned it on, and every command waits for your approval unless you allowed that command pattern or put the device on full trust. A safety net blocks commands like rm -rf / or reboot unless you switch it off." },
       { q: "How do I approve actions quickly?", a: "In the dashboard, from the approval e-mail, or with the Management Center desktop app on Windows, which shows each request as a notification with Approve and Deny buttons." },
@@ -351,7 +345,7 @@ export const publicPages: PublicPage[] = [
         "In PowerShell: irm https://wecommander.app/install.ps1 | iex. The WECOMMANDER app opens your browser to sign in and connects this PC by itself; the folder it shares is C:\\Users\\you\\WECOMMANDER.",
         "In ChatGPT: Settings → Connectors → create a custom connector with https://wecommander.app/mcp (OAuth).",
         "Ask ChatGPT to summarise, search or edit documents in that folder; Word, Excel and PDF files can be read too.",
-        "Deleting or moving files and running commands wait for your approval; edits keep undo snapshots.",
+        "Deleting files and running commands wait for your approval; writing, editing and moving files run directly and edits keep undo snapshots.",
       ] },
     ],
   },
@@ -367,7 +361,7 @@ export const publicPages: PublicPage[] = [
       { ul: [
         "Single-use approvals: valid once, for exactly the command or file shown, on that device.",
         "Allowed command patterns: routine commands such as df -h run without asking.",
-        "Trust levels per device: strict, standard or full; full can be time-limited or have no limit. SSH servers shared through the Windows app always need an approval.",
+        "Trust levels per device and per SSH server: strict, standard or full; full can be time-limited or have no limit. SSH servers shared read-only can never be changed.",
         "Autonomous mode: switch approvals off for all or selected devices for 30 minutes to indefinitely, with automatic expiry and one-click stop; AI clients cannot turn it on.",
         "Approve from the dashboard, the e-mail, or Windows notifications of the Management Center app.",
       ] },
@@ -418,16 +412,44 @@ export const publicPages: PublicPage[] = [
 export const pageByPath = new Map(publicPages.map((page) => [page.path, page]));
 export const contentPagePaths = publicPages.filter((page) => page.content).map((page) => page.path);
 
+/** Heading anchor id, the same in the pre-rendered HTML and the React view (Content.tsx). */
+export function anchorId(text: string) {
+  return text.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "section";
+}
+
+/** Title and summary of every public page, for links (`see` blocks) and the docs sidebar. */
+export function pageNav() {
+  return publicPages.map((p) => ({ path: p.path, heading: p.heading, description: p.description, ...(p.docGroup ? { group: p.docGroup } : {}) }));
+}
+
 const escapeHtml = (value: string) =>
   value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+const isDocPage = (page: PublicPage) => page.path === "/docs" || !!page.docGroup;
+
 /** Plain HTML of a page for crawlers; React replaces it when the app starts. */
 export function renderPageHtml(page: PublicPage) {
-  const parts = [`<main class="prerender"><h1>${escapeHtml(page.heading)}</h1><p>${escapeHtml(page.intro)}</p>`];
+  const parts = [`<main class="prerender">`];
+  if (isDocPage(page)) {
+    const crumbs = [`<a href="/">${productName}</a>`, page.path === "/docs" ? "Documentation" : `<a href="/docs">Documentation</a>`];
+    if (page.docGroup) crumbs.push(escapeHtml(page.docGroup), escapeHtml(page.heading));
+    parts.push(`<nav aria-label="Breadcrumb">${crumbs.join(" › ")}</nav>`);
+  }
+  parts.push(`<h1>${escapeHtml(page.heading)}</h1><p>${escapeHtml(page.intro)}</p>`);
   for (const block of page.blocks) {
-    if ("h2" in block) parts.push(`<h2>${escapeHtml(block.h2)}</h2>`);
+    if ("h2" in block) parts.push(`<h2 id="${anchorId(block.h2)}">${escapeHtml(block.h2)}</h2>`);
+    else if ("h3" in block) parts.push(`<h3 id="${anchorId(block.h3)}">${escapeHtml(block.h3)}</h3>`);
     else if ("p" in block) parts.push(`<p>${escapeHtml(block.p)}</p>`);
+    else if ("note" in block) parts.push(`<aside><p><strong>Note:</strong> ${escapeHtml(block.note)}</p></aside>`);
     else if ("ul" in block) parts.push(`<ul>${block.ul.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`);
+    else if ("ol" in block) parts.push(`<ol>${block.ol.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>`);
+    else if ("see" in block) {
+      parts.push(`<ul>${block.see.map((path) => {
+        const target = pageByPath.get(path);
+        return target ? `<li><a href="${path}">${escapeHtml(target.heading)}</a>: ${escapeHtml(target.description)}</li>` : "";
+      }).join("")}</ul>`);
+    }
     else if ("code" in block) parts.push(`<pre><code>${escapeHtml(block.code)}</code></pre>`);
     else if ("table" in block) {
       parts.push(`<table><thead><tr>${block.table.head.map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead><tbody>${
@@ -437,7 +459,16 @@ export function renderPageHtml(page: PublicPage) {
   if (page.faq) {
     for (const item of page.faq) parts.push(`<h2>${escapeHtml(item.q)}</h2><p>${escapeHtml(item.a)}</p>`);
   }
-  const links = publicPages.filter((p) => p.section !== "Legal" && p.path !== page.path)
+  if (page.howTo && page.docGroup) {
+    parts.push(`<h2>${escapeHtml(page.howTo.name)}</h2><ol>${page.howTo.steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}</ol>`);
+  }
+  if (page.docGroup) {
+    // Documentation pages carry the documentation's table of contents.
+    parts.push(`<nav aria-label="Documentation">${docGroups.map((group) =>
+      `<h2>${escapeHtml(group)}</h2><ul>${docPages.filter((p) => p.docGroup === group)
+        .map((p) => `<li><a href="${p.path}">${escapeHtml(p.heading)}</a></li>`).join("")}</ul>`).join("")}</nav>`);
+  }
+  const links = publicPages.filter((p) => p.section !== "Legal" && !p.docGroup && p.path !== page.path)
     .map((p) => `<a href="${p.path}">${escapeHtml(p.heading)}</a>`).join(" · ");
   parts.push(`<nav>${links}</nav></main>`);
   return parts.join("");
@@ -487,6 +518,38 @@ export function pageJsonLd(page: PublicPage, origin: string) {
       })),
     });
   }
+  if (isDocPage(page)) {
+    const crumbs = [
+      { name: productName, item: `${origin}/` },
+      { name: "Documentation", item: `${origin}/docs` },
+      ...(page.docGroup ? [{ name: page.heading, item: `${origin}${page.path}` }] : []),
+    ];
+    graph.push({
+      "@type": "BreadcrumbList",
+      itemListElement: crumbs.map((c, index) => ({ "@type": "ListItem", position: index + 1, name: c.name, item: c.item })),
+    });
+    if (page.docGroup) {
+      graph.push({
+        "@type": "TechArticle",
+        "@id": `${origin}${page.path}#article`,
+        headline: page.heading,
+        description: page.description,
+        url: `${origin}${page.path}`,
+        inLanguage: "en",
+        articleSection: page.docGroup,
+        isPartOf: { "@id": `${origin}/docs` },
+        about: { "@id": `${origin}/#software` },
+        publisher: { "@id": `${origin}/#organization` },
+        mainEntityOfPage: { "@id": `${origin}${page.path}` },
+      });
+    } else {
+      graph.push({
+        "@type": "ItemList",
+        name: "WECOMMANDER documentation",
+        itemListElement: docPages.map((p, index) => ({ "@type": "ListItem", position: index + 1, url: `${origin}${p.path}`, name: p.heading })),
+      });
+    }
+  }
   if (page.howTo) {
     graph.push({
       "@type": "HowTo",
@@ -525,15 +588,23 @@ export function sitemapXml(origin: string, lastModified: string) {
 /** https://llmstxt.org: a short Markdown map of the site for language models. */
 export function llmsTxt(origin: string) {
   const sections = (["Product", "Docs", "Guides"] as const).map((section) =>
-    `## ${section}\n\n` + publicPages.filter((p) => p.section === section)
+    `## ${section}\n\n` + publicPages.filter((p) => p.section === section && !p.docGroup)
       .map((p) => `- [${p.heading}](${origin}${p.path}): ${p.description}`).join("\n"));
-  return `# ${productName}\n\n> ${productSummary}\n\nKey facts:\n\n${facts.map((f) => `- ${f}`).join("\n")}\n\n${sections.join("\n\n")}\n\n## Optional\n\n- [Full text of the public pages](${origin}/llms-full.txt)\n- [Privacy](${origin}/privacy)\n- [Terms](${origin}/terms)\n`;
+  const documentation = `## Documentation (A to Z)\n\nOne page per topic; the index is ${origin}/docs.\n\n` + docGroups.map((group) =>
+    `### ${group}\n\n` + docPages.filter((p) => p.docGroup === group)
+      .map((p) => `- [${p.heading}](${origin}${p.path}): ${p.description}`).join("\n")).join("\n\n");
+  return `# ${productName}\n\n> ${productSummary}\n\nKey facts:\n\n${facts.map((f) => `- ${f}`).join("\n")}\n\n${sections.join("\n\n")}\n\n${documentation}\n\n## Optional\n\n- [Full text of the public pages and the documentation](${origin}/llms-full.txt)\n- [Privacy](${origin}/privacy)\n- [Terms](${origin}/terms)\n`;
 }
 
-function blockToMarkdown(block: Block) {
+function blockToMarkdown(block: Block, origin: string) {
   if ("h2" in block) return `### ${block.h2}`;
+  if ("h3" in block) return `#### ${block.h3}`;
   if ("p" in block) return block.p;
+  if ("note" in block) return `> Note: ${block.note}`;
   if ("ul" in block) return block.ul.map((item) => `- ${item}`).join("\n");
+  if ("ol" in block) return block.ol.map((item, i) => `${i + 1}. ${item}`).join("\n");
+  if ("see" in block) return block.see.map((path) => pageByPath.get(path))
+    .filter((p): p is PublicPage => !!p).map((p) => `- [${p.heading}](${origin}${p.path}): ${p.description}`).join("\n");
   if ("code" in block) return "```\n" + block.code + "\n```";
   return [
     `| ${block.table.head.join(" | ")} |`,
@@ -547,7 +618,7 @@ export function llmsFullTxt(origin: string) {
     `## ${page.heading}`,
     `URL: ${origin}${page.path}`,
     page.intro,
-    ...page.blocks.map(blockToMarkdown),
+    ...page.blocks.map((block) => blockToMarkdown(block, origin)),
     ...(page.faq ?? []).map((item) => `### ${item.q}\n${item.a}`),
     ...(page.howTo ? [`### ${page.howTo.name}\n${page.howTo.steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`] : []),
   ].join("\n\n"));

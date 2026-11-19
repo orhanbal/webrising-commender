@@ -10,9 +10,15 @@ import {Alert,Button,Dialog,DialogContent,DialogDescription,DialogTitle,Input,Sp
 // (full trust, root, safety net off) needs the current password.
 export type Trust="strict"|"standard"|"full";
 export type PermissionDevice=Device&{trust_level?:Trust;trust_full_until?:string|null;run_as?:"user"|"root";root_capable?:boolean;safety_net?:boolean;safety_net_allow_power?:boolean;agent_root?:boolean};
+/** A saved SSH server shared with remote AI through a person's computer
+ *  (GET /api/ssh-targets): the same permissions, keyed by target_id. */
+export type SshPermissionTarget={target_id:string;name:string;center_id:string;center_name:string;online:boolean;preset:"readonly"|"approval";sudo:"never"|"sudoers";trust_level?:Trust;trust_full_until?:string|null;run_as?:"user"|"root";root_capable?:boolean;safety_net?:boolean;safety_net_allow_power?:boolean};
+/** An SSH target as the dialog's subject (id = target_id). */
+export const sshSubject=(t:SshPermissionTarget):PermissionDevice&{preset?:string}=>({...t,id:t.target_id});
+type AllowEntry={id:string;pattern:string};
 
 /** What the person on a Linux machine runs once so root can be turned on. */
-export const ROOT_INSTALL_COMMAND="sudo bash install-linux.sh --allow-root";
+export const ROOT_INSTALL_COMMAND="curl -fsSL https://wecommander.app/install.sh | sh -s -- --allow-root";
 const durations:{label:string;minutes:number|null}[]=[
  {label:"1 saat",minutes:60},{label:"4 saat",minutes:240},{label:"24 saat",minutes:1440},{label:"7 gün",minutes:10080},{label:"Süre sınırı yok",minutes:null},
 ];
@@ -21,6 +27,7 @@ const trustText:Record<Trust,{title:string;text:string}>={
  standard:{title:"Standart",text:"İzinli komutlar onaysız çalışır, diğer yüksek riskli işlemler onay ister."},
  full:{title:"Tam",text:"Yapay zekâ komutları, Docker işlemlerini ve zamanlanmış görev değişikliklerini onay beklemeden yapar."},
 };
+const sshFullText="Yapay zekâ bu sunucuda komutları, dosya, Docker ve sunucu değişikliklerini onay beklemeden yapar.";
 
 /** Badges for a device row: trust, run as and safety net at a glance. */
 export function PermissionBadges({device,onOpen}:{device:PermissionDevice;onOpen?:()=>void}){
@@ -35,7 +42,11 @@ export function PermissionBadges({device,onOpen}:{device:PermissionDevice;onOpen
  return onOpen?<button type="button" onClick={onOpen} title={translate("Yapay zekâ yetkileri")} className="flex flex-wrap gap-1.5">{body}</button>:<span className="flex flex-wrap gap-1.5">{body}</span>;
 }
 
-export function AiPermissionsDialog({device,onClose,onChanged}:{device:PermissionDevice|null;onClose:()=>void;onChanged:()=>void}){
+export function AiPermissionsDialog({device,onClose,onChanged,kind="device"}:{device:(PermissionDevice&{preset?:string;center_name?:string})|null;onClose:()=>void;onChanged:()=>void;kind?:"device"|"ssh"}){
+ const ssh=kind==="ssh";
+ const basePath=ssh?"/api/ssh-targets/":"/api/devices/";
+ const [allow,setAllow]=useState<AllowEntry[]>([]);
+ const [pattern,setPattern]=useState("");
  const [trust,setTrust]=useState<Trust>("standard");
  // null: keep the current time limit of a device already on full trust.
  const [duration,setDuration]=useState<number|null>(null);
@@ -51,8 +62,23 @@ export function AiPermissionsDialog({device,onClose,onChanged}:{device:Permissio
   if(!device)return;
   setTrust(device.trust_level||"standard");setRunAs(device.run_as==="root"?"root":"user");
   setSafety(device.safety_net!==false);setPower(device.safety_net_allow_power===true);
-  setDuration(null);setPassword("");setError("");setSaved("");
+  setDuration(null);setPassword("");setError("");setSaved("");setPattern("");setAllow([]);
+  if(ssh)void loadAllow();
  },[device?.id]);
+ async function loadAllow(){
+  if(!device||!ssh)return;
+  try{setAllow((await api<{items:AllowEntry[]}>(basePath+device.id+"/command-allowlist")).items)}catch{setAllow([])}
+ }
+ async function addPattern(){
+  if(!device||!pattern.trim())return;
+  setError("");
+  try{await api(basePath+device.id+"/command-allowlist",{method:"POST",body:JSON.stringify({pattern:pattern.trim()})});setPattern("");await loadAllow()}catch(e){setError((e as Error).message)}
+ }
+ async function removePattern(id:string){
+  if(!device)return;
+  setError("");
+  try{await api(basePath+device.id+"/command-allowlist/"+id,{method:"DELETE"});await loadAllow()}catch(e){setError((e as Error).message)}
+ }
  if(!device)return null;
  const currentTrust=device.trust_level||"standard";
  const currentRunAs=device.run_as==="root"?"root":"user";
@@ -72,10 +98,10 @@ export function AiPermissionsDialog({device,onClose,onChanged}:{device:Permissio
    const pw=password?{currentPassword:password}:{};
    if(sendTrust){
     const minutes=durationIndex===null?null:durations[durationIndex]!.minutes;
-    await api("/api/devices/"+device.id+"/trust",{method:"PUT",body:JSON.stringify({level:trust,...(trust==="full"?{...pw,...(minutes?{minutes}:{})}:{})})});
+    await api(basePath+device.id+"/trust",{method:"PUT",body:JSON.stringify({level:trust,...(trust==="full"?{...pw,...(minutes?{minutes}:{})}:{})})});
    }
-   if(runAsChanged)await api("/api/devices/"+device.id+"/run-as",{method:"PUT",body:JSON.stringify({runAs,...(runAs==="root"?pw:{})})});
-   if(safetyChanged)await api("/api/devices/"+device.id+"/safety-net",{method:"PUT",body:JSON.stringify({enabled:safety,allowPower:power,...pw})});
+   if(runAsChanged)await api(basePath+device.id+"/run-as",{method:"PUT",body:JSON.stringify({runAs,...(runAs==="root"?pw:{})})});
+   if(safetyChanged)await api(basePath+device.id+"/safety-net",{method:"PUT",body:JSON.stringify({enabled:safety,allowPower:power,...pw})});
    setPassword("");setSaved(translate("Yapay zekâ yetkileri kaydedildi."));onChanged();
   }catch(e){setError((e as Error).message);onChanged()}
   finally{setBusy(false)}
@@ -84,19 +110,21 @@ export function AiPermissionsDialog({device,onClose,onChanged}:{device:Permissio
  const fullUntil=currentTrust==="full"?device.trust_full_until:null;
  return <Dialog open={!!device} onOpenChange={open=>{if(!open)onClose()}}><DialogContent className="w-[min(94vw,640px)] max-h-[90vh] overflow-y-auto">
   <DialogTitle className="text-xl font-bold">{translate("Yapay zekâ yetkileri")} · {device.name}</DialogTitle>
-  <DialogDescription className="text-sm muted mt-1">{translate("Yapay zekânın bu cihazda ne yapabileceğini seç. Bu ayarları yalnızca yöneticiler tarayıcıdan değiştirebilir; yapay zekâ istemcileri değiştiremez.")}</DialogDescription>
+  <DialogDescription className="text-sm muted mt-1">{ssh?<>{translate("Yapay zekânın bu SSH sunucusunda ne yapabileceğini seç. Sunucuya bu bilgisayar üzerinden erişilir:")} <strong>{device.center_name}</strong>. {translate("Bu ayarları yapay zekâ istemcileri değiştiremez.")}</>:translate("Yapay zekânın bu cihazda ne yapabileceğini seç. Bu ayarları yalnızca yöneticiler tarayıcıdan değiştirebilir; yapay zekâ istemcileri değiştiremez.")}</DialogDescription>
+  {ssh&&device.preset==="readonly"&&<Alert tone="info" className="mt-4" title={translate("Bu sunucu salt okunur paylaşılıyor")}>{translate("O bilgisayarda salt okunur seçildiği için güven seviyesi ne olursa olsun yapay zekâ bu sunucuda komut çalıştıramaz ve değişiklik yapamaz.")}</Alert>}
   <div className="mt-4"><PermissionBadges device={device}/>{fullUntil&&<p className="text-xs muted mt-2">{translate("Tam güven bitişi")}: {localizedDate(fullUntil,{dateStyle:"short",timeStyle:"short"})}</p>}{currentTrust==="full"&&!fullUntil&&<p className="text-xs muted mt-2">{translate("Tam güven süresiz açık.")}</p>}</div>
 
   <fieldset className="grid gap-2 mt-6"><legend className="text-sm font-semibold mb-1">{translate("Güven seviyesi")}</legend>
-   {(Object.keys(trustText) as Trust[]).map(key=><label key={key} className={"flex gap-3 rounded-xl border p-3 text-sm "+(trust===key?"border-[var(--accent)] bg-[var(--accent-soft)]":"border-[var(--stroke)]")}><input type="radio" name="ai-trust" checked={trust===key} onChange={()=>setTrust(key)}/><span><span className="font-semibold">{translate(trustText[key].title)}</span>{currentTrust===key&&<span className="muted"> · {translate("şu an")}</span>}<span className="block text-xs muted">{translate(trustText[key].text)}</span></span></label>)}
+   {(Object.keys(trustText) as Trust[]).map(key=><label key={key} className={"flex gap-3 rounded-xl border p-3 text-sm "+(trust===key?"border-[var(--accent)] bg-[var(--accent-soft)]":"border-[var(--stroke)]")}><input type="radio" name="ai-trust" checked={trust===key} onChange={()=>setTrust(key)}/><span><span className="font-semibold">{translate(trustText[key].title)}</span>{currentTrust===key&&<span className="muted"> · {translate("şu an")}</span>}<span className="block text-xs muted">{translate(ssh&&key==="full"?sshFullText:trustText[key].text)}</span></span></label>)}
    {trust==="full"&&<div className="grid gap-2 mt-1"><span className="text-xs font-semibold">{translate("Süre")}</span><div className="flex flex-wrap gap-2">{durations.map((d,i)=><Button key={d.label} type="button" size="sm" variant={durationIndex===i?"default":"outline"} aria-pressed={durationIndex===i} onClick={()=>setDuration(i)}>{translate(d.label)}</Button>)}</div>{durationIndex!==null&&durations[durationIndex]!.minutes===null&&<p className="text-xs text-[var(--warning)]">{translate("Süre sınırı olmadan tam güven, siz değiştirene kadar açık kalır.")}</p>}</div>}
   </fieldset>
 
   <fieldset className="grid gap-2 mt-6"><legend className="text-sm font-semibold mb-1">{translate("Çalıştıran kullanıcı")}</legend>
-   <label className={"flex gap-3 rounded-xl border p-3 text-sm "+(runAs==="user"?"border-[var(--accent)] bg-[var(--accent-soft)]":"border-[var(--stroke)]")}><input type="radio" name="ai-run-as" checked={runAs==="user"} onChange={()=>setRunAs("user")}/><span><span className="font-semibold">{translate("Kullanıcı olarak")}</span><span className="block text-xs muted">{translate("Komutlar, görevler, terminaller ve dosya yazmaları agent servis kullanıcısıyla çalışır (önerilen).")}</span></span></label>
-   <label className={"flex gap-3 rounded-xl border p-3 text-sm "+(runAs==="root"?"border-[var(--warning)] bg-[var(--warning-soft)]":"border-[var(--stroke)]")+(device.root_capable?"":" opacity-60")}><input type="radio" name="ai-run-as" checked={runAs==="root"} disabled={!device.root_capable} onChange={()=>setRunAs("root")}/><span><span className="font-semibold">{translate("Root olarak")}</span><span className="block text-xs muted">{translate("Komutlar, görevler, terminaller ve dosya yazmaları sudo ile root olarak çalışır. Dosya araçları yine izinli klasörlerle sınırlıdır.")}</span></span></label>
-   {!device.root_capable&&<Alert tone="info" title={translate("Bu cihazda root kapalı")}>{translate("Root yetkisi önce makinenin kendisinde açılmalı; web panelinden tek başına açılamaz. Makinedeki kişi şu komutu bir kez çalıştırsın, sonra burada açabilirsin:")}
-    <div className="flex gap-2 items-center mt-2"><code className="font-mono text-xs break-all select-all flex-1 rounded-lg bg-[var(--subtle-surface)] px-3 py-2">{ROOT_INSTALL_COMMAND}</code><Button type="button" variant="outline" size="icon" aria-label={translate("Komutu kopyala")} onClick={()=>void copy()}><Copy size={16}/></Button></div>{copied&&<span role="status" className="text-xs text-[var(--success)]">{translate("Kopyalandı")}</span>}</Alert>}
+   <label className={"flex gap-3 rounded-xl border p-3 text-sm "+(runAs==="user"?"border-[var(--accent)] bg-[var(--accent-soft)]":"border-[var(--stroke)]")}><input type="radio" name="ai-run-as" checked={runAs==="user"} onChange={()=>setRunAs("user")}/><span><span className="font-semibold">{translate("Kullanıcı olarak")}</span><span className="block text-xs muted">{ssh?translate("Komutlar ve dosya yazmaları SSH kullanıcısıyla çalışır (önerilen)."):translate("Komutlar, görevler, terminaller ve dosya yazmaları agent servis kullanıcısıyla çalışır (önerilen).")}</span></span></label>
+   <label className={"flex gap-3 rounded-xl border p-3 text-sm "+(runAs==="root"?"border-[var(--warning)] bg-[var(--warning-soft)]":"border-[var(--stroke)]")+(device.root_capable?"":" opacity-60")}><input type="radio" name="ai-run-as" checked={runAs==="root"} disabled={!device.root_capable} onChange={()=>setRunAs("root")}/><span><span className="font-semibold">{translate("Root olarak")}</span><span className="block text-xs muted">{ssh?translate("Komutlar ve dosya yazmaları sunucuda sudo -n ile root olarak çalışır."):translate("Komutlar, görevler, terminaller ve dosya yazmaları sudo ile root olarak çalışır. Dosya araçları yine izinli klasörlerle sınırlıdır.")}</span></span></label>
+   {ssh&&!device.root_capable&&<Alert tone="info" title={translate("Bu sunucuda sudo kapalı")}>{translate("Root için önce o bilgisayarda izin verilmeli; web panelinden tek başına açılamaz. O bilgisayarda: WECOMMANDER → sunucu → Yapay zekâ erişimi → sudo: izinli (sudoers).")}</Alert>}
+   {!ssh&&!device.root_capable&&<Alert tone="info" title={translate("Bu cihazda root kapalı")}>{translate("Root yetkisi önce makinenin kendisinde açılmalı; web panelinden tek başına açılamaz. Makinedeki kişi şu komutu bir kez çalıştırsın, sonra burada açabilirsin:")}
+    <div className="flex gap-2 items-center mt-2"><code className="font-mono text-xs break-all select-all flex-1 rounded-lg bg-[var(--subtle-surface)] px-3 py-2">{ROOT_INSTALL_COMMAND}</code><Button type="button" variant="outline" size="icon" aria-label={translate("Komutu kopyala")} onClick={()=>void copy()}><Copy size={16}/></Button></div><p className="text-xs muted mt-2">{translate("Ya da WECOMMANDER uygulamasında sunucuya sağ tıkla → Yapay zekâya root izni ver")}</p>{copied&&<span role="status" className="text-xs text-[var(--success)]">{translate("Kopyalandı")}</span>}</Alert>}
    {runAs==="root"&&runAsChanged&&<Alert tone="warning" title={translate("Root tam yönetici yetkisidir")}>{translate("Yapay zekâ bu makinede her şeyi değiştirebilir. Değişiklik tüm yöneticilere e-postayla bildirilir ve denetim kaydına yazılır.")}</Alert>}
   </fieldset>
 
@@ -105,6 +133,12 @@ export function AiPermissionsDialog({device,onClose,onChanged}:{device:Permissio
    {safety&&<label className="flex gap-3 text-sm pl-6"><input type="checkbox" checked={power} onChange={e=>setPower(e.target.checked)}/><span>{translate("Kapatma ve yeniden başlatma komutlarına izin ver")}</span></label>}
    {!safety&&currentSafety&&<Alert tone="warning" title={translate("Güvenlik ağını kapatmak geri alınamaz hatalara izin verir")}>{translate("Değişiklik tüm yöneticilere e-postayla bildirilir ve denetim kaydına yazılır.")}</Alert>}
   </fieldset>
+
+  {ssh&&<fieldset className="grid gap-2 mt-6"><legend className="text-sm font-semibold mb-1">{translate("İzinli komutlar")}</legend>
+   <p className="text-xs muted">{translate("Standart seviyede bu komutlarla başlayan process_exec çağrıları onaysız çalışır. Kabuk karakterleri, yorumlayıcılar, sudo ve silme komutları hiçbir zaman eklenemez.")}</p>
+   {allow.length?<ul className="grid gap-1">{allow.map(a=><li key={a.id} className="flex items-center gap-2 text-sm"><code className="font-mono text-xs flex-1 rounded-lg bg-[var(--subtle-surface)] px-3 py-1.5 break-all">{a.pattern}</code><Button type="button" size="sm" variant="ghost" onClick={()=>void removePattern(a.id)}>{translate("Kaldır")}</Button></li>)}</ul>:<p className="text-xs muted">{translate("Bu sunucuda izinli komut yok.")}</p>}
+   <form className="flex gap-2" onSubmit={e=>{e.preventDefault();void addPattern()}}><Input aria-label={translate("Komut kalıbı")} placeholder="df -h" value={pattern} onChange={e=>setPattern(e.target.value)} maxLength={512}/><Button type="submit" variant="outline" disabled={!pattern.trim()}>{translate("Ekle")}</Button></form>
+  </fieldset>}
 
   {needsPassword&&<label className="grid gap-1 mt-6 max-w-sm"><span className="text-sm font-semibold">{translate("Mevcut şifren")}</span><Input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)}/></label>}
   {error&&<div className="form-error mt-4" role="alert">{error}</div>}

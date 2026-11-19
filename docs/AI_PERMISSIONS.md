@@ -1,4 +1,4 @@
-# AI permissions per device
+# AI permissions per device and SSH target
 
 What an AI client may do on an agent device over MCP is set per device, in the
 web panel under **Devices > AI permissions** (admins only, browser session).
@@ -28,9 +28,9 @@ needs no password.
 - **full**: no per-call approval for any high-risk tool on the device,
   including `docker_container_action` and `scheduled_task_create/update/
   delete/run_now` for tasks that run on that device. WECOMMANDER's own
-  containers are still never stopped or restarted, SSH targets and SSH
-  scheduled tasks still need an approval every time, and the safety net
-  still applies. `full` can be time-limited (`PUT /api/devices/:id/trust`
+  containers are still never stopped or restarted, SSH scheduled tasks still
+  need an approval every time, and the safety net still applies. SSH targets
+  have their own trust (below). `full` can be time-limited (`PUT /api/devices/:id/trust`
   with `minutes`, 5–10080) or left without a limit (omit `minutes`); an
   expired `full` returns to `standard` (audited, actor `system`).
 
@@ -46,8 +46,9 @@ root needs **both**:
 1. **The machine owner, on the machine, once:**
 
    ```bash
-   sudo bash install-linux.sh --allow-root      # existing install or with the usual arguments
-   sudo bash install-linux.sh --disallow-root   # undo
+   curl -fsSL https://wecommander.app/install.sh | sh -s -- --allow-root   # installs or updates the agent and allows root
+   sudo bash /opt/wecommander/libexec/install-linux.sh --allow-root       # same, on an installed agent without downloading
+   sudo bash /opt/wecommander/libexec/install-linux.sh --disallow-root    # undo
    ```
 
    This writes `/etc/sudoers.d/wecommander-agent`
@@ -59,6 +60,34 @@ root needs **both**:
    --allow-root on|off`). The agent then reports `root_capable: true` when it
    connects (ceiling set and `sudo -n true` works, or the agent already runs
    as root). `uninstall-linux.sh` removes the drop-in.
+
+   **From the WECOMMANDER app instead of typing it:** right-click a saved
+   SSH server (Windows, macOS) or use its buttons on the Linux app's *SSH*
+   tab: **Yapay zekâya root izni ver (bu sunucuda)** / **Root iznini
+   kaldır**. A confirmation shows what it does and the exact command, then a
+   new terminal to that server runs one fixed line (nothing of the host or
+   the person is put into it):
+
+   ```bash
+   if [ -f /opt/wecommander/libexec/install-linux.sh ]; then sudo bash /opt/wecommander/libexec/install-linux.sh --allow-root; else curl -fsSL https://wecommander.app/install.sh | sh -s -- --allow-root; fi
+   ```
+
+   (`--disallow-root` for the undo). Windows and macOS type it into a new
+   terminal tab of the app; the Linux app opens this computer's terminal
+   (gnome-terminal, konsole, xfce4-terminal, … xterm) with
+   `ssh -t … -- <host> '<that line>'` (arguments passed as a list, no shell
+   line built from the host). The person types their own SSH login and sudo
+   password in that terminal; the app never sees or stores them, so this
+   stays a machine-side action done with the person's own server
+   credentials: the gateway and the web panel cannot start it. Afterwards
+   the app offers **Web'de yetkileri aç**, which opens
+   `/devices?permissions=<device id>` when exactly one Linux device of the
+   account has the host's address, short name or label as its name, else
+   `/devices`. The web dialog points to this route next to the install
+   command while a device is not `root_capable`. Code:
+   `center-windows/Core/RootSetup.cs`,
+   `center-macos/Sources/CenterCore/RootSetup.swift`, `tray/src/hybrid.rs`
+   (`hybrid_root_terminal`).
 2. **An admin, in the web panel:** run as **root** for that device
    (`PUT /api/devices/:id/run-as {runAs, currentPassword}`). Refused with
    `409 device_not_root_capable` (and the install command) while the agent
@@ -120,3 +149,41 @@ net on can still find other ways to break a machine.
 Turning it off (`PUT /api/devices/:id/safety-net {enabled:false,
 currentPassword}`) or allowing power commands (`allowPower: true`) needs the
 password; turning it back on does not.
+
+## SSH targets (Hybrid Access)
+
+Saved SSH servers that a person shares with remote AI through WECOMMANDER on
+their own computer (docs/HYBRID_ACCESS.md) have the same settings, on the web
+**Devices** page under *SSH servers*, grouped by the computer they go through:
+trust (strict / standard / full, with 1 h … 7 days or no time limit), run as
+user / root, safety net and shutdown/reboot allowance, plus an allowlist of
+routine commands per server.
+
+- **Same rules:** browser session only (an AI client or API token gets
+  `browser_session_required`), admin role, current password to widen, audited
+  (`ssh_target.trust_level`, `ssh_target.run_as`, `ssh_target.safety_net`,
+  `ssh_command_allowlist.add|remove`), widening e-mailed to admins and owners;
+  an expired full trust returns to standard (audited, actor `system`).
+  SSH targets are personal, so only the owner of that computer sees and
+  changes them.
+- **Trust:** strict = approval for every command and change; standard =
+  `process_exec` commands on the server's allowlist run without approval, the
+  rest needs an approval; full = no per-call approval for any SSH change
+  (`process_exec`, `fs_write/mkdir/move/delete`, `server_cleanup_run`,
+  `server_process_signal`, `docker_container_action`).
+- **Readonly wins:** a host shared read-only on the computer refuses every
+  command and change, whatever its trust, run as or an approval says (checked
+  by the gateway and again by the computer).
+- **Run as root (two keys):** 1) on the computer, the host's AI access sudo
+  setting must be *sudoers* (the SSH user has passwordless sudo there);
+  2) the owner selects root in the web panel (password). Otherwise the panel
+  answers `409 target_not_root_capable`. The gateway sends `run_as: "root"`
+  with `process_exec` and `fs_write` (part of the approved action), and the
+  computer runs them through `sudo -n` only if its own setting still allows
+  sudo for that host, else `run_as_root_unavailable` (never silently as the
+  user). When the computer stops allowing sudo, its next publish sets the
+  target back to user (audited `fallback`). Other tools stay the SSH user.
+- **Safety net:** the same list (`safety-net.ts`) applies to SSH
+  `process_exec` on every trust level and with an approval.
+- `targets_list` shows `trust`, `run_as`, `root_capable` and `safety_net` for
+  SSH targets too.

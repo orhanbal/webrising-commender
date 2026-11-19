@@ -266,7 +266,8 @@ pub fn remote_targets(data: &Data, center_id: &str) -> Vec<(SavedHost, AiAccess)
 pub struct PublishedTarget {
     pub host_id: String,
     pub name: String,
-    /// "readonly" or "approval": remote changes always need an approval.
+    /// "readonly" or "approval": the computer's timed period never applies
+    /// remotely (the gateway decides per call: approval or the target's trust).
     pub preset: String,
     pub sudo: String,
     pub capabilities: Capabilities,

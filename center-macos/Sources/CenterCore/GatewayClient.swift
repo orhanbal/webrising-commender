@@ -323,4 +323,15 @@ extension GatewayClient {
         let ws = base.hasPrefix("https://") ? "wss://" + base.dropFirst(8) : "ws://" + base.replacingOccurrences(of: "http://", with: "")
         return URL(string: "\(ws)/center/share?id=\(id)&role=\(role)")
     }
+
+    /// S3: an error this app hit goes to the server (super admin: Console → Growth → Feedback),
+    /// without the user's folder name. Same contract as the Windows app.
+    public func reportError(token: String, build: String, message: String, detail: String) async throws {
+        _ = try await sendJSON("POST", "/api/center/errors", token: token, body: [
+            "platform": "macos",
+            "build": String(build.prefix(40)),
+            "message": ErrorText.scrub(message, max: 2000),
+            "detail": ErrorText.scrub(detail, max: 20000),
+        ])
+    }
 }

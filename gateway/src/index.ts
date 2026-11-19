@@ -1,7 +1,7 @@
 import zlib from "node:zlib";
 import { announcePages, indexNowKey, shouldAnnounce } from "./indexnow.js";
 import { publishToRegistry, registryAuthRecord, REGISTRY_LISTING_VERSION } from "./mcp-registry.js";
-import { contentPagePaths, llmsFullTxt, llmsTxt, pageByPath, pageJsonLd, renderPageHtml, robotsTxt, sitemapXml } from "./site-content.js";
+import { contentPagePaths, llmsFullTxt, llmsTxt, pageByPath, pageJsonLd, pageNav, renderPageHtml, robotsTxt, sitemapXml } from "./site-content.js";
 import { notifyAutonomy, notifyPermissionChange, notifyTrustChange } from "./approval-notify.js";
 import { MAX_ALLOWLIST_ENTRIES, normalizePattern } from "./command-allowlist.js";
 import crypto from "node:crypto";
@@ -41,6 +41,7 @@ import { db, housekeeping, migrate, ready } from "./db.js";
 import { getPublicPlans, publicPaddleConfig, createPaddleCheckout, createPaddlePortal, consumePaddleWebhook, syncPlanCatalog } from "./paddle.js";
 import { getDownloads } from "./downloads.js";
 import { scrubUserPaths } from "./scrub.js";
+import { appErrorFingerprint, recordAppErrorKind } from "./app-error-alerts.js";
 import { audienceSize, emailAudienceSchema, emailSchema, listEmails, saveEmail, sendEmail, sendTestEmail, setMarketingConsent, validUnsubscribe } from "./marketing-email.js";
 import { campaignResults, campaignSchema, listCampaigns, nextMessage, PLATFORMS, recordResponse, responseSchema, saveCampaign } from "./marketing.js";
 import { installRoute } from "./install-scripts.js";
@@ -52,7 +53,7 @@ import { PgSearchPersistence } from "./search-persistence.js";
 import { RelayCancellationRegistry } from "./relay-cancellation.js";
 import { enqueueMail, mailConfigured, publicSignupSetting, startMailWorker } from "./mail.js";
 import { handleMcp } from "./mcp.js";
-import { claimCalls, finishCall, parseResult, parseTargets, publishTargets } from "./ssh-connector.js";
+import { claimCalls, CONNECTOR_ONLINE_SECONDS, finishCall, parseResult, parseTargets, publishTargets, SSH_PERMISSION_COLUMNS } from "./ssh-connector.js";
 import { handleOAuthHttp, oauthChallenge } from "./oauth.js";
 import { authenticateOAuthAccessToken } from "./oauth-tokens.js";
 import { actionRisk, parseAgentAction } from "./protocol.js";
@@ -246,7 +247,19 @@ async function expireFullTrust() {
     byOrg.set(row.organization_id, [...(byOrg.get(row.organization_id) ?? []), row.name]);
   }
   for (const [org, names] of byOrg) await notifyAutonomy(org, "expired", names, "system", null).catch(() => undefined);
-  return expired.rowCount ?? 0;
+  // SSH targets (Hybrid Access): the same expiry, audited per target.
+  const sshExpired = await db.query<{ organization_id: string; target_id: string; name: string }>(
+    `update connector_targets set trust_level='standard', trust_full_until=null
+      where trust_level='full' and trust_full_until is not null and trust_full_until<=now()
+      returning organization_id, target_id, name`,
+  );
+  for (const row of sshExpired.rows) {
+    await db.query(
+      "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,'system',null,'ssh_target.trust_level','high','expired',$2)",
+      [row.organization_id, JSON.stringify({ target: row.target_id, targetLabel: row.name, level: "standard", reason: "full_trust_expired" })],
+    );
+  }
+  return (expired.rowCount ?? 0) + (sshExpired.rowCount ?? 0);
 }
 const trustExpiryTimer = setInterval(() => {
   void expireFullTrust().catch((error) => {
@@ -376,7 +389,7 @@ async function auditForOrganization(
 
 /** What the person on a Linux machine runs once so an admin may turn on
  *  "run as root" for it (scripts/install-linux.sh). */
-const ROOT_INSTALL_COMMAND = "sudo bash install-linux.sh --allow-root";
+const ROOT_INSTALL_COMMAND = "curl -fsSL https://wecommander.app/install.sh | sh -s -- --allow-root";
 
 /** The signed-in user's current password, for changes that widen what an AI
  *  may do (full trust, run as root, safety net off). */
@@ -385,6 +398,28 @@ async function reauthenticated(userId: string, password: string | undefined) {
   const me = await db.query<{ password_hash: string }>(
     "select password_hash from users where id=$1 and disabled_at is null", [userId]);
   return Boolean(me.rows[0] && (await verifyPassword(password, me.rows[0].password_hash)));
+}
+
+/** The signed-in user's own SSH targets (Hybrid Access), with their AI
+ *  permissions, for the web panel: never an address or credential (host_id
+ *  is the app's own opaque id; the routes use it, the list leaves it out). */
+async function ownSshTargets(principal: Principal) {
+  if (!principal.userId) return [];
+  const rows = await db.query<{
+    target_id: string; center_id: string; host_id: string; name: string; preset: string; sudo: string;
+    center_name: string; online: boolean; trust: string; trust_full_until: Date | null; run_as: string;
+    safety_net: boolean; safety_net_allow_power: boolean;
+  }>(
+    `select t.target_id,t.center_id,t.host_id,t.name,t.preset,t.sudo,c.name as center_name,
+            coalesce(c.connector_seen_at > now() - ($3::int * interval '1 second'), false) as online,
+            ${SSH_PERMISSION_COLUMNS}
+       from connector_targets t
+       join management_centers c on c.id=t.center_id and c.revoked_at is null
+      where t.organization_id=$1 and c.user_id=$2
+      order by c.name, t.name, t.target_id`,
+    [principal.organizationId, principal.userId, CONNECTOR_ONLINE_SECONDS],
+  );
+  return rows.rows.map((r) => ({ ...r, root_capable: r.sudo === "sudoers", trust_level: r.trust }));
 }
 
 async function auditControl(
@@ -636,10 +671,11 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     if (req.method === "GET" && url.pathname === "/api/public/pages") {
       const page = pageByPath.get(url.searchParams.get("path") || "");
       if (!page) return void json(res, 404, { error: "page_not_found" });
-      const related = contentPagePaths.filter((p) => p !== page.path)
+      // Documentation pages (/docs/<slug>) have their own sidebar from `nav`.
+      const related = contentPagePaths.filter((p) => p !== page.path && !pageByPath.get(p)!.docGroup)
         .map((p) => ({ path: p, heading: pageByPath.get(p)!.heading }));
       res.setHeader("cache-control", "public, max-age=300");
-      return void json(res, 200, { page, related });
+      return void json(res, 200, { page, related, nav: pageNav() });
     }
     // MCP Registry domain proof (HTTP authentication): our Ed25519 public key.
     if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/.well-known/mcp-registry-auth") {
@@ -3976,11 +4012,15 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         message: z.string().max(2000),
         detail: z.string().max(20000),
       }).parse(await readJson(req));
+      const fingerprint = appErrorFingerprint(body);
       await db.query(
-        `insert into app_error_reports(organization_id,center_id,platform,build,message,detail) values($1,$2,$3,$4,$5,$6)`,
+        `insert into app_error_reports(organization_id,center_id,platform,build,message,detail,fingerprint) values($1,$2,$3,$4,$5,$6,$7)`,
         [principal!.organizationId, principal!.centerId ?? null, body.platform, scrubUserPaths(body.build),
-          scrubUserPaths(body.message).slice(0, 500), scrubUserPaths(body.detail).slice(0, 8000)],
+          scrubUserPaths(body.message).slice(0, 500), scrubUserPaths(body.detail).slice(0, 8000), fingerprint],
       );
+      // A kind never seen before e-mails the platform super admins (rate limited).
+      try { await recordAppErrorKind({ ...body, fingerprint }); }
+      catch (error) { process.stderr.write(`app error alert failed: ${redact(error instanceof Error ? error.message : error)}\n`); }
       await db.query(
         `delete from app_error_reports where organization_id=$1 and id not in
            (select id from app_error_reports where organization_id=$1 order by created_at desc limit 500)`,
@@ -4408,6 +4448,159 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           .catch(() => undefined);
       }
       return void json(res, 200, { item: { safety_net: item.safety_net, safety_net_allow_power: item.safety_net_allow_power } });
+    }
+
+    // AI permissions of SSH targets (Hybrid Access; docs/AI_PERMISSIONS.md):
+    // the same trust / run as / safety net / allowlist as agent devices, with
+    // the same rules (admin browser session, current password to widen,
+    // audit, e-mail to admins). SSH targets are personal: only the owner of
+    // the computer they go through sees or changes them. run_as root needs
+    // the computer's own sudo setting for that host (two keys).
+    if (url.pathname === "/api/ssh-targets" && req.method === "GET") {
+      if (!requireRole(principal!, "viewer", res)) return;
+      const items = (await ownSshTargets(principal!)).map(({ host_id: _host, ...rest }) => rest);
+      return void json(res, 200, { items });
+    }
+    const sshTargetMatch = url.pathname.match(/^\/api\/ssh-targets\/(ssh-[0-9a-f]{24})\/(trust|run-as|safety-net|command-allowlist)(?:\/([0-9a-f-]{36}))?$/);
+    if (sshTargetMatch) {
+      if (!requireRole(principal!, "admin", res)) return;
+      const targetId = sshTargetMatch[1]!;
+      const what = sshTargetMatch[2]!;
+      const entryId = sshTargetMatch[3];
+      // Changes: a browser session only, so no AI client or token can widen them.
+      if (req.method !== "GET" && (principal!.authKind !== "session" || !principal!.userId)) {
+        return void json(res, 403, { error: "browser_session_required" });
+      }
+      const target = (await ownSshTargets(principal!)).find((t) => t.target_id === targetId);
+      if (!target) return void json(res, 404, { error: "target_not_found" });
+      const userId = principal!.userId ?? "";
+      const label = `${target.name} (SSH · ${target.center_name})`;
+      const where = { target: target.target_id, targetLabel: target.name, centerId: target.center_id };
+      const key = [principal!.organizationId, target.center_id, target.host_id];
+      if (what === "command-allowlist" && req.method === "GET" && !entryId) {
+        const rows = await db.query(
+          `select id,pattern,created_by,created_at from connector_target_command_allowlist
+            where organization_id=$1 and center_id=$2 and host_id=$3 order by created_at`, key);
+        return void json(res, 200, { items: rows.rows });
+      }
+      if (what === "command-allowlist") {
+        if (req.method === "POST" && !entryId) {
+          const body = z.object({ pattern: z.string().max(512) }).parse(await readJson(req));
+          const pattern = normalizePattern(body.pattern);
+          if (!pattern) return void json(res, 400, { error: "pattern_not_allowed" });
+          const count = await db.query<{ n: number }>(
+            "select count(*)::int as n from connector_target_command_allowlist where center_id=$1 and host_id=$2",
+            [target.center_id, target.host_id]);
+          if ((count.rows[0]?.n ?? 0) >= MAX_ALLOWLIST_ENTRIES) return void json(res, 409, { error: "allowlist_full" });
+          const inserted = await db.query(
+            `insert into connector_target_command_allowlist(organization_id,center_id,host_id,pattern,created_by)
+             values($1,$2,$3,$4,$5) on conflict(center_id,host_id,pattern) do nothing
+             returning id,pattern,created_by,created_at`,
+            [...key, pattern, principal!.actor]);
+          if (!inserted.rowCount) return void json(res, 409, { error: "pattern_exists" });
+          await auditControl(principal!, null, "ssh_command_allowlist.add", "high", "success", JSON.stringify({ ...where, pattern }));
+          return void json(res, 201, { item: inserted.rows[0] });
+        }
+        if (req.method === "DELETE" && entryId) {
+          const removed = await db.query<{ pattern: string }>(
+            `delete from connector_target_command_allowlist
+              where id=$4 and organization_id=$1 and center_id=$2 and host_id=$3 returning pattern`,
+            [...key, entryId]);
+          if (!removed.rowCount) return void json(res, 404, { error: "allowlist_entry_not_found" });
+          await auditControl(principal!, null, "ssh_command_allowlist.remove", "high", "success",
+            JSON.stringify({ ...where, pattern: removed.rows[0]!.pattern }));
+          return void json(res, 200, { ok: true });
+        }
+        return void json(res, 405, { error: "method_not_allowed" });
+      }
+      if (req.method !== "PUT" || entryId) return void json(res, 405, { error: "method_not_allowed" });
+      if (what === "trust") {
+        const body = z.object({
+          level: z.enum(["strict", "standard", "full"]),
+          minutes: z.number().int().min(5).max(7 * 24 * 60).optional(),
+          currentPassword: z.string().min(1).max(256).optional(),
+        }).parse(await readJson(req));
+        if (body.level === "full" && !(await reauthenticated(userId, body.currentPassword))) {
+          return void json(res, 403, { error: "reauthentication_failed" });
+        }
+        const updated = await db.query<{ trust_level: string; trust_full_until: Date | null; run_as: "user" | "root" }>(
+          `update connector_targets set trust_level=$4,updated_at=now(),
+                  trust_full_until=case when $4='full' and $5::int is not null then now()+($5::int*interval '1 minute') else null end
+            where organization_id=$1 and center_id=$2 and host_id=$3
+            returning trust_level,trust_full_until,run_as`,
+          [...key, body.level, body.minutes ?? null]);
+        if (!updated.rowCount) return void json(res, 404, { error: "target_not_found" });
+        const item = updated.rows[0]!;
+        await auditControl(principal!, null, "ssh_target.trust_level", "high", "success",
+          JSON.stringify({ ...where, level: item.trust_level, until: item.trust_full_until, runAs: item.run_as }));
+        if (item.trust_level === "full") {
+          notifyTrustChange(principal!.organizationId, label, principal!.email || principal!.actor, item.trust_full_until, item.run_as)
+            .catch(() => undefined);
+        }
+        return void json(res, 200, { item });
+      }
+      if (what === "run-as") {
+        const body = z.object({
+          runAs: z.enum(["user", "root"]),
+          currentPassword: z.string().min(1).max(256).optional(),
+        }).parse(await readJson(req));
+        if (body.runAs === "root" && !(await reauthenticated(userId, body.currentPassword))) {
+          return void json(res, 403, { error: "reauthentication_failed" });
+        }
+        if (body.runAs === "root" && target.sudo !== "sudoers") {
+          await auditControl(principal!, null, "ssh_target.run_as", "high", "denied",
+            JSON.stringify({ ...where, runAs: "root", reason: "target_not_root_capable" }));
+          return void json(res, 409, {
+            error: "target_not_root_capable",
+            message: "The computer that reaches this server does not allow sudo for AI on it. On that computer: WECOMMANDER → this server → AI access → sudo: allowed (sudoers), then try again.",
+          });
+        }
+        const updated = await db.query<{ run_as: "user" | "root"; previous: string }>(
+          `with previous as (select run_as from connector_targets where organization_id=$1 and center_id=$2 and host_id=$3)
+           update connector_targets set run_as=$4,updated_at=now()
+            where organization_id=$1 and center_id=$2 and host_id=$3 and ($4='user' or sudo='sudoers')
+            returning run_as,(select run_as from previous) as previous`,
+          [...key, body.runAs]);
+        if (!updated.rowCount) return void json(res, 409, { error: "target_not_root_capable" });
+        const item = updated.rows[0]!;
+        await auditControl(principal!, null, "ssh_target.run_as", "high", "success",
+          JSON.stringify({ ...where, runAs: item.run_as, previous: item.previous }));
+        if (item.previous !== item.run_as) {
+          notifyPermissionChange(principal!.organizationId, label, principal!.email || principal!.actor, { runAs: item.run_as })
+            .catch(() => undefined);
+        }
+        return void json(res, 200, { item: { run_as: item.run_as } });
+      }
+      // safety-net
+      const body = z.object({
+        enabled: z.boolean(),
+        allowPower: z.boolean().optional(),
+        currentPassword: z.string().min(1).max(256).optional(),
+      }).parse(await readJson(req));
+      const before = { safety_net: target.safety_net !== false, safety_net_allow_power: target.safety_net_allow_power === true };
+      const allowPower = body.allowPower ?? before.safety_net_allow_power;
+      const weakens = (!body.enabled && before.safety_net) || (allowPower && !before.safety_net_allow_power);
+      if (weakens && !(await reauthenticated(userId, body.currentPassword))) {
+        return void json(res, 403, { error: "reauthentication_failed" });
+      }
+      const updated = await db.query<{ safety_net: boolean; safety_net_allow_power: boolean }>(
+        `update connector_targets set safety_net=$4,safety_net_allow_power=$5,updated_at=now()
+          where organization_id=$1 and center_id=$2 and host_id=$3
+          returning safety_net,safety_net_allow_power`,
+        [...key, body.enabled, allowPower]);
+      if (!updated.rowCount) return void json(res, 404, { error: "target_not_found" });
+      const item = updated.rows[0]!;
+      await auditControl(principal!, null, "ssh_target.safety_net", "high", "success",
+        JSON.stringify({ ...where, enabled: item.safety_net, allowPower: item.safety_net_allow_power,
+          previous: { enabled: before.safety_net, allowPower: before.safety_net_allow_power } }));
+      const change: { safetyNet?: boolean; allowPower?: boolean } = {};
+      if (item.safety_net !== before.safety_net) change.safetyNet = item.safety_net;
+      if (item.safety_net_allow_power && !before.safety_net_allow_power) change.allowPower = true;
+      if (Object.keys(change).length) {
+        notifyPermissionChange(principal!.organizationId, label, principal!.email || principal!.actor, change)
+          .catch(() => undefined);
+      }
+      return void json(res, 200, { item });
     }
 
     // Autonomous mode: full trust for all (or the listed) devices at once,

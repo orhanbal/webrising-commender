@@ -304,7 +304,7 @@
  {
   "name": "docker_container_action",
   "title": "Start, stop or restart a container",
-  "description": "Starts, stops or restarts one Docker container on the daemon it names (stop and restart wait 10 s before killing); the action runs on the full id Docker resolves the reference to. Never removes containers, images or volumes; WECOMMANDER's own containers are never stopped or restarted. Needs a human approval for every call unless the device's trust is full; refused on read-only SSH targets.",
+  "description": "Starts, stops or restarts one Docker container on the daemon it names (stop and restart wait 10 s before killing); the action runs on the full id Docker resolves the reference to. Never removes containers, images or volumes; WECOMMANDER's own containers are never stopped or restarted. Needs a human approval for every call unless the device's or SSH target's trust is full; refused on read-only SSH targets.",
   "inputSchema": {
    "type": "object",
    "properties": {

@@ -183,7 +183,9 @@ unknown local client refused until allowed.
   (`hostId, name, preset, sudo, capabilities`; no address, user or key); `mcp.remoteCall {callId,
   centerId, client, tool, args, approved}` → `{ok, result}` / `{ok:false, error, message}`. The
   core re-checks exposure (`remote` + connector), host key, readonly, sudo guard and limits,
-  refuses changes without `approved` (`approval_required`) and runs each `callId` once.
+  refuses changes without `approved` (`approval_required`) and runs each `callId` once. With
+  `args.run_as: "root"` (process_exec, fs_write) it runs through `sudo -n` only when its own
+  `sudo` for the host is `sudoers`, else `run_as_root_unavailable` (see §9).
 - **Gateway** (`gateway/src/ssh-connector.ts`): `PUT /api/center/connector/targets`,
   `GET /api/center/connector/claim?waitMs≤15000` (long poll; marks the computer online),
   `POST /api/center/connector/calls/:id/result` (Center token only). MCP: `targets_list` lists
@@ -192,9 +194,10 @@ unknown local client refused until allowed.
   `fs_stat`, `server_overview`, `server_disk_usage`, `server_processes`, `process_exec`,
   `fs_write`, `fs_mkdir`, `fs_move`, `fs_delete` take `target` (or `device_id`); other tools answer
   `unsupported_for_target`.
-- **Approvals.** Remote changes always need the owner's one-time approval (5 min, single use,
-  bound to client + target + exact arguments; a write by path, size and SHA-256). Timed autonomy
-  is local only. The request appears in the app's approval notifications and on the web
+- **Approvals.** A remote change needs the owner's one-time approval (5 min, single use,
+  bound to client + target + exact arguments; a write by path, size and SHA-256) unless the
+  target's AI permissions in the web panel say otherwise (§9: full trust, or standard trust with
+  an allowlisted command). The computer's own timed autonomy is local only. The request appears in the app's approval notifications and on the web
   Approvals page with the server's name (`target_label`, `device_id` is `""`).
 - **Offline.** No poll within 45 s, or no claim within 20 s: `connector_offline` with
   “Bu sunucuya erişen bilgisayar şu an kapalı…”; an approval consumed for an undelivered call is
@@ -202,6 +205,58 @@ unknown local client refused until allowed.
 - **Limits.** Remote reads ≤ 1 MiB and writes ≤ 1 MiB (gateway body limit); local reads and writes
   ≤ 4 MiB. Writes refuse a symbolic link as the path, deletes never follow links, refuse `/` and the
   home folder and more than 10 000 entries.
-- **macOS:** the Mac app has no AI access editor yet (H1/H2 UI is Windows-only); it decodes the
-  new approval rows unchanged (`device_id` stays a string). Remote access for hosts on a Mac
-  needs the Mac connector loop later.
+- **Linux:** the Management Center (`tray/`) holds the app core (`wc-app-core`) in process, with its
+  own host store in `<config dir>/core` (keyring service `app.wecommander`). The connector loop is
+  `wc_app_core::mcp::connector` (same behaviour as the Windows `RemoteConnector`: publish on change
+  and every minute, long-poll claim, `remote::call`, post with retries, never approves; backoff
+  5 s doubling to 60 s, 30 s on a refused token; stops on sign-out). Its "SSH sunucuları" tab imports
+  `~/.ssh/config` or adds a server, connects once to verify the login and trust the host key, shares
+  a host with remote AI (preset read only / with approval, sudo never / sudoers) and shows the
+  connector's status. Not on Linux yet: local MCP (H2) and the E2E library sync, so hosts saved on
+  another computer are not listed there.
+- **macOS (H3 parity with Windows):** the Mac app runs the same connector loop
+  (`center-macos/Sources/CenterCore/RemoteConnector.swift`, an actor; started while signed in,
+  cancelled on sign-out or when the account/server changes): it publishes `mcp.remoteTargets`
+  (again when changed or after 60 s), long-polls the claim (12 s), runs each call once through
+  `mcp.remoteCall` and posts the result (network errors: two more tries). It never approves:
+  `approved` is passed through as the gateway sent it. Errors back off 5, 10, 20, 40, then 60 s;
+  a refused token waits 30 s (the app signs out). Main window → **Yapay zekâ erişimi** lists the
+  saved hosts: share with remote AI (stored with this Mac's Center id as `connector`), preset
+  (Salt okunur / Onaylı; a timed preset set elsewhere is kept and shown as local-only), sudo,
+  the blockers with their fix, the guarantees and the SSH limit (same texts as Windows), and the
+  connector's status (connected / last contact / last call / last error). Host cards show the
+  “Uzak YZ” badge. Approval notifications and the panel name SSH approvals “web-1 · SSH” and show
+  a move as `a → b` and a write by path, size and SHA-256. Local MCP (H2) has no Mac UI yet: the
+  Mac keeps a host's `local` flag as it is.
+
+## 9. AI permissions of SSH targets (web panel)
+
+Each shared SSH target has the same AI permissions as an agent device (docs/AI_PERMISSIONS.md),
+set on the web **Devices** page under *SSH servers* (grouped by the computer they go through):
+
+- **Stored** on `connector_targets` per (organization, computer, host id): `trust_level`
+  (`strict|standard|full`), `trust_full_until`, `run_as` (`user|root`), `safety_net`,
+  `safety_net_allow_power`; the allowlist in `connector_target_command_allowlist`. Unsharing a
+  host on the computer deletes them; sharing it again starts at standard / user / safety net on.
+- **Who:** only the owner of that computer (SSH targets are personal), with the admin role, from
+  a browser session (CSRF); widening (full, root, safety net off, power allowed) needs the current
+  password. Audited (`ssh_target.trust_level|run_as|safety_net`, `ssh_command_allowlist.add|
+  remove`) and widening is e-mailed to admins and owners. REST: `GET /api/ssh-targets`,
+  `PUT /api/ssh-targets/:target/trust|run-as|safety-net`, `GET|POST /api/ssh-targets/:target/
+  command-allowlist`, `DELETE …/command-allowlist/:id`.
+- **Order of a call** (gateway): role → arguments → **readonly preset (always wins)** → safety net
+  (process_exec) → run as root (needs the computer's `sudo: sudoers`) → offline → full trust (no
+  approval, audit `trusted_full`) / standard + allowlisted command (`allowlisted`) / approval.
+  The call goes to the computer with `approved: true` and, for root, `run_as: "root"`; the
+  approval request shows `runAs: "root"`.
+- **Two keys for root:** the computer reports `sudo` per host when it publishes; root is accepted
+  only while that is `sudoers`, a republish with `never` sets the target back to user (audit
+  `ssh_target.run_as` / `fallback`), and the core refuses `run_as: "root"` on its own unless its
+  setting allows it. As root, `process_exec` runs `sudo -n -- sh -c <command>` and `fs_write`
+  writes through one `sudo -n sh` (no link, regular file, `expected_sha256`, folders; an existing
+  file keeps its owner and mode). `fs_mkdir`, `fs_move`, `fs_delete` and reads stay the SSH user;
+  the server tools keep using sudo as before when `sudo: sudoers`.
+- **Safety net:** `safety-net.ts` is applied by the gateway to SSH `process_exec`. The core has no
+  copy (the setting lives in the gateway); the core's sudo guard and readonly checks still apply.
+- `targets_list` shows `trust`, `trust_full_until` (full), `run_as`, `root_capable` (= `sudo`
+  is `sudoers`) and `safety_net` for SSH targets.

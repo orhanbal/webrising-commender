@@ -12,10 +12,17 @@
 //   POST /api/center/connector/calls/:id/result. Interactive calls fail
 //   closed: a computer that does not claim within a few seconds is offline
 //   (`connector_offline`), nothing waits in a queue for later.
-// - Every command and file change needs the person's one-time approval here
-//   (approval_requests bound to client, target and the exact arguments,
-//   5 minutes, single use); a timed period never applies remotely. Readonly
-//   targets refuse changes before anything is queued.
+// - AI permissions per target (docs/AI_PERMISSIONS.md), set in the web panel
+//   like an agent device's: trust strict/standard/full (full optionally
+//   time-limited), run_as user/root and the safety net. A command or change
+//   needs the person's one-time approval here (approval_requests bound to
+//   client, target and the exact arguments, 5 minutes, single use) unless
+//   trust is full, or trust is standard and the command is on the target's
+//   allowlist. The computer's own timed period never applies remotely.
+//   Readonly targets refuse changes before anything is queued, whatever the
+//   trust. run_as=root sends run_as "root" with process_exec and fs_write
+//   (bound into the approval); it needs the computer's sudo setting for the
+//   host ('sudoers'), which the computer checks again before using sudo -n.
 // - Personal hosts stay personal: only the user who owns the computer sees
 //   its targets, and only that user can approve their commands.
 // - Every call is written to audit_logs (target, tool, decision, outcome;
@@ -25,6 +32,8 @@ import crypto from "node:crypto";
 import { roleAtLeast, type Principal } from "./auth.js";
 import { db } from "./db.js";
 import { redactSecrets } from "./security.js";
+import { safetyNetCheck } from "./safety-net.js";
+import { sshAllowlistMatch } from "./command-allowlist.js";
 import { DOCKER_LOG_LINES_MAX, dockerContainerSchema, dockerDaemonSchema, dockerSinceSchema } from "./protocol.js";
 
 /** Tools an SSH target supports (the rest answer unsupported_for_target). */
@@ -37,11 +46,14 @@ export const SSH_TARGET_TOOLS = [
   "server_timers_list", "docker_containers_list", "docker_container_logs", "docker_container_action",
 ] as const;
 const SSH_TOOLS = new Set<string>(SSH_TARGET_TOOLS);
-/** Commands, file and server changes: approval every time, refused on readonly. */
+/** Commands, file and server changes: refused on readonly; approval unless the target's trust says otherwise. */
 export const SSH_CHANGE_TOOLS = new Set([
   "process_exec", "fs_write", "fs_mkdir", "fs_move", "fs_delete",
   "server_cleanup_run", "server_process_signal", "docker_container_action",
 ]);
+
+/** Tools that run as root on a target set to run_as root (the rest stay the SSH user). */
+export const SSH_ROOT_TOOLS = new Set(["process_exec", "fs_write"]);
 
 /** How long the computer may take for a call, by tool (default 60 s). */
 const TOOL_TIMEOUT_MS: Record<string, number> = {
@@ -132,10 +144,29 @@ export function parseTargets(body: unknown): PublishedTarget[] | null {
   return out;
 }
 
+export type SshTrust = "strict" | "standard" | "full";
 export type TargetRow = {
   target_id: string; center_id: string; host_id: string; name: string; preset: string; sudo: string;
   center_name: string; online: boolean;
+  /** Effective trust (an expired full is standard). Absent on old rows: standard. */
+  trust?: SshTrust;
+  trust_full_until?: Date | null;
+  run_as?: "user" | "root";
+  safety_net?: boolean;
+  safety_net_allow_power?: boolean;
 };
+
+/** The SQL of a target's effective AI permissions (alias t). */
+export const SSH_PERMISSION_COLUMNS =
+  `case when t.trust_level='full' and t.trust_full_until is not null and t.trust_full_until<=now()
+        then 'standard' else t.trust_level end as trust,
+   case when t.trust_level='full' then t.trust_full_until else null end as trust_full_until,
+   t.run_as,t.safety_net,t.safety_net_allow_power`;
+
+/** Root is possible only while the computer allows sudo for AI on this host. */
+export function sshRootCapable(row: Pick<TargetRow, "sudo">) {
+  return row.sudo === "sudoers";
+}
 
 /** The user an MCP principal acts for (OAuth/session/center, or the creator of an API token). */
 export async function principalUserId(principal: Principal): Promise<string | null> {
@@ -156,7 +187,8 @@ export async function listSshTargets(principal: Principal): Promise<TargetRow[]>
   if (!userId) return [];
   const result = await db.query<TargetRow>(
     `select t.target_id,t.center_id,t.host_id,t.name,t.preset,t.sudo,c.name as center_name,
-            coalesce(c.connector_seen_at > now() - ($3::int * interval '1 second'), false) as online
+            coalesce(c.connector_seen_at > now() - ($3::int * interval '1 second'), false) as online,
+            ${SSH_PERMISSION_COLUMNS}
        from connector_targets t
        join management_centers c on c.id=t.center_id and c.revoked_at is null
       where t.organization_id=$1 and c.user_id=$2
@@ -178,6 +210,11 @@ export function targetView(row: TargetRow) {
     capabilities: { exec: !readonly, read: true, write: !readonly, terminal: false, persistent_tasks: false, path_policy: "none" },
     preset: row.preset,
     sudo: row.sudo,
+    trust: row.trust ?? "standard",
+    ...(row.trust === "full" ? { trust_full_until: row.trust_full_until ?? null } : {}),
+    run_as: row.run_as === "root" && sshRootCapable(row) ? "root" as const : "user" as const,
+    root_capable: sshRootCapable(row),
+    safety_net: row.safety_net !== false,
     tools: [...SSH_TARGET_TOOLS],
   };
 }
@@ -187,6 +224,22 @@ export async function publishTargets(organizationId: string, centerId: string, t
   const client = await db.connect();
   try {
     await client.query("begin");
+    // run_as root needs the computer's sudo setting for that host: a host
+    // published without it returns to user (audited, like a device whose
+    // agent stopped reporting root_capable).
+    const noSudo = targets.filter((t) => t.sudo !== "sudoers").map((t) => t.hostId);
+    const fallback = await client.query<{ target_id: string; name: string }>(
+      `update connector_targets set run_as='user',updated_at=now()
+        where center_id=$1 and run_as='root' and host_id = any($2::text[])
+        returning target_id,name`,
+      [centerId, noSudo],
+    );
+    for (const row of fallback.rows) {
+      await client.query(
+        "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,'system',null,'ssh_target.run_as','high','fallback',$2)",
+        [organizationId, JSON.stringify({ target: row.target_id, targetLabel: row.name, runAs: "user", reason: "sudo_not_allowed_on_computer" })],
+      );
+    }
     await client.query("update management_centers set connector_seen_at=now() where id=$1", [centerId]);
     await client.query(
       "delete from connector_targets where center_id=$1 and not (host_id = any($2::text[]))",
@@ -482,31 +535,71 @@ export async function sshTargetCall(principal: Principal, tool: string, rawArgs:
     await audit(tool, risk, "denied", { ...where, reason: "readonly_preset" });
     return err("readonly_preset", "This server is read-only for AI: commands, file changes and server changes are off. The person can change it in WECOMMANDER (server → AI access).");
   }
+  // Safety net (safety-net.ts): the same short hard-deny list as on agent
+  // devices, whatever the trust, run_as or an approval says.
+  if (tool === "process_exec" && row.safety_net !== false) {
+    const hit = safetyNetCheck(String(normalized.args.command), { allowPower: row.safety_net_allow_power === true });
+    if (hit) {
+      await audit(tool, risk, "denied", { ...where, reason: "safety_net", rule: hit.rule, runAs: row.run_as ?? "user" });
+      return err("safety_net_blocked",
+        `Refused by this server's safety net: ${hit.reason}. The owner can switch the safety net off for this server in the WECOMMANDER web panel (Devices > AI permissions).`,
+        { rule: hit.rule });
+    }
+  }
+  // run_as root: run_as "root" travels with the call and is part of the
+  // approved action; the computer runs it through sudo -n only if its own
+  // sudo setting for this host allows it.
+  let args = normalized.args;
+  let action = normalized.action;
+  const runAs = row.run_as === "root" && SSH_ROOT_TOOLS.has(tool) ? "root" : "user";
+  if (runAs === "root") {
+    if (!sshRootCapable(row)) {
+      await audit(tool, risk, "denied", { ...where, reason: "run_as_root_unavailable" });
+      return err("run_as_root_unavailable",
+        "This server is set to run as root, but the computer that reaches it does not allow sudo for AI on it (WECOMMANDER → server → AI access → sudo). Ask the owner to set run as: user, or to allow sudo there.");
+    }
+    args = { ...args, run_as: "root" };
+    if (action) action = { ...action, runAs: "root" };
+  }
   if (!row.online) {
     await audit(tool, risk, "error", { ...where, reason: "connector_offline" });
     return err("connector_offline", OFFLINE_MESSAGE);
   }
 
   let approvalId: string | null = null;
-  if (normalized.action) {
-    approvalId = await consumeSshApproval(principal.organizationId, principal.actor, row, normalized.action);
+  let preApproved = false;
+  const trust: SshTrust = row.trust ?? "standard";
+  if (action && trust === "full") {
+    // Full trust for this target: no per-call approval (readonly, the
+    // safety net and the computer's own checks still apply).
+    preApproved = true;
+    await audit(tool, risk, "trusted_full", { ...where, kind: tool, runAs });
+  } else if (action && tool === "process_exec" && trust === "standard") {
+    const allowed = await sshAllowlistMatch(principal.organizationId, row.center_id, row.host_id, String(args.command));
+    if (allowed) {
+      preApproved = true;
+      await audit(tool, risk, "allowlisted", { ...where, allowlistId: allowed.id, pattern: allowed.pattern, runAs });
+    }
+  }
+  if (action && !preApproved) {
+    approvalId = await consumeSshApproval(principal.organizationId, principal.actor, row, action);
     if (!approvalId) {
-      const pending = await ensureSshApproval(principal.organizationId, principal.actor, row, normalized.action);
+      const pending = await ensureSshApproval(principal.organizationId, principal.actor, row, action);
       await audit(tool, risk, "approval_pending", { ...where, approvalRequestId: pending.id });
       return err("approval_required",
         "The person must approve this exact operation first (WECOMMANDER app notification or wecommander.app → Approvals), then retry the identical call. The approval is single use and expires in 5 minutes.",
         { action: tool, approval_request_id: pending.id, approval_expires_at: pending.expires_at });
     }
-    await audit(tool, risk, "approval_consumed", { ...where, approvalRequestId: approvalId });
+    await audit(tool, risk, "approval_consumed", { ...where, approvalRequestId: approvalId, runAs });
   }
 
-  const timeoutMs = callTimeoutMs(tool, normalized.args);
+  const timeoutMs = callTimeoutMs(tool, args);
   const inserted = await db.query<{ id: string }>(
     `insert into connector_calls(organization_id,center_id,host_id,target_id,tool,args,approved,client,claim_by,deadline)
      values($1,$2,$3,$4,$5,$6::jsonb,$7,$8,now()+($9::int * interval '1 millisecond'),now()+($10::int * interval '1 millisecond'))
      returning id`,
     [principal.organizationId, row.center_id, row.host_id, row.target_id, tool,
-     JSON.stringify({ ...normalized.args, target: row.host_id }), approvalId !== null,
+     JSON.stringify({ ...args, target: row.host_id }), approvalId !== null || preApproved,
      (principal.oauthClientKind || principal.actor).slice(0, 100), CLAIM_WITHIN_MS, CLAIM_WITHIN_MS + timeoutMs + 30_000],
   );
   const callId = inserted.rows[0]!.id;
@@ -534,7 +627,7 @@ export async function sshTargetCall(principal: Principal, tool: string, rawArgs:
     if (s.unclaimed) {
       const expired = await db.query("delete from connector_calls where id=$1 and status='queued' returning id", [callId]);
       if (expired.rowCount) {
-        if (approvalId && normalized.action) await restoreSshApproval(principal.organizationId, approvalId, normalized.action);
+        if (approvalId && action) await restoreSshApproval(principal.organizationId, approvalId, action);
         await audit(tool, risk, "error", { ...where, reason: "connector_offline", ...(approvalId ? { approvalRestored: approvalId } : {}) });
         return err("connector_offline", OFFLINE_MESSAGE, approvalId ? { approval_request_id: approvalId } : {});
       }

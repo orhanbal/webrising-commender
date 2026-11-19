@@ -4,7 +4,7 @@
 // crates/agent/src/local_tools.json is the generated copy; local-tools.test.ts
 // fails when it drifts. Regenerate with: npm run -s export-local-tools
 import { DC_TOOLS } from "./dc-compat.js";
-import { actionFromTool, FS_WRITE_ROOT_HELP, RUN_AS_HELP, tools } from "./mcp.js";
+import { actionFromTool, FS_WRITE_ROOT_HELP, RUN_AS_HELP, SSH_RUN_AS_HELP, tools } from "./mcp.js";
 import { toolAnnotations, type ToolAnnotations } from "./tool-annotations.js";
 
 type Schema = { type?: string; properties?: Record<string, any>; required?: string[]; items?: any; enum?: unknown[] };
@@ -50,7 +50,7 @@ const withoutGatewayFields = (tool: Tool): Tool => {
   delete properties.device_id; delete properties.approval_token; delete properties.target;
   const required = (tool.inputSchema.required ?? []).filter((r) => r !== "device_id" && r !== "approval_token" && r !== "target");
   const annotations = toolAnnotations(tool.name);
-  return { name: tool.name, title: annotations.title, description: tool.description.replace(RUN_AS_HELP, "").replace(FS_WRITE_ROOT_HELP, ""), inputSchema: { type: "object", properties, required, additionalProperties: false } as Schema, annotations };
+  return { name: tool.name, title: annotations.title, description: tool.description.replace(RUN_AS_HELP, "").replace(FS_WRITE_ROOT_HELP, "").replace(SSH_RUN_AS_HELP, ""), inputSchema: { type: "object", properties, required, additionalProperties: false } as Schema, annotations };
 };
 
 /** Tools the agent can serve directly (action kind equals the tool name),

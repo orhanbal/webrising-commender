@@ -39,7 +39,7 @@ WECOMMANDER also connects AI assistants such as Claude, ChatGPT and Cursor to yo
 The SSH client works fully without AI and without an account.
 
 **Product features**
-- Tabbed and split SSH terminals, saved servers with groups and tags
+- Tabbed and split SSH terminals, saved servers with groups
 - Drag-and-drop SFTP file manager
 - Local, remote and SOCKS tunnels, jump hosts
 - SSH agent and FIDO2 hardware key sign-in
@@ -81,7 +81,7 @@ WECOMMANDER ayrıca Claude, ChatGPT ve Cursor gibi yapay zekâ asistanlarını t
 SSH istemcisi yapay zekâ ve hesap olmadan da eksiksiz çalışır.
 
 **Ürün özellikleri**
-- Sekmeli ve bölünmüş SSH terminalleri, gruplu ve etiketli kayıtlı sunucular
+- Sekmeli ve bölünmüş SSH terminalleri, gruplu kayıtlı sunucular
 - Sürükle-bırak SFTP dosya yöneticisi
 - Yerel, uzak ve SOCKS tüneller, jump host
 - SSH agent ve FIDO2 donanım anahtarıyla giriş
@@ -123,7 +123,7 @@ WECOMMANDER verbindet außerdem KI-Assistenten wie Claude, ChatGPT und Cursor mi
 Der SSH-Client funktioniert vollständig ohne KI und ohne Konto.
 
 **Produktfunktionen**
-- SSH-Terminals in Tabs und geteilter Ansicht, gespeicherte Server mit Gruppen und Tags
+- SSH-Terminals in Tabs und geteilter Ansicht, gespeicherte Server mit Gruppen
 - SFTP-Dateimanager mit Drag-and-drop
 - Lokale, entfernte und SOCKS-Tunnel, Jump-Hosts
 - Anmeldung über SSH-Agent und FIDO2-Hardwareschlüssel
@@ -165,7 +165,7 @@ WECOMMANDER connecte aussi les assistants IA comme Claude, ChatGPT et Cursor à 
 Le client SSH fonctionne entièrement sans IA et sans compte.
 
 **Fonctionnalités**
-- Terminaux SSH en onglets et en vue partagée, serveurs enregistrés avec groupes et étiquettes
+- Terminaux SSH en onglets et en vue partagée, serveurs enregistrés avec groupes
 - Gestionnaire de fichiers SFTP par glisser-déposer
 - Tunnels locaux, distants et SOCKS, hôtes de rebond
 - Connexion par agent SSH et clés matérielles FIDO2
@@ -207,7 +207,7 @@ WECOMMANDER también conecta asistentes de IA como Claude, ChatGPT y Cursor a tu
 El cliente SSH funciona por completo sin IA y sin cuenta.
 
 **Características**
-- Terminales SSH en pestañas y divididas, servidores guardados con grupos y etiquetas
+- Terminales SSH en pestañas y divididas, servidores guardados con grupos
 - Gestor de archivos SFTP con arrastrar y soltar
 - Túneles locales, remotos y SOCKS, hosts de salto
 - Inicio de sesión con agente SSH y llaves de hardware FIDO2
@@ -249,7 +249,7 @@ O WECOMMANDER também conecta assistentes de IA como Claude, ChatGPT e Cursor à
 O cliente SSH funciona por completo sem IA e sem conta.
 
 **Recursos**
-- Terminais SSH em abas e divididos, servidores salvos com grupos e tags
+- Terminais SSH em abas e divididos, servidores salvos com grupos
 - Gerenciador de arquivos SFTP com arrastar e soltar
 - Túneis locais, remotos e SOCKS, jump hosts
 - Login com agente SSH e chaves de hardware FIDO2

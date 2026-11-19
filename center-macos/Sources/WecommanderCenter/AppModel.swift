@@ -160,7 +160,7 @@ final class AppModel: ObservableObject {
                 if settings.notifications {
                     let names = Dictionary(newDevices.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
                     for item in fresh.prefix(5) {
-                        notifier.showApproval(item, device: names[item.deviceId] ?? L.t("bilinmeyen cihaz"))
+                        notifier.showApproval(item, device: item.placeName(names))
                     }
                 }
                 // Only the notification by default; the panel opens when asked
@@ -175,6 +175,7 @@ final class AppModel: ObservableObject {
             error = e.message
         } catch {
             self.error = error.localizedDescription
+            ErrorReporter.record(error, "AppModel.sync")
         }
         publish()
     }
@@ -184,7 +185,7 @@ final class AppModel: ObservableObject {
         guard settings.notifications, !others.isEmpty else { return }
         let gateway = self.gateway
         for item in others.prefix(5) {
-            let device = deviceName(item.deviceId)
+            let device = placeName(item)
             let what = item.summary.isEmpty ? Texts.kindLabel(item.actionKind) : item.summary
             Task { [weak self] in
                 guard let outcome = try? await gateway.outcome(token: token, id: item.id),
@@ -227,6 +228,7 @@ final class AppModel: ObservableObject {
             error = e.message
         } catch {
             self.error = error.localizedDescription
+            ErrorReporter.record(error, "AppModel.connect")
         }
         publish()
     }
@@ -416,6 +418,7 @@ final class AppModel: ObservableObject {
             notifier.showPlain("WECOMMANDER", installing ? Texts.agentInstallStarted : Texts.agentUpdateStarted)
         } catch {
             self.error = error.localizedDescription
+            ErrorReporter.record(error, "AppModel.runAgentInstaller")
             publish()
         }
     }
@@ -444,6 +447,7 @@ final class AppModel: ObservableObject {
             error = nil
         } catch {
             self.error = error.localizedDescription
+            ErrorReporter.record(error, "AppModel.setAgentEnabled")
         }
     }
 
@@ -508,6 +512,11 @@ final class AppModel: ObservableObject {
     func deviceName(_ id: String) -> String {
         devices.first { $0.id == id }?.name ?? L.t("bilinmeyen cihaz")
     }
+
+    /// Where an approval runs: the device, or the saved SSH server shared through a computer ("web-1 · SSH").
+    func placeName(_ item: ApprovalRequest) -> String {
+        item.placeName(Dictionary(devices.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a }))
+    }
 }
 
 // MARK: the agent inside the app
@@ -552,6 +561,7 @@ extension AppModel {
             }
         } catch {
             self.error = L.t("Bu Mac hesaba bağlanamadı: ") + error.localizedDescription
+            ErrorReporter.record(error, "AppModel.ensurePaired")
         }
     }
 
@@ -697,6 +707,7 @@ extension AppModel {
             updating = false
             updateProgress = nil
             updateMessage = error.localizedDescription
+            ErrorReporter.record(error, "AppModel.updateApp")
             notifier.showPlain("WECOMMANDER", L.t("Güncelleme tamamlanamadı; ayrıntı panelde."))
             publish()
         }

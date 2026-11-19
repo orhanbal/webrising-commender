@@ -24,6 +24,8 @@ public enum JSONValue: Decodable, Equatable {
 public struct ApprovalRequest: Decodable, Identifiable, Equatable {
     public let id: String
     public let deviceId: String
+    /// A saved SSH server shared through a computer (Hybrid Access H3): no device, a label instead.
+    public let targetLabel: String?
     public let actionKind: String
     public let action: JSONValue?
     public let expiresAt: Date
@@ -32,18 +34,27 @@ public struct ApprovalRequest: Decodable, Identifiable, Equatable {
     enum CodingKeys: String, CodingKey {
         case id, action
         case deviceId = "device_id"
+        case targetLabel = "target_label"
         case actionKind = "action_kind"
         case expiresAt = "expires_at"
         case createdAt = "created_at"
     }
 
-    public init(id: String, deviceId: String, actionKind: String, action: JSONValue?, expiresAt: Date, createdAt: Date) {
+    public init(id: String, deviceId: String, actionKind: String, action: JSONValue?, expiresAt: Date, createdAt: Date, targetLabel: String? = nil) {
         self.id = id; self.deviceId = deviceId; self.actionKind = actionKind
         self.action = action; self.expiresAt = expiresAt; self.createdAt = createdAt
+        self.targetLabel = targetLabel
     }
 
     /// The exact thing the approval allows: command, path or name.
     public var summary: String { ActionSummary.from(action) }
+
+    /// Where it runs: the device's name, or the SSH server's ("web-1 · SSH").
+    public func placeName(_ devices: [String: String]) -> String {
+        if !deviceId.isEmpty, let name = devices[deviceId] { return name }
+        if let label = targetLabel?.trimmingCharacters(in: .whitespaces), !label.isEmpty { return label + " · SSH" }
+        return L.t("bilinmeyen cihaz")
+    }
 }
 
 public struct Device: Decodable, Identifiable, Equatable {
@@ -150,6 +161,12 @@ public enum ActionSummary {
     public static func from(_ action: JSONValue?) -> String {
         guard case .object(let fields)? = action else { return "" }
         if case .string(let data)? = fields["dataBase64"] { return terminalInput(data) }
+        // SSH targets (Hybrid Access H4): a move shows both ends, a write its size and content hash.
+        if case .string(let from)? = fields["source"], case .string(let to)? = fields["destination"] { return "\(from) → \(to)" }
+        if case .string(let path)? = fields["path"], case .string(let hash)? = fields["sha256"], case .number(let size)? = fields["size"] {
+            let bytes = size == size.rounded() ? String(Int64(size)) : String(size)
+            return "\(path) (\(bytes) B, sha256 \(hash.prefix(12))…)"
+        }
         for key in ["command", "path", "source", "name", "pid", "taskId", "sessionId"] {
             switch fields[key] {
             case .string(let s)? where !s.isEmpty: return s

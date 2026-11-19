@@ -224,7 +224,7 @@ private struct ApprovalCard: View {
         let expired = item.expiresAt <= model.now
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(model.deviceName(item.deviceId)).font(.callout.weight(.semibold))
+                Text(model.placeName(item)).font(.callout.weight(.semibold))
                 Text(Texts.kindLabel(item.actionKind)).font(.callout).foregroundStyle(.secondary)
                 Spacer()
                 Text(Texts.remaining(item.expiresAt, now: model.now))

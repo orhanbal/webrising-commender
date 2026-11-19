@@ -8,6 +8,11 @@
 mod agent;
 mod api;
 mod embedded;
+#[cfg(target_os = "linux")]
+mod hybrid;
+#[cfg(not(target_os = "linux"))]
+#[path = "hybrid_stub.rs"]
+mod hybrid;
 mod store;
 
 use api::{Api, ApiError, AutonomyItem, Device, Me};
@@ -86,6 +91,10 @@ struct AppState {
     tray: Mutex<Option<TrayIcon>>,
     menus: Mutex<Option<Menus>>,
     wake: tokio::sync::Notify,
+    /// Linux: saved SSH hosts shared with remote AI through this computer
+    /// (Hybrid Access), and the connector loop that serves them.
+    #[cfg(target_os = "linux")]
+    hybrid: hybrid::Hybrid,
 }
 
 #[derive(Clone, Serialize)]
@@ -118,6 +127,8 @@ struct Snapshot {
     agent: Option<agent::AgentView>,
     agent_busy: bool,
     agent_version: Option<String>,
+    /// The window shows the SSH AI access tab (Linux).
+    hybrid: bool,
 }
 
 fn snapshot(app: &AppHandle) -> Snapshot {
@@ -146,6 +157,7 @@ fn snapshot(app: &AppHandle) -> Snapshot {
         agent: inner.agent.clone(),
         agent_busy: inner.agent_busy,
         agent_version: inner.agent_version.clone(),
+        hybrid: cfg!(target_os = "linux"),
     }
 }
 
@@ -554,6 +566,9 @@ fn sign_out(app: &AppHandle, message: Option<String>) {
         server
     };
     store::delete_token(&state.dir, &server);
+    // The SSH connector stops with the sign-in (Linux).
+    #[cfg(target_os = "linux")]
+    hybrid::tick(app);
 }
 
 async fn sync(app: &AppHandle) {
@@ -614,6 +629,7 @@ async fn sync(app: &AppHandle) {
                     device_name: names
                         .get(&a.device_id)
                         .cloned()
+                        .or_else(|| a.target_label.clone().filter(|l| !l.is_empty()))
                         .unwrap_or_else(|| "bilinmeyen cihaz".into()),
                     summary: api::summary(&a.action),
                     id: a.id,
@@ -1099,6 +1115,9 @@ async fn background(app: AppHandle) {
             last = Instant::now();
             sync(&app).await;
         }
+        // Linux: the SSH connector runs while signed in, stops on sign-out.
+        #[cfg(target_os = "linux")]
+        hybrid::tick(&app);
         if last_agent.elapsed() >= Duration::from_secs(10) {
             last_agent = Instant::now();
             check_agent(&app).await;
@@ -1588,6 +1607,8 @@ fn main() {
                 None
             };
             app.manage(AppState {
+                #[cfg(target_os = "linux")]
+                hybrid: hybrid::Hybrid::new(&dir),
                 dir,
                 embedded: Mutex::new(embedded),
                 inner: Mutex::new(Inner {
@@ -1638,7 +1659,15 @@ fn main() {
             update_agent,
             refresh,
             hide_panel,
-            default_name
+            default_name,
+            hybrid::hybrid_view,
+            hybrid::hybrid_import,
+            hybrid::hybrid_add,
+            hybrid::hybrid_verify,
+            hybrid::hybrid_set,
+            hybrid::hybrid_delete,
+            hybrid::hybrid_root_terminal,
+            hybrid::hybrid_open_permissions
         ])
         .run(tauri::generate_context!())
         .expect("WECOMMANDER Management Center failed to start");

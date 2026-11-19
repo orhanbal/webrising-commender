@@ -536,6 +536,7 @@ export const productEnglish:Record<string,string> = {
   "Komutlar, görevler, terminaller ve dosya yazmaları sudo ile root olarak çalışır. Dosya araçları yine izinli klasörlerle sınırlıdır.": "Commands, tasks, terminals and file writes run as root through sudo. File tools stay limited to the allowed folders.",
   "Bu cihazda root kapalı": "Root is off on this device",
   "Root yetkisi önce makinenin kendisinde açılmalı; web panelinden tek başına açılamaz. Makinedeki kişi şu komutu bir kez çalıştırsın, sonra burada açabilirsin:": "Root must first be allowed on the machine itself; the web panel alone cannot turn it on. Have the person on the machine run this command once, then you can turn it on here:",
+  "Ya da WECOMMANDER uygulamasında sunucuya sağ tıkla → Yapay zekâya root izni ver": "Or, in the WECOMMANDER app, right-click the server → Give AI root permission",
   "Komutu kopyala": "Copy command",
   "Root tam yönetici yetkisidir": "Root is full administrator access",
   "Yapay zekâ bu makinede her şeyi değiştirebilir. Değişiklik tüm yöneticilere e-postayla bildirilir ve denetim kaydına yazılır.": "The AI can change anything on this machine. All admins are e-mailed about the change and it is written to the audit log.",
@@ -551,5 +552,18 @@ export const productEnglish:Record<string,string> = {
   "Yapay zekâ komutları, Docker işlemlerini ve zamanlanmış görev değişikliklerini onay beklemeden yapar.": "The AI runs commands, Docker actions and scheduled-task changes without waiting for approval.",
   "Mevcut şifre doğrulanamadı.": "Your current password could not be verified.",
   "Bu ayar yalnızca tarayıcı oturumundan değiştirilebilir.": "This setting can only be changed from a browser session.",
-  "Bu cihazda root kapalı. Önce makinede install-linux.sh --allow-root çalıştırılmalı.": "Root is off on this device. Run install-linux.sh --allow-root on the machine first."
+  "Bu cihazda root kapalı. Önce makinede install-linux.sh --allow-root çalıştırılmalı.": "Root is off on this device. Run install-linux.sh --allow-root on the machine first.",
+  "Yapay zekânın bu SSH sunucusunda ne yapabileceğini seç. Sunucuya bu bilgisayar üzerinden erişilir:": "Choose what the AI may do on this SSH server. It is reached through this computer:",
+  "Bu ayarları yapay zekâ istemcileri değiştiremez.": "AI clients cannot change these settings.",
+  "Bu sunucu salt okunur paylaşılıyor": "This server is shared read-only",
+  "O bilgisayarda salt okunur seçildiği için güven seviyesi ne olursa olsun yapay zekâ bu sunucuda komut çalıştıramaz ve değişiklik yapamaz.": "Read-only is chosen on that computer, so whatever the trust level the AI cannot run commands or make changes on this server.",
+  "Komutlar ve dosya yazmaları SSH kullanıcısıyla çalışır (önerilen).": "Commands and file writes run as the SSH user (recommended).",
+  "Komutlar ve dosya yazmaları sunucuda sudo -n ile root olarak çalışır.": "Commands and file writes run as root on the server through sudo -n.",
+  "Bu sunucuda sudo kapalı": "Sudo is off for this server",
+  "Root için önce o bilgisayarda izin verilmeli; web panelinden tek başına açılamaz. O bilgisayarda: WECOMMANDER → sunucu → Yapay zekâ erişimi → sudo: izinli (sudoers).": "Root must first be allowed on that computer; the web panel alone cannot turn it on. On that computer: WECOMMANDER → server → AI access → sudo: allowed (sudoers).",
+  "Bu sunucuda izinli komut yok.": "No allowed commands on this server.",
+  "SSH sunucuları": "SSH servers",
+  "Bilgisayarındaki WECOMMANDER üzerinden uzak yapay zekâyla paylaştığın kayıtlı sunucular. Yalnızca sen görürsün.": "Saved servers you share with remote AI through WECOMMANDER on your computer. Only you see them.",
+  "Değişikliğe açık": "Changes allowed",
+  "Yapay zekâ bu sunucuda komutları, dosya, Docker ve sunucu değişikliklerini onay beklemeden yapar.": "The AI runs commands, file, Docker and server changes on this server without waiting for approval."
 };

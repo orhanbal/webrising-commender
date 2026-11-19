@@ -13,6 +13,9 @@ pub struct Approval {
     pub action: Value,
     pub expires_at: String,
     pub created_at: String,
+    /// SSH target requests (Hybrid Access): the server's name; `device_id` is "".
+    #[serde(default)]
+    pub target_label: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -305,6 +308,45 @@ impl Api {
             })
     }
 
+    // ---- Hybrid Access H3: this computer as the connector for its shared SSH hosts ----
+
+    /// Replaces the SSH hosts this computer shares with remote AI.
+    #[cfg(target_os = "linux")]
+    pub async fn connector_publish(&self, token: &str, targets: Value) -> Result<(), ApiError> {
+        let req = self
+            .http
+            .put(format!("{}/api/center/connector/targets", self.base))
+            .bearer_auth(token)
+            .json(&json!({ "targets": targets }));
+        self.send(req).await.map(|_| ())
+    }
+
+    /// Long poll (at most 15 s on the gateway) for calls queued for this computer.
+    #[cfg(target_os = "linux")]
+    pub async fn connector_claim(&self, token: &str, wait_ms: u64) -> Result<Value, ApiError> {
+        let path = format!("/api/center/connector/claim?waitMs={}", wait_ms.min(15_000));
+        self.send(self.get(token, &path)).await
+    }
+
+    #[cfg(target_os = "linux")]
+    pub async fn connector_result(
+        &self,
+        token: &str,
+        call_id: &str,
+        result: Value,
+    ) -> Result<(), ApiError> {
+        if !call_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') || call_id.len() != 36 {
+            return Err(ApiError::Http {
+                status: 404,
+                code: "call_not_found".into(),
+            });
+        }
+        let path = format!("/api/center/connector/calls/{call_id}/result");
+        self.send(self.post(Some(token), &path, result))
+            .await
+            .map(|_| ())
+    }
+
     pub async fn disconnect(&self, token: &str) -> Result<(), ApiError> {
         self.send(self.post(Some(token), "/api/center/disconnect", json!({})))
             .await
@@ -487,6 +529,16 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(approval.action_kind, "process_exec");
+        assert_eq!(approval.target_label, None);
+        // SSH target request (Hybrid Access): no device, the server's name.
+        let ssh: Approval = serde_json::from_value(json!({
+            "id":"99413e59-492a-4b60-b53a-9c36d5433113","device_id":"","action_kind":"process_exec",
+            "action":{"command":"uptime"},"status":"pending","target_kind":"ssh",
+            "target_id":"ssh-0123456789abcdef01234567","target_label":"Web",
+            "expires_at":"2026-11-07T11:14:18.026Z","created_at":"2026-11-07T11:04:18.026Z"
+        }))
+        .unwrap();
+        assert_eq!(ssh.target_label.as_deref(), Some("Web"));
         let device: Device = serde_json::from_value(json!({
             "id":"d","name":"content","platform":"windows","online":true,"trust_level":"standard",
             "trust_full_until":null,"revoked_at":null,"capabilities":{}

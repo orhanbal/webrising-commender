@@ -165,7 +165,7 @@ try {
   assert.equal(notCapable.status, 409, "refused while the agent is not root capable");
   const notCapableBody = await notCapable.json();
   assert.equal(notCapableBody.error, "device_not_root_capable");
-  assert.match(notCapableBody.installCommand, /install-linux\.sh --allow-root/);
+  assert.match(notCapableBody.installCommand, /install\.sh \| sh -s -- --allow-root$/);
   assert.equal((await db.query("select run_as from devices where id=$1", [device])).rows[0].run_as, "user");
   await db.query("update devices set root_capable=true where id=$1", [device]); // as the agent's hello would
   const mailsBeforeRoot = await mails();

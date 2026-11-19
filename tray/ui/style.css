@@ -46,6 +46,8 @@ label.switch { display: flex; align-items: center; gap: 10px; margin: 6px 0; pad
 input[type=text], input[type=url], input[type=password] { width: 100%; height: 32px; padding: 0 10px; border: 1px solid var(--stroke); border-bottom-color: var(--muted);
   border-radius: 4px; background: var(--card); color: var(--text); font: inherit; outline: none; }
 input:focus { border-bottom: 2px solid var(--accent); }
+select { height: 32px; padding: 0 8px; border: 1px solid var(--stroke); border-radius: 4px; background: var(--card); color: var(--text); font: inherit; }
+.row input[type=password] { flex: 1; min-width: 140px; width: auto; }
 input[type=checkbox], input[type=radio] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
 
 button { height: 32px; padding: 0 12px; border-radius: 4px; border: 1px solid var(--stroke); background: var(--card); color: var(--text); font: inherit; cursor: default; }
@@ -60,7 +62,7 @@ button.ghost { background: transparent; }
 #connect { margin-top: 16px; width: 100%; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
 
-.tabs { display: flex; gap: 2px; margin: 4px 0 12px; }
+.tabs { display: flex; flex-wrap: wrap; gap: 2px; margin: 4px 0 12px; }
 .tabs button { position: relative; height: 32px; border: 0; background: transparent; padding: 0 10px; color: var(--muted); }
 .tabs button:hover { color: var(--text); background: var(--code); }
 .tabs button.active { color: var(--text); font-weight: 600; }

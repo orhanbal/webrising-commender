@@ -1376,5 +1376,19 @@
  "Zamanlanmış görevi sil": "Geplante Aufgabe löschen",
  "Zamanlanmış görevi şimdi çalıştır": "Geplante Aufgabe jetzt ausführen",
  "güvenlik ağı kapalı": "Sicherheitsnetz aus",
- "Yapay zekâ yetkileri": "KI-Berechtigungen"
+ "Yapay zekâ yetkileri": "KI-Berechtigungen",
+ "Yapay zekâya root izni ver (bu sunucuda)": "KI Root-Rechte geben (auf diesem Server)",
+ "Root iznini kaldır": "Root-Rechte entfernen",
+ "{0} şu anda bağlanıyor; bitince yeniden dene.": "{0} verbindet sich gerade; versuche es danach noch einmal.",
+ "Bu sunucuda yeni bir terminal açılır ve aşağıdaki komut çalışır. Komut, WECOMMANDER ajanının servis kullanıcısına sudo izni veren bir sudoers dosyası yazar (/etc/sudoers.d/wecommander-agent) ve servisin sudo'yu engelleyen kısıtlamalarını gevşetir. Ajan kurulu değilse önce kurar.": "Auf diesem Server öffnet sich ein neues Terminal und führt den Befehl unten aus. Er schreibt eine sudoers-Datei, die dem Dienstbenutzer des WECOMMANDER-Agenten sudo erlaubt (/etc/sudoers.d/wecommander-agent), und lockert die Dienst-Einschränkungen, die sudo blockieren. Ist der Agent nicht installiert, wird er zuerst installiert.",
+ "Bu sunucuda yeni bir terminal açılır ve aşağıdaki komut çalışır. Komut, ajanın sudoers dosyasını siler ve servisin kısıtlamalarını geri getirir. Yapay zekâ bu cihazda artık root olarak çalışamaz.": "Auf diesem Server öffnet sich ein neues Terminal und führt den Befehl unten aus. Er löscht die sudoers-Datei des Agenten und stellt die Dienst-Einschränkungen wieder her. Die KI kann auf diesem Gerät dann nicht mehr als root arbeiten.",
+ "sudo parolanı terminalde kendin yazarsın; WECOMMANDER parolayı görmez ve saklamaz.": "Dein sudo-Passwort tippst du selbst im Terminal ein; WECOMMANDER sieht und speichert es nicht.",
+ "Bu yalnız ilk anahtardır: root, bir yönetici web panelinde parolasıyla açana kadar kapalı kalır. Geri almak için: sunucuya sağ tıkla → Root iznini kaldır.": "Das ist nur der erste Schlüssel: Root bleibt aus, bis ein Admin es im Webpanel mit seinem Passwort einschaltet. Rückgängig machen: Rechtsklick auf den Server → Root-Rechte entfernen.",
+ "Çalışacak komut": "Auszuführender Befehl",
+ "{0}: yapay zekâya root izni verilsin mi?": "{0}: KI Root-Rechte geben?",
+ "{0}: root izni kaldırılsın mı?": "{0}: Root-Rechte entfernen?",
+ "Terminalde çalıştır": "Im Terminal ausführen",
+ "Komut terminalde çalışıyor; sudo parolanı orada yaz. Bitince ikinci anahtar: bir yönetici web panelinde root'u açar.": "Der Befehl läuft im Terminal; gib dort dein sudo-Passwort ein. Danach der zweite Schlüssel: Ein Admin schaltet Root im Webpanel ein.",
+ "Web'de yetkileri aç": "Berechtigungen im Web öffnen",
+ "Komut terminalde çalışıyor; sudo parolanı orada yaz. Bitince ajan yeniden bağlanır ve cihaz kullanıcı olarak çalışmaya döner.": "Der Befehl läuft im Terminal; gib dort dein sudo-Passwort ein. Danach verbindet sich der Agent neu und das Gerät arbeitet wieder als Benutzer."
 }

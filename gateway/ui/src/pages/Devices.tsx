@@ -1,11 +1,11 @@
 import {useEffect,useMemo,useState} from "react";
 import { t as translate,useLocale } from "../i18n";
-import {ArrowRight,Check,Clock3,Copy,Info,Monitor,MoreHorizontal,Plus,RefreshCw,Search,ShieldCheck,Wifi,WifiOff,Trash2} from "../components/icons";
+import {ArrowRight,Check,Clock3,Copy,Info,Monitor,MoreHorizontal,Plus,RefreshCw,Search,Server,ShieldCheck,Wifi,WifiOff,Trash2} from "../components/icons";
 import {api,type Account} from "../api";
 import {Badge,Button,Card,CardContent,CardHeader,CardTitle,Dialog,DialogContent,DialogDescription,DialogTitle,Input} from "../components/ui";
 import {DashboardShell} from "./Dashboard";
 import type {Nav,Theme} from "../App";
-import {AiPermissionsDialog,PermissionBadges,type PermissionDevice} from "./AiPermissions";
+import {AiPermissionsDialog,PermissionBadges,sshSubject,type PermissionDevice,type SshPermissionTarget} from "./AiPermissions";
 
 type ManagedDevice=PermissionDevice&{revoked_at?:string|null;agent_version?:string|null;capabilities?:string[]|null};
 export function DevicesPage({nav,account,checking,theme,toggle,logout}:{nav:Nav;account:Account|null;checking:boolean;theme:Theme;toggle:()=>void;logout:()=>void}){
@@ -23,6 +23,11 @@ export function DevicesPage({nav,account,checking,theme,toggle,logout}:{nav:Nav;
  const [selected,setSelected]=useState<ManagedDevice|null>(null);
  const [permissionsId,setPermissionsId]=useState<string|null>(new URLSearchParams(location.search).get("permissions"));
  const permissionsDevice=devices.find(d=>d.id===permissionsId&&!d.revoked_at)??null;
+ // Saved SSH servers shared with remote AI through this user's computers
+ // (Hybrid Access): the same AI permissions, grouped by computer.
+ const [sshTargets,setSshTargets]=useState<SshPermissionTarget[]>([]);
+ const permissionsSsh=sshTargets.find(t=>t.target_id===permissionsId)??null;
+ const sshGroups=useMemo(()=>{const groups=new Map<string,SshPermissionTarget[]>();for(const t of sshTargets)groups.set(t.center_id,[...(groups.get(t.center_id)??[]),t]);return [...groups.values()]},[sshTargets]);
  const [name,setName]=useState("");
  const [busy,setBusy]=useState(false);
  const canOperator=["operator","admin","owner"].includes(account?.role||"")||account?.global===true;
@@ -34,7 +39,12 @@ export function DevicesPage({nav,account,checking,theme,toggle,logout}:{nav:Nav;
   catch(e){setError(e instanceof Error?e.message:translate("Cihazlar yüklenemedi."))}
   finally{setLoading(false)}
  }
- useEffect(()=>{void load();const timer=setInterval(()=>void load(),30000);return()=>clearInterval(timer)},[account?.organizationId]);
+ async function loadSsh(){
+  if(!account)return;
+  try{setSshTargets((await api<{items:SshPermissionTarget[]}>("/api/ssh-targets")).items)}catch{setSshTargets([])}
+ }
+ const reload=()=>{void load();void loadSsh()};
+ useEffect(()=>{reload();const timer=setInterval(reload,30000);return()=>clearInterval(timer)},[account?.organizationId]);
  const filtered=useMemo(()=>devices.filter(d=>(showRevoked||!d.revoked_at)&&[d.name,d.hostname,d.platform,d.id].some(x=>String(x||"").toLocaleLowerCase("tr").includes(filter.toLocaleLowerCase("tr")))),[devices,filter,showRevoked]);
  const active=devices.filter(d=>!d.revoked_at);
  async function pair(){
@@ -80,7 +90,7 @@ export function DevicesPage({nav,account,checking,theme,toggle,logout}:{nav:Nav;
   finally{setBusy(false)}
  }
  return <DashboardShell nav={nav} path="/devices" account={account} theme={theme} toggle={toggle} logout={logout}>
-  <div className="flex items-end justify-between gap-4 flex-wrap"><div><span className="dash-kicker">{translate("ÇALIŞMA ALANI")}</span><h1 className="dash-title mt-2">{translate("Cihazlarım")}<span className="text-[var(--accent)]">.</span></h1><p className="muted text-sm mt-2">{translate("Tüm cihazlarını tek yerden yönet, bağlantı durumlarını izle.")}</p></div><div className="flex gap-2"><Button variant="outline" onClick={()=>void load()} disabled={loading||!account}><RefreshCw size={17} className={loading?"animate-spin":""}/> {translate("Yenile")}</Button><Button disabled={!account||!canOperator||pairBusy} onClick={()=>void pair()}><Plus size={18}/> {translate("Cihaz Ekle")}</Button></div></div>
+  <div className="flex items-end justify-between gap-4 flex-wrap"><div><span className="dash-kicker">{translate("ÇALIŞMA ALANI")}</span><h1 className="dash-title mt-2">{translate("Cihazlarım")}<span className="text-[var(--accent)]">.</span></h1><p className="muted text-sm mt-2">{translate("Tüm cihazlarını tek yerden yönet, bağlantı durumlarını izle.")}</p></div><div className="flex gap-2"><Button variant="outline" onClick={reload} disabled={loading||!account}><RefreshCw size={17} className={loading?"animate-spin":""}/> {translate("Yenile")}</Button><Button disabled={!account||!canOperator||pairBusy} onClick={()=>void pair()}><Plus size={18}/> {translate("Cihaz Ekle")}</Button></div></div>
   {error&&<div className="form-error mt-6" role="alert">{error}</div>}
   {info&&<div role="status" className="form-success mt-6 flex items-center justify-between">{info}<button onClick={()=>setInfo("")} aria-label={translate("Bildirimi kapat")}>×</button></div>}
   {!account&&!checking&&<Card className="p-6 mt-6"><h2 className="font-semibold">{translate("Cihazlarınızı görmek için giriş yapın")}</h2><p className="muted text-sm mt-1">{translate("Cihazlar ve erişim kodları yalnızca yetkili hesaplarla gösterilir.")}</p><Button className="mt-4" onClick={()=>nav("/login")}>{translate("Giriş yap")} <ArrowRight size={16}/></Button></Card>}
@@ -100,7 +110,18 @@ export function DevicesPage({nav,account,checking,theme,toggle,logout}:{nav:Nav;
    </div>)}</div>}
   </CardContent></Card>
   <div className="mt-5 flex items-start gap-3 p-4 rounded-xl border border-[var(--stroke)] bg-[var(--surface)]"><Info size={18} className="shrink-0 text-[var(--accent)]"/><p className="text-sm muted">{translate("Eşleştirme kodları 10 dakika geçerlidir. Terminal ve dosya erişimi cihazdaki ajan ve kullanıcı yetkilerine bağlıdır. Kritik işlemler ayrıca onay gerektirir.")}</p></div>
+  {sshGroups.length>0&&<Card className="mt-5"><CardHeader><CardTitle>{translate("SSH sunucuları")}</CardTitle><p className="muted text-sm mt-1">{translate("Bilgisayarındaki WECOMMANDER üzerinden uzak yapay zekâyla paylaştığın kayıtlı sunucular. Yalnızca sen görürsün.")}</p></CardHeader>
+   <CardContent className="grid gap-5">{sshGroups.map(group=><div key={group.length?group[0]!.center_id:"none"}>
+    <h3 className="text-xs font-semibold muted flex items-center gap-2"><Monitor size={14}/> {group[0]!.center_name} <Badge className={group[0]!.online?"text-[var(--success)]":""}>{group[0]!.online?translate("● Çevrimiçi"):translate("● Çevrimdışı")}</Badge></h3>
+    <div className="divide-y divide-[var(--stroke)] mt-1">{group.map(t=><div key={t.target_id} className="py-3 flex flex-wrap sm:flex-nowrap items-center gap-3">
+     <div className="size-10 flex-none grid place-items-center rounded-xl bg-[var(--subtle-surface)] text-[var(--accent)]"><Server size={19}/></div>
+     <div className="flex-1 min-w-[145px]"><strong className="text-sm">{t.name}</strong><small className="muted block text-xs mt-1">SSH · {t.preset==="readonly"?translate("Salt okunur"):translate("Değişikliğe açık")}{t.sudo==="sudoers"?" · sudo":""}</small></div>
+     <PermissionBadges device={sshSubject(t)} onOpen={canAdmin?()=>setPermissionsId(t.target_id):undefined}/>
+     {canAdmin&&<div className="flex gap-2 sm:ml-auto"><Button size="sm" variant="outline" onClick={()=>setPermissionsId(t.target_id)}><ShieldCheck size={15}/> {translate("Yapay zekâ yetkileri")}</Button></div>}
+    </div>)}</div>
+   </div>)}</CardContent></Card>}
   {canAdmin&&<AiPermissionsDialog device={permissionsDevice} onClose={()=>setPermissionsId(null)} onChanged={()=>void load()}/>}
+  {canAdmin&&<AiPermissionsDialog kind="ssh" device={permissionsSsh?sshSubject(permissionsSsh):null} onClose={()=>setPermissionsId(null)} onChanged={()=>void loadSsh()}/>}
   <Dialog open={pairOpen} onOpenChange={setPairOpen}><DialogContent><DialogTitle className="text-xl font-bold">{translate("Yeni cihaz eşleştir")}</DialogTitle><DialogDescription className="text-sm muted mt-2">{translate("Cihazınıza WECOMMANDER Agent kurduktan sonra bu tek kullanımlık eşleştirme kodunu cihazdaki agent'a girin.")}</DialogDescription><div className="border border-[var(--stroke)] bg-[var(--subtle-surface)] rounded-xl p-4 mt-6"><small className="muted">{translate("Eşleştirme kodu")}</small><div className="flex gap-2 items-center mt-2"><code className="font-mono text-sm break-all select-all flex-1">{pairCode}</code><Button variant="outline" size="icon" aria-label={translate("Eşleştirme kodunu kopyala")} onClick={()=>void copyCode()}><Copy size={17}/></Button></div></div><p className="text-xs muted mt-4 flex gap-2 items-center"><Clock3 size={14}/> {expiresAt&&Date.now()<expiresAt?translate("10 dakika geçerli"):translate("Kodun süresi dolmuş olabilir; yeni kod oluşturun.")}</p><Button className="w-full mt-5" onClick={()=>setPairOpen(false)}>{translate("Tamam")}</Button></DialogContent></Dialog>
   <Dialog open={!!selected} onOpenChange={open=>{if(!open)setSelected(null)}}><DialogContent><DialogTitle className="text-xl font-bold">{translate("Cihazı yönet")}</DialogTitle><DialogDescription className="text-sm muted mt-1">{translate("Cihaz adını değiştirin veya erişimini yönetin.")}</DialogDescription><form onSubmit={e=>{e.preventDefault();void rename()}} className="mt-6 grid gap-3"><label className="text-sm font-semibold">{translate("Cihaz adı")}<Input className="mt-2" value={name} onChange={e=>setName(e.target.value)} maxLength={120} required/></label><Button type="submit" disabled={busy||!name.trim()}>{translate("Kaydet")} <Check size={16}/></Button></form><div className="border-t border-[var(--stroke)] mt-5 pt-4 grid gap-2"><Button variant="outline" disabled={busy||!selected?.online} onClick={()=>selected&&void disconnect(selected)}>{translate("Bağlantıyı kes")}</Button><Button variant="danger" disabled={busy} onClick={()=>{if(selected){const device=selected;setSelected(null);void revoke(device)}}}>{translate("Cihaz yetkisini iptal et")}</Button></div></DialogContent></Dialog>
  </DashboardShell>

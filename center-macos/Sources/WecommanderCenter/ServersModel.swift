@@ -25,6 +25,14 @@ final class TerminalSession: ObservableObject, Identifiable {
     }
 }
 
+/// After RootSetup's command was typed into a new terminal.
+struct RootSetupDone: Identifiable {
+    let id = UUID()
+    let allow: Bool
+    /// The web page where an admin turns root on (nil: not signed in, or after "remove").
+    let permissionsURL: String?
+}
+
 /// What the connect sheet is asking for.
 struct ConnectRequest: Identifiable {
     let id = UUID()
@@ -42,8 +50,15 @@ final class ServersModel: ObservableObject {
     @Published private(set) var hosts: [CoreHost] = []
     @Published private(set) var sessions: [TerminalSession] = []
     @Published var selection: String?
-    @Published var connect: ConnectRequest?
+    /// Cancelling a login also drops a root command waiting for that terminal.
+    @Published var connect: ConnectRequest? { didSet { if connect == nil { pendingCommands.removeAll() } } }
     @Published var notice: String?
+    /// After the root command was typed into a new terminal: what to tell and where the second key is.
+    @Published var rootSetupDone: RootSetupDone?
+    /// Host id → (command, allow) its next new terminal types; only while that connect runs.
+    private var pendingCommands: [String: (command: String, allow: Bool)] = [:]
+    /// The gateway address and this account's devices (set by the app delegate).
+    var account: (() -> (server: String, devices: [Device]))?
     @Published private(set) var savedTunnels: [SavedTunnel] = []
     @Published private(set) var transfers: [String: (label: String, done: UInt64, total: UInt64)] = [:]
     @Published private(set) var vaultLabel = ""
@@ -58,6 +73,8 @@ final class ServersModel: ObservableObject {
     @Published var showFiles = false
     /// WECOMMANDER's scheduled tasks (the "Zamanlanmış görevler" page); set by the app delegate.
     var scheduled: ScheduledTasksModel?
+    /// This Mac as the remote AI connector (the AI access page); set by the app delegate.
+    var connector: RemoteConnectorModel?
     /// Set while connecting a host for a split: it joins this terminal.
     private var splitTarget: (primary: String, vertical: Bool)?
 
@@ -131,6 +148,7 @@ final class ServersModel: ObservableObject {
             Task { await reload() }
         } catch {
             coreError = L.f("Uygulama çekirdeği başlatılamadı: {0}", error.localizedDescription)
+            ErrorReporter.record(error, "ServersModel.start (wecommander-core)")
         }
     }
 
@@ -201,6 +219,7 @@ final class ServersModel: ObservableObject {
             onChange?()
         } catch {
             notice = error.localizedDescription
+            ErrorReporter.record(error, "ServersModel.reload")
         }
     }
 
@@ -270,10 +289,12 @@ final class ServersModel: ObservableObject {
                 connect = ConnectRequest(host: host, message: nil, hostKey: result, auth: auth)
                 return
             }
+            let pending = pendingCommands.removeValue(forKey: host.id)
             connect = nil
             if let sid = result.sessionId {
                 let session = TerminalSession(id: sid, host: host)
                 sessions.append(session)
+                if let pending { typePending(pending.command, allow: pending.allow, into: sid, host: host) }
                 advanceTutorial(Tutorial.terminalOpened)
                 if let target = splitTarget, sessions.contains(where: { $0.id == target.primary }) {
                     splits[target.primary, default: []].append(sid)
@@ -299,9 +320,29 @@ final class ServersModel: ObservableObject {
                 let shown = raw.contains("no saved credential") || (silentTry && !keyOnly) ? nil : text
                 connect = ConnectRequest(host: host, message: shown)
             } else {
+                pendingCommands.removeValue(forKey: host.id)
                 notice = "\(host.label): \(text)"
             }
         }
+    }
+
+    // MARK: root on the server (the machine-side key)
+
+    /// Opens a new terminal to the host and types RootSetup's fixed command
+    /// there; the person types their sudo password themselves.
+    func runRootSetup(_ host: CoreHost, allow: Bool) {
+        pendingCommands[host.id] = (RootSetup.command(allow: allow), allow)
+        open(host)
+    }
+
+    private func typePending(_ command: String, allow: Bool, into sessionId: String, host: CoreHost) {
+        guard let core else { return }
+        Task { try? await core.call("terminal.write", ["sessionId": sessionId, "data": command + "\r"]) }
+        var url: String?
+        if allow, let account = account?() {
+            url = RootSetup.permissionsURL(server: account.server, deviceId: RootSetup.matchDevice(host, in: account.devices))
+        }
+        rootSetupDone = RootSetupDone(allow: allow, permissionsURL: url)
     }
 
     // MARK: terminal
@@ -384,6 +425,36 @@ final class ServersModel: ObservableObject {
     func coreCall(_ method: String, _ params: [String: Any] = [:]) async throws {
         guard let core else { throw CoreClient.Failure.stopped }
         try await core.call(method, params)
+    }
+
+    /// A core call with its raw JSON result (the remote connector, RemoteConnectorModel).
+    func coreCallRaw(_ method: String, _ params: [String: Any]) async throws -> Any? {
+        guard let core else { throw CoreClient.Failure.stopped }
+        return try await core.call(method, params)
+    }
+
+    // MARK: AI access (Hybrid Access)
+
+    /// The core can serve remote AI access (`mcp.status.remoteSupported`); nil until asked.
+    @Published private(set) var remoteAiSupported: Bool?
+
+    func refreshRemoteAiSupport() async {
+        guard let core else { return }
+        if AiAccessRules.remoteSupported(info: core.info) { remoteAiSupported = true; return }
+        let status = try? await core.call("mcp.status") as? [String: Any]
+        remoteAiSupported = AiAccessRules.remoteSupported(info: core.info, status: status)
+    }
+
+    /// Saves a host's AI access (`hosts.setAiAccess`); checks what it can first, the core decides.
+    func setAiAccess(_ host: CoreHost, _ access: AiAccess) async throws {
+        guard let core else { throw CoreClient.Failure.stopped }
+        let access = AiAccessRules.normalize(access)
+        if access.remote, remoteAiSupported == false { throw CoreClient.Failure.core(AiAccessRules.remoteNotSupported) }
+        if let invalid = AiAccessRules.validate(access, now: Date()) { throw CoreClient.Failure.core(invalid) }
+        if access.any, let first = AiAccessRules.blockers(host).first { throw CoreClient.Failure.core(AiAccessRules.code(first)) }
+        hosts = try await core.call("hosts.setAiAccess", ["id": host.id, "aiAccess": access.json], as: [CoreHost].self)
+        onChange?()
+        scheduleLibrarySync()
     }
 
     // MARK: scheduled tasks

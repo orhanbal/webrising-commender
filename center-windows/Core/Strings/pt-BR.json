@@ -1376,5 +1376,19 @@
  "Zamanlanmış görevi sil": "Excluir tarefa agendada",
  "Zamanlanmış görevi şimdi çalıştır": "Executar tarefa agendada agora",
  "güvenlik ağı kapalı": "rede de segurança desligada",
- "Yapay zekâ yetkileri": "Permissões da IA"
+ "Yapay zekâ yetkileri": "Permissões da IA",
+ "Yapay zekâya root izni ver (bu sunucuda)": "Dar permissão root à IA (neste servidor)",
+ "Root iznini kaldır": "Remover permissão root",
+ "{0} şu anda bağlanıyor; bitince yeniden dene.": "{0} está conectando agora; tente de novo quando terminar.",
+ "Bu sunucuda yeni bir terminal açılır ve aşağıdaki komut çalışır. Komut, WECOMMANDER ajanının servis kullanıcısına sudo izni veren bir sudoers dosyası yazar (/etc/sudoers.d/wecommander-agent) ve servisin sudo'yu engelleyen kısıtlamalarını gevşetir. Ajan kurulu değilse önce kurar.": "Um novo terminal abre neste servidor e executa o comando abaixo. Ele grava um arquivo sudoers que dá sudo ao usuário de serviço do agente WECOMMANDER (/etc/sudoers.d/wecommander-agent) e relaxa as restrições do serviço que bloqueiam o sudo. Se o agente não estiver instalado, ele o instala primeiro.",
+ "Bu sunucuda yeni bir terminal açılır ve aşağıdaki komut çalışır. Komut, ajanın sudoers dosyasını siler ve servisin kısıtlamalarını geri getirir. Yapay zekâ bu cihazda artık root olarak çalışamaz.": "Um novo terminal abre neste servidor e executa o comando abaixo. Ele apaga o arquivo sudoers do agente e restaura as restrições do serviço. A IA não poderá mais rodar como root neste dispositivo.",
+ "sudo parolanı terminalde kendin yazarsın; WECOMMANDER parolayı görmez ve saklamaz.": "Você mesmo digita sua senha do sudo no terminal; o WECOMMANDER não a vê nem a guarda.",
+ "Bu yalnız ilk anahtardır: root, bir yönetici web panelinde parolasıyla açana kadar kapalı kalır. Geri almak için: sunucuya sağ tıkla → Root iznini kaldır.": "Esta é só a primeira chave: o root continua desligado até um administrador ativá-lo no painel web com a senha dele. Para desfazer: clique com o botão direito no servidor → Remover permissão root.",
+ "Çalışacak komut": "Comando a executar",
+ "{0}: yapay zekâya root izni verilsin mi?": "{0}: dar permissão root à IA?",
+ "{0}: root izni kaldırılsın mı?": "{0}: remover permissão root?",
+ "Terminalde çalıştır": "Executar no terminal",
+ "Komut terminalde çalışıyor; sudo parolanı orada yaz. Bitince ikinci anahtar: bir yönetici web panelinde root'u açar.": "O comando está rodando no terminal; digite sua senha do sudo lá. Quando terminar, a segunda chave: um administrador ativa o root no painel web.",
+ "Web'de yetkileri aç": "Abrir permissões na web",
+ "Komut terminalde çalışıyor; sudo parolanı orada yaz. Bitince ajan yeniden bağlanır ve cihaz kullanıcı olarak çalışmaya döner.": "O comando está rodando no terminal; digite sua senha do sudo lá. Quando terminar, o agente se reconecta e o dispositivo volta a rodar como usuário."
 }

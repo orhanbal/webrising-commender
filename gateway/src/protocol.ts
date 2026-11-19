@@ -412,8 +412,8 @@ export function actionRisk(kind: AgentAction["kind"] | string): Risk {
     case "server_cleanup_run":
     case "server_process_signal":
     case "server_restart_owner":
-    // Starting, stopping or restarting a container: approval every time
-    // (mcp.ts ALWAYS_APPROVE skips the full-trust shortcut for it).
+    // Starting, stopping or restarting a container: approval unless the
+    // device is on full trust (docs/AI_PERMISSIONS.md).
     case "docker_container_action":
     case "fs_delete":
     case "process_exec":
