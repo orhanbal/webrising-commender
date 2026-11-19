@@ -5,6 +5,33 @@ enum ReleaseNotesData {
 {
  "releases": [
   {
+   "id": "2026-11-19-macos-title-bar",
+   "date": "2026-11-19",
+   "platforms": [
+    "macos"
+   ],
+   "items": {
+    "tr": [
+     "Mac'te Sunucular, sunucu yönetimi ve Görev Yöneticisi pencerelerinin başlık çubuğu artık macOS'un kendi pencereleriyle aynı yükseklikte; kapatma düğmeleri ve başlık yerine oturdu."
+    ],
+    "en": [
+     "On the Mac, the title bar of the Servers, server management and Task Manager windows now has the same height as macOS's own windows; the close buttons and the title sit where they should."
+    ],
+    "de": [
+     "Auf dem Mac hat die Titelleiste der Fenster Server, Serververwaltung und Aufgabenverwaltung jetzt dieselbe Höhe wie die eigenen Fenster von macOS; Schließen-Tasten und Titel sitzen an der richtigen Stelle."
+    ],
+    "fr": [
+     "Sur Mac, la barre de titre des fenêtres Serveurs, gestion du serveur et Gestionnaire des tâches a désormais la même hauteur que les fenêtres de macOS ; les boutons de fermeture et le titre sont à leur place."
+    ],
+    "es": [
+     "En el Mac, la barra de título de las ventanas Servidores, gestión del servidor y Administrador de tareas tiene ahora la misma altura que las ventanas de macOS; los botones de cierre y el título están en su sitio."
+    ],
+    "pt-BR": [
+     "No Mac, a barra de título das janelas Servidores, gerenciamento do servidor e Gerenciador de Tarefas agora tem a mesma altura das janelas do próprio macOS; os botões de fechar e o título ficam no lugar certo."
+    ]
+   }
+  },
+  {
    "id": "2026-11-19-ai-permissions",
    "date": "2026-11-19",
    "platforms": [],
