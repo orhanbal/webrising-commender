@@ -536,6 +536,7 @@ export const productEnglish:Record<string,string> = {
   "Komutlar, görevler, terminaller ve dosya yazmaları sudo ile root olarak çalışır. Dosya araçları yine izinli klasörlerle sınırlıdır.": "Commands, tasks, terminals and file writes run as root through sudo. File tools stay limited to the allowed folders.",
   "Bu cihazda root kapalı": "Root is off on this device",
   "Root yetkisi önce makinenin kendisinde açılmalı; web panelinden tek başına açılamaz. Makinedeki kişi şu komutu bir kez çalıştırsın, sonra burada açabilirsin:": "Root must first be allowed on the machine itself; the web panel alone cannot turn it on. Have the person on the machine run this command once, then you can turn it on here:",
+  "Ya da WECOMMANDER uygulamasında sunucuya sağ tıkla → Yapay zekâya root izni ver": "Or, in the WECOMMANDER app, right-click the server → Give AI root permission",
   "Komutu kopyala": "Copy command",
   "Root tam yönetici yetkisidir": "Root is full administrator access",
   "Yapay zekâ bu makinede her şeyi değiştirebilir. Değişiklik tüm yöneticilere e-postayla bildirilir ve denetim kaydına yazılır.": "The AI can change anything on this machine. All admins are e-mailed about the change and it is written to the audit log.",

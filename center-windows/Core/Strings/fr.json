@@ -1376,5 +1376,19 @@
  "Zamanlanmış görevi sil": "Supprimer la tâche planifiée",
  "Zamanlanmış görevi şimdi çalıştır": "Exécuter la tâche planifiée maintenant",
  "güvenlik ağı kapalı": "filet de sécurité désactivé",
- "Yapay zekâ yetkileri": "Autorisations de l'IA"
+ "Yapay zekâ yetkileri": "Autorisations de l'IA",
+ "Yapay zekâya root izni ver (bu sunucuda)": "Donner l'autorisation root à l'IA (sur ce serveur)",
+ "Root iznini kaldır": "Retirer l'autorisation root",
+ "{0} şu anda bağlanıyor; bitince yeniden dene.": "{0} est en cours de connexion ; réessayez ensuite.",
+ "Bu sunucuda yeni bir terminal açılır ve aşağıdaki komut çalışır. Komut, WECOMMANDER ajanının servis kullanıcısına sudo izni veren bir sudoers dosyası yazar (/etc/sudoers.d/wecommander-agent) ve servisin sudo'yu engelleyen kısıtlamalarını gevşetir. Ajan kurulu değilse önce kurar.": "Un nouveau terminal s'ouvre sur ce serveur et exécute la commande ci-dessous. Elle écrit un fichier sudoers qui donne sudo à l'utilisateur de service de l'agent WECOMMANDER (/etc/sudoers.d/wecommander-agent) et assouplit les restrictions du service qui bloquent sudo. Si l'agent n'est pas installé, elle l'installe d'abord.",
+ "Bu sunucuda yeni bir terminal açılır ve aşağıdaki komut çalışır. Komut, ajanın sudoers dosyasını siler ve servisin kısıtlamalarını geri getirir. Yapay zekâ bu cihazda artık root olarak çalışamaz.": "Un nouveau terminal s'ouvre sur ce serveur et exécute la commande ci-dessous. Elle supprime le fichier sudoers de l'agent et rétablit les restrictions du service. L'IA ne peut alors plus s'exécuter en root sur cet appareil.",
+ "sudo parolanı terminalde kendin yazarsın; WECOMMANDER parolayı görmez ve saklamaz.": "Vous tapez vous-même votre mot de passe sudo dans le terminal ; WECOMMANDER ne le voit pas et ne l'enregistre pas.",
+ "Bu yalnız ilk anahtardır: root, bir yönetici web panelinde parolasıyla açana kadar kapalı kalır. Geri almak için: sunucuya sağ tıkla → Root iznini kaldır.": "Ce n'est que la première clé : root reste désactivé jusqu'à ce qu'un administrateur l'active dans le panneau web avec son mot de passe. Pour annuler : clic droit sur le serveur → Retirer l'autorisation root.",
+ "Çalışacak komut": "Commande exécutée",
+ "{0}: yapay zekâya root izni verilsin mi?": "{0} : donner l'autorisation root à l'IA ?",
+ "{0}: root izni kaldırılsın mı?": "{0} : retirer l'autorisation root ?",
+ "Terminalde çalıştır": "Exécuter dans le terminal",
+ "Komut terminalde çalışıyor; sudo parolanı orada yaz. Bitince ikinci anahtar: bir yönetici web panelinde root'u açar.": "La commande s'exécute dans le terminal ; tapez-y votre mot de passe sudo. Ensuite, la deuxième clé : un administrateur active root dans le panneau web.",
+ "Web'de yetkileri aç": "Ouvrir les autorisations sur le web",
+ "Komut terminalde çalışıyor; sudo parolanı orada yaz. Bitince ajan yeniden bağlanır ve cihaz kullanıcı olarak çalışmaya döner.": "La commande s'exécute dans le terminal ; tapez-y votre mot de passe sudo. Ensuite, l'agent se reconnecte et l'appareil repasse en utilisateur."
 }

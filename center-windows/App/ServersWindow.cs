@@ -485,6 +485,7 @@ public sealed partial class ServersWindow : Window
 
     private void Show(string text, InfoBarSeverity severity)
     {
+        _info.ActionButton = null;
         _info.Message = text;
         _info.Severity = severity;
         _info.IsOpen = true;
@@ -835,6 +836,7 @@ public sealed partial class ServersWindow : Window
                 RenderHosts();
             }));
         }
+        AddRootSetupItems(flyout, host);
         flyout.Items.Add(new MenuFlyoutSeparator());
         flyout.Items.Add(Item(L.T("Sil"), () => _ = ConfirmDelete(host)));
         card.ContextFlyout = flyout;
@@ -1925,6 +1927,7 @@ public sealed partial class ServersWindow : Window
         tab.Exited = () => { tab.Caption.Text = host.Label + L.T(" (kapandı)"); if (tab.Page is { } p && p.Item is not null) p.Item.Header = p.Title; SyncCommands(); };
         view.GotFocus += (_, _) => { if (tab.Page is { } p) { p.Focused = tab; SyncCommands(); } };
         _c.Register(tab, DispatcherQueue);
+        if (!sessionId.StartsWith("share:", StringComparison.Ordinal)) SendPendingCommand(host, tab);
         TutorialTerminalOpened();
         if (_splitTarget is { } target && _tabs.TabItems.Contains(target.Page.Item) && target.Page.Panes.Count < TabPage.MaxPanes)
         {

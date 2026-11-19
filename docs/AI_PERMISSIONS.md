@@ -60,6 +60,34 @@ root needs **both**:
    --allow-root on|off`). The agent then reports `root_capable: true` when it
    connects (ceiling set and `sudo -n true` works, or the agent already runs
    as root). `uninstall-linux.sh` removes the drop-in.
+
+   **From the WECOMMANDER app instead of typing it:** right-click a saved
+   SSH server (Windows, macOS) or use its buttons on the Linux app's *SSH*
+   tab: **Yapay zekâya root izni ver (bu sunucuda)** / **Root iznini
+   kaldır**. A confirmation shows what it does and the exact command, then a
+   new terminal to that server runs one fixed line (nothing of the host or
+   the person is put into it):
+
+   ```bash
+   if [ -f /opt/wecommander/libexec/install-linux.sh ]; then sudo bash /opt/wecommander/libexec/install-linux.sh --allow-root; else curl -fsSL https://wecommander.app/install.sh | sh -s -- --allow-root; fi
+   ```
+
+   (`--disallow-root` for the undo). Windows and macOS type it into a new
+   terminal tab of the app; the Linux app opens this computer's terminal
+   (gnome-terminal, konsole, xfce4-terminal, … xterm) with
+   `ssh -t … -- <host> '<that line>'` (arguments passed as a list, no shell
+   line built from the host). The person types their own SSH login and sudo
+   password in that terminal; the app never sees or stores them, so this
+   stays a machine-side action done with the person's own server
+   credentials: the gateway and the web panel cannot start it. Afterwards
+   the app offers **Web'de yetkileri aç**, which opens
+   `/devices?permissions=<device id>` when exactly one Linux device of the
+   account has the host's address, short name or label as its name, else
+   `/devices`. The web dialog points to this route next to the install
+   command while a device is not `root_capable`. Code:
+   `center-windows/Core/RootSetup.cs`,
+   `center-macos/Sources/CenterCore/RootSetup.swift`, `tray/src/hybrid.rs`
+   (`hybrid_root_terminal`).
 2. **An admin, in the web panel:** run as **root** for that device
    (`PUT /api/devices/:id/run-as {runAs, currentPassword}`). Refused with
    `409 device_not_root_capable` (and the install command) while the agent

@@ -1665,7 +1665,9 @@ fn main() {
             hybrid::hybrid_add,
             hybrid::hybrid_verify,
             hybrid::hybrid_set,
-            hybrid::hybrid_delete
+            hybrid::hybrid_delete,
+            hybrid::hybrid_root_terminal,
+            hybrid::hybrid_open_permissions
         ])
         .run(tauri::generate_context!())
         .expect("WECOMMANDER Management Center failed to start");

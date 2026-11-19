@@ -42,6 +42,19 @@ struct ServersView: View {
         } message: {
             Text(model.notice ?? "")
         }
+        .alert("WECOMMANDER", isPresented: Binding(get: { model.rootSetupDone != nil }, set: { if !$0 { model.rootSetupDone = nil } }),
+               presenting: model.rootSetupDone) { done in
+            if let url = done.permissionsURL {
+                Button(L.t("Web'de yetkileri aç")) {
+                    if let u = URL(string: url) { NSWorkspace.shared.open(u) }
+                }
+            }
+            Button(L.t("Tamam"), role: .cancel) {}
+        } message: { done in
+            Text(done.allow
+                ? L.t("Komut terminalde çalışıyor; sudo parolanı orada yaz. Bitince ikinci anahtar: bir yönetici web panelinde root'u açar.")
+                : L.t("Komut terminalde çalışıyor; sudo parolanı orada yaz. Bitince ajan yeniden bağlanır ve cihaz kullanıcı olarak çalışmaya döner."))
+        }
         .frame(minWidth: 900, minHeight: 540)
         .onAppear { if model.selection == nil { model.selection = Self.hostsPage } }
     }
@@ -254,6 +267,57 @@ struct TerminalListRow: View {
     }
 }
 
+struct RootSetupRequest: Identifiable {
+    let id = UUID()
+    let host: CoreHost
+    let allow: Bool
+}
+
+/// "Yapay zekâya root izni ver (bu sunucuda)" / "Root iznini kaldır": what the
+/// command does and the exact command, before a new terminal runs it. The
+/// person types their sudo password in that terminal; the app never sees it.
+struct RootSetupSheet: View {
+    @ObservedObject var model: ServersModel
+    let request: RootSetupRequest
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(request.allow ? L.f("{0}: yapay zekâya root izni verilsin mi?", request.host.label) : L.f("{0}: root izni kaldırılsın mı?", request.host.label))
+                .font(.headline)
+            Text(request.allow
+                ? L.t("Bu sunucuda yeni bir terminal açılır ve aşağıdaki komut çalışır. Komut, WECOMMANDER ajanının servis kullanıcısına sudo izni veren bir sudoers dosyası yazar (/etc/sudoers.d/wecommander-agent) ve servisin sudo'yu engelleyen kısıtlamalarını gevşetir. Ajan kurulu değilse önce kurar.")
+                : L.t("Bu sunucuda yeni bir terminal açılır ve aşağıdaki komut çalışır. Komut, ajanın sudoers dosyasını siler ve servisin kısıtlamalarını geri getirir. Yapay zekâ bu cihazda artık root olarak çalışamaz."))
+                .fixedSize(horizontal: false, vertical: true)
+            Text(L.t("sudo parolanı terminalde kendin yazarsın; WECOMMANDER parolayı görmez ve saklamaz."))
+                .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if request.allow {
+                Text(L.t("Bu yalnız ilk anahtardır: root, bir yönetici web panelinde parolasıyla açana kadar kapalı kalır. Geri almak için: sunucuya sağ tıkla → Root iznini kaldır."))
+                    .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Text(L.t("Çalışacak komut")).font(.body.weight(.semibold))
+            Text(RootSetup.command(allow: request.allow))
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.1)))
+            HStack {
+                Spacer()
+                Button(L.t("Vazgeç")) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(L.t("Terminalde çalıştır")) {
+                    dismiss()
+                    model.runRootSetup(request.host, allow: request.allow)
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 520)
+    }
+}
+
 struct EditRequest: Identifiable {
     let id = UUID()
     /// nil: a new host.
@@ -267,6 +331,7 @@ struct HostsPage: View {
     let edit: (CoreHost?) -> Void
     @State private var query = ""
     @State private var showShares = false
+    @State private var rootSetup: RootSetupRequest?
 
     private var filtered: [CoreHost] {
         let q = query.trimmingCharacters(in: .whitespaces)
@@ -317,6 +382,11 @@ struct HostsPage: View {
                                     if host.savedSecret {
                                         Button(L.t("Kayıtlı giriş bilgisini unut")) { Task { await model.forgetSecret(host) } }
                                     }
+                                    if RootSetup.applies(host) {
+                                        Divider()
+                                        Button(L.t("Yapay zekâya root izni ver (bu sunucuda)")) { rootSetup = RootSetupRequest(host: host, allow: true) }
+                                        Button(L.t("Root iznini kaldır")) { rootSetup = RootSetupRequest(host: host, allow: false) }
+                                    }
                                     Divider()
                                     Button(L.t("Sil"), role: .destructive) { Task { await model.deleteHost(host) } }
                                 }
@@ -328,6 +398,7 @@ struct HostsPage: View {
         }
         .navigationTitle(L.t("Sunucular"))
         .sheet(isPresented: $showShares) { SharesSheet(model: model) }
+        .sheet(item: $rootSetup) { request in RootSetupSheet(model: model, request: request) }
         .searchable(text: $query, prompt: L.t("Sunucu ara ya da kullanıcı@adres"))
         .onSubmit(of: .search) { Task { await quickConnect() } }
         .toolbar {

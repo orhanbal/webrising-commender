@@ -59,6 +59,20 @@
       "Onay ekranı her zaman tam komutu gösterir · Çıktıdaki parola, anahtar ve token'lar maskelenir · Her işlem denetim kaydına yazılır · Sunucunun kimliği (host key) doğrulanmadan yapay zekâ bağlanamaz.": "The approval always shows the exact command · Passwords, keys and tokens in the output are masked · Every action is written to the audit log · The AI cannot connect before the server's identity (host key) is verified.",
       "Anahtar zinciri (Secret Service) bulunamadı: parolalar yalnız uygulama açıkken hatırlanır. Anahtar dosyası ya da SSH ajanı kullan.": "No keyring (Secret Service) found: passwords are remembered only while the app runs. Use a key file or the SSH agent.",
       "Önce oturum aç.": "Sign in first.",
+      "Yapay zekâya root izni ver (bu sunucuda)": "Give AI root permission (on this server)",
+      "Root iznini kaldır": "Remove root permission",
+      "Bu sunucuda yeni bir terminal açılır ve aşağıdaki komut çalışır. Komut, WECOMMANDER ajanının servis kullanıcısına sudo izni veren bir sudoers dosyası yazar (/etc/sudoers.d/wecommander-agent) ve servisin sudo'yu engelleyen kısıtlamalarını gevşetir. Ajan kurulu değilse önce kurar.": "A new terminal opens on this server and runs the command below. It writes a sudoers file that gives the WECOMMANDER agent's service user sudo (/etc/sudoers.d/wecommander-agent) and relaxes the service restrictions that block sudo. If the agent isn't installed, it installs it first.",
+      "Bu sunucuda yeni bir terminal açılır ve aşağıdaki komut çalışır. Komut, ajanın sudoers dosyasını siler ve servisin kısıtlamalarını geri getirir. Yapay zekâ bu cihazda artık root olarak çalışamaz.": "A new terminal opens on this server and runs the command below. It deletes the agent's sudoers file and restores the service restrictions. AI can then no longer run as root on this device.",
+      "sudo parolanı terminalde kendin yazarsın; WECOMMANDER parolayı görmez ve saklamaz.": "You type your sudo password in the terminal yourself; WECOMMANDER doesn't see or store it.",
+      "Bu yalnız ilk anahtardır: root, bir yönetici web panelinde parolasıyla açana kadar kapalı kalır. Geri almak için: sunucuya sağ tıkla → Root iznini kaldır.": "This is only the first key: root stays off until an admin turns it on in the web panel with their password. To undo: right-click the server → Remove root permission.",
+      "Çalışacak komut": "Command to run",
+      "Terminalde çalıştır": "Run in terminal",
+      "Komut terminalde çalışıyor; sudo parolanı orada yaz. Bitince ikinci anahtar: bir yönetici web panelinde root'u açar.": "The command is running in the terminal; type your sudo password there. When it's done, the second key: an admin turns root on in the web panel.",
+      "Komut terminalde çalışıyor; sudo parolanı orada yaz. Bitince ajan yeniden bağlanır ve cihaz kullanıcı olarak çalışmaya döner.": "The command is running in the terminal; type your sudo password there. When it's done, the agent reconnects and the device goes back to running as the user.",
+      "Web'de yetkileri aç": "Open permissions on the web",
+      "Bitti. Kapatmak için Enter'a bas.": "Done. Press Enter to close.",
+      "Terminal bulunamadı: gnome-terminal, konsole, xfce4-terminal ya da xterm kur.": "No terminal found: install gnome-terminal, konsole, xfce4-terminal or xterm.",
+      "Bu bilgisayarın terminali açılır ve ssh ile bu sunucuya bağlanır; SSH girişini ve sudo parolanı orada kendin yaparsın.": "This computer's terminal opens and connects to this server with ssh; you log in and type your sudo password there yourself.",
     },
     de: {
       "SSH sunucuları": "SSH-Server",
@@ -110,6 +124,20 @@
       "Onay ekranı her zaman tam komutu gösterir · Çıktıdaki parola, anahtar ve token'lar maskelenir · Her işlem denetim kaydına yazılır · Sunucunun kimliği (host key) doğrulanmadan yapay zekâ bağlanamaz.": "Die Bestätigung zeigt immer den genauen Befehl · Passwörter, Schlüssel und Tokens in der Ausgabe werden maskiert · Jede Aktion landet im Audit-Log · Ohne bestätigte Server-Identität (Host-Key) verbindet sich die KI nicht.",
       "Anahtar zinciri (Secret Service) bulunamadı: parolalar yalnız uygulama açıkken hatırlanır. Anahtar dosyası ya da SSH ajanı kullan.": "Kein Schlüsselbund (Secret Service) gefunden: Passwörter bleiben nur gespeichert, solange die App läuft. Nutze eine Schlüsseldatei oder den SSH-Agenten.",
       "Önce oturum aç.": "Zuerst anmelden.",
+      "Yapay zekâya root izni ver (bu sunucuda)": "KI Root-Rechte geben (auf diesem Server)",
+      "Root iznini kaldır": "Root-Rechte entfernen",
+      "Bu sunucuda yeni bir terminal açılır ve aşağıdaki komut çalışır. Komut, WECOMMANDER ajanının servis kullanıcısına sudo izni veren bir sudoers dosyası yazar (/etc/sudoers.d/wecommander-agent) ve servisin sudo'yu engelleyen kısıtlamalarını gevşetir. Ajan kurulu değilse önce kurar.": "Auf diesem Server öffnet sich ein neues Terminal und führt den Befehl unten aus. Er schreibt eine sudoers-Datei, die dem Dienstbenutzer des WECOMMANDER-Agenten sudo erlaubt (/etc/sudoers.d/wecommander-agent), und lockert die Dienst-Einschränkungen, die sudo blockieren. Ist der Agent nicht installiert, wird er zuerst installiert.",
+      "Bu sunucuda yeni bir terminal açılır ve aşağıdaki komut çalışır. Komut, ajanın sudoers dosyasını siler ve servisin kısıtlamalarını geri getirir. Yapay zekâ bu cihazda artık root olarak çalışamaz.": "Auf diesem Server öffnet sich ein neues Terminal und führt den Befehl unten aus. Er löscht die sudoers-Datei des Agenten und stellt die Dienst-Einschränkungen wieder her. Die KI kann auf diesem Gerät dann nicht mehr als root arbeiten.",
+      "sudo parolanı terminalde kendin yazarsın; WECOMMANDER parolayı görmez ve saklamaz.": "Dein sudo-Passwort tippst du selbst im Terminal ein; WECOMMANDER sieht und speichert es nicht.",
+      "Bu yalnız ilk anahtardır: root, bir yönetici web panelinde parolasıyla açana kadar kapalı kalır. Geri almak için: sunucuya sağ tıkla → Root iznini kaldır.": "Das ist nur der erste Schlüssel: Root bleibt aus, bis ein Admin es im Webpanel mit seinem Passwort einschaltet. Rückgängig machen: Rechtsklick auf den Server → Root-Rechte entfernen.",
+      "Çalışacak komut": "Auszuführender Befehl",
+      "Terminalde çalıştır": "Im Terminal ausführen",
+      "Komut terminalde çalışıyor; sudo parolanı orada yaz. Bitince ikinci anahtar: bir yönetici web panelinde root'u açar.": "Der Befehl läuft im Terminal; gib dort dein sudo-Passwort ein. Danach der zweite Schlüssel: Ein Admin schaltet Root im Webpanel ein.",
+      "Komut terminalde çalışıyor; sudo parolanı orada yaz. Bitince ajan yeniden bağlanır ve cihaz kullanıcı olarak çalışmaya döner.": "Der Befehl läuft im Terminal; gib dort dein sudo-Passwort ein. Danach verbindet sich der Agent neu und das Gerät arbeitet wieder als Benutzer.",
+      "Web'de yetkileri aç": "Berechtigungen im Web öffnen",
+      "Bitti. Kapatmak için Enter'a bas.": "Fertig. Zum Schließen Enter drücken.",
+      "Terminal bulunamadı: gnome-terminal, konsole, xfce4-terminal ya da xterm kur.": "Kein Terminal gefunden: Installiere gnome-terminal, konsole, xfce4-terminal oder xterm.",
+      "Bu bilgisayarın terminali açılır ve ssh ile bu sunucuya bağlanır; SSH girişini ve sudo parolanı orada kendin yaparsın.": "Das Terminal dieses Computers öffnet sich und verbindet sich per ssh mit diesem Server; Anmeldung und sudo-Passwort gibst du dort selbst ein.",
     },
     "pt-BR": {
       "SSH sunucuları": "Servidores SSH",
@@ -161,6 +189,20 @@
       "Onay ekranı her zaman tam komutu gösterir · Çıktıdaki parola, anahtar ve token'lar maskelenir · Her işlem denetim kaydına yazılır · Sunucunun kimliği (host key) doğrulanmadan yapay zekâ bağlanamaz.": "A aprovação sempre mostra o comando exato · Senhas, chaves e tokens na saída são mascarados · Toda ação vai para o log de auditoria · A IA não se conecta antes de a identidade do servidor (host key) ser verificada.",
       "Anahtar zinciri (Secret Service) bulunamadı: parolalar yalnız uygulama açıkken hatırlanır. Anahtar dosyası ya da SSH ajanı kullan.": "Nenhum chaveiro (Secret Service) encontrado: as senhas só ficam salvas enquanto o app está aberto. Use um arquivo de chave ou o agente SSH.",
       "Önce oturum aç.": "Entre primeiro.",
+      "Yapay zekâya root izni ver (bu sunucuda)": "Dar permissão root à IA (neste servidor)",
+      "Root iznini kaldır": "Remover permissão root",
+      "Bu sunucuda yeni bir terminal açılır ve aşağıdaki komut çalışır. Komut, WECOMMANDER ajanının servis kullanıcısına sudo izni veren bir sudoers dosyası yazar (/etc/sudoers.d/wecommander-agent) ve servisin sudo'yu engelleyen kısıtlamalarını gevşetir. Ajan kurulu değilse önce kurar.": "Um novo terminal abre neste servidor e executa o comando abaixo. Ele grava um arquivo sudoers que dá sudo ao usuário de serviço do agente WECOMMANDER (/etc/sudoers.d/wecommander-agent) e relaxa as restrições do serviço que bloqueiam o sudo. Se o agente não estiver instalado, ele o instala primeiro.",
+      "Bu sunucuda yeni bir terminal açılır ve aşağıdaki komut çalışır. Komut, ajanın sudoers dosyasını siler ve servisin kısıtlamalarını geri getirir. Yapay zekâ bu cihazda artık root olarak çalışamaz.": "Um novo terminal abre neste servidor e executa o comando abaixo. Ele apaga o arquivo sudoers do agente e restaura as restrições do serviço. A IA não poderá mais rodar como root neste dispositivo.",
+      "sudo parolanı terminalde kendin yazarsın; WECOMMANDER parolayı görmez ve saklamaz.": "Você mesmo digita sua senha do sudo no terminal; o WECOMMANDER não a vê nem a guarda.",
+      "Bu yalnız ilk anahtardır: root, bir yönetici web panelinde parolasıyla açana kadar kapalı kalır. Geri almak için: sunucuya sağ tıkla → Root iznini kaldır.": "Esta é só a primeira chave: o root continua desligado até um administrador ativá-lo no painel web com a senha dele. Para desfazer: clique com o botão direito no servidor → Remover permissão root.",
+      "Çalışacak komut": "Comando a executar",
+      "Terminalde çalıştır": "Executar no terminal",
+      "Komut terminalde çalışıyor; sudo parolanı orada yaz. Bitince ikinci anahtar: bir yönetici web panelinde root'u açar.": "O comando está rodando no terminal; digite sua senha do sudo lá. Quando terminar, a segunda chave: um administrador ativa o root no painel web.",
+      "Komut terminalde çalışıyor; sudo parolanı orada yaz. Bitince ajan yeniden bağlanır ve cihaz kullanıcı olarak çalışmaya döner.": "O comando está rodando no terminal; digite sua senha do sudo lá. Quando terminar, o agente se reconecta e o dispositivo volta a rodar como usuário.",
+      "Web'de yetkileri aç": "Abrir permissões na web",
+      "Bitti. Kapatmak için Enter'a bas.": "Pronto. Pressione Enter para fechar.",
+      "Terminal bulunamadı: gnome-terminal, konsole, xfce4-terminal ya da xterm kur.": "Nenhum terminal encontrado: instale gnome-terminal, konsole, xfce4-terminal ou xterm.",
+      "Bu bilgisayarın terminali açılır ve ssh ile bu sunucuya bağlanır; SSH girişini ve sudo parolanı orada kendin yaparsın.": "O terminal deste computador abre e se conecta a este servidor com ssh; você mesmo faz o login e digita sua senha do sudo lá.",
     },
     es: {
       "SSH sunucuları": "Servidores SSH",
@@ -212,6 +254,20 @@
       "Onay ekranı her zaman tam komutu gösterir · Çıktıdaki parola, anahtar ve token'lar maskelenir · Her işlem denetim kaydına yazılır · Sunucunun kimliği (host key) doğrulanmadan yapay zekâ bağlanamaz.": "La aprobación siempre muestra el comando exacto · Las contraseñas, claves y tokens de la salida se enmascaran · Cada acción queda en el registro de auditoría · La IA no se conecta sin verificar la identidad del servidor (host key).",
       "Anahtar zinciri (Secret Service) bulunamadı: parolalar yalnız uygulama açıkken hatırlanır. Anahtar dosyası ya da SSH ajanı kullan.": "No se encontró llavero (Secret Service): las contraseñas solo se recuerdan mientras la app está abierta. Usa un archivo de clave o el agente SSH.",
       "Önce oturum aç.": "Inicia sesión primero.",
+      "Yapay zekâya root izni ver (bu sunucuda)": "Dar permiso root a la IA (en este servidor)",
+      "Root iznini kaldır": "Quitar el permiso root",
+      "Bu sunucuda yeni bir terminal açılır ve aşağıdaki komut çalışır. Komut, WECOMMANDER ajanının servis kullanıcısına sudo izni veren bir sudoers dosyası yazar (/etc/sudoers.d/wecommander-agent) ve servisin sudo'yu engelleyen kısıtlamalarını gevşetir. Ajan kurulu değilse önce kurar.": "Se abre un terminal nuevo en este servidor y ejecuta el comando de abajo. Escribe un archivo sudoers que da sudo al usuario de servicio del agente de WECOMMANDER (/etc/sudoers.d/wecommander-agent) y relaja las restricciones del servicio que bloquean sudo. Si el agente no está instalado, primero lo instala.",
+      "Bu sunucuda yeni bir terminal açılır ve aşağıdaki komut çalışır. Komut, ajanın sudoers dosyasını siler ve servisin kısıtlamalarını geri getirir. Yapay zekâ bu cihazda artık root olarak çalışamaz.": "Se abre un terminal nuevo en este servidor y ejecuta el comando de abajo. Borra el archivo sudoers del agente y restaura las restricciones del servicio. La IA ya no podrá ejecutarse como root en este dispositivo.",
+      "sudo parolanı terminalde kendin yazarsın; WECOMMANDER parolayı görmez ve saklamaz.": "Escribes tú mismo tu contraseña de sudo en el terminal; WECOMMANDER no la ve ni la guarda.",
+      "Bu yalnız ilk anahtardır: root, bir yönetici web panelinde parolasıyla açana kadar kapalı kalır. Geri almak için: sunucuya sağ tıkla → Root iznini kaldır.": "Esta es solo la primera llave: root sigue desactivado hasta que un administrador lo active en el panel web con su contraseña. Para deshacerlo: clic derecho en el servidor → Quitar el permiso root.",
+      "Çalışacak komut": "Comando que se ejecutará",
+      "Terminalde çalıştır": "Ejecutar en el terminal",
+      "Komut terminalde çalışıyor; sudo parolanı orada yaz. Bitince ikinci anahtar: bir yönetici web panelinde root'u açar.": "El comando se está ejecutando en el terminal; escribe allí tu contraseña de sudo. Cuando termine, la segunda llave: un administrador activa root en el panel web.",
+      "Komut terminalde çalışıyor; sudo parolanı orada yaz. Bitince ajan yeniden bağlanır ve cihaz kullanıcı olarak çalışmaya döner.": "El comando se está ejecutando en el terminal; escribe allí tu contraseña de sudo. Cuando termine, el agente se vuelve a conectar y el dispositivo vuelve a ejecutarse como usuario.",
+      "Web'de yetkileri aç": "Abrir permisos en la web",
+      "Bitti. Kapatmak için Enter'a bas.": "Listo. Pulsa Enter para cerrar.",
+      "Terminal bulunamadı: gnome-terminal, konsole, xfce4-terminal ya da xterm kur.": "No se encontró ningún terminal: instala gnome-terminal, konsole, xfce4-terminal o xterm.",
+      "Bu bilgisayarın terminali açılır ve ssh ile bu sunucuya bağlanır; SSH girişini ve sudo parolanı orada kendin yaparsın.": "Se abre el terminal de este ordenador y se conecta a este servidor con ssh; tú mismo inicias sesión y escribes tu contraseña de sudo allí.",
     },
     fr: {
       "SSH sunucuları": "Serveurs SSH",
@@ -263,6 +319,20 @@
       "Onay ekranı her zaman tam komutu gösterir · Çıktıdaki parola, anahtar ve token'lar maskelenir · Her işlem denetim kaydına yazılır · Sunucunun kimliği (host key) doğrulanmadan yapay zekâ bağlanamaz.": "L'approbation montre toujours la commande exacte · Les mots de passe, clés et jetons de la sortie sont masqués · Chaque action est inscrite au journal d'audit · L'IA ne se connecte pas tant que l'identité du serveur (clé d'hôte) n'est pas vérifiée.",
       "Anahtar zinciri (Secret Service) bulunamadı: parolalar yalnız uygulama açıkken hatırlanır. Anahtar dosyası ya da SSH ajanı kullan.": "Aucun trousseau (Secret Service) trouvé : les mots de passe ne sont retenus que tant que l'app tourne. Utilise un fichier de clé ou l'agent SSH.",
       "Önce oturum aç.": "Connecte-toi d'abord.",
+      "Yapay zekâya root izni ver (bu sunucuda)": "Donner l'autorisation root à l'IA (sur ce serveur)",
+      "Root iznini kaldır": "Retirer l'autorisation root",
+      "Bu sunucuda yeni bir terminal açılır ve aşağıdaki komut çalışır. Komut, WECOMMANDER ajanının servis kullanıcısına sudo izni veren bir sudoers dosyası yazar (/etc/sudoers.d/wecommander-agent) ve servisin sudo'yu engelleyen kısıtlamalarını gevşetir. Ajan kurulu değilse önce kurar.": "Un nouveau terminal s'ouvre sur ce serveur et exécute la commande ci-dessous. Elle écrit un fichier sudoers qui donne sudo à l'utilisateur de service de l'agent WECOMMANDER (/etc/sudoers.d/wecommander-agent) et assouplit les restrictions du service qui bloquent sudo. Si l'agent n'est pas installé, elle l'installe d'abord.",
+      "Bu sunucuda yeni bir terminal açılır ve aşağıdaki komut çalışır. Komut, ajanın sudoers dosyasını siler ve servisin kısıtlamalarını geri getirir. Yapay zekâ bu cihazda artık root olarak çalışamaz.": "Un nouveau terminal s'ouvre sur ce serveur et exécute la commande ci-dessous. Elle supprime le fichier sudoers de l'agent et rétablit les restrictions du service. L'IA ne peut alors plus s'exécuter en root sur cet appareil.",
+      "sudo parolanı terminalde kendin yazarsın; WECOMMANDER parolayı görmez ve saklamaz.": "Vous tapez vous-même votre mot de passe sudo dans le terminal ; WECOMMANDER ne le voit pas et ne l'enregistre pas.",
+      "Bu yalnız ilk anahtardır: root, bir yönetici web panelinde parolasıyla açana kadar kapalı kalır. Geri almak için: sunucuya sağ tıkla → Root iznini kaldır.": "Ce n'est que la première clé : root reste désactivé jusqu'à ce qu'un administrateur l'active dans le panneau web avec son mot de passe. Pour annuler : clic droit sur le serveur → Retirer l'autorisation root.",
+      "Çalışacak komut": "Commande exécutée",
+      "Terminalde çalıştır": "Exécuter dans le terminal",
+      "Komut terminalde çalışıyor; sudo parolanı orada yaz. Bitince ikinci anahtar: bir yönetici web panelinde root'u açar.": "La commande s'exécute dans le terminal ; tapez-y votre mot de passe sudo. Ensuite, la deuxième clé : un administrateur active root dans le panneau web.",
+      "Komut terminalde çalışıyor; sudo parolanı orada yaz. Bitince ajan yeniden bağlanır ve cihaz kullanıcı olarak çalışmaya döner.": "La commande s'exécute dans le terminal ; tapez-y votre mot de passe sudo. Ensuite, l'agent se reconnecte et l'appareil repasse en utilisateur.",
+      "Web'de yetkileri aç": "Ouvrir les autorisations sur le web",
+      "Bitti. Kapatmak için Enter'a bas.": "Terminé. Appuyez sur Entrée pour fermer.",
+      "Terminal bulunamadı: gnome-terminal, konsole, xfce4-terminal ya da xterm kur.": "Aucun terminal trouvé : installez gnome-terminal, konsole, xfce4-terminal ou xterm.",
+      "Bu bilgisayarın terminali açılır ve ssh ile bu sunucuya bağlanır; SSH girişini ve sudo parolanı orada kendin yaparsın.": "Le terminal de cet ordinateur s'ouvre et se connecte à ce serveur avec ssh ; vous vous y connectez et tapez vous-même votre mot de passe sudo.",
     },
   };
 
@@ -285,6 +355,7 @@
     needs_credential: "Kayıtlı parola ya da anahtar yok: yapay zekâ sorusuz giriş yapamaz. Bir kez parolanla bağlan; parola anahtar zincirine kaydedilir.",
     not_ssh: "Yapay zekâ erişimi yalnız SSH sunucularında çalışır.",
     not_signed_in: "Önce oturum aç.",
+    no_terminal: "Terminal bulunamadı: gnome-terminal, konsole, xfce4-terminal ya da xterm kur.",
   };
 
   let view = null;
@@ -294,6 +365,43 @@
   let notice = "";
   let busy = false;
   let timer = null;
+  let rootAsk = null; // { id, allow }: the confirmation shown under that host
+  let rootDone = null; // { allow, url }: after the terminal opened
+
+  // "Yapay zekâya root izni ver (bu sunucuda)": this computer's terminal
+  // opens ssh to the host and runs the fixed command from hybrid.rs; the
+  // person logs in and types their sudo password there (docs/AI_PERMISSIONS.md).
+  function rootConfirm(host, allow) {
+    const command = allow ? view.rootAllowCommand : view.rootDisallowCommand;
+    return el("div", { class: "card" },
+      el("strong", {}, allow ? T("Yapay zekâya root izni ver (bu sunucuda)") : T("Root iznini kaldır")),
+      el("p", { class: "small" }, allow
+        ? T("Bu sunucuda yeni bir terminal açılır ve aşağıdaki komut çalışır. Komut, WECOMMANDER ajanının servis kullanıcısına sudo izni veren bir sudoers dosyası yazar (/etc/sudoers.d/wecommander-agent) ve servisin sudo'yu engelleyen kısıtlamalarını gevşetir. Ajan kurulu değilse önce kurar.")
+        : T("Bu sunucuda yeni bir terminal açılır ve aşağıdaki komut çalışır. Komut, ajanın sudoers dosyasını siler ve servisin kısıtlamalarını geri getirir. Yapay zekâ bu cihazda artık root olarak çalışamaz.")),
+      el("p", { class: "small muted" }, T("Bu bilgisayarın terminali açılır ve ssh ile bu sunucuya bağlanır; SSH girişini ve sudo parolanı orada kendin yaparsın.")),
+      el("p", { class: "small muted" }, T("sudo parolanı terminalde kendin yazarsın; WECOMMANDER parolayı görmez ve saklamaz.")),
+      allow ? el("p", { class: "small muted" }, T("Bu yalnız ilk anahtardır: root, bir yönetici web panelinde parolasıyla açana kadar kapalı kalır. Geri almak için: sunucuya sağ tıkla → Root iznini kaldır.")) : null,
+      el("p", { class: "small" }, el("strong", {}, T("Çalışacak komut"))),
+      el("code", {}, command),
+      el("div", { class: "row" },
+        el("button", { class: "primary", onclick: async () => {
+          rootAsk = null;
+          const result = await run("hybrid_root_terminal", { id: host.id, allow, closeText: T("Bitti. Kapatmak için Enter'a bas.") });
+          if (result) rootDone = { allow, url: result.permissionsUrl };
+          render();
+        } }, T("Terminalde çalıştır")),
+        el("button", { class: "ghost", onclick: () => { rootAsk = null; render(); } }, T("Vazgeç"))));
+  }
+
+  function rootNotice() {
+    return el("div", { class: "card" },
+      el("p", { class: "small" }, rootDone.allow
+        ? T("Komut terminalde çalışıyor; sudo parolanı orada yaz. Bitince ikinci anahtar: bir yönetici web panelinde root'u açar.")
+        : T("Komut terminalde çalışıyor; sudo parolanı orada yaz. Bitince ajan yeniden bağlanır ve cihaz kullanıcı olarak çalışmaya döner.")),
+      el("div", { class: "row" },
+        rootDone.allow ? el("button", { class: "primary", onclick: () => run("hybrid_open_permissions", { url: rootDone.url }) }, T("Web'de yetkileri aç")) : null,
+        el("button", { class: "ghost", onclick: () => { rootDone = null; render(); } }, "×")));
+  }
 
   function el(tag, attrs = {}, ...children) {
     const node = document.createElement(tag);
@@ -448,6 +556,13 @@
         ? T("Dosyaları okur, klasörleri listeler, sunucunun durumuna bakar. Komut çalıştıramaz, dosya yazamaz.")
         : T("Her komut ve dosya değişikliği, tam komutu gösteren tek kullanımlık onayla çalışır (Onaylar sekmesi, bildirim ya da web).")));
     }
+    if (host.protocol === "ssh" || host.protocol === "mosh") {
+      body.push(rootAsk && rootAsk.id === host.id
+        ? rootConfirm(host, rootAsk.allow)
+        : el("div", { class: "row" },
+            el("button", { class: "ghost", onclick: () => { rootAsk = { id: host.id, allow: true }; render(); } }, T("Yapay zekâya root izni ver (bu sunucuda)")),
+            el("button", { class: "ghost", onclick: () => { rootAsk = { id: host.id, allow: false }; render(); } }, T("Root iznini kaldır"))));
+    }
     body.push(deleting === host.id
       ? el("div", { class: "row" },
           el("span", { class: "small" }, T("Bu sunucu silinsin mi? Kayıtlı parolası da silinir.")),
@@ -478,6 +593,7 @@
     ];
     if (!view.keyring) parts.push(el("p", { class: "banner" }, T("Anahtar zinciri (Secret Service) bulunamadı: parolalar yalnız uygulama açıkken hatırlanır. Anahtar dosyası ya da SSH ajanı kullan.")));
     if (notice) parts.push(el("p", { class: "small" }, notice));
+    if (rootDone) parts.push(rootNotice());
     parts.push(el("div", { class: "row" },
       el("button", { onclick: importConfig }, T("~/.ssh/config'den içe aktar")),
       el("button", { onclick: () => { adding = true; render(); } }, T("Sunucu ekle"))));

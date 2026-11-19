@@ -57,6 +57,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             guard let self, let token = self.model.token else { return nil }
             return (self.model.gateway, token)
         }
+        servers.account = { [weak self] in
+            guard let self else { return (server: CenterSettings.defaultServer, devices: []) }
+            return (server: self.model.settings.server, devices: self.model.devices)
+        }
         servers.startLibrarySync()
         servers.loadTutorial(step: model.settings.tutorialStep, off: model.settings.tutorialOff)
         servers.onTutorialChange = { [weak self] step, off in self?.model.rememberTutorial(step: step, off: off) }

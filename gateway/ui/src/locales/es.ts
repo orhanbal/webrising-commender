@@ -1200,6 +1200,7 @@ export const table:Record<string,string> = {
  "Komutlar, görevler, terminaller ve dosya yazmaları sudo ile root olarak çalışır. Dosya araçları yine izinli klasörlerle sınırlıdır.": "Los comandos, tareas, terminales y escrituras de archivos se ejecutan como root mediante sudo. Las herramientas de archivos siguen limitadas a las carpetas permitidas.",
  "Bu cihazda root kapalı": "Root está desactivado en este dispositivo",
  "Root yetkisi önce makinenin kendisinde açılmalı; web panelinden tek başına açılamaz. Makinedeki kişi şu komutu bir kez çalıştırsın, sonra burada açabilirsin:": "Root debe permitirse primero en la propia máquina; el panel web por sí solo no puede activarlo. Pide a la persona en la máquina que ejecute este comando una vez y luego actívalo aquí:",
+ "Ya da WECOMMANDER uygulamasında sunucuya sağ tıkla → Yapay zekâya root izni ver": "O, en la app WECOMMANDER, haz clic derecho en el servidor → Dar permiso root a la IA",
  "Komutu kopyala": "Copiar comando",
  "Root tam yönetici yetkisidir": "Root es acceso completo de administrador",
  "Yapay zekâ bu makinede her şeyi değiştirebilir. Değişiklik tüm yöneticilere e-postayla bildirilir ve denetim kaydına yazılır.": "La IA puede cambiar cualquier cosa en esta máquina. Se avisa por correo a todos los administradores y el cambio queda en el registro de auditoría.",

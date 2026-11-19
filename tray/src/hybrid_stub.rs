@@ -52,3 +52,18 @@ pub fn hybrid_set(
 pub fn hybrid_delete(_app: AppHandle, _id: String) -> Result<Value, String> {
     Err(UNSUPPORTED.into())
 }
+
+#[tauri::command]
+pub fn hybrid_root_terminal(
+    _app: AppHandle,
+    _id: String,
+    _allow: bool,
+    _close_text: String,
+) -> Result<Value, String> {
+    Err(UNSUPPORTED.into())
+}
+
+#[tauri::command]
+pub fn hybrid_open_permissions(_app: AppHandle, _url: String) -> Result<(), String> {
+    Err(UNSUPPORTED.into())
+}

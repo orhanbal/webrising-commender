@@ -222,6 +222,9 @@ pub struct View {
     /// False when no OS keyring answered: passwords last until the app quits.
     keyring: bool,
     hosts: Vec<HostRow>,
+    /// The fixed commands "Yapay zekâya root izni ver" / "Root iznini kaldır" run on the server.
+    root_allow_command: &'static str,
+    root_disallow_command: &'static str,
 }
 
 fn code(error: &str) -> String {
@@ -273,6 +276,8 @@ fn view(app: &AppHandle) -> Result<View, String> {
         center_id: center,
         keyring,
         hosts,
+        root_allow_command: ROOT_ALLOW_COMMAND,
+        root_disallow_command: ROOT_DISALLOW_COMMAND,
     })
 }
 
@@ -437,9 +442,296 @@ pub fn hybrid_delete(app: AppHandle, id: String) -> Result<View, String> {
     view(&app)
 }
 
+// ---- root on the server: the machine-side key (docs/AI_PERMISSIONS.md) ----
+//
+// "Yapay zekâya root izni ver (bu sunucuda)": this computer's own terminal
+// opens `ssh` to the saved host and runs one fixed command there; the person
+// logs in and types their sudo password in that terminal. Nothing of the host
+// or the person is put into a shell line (ssh gets its arguments as a list),
+// and this app never sees either password. Root stays off until an admin
+// turns it on in the web panel with their password (the second key).
+
+/// Allows root on the machine: the installed agent's script, else the online installer.
+pub const ROOT_ALLOW_COMMAND: &str = "if [ -f /opt/wecommander/libexec/install-linux.sh ]; then sudo bash /opt/wecommander/libexec/install-linux.sh --allow-root; else curl -fsSL https://wecommander.app/install.sh | sh -s -- --allow-root; fi";
+/// Takes it back (removes the sudoers drop-in, restores the unit hardening).
+pub const ROOT_DISALLOW_COMMAND: &str = "if [ -f /opt/wecommander/libexec/install-linux.sh ]; then sudo bash /opt/wecommander/libexec/install-linux.sh --disallow-root; else curl -fsSL https://wecommander.app/install.sh | sh -s -- --disallow-root; fi";
+
+/// Terminals tried in order, with the flag after which the command follows.
+const TERMINALS: &[(&str, &[&str])] = &[
+    ("gnome-terminal", &["--"]),
+    ("konsole", &["-e"]),
+    ("xfce4-terminal", &["-x"]),
+    ("mate-terminal", &["-x"]),
+    ("tilix", &["-e"]),
+    ("kitty", &[]),
+    ("alacritty", &["-e"]),
+    ("x-terminal-emulator", &["-e"]),
+    ("xterm", &["-e"]),
+];
+
+fn on_path(name: &str) -> bool {
+    std::env::var_os("PATH").is_some_and(|paths| {
+        std::env::split_paths(&paths).any(|dir| {
+            let file = dir.join(name);
+            std::fs::metadata(&file).is_ok_and(|m| m.is_file())
+        })
+    })
+}
+
+/// Where ssh logs in (a saved host's address, port and user).
+struct SshTarget {
+    host: String,
+    port: u16,
+    user: String,
+}
+
+impl SshTarget {
+    fn of(saved: &core::store::SavedHost) -> Self {
+        SshTarget {
+            host: saved.profile.host.clone(),
+            port: saved.profile.port,
+            user: saved.profile.user.clone(),
+        }
+    }
+}
+
+/// `ssh` arguments to a saved host: `-t`, port, key, user, jump host, then
+/// `--`, the address and the fixed remote command (each its own argument).
+fn ssh_args(
+    profile: &SshTarget,
+    key_path: Option<&str>,
+    jump: Option<&SshTarget>,
+    command: &str,
+) -> Vec<String> {
+    let mut args = vec![
+        "ssh".to_owned(),
+        "-t".to_owned(),
+        "-p".to_owned(),
+        profile.port.to_string(),
+    ];
+    if let Some(key) = key_path.filter(|k| !k.is_empty()) {
+        args.push("-i".to_owned());
+        args.push(key.to_owned());
+    }
+    if let Some(j) = jump {
+        args.push("-J".to_owned());
+        args.push(format!("{}@{}:{}", j.user, j.host, j.port));
+    }
+    if !profile.user.is_empty() {
+        args.push("-l".to_owned());
+        args.push(profile.user.clone());
+    }
+    args.push("--".to_owned());
+    args.push(profile.host.clone());
+    args.push(command.to_owned());
+    args
+}
+
+/// `sh -c` that runs the ssh arguments (as "$@") and waits for Enter, so the
+/// result stays on screen; the prompt is `$0`, never part of the script.
+fn keep_open(ssh: Vec<String>, close_text: &str) -> Vec<String> {
+    let mut argv = vec![
+        "sh".to_owned(),
+        "-c".to_owned(),
+        r#""$@"; status=$?; printf '\n%s ' "$0"; read -r _; exit $status"#.to_owned(),
+        close_text.to_owned(),
+    ];
+    argv.extend(ssh);
+    argv
+}
+
+/// The agent device on that server, when exactly one Linux device's name is
+/// the host's address, its short name or its label (case ignored).
+fn match_device(label: &str, address: &str, devices: &[crate::api::Device]) -> Option<String> {
+    let mut names = std::collections::HashSet::new();
+    for raw in [address, label] {
+        let n = raw.trim();
+        if n.is_empty() {
+            continue;
+        }
+        names.insert(n.to_lowercase());
+        if let Some(dot) = n.find('.') {
+            if dot > 0 && !n.starts_with(|c: char| c.is_ascii_digit()) {
+                names.insert(n[..dot].to_lowercase());
+            }
+        }
+    }
+    let found: std::collections::BTreeSet<&str> = devices
+        .iter()
+        .filter(|d| d.revoked_at.is_none())
+        .filter(|d| {
+            d.platform
+                .as_deref()
+                .unwrap_or("")
+                .to_lowercase()
+                .contains("linux")
+        })
+        .filter(|d| names.contains(&d.name.trim().to_lowercase()))
+        .map(|d| d.id.as_str())
+        .collect();
+    (found.len() == 1).then(|| found.into_iter().next().unwrap_or_default().to_owned())
+}
+
+fn permissions_url(server: &str, device: Option<&str>) -> String {
+    let base = server.trim_end_matches('/');
+    match device {
+        Some(id) => format!(
+            "{base}/devices?permissions={}",
+            url::form_urlencoded::byte_serialize(id.as_bytes()).collect::<String>()
+        ),
+        None => format!("{base}/devices"),
+    }
+}
+
+/// Opens this computer's terminal with `ssh` to the host running the fixed
+/// root command. Returns the terminal used and the web page of the second key.
+#[tauri::command]
+pub fn hybrid_root_terminal(
+    app: AppHandle,
+    id: String,
+    allow: bool,
+    close_text: String,
+) -> Result<Value, String> {
+    let state = app.state::<AppState>();
+    let core = state.hybrid.core();
+    let (label, profile, key_path, jump) = {
+        let data = core.data.lock().map_err(|_| "busy")?;
+        let host = data
+            .hosts
+            .iter()
+            .find(|h| h.id == id)
+            .ok_or("unknown_host")?;
+        if !matches!(host.link.kind(), "ssh" | "mosh") {
+            return Err("not_ssh".into());
+        }
+        let jump = host
+            .jump_id
+            .as_ref()
+            .and_then(|j| data.hosts.iter().find(|h| &h.id == j))
+            .map(SshTarget::of);
+        (
+            host.profile.label.clone(),
+            SshTarget::of(host),
+            host.key_path.clone(),
+            jump,
+        )
+    };
+    let command = if allow {
+        ROOT_ALLOW_COMMAND
+    } else {
+        ROOT_DISALLOW_COMMAND
+    };
+    let argv = keep_open(
+        ssh_args(&profile, key_path.as_deref(), jump.as_ref(), command),
+        &close_text,
+    );
+    let (terminal, flags) = TERMINALS
+        .iter()
+        .find(|(name, _)| on_path(name))
+        .ok_or("no_terminal")?;
+    let mut child = std::process::Command::new(terminal)
+        .args(flags.iter())
+        .args(&argv)
+        .spawn()
+        .map_err(|e| format!("no_terminal: {e}"))?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    let (server, devices) = {
+        let inner = state.inner.lock().unwrap();
+        (inner.settings.server.clone(), inner.devices.clone())
+    };
+    let device = match_device(&label, &profile.host, &devices);
+    Ok(json!({
+        "terminal": terminal,
+        "permissionsUrl": permissions_url(&server, device.as_deref()),
+    }))
+}
+
+/// Opens the web page of the second key (from hybrid_root_terminal).
+#[tauri::command]
+pub fn hybrid_open_permissions(app: AppHandle, url: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let server = app
+        .state::<AppState>()
+        .inner
+        .lock()
+        .unwrap()
+        .settings
+        .server
+        .clone();
+    let base = format!("{}/devices", server.trim_end_matches('/'));
+    if url != base && !url.starts_with(&format!("{base}?permissions=")) {
+        return Err("bad_url".into());
+    }
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn root_commands_are_fixed_and_ssh_gets_a_list() {
+        assert!(ROOT_ALLOW_COMMAND.contains("install-linux.sh --allow-root"));
+        assert!(ROOT_DISALLOW_COMMAND.contains("install-linux.sh --disallow-root"));
+        let profile = SshTarget {
+            host: "web-1; rm -rf /".into(),
+            port: 2222,
+            user: "ops".into(),
+        };
+        let args = ssh_args(&profile, Some("/k"), None, ROOT_ALLOW_COMMAND);
+        assert_eq!(
+            args,
+            [
+                "ssh",
+                "-t",
+                "-p",
+                "2222",
+                "-i",
+                "/k",
+                "-l",
+                "ops",
+                "--",
+                "web-1; rm -rf /",
+                ROOT_ALLOW_COMMAND
+            ]
+        );
+        let argv = keep_open(args, "Enter");
+        assert_eq!(&argv[..2], ["sh", "-c"]);
+        assert!(!argv[2].contains("web-1"));
+        assert_eq!(argv[3], "Enter");
+    }
+
+    #[test]
+    fn device_match_needs_one_linux_device() {
+        let d = |id: &str, name: &str, platform: &str| crate::api::Device {
+            id: id.into(),
+            name: name.into(),
+            platform: Some(platform.into()),
+            online: true,
+            trust_level: None,
+            trust_full_until: None,
+            revoked_at: None,
+        };
+        let list = [d("d1", "web-1", "linux"), d("w", "web-2", "windows")];
+        assert_eq!(
+            match_device("Web", "web-1.example.com", &list).as_deref(),
+            Some("d1")
+        );
+        assert_eq!(match_device("web-2", "10.0.0.2", &list), None);
+        assert_eq!(match_device("x", "10.0.0.3", &list), None);
+        assert_eq!(
+            permissions_url("https://wecommander.app/", Some("d 1")),
+            "https://wecommander.app/devices?permissions=d+1"
+        );
+        assert_eq!(
+            permissions_url("https://wecommander.app", None),
+            "https://wecommander.app/devices"
+        );
+    }
 
     #[test]
     fn maps_gateway_errors_and_core_codes() {
