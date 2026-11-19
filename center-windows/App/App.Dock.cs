@@ -155,10 +155,21 @@ public partial class App
         }
         try
         {
+            // The new window opens where the old one was, on the same settings
+            // page and scroll position, and only then the old one closes.
+            var place = old.CaptureForLanguage();
             _servers = null;
+            Servers.Start();
+            var fresh = new ServersWindow(Servers);
+            _servers = fresh;
+            fresh.PlaceForLanguage(place);
+            if (place.Visible)
+            {
+                fresh.ShowWindow();
+                fresh.ReturnAfterLanguage(place);
+            }
             old.CloseForLanguage();
-            ShowServers();
-            _servers?.OpenSettings();
+            if (place.Visible) fresh.Activate();
         }
         catch (Exception e) { LogCrash(e); }
     }

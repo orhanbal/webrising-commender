@@ -1,6 +1,31 @@
 {
  "releases": [
   {
+   "id": "2026-11-19-windows-language-place",
+   "date": "2026-11-19",
+   "platforms": ["windows"],
+   "items": {
+    "tr": [
+     "Dil değiştirince pencere artık olduğu yerde, aynı boyutta ve Ayarlar'da kaldığın noktada açılır."
+    ],
+    "en": [
+     "After a language change the window now opens where it was, at the same size, at the same spot in Settings."
+    ],
+    "de": [
+     "Nach einem Sprachwechsel öffnet sich das Fenster jetzt an derselben Stelle, in derselben Größe und an derselben Position in den Einstellungen."
+    ],
+    "fr": [
+     "Après un changement de langue, la fenêtre s'ouvre désormais au même endroit, à la même taille et au même point des Paramètres."
+    ],
+    "es": [
+     "Tras cambiar el idioma, la ventana se abre ahora en el mismo lugar, con el mismo tamaño y en el mismo punto de Configuración."
+    ],
+    "pt-BR": [
+     "Depois de trocar o idioma, a janela agora abre no mesmo lugar, do mesmo tamanho e no mesmo ponto das Configurações."
+    ]
+   }
+  },
+  {
    "id": "2026-11-19-windows",
    "date": "2026-11-19",
    "platforms": ["windows"],
