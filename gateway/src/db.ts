@@ -705,6 +705,23 @@ export async function migrate() {
       created_at timestamptz not null default now()
     );
     create index if not exists app_error_reports_org_idx on app_error_reports(organization_id,created_at desc);
+    -- Kinds of app error across all organizations (app-error-alerts.ts): the
+    -- first report of a new fingerprint e-mails the platform super admins.
+    alter table app_error_reports add column if not exists fingerprint text;
+    create table if not exists app_error_kinds (
+      fingerprint text primary key,
+      platform text not null,
+      error_type text not null,
+      first_build text not null,
+      last_build text not null,
+      message text not null,
+      report_count bigint not null default 1,
+      first_seen_at timestamptz not null default now(),
+      last_seen_at timestamptz not null default now(),
+      alert text check (alert in ('mail','summary','suppressed','off')),
+      alerted_at timestamptz
+    );
+    create index if not exists app_error_kinds_alerted_idx on app_error_kinds(alerted_at desc);
 
     -- Marketing: in-app messages and surveys (satisfaction, NPS, news, tips),
     -- shown once per user in the apps and the web dashboard.

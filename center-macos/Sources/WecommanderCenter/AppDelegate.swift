@@ -51,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         model.onLanguageChange = { [weak self] in DispatchQueue.main.async { self?.languageChanged() } }
         model.showPanel = { [weak self] in self?.showPanel() }
         model.start()
+        ErrorReporter.startCrashGuard(model: model)
         servers.start()
         servers.credentials = { [weak self] in
             guard let self, let token = self.model.token else { return nil }
@@ -109,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        ErrorReporter.orderlyExit()
         scheduled.stop()
         connector.stop()
         monitor.stop()

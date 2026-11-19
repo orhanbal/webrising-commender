@@ -175,6 +175,7 @@ final class AppModel: ObservableObject {
             error = e.message
         } catch {
             self.error = error.localizedDescription
+            ErrorReporter.record(error, "AppModel.sync")
         }
         publish()
     }
@@ -227,6 +228,7 @@ final class AppModel: ObservableObject {
             error = e.message
         } catch {
             self.error = error.localizedDescription
+            ErrorReporter.record(error, "AppModel.connect")
         }
         publish()
     }
@@ -416,6 +418,7 @@ final class AppModel: ObservableObject {
             notifier.showPlain("WECOMMANDER", installing ? Texts.agentInstallStarted : Texts.agentUpdateStarted)
         } catch {
             self.error = error.localizedDescription
+            ErrorReporter.record(error, "AppModel.runAgentInstaller")
             publish()
         }
     }
@@ -444,6 +447,7 @@ final class AppModel: ObservableObject {
             error = nil
         } catch {
             self.error = error.localizedDescription
+            ErrorReporter.record(error, "AppModel.setAgentEnabled")
         }
     }
 
@@ -557,6 +561,7 @@ extension AppModel {
             }
         } catch {
             self.error = L.t("Bu Mac hesaba bağlanamadı: ") + error.localizedDescription
+            ErrorReporter.record(error, "AppModel.ensurePaired")
         }
     }
 
@@ -702,6 +707,7 @@ extension AppModel {
             updating = false
             updateProgress = nil
             updateMessage = error.localizedDescription
+            ErrorReporter.record(error, "AppModel.updateApp")
             notifier.showPlain("WECOMMANDER", L.t("Güncelleme tamamlanamadı; ayrıntı panelde."))
             publish()
         }

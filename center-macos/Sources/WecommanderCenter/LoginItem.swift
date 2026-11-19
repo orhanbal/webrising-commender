@@ -14,6 +14,7 @@ enum LoginItem {
             else { try SMAppService.mainApp.unregister() }
         } catch {
             NSLog("WECOMMANDER Center: login item change failed: \(error.localizedDescription)")
+            Task { @MainActor in ErrorReporter.record(error, "LoginItem.set") }
         }
     }
 }

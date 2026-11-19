@@ -41,6 +41,7 @@ import { db, housekeeping, migrate, ready } from "./db.js";
 import { getPublicPlans, publicPaddleConfig, createPaddleCheckout, createPaddlePortal, consumePaddleWebhook, syncPlanCatalog } from "./paddle.js";
 import { getDownloads } from "./downloads.js";
 import { scrubUserPaths } from "./scrub.js";
+import { appErrorFingerprint, recordAppErrorKind } from "./app-error-alerts.js";
 import { audienceSize, emailAudienceSchema, emailSchema, listEmails, saveEmail, sendEmail, sendTestEmail, setMarketingConsent, validUnsubscribe } from "./marketing-email.js";
 import { campaignResults, campaignSchema, listCampaigns, nextMessage, PLATFORMS, recordResponse, responseSchema, saveCampaign } from "./marketing.js";
 import { installRoute } from "./install-scripts.js";
@@ -4010,11 +4011,15 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         message: z.string().max(2000),
         detail: z.string().max(20000),
       }).parse(await readJson(req));
+      const fingerprint = appErrorFingerprint(body);
       await db.query(
-        `insert into app_error_reports(organization_id,center_id,platform,build,message,detail) values($1,$2,$3,$4,$5,$6)`,
+        `insert into app_error_reports(organization_id,center_id,platform,build,message,detail,fingerprint) values($1,$2,$3,$4,$5,$6,$7)`,
         [principal!.organizationId, principal!.centerId ?? null, body.platform, scrubUserPaths(body.build),
-          scrubUserPaths(body.message).slice(0, 500), scrubUserPaths(body.detail).slice(0, 8000)],
+          scrubUserPaths(body.message).slice(0, 500), scrubUserPaths(body.detail).slice(0, 8000), fingerprint],
       );
+      // A kind never seen before e-mails the platform super admins (rate limited).
+      try { await recordAppErrorKind({ ...body, fingerprint }); }
+      catch (error) { process.stderr.write(`app error alert failed: ${redact(error instanceof Error ? error.message : error)}\n`); }
       await db.query(
         `delete from app_error_reports where organization_id=$1 and id not in
            (select id from app_error_reports where organization_id=$1 order by created_at desc limit 500)`,

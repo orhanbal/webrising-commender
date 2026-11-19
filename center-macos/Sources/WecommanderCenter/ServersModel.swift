@@ -133,6 +133,7 @@ final class ServersModel: ObservableObject {
             Task { await reload() }
         } catch {
             coreError = L.f("Uygulama çekirdeği başlatılamadı: {0}", error.localizedDescription)
+            ErrorReporter.record(error, "ServersModel.start (wecommander-core)")
         }
     }
 
@@ -203,6 +204,7 @@ final class ServersModel: ObservableObject {
             onChange?()
         } catch {
             notice = error.localizedDescription
+            ErrorReporter.record(error, "ServersModel.reload")
         }
     }
 

@@ -19,7 +19,10 @@ if let running = others.first {
     exit(0)
 }
 
-let app = NSApplication.shared
+// Crash handlers first (CenterCore/CrashGuard.swift); only in the instance that keeps running.
+ErrorReporter.installCrashHandlers()
+// The subclass reports exceptions AppKit catches (ErrorReporter.swift); it must be the first `shared`.
+let app = WecommanderApplication.shared
 let delegate = MainActor.assumeIsolated { AppDelegate() }
 app.delegate = delegate
 app.setActivationPolicy(.accessory) // menu bar only, no Dock icon
