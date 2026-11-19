@@ -40,6 +40,7 @@
     <button data-tab="approvals" class="active" role="tab">Onaylar <span id="pendingCount" class="count" hidden></span></button>
     <button data-tab="autonomy" role="tab">Otonom mod</button>
     <button data-tab="devices" role="tab">Cihazlar</button>
+    <button data-tab="ssh" role="tab" id="sshTabButton" hidden>SSH</button>
     <button data-tab="settings" role="tab">Ayarlar</button>
   </nav>
 
@@ -95,6 +96,9 @@
     <p id="devicesEmpty" class="empty" hidden>Henüz cihaz yok.</p>
   </div>
 
+  <!-- Linux: SSH servers shared with remote AI through this computer (hybrid.js). -->
+  <div id="tab-ssh" class="tab" hidden></div>
+
   <div id="tab-settings" class="tab" hidden>
     <label class="switch"><input type="checkbox" id="setNotify"> Yeni onay isteğinde bildirim göster</label>
     <label class="switch"><input type="checkbox" id="setOpen"> Bildirimler kapalıyken yeni istekte paneli aç</label>
@@ -112,6 +116,7 @@
 </section>
 
 <footer id="status" class="status"></footer>
+<script src="hybrid.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

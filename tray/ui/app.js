@@ -179,6 +179,8 @@ function render(next) {
     ? `${me.email || ""}${me.organizationName ? " · " + me.organizationName : ""}`
     : "";
   $("signOutTop").hidden = state.phase !== "signedIn";
+  $("sshTabButton").hidden = !state.hybrid;
+  if (window.hybridTabName) $("sshTabButton").textContent = window.hybridTabName;
   if (state.phase !== "signedIn") $("signOutConfirm").hidden = true;
   if (state.phase === "signedIn") {
     renderPending();
@@ -201,6 +203,7 @@ function selectTab(name) {
   tab = name;
   for (const button of document.querySelectorAll(".tabs button")) button.classList.toggle("active", button.dataset.tab === name);
   for (const panel of document.querySelectorAll(".tab")) panel.hidden = panel.id !== "tab-" + name;
+  if (name === "ssh" && window.hybridShow) window.hybridShow();
 }
 
 document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => selectTab(b.dataset.tab)));

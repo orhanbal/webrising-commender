@@ -37,6 +37,9 @@ keyring = { version = "3", features = ["windows-native", "apple-native"] }
 # Desktop notifications with Onayla / Reddet actions (freedesktop, D-Bus);
 # already used by tauri-plugin-notification.
 notify-rust = "4"
+# Hybrid Access: the WECOMMANDER app core (saved SSH hosts, keyring vault,
+# SSH engine, remote MCP calls and the connector loop) in process.
+wc-app-core = { path = "../crates/wc-app-core" }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"

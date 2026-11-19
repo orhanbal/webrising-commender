@@ -15,11 +15,14 @@
 //! * [`remote`]: remote AI clients through wecommander.app with this
 //!   computer as the connector (H3): what is published, and the calls the
 //!   app hands over from the gateway.
+//! * [`connector`]: the loop that publishes, claims and answers those calls
+//!   for apps that hold the core in process (the Linux Management Center).
 //!
 //! This module holds the shared state: the client allow-list, pending
 //! approvals and the endpoint status.
 pub mod bridge;
 pub mod clientconfig;
+pub mod connector;
 pub mod endpoint;
 pub mod redact;
 pub mod remote;
