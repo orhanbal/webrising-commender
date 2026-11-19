@@ -112,4 +112,9 @@ test("public docs and guide pages are routes of the web app (not the landing pag
   assert.match(app, /const routes=new Set\(\[[^\]]*\.\.\.contentPaths\]\);/, "routes must include contentPaths");
   const routes = [...app.match(/const routes=new Set\((\[[^\]]*)/)[1].matchAll(/"([^"]+)"/g)].map(m => m[1]);
   for (const p of [...content.matchAll(/path: "([^"]+)"/g)].map(m => m[1])) assert.ok(routes.includes(p) || listed.includes(p), p + " is not a web app route");
+  // Documentation pages (docs-content.ts) are /docs/<slug>.
+  const docs = readFileSync(new URL("../src/docs-content.ts", import.meta.url), "utf8");
+  const slugs = [...docs.matchAll(/slug: "([^"]+)"/g)].map(m => "/docs/" + m[1]);
+  assert.ok(slugs.length > 20, "docs pages found");
+  for (const p of slugs) assert.ok(listed.includes(p), p + " is not a web app route");
 });

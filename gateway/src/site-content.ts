@@ -4,12 +4,18 @@
 // sitemap. Keep it factual: assistants quote it.
 
 import { releaseNotes } from "./release-notes.gen.js";
+import { docGroups, docPages, docsIndexBlocks } from "./docs-content.js";
 
 export type Block =
   | { h2: string }
+  | { h3: string }
   | { p: string }
   | { ul: string[] }
+  | { ol: string[] }
   | { code: string }
+  | { note: string }
+  /** Links to other public pages (paths), shown with their heading and description. */
+  | { see: string[] }
   | { table: { head: string[]; rows: string[][] } };
 
 export type Faq = { q: string; a: string };
@@ -34,6 +40,8 @@ export type PublicPage = {
   content?: boolean;
   /** Listed in /llms.txt under this section. */
   section: "Product" | "Docs" | "Guides" | "Legal";
+  /** Documentation pages (/docs/<slug>): their sidebar group (docs-content.ts). */
+  docGroup?: string;
 };
 
 export const productName = "WECOMMANDER";
@@ -206,26 +214,12 @@ export const publicPages: PublicPage[] = [
     section: "Docs",
     content: true,
     title: "Documentation · WECOMMANDER",
-    description: "Set up WECOMMANDER with Claude, ChatGPT, Cursor and other MCP clients, run the agent in local mode, and manage approvals.",
+    description: "The complete WECOMMANDER guide, A to Z: install, the desktop SSH client, server management, scheduled tasks, connecting Claude, ChatGPT, Cursor and VS Code over MCP, every MCP tool, AI permissions, approvals, security and troubleshooting.",
     heading: "Documentation",
-    intro: "Connect your AI client to your machines in a few minutes.",
-    blocks: [
-      { h2: "1. Install the agent" },
-      { p: "Run the one-line installer on each machine (see Install). The device appears in your dashboard after you approve it in the browser." },
-      { h2: "2. Add the MCP server to your AI client" },
-      { ul: [
-        "Claude (web and desktop): Settings → Connectors → Add custom connector → URL https://wecommander.app/mcp → Connect, then allow access with your WECOMMANDER account.",
-        "ChatGPT: Settings → Connectors → create a custom MCP connector with the same URL and OAuth authentication (developer mode may be required depending on the plan).",
-        "Cursor and other clients: add a remote (HTTP) MCP server with the URL https://wecommander.app/mcp.",
-      ] },
-      { h2: "3. Approve risky actions" },
-      { p: "Commands and destructive file operations wait for your approval. Approve them in the dashboard (Approvals), from the e-mail, or from the Management Center on Windows. Each approval is valid once, for exactly the action shown." },
-      { h2: "Local mode (no account, no server)" },
-      { p: "The agent can serve MCP over stdio to a local client. Example for Claude Desktop:" },
-      { code: '{\n  "mcpServers": {\n    "wecommander": {\n      "command": "webrising-commender",\n      "args": ["mcp-stdio", "--allowed-root", "/home/me/projects"]\n    }\n  }\n}' },
-      { p: "Writes and commands are off unless you add --allow-writes or --allow-commands." },
-    ],
+    intro: "Everything WECOMMANDER does, one topic per page. Start with Getting started, or jump to a section below.",
+    blocks: docsIndexBlocks(),
   },
+  ...docPages,
   {
     path: "/security",
     section: "Docs",
@@ -418,16 +412,44 @@ export const publicPages: PublicPage[] = [
 export const pageByPath = new Map(publicPages.map((page) => [page.path, page]));
 export const contentPagePaths = publicPages.filter((page) => page.content).map((page) => page.path);
 
+/** Heading anchor id, the same in the pre-rendered HTML and the React view (Content.tsx). */
+export function anchorId(text: string) {
+  return text.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "section";
+}
+
+/** Title and summary of every public page, for links (`see` blocks) and the docs sidebar. */
+export function pageNav() {
+  return publicPages.map((p) => ({ path: p.path, heading: p.heading, description: p.description, ...(p.docGroup ? { group: p.docGroup } : {}) }));
+}
+
 const escapeHtml = (value: string) =>
   value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+const isDocPage = (page: PublicPage) => page.path === "/docs" || !!page.docGroup;
+
 /** Plain HTML of a page for crawlers; React replaces it when the app starts. */
 export function renderPageHtml(page: PublicPage) {
-  const parts = [`<main class="prerender"><h1>${escapeHtml(page.heading)}</h1><p>${escapeHtml(page.intro)}</p>`];
+  const parts = [`<main class="prerender">`];
+  if (isDocPage(page)) {
+    const crumbs = [`<a href="/">${productName}</a>`, page.path === "/docs" ? "Documentation" : `<a href="/docs">Documentation</a>`];
+    if (page.docGroup) crumbs.push(escapeHtml(page.docGroup), escapeHtml(page.heading));
+    parts.push(`<nav aria-label="Breadcrumb">${crumbs.join(" › ")}</nav>`);
+  }
+  parts.push(`<h1>${escapeHtml(page.heading)}</h1><p>${escapeHtml(page.intro)}</p>`);
   for (const block of page.blocks) {
-    if ("h2" in block) parts.push(`<h2>${escapeHtml(block.h2)}</h2>`);
+    if ("h2" in block) parts.push(`<h2 id="${anchorId(block.h2)}">${escapeHtml(block.h2)}</h2>`);
+    else if ("h3" in block) parts.push(`<h3 id="${anchorId(block.h3)}">${escapeHtml(block.h3)}</h3>`);
     else if ("p" in block) parts.push(`<p>${escapeHtml(block.p)}</p>`);
+    else if ("note" in block) parts.push(`<aside><p><strong>Note:</strong> ${escapeHtml(block.note)}</p></aside>`);
     else if ("ul" in block) parts.push(`<ul>${block.ul.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`);
+    else if ("ol" in block) parts.push(`<ol>${block.ol.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>`);
+    else if ("see" in block) {
+      parts.push(`<ul>${block.see.map((path) => {
+        const target = pageByPath.get(path);
+        return target ? `<li><a href="${path}">${escapeHtml(target.heading)}</a>: ${escapeHtml(target.description)}</li>` : "";
+      }).join("")}</ul>`);
+    }
     else if ("code" in block) parts.push(`<pre><code>${escapeHtml(block.code)}</code></pre>`);
     else if ("table" in block) {
       parts.push(`<table><thead><tr>${block.table.head.map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead><tbody>${
@@ -437,7 +459,16 @@ export function renderPageHtml(page: PublicPage) {
   if (page.faq) {
     for (const item of page.faq) parts.push(`<h2>${escapeHtml(item.q)}</h2><p>${escapeHtml(item.a)}</p>`);
   }
-  const links = publicPages.filter((p) => p.section !== "Legal" && p.path !== page.path)
+  if (page.howTo && page.docGroup) {
+    parts.push(`<h2>${escapeHtml(page.howTo.name)}</h2><ol>${page.howTo.steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}</ol>`);
+  }
+  if (page.docGroup) {
+    // Documentation pages carry the documentation's table of contents.
+    parts.push(`<nav aria-label="Documentation">${docGroups.map((group) =>
+      `<h2>${escapeHtml(group)}</h2><ul>${docPages.filter((p) => p.docGroup === group)
+        .map((p) => `<li><a href="${p.path}">${escapeHtml(p.heading)}</a></li>`).join("")}</ul>`).join("")}</nav>`);
+  }
+  const links = publicPages.filter((p) => p.section !== "Legal" && !p.docGroup && p.path !== page.path)
     .map((p) => `<a href="${p.path}">${escapeHtml(p.heading)}</a>`).join(" · ");
   parts.push(`<nav>${links}</nav></main>`);
   return parts.join("");
@@ -487,6 +518,38 @@ export function pageJsonLd(page: PublicPage, origin: string) {
       })),
     });
   }
+  if (isDocPage(page)) {
+    const crumbs = [
+      { name: productName, item: `${origin}/` },
+      { name: "Documentation", item: `${origin}/docs` },
+      ...(page.docGroup ? [{ name: page.heading, item: `${origin}${page.path}` }] : []),
+    ];
+    graph.push({
+      "@type": "BreadcrumbList",
+      itemListElement: crumbs.map((c, index) => ({ "@type": "ListItem", position: index + 1, name: c.name, item: c.item })),
+    });
+    if (page.docGroup) {
+      graph.push({
+        "@type": "TechArticle",
+        "@id": `${origin}${page.path}#article`,
+        headline: page.heading,
+        description: page.description,
+        url: `${origin}${page.path}`,
+        inLanguage: "en",
+        articleSection: page.docGroup,
+        isPartOf: { "@id": `${origin}/docs` },
+        about: { "@id": `${origin}/#software` },
+        publisher: { "@id": `${origin}/#organization` },
+        mainEntityOfPage: { "@id": `${origin}${page.path}` },
+      });
+    } else {
+      graph.push({
+        "@type": "ItemList",
+        name: "WECOMMANDER documentation",
+        itemListElement: docPages.map((p, index) => ({ "@type": "ListItem", position: index + 1, url: `${origin}${p.path}`, name: p.heading })),
+      });
+    }
+  }
   if (page.howTo) {
     graph.push({
       "@type": "HowTo",
@@ -525,15 +588,23 @@ export function sitemapXml(origin: string, lastModified: string) {
 /** https://llmstxt.org: a short Markdown map of the site for language models. */
 export function llmsTxt(origin: string) {
   const sections = (["Product", "Docs", "Guides"] as const).map((section) =>
-    `## ${section}\n\n` + publicPages.filter((p) => p.section === section)
+    `## ${section}\n\n` + publicPages.filter((p) => p.section === section && !p.docGroup)
       .map((p) => `- [${p.heading}](${origin}${p.path}): ${p.description}`).join("\n"));
-  return `# ${productName}\n\n> ${productSummary}\n\nKey facts:\n\n${facts.map((f) => `- ${f}`).join("\n")}\n\n${sections.join("\n\n")}\n\n## Optional\n\n- [Full text of the public pages](${origin}/llms-full.txt)\n- [Privacy](${origin}/privacy)\n- [Terms](${origin}/terms)\n`;
+  const documentation = `## Documentation (A to Z)\n\nOne page per topic; the index is ${origin}/docs.\n\n` + docGroups.map((group) =>
+    `### ${group}\n\n` + docPages.filter((p) => p.docGroup === group)
+      .map((p) => `- [${p.heading}](${origin}${p.path}): ${p.description}`).join("\n")).join("\n\n");
+  return `# ${productName}\n\n> ${productSummary}\n\nKey facts:\n\n${facts.map((f) => `- ${f}`).join("\n")}\n\n${sections.join("\n\n")}\n\n${documentation}\n\n## Optional\n\n- [Full text of the public pages and the documentation](${origin}/llms-full.txt)\n- [Privacy](${origin}/privacy)\n- [Terms](${origin}/terms)\n`;
 }
 
-function blockToMarkdown(block: Block) {
+function blockToMarkdown(block: Block, origin: string) {
   if ("h2" in block) return `### ${block.h2}`;
+  if ("h3" in block) return `#### ${block.h3}`;
   if ("p" in block) return block.p;
+  if ("note" in block) return `> Note: ${block.note}`;
   if ("ul" in block) return block.ul.map((item) => `- ${item}`).join("\n");
+  if ("ol" in block) return block.ol.map((item, i) => `${i + 1}. ${item}`).join("\n");
+  if ("see" in block) return block.see.map((path) => pageByPath.get(path))
+    .filter((p): p is PublicPage => !!p).map((p) => `- [${p.heading}](${origin}${p.path}): ${p.description}`).join("\n");
   if ("code" in block) return "```\n" + block.code + "\n```";
   return [
     `| ${block.table.head.join(" | ")} |`,
@@ -547,7 +618,7 @@ export function llmsFullTxt(origin: string) {
     `## ${page.heading}`,
     `URL: ${origin}${page.path}`,
     page.intro,
-    ...page.blocks.map(blockToMarkdown),
+    ...page.blocks.map((block) => blockToMarkdown(block, origin)),
     ...(page.faq ?? []).map((item) => `### ${item.q}\n${item.a}`),
     ...(page.howTo ? [`### ${page.howTo.name}\n${page.howTo.steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`] : []),
   ].join("\n\n"));

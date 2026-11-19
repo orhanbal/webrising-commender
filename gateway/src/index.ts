@@ -1,7 +1,7 @@
 import zlib from "node:zlib";
 import { announcePages, indexNowKey, shouldAnnounce } from "./indexnow.js";
 import { publishToRegistry, registryAuthRecord, REGISTRY_LISTING_VERSION } from "./mcp-registry.js";
-import { contentPagePaths, llmsFullTxt, llmsTxt, pageByPath, pageJsonLd, renderPageHtml, robotsTxt, sitemapXml } from "./site-content.js";
+import { contentPagePaths, llmsFullTxt, llmsTxt, pageByPath, pageJsonLd, pageNav, renderPageHtml, robotsTxt, sitemapXml } from "./site-content.js";
 import { notifyAutonomy, notifyPermissionChange, notifyTrustChange } from "./approval-notify.js";
 import { MAX_ALLOWLIST_ENTRIES, normalizePattern } from "./command-allowlist.js";
 import crypto from "node:crypto";
@@ -671,10 +671,11 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     if (req.method === "GET" && url.pathname === "/api/public/pages") {
       const page = pageByPath.get(url.searchParams.get("path") || "");
       if (!page) return void json(res, 404, { error: "page_not_found" });
-      const related = contentPagePaths.filter((p) => p !== page.path)
+      // Documentation pages (/docs/<slug>) have their own sidebar from `nav`.
+      const related = contentPagePaths.filter((p) => p !== page.path && !pageByPath.get(p)!.docGroup)
         .map((p) => ({ path: p, heading: pageByPath.get(p)!.heading }));
       res.setHeader("cache-control", "public, max-age=300");
-      return void json(res, 200, { page, related });
+      return void json(res, 200, { page, related, nav: pageNav() });
     }
     // MCP Registry domain proof (HTTP authentication): our Ed25519 public key.
     if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/.well-known/mcp-registry-auth") {
