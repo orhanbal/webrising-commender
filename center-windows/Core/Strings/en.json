@@ -1376,6 +1376,7 @@
  "Zamanlanmış görevi sil": "Delete scheduled task",
  "Zamanlanmış görevi şimdi çalıştır": "Run scheduled task now",
  "güvenlik ağı kapalı": "safety net off",
+ "Agent Yetkilendirme": "Agent authorization",
  "Yapay zekâ yetkileri": "AI permissions",
  "Yapay zekâya root izni ver (bu sunucuda)": "Give AI root permission (on this server)",
  "Root iznini kaldır": "Remove root permission",

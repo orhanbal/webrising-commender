@@ -377,7 +377,7 @@ private struct DevicesView: View {
                     }
                     Spacer()
                     // AI permissions (trust, run as root, safety net) are changed in the web panel.
-                    Button(L.t("Yapay zekâ yetkileri")) { model.openDevicePermissions(d.id) }
+                    Button(L.t("Agent Yetkilendirme")) { model.openDevicePermissions(d.id) }
                         .buttonStyle(.link).font(.caption)
                 }
                 .padding(8)

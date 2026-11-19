@@ -395,7 +395,7 @@ public sealed partial class CenterPanel : UserControl
             row.Children.Add(text);
             // AI permissions (trust, run as root, safety net) are changed in the web panel.
             var id = d.Id;
-            var permissions = new HyperlinkButton { Content = L.T("Yapay zekâ yetkileri"), VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(6, 2, 6, 2) };
+            var permissions = new HyperlinkButton { Content = L.T("Agent Yetkilendirme"), VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(6, 2, 6, 2) };
             permissions.Click += (_, _) => App.OpenUrl(Center.Settings.Server + "/devices?permissions=" + Uri.EscapeDataString(id));
             row.Children.Add(permissions);
             DevicesPanel.Children.Add(new Border
