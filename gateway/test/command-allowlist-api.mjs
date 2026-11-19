@@ -152,6 +152,68 @@ try {
   }
   assert.equal(expiredRows, 1, "expiry is recorded in the audit log");
   assert.equal((await db.query("select trust_level from devices where id=$1", [device])).rows[0].trust_level, "standard");
+  // AI permissions (docs/AI_PERMISSIONS.md). Run as root: admin browser
+  // session, password, and only when the agent reports root_capable.
+  const runAs = (headers, body) => fetch(base + `/api/devices/${device}/run-as`, { method: "PUT", headers, body: JSON.stringify(body) });
+  const safety = (headers, body) => fetch(base + `/api/devices/${device}/safety-net`, { method: "PUT", headers, body: JSON.stringify(body) });
+  const tokenHeaders = { authorization: "Bearer " + apiToken, "content-type": "application/json" };
+  assert.equal((await runAs(viewer, { runAs: "root", currentPassword: password })).status, 403, "viewer");
+  assert.equal((await runAs(tokenHeaders, { runAs: "root", currentPassword: password })).status, 403, "API tokens (AI clients) cannot turn root on");
+  assert.equal((await runAs(owner, { runAs: "root" })).status, 403, "root needs the password");
+  assert.equal((await runAs(owner, { runAs: "root", currentPassword: "wrong-password-0000" })).status, 403);
+  const notCapable = await runAs(owner, { runAs: "root", currentPassword: password });
+  assert.equal(notCapable.status, 409, "refused while the agent is not root capable");
+  const notCapableBody = await notCapable.json();
+  assert.equal(notCapableBody.error, "device_not_root_capable");
+  assert.match(notCapableBody.installCommand, /install-linux\.sh --allow-root/);
+  assert.equal((await db.query("select run_as from devices where id=$1", [device])).rows[0].run_as, "user");
+  await db.query("update devices set root_capable=true where id=$1", [device]); // as the agent's hello would
+  const mailsBeforeRoot = await mails();
+  const rootRes = await runAs(owner, { runAs: "root", currentPassword: password });
+  assert.equal(rootRes.status, 200);
+  assert.equal((await rootRes.json()).item.run_as, "root");
+  for (let i = 0; i < 40 && (await mails()) === mailsBeforeRoot; i++) await new Promise((r) => setTimeout(r, 100));
+  assert.equal(await mails(), mailsBeforeRoot + 1, "admins are e-mailed when root is turned on");
+  const runAsAudit = await db.query("select count(*)::int n from audit_logs where device_id=$1 and tool='device.run_as' and outcome='success'", [device]);
+  assert.equal(runAsAudit.rows[0].n, 1);
+  const shown = (await (await fetch(base + "/api/devices", { headers: owner })).json()).items.find((d) => d.id === device);
+  assert.deepEqual([shown.run_as, shown.root_capable, shown.safety_net], ["root", true, true]);
+  // Full trust with no time limit + root: no approval, audited as root.
+  const noLimit = await trust(owner, { level: "full", currentPassword: password });
+  assert.equal(noLimit.status, 200);
+  assert.equal((await noLimit.json()).item.trust_full_until, null, "full trust without a time limit");
+  const rootCall = await callExec("whoami");
+  assert.notEqual(rootCall.error, "approval_required");
+  const rootAudit = await db.query("select detail from audit_logs where device_id=$1 and outcome='trusted_full' order by id desc limit 1", [device]);
+  assert.match(rootAudit.rows[0].detail, /"runAs":"root"/);
+  const targets = JSON.parse((await (await fetch(base + "/mcp", {
+    method: "POST", headers: { ...tokenHeaders, accept: "application/json, text/event-stream" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "targets_list", arguments: {} } }),
+  })).json()).result.content[0].text);
+  const target = targets.targets.find((t) => t.target_id === device);
+  assert.deepEqual([target.trust, target.run_as, target.safety_net], ["full", "root", true], "the AI sees it is root");
+  // Safety net: blocks even under root + full trust; off needs the password.
+  assert.equal((await callExec("rm -rf /")).error, "safety_net_blocked");
+  assert.equal((await callExec("reboot")).error, "safety_net_blocked");
+  assert.equal((await safety(owner, { enabled: false })).status, 403, "turning the safety net off needs the password");
+  assert.equal((await safety(viewer, { enabled: false, currentPassword: password })).status, 403, "viewer");
+  assert.equal((await safety(tokenHeaders, { enabled: false, currentPassword: password })).status, 403, "API token");
+  assert.equal((await safety(owner, { enabled: true, allowPower: true })).status, 403, "allowing power commands needs the password");
+  const mailsBeforeSafety = await mails();
+  assert.equal((await safety(owner, { enabled: false, currentPassword: password })).status, 200);
+  for (let i = 0; i < 40 && (await mails()) === mailsBeforeSafety; i++) await new Promise((r) => setTimeout(r, 100));
+  assert.equal(await mails(), mailsBeforeSafety + 1, "admins are e-mailed when the safety net is turned off");
+  assert.notEqual((await callExec("reboot")).error, "safety_net_blocked", "safety net off");
+  assert.equal((await safety(owner, { enabled: true })).status, 200, "turning it back on needs no password");
+  assert.equal((await callExec("reboot")).error, "safety_net_blocked");
+  const safetyAudit = await db.query("select count(*)::int n from audit_logs where device_id=$1 and tool='device.safety_net'", [device]);
+  assert.equal(safetyAudit.rows[0].n, 2);
+  // The machine owner removed the ceiling: root is refused, never run as user.
+  await db.query("update devices set root_capable=false where id=$1", [device]);
+  assert.equal((await callExec("whoami")).error, "run_as_root_unavailable");
+  assert.equal((await runAs(owner, { runAs: "user" })).status, 200, "back to user needs no password");
+  assert.notEqual((await callExec("whoami")).error, "run_as_root_unavailable");
+  assert.equal((await trust(owner, { level: "standard" })).status, 200);
   // Device deletion: only revoked devices, only from an admin browser session; audit kept.
   const delRoute = base + `/api/devices/${device}`;
   assert.equal((await fetch(delRoute, { method: "DELETE", headers: owner })).status, 409, "revoke before delete");

@@ -1,12 +1,13 @@
 import {useEffect,useMemo,useState} from "react";
 import { t as translate,useLocale } from "../i18n";
 import {ArrowRight,Check,Clock3,Copy,Info,Monitor,MoreHorizontal,Plus,RefreshCw,Search,ShieldCheck,Wifi,WifiOff,Trash2} from "../components/icons";
-import {api,type Account,type Device} from "../api";
+import {api,type Account} from "../api";
 import {Badge,Button,Card,CardContent,CardHeader,CardTitle,Dialog,DialogContent,DialogDescription,DialogTitle,Input} from "../components/ui";
 import {DashboardShell} from "./Dashboard";
 import type {Nav,Theme} from "../App";
+import {AiPermissionsDialog,PermissionBadges,type PermissionDevice} from "./AiPermissions";
 
-type ManagedDevice=Device&{revoked_at?:string|null;trust_level?:"strict"|"standard"|"full";agent_version?:string|null;capabilities?:string[]|null};
+type ManagedDevice=PermissionDevice&{revoked_at?:string|null;agent_version?:string|null;capabilities?:string[]|null};
 export function DevicesPage({nav,account,checking,theme,toggle,logout}:{nav:Nav;account:Account|null;checking:boolean;theme:Theme;toggle:()=>void;logout:()=>void}){
  useLocale();
  const [devices,setDevices]=useState<ManagedDevice[]>([]);
@@ -20,6 +21,8 @@ export function DevicesPage({nav,account,checking,theme,toggle,logout}:{nav:Nav;
  const [expiresAt,setExpiresAt]=useState<number|null>(null);
  const [pairBusy,setPairBusy]=useState(false);
  const [selected,setSelected]=useState<ManagedDevice|null>(null);
+ const [permissionsId,setPermissionsId]=useState<string|null>(new URLSearchParams(location.search).get("permissions"));
+ const permissionsDevice=devices.find(d=>d.id===permissionsId&&!d.revoked_at)??null;
  const [name,setName]=useState("");
  const [busy,setBusy]=useState(false);
  const canOperator=["operator","admin","owner"].includes(account?.role||"")||account?.global===true;
@@ -89,14 +92,15 @@ export function DevicesPage({nav,account,checking,theme,toggle,logout}:{nav:Nav;
     <div className="size-11 flex-none grid place-items-center rounded-xl bg-[var(--subtle-surface)] text-[var(--accent)]"><Monitor size={21}/></div>
     <div className="flex-1 min-w-[145px]"><strong className="text-sm">{d.name}</strong><small className="muted block text-xs mt-1 truncate">{d.platform||"Sistem"} · {d.hostname||d.id.slice(0,8)} · {d.agent_version||translate("Agent sürümü bilinmiyor")}</small></div>
     <Badge className={d.revoked_at?"text-[var(--danger)]":d.online?"text-[var(--success)]":""}>{d.revoked_at?translate("● İptal edildi"):d.online?translate("● Çevrimiçi"):translate("● Çevrimdışı")}</Badge>
-    {!d.revoked_at&&d.trust_level&&<button type="button" onClick={()=>nav("/approvals")} title={translate("Güven seviyesi")} className={"rounded-full border px-3 py-1 text-xs font-semibold "+(d.trust_level==="full"?"border-[var(--warning)] bg-[var(--warning-soft)] text-[var(--warning)]":d.trust_level==="strict"?"border-[var(--stroke)] bg-[var(--subtle-surface)]":"border-[var(--stroke)] bg-[var(--accent-soft)] text-[var(--accent)]")}>{translate("Güven")}: {translate(d.trust_level==="full"?"Tam":d.trust_level==="strict"?"Sıkı":"Standart")}</button>}
-    <div className="flex gap-2 sm:ml-auto"><Button size="sm" variant="outline" onClick={()=>nav("/terminal?device="+encodeURIComponent(d.id))} disabled={!!d.revoked_at}>{translate("Yönet")} <ArrowRight size={15}/></Button>
+    {!d.revoked_at&&d.trust_level&&<PermissionBadges device={d} onOpen={canAdmin?()=>setPermissionsId(d.id):undefined}/>}
+    <div className="flex gap-2 sm:ml-auto">{canAdmin&&!d.revoked_at&&<Button size="sm" variant="outline" onClick={()=>setPermissionsId(d.id)}><ShieldCheck size={15}/> {translate("Yapay zekâ yetkileri")}</Button>}<Button size="sm" variant="outline" onClick={()=>nav("/terminal?device="+encodeURIComponent(d.id))} disabled={!!d.revoked_at}>{translate("Yönet")} <ArrowRight size={15}/></Button>
      {canAdmin&&!d.revoked_at&&<Button size="sm" variant="ghost" onClick={()=>{setSelected(d);setName(d.name)}} aria-label={d.name+" düzenle"}><MoreHorizontal size={17}/></Button>}
      {canAdmin&&d.revoked_at&&<Button size="sm" variant="ghost" disabled={busy} onClick={()=>void remove(d)} aria-label={translate("Sil")+": "+d.name}><Trash2 size={16}/>{translate("Sil")}</Button>}
     </div>
    </div>)}</div>}
   </CardContent></Card>
   <div className="mt-5 flex items-start gap-3 p-4 rounded-xl border border-[var(--stroke)] bg-[var(--surface)]"><Info size={18} className="shrink-0 text-[var(--accent)]"/><p className="text-sm muted">{translate("Eşleştirme kodları 10 dakika geçerlidir. Terminal ve dosya erişimi cihazdaki ajan ve kullanıcı yetkilerine bağlıdır. Kritik işlemler ayrıca onay gerektirir.")}</p></div>
+  {canAdmin&&<AiPermissionsDialog device={permissionsDevice} onClose={()=>setPermissionsId(null)} onChanged={()=>void load()}/>}
   <Dialog open={pairOpen} onOpenChange={setPairOpen}><DialogContent><DialogTitle className="text-xl font-bold">{translate("Yeni cihaz eşleştir")}</DialogTitle><DialogDescription className="text-sm muted mt-2">{translate("Cihazınıza WECOMMANDER Agent kurduktan sonra bu tek kullanımlık eşleştirme kodunu cihazdaki agent'a girin.")}</DialogDescription><div className="border border-[var(--stroke)] bg-[var(--subtle-surface)] rounded-xl p-4 mt-6"><small className="muted">{translate("Eşleştirme kodu")}</small><div className="flex gap-2 items-center mt-2"><code className="font-mono text-sm break-all select-all flex-1">{pairCode}</code><Button variant="outline" size="icon" aria-label={translate("Eşleştirme kodunu kopyala")} onClick={()=>void copyCode()}><Copy size={17}/></Button></div></div><p className="text-xs muted mt-4 flex gap-2 items-center"><Clock3 size={14}/> {expiresAt&&Date.now()<expiresAt?translate("10 dakika geçerli"):translate("Kodun süresi dolmuş olabilir; yeni kod oluşturun.")}</p><Button className="w-full mt-5" onClick={()=>setPairOpen(false)}>{translate("Tamam")}</Button></DialogContent></Dialog>
   <Dialog open={!!selected} onOpenChange={open=>{if(!open)setSelected(null)}}><DialogContent><DialogTitle className="text-xl font-bold">{translate("Cihazı yönet")}</DialogTitle><DialogDescription className="text-sm muted mt-1">{translate("Cihaz adını değiştirin veya erişimini yönetin.")}</DialogDescription><form onSubmit={e=>{e.preventDefault();void rename()}} className="mt-6 grid gap-3"><label className="text-sm font-semibold">{translate("Cihaz adı")}<Input className="mt-2" value={name} onChange={e=>setName(e.target.value)} maxLength={120} required/></label><Button type="submit" disabled={busy||!name.trim()}>{translate("Kaydet")} <Check size={16}/></Button></form><div className="border-t border-[var(--stroke)] mt-5 pt-4 grid gap-2"><Button variant="outline" disabled={busy||!selected?.online} onClick={()=>selected&&void disconnect(selected)}>{translate("Bağlantıyı kes")}</Button><Button variant="danger" disabled={busy} onClick={()=>{if(selected){const device=selected;setSelected(null);void revoke(device)}}}>{translate("Cihaz yetkisini iptal et")}</Button></div></DialogContent></Dialog>
  </DashboardShell>

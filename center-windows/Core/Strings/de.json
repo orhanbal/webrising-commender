@@ -1374,5 +1374,7 @@
  "Konteyneri başlat veya durdur": "Container starten oder stoppen",
  "Zamanlanmış görev oluştur": "Geplante Aufgabe erstellen",
  "Zamanlanmış görevi sil": "Geplante Aufgabe löschen",
- "Zamanlanmış görevi şimdi çalıştır": "Geplante Aufgabe jetzt ausführen"
+ "Zamanlanmış görevi şimdi çalıştır": "Geplante Aufgabe jetzt ausführen",
+ "güvenlik ağı kapalı": "Sicherheitsnetz aus",
+ "Yapay zekâ yetkileri": "KI-Berechtigungen"
 }

@@ -90,8 +90,12 @@ roles, workspace checks, validation and plan limits are the same:
   (secrets masked), schedule, time zone, enabled, next run and the last run's
   status, exit code and error (no output).
 - `scheduled_task_create` (agent device targets only), `scheduled_task_update`,
-  `scheduled_task_delete`, `scheduled_task_run_now` (admin): high risk, never
-  automatic (device trust level and command allowlists do not apply). The call
+  `scheduled_task_delete`, `scheduled_task_run_now` (admin): high risk; they
+  need an approval unless the task's device has **full** trust, in which case
+  the change is made at once (audited `trusted_full`); command allowlists do
+  not apply, SSH tasks always need an approval, and the device's safety net
+  refuses a catastrophic command (`safety_net_blocked`, see
+  AI_PERMISSIONS.md). The call
   is first checked as a dry run of the route; only a change that would succeed
   becomes an approval request (`action_kind` `scheduled_task_<op>`, bound to
   the requester, the task's device (null for SSH tasks), the exact change and

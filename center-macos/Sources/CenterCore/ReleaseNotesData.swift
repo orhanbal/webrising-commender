@@ -5,6 +5,37 @@ enum ReleaseNotesData {
 {
  "releases": [
   {
+   "id": "2026-11-19-ai-permissions",
+   "date": "2026-11-19",
+   "platforms": [],
+   "items": {
+    "tr": [
+     "Yapay zekâ yetkileri artık cihaz başına senin elinde: güven seviyesi ve süresi (sınırsız da olabilir), root olarak çalışma ve güvenlik ağı. Web'de Cihazlar → Yapay zekâ yetkileri.",
+     "Root iki anahtarla açılır: sunucuda bir kez `--allow-root`, sonra hesabından şifrenle. Güvenlik ağı, diski silmek gibi geri dönüşü olmayan komutları root ve tam güvende bile engeller; istersen kapatabilirsin."
+    ],
+    "en": [
+     "AI permissions are now yours to set per device: trust level and duration (no limit allowed), running as root, and a safety net. On the web: Devices → AI permissions.",
+     "Root takes two keys: `--allow-root` once on the server, then your password in your account. The safety net blocks irreversible commands such as wiping a disk, even as root with full trust; you can turn it off."
+    ],
+    "de": [
+     "KI-Berechtigungen legst du jetzt pro Gerät fest: Vertrauensstufe und Dauer (auch unbegrenzt), Ausführen als root und ein Sicherheitsnetz. Im Web: Geräte → KI-Berechtigungen.",
+     "Root braucht zwei Schlüssel: einmal `--allow-root` auf dem Server, dann dein Passwort im Konto. Das Sicherheitsnetz blockiert unumkehrbare Befehle wie das Löschen einer Festplatte, auch als root mit vollem Vertrauen; du kannst es abschalten."
+    ],
+    "fr": [
+     "Vous réglez désormais les droits de l'IA par appareil : niveau de confiance et durée (illimitée possible), exécution en root et filet de sécurité. Sur le web : Appareils → Droits de l'IA.",
+     "Le root demande deux clés : `--allow-root` une fois sur le serveur, puis votre mot de passe dans votre compte. Le filet de sécurité bloque les commandes irréversibles comme l'effacement d'un disque, même en root avec confiance totale ; vous pouvez le désactiver."
+    ],
+    "es": [
+     "Ahora tú decides los permisos de la IA por dispositivo: nivel de confianza y duración (también sin límite), ejecutar como root y una red de seguridad. En la web: Dispositivos → Permisos de IA.",
+     "Root necesita dos llaves: `--allow-root` una vez en el servidor y luego tu contraseña en la cuenta. La red de seguridad bloquea comandos irreversibles como borrar un disco, incluso como root con confianza total; puedes desactivarla."
+    ],
+    "pt-BR": [
+     "Agora você define as permissões da IA por dispositivo: nível de confiança e duração (inclusive sem limite), executar como root e uma rede de segurança. Na web: Dispositivos → Permissões da IA.",
+     "Root exige duas chaves: `--allow-root` uma vez no servidor e depois sua senha na conta. A rede de segurança bloqueia comandos irreversíveis, como apagar um disco, mesmo como root com confiança total; você pode desligá-la."
+    ]
+   }
+  },
+  {
    "id": "2026-11-19-mcp-tools",
    "date": "2026-11-19",
    "platforms": [],

@@ -1374,5 +1374,7 @@
  "Konteyneri başlat veya durdur": "Iniciar o detener un contenedor",
  "Zamanlanmış görev oluştur": "Crear tarea programada",
  "Zamanlanmış görevi sil": "Eliminar tarea programada",
- "Zamanlanmış görevi şimdi çalıştır": "Ejecutar tarea programada ahora"
+ "Zamanlanmış görevi şimdi çalıştır": "Ejecutar tarea programada ahora",
+ "güvenlik ağı kapalı": "red de seguridad desactivada",
+ "Yapay zekâ yetkileri": "Permisos de la IA"
 }

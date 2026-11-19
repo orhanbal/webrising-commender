@@ -183,13 +183,35 @@ impl Drop for DescendantTracker {
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub async fn exec(
     policy: &PathPolicy,
     command: &str,
     cwd: Option<&str>,
     timeout_ms: Option<u64>,
 ) -> Result<Value> {
-    exec_with_timeout_bounds(policy, command, cwd, timeout_ms, 30_000, 10 * 60_000).await
+    exec_as(policy, command, cwd, timeout_ms, false).await
+}
+
+/// process_exec; `as_root` (checked by ops.rs against the device's ceiling)
+/// runs it through `sudo -n` unless the agent already is root.
+pub async fn exec_as(
+    policy: &PathPolicy,
+    command: &str,
+    cwd: Option<&str>,
+    timeout_ms: Option<u64>,
+    as_root: bool,
+) -> Result<Value> {
+    exec_with_timeout_bounds(
+        policy,
+        command,
+        cwd,
+        timeout_ms,
+        30_000,
+        10 * 60_000,
+        as_root,
+    )
+    .await
 }
 
 pub async fn exec_task(
@@ -197,6 +219,7 @@ pub async fn exec_task(
     command: &str,
     cwd: Option<&str>,
     timeout_ms: Option<u64>,
+    as_root: bool,
 ) -> Result<Value> {
     exec_with_timeout_bounds(
         policy,
@@ -205,8 +228,21 @@ pub async fn exec_task(
         timeout_ms,
         60 * 60_000,
         24 * 60 * 60_000,
+        as_root,
     )
     .await
+}
+
+/// `/bin/sh`, or `sudo -n -- /bin/sh` for a root command.
+#[cfg(not(windows))]
+fn shell(sudo: bool) -> Command {
+    if sudo {
+        let mut cmd = Command::new(crate::privilege::sudo_program());
+        cmd.arg("-n").arg("--").arg("/bin/sh");
+        cmd
+    } else {
+        Command::new("/bin/sh")
+    }
 }
 
 async fn exec_with_timeout_bounds(
@@ -216,6 +252,7 @@ async fn exec_with_timeout_bounds(
     timeout_ms: Option<u64>,
     default_timeout_ms: u64,
     max_timeout_ms: u64,
+    as_root: bool,
 ) -> Result<Value> {
     if command.trim().is_empty() {
         return Err(anyhow!("command cannot be empty"));
@@ -230,6 +267,20 @@ async fn exec_with_timeout_bounds(
     };
 
     #[cfg(windows)]
+    if as_root {
+        return Err(anyhow!(
+            "device_policy_denied: running as root is not supported on Windows"
+        ));
+    }
+    // A root command goes through sudo (unless the agent already is root).
+    // sudo stays the process-group leader the agent can signal: it relays
+    // SIGTERM to the root command, so teardown is graceful like the reaper's.
+    #[cfg(not(windows))]
+    let sudo = as_root && crate::privilege::needs_sudo();
+    #[cfg(windows)]
+    let sudo = false;
+
+    #[cfg(windows)]
     let mut process = {
         let mut cmd = Command::new("cmd.exe");
         cmd.arg("/D").arg("/S").arg("/C").arg(command);
@@ -242,17 +293,31 @@ async fn exec_with_timeout_bounds(
     let uses_reaper = reaper.is_some();
     #[cfg(windows)]
     let uses_reaper = false;
+    // Graceful teardown (SIGTERM, then SIGKILL) for the reaper and for sudo.
+    let graceful = uses_reaper || sudo;
     #[cfg(not(windows))]
     let mut process = {
         let mut cmd = match reaper {
             // Linux: run under the Agent's own subreaper so descendants that
             // leave the process group (setsid, double fork) are still killed.
+            // As root the reaper itself runs under sudo, so it can kill the
+            // root command's whole tree.
+            Some(exe) if sudo => {
+                let mut cmd = Command::new(crate::privilege::sudo_program());
+                cmd.arg("-n")
+                    .arg("--")
+                    .arg(exe)
+                    .arg(REAPER_ARG)
+                    .arg("--")
+                    .arg("/bin/sh");
+                cmd
+            }
             Some(exe) => {
                 let mut cmd = Command::new(exe);
                 cmd.arg(REAPER_ARG).arg("--").arg("/bin/sh");
                 cmd
             }
-            None => Command::new("/bin/sh"),
+            None => shell(sudo),
         };
         cmd.arg("-lc").arg(command);
         cmd
@@ -268,7 +333,7 @@ async fn exec_with_timeout_bounds(
     let workdir = {
         let mut workdir = workdir;
         if let Some(dir) = workdir.take() {
-            let mut cmd = Command::new("/bin/sh");
+            let mut cmd = shell(sudo);
             cmd.arg("-c")
                 .arg(CD_THEN_RUN)
                 .arg("wecommander")
@@ -286,7 +351,7 @@ async fn exec_with_timeout_bounds(
     process
         // With the reaper, SIGKILL on drop would kill it before it can clean
         // up detached descendants; ProcessGroupGuard handles teardown instead.
-        .kill_on_drop(!uses_reaper)
+        .kill_on_drop(!graceful)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
@@ -318,7 +383,7 @@ async fn exec_with_timeout_bounds(
         child
             .id()
             .ok_or_else(|| anyhow!("spawned process has no pid"))?,
-        uses_reaper,
+        graceful,
     )?;
     let stdout = child
         .stdout
@@ -345,7 +410,7 @@ async fn exec_with_timeout_bounds(
                 group.signal(libc::SIGTERM);
                 // The Linux reaper SIGKILLs its whole descendant tree on
                 // SIGTERM; give it time to finish before killing the group.
-                let grace = if uses_reaper { 2_000 } else { 250 };
+                let grace = if graceful { 2_000 } else { 250 };
                 let _ = tokio::time::timeout(Duration::from_millis(grace), child.wait()).await;
                 group.finish();
             }
@@ -878,7 +943,9 @@ mod tests {
             marker.display()
         );
         let job =
-            tokio::spawn(async move { exec_task(&policy, &command, None, Some(10_000)).await });
+            tokio::spawn(
+                async move { exec_task(&policy, &command, None, Some(10_000), false).await },
+            );
         let started = tokio::time::timeout(Duration::from_secs(5), async {
             while !ready.exists() {
                 tokio::time::sleep(Duration::from_millis(10)).await;

@@ -156,30 +156,39 @@ export class AgentHub {
     }
 
     if (message.type === "hello") {
-      if (this.relayNodeId) {
+      // root_capable: the machine owner allowed root on this machine
+      // (install-linux.sh --allow-root) and sudo works for the agent. When the
+      // ceiling is gone, a run_as=root setting falls back to user, audited.
+      const rootCapable = message.rootCapable === true;
+      const updated = await db.query<{ organization_id: string; previous_run_as: string }>(
+        `with previous as (select run_as from devices where id=$1)
+         update devices
+            set hostname=$2,
+                platform=$3,
+                agent_version=$4,
+                capabilities=$5::jsonb,
+                root_capable=$6,
+                run_as=case when $6 then run_as else 'user' end,
+                last_seen_at=now()${this.relayNodeId ? `,
+                relay_last_seen_at=now(),
+                connected_relay_id=$7` : ""}
+          where id=$1
+          returning organization_id, (select run_as from previous) as previous_run_as`,
+        [
+          deviceId,
+          message.hostname,
+          message.os,
+          message.version,
+          JSON.stringify(message.capabilities),
+          rootCapable,
+          ...(this.relayNodeId ? [this.relayNodeId] : []),
+        ],
+      );
+      const row = updated.rows[0];
+      if (row && row.previous_run_as === "root" && !rootCapable) {
         await db.query(
-          `update devices
-              set hostname=$2,
-                  platform=$3,
-                  agent_version=$4,
-                  capabilities=$5::jsonb,
-                  last_seen_at=now(),
-                  relay_last_seen_at=now(),
-                  connected_relay_id=$6
-            where id=$1`,
-          [
-            deviceId,
-            message.hostname,
-            message.os,
-            message.version,
-            JSON.stringify(message.capabilities),
-            this.relayNodeId,
-          ],
-        );
-      } else {
-        await db.query(
-          "update devices set hostname=$2,platform=$3,agent_version=$4,capabilities=$5::jsonb,last_seen_at=now() where id=$1",
-          [deviceId, message.hostname, message.os, message.version, JSON.stringify(message.capabilities)],
+          "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,'system',$2,'device.run_as','high','ceiling_removed',$3)",
+          [row.organization_id, deviceId, JSON.stringify({ runAs: "user", reason: "agent_not_root_capable" })],
         );
       }
       if (this.sockets.get(deviceId) === socket && socket.readyState === 1) {

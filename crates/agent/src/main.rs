@@ -8,6 +8,7 @@ mod ops;
 mod parent_watch;
 mod pdf_ops;
 mod policy;
+mod privilege;
 mod process_ops;
 mod protocol;
 #[cfg(target_os = "linux")]
@@ -112,6 +113,11 @@ enum Command {
         /// Allow log_query on the system journal.
         #[arg(long, value_parser = parse_on_off)]
         system_logs: Option<bool>,
+        /// The machine owner's ceiling for "run as root" (Linux/macOS). Also
+        /// needs passwordless sudo for the service user; install-linux.sh
+        /// --allow-root sets both.
+        #[arg(long, value_parser = parse_on_off)]
+        allow_root: Option<bool>,
     },
     /// Point an enrolled device at a new gateway origin (domain change)
     /// without re-enrolling. Restart the service to apply.
@@ -193,6 +199,7 @@ async fn agent_main() -> Result<()> {
                     file_writes: !read_only,
                     redact_output: true,
                     system_logs: true,
+                    allow_root: false,
                 },
             )
             .await
@@ -202,13 +209,18 @@ async fn agent_main() -> Result<()> {
             file_writes,
             redact_output,
             system_logs,
+            allow_root,
         } => {
             let mut config = AgentConfig::load(&config_path)?;
             if commands.is_some()
                 || file_writes.is_some()
                 || redact_output.is_some()
                 || system_logs.is_some()
+                || allow_root.is_some()
             {
+                if let Some(value) = allow_root {
+                    config.capabilities.allow_root = value;
+                }
                 if let Some(value) = system_logs {
                     config.capabilities.system_logs = value;
                 }
@@ -360,6 +372,10 @@ fn print_capabilities(capabilities: &config::DeviceCapabilities) {
     println!("file writes: {}", state(capabilities.file_writes));
     println!("output redaction: {}", state(capabilities.redact_output));
     println!("system logs: {}", state(capabilities.system_logs));
+    println!(
+        "run as root (machine owner's ceiling): {}",
+        state(capabilities.allow_root)
+    );
 }
 
 async fn run(config: AgentConfig) -> Result<()> {
@@ -537,6 +553,27 @@ async fn connected_loop(
 
     let (stream, _) = connect_async(request).await?;
     info!("connected to gateway");
+    // Checked per connection, so removing the sudoers drop-in or the ceiling
+    // shows up at the next reconnect (and the gateway falls back to user).
+    let agent_root = privilege::agent_is_root();
+    let root_capable = tokio::task::spawn_blocking(move || privilege::root_capable(capabilities))
+        .await
+        .unwrap_or(false);
+    let mut hello_capabilities: Vec<String> = vec![
+        "fs".into(),
+        "xlsx-read".into(),
+        "docx-read".into(),
+        "process".into(),
+        "task".into(),
+        "pty".into(),
+        "system".into(),
+    ];
+    if root_capable {
+        hello_capabilities.push("root-capable".into());
+    }
+    if agent_root {
+        hello_capabilities.push("agent-root".into());
+    }
 
     let (writer, mut reader) = stream.split();
     let writer = Arc::new(Mutex::new(writer));
@@ -551,15 +588,9 @@ async fn connected_loop(
                 .to_string(),
             os: std::env::consts::OS.to_owned(),
             version: VERSION.to_owned(),
-            capabilities: vec![
-                "fs".into(),
-                "xlsx-read".into(),
-                "docx-read".into(),
-                "process".into(),
-                "task".into(),
-                "pty".into(),
-                "system".into(),
-            ],
+            capabilities: hello_capabilities,
+            root_capable,
+            agent_root,
         },
     )
     .await?;

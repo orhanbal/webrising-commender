@@ -1374,5 +1374,7 @@
  "Konteyneri başlat veya durdur": "Démarrer ou arrêter un conteneur",
  "Zamanlanmış görev oluştur": "Créer une tâche planifiée",
  "Zamanlanmış görevi sil": "Supprimer la tâche planifiée",
- "Zamanlanmış görevi şimdi çalıştır": "Exécuter la tâche planifiée maintenant"
+ "Zamanlanmış görevi şimdi çalıştır": "Exécuter la tâche planifiée maintenant",
+ "güvenlik ağı kapalı": "filet de sécurité désactivé",
+ "Yapay zekâ yetkileri": "Autorisations de l'IA"
 }

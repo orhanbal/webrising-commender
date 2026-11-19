@@ -7,7 +7,8 @@ import { consumeApproval } from "./approvals.js";
 import { roleAtLeast, type Principal } from "./auth.js";
 import { db } from "./db.js";
 import { toolCallQuota } from "./billing.js";
-import { actionRisk, agentActionSchema, type AgentAction } from "./protocol.js";
+import { actionRisk, agentActionSchema, ROOT_CAPABLE_ACTIONS, type AgentAction } from "./protocol.js";
+import { safetyNetCheck } from "./safety-net.js";
 import type { DeviceRouter } from "./device-router.js";
 import { issueApproval, redact, redactSecrets } from "./security.js";
 import { startSearch, searchPage, listSearches, stopSearch, controlSearch } from "./search-sessions.js";
@@ -26,19 +27,22 @@ type JsonRpcRequest = { jsonrpc?: string; id?: string | number | null; method?: 
 // the corresponding padded base64 bound before relaying to a device.
 const MAX_TERMINAL_INPUT_BASE64_BYTES = Math.ceil((256 * 1024) / 3) * 4;
 
+export const RUN_AS_HELP = " Runs as the agent's service user, or as root when the device's run_as is root (targets_list shows run_as, trust and safety_net per device); with the safety net on, a short list of catastrophic commands (rm -rf /, mkfs/dd on disks, fork bombs, reboot/shutdown, removing the agent) is refused even with an approval.";
+export const FS_WRITE_ROOT_HELP = " When the device's run_as is root, a file the service user cannot write is written as root (still only inside the allowed folders; no undo snapshot then).";
+
 const DOCKER_DAEMON_ARG = { type: "string", description: "Docker daemon from docker_containers_list: system (default) or u<uid> for a user's rootless one." };
 const DOCKER_CONTAINER_ARG = { type: "string", description: "Container id or name from docker_containers_list; ref@u<uid> names a rootless daemon." };
 
 export const tools = [
   {
     name: "devices_list",
-    description: "List enrolled WebRising Commender devices and online state.",
+    description: "List enrolled WebRising Commender devices and online state, with each device's AI permissions: trust (strict, standard or full: full runs high-risk tools without per-call approval), run_as (user, or root when the machine owner allowed it and an admin turned it on), root_capable and safety_net.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     ...(process.env.MCP_OAUTH_ENABLED === "true" ? { securitySchemes: [{ type: "oauth2", scopes: ["mcp:tools"] }] } : {}),
   },
   {
     name: "targets_list",
-    description: "List every place this account's AI tools can act on: agent devices (kind \"agent\", folder limits enforced by the agent) and the person's saved SSH servers shared with remote AI through WECOMMANDER on their own computer (kind \"ssh\", path_policy \"none\": a command reaches everything the SSH user can). Each has target_id, name, kind, online, capabilities and, for SSH, preset (readonly or approval) and the tools it supports. Pass target_id as `target` to the tools. SSH servers answer only while that computer is on and WECOMMANDER runs there; every command and file change on them needs the person's one-time approval. Read-only.",
+    description: "List every place this account's AI tools can act on: agent devices (kind \"agent\", folder limits enforced by the agent) and the person's saved SSH servers shared with remote AI through WECOMMANDER on their own computer (kind \"ssh\", path_policy \"none\": a command reaches everything the SSH user can). Each has target_id, name, kind, online, capabilities and, for SSH, preset (readonly or approval) and the tools it supports. Agent targets also carry trust (strict, standard, full), run_as (user or root: whether commands, tasks, terminals and file writes run as root), root_capable and safety_net. Pass target_id as `target` to the tools. SSH servers answer only while that computer is on and WECOMMANDER runs there; every command and file change on them needs the person's one-time approval. Read-only.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     ...(process.env.MCP_OAUTH_ENABLED === "true" ? { securitySchemes: [{ type: "oauth2", scopes: ["mcp:tools"] }] } : {}),
   },
@@ -72,7 +76,7 @@ export const tools = [
     tail: { type: "integer", minimum: 1, maximum: 2000, description: "Lines from the end (default 200)." },
     since: { type: "string", maxLength: 40 },
   }, ["container"]),
-  tool("docker_container_action", "Starts, stops or restarts one Docker container on the daemon it names (stop and restart wait 10 s before killing); the action runs on the full id Docker resolves the reference to. Never removes containers, images or volumes; WECOMMANDER's own containers are never stopped or restarted. Needs a human approval for every call, also on fully trusted devices; refused on read-only SSH targets.", {
+  tool("docker_container_action", "Starts, stops or restarts one Docker container on the daemon it names (stop and restart wait 10 s before killing); the action runs on the full id Docker resolves the reference to. Never removes containers, images or volumes; WECOMMANDER's own containers are never stopped or restarted. Needs a human approval for every call unless the device's trust is full; refused on read-only SSH targets.", {
     container: DOCKER_CONTAINER_ARG,
     daemon: DOCKER_DAEMON_ARG,
     action: { type: "string", enum: ["start", "stop", "restart"] },
@@ -120,7 +124,7 @@ export const tools = [
   ),
   tool(
     "fs_write",
-    "Write base64-encoded bytes to an allowlisted file. Optional expected_sha256 rejects stale content; with_undo snapshots an existing regular file (max 4 MiB) for guarded restoration.",
+    "Write base64-encoded bytes to an allowlisted file. Optional expected_sha256 rejects stale content; with_undo snapshots an existing regular file (max 4 MiB) for guarded restoration." + FS_WRITE_ROOT_HELP,
     { path: str(), content_base64: str(), create_parents: bool(), expected_sha256: str(), with_undo: bool() },
     ["path", "content_base64"],
   ),
@@ -188,7 +192,7 @@ export const tools = [
   tool("fs_undo", "Restore a prior fs_replace snapshot only when the current SHA-256 matches. Consumes the snapshot on success.", { path: str(), undo_id: str(), expected_sha256: str() }, ["path", "undo_id", "expected_sha256"]),
   tool(
     "process_exec",
-    "Execute a shell command. HIGH risk. Omit approval_token to create a human approval request, then retry after approval.",
+    "Execute a shell command. HIGH risk. Omit approval_token to create a human approval request, then retry after approval." + RUN_AS_HELP,
     { command: str(), cwd: str(), timeout_ms: integer(), approval_token: str() },
     ["command"],
   ),
@@ -201,7 +205,7 @@ export const tools = [
   ),
   tool(
     "task_start",
-    "Start a persistent background command task. The task survives AI/gateway disconnects while the agent process remains alive. HIGH risk; omit approval_token to request human approval.",
+    "Start a persistent background command task. The task survives AI/gateway disconnects while the agent process remains alive. HIGH risk; omit approval_token to request human approval." + RUN_AS_HELP,
     { command: str(), cwd: str(), timeout_ms: integer(), approval_token: str() },
     ["command"],
   ),
@@ -224,7 +228,7 @@ export const tools = [
   ),
   tool(
     "terminal_start",
-    "Start a persistent PTY session. HIGH risk; omit approval_token to request human approval.",
+    "Start a persistent PTY session. HIGH risk; omit approval_token to request human approval." + RUN_AS_HELP,
     { shell: str(), cwd: str(), cols: integer(), rows: integer(), approval_token: str() },
     [],
   ),
@@ -298,13 +302,66 @@ function tool(name: string, description: string, properties: Record<string, unkn
   };
 }
 
-/** High-risk actions a human approves every time, even on a device its owner
- *  set to full trust (no allowlist either). */
+/** High-risk actions that are never allowlisted and need a human approval
+ *  on every call below full trust. Full trust is the owner's explicit "no
+ *  per-call approval" choice, so it covers these too (docs/AI_PERMISSIONS.md);
+ *  the agent still refuses WECOMMANDER's own containers. */
 export const ALWAYS_APPROVE: ReadonlySet<string> = new Set(["docker_container_action"]);
 
 /** Whether a device's full trust replaces the per-call human approval. */
-export function fullTrustSkipsApproval(kind: string, trust: string): boolean {
-  return trust === "full" && !ALWAYS_APPROVE.has(kind);
+export function fullTrustSkipsApproval(_kind: string, trust: string): boolean {
+  return trust === "full";
+}
+
+/** The device's AI permissions as the gateway applies them. */
+export type DevicePermissions = {
+  trust: "strict" | "standard" | "full";
+  run_as: "user" | "root";
+  root_capable: boolean;
+  safety_net: boolean;
+  safety_net_allow_power: boolean;
+};
+
+/** A scheduled-task change on an agent device: refused by its safety net,
+ *  automatic under full trust, else a human approval. */
+export async function scheduledTaskPolicy(orgId: string, deviceId: string, command: string) {
+  const row = await db.query<DevicePermissions>(
+    `select case when trust_level='full' and trust_full_until is not null and trust_full_until<=now()
+                 then 'standard' else trust_level end as trust,
+            run_as,root_capable,safety_net,safety_net_allow_power
+       from devices where id=$1 and organization_id=$2 and revoked_at is null`,
+    [deviceId, orgId]);
+  const perms = row.rows[0];
+  if (!perms) return "approve" as const;
+  const hit = perms.safety_net && command ? safetyNetCheck(command, { allowPower: perms.safety_net_allow_power }) : null;
+  if (hit) return { refused: hit.reason, rule: hit.rule };
+  return fullTrustSkipsApproval("scheduled_task", perms.trust) ? "auto" as const : "approve" as const;
+}
+
+/** The command text a call would run, for the safety net. */
+export function commandTextOf(action: AgentAction): string | null {
+  if (action.kind === "process_exec" || action.kind === "task_start") return action.command;
+  if (action.kind === "terminal_input") {
+    try { return Buffer.from(action.dataBase64, "base64").toString("utf8"); } catch { return null; }
+  }
+  return null;
+}
+
+/** Safety net (safety-net.ts) for one call; null when it may go on. */
+export function safetyNetRefusal(action: AgentAction, perms: Pick<DevicePermissions, "safety_net" | "safety_net_allow_power">) {
+  if (!perms.safety_net) return null;
+  const text = commandTextOf(action);
+  if (text === null) return null;
+  return safetyNetCheck(text, { allowPower: perms.safety_net_allow_power });
+}
+
+/** The action as it goes to the agent: with runAs "root" when the device
+ *  runs as root and the tool supports it. Throws when root is set but the
+ *  agent no longer reports root_capable. */
+export function applyRunAs(action: AgentAction, perms: Pick<DevicePermissions, "run_as" | "root_capable">): AgentAction {
+  if (perms.run_as !== "root" || !ROOT_CAPABLE_ACTIONS.has(action.kind)) return action;
+  if (!perms.root_capable) throw new Error("run_as_root_unavailable");
+  return { ...action, runAs: "root" } as AgentAction;
 }
 
 /** Largest container log text passed on (the agent caps it the same way). */
@@ -499,6 +556,7 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
       ensure: ensureApprovalRequest,
       restore: restoreUndeliveredApproval,
       notify: notifyApprovers,
+      policy: scheduledTaskPolicy,
     }, (deviceId, tool, risk, result, detail) => audit(orgIdEarly, principal.actor, deviceId, tool, risk, result, detail));
     return ok(request.id, toolResult(outcome.data, outcome.isError));
   }
@@ -532,10 +590,13 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
 
   if (name === "targets_list") {
     if (!roleAtLeast(principal, "viewer")) return ok(request.id, toolResult({ error: "forbidden" }, true));
-    const devices = await db.query<{ id: string; name: string; platform: string | null; trust: string }>(
+    const devices = await db.query<{ id: string; name: string; platform: string | null; trust: string;
+      trust_full_until: Date | null; run_as: string; root_capable: boolean; safety_net: boolean; agent_root: boolean }>(
       `select id,name,platform,
               case when trust_level='full' and trust_full_until is not null and trust_full_until<=now()
-                   then 'standard' else trust_level end as trust
+                   then 'standard' else trust_level end as trust,
+              case when trust_level='full' then trust_full_until else null end as trust_full_until,
+              run_as,root_capable,safety_net,capabilities ? 'agent-root' as agent_root
          from devices where organization_id=$1 and revoked_at is null order by created_at desc`,
       [orgId],
     );
@@ -549,6 +610,11 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
           target_id: d.id, name: d.name, kind: "agent", online: online.has(d.id), platform: d.platform,
           capabilities: { exec: true, read: true, write: true, terminal: true, persistent_tasks: true, path_policy: "enforced" },
           trust: d.trust,
+          ...(d.trust === "full" ? { trust_full_until: d.trust_full_until } : {}),
+          run_as: d.agent_root ? "root" : d.run_as,
+          root_capable: d.root_capable,
+          safety_net: d.safety_net,
+          ...(d.agent_root ? { note: "The agent process itself runs as root on this device." } : {}),
         })),
         ...ssh.map(targetView),
       ],
@@ -558,7 +624,12 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
 
   if (name === "devices_list") {
     const result = await db.query(
-      "select id,name,hostname,platform,agent_version,last_seen_at,revoked_at from devices where organization_id=$1 order by created_at desc",
+      `select id,name,hostname,platform,agent_version,last_seen_at,revoked_at,
+              case when trust_level='full' and trust_full_until is not null and trust_full_until<=now()
+                   then 'standard' else trust_level end as trust,
+              case when capabilities ? 'agent-root' then 'root' else run_as end as run_as,
+              root_capable,safety_net
+         from devices where organization_id=$1 order by created_at desc`,
       [orgId],
     );
     const online = await router.onlineStatuses(result.rows.map((row) => row.id));
@@ -583,9 +654,10 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
   const deviceId = String(args.device_id || "");
   if (!deviceId) return ok(request.id, toolResult({ error: "device_id_required" }, true));
 
-  const device = await db.query<{ trust: "strict" | "standard" | "full" }>(
+  const device = await db.query<DevicePermissions>(
     `select case when trust_level='full' and trust_full_until is not null and trust_full_until<=now()
-                 then 'standard' else trust_level end as trust
+                 then 'standard' else trust_level end as trust,
+            run_as,root_capable,safety_net,safety_net_allow_power
        from devices where id=$1 and organization_id=$2 and revoked_at is null`,
     [deviceId, orgId],
   );
@@ -712,9 +784,41 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
     return ok(request.id, toolResult({ error: "terminal_input_too_large" }, true));
   }
 
+  // Safety net: a short hard-deny list, whatever the trust level, run_as or
+  // an approval says (safety-net.ts; the owner can switch it off per device).
+  const perms = device.rows[0]!;
+  const blocked = safetyNetRefusal(action, perms);
+  if (blocked) {
+    await audit(orgId, principal.actor, deviceId, name, risk, "denied",
+      JSON.stringify({ reason: "safety_net", rule: blocked.rule, runAs: perms.run_as }));
+    return ok(request.id, toolResult({
+      error: "safety_net_blocked",
+      rule: blocked.rule,
+      message: `Refused by this device's safety net: ${blocked.reason}. An admin can switch the safety net off for this device in the WECOMMANDER web panel (Devices > AI permissions).`,
+    }, true));
+  }
+  // run_as=root: the action carries runAs "root", so an approval binds it
+  // and the agent checks it against its own ceiling (install-linux.sh
+  // --allow-root) before using sudo.
+  try {
+    action = applyRunAs(action, perms);
+  } catch {
+    await audit(orgId, principal.actor, deviceId, name, risk, "denied", JSON.stringify({ reason: "run_as_root_unavailable" }));
+    return ok(request.id, toolResult({
+      error: "run_as_root_unavailable",
+      message: "This device is set to run as root, but its agent does not report root capability (the machine owner removed it or the agent is offline/outdated). Ask an admin to set run as: user, or re-enable root on the machine with install-linux.sh --allow-root.",
+    }, true));
+  }
+  const runAs = (action as { runAs?: string }).runAs === "root" ? "root" : "user";
+
   let approvalToken = typeof args.approval_token === "string" ? args.approval_token : undefined;
   let allowlisted: { id: string; pattern: string } | null = null;
   let consumedRequestId: string | null = null;
+  if (risk !== "high" && runAs === "root") {
+    // A root file write: no per-call approval at this risk level, but the
+    // agent only runs a root action with a gateway-signed approval for it.
+    approvalToken = issueApproval(deviceId, action, 60).token;
+  }
   if (risk === "high") {
     if (approvalToken) {
       if (!(await consumeApproval(approvalToken, deviceId, action))) {
@@ -733,7 +837,7 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
       // Owner chose Desktop Commander-style trust for this device: no
       // per-call approval. Device-local capabilities still apply on the Agent.
       approvalToken = issueApproval(deviceId, action, 60).token;
-      await audit(orgId, principal.actor, deviceId, name, risk, "trusted_full", action.kind);
+      await audit(orgId, principal.actor, deviceId, name, risk, "trusted_full", JSON.stringify({ kind: action.kind, runAs }));
     } else if (action.kind === "process_exec" && device.rows[0]!.trust === "standard" &&
                (allowlisted = await allowlistMatch(orgId, deviceId, action.command))) {
       // Owner-allowlisted routine command: the gateway issues the one-use
@@ -759,7 +863,7 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
           name,
           risk,
           "approval_consumed",
-          JSON.stringify({ approvalRequestId: approvedRequestId }),
+          JSON.stringify({ approvalRequestId: approvedRequestId, runAs }),
         );
       } else {
         const pending = await ensureApprovalRequest(
@@ -779,7 +883,7 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
           name,
           risk,
           "approval_pending",
-          JSON.stringify({ approvalRequestId: pending.id }),
+          JSON.stringify({ approvalRequestId: pending.id, runAs }),
         );
         return ok(
           request.id,
@@ -802,7 +906,7 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
     const data = await router.request(deviceId, action, approvalToken,
       undefined, undefined, undefined, undefined,
       { organizationId: orgId, actor: principal.actor });
-    await audit(orgId, principal.actor, deviceId, name, risk, "success", redact({ kind: action.kind }));
+    await audit(orgId, principal.actor, deviceId, name, risk, "success", redact({ kind: action.kind, runAs }));
     return ok(request.id, toolResult(action.kind === "docker_container_logs" ? redactDockerLogs(data) : data));
   } catch (error) {
     await audit(orgId, principal.actor, deviceId, name, risk, "error", redact(error instanceof Error ? error.message : error));

@@ -2,7 +2,7 @@ import zlib from "node:zlib";
 import { announcePages, indexNowKey, shouldAnnounce } from "./indexnow.js";
 import { publishToRegistry, registryAuthRecord, REGISTRY_LISTING_VERSION } from "./mcp-registry.js";
 import { contentPagePaths, llmsFullTxt, llmsTxt, pageByPath, pageJsonLd, renderPageHtml, robotsTxt, sitemapXml } from "./site-content.js";
-import { notifyAutonomy, notifyTrustChange } from "./approval-notify.js";
+import { notifyAutonomy, notifyPermissionChange, notifyTrustChange } from "./approval-notify.js";
 import { MAX_ALLOWLIST_ENTRIES, normalizePattern } from "./command-allowlist.js";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
@@ -372,6 +372,19 @@ async function auditForOrganization(
     "insert into audit_logs(organization_id,actor,device_id,tool,risk,outcome,detail) values($1,$2,$3,$4,$5,$6,$7)",
     [organizationId, principal.actor, deviceId, tool, risk, outcome, detail],
   );
+}
+
+/** What the person on a Linux machine runs once so an admin may turn on
+ *  "run as root" for it (scripts/install-linux.sh). */
+const ROOT_INSTALL_COMMAND = "sudo bash install-linux.sh --allow-root";
+
+/** The signed-in user's current password, for changes that widen what an AI
+ *  may do (full trust, run as root, safety net off). */
+async function reauthenticated(userId: string, password: string | undefined) {
+  if (!password) return false;
+  const me = await db.query<{ password_hash: string }>(
+    "select password_hash from users where id=$1 and disabled_at is null", [userId]);
+  return Boolean(me.rows[0] && (await verifyPassword(password, me.rows[0].password_hash)));
 }
 
 async function auditControl(
@@ -4250,7 +4263,8 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
                 created_at,revoked_at,
                 case when trust_level='full' and trust_full_until is not null and trust_full_until<=now()
                      then 'standard' else trust_level end as trust_level,
-                trust_full_until
+                trust_full_until,run_as,root_capable,safety_net,safety_net_allow_power,
+                capabilities ? 'agent-root' as agent_root
            from devices
           where organization_id=$1
           order by created_at desc`,
@@ -4286,22 +4300,114 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           return void json(res, 403, { error: "reauthentication_failed" });
         }
       }
-      const updated = await db.query<{ name: string; trust_level: string; trust_full_until: Date | null }>(
+      const updated = await db.query<{ name: string; trust_level: string; trust_full_until: Date | null; run_as: "user" | "root" }>(
         `update devices set trust_level=$3,
                 trust_full_until=case when $3='full' and $4::int is not null then now()+($4::int*interval '1 minute') else null end
           where id=$1 and organization_id=$2 and revoked_at is null
-          returning name,trust_level,trust_full_until`,
+          returning name,trust_level,trust_full_until,run_as`,
         [trustMatch[1], principal!.organizationId, body.level, body.minutes ?? null],
       );
       if (!updated.rowCount) return void json(res, 404, { error: "device_not_found" });
       const item = updated.rows[0]!;
       await auditControl(principal!, trustMatch[1]!, "device.trust_level", "high", "success",
-        JSON.stringify({ level: item.trust_level, until: item.trust_full_until }));
+        JSON.stringify({ level: item.trust_level, until: item.trust_full_until, runAs: item.run_as }));
       if (item.trust_level === "full") {
-        notifyTrustChange(principal!.organizationId, item.name, principal!.email || principal!.actor, item.trust_full_until)
+        notifyTrustChange(principal!.organizationId, item.name, principal!.email || principal!.actor, item.trust_full_until, item.run_as)
           .catch(() => undefined);
       }
       return void json(res, 200, { item });
+    }
+
+    // Run as root (docs/AI_PERMISSIONS.md). Two keys: the machine owner
+    // allows root on the machine (install-linux.sh --allow-root, reported as
+    // root_capable) and an admin turns it on here, in a browser session with
+    // the current password, like full trust. Switching back to user needs
+    // no password.
+    const runAsMatch = url.pathname.match(/^\/api\/devices\/([0-9a-f-]{36})\/run-as$/i);
+    if (req.method === "PUT" && runAsMatch) {
+      if (!requireRole(principal!, "admin", res)) return;
+      if (principal!.authKind !== "session" || !principal!.userId) {
+        return void json(res, 403, { error: "browser_session_required" });
+      }
+      const body = z.object({
+        runAs: z.enum(["user", "root"]),
+        currentPassword: z.string().min(1).max(256).optional(),
+      }).parse(await readJson(req));
+      if (body.runAs === "root" && !(await reauthenticated(principal!.userId, body.currentPassword))) {
+        return void json(res, 403, { error: "reauthentication_failed" });
+      }
+      const current = await db.query<{ root_capable: boolean }>(
+        "select root_capable from devices where id=$1 and organization_id=$2 and revoked_at is null",
+        [runAsMatch[1], principal!.organizationId]);
+      if (!current.rowCount) return void json(res, 404, { error: "device_not_found" });
+      if (body.runAs === "root" && !current.rows[0]!.root_capable) {
+        await auditControl(principal!, runAsMatch[1]!, "device.run_as", "high", "denied",
+          JSON.stringify({ runAs: "root", reason: "device_not_root_capable" }));
+        return void json(res, 409, {
+          error: "device_not_root_capable",
+          message: "This device's agent does not allow root. The person on that machine must first run: " + ROOT_INSTALL_COMMAND,
+          installCommand: ROOT_INSTALL_COMMAND,
+        });
+      }
+      const updated = await db.query<{ name: string; run_as: "user" | "root"; previous: string }>(
+        `with previous as (select run_as from devices where id=$1 and organization_id=$2)
+         update devices set run_as=$3
+          where id=$1 and organization_id=$2 and revoked_at is null and ($3='user' or root_capable)
+          returning name,run_as,(select run_as from previous) as previous`,
+        [runAsMatch[1], principal!.organizationId, body.runAs]);
+      if (!updated.rowCount) return void json(res, 409, { error: "device_not_root_capable", installCommand: ROOT_INSTALL_COMMAND });
+      const item = updated.rows[0]!;
+      await auditControl(principal!, runAsMatch[1]!, "device.run_as", "high", "success",
+        JSON.stringify({ runAs: item.run_as, previous: item.previous }));
+      if (item.previous !== item.run_as) {
+        notifyPermissionChange(principal!.organizationId, item.name, principal!.email || principal!.actor, { runAs: item.run_as })
+          .catch(() => undefined);
+      }
+      return void json(res, 200, { item: { run_as: item.run_as } });
+    }
+
+    // Safety net: a short hard-deny list (safety-net.ts), on by default.
+    // Weakening it (off, or allowing shutdown/reboot) needs an admin browser
+    // session and the current password; it is audited and mailed.
+    const safetyMatch = url.pathname.match(/^\/api\/devices\/([0-9a-f-]{36})\/safety-net$/i);
+    if (req.method === "PUT" && safetyMatch) {
+      if (!requireRole(principal!, "admin", res)) return;
+      if (principal!.authKind !== "session" || !principal!.userId) {
+        return void json(res, 403, { error: "browser_session_required" });
+      }
+      const body = z.object({
+        enabled: z.boolean(),
+        allowPower: z.boolean().optional(),
+        currentPassword: z.string().min(1).max(256).optional(),
+      }).parse(await readJson(req));
+      const current = await db.query<{ safety_net: boolean; safety_net_allow_power: boolean }>(
+        "select safety_net,safety_net_allow_power from devices where id=$1 and organization_id=$2 and revoked_at is null",
+        [safetyMatch[1], principal!.organizationId]);
+      if (!current.rowCount) return void json(res, 404, { error: "device_not_found" });
+      const before = current.rows[0]!;
+      const allowPower = body.allowPower ?? before.safety_net_allow_power;
+      const weakens = (!body.enabled && before.safety_net) || (allowPower && !before.safety_net_allow_power);
+      if (weakens && !(await reauthenticated(principal!.userId, body.currentPassword))) {
+        return void json(res, 403, { error: "reauthentication_failed" });
+      }
+      const updated = await db.query<{ name: string; safety_net: boolean; safety_net_allow_power: boolean }>(
+        `update devices set safety_net=$3, safety_net_allow_power=$4
+          where id=$1 and organization_id=$2 and revoked_at is null
+          returning name,safety_net,safety_net_allow_power`,
+        [safetyMatch[1], principal!.organizationId, body.enabled, allowPower]);
+      if (!updated.rowCount) return void json(res, 404, { error: "device_not_found" });
+      const item = updated.rows[0]!;
+      await auditControl(principal!, safetyMatch[1]!, "device.safety_net", "high", "success",
+        JSON.stringify({ enabled: item.safety_net, allowPower: item.safety_net_allow_power,
+          previous: { enabled: before.safety_net, allowPower: before.safety_net_allow_power } }));
+      const change: { safetyNet?: boolean; allowPower?: boolean } = {};
+      if (item.safety_net !== before.safety_net) change.safetyNet = item.safety_net;
+      if (item.safety_net_allow_power && !before.safety_net_allow_power) change.allowPower = true;
+      if (Object.keys(change).length) {
+        notifyPermissionChange(principal!.organizationId, item.name, principal!.email || principal!.actor, change)
+          .catch(() => undefined);
+      }
+      return void json(res, 200, { item: { safety_net: item.safety_net, safety_net_allow_power: item.safety_net_allow_power } });
     }
 
     // Autonomous mode: full trust for all (or the listed) devices at once,

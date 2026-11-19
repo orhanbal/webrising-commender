@@ -1,9 +1,11 @@
 // WECOMMANDER scheduled tasks over MCP (docs/SCHEDULED_TASKS.md). The tools
 // run the REST routes of scheduled-tasks-api.ts, so roles, workspace checks,
 // validation (cron, command limits, targets) and plan limits are the API's
-// own. Every change needs a human approval of that exact change, whatever the
-// device's trust level: a dry run checks it first, so only a change that
-// would succeed is put to a human; the approved retry then makes it.
+// own. Every change needs a human approval of that exact change unless the
+// target device's trust is full (the owner's "no per-call approval" choice):
+// a dry run checks it first, so only a change that would succeed is put to a
+// human; the approved retry then makes it. The device's safety net applies to
+// the task's command either way. SSH tasks always need an approval.
 
 import { roleAtLeast, type Principal } from "./auth.js";
 import type { WorkspaceAction } from "./approval-requests.js";
@@ -13,8 +15,8 @@ import { redactSecrets } from "./security.js";
 
 const oauth = () => (process.env.MCP_OAUTH_ENABLED === "true" ? { securitySchemes: [{ type: "oauth2", scopes: ["mcp:tools"] }] } : {});
 
-const APPROVAL_HELP = "HIGH risk, never automatic: the first call returns approval_required with approval_request_id; " +
-  "an admin or owner approves this exact change, then retry the same call.";
+const APPROVAL_HELP = "HIGH risk: the first call returns approval_required with approval_request_id; " +
+  "an admin or owner approves this exact change, then retry the same call. On a device whose trust is full it runs without approval.";
 
 const SCHEDULE = {
   type: "object",
@@ -66,6 +68,11 @@ export type ScheduledTaskApprovals = {
   restore: (orgId: string, requestId: string, action: WorkspaceAction) => Promise<boolean>;
   notify: (orgId: string, deviceId: string | null, action: WorkspaceAction, requestId: string, expiresAt: Date, label: string) =>
     Promise<unknown>;
+  /** The target device's policy for this change: "auto" (full trust: no
+   *  approval), "approve" (ask a human), or a refusal (safety net). Omitted
+   *  means always "approve". */
+  policy?: (orgId: string, deviceId: string, command: string) =>
+    Promise<"auto" | "approve" | { refused: string; rule: string }>;
 };
 export type McpAudit = (deviceId: string | null, tool: string, risk: string, outcome: string, detail: string) => Promise<void>;
 export type ToolOutcome = { data: unknown; isError: boolean };
@@ -172,6 +179,24 @@ export async function scheduledTaskTool(
   };
   const label = `Scheduled task: ${checked.name}`.slice(0, 200);
 
+  const policy = checked.deviceId && approvals.policy
+    ? await approvals.policy(orgId, checked.deviceId, checked.command)
+    : "approve";
+  if (typeof policy === "object") {
+    await audit(checked.deviceId, name, "high", "denied", JSON.stringify({ reason: "safety_net", rule: policy.rule }));
+    return fail({
+      error: "safety_net_blocked",
+      rule: policy.rule,
+      message: `Refused by the target device's safety net: ${policy.refused}. An admin can switch the safety net off for that device in the WECOMMANDER web panel.`,
+    });
+  }
+  if (policy === "auto") {
+    await audit(checked.deviceId, name, "high", "trusted_full", JSON.stringify({ kind: action.kind }));
+    const reply = await call(r, principal, ctx, payload, false);
+    if (!reply || reply.status >= 300) return fail(reply?.body ?? { error: "scheduled_tasks_unavailable" });
+    return done(r, reply.body as { item?: ApiTask; run?: ApiRun });
+  }
+
   const approved = await approvals.consume(orgId, principal.actor, checked.deviceId, action);
   if (!approved) {
     const pending = await approvals.ensure(orgId, principal.actor, checked.deviceId, action, label);
@@ -196,7 +221,10 @@ export async function scheduledTaskTool(
     await approvals.restore(orgId, approved, action);
     return fail({ ...(reply?.body as object ?? { error: "scheduled_tasks_unavailable" }), approval_request_id: approved });
   }
-  const result = reply.body as { item?: ApiTask; run?: ApiRun };
+  return done(r, reply.body as { item?: ApiTask; run?: ApiRun });
+}
+
+function done(r: Route, result: { item?: ApiTask; run?: ApiRun }): ToolOutcome {
   if (r.op === "delete") return { data: { ok: true, deleted: r.taskId }, isError: false };
   if (r.op === "run_now") return { data: { ok: true, run: runView(result.run) }, isError: false };
   return { data: { ok: true, task: taskView(result.item!) }, isError: false };
