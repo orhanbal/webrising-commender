@@ -33,7 +33,7 @@ export type AgentAction =
   | { kind: "xlsx_read_range"; path: string; sheet: string; startRow: number; startColumn: number; rowCount: number; columnCount: number }
   | { kind: "xlsx_write_cells"; path: string; outputPath: string; sheet: string; updates: Array<{ cell: string; value: string | number | boolean }>; expectedSha256?: string }
   | { kind: "xlsx_find"; path: string; sheet?: string; query: string; caseSensitive?: boolean; maxResults?: number }
-  | { kind: "fs_write"; path: string; contentBase64: string; createParents?: boolean; expectedSha256?: string; withUndo?: boolean }
+  | { kind: "fs_write"; path: string; contentBase64: string; createParents?: boolean; expectedSha256?: string; withUndo?: boolean; runAs?: "root" }
   | { kind: "fs_append"; path: string; contentBase64: string; expectedSha256?: string; withUndo?: boolean }
   | { kind: "fs_mkdir"; path: string; recursive?: boolean }
   | { kind: "fs_delete"; path: string; recursive?: boolean; expectedSha256?: string }
@@ -44,14 +44,14 @@ export type AgentAction =
   | { kind: "fs_replace"; path: string; search: string; replace: string; replaceAll?: boolean; expectedSha256?: string }
   | { kind: "fs_versions"; path: string }
   | { kind: "fs_undo"; path: string; undoId: string; expectedSha256: string }
-  | { kind: "process_exec"; command: string; cwd?: string; timeoutMs?: number }
+  | { kind: "process_exec"; command: string; cwd?: string; timeoutMs?: number; runAs?: "root" }
   | { kind: "process_list" }
   | { kind: "process_kill"; pid: number }
-  | { kind: "task_start"; command: string; cwd?: string; timeoutMs?: number }
+  | { kind: "task_start"; command: string; cwd?: string; timeoutMs?: number; runAs?: "root" }
   | { kind: "task_status"; taskId: string }
   | { kind: "task_cancel"; taskId: string }
   | { kind: "task_list" }
-  | { kind: "terminal_start"; shell?: string; cwd?: string; cols?: number; rows?: number }
+  | { kind: "terminal_start"; shell?: string; cwd?: string; cols?: number; rows?: number; runAs?: "root" }
   | { kind: "terminal_input"; sessionId: string; dataBase64: string }
   | { kind: "terminal_read"; sessionId: string; maxBytes?: number }
   | { kind: "terminal_read_page"; sessionId: string; offsetBytes?: number; maxBytes?: number }
@@ -60,6 +60,12 @@ export type AgentAction =
   | { kind: "terminal_list" };
 
 const pathSchema = z.string().min(1).max(4096);
+// Set only by the gateway from the device's run_as setting (never from tool
+// arguments); the agent also needs its local root ceiling and a signed
+// approval for it.
+const runAsSchema = z.literal("root");
+/** Actions that run as root when the device's run_as is root. */
+export const ROOT_CAPABLE_ACTIONS: ReadonlySet<string> = new Set(["process_exec", "task_start", "terminal_start", "fs_write"]);
 // Rust search budgets are measured in UTF-8 bytes (String::len), not JS
 // UTF-16 code units. Reject multi-byte over-budget queries at the wire boundary.
 const searchQuerySchema = (maxBytes: number) =>
@@ -186,6 +192,7 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     createParents: z.boolean().optional(),
     expectedSha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
     withUndo: z.boolean().optional(),
+    runAs: runAsSchema.optional(),
   }).strict(),
   z.object({
     kind: z.literal("fs_append"),
@@ -252,6 +259,7 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     command: z.string().min(1).max(32_000),
     cwd: pathSchema.optional(),
     timeoutMs: timeoutSchema.optional(),
+    runAs: runAsSchema.optional(),
   }).strict(),
   z.object({ kind: z.literal("process_list") }).strict(),
   z.object({
@@ -263,6 +271,7 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     command: z.string().min(1).max(32_000),
     cwd: pathSchema.optional(),
     timeoutMs: timeoutSchema.optional(),
+    runAs: runAsSchema.optional(),
   }).strict(),
   z.object({
     kind: z.literal("task_status"),
@@ -279,6 +288,7 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     cwd: pathSchema.optional(),
     cols: z.number().int().min(10).max(500).optional(),
     rows: z.number().int().min(5).max(300).optional(),
+    runAs: runAsSchema.optional(),
   }).strict(),
   z.object({
     kind: z.literal("terminal_input"),
@@ -337,6 +347,10 @@ export type AgentMessage =
       os: string;
       version: string;
       capabilities: string[];
+      /** Agent 2026.11+: the machine allows root (sudoers drop-in) and sudo works. */
+      rootCapable?: boolean;
+      /** The agent process itself runs as root/SYSTEM. */
+      agentRoot?: boolean;
     }
   | { type: "heartbeat"; timestamp: string }
   | { type: "search_control_ack"; requestId: string; paused: boolean }

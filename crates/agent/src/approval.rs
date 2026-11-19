@@ -246,6 +246,7 @@ mod tests {
             command: "id".into(),
             cwd: None,
             timeout_ms: None,
+            run_as: None,
         };
         let token = sign(&key, "local", &action, 60).unwrap();
         verify(&token, &key, "local", &action).unwrap();
@@ -253,6 +254,7 @@ mod tests {
             command: "rm -rf /".into(),
             cwd: None,
             timeout_ms: None,
+            run_as: None,
         };
         assert!(verify(&token, &key, "local", &other).is_err());
         assert!(verify(&token, &key, "another-device", &action).is_err());
@@ -305,6 +307,7 @@ mod tests {
             command: "echo approved".into(),
             cwd: None,
             timeout_ms: Some(30_000),
+            run_as: None,
         };
         let value = token(&key, "device-a", &action, exp);
         assert!(verify(&value, &key_text, "device-a", &action).is_ok());
@@ -314,6 +317,7 @@ mod tests {
             command: "echo changed".into(),
             cwd: None,
             timeout_ms: Some(30_000),
+            run_as: None,
         };
         assert!(verify(&value, &key_text, "device-a", &changed).is_err());
     }
@@ -337,6 +341,7 @@ mod tests {
             command: "id".into(),
             cwd: None,
             timeout_ms: None,
+            run_as: None,
         };
         let value = token(&key, &device, &action, exp_in(60));
         verify(&value, &key_text, &device, &action).unwrap();

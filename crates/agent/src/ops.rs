@@ -121,7 +121,13 @@ async fn execute_unredacted(context: ExecutionContext<'_>, action: AgentAction) 
         capabilities,
     } = context;
     enforce_capabilities(capabilities, &action)?;
-    if action.risk() == Risk::High {
+    // Run as root: the machine owner's ceiling first (privilege.rs), then a
+    // gateway-signed approval of this exact root action, whatever its risk.
+    let as_root = action.runs_as_root();
+    if as_root {
+        crate::privilege::ensure_root_allowed(capabilities)?;
+    }
+    if action.risk() == Risk::High || as_root {
         let token = approval_token
             .ok_or_else(|| anyhow!("approval token required for high-risk action"))?;
         approval::verify(token, approval_key, device_id, &action)?;
@@ -328,9 +334,10 @@ async fn execute_unredacted(context: ExecutionContext<'_>, action: AgentAction) 
             create_parents,
             expected_sha256,
             with_undo,
+            run_as,
         } => {
             let with_undo = with_undo.unwrap_or(false);
-            if with_undo {
+            let result = if with_undo {
                 fs_ops::write_scoped(
                     policy,
                     &path,
@@ -349,6 +356,32 @@ async fn execute_unredacted(context: ExecutionContext<'_>, action: AgentAction) 
                     expected_sha256.as_deref(),
                     false,
                 )
+            };
+            // As root: only what the service user may not write goes
+            // through sudo, still inside the allowed folders.
+            match result {
+                Err(error)
+                    if run_as.is_some()
+                        && crate::privilege::needs_sudo()
+                        && crate::privilege::is_permission_error(&error) =>
+                {
+                    #[cfg(unix)]
+                    {
+                        crate::privilege::write_file_as_root(
+                            policy,
+                            &path,
+                            &content_base64,
+                            create_parents.unwrap_or(false),
+                            expected_sha256.as_deref(),
+                        )
+                        .await
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        Err(error)
+                    }
+                }
+                other => other,
             }
         }
         AgentAction::FsAppend {
@@ -524,14 +557,29 @@ async fn execute_unredacted(context: ExecutionContext<'_>, action: AgentAction) 
             command,
             cwd,
             timeout_ms,
-        } => process_ops::exec(policy, &command, cwd.as_deref(), timeout_ms).await,
+            run_as,
+        } => {
+            process_ops::exec_as(
+                policy,
+                &command,
+                cwd.as_deref(),
+                timeout_ms,
+                run_as.is_some(),
+            )
+            .await
+        }
         AgentAction::ProcessList => process_ops::list(),
         AgentAction::ProcessKill { pid } => process_ops::kill(pid),
         AgentAction::TaskStart {
             command,
             cwd,
             timeout_ms,
-        } => tasks.start(policy.clone(), command, cwd, timeout_ms).await,
+            run_as,
+        } => {
+            tasks
+                .start_as(policy.clone(), command, cwd, timeout_ms, run_as.is_some())
+                .await
+        }
         AgentAction::TaskStatus { task_id } => tasks.status(&task_id).await,
         AgentAction::TaskCancel { task_id } => tasks.cancel(&task_id).await,
         AgentAction::TaskList => tasks.list().await,
@@ -540,13 +588,15 @@ async fn execute_unredacted(context: ExecutionContext<'_>, action: AgentAction) 
             cwd,
             cols,
             rows,
-        } => terminals.start(
+            run_as,
+        } => terminals.start_as(
             policy,
             shell.as_deref(),
             cwd.as_deref(),
             cols.unwrap_or(120),
             rows.unwrap_or(30),
             require_undo_key()?,
+            run_as.is_some(),
         ),
         AgentAction::TerminalInput {
             session_id,
@@ -643,6 +693,7 @@ mod capability_tests {
             file_writes: true,
             redact_output: true,
             system_logs: true,
+            allow_root: false,
         };
         for a in commands() {
             let error = enforce_capabilities(caps, &a).unwrap_err().to_string();
@@ -664,6 +715,7 @@ mod capability_tests {
             file_writes: false,
             redact_output: true,
             system_logs: true,
+            allow_root: false,
         };
         for a in writes() {
             let error = enforce_capabilities(caps, &a).unwrap_err().to_string();
@@ -686,6 +738,7 @@ mod capability_tests {
             file_writes: false,
             redact_output: true,
             system_logs: true,
+            allow_root: false,
         };
         let allowed_anyway = ["task_cancel", "terminal_stop", "terminal_resize"];
         for a in commands().iter().chain(writes().iter()) {
@@ -759,5 +812,134 @@ mod terminal_input_approval_tests {
             );
         }
         let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod run_as_root_tests {
+    use super::*;
+    use crate::{config::DeviceCapabilities, policy::PathPolicy, task_manager::TaskManager};
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+
+    const DEVICE: &str = "00000000-0000-4000-8000-0000000000c1";
+
+    fn root_actions() -> Vec<AgentAction> {
+        [
+            json!({"kind": "process_exec", "command": "id -u", "runAs": "root"}),
+            json!({"kind": "task_start", "command": "id -u", "runAs": "root"}),
+            json!({"kind": "terminal_start", "runAs": "root"}),
+            json!({"kind": "fs_write", "path": "/tmp/x", "contentBase64": "aGk=", "runAs": "root"}),
+        ]
+        .into_iter()
+        .map(|value| serde_json::from_value(value).unwrap())
+        .collect()
+    }
+
+    async fn run(
+        action: AgentAction,
+        token: Option<&str>,
+        capabilities: DeviceCapabilities,
+    ) -> Result<Value> {
+        let root = std::env::temp_dir().join(format!("wc-root-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let terminals = TerminalManager::for_device(DEVICE).unwrap();
+        let tasks = TaskManager::default();
+        let key = URL_SAFE_NO_PAD.encode([6_u8; 32]);
+        let result = execute(
+            ExecutionContext {
+                policy: &policy,
+                terminals: &terminals,
+                tasks: &tasks,
+                approval_token: token,
+                approval_key: &key,
+                device_id: DEVICE,
+                undo_scope: None,
+                cancelled: Arc::new(AtomicBool::new(false)),
+                paused: Arc::new(AtomicBool::new(false)),
+                search_progress: None,
+                capabilities,
+            },
+            action,
+        )
+        .await;
+        let _ = std::fs::remove_dir_all(&root);
+        result
+    }
+
+    #[test]
+    fn run_as_is_only_root_and_absent_means_the_service_user() {
+        for action in root_actions() {
+            assert!(action.runs_as_root(), "{}", action.kind_name());
+        }
+        let plain: AgentAction =
+            serde_json::from_value(json!({"kind": "process_exec", "command": "id"})).unwrap();
+        assert!(!plain.runs_as_root());
+        assert!(serde_json::from_value::<AgentAction>(
+            json!({"kind": "process_exec", "command": "id", "runAs": "user"})
+        )
+        .is_err());
+        assert!(serde_json::from_value::<AgentAction>(
+            json!({"kind": "process_exec", "command": "id", "runAs": "admin"})
+        )
+        .is_err());
+    }
+
+    // The gateway alone cannot escalate: a signed root action is refused
+    // when the machine owner has not set the local ceiling.
+    #[tokio::test]
+    async fn root_is_refused_without_the_local_ceiling_even_with_a_valid_approval() {
+        if crate::privilege::agent_is_root() {
+            return; // the agent process is root already: nothing to escalate
+        }
+        let key = URL_SAFE_NO_PAD.encode([6_u8; 32]);
+        for action in root_actions() {
+            let token = approval::sign(&key, DEVICE, &action, 60).unwrap();
+            let error = run(action.clone(), Some(&token), DeviceCapabilities::default())
+                .await
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains("running as root is not allowed"),
+                "{}: {error}",
+                action.kind_name()
+            );
+        }
+    }
+
+    // With the ceiling, a root action still needs a gateway-signed approval
+    // of exactly that root action, also for a medium-risk file write.
+    #[tokio::test]
+    async fn root_needs_a_signed_approval_of_the_root_action() {
+        let key = URL_SAFE_NO_PAD.encode([6_u8; 32]);
+        let ceiling = DeviceCapabilities {
+            allow_root: true,
+            ..DeviceCapabilities::default()
+        };
+        for action in root_actions() {
+            let error = run(action.clone(), None, ceiling)
+                .await
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains("approval"),
+                "{}: {error}",
+                action.kind_name()
+            );
+            // An approval of the same action as the service user does not cover root.
+            let mut as_user = serde_json::to_value(&action).unwrap();
+            as_user.as_object_mut().unwrap().remove("runAs");
+            let as_user: AgentAction = serde_json::from_value(as_user).unwrap();
+            let token = approval::sign(&key, DEVICE, &as_user, 60).unwrap();
+            let error = run(action.clone(), Some(&token), ceiling)
+                .await
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains("approval"),
+                "{}: {error}",
+                action.kind_name()
+            );
+        }
     }
 }

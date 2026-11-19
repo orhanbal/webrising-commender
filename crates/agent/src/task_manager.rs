@@ -26,12 +26,26 @@ pub struct TaskManager {
 }
 
 impl TaskManager {
+    #[cfg_attr(not(test), allow(dead_code))]
     pub async fn start(
         &self,
         policy: PathPolicy,
         command: String,
         cwd: Option<String>,
         timeout_ms: Option<u64>,
+    ) -> Result<Value> {
+        self.start_as(policy, command, cwd, timeout_ms, false).await
+    }
+
+    /// task_start; `as_root` runs the command through `sudo -n` (ops.rs has
+    /// checked the device's root ceiling).
+    pub async fn start_as(
+        &self,
+        policy: PathPolicy,
+        command: String,
+        cwd: Option<String>,
+        timeout_ms: Option<u64>,
+        as_root: bool,
     ) -> Result<Value> {
         if command.trim().is_empty() {
             return Err(anyhow!("command cannot be empty"));
@@ -60,7 +74,8 @@ impl TaskManager {
 
         let job = tokio::spawn(async move {
             let outcome =
-                process_ops::exec_task(&policy, &command, cwd.as_deref(), timeout_ms).await;
+                process_ops::exec_task(&policy, &command, cwd.as_deref(), timeout_ms, as_root)
+                    .await;
 
             let mut map = tasks.lock().await;
             let Some(entry) = map.get_mut(&id_for_job) else {

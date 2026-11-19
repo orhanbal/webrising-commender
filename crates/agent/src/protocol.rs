@@ -43,6 +43,16 @@ pub struct SpreadsheetCellUpdate {
     pub value: Value,
 }
 
+/// Who a command, task, terminal or file write runs as. Set only by the
+/// gateway from the device's run_as setting, inside the signed action; the
+/// agent also needs its own ceiling (privilege.rs). Absent means the service
+/// user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RunAs {
+    Root,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
@@ -176,6 +186,8 @@ pub enum AgentAction {
         create_parents: Option<bool>,
         expected_sha256: Option<String>,
         with_undo: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        run_as: Option<RunAs>,
     },
     FsAppend {
         path: String,
@@ -235,6 +247,8 @@ pub enum AgentAction {
         command: String,
         cwd: Option<String>,
         timeout_ms: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        run_as: Option<RunAs>,
     },
     ProcessList,
     ProcessKill {
@@ -244,6 +258,8 @@ pub enum AgentAction {
         command: String,
         cwd: Option<String>,
         timeout_ms: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        run_as: Option<RunAs>,
     },
     TaskStatus {
         task_id: String,
@@ -257,6 +273,8 @@ pub enum AgentAction {
         cwd: Option<String>,
         cols: Option<u16>,
         rows: Option<u16>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        run_as: Option<RunAs>,
     },
     TerminalInput {
         session_id: String,
@@ -295,6 +313,10 @@ pub enum AgentMessage {
         os: String,
         version: String,
         capabilities: Vec<String>,
+        /// The machine allows root (ceiling + working sudo) or the agent is root.
+        root_capable: bool,
+        /// The agent process itself runs as root.
+        agent_root: bool,
     },
     Heartbeat {
         timestamp: String,
@@ -392,6 +414,26 @@ impl AgentAction {
             Self::TerminalStop { .. } => "terminal_stop",
             Self::TerminalList => "terminal_list",
         }
+    }
+
+    /// The gateway asked for this action to run as root.
+    pub fn runs_as_root(&self) -> bool {
+        matches!(
+            self,
+            Self::FsWrite {
+                run_as: Some(RunAs::Root),
+                ..
+            } | Self::ProcessExec {
+                run_as: Some(RunAs::Root),
+                ..
+            } | Self::TaskStart {
+                run_as: Some(RunAs::Root),
+                ..
+            } | Self::TerminalStart {
+                run_as: Some(RunAs::Root),
+                ..
+            }
+        )
     }
 
     pub fn risk(&self) -> Risk {

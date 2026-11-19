@@ -38,17 +38,19 @@ test("docker tools map to strictly validated agent actions", () => {
     assert.throws(() => parseAgentAction({ kind: "docker_container_action", daemon: "system", container: "web", action }), action);
 });
 
-test("listing and logs are read-only; actions are high risk and never skip approval", () => {
+test("listing and logs are read-only; actions are high risk and skip approval only under full trust", () => {
   assert.equal(actionRisk("docker_containers_list"), "low");
   assert.equal(actionRisk("docker_container_logs"), "low");
   assert.equal(actionRisk("docker_container_action"), "high");
   assert.equal(toolAnnotations("docker_containers_list").readOnlyHint, true);
   assert.equal(toolAnnotations("docker_container_logs").readOnlyHint, true);
   assert.equal(toolAnnotations("docker_container_action").destructiveHint, true);
-  // Full trust replaces approval for other high-risk tools, never for container actions.
+  // Full trust (the owner's "no per-call approval" choice) covers container
+  // actions too; below full trust they always wait for a human.
   assert.equal(fullTrustSkipsApproval("process_exec", "full"), true);
-  assert.equal(fullTrustSkipsApproval("docker_container_action", "full"), false);
+  assert.equal(fullTrustSkipsApproval("docker_container_action", "full"), true);
   assert.equal(fullTrustSkipsApproval("docker_container_action", "standard"), false);
+  assert.equal(fullTrustSkipsApproval("docker_container_action", "strict"), false);
 });
 
 test("container logs are redacted and capped at the gateway", () => {
@@ -95,7 +97,20 @@ const call = (name: string, args: Record<string, unknown>) =>
   ({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: { device_id: DEVICE, ...args } } });
 const payload = (response: any) => JSON.parse(response.result.content[0].text);
 
-for (const trust of ["standard", "full"] as const) {
+test("docker_container_action runs without approval on a full trust device", async () => {
+  const database = fakeDb("full");
+  const { sent, router } = fakeRouter({ ok: true });
+  try {
+    const response: any = await handleMcp(call("docker_container_action", { daemon: "system", container: "web", action: "stop" }), router, principal);
+    assert.ok(!response.result.isError, JSON.stringify(response.result));
+    assert.deepEqual(sent, [{ kind: "docker_container_action", daemon: "system", container: "web", action: "stop" }]);
+    assert.ok(!database.queries.some((q) => /insert into approval_requests/.test(q)));
+  } finally {
+    database.restore();
+  }
+});
+
+for (const trust of ["strict", "standard"] as const) {
   test(`docker_container_action waits for a human approval on a ${trust} trust device`, async () => {
     const database = fakeDb(trust);
     const { sent, router } = fakeRouter({ ok: true });

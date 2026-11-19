@@ -123,6 +123,11 @@ pub struct DeviceCapabilities {
     /// log_query on the system journal (file logs follow the allowed roots).
     #[serde(default = "enabled")]
     pub system_logs: bool,
+    /// The machine owner's ceiling for "run as root" (install-linux.sh
+    /// --allow-root, or `capabilities --allow-root on`). Off unless set on
+    /// the device; the gateway's run_as=root is refused without it.
+    #[serde(default)]
+    pub allow_root: bool,
 }
 
 fn enabled() -> bool {
@@ -136,6 +141,7 @@ impl Default for DeviceCapabilities {
             file_writes: true,
             redact_output: true,
             system_logs: true,
+            allow_root: false,
         }
     }
 }

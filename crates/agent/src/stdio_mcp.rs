@@ -84,7 +84,8 @@ pub fn action_from_call(name: &str, args: &Map<String, Value>) -> Result<AgentAc
     let mut action = Map::new();
     action.insert("kind".into(), Value::String(name.into()));
     for (key, value) in args {
-        if key == "device_id" || key == "approval_token" {
+        // run_as is set only by the gateway from the device's setting.
+        if key == "device_id" || key == "approval_token" || key == "run_as" || key == "runAs" {
             continue;
         }
         action.insert(snake_to_camel(key), value.clone());
@@ -636,6 +637,7 @@ pub async fn serve(options: LocalOptions) -> Result<()> {
             file_writes: options.allow_writes,
             redact_output: options.redact_output,
             system_logs: true,
+            allow_root: false,
         },
         undo_scope: UndoScope {
             organization_id: "local".into(),
@@ -795,6 +797,7 @@ mod tests {
                 file_writes: false,
                 redact_output: true,
                 system_logs: true,
+                allow_root: false,
             },
             undo_scope: UndoScope {
                 organization_id: "local".into(),
@@ -837,6 +840,7 @@ mod tests {
             file_writes: true,
             redact_output: true,
             system_logs: true,
+            allow_root: false,
         };
         let write = handle(&mut local, json!({"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"fs_write","arguments":{"path": root.join("b.txt"),"content_base64":"aGk="}}})).await.unwrap();
         assert_eq!(write["result"]["isError"], false, "{write}");

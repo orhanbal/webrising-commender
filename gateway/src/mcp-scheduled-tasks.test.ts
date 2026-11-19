@@ -304,6 +304,24 @@ test("update, delete and run_now run after approval; an edit in between needs a 
   assert.deepEqual(apiAudit, ["scheduled_task.run_now", "scheduled_task.update", "scheduled_task.delete"]);
 });
 
+test("full trust on the target device: the change is made without an approval; the safety net still refuses", async () => {
+  const { call, store, approvals, mcpAudit } = setup();
+  (approvals.deps as any).policy = async (_org: string, deviceId: string, command: string) =>
+    command.includes("reboot") ? { refused: "reboot turns the machine off", rule: "power" } : deviceId === DEVICE ? "auto" : "approve";
+  const args = { device_id: DEVICE, name: "Nightly", command: "echo hi", schedule: { kind: "cron", expr: "0 2 * * *" } };
+  const made = await call("scheduled_task_create", args);
+  assert.equal(made.isError, false, JSON.stringify(made.data));
+  assert.equal(store.tasks.length, 1);
+  assert.equal(approvals.requests.length, 0, "no approval asked");
+  assert.ok(mcpAudit.some((a) => a.outcome === "trusted_full"));
+
+  const refused = await call("scheduled_task_create", { ...args, name: "Restart", command: "sudo reboot" });
+  assert.equal(refused.isError, true);
+  assert.equal((refused.data as any).error, "safety_net_blocked");
+  assert.equal(store.tasks.length, 1, "nothing created");
+  assert.equal(approvals.requests.length, 0);
+});
+
 test("SSH tasks keep the API rule: command and target change only in the desktop app", async () => {
   const ssh = taskRow({ target_kind: "ssh", device_id: null, center_id: DEVICE, host_id: "h1", host_label: "db-1", device_name: null });
   const { call, approvals } = setup([ssh]);

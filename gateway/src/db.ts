@@ -308,6 +308,20 @@ export async function migrate() {
         alter table devices add constraint devices_trust_level_check check (trust_level in ('strict','standard','full'));
       end if;
     end $$;
+    -- AI permissions (docs/AI_PERMISSIONS.md): run_as=root only when the
+    -- agent reports root_capable (the machine owner ran install-linux.sh
+    -- --allow-root); the safety net hard-denies a short catastrophic list
+    -- (safety-net.ts) whatever the trust level, power commands included
+    -- unless safety_net_allow_power.
+    alter table devices add column if not exists run_as text not null default 'user';
+    alter table devices add column if not exists root_capable boolean not null default false;
+    alter table devices add column if not exists safety_net boolean not null default true;
+    alter table devices add column if not exists safety_net_allow_power boolean not null default false;
+    do $$ begin
+      if not exists (select 1 from pg_constraint where conname='devices_run_as_check') then
+        alter table devices add constraint devices_run_as_check check (run_as in ('user','root'));
+      end if;
+    end $$;
 
     create index if not exists devices_assigned_relay_idx
       on devices(assigned_relay_id)

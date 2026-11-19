@@ -54,6 +54,7 @@ export async function notifyApprovers(
   const deviceName = device.rows[0]?.name || placeLabel || deviceId || "workspace";
   const link = `${base}/approvals`;
   const detail = describe(action);
+  const runAs = (action as { runAs?: unknown }).runAs === "root" ? "root" : "";
   const expires = new Date(expiresAt).toISOString().replace("T", " ").slice(0, 16) + " UTC";
   for (const { email } of recipients.rows) {
     await enqueueMail({
@@ -62,10 +63,11 @@ export async function notifyApprovers(
       text:
         `Bir yapay zekâ istemcisi yüksek riskli bir işlem istiyor ve onayınızı bekliyor.\n\n` +
         `Cihaz: ${deviceName}\nİşlem: ${action.kind}\n${detail ? `Ayrıntı: ${detail}\n` : ""}` +
+        (runAs ? `Çalıştıran kullanıcı: root (bu cihazda "root olarak çalıştır" açık)\n` : "") +
         `Son geçerlilik: ${expires}\nTalep: ${requestId}\n\n` +
         `İncelemek ve onaylamak ya da reddetmek için:\n${link}\n\n` +
         `Onay yalnızca oturum açtığınız tarayıcıdan verilebilir. Bu işlemi siz başlatmadıysanız reddedin.\n\n` +
-        `---\nAn AI client requested a HIGH-risk operation (${action.kind} on ${deviceName}). Review it at ${link}`,
+        `---\nAn AI client requested a HIGH-risk operation (${action.kind} on ${deviceName}${runAs ? ", runs as root" : ""}). Review it at ${link}`,
     });
   }
   return recipients.rows.length;
@@ -102,7 +104,7 @@ export async function notifyAutonomy(organizationId: string, kind: "started" | "
   return recipients.rows.length;
 }
 
-export async function notifyTrustChange(organizationId: string, deviceName: string, changedBy: string, until: Date | null) {
+export async function notifyTrustChange(organizationId: string, deviceName: string, changedBy: string, until: Date | null, runAs: "user" | "root" = "user") {
   if (!mailConfigured()) return 0;
   const base = (process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
   const recipients = await db.query<{ email: string }>(
@@ -119,9 +121,53 @@ export async function notifyTrustChange(organizationId: string, deviceName: stri
       subject: `WECOMMANDER güvenlik bildirimi: ${deviceName} tam yetki moduna alındı`.slice(0, 160),
       text:
         `"${deviceName}" cihazı tam yetki moduna alındı. Yapay zekâ istemcileri bu cihazda yüksek riskli ` +
-        `işlemleri onay beklemeden çalıştırabilir.\n\nDeğiştiren: ${changedBy}\nBitiş: ${untilText}\n\n` +
+        `işlemleri onay beklemeden çalıştırabilir.\n\nDeğiştiren: ${changedBy}\nBitiş: ${untilText}\n` +
+        `Çalıştıran kullanıcı: ${runAs === "root" ? "root (tam yönetici yetkisi)" : "agent servis kullanıcısı (root değil)"}\n\n` +
         `Bunu siz yapmadıysanız hemen Standart veya Sıkı seviyeye alın: ${base}/approvals\n` +
         `Tüm işlemler audit kaydında "trusted_full" olarak görünür.`,
+    });
+  }
+  return recipients.rows.length;
+}
+
+async function adminRecipients(organizationId: string) {
+  return db.query<{ email: string }>(
+    `select u.email from organization_members m join users u on u.id=m.user_id
+      where m.organization_id=$1 and m.role in ('admin','owner')
+        and u.disabled_at is null and u.email_verified_at is not null
+      order by m.role desc, u.email limit $2`,
+    [organizationId, MAX_RECIPIENTS],
+  );
+}
+
+/** Security notice: an AI permission of a device was widened (run as root,
+ *  safety net off, power commands allowed) or root was switched back off. */
+export async function notifyPermissionChange(
+  organizationId: string,
+  deviceName: string,
+  changedBy: string,
+  change: { runAs?: "user" | "root"; safetyNet?: boolean; allowPower?: boolean },
+) {
+  if (!mailConfigured()) return 0;
+  const base = (process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
+  const recipients = await adminRecipients(organizationId);
+  const lines: string[] = [];
+  if (change.runAs === "root") lines.push("Yapay zekâ komutları, görevleri, terminalleri ve dosya yazmaları artık ROOT olarak çalışır.");
+  if (change.runAs === "user") lines.push("Root olarak çalıştırma kapatıldı; işlemler yine agent servis kullanıcısıyla çalışır.");
+  if (change.safetyNet === false) lines.push("Güvenlik ağı KAPATILDI: rm -rf /, disk biçimlendirme, fork bomb, kapatma/yeniden başlatma gibi komutlar artık engellenmez.");
+  if (change.safetyNet === true) lines.push("Güvenlik ağı açıldı.");
+  if (change.allowPower === true) lines.push("Güvenlik ağı artık kapatma/yeniden başlatma komutlarına izin veriyor.");
+  if (!lines.length) return 0;
+  const widened = change.runAs === "root" || change.safetyNet === false || change.allowPower === true;
+  for (const { email } of recipients.rows) {
+    await enqueueMail({
+      to: email,
+      subject: `WECOMMANDER güvenlik bildirimi: ${deviceName} yapay zekâ yetkileri değişti`.slice(0, 160),
+      text:
+        `"${deviceName}" cihazının yapay zekâ yetkileri değişti.\n\n${lines.join("\n")}\n\nDeğiştiren: ${changedBy}\n\n` +
+        (widened ? `Bunu siz yapmadıysanız hemen geri alın: ${base}/devices\n` : `${base}/devices\n`) +
+        `Değişiklik denetim kaydına yazıldı.\n\n---\nAI permissions of "${deviceName}" changed by ${changedBy}: ` +
+        JSON.stringify(change),
     });
   }
   return recipients.rows.length;

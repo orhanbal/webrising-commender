@@ -165,6 +165,7 @@ impl TerminalManager {
         })
     }
 
+    #[cfg_attr(not(all(test, windows)), allow(dead_code))]
     pub fn start(
         &self,
         policy: &PathPolicy,
@@ -174,6 +175,28 @@ impl TerminalManager {
         rows: u16,
         scope: &str,
     ) -> Result<Value> {
+        self.start_as(policy, shell, cwd, cols, rows, scope, false)
+    }
+
+    /// terminal_start; `as_root` starts the shell through `sudo -n` (ops.rs
+    /// has checked the device's root ceiling).
+    #[allow(clippy::too_many_arguments)]
+    pub fn start_as(
+        &self,
+        policy: &PathPolicy,
+        shell: Option<&str>,
+        cwd: Option<&str>,
+        cols: u16,
+        rows: u16,
+        scope: &str,
+        as_root: bool,
+    ) -> Result<Value> {
+        #[cfg(windows)]
+        if as_root {
+            return Err(anyhow!(
+                "device_policy_denied: running as root is not supported on Windows"
+            ));
+        }
         let reservation = self.reserve_start()?;
         // Allocate the archive before spawning an OS child. A disk failure
         // must never leave an untracked live shell behind.
@@ -187,6 +210,16 @@ impl TerminalManager {
         })?;
 
         let shell = shell.map(str::to_owned).unwrap_or_else(default_shell);
+        #[cfg(unix)]
+        let mut command = if as_root && crate::privilege::needs_sudo() {
+            let mut command = CommandBuilder::new(crate::privilege::sudo_program());
+            command.args(["-n", "--"]);
+            command.arg(shell);
+            command
+        } else {
+            CommandBuilder::new(shell)
+        };
+        #[cfg(not(unix))]
         let mut command = CommandBuilder::new(shell);
 
         if let Some(raw) = cwd {
