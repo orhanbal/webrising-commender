@@ -92,34 +92,42 @@ output, and waits for your approval before risky actions.
 > https://wecommander.app/mcp, with OAuth sign-in.
 >
 > A small agent on each machine keeps one outbound encrypted connection, so no
-> inbound port, VPN or SSH key is needed. It runs as a normal user (not
-> root/SYSTEM) and only inside the folders you allow.
+> inbound port, VPN or SSH key is needed. By default it runs as a normal user
+> (not root/SYSTEM) and only inside the folders you allow.
 >
 > Tools: read, write, edit, search and move files (PDF, Word and Excel can be
 > read too); run commands; long-running background tasks; interactive
-> terminals; process lists; device health snapshots; log search; and server
+> terminals; process lists; device health snapshots; log search; scheduled
+> tasks; server systemd timers and cron (read-only); Docker containers and
+> their logs, with start, stop and restart (never remove or prune); and server
 > management: overview, what fills the disk, a safe cleanup scan, processes
 > and service restarts.
 >
 > Reading needs no approval. High-risk actions (running commands, deleting or
-> moving files, stopping processes, opening terminals, cleaning disk space)
-> wait for a person to approve that exact action in the web dashboard, by
-> e-mail, or as a Windows notification from the Management Center app, unless
-> you allow a command pattern or switch a device to autonomous mode for a set
-> time. AI clients cannot change these limits themselves. Secrets in command
+> moving files, stopping processes, opening terminals, cleaning disk space,
+> container actions, scheduled-task changes) wait for a person to approve that
+> exact action in the web dashboard, by e-mail, or as a notification from the
+> desktop app, unless you allow a command pattern or put a device on full
+> trust (for a set time or without a limit). Running as root is possible on
+> Linux only, with two keys: the machine's owner allows it on the machine,
+> then an admin turns it on with their password. A safety net, on by default,
+> blocks irreversible commands such as wiping a disk, even as root with full
+> trust. AI clients cannot change these limits themselves. Secrets in command
 > and terminal output are masked on the device, every action is in an audit
 > log, and file edits keep undo snapshots.
 >
 > The same account includes the WECOMMANDER desktop app for Windows and macOS:
 > an SSH client with SFTP, tunnels, snippets, server disk cleanup and live
 > monitoring. On Windows, Hybrid Access can also share SSH servers that have no
-> agent with the AI through the desktop app, keeping SSH keys on your computer.
+> agent with the AI through the desktop app, keeping SSH keys on your computer;
+> over SSH every change needs an approval each time.
 >
 > Free, Pro and Team plans. Local mode (stdio, no account) is also available.
 
 Accuracy notes (keep when editing): Hybrid Access is Windows only (not macOS
-yet). Approval notifications in the desktop are from the Management Center on
-Windows. The desktop SSH app is Windows and macOS (Linux preview); the agent is
+yet) and has no trust levels or root mode (every change approved each time,
+the SSH user's rights). Root is Linux only (two keys); trust and the safety
+net are set per agent device in the web panel (`docs/AI_PERMISSIONS.md`). The desktop SSH app is Windows and macOS (Linux preview); the agent is
 Windows, macOS and Linux. No self-hosted edition is offered.
 
 ### Example prompts (for listings and reviewers)

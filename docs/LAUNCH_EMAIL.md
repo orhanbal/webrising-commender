@@ -25,9 +25,12 @@ day.
   only. Each person sees it once.
 
 Facts checked against `gateway/src/site-content.ts` and the 1.0 section of
-`CHANGELOG.md`. Keep these limits when editing: Hybrid Access is Windows only;
-the getting-started tutorial ships in the macOS app only (the Windows one is
-not in 1.0); live monitoring is the Dock on Windows and the menu bar on macOS.
+`CHANGELOG.md`. Keep these limits when editing: Hybrid Access (connecting a
+server for AI over SSH with nothing installed) is in the Windows app only, and
+over SSH every change needs an approval every time (no trust levels there);
+running as root is Linux only, with two keys; the getting-started tutorial is
+in both apps; live monitoring and the terminal tabs panel are the Dock on
+Windows, the menu bar on macOS.
 
 ---
 
@@ -57,12 +60,14 @@ Neler var:
 
 • Tam bir SSH istemcisi: sekmeli ve bölünmüş terminaller, sürükle-bırak SFTP, tüneller ve jump host. Yapay zekâ ve hesap olmadan da çalışır.
 • Sunucu yönetimi: diski neyin doldurduğunu gör; eski günlükleri, paket önbelleklerini ve Docker artıklarını güvenle temizle. Her değişiklik önce tam komutu gösterir.
-• Windows'ta Dock: görev çubuğu gibi ekranın kenarında, sunucunun canlı grafikleriyle. macOS'ta canlı izleme menü çubuğunda.
-• Kontrol sende olan yapay zekâ: Claude, ChatGPT ve Cursor tek MCP adresiyle makinelerine ulaşır. Komut, silme ve yeniden başlatma tek kullanımlık onayını bekler; her işlem denetim kaydında.
+• Windows'ta Dock: görev çubuğu gibi ekranın kenarında, sunucunun canlı grafikleriyle; Terminal panelinde her sekme ayrı bir sunucuya bağlanır. macOS'ta canlı izleme menü çubuğunda.
+• İlk açılışta kısa bir öğretici: ilk sunucunu ekle, bağlan, canlı durumu gör.
+• Kontrol sende olan yapay zekâ: Claude, ChatGPT ve Cursor tek MCP adresiyle makinelerine ulaşır; zamanlanmış görevler ve Docker container'ları da dahil. Komut, silme ve yeniden başlatma tek kullanımlık onayını bekler; her işlem denetim kaydında.
+• Yapay zekâ yetkileri cihaz başına senin elinde: güven seviyesi ve süresi (sınırsız da olabilir), Linux'ta iki anahtarla root ve geri dönüşü olmayan komutları engelleyen güvenlik ağı.
 • Sunucuların, anahtarların ve parçacıkların uçtan uca şifreli eşitlenir.
 • Türkçe dahil altı dil.
 
-Windows'ta Hibrit Erişim ile ajan kurulu olmayan SSH sunucularını da yapay zekâyla kendi bilgisayarın üzerinden paylaşabilirsin; anahtarların bilgisayarından çıkmaz.
+Bir sunucuyu yapay zekâya iki yolla bağlarsın: ajanla (bilgisayarın kapalıyken de çalışır) ya da Windows'ta sunucuya hiçbir şey kurmadan SSH ile, kendi bilgisayarın üzerinden; anahtarların bilgisayarından çıkmaz.
 
 WECOMMANDER 1.0'ı indir: https://wecommander.app/download
 
@@ -91,12 +96,14 @@ What you get:
 
 • A complete SSH client: tabbed and split terminals, drag-and-drop SFTP, tunnels and jump hosts. It works without AI and without an account.
 • Server management: see what fills a server's disk and safely clean old logs, package caches and Docker leftovers. Every change shows the exact command first.
-• On Windows, the Dock: a taskbar-like bar on a screen edge with live charts for your server. On macOS, live monitoring sits in the menu bar.
-• AI with you in charge: Claude, ChatGPT and Cursor reach your machines through one MCP address. Commands, deletions and restarts wait for your one-time approval, and every action is in the audit log.
+• On Windows, the Dock: a taskbar-like bar on a screen edge with live charts for your server, and a Terminal panel where each tab connects to its own server. On macOS, live monitoring sits in the menu bar.
+• A short tutorial on first launch: add your first server, connect, see its live status.
+• AI with you in charge: Claude, ChatGPT and Cursor reach your machines through one MCP address, scheduled tasks and Docker containers included. Commands, deletions and restarts wait for your one-time approval, and every action is in the audit log.
+• AI permissions per device, set by you: trust level and duration (no limit allowed), root on Linux with two keys, and a safety net that blocks irreversible commands.
 • End-to-end encrypted sync of your servers, keys and snippets.
 • Six languages, including English and Turkish.
 
-On Windows, Hybrid Access also lets AI use SSH servers that have no agent, through your own computer; your keys never leave it.
+There are two ways to connect a server for AI: with the agent, which keeps working while your computer is off, or on Windows over SSH with nothing installed on the server, through your own computer; your keys never leave it.
 
 Download WECOMMANDER 1.0: https://wecommander.app/download
 
@@ -130,7 +137,7 @@ People who see it already have the app, so the button opens the notes.
 | | Türkçe | English |
 |---|---|---|
 | Title | WECOMMANDER 1.0 masaüstü uygulaması yayında | The WECOMMANDER 1.0 desktop app is here |
-| Body | Windows ve macOS için SSH istemcisi ve sunucu yönetimi; Windows'ta canlı grafikli Dock, macOS'ta menü çubuğunda canlı izleme. | An SSH client and server management for Windows and macOS, with the live-chart Dock on Windows and live monitoring in the macOS menu bar. |
+| Body | Windows ve macOS için SSH istemcisi ve sunucu yönetimi; Windows'ta canlı grafikli Dock, macOS'ta menü çubuğunda canlı izleme. Yapay zekânın her cihazda neler yapabileceğini Cihazlar → Yapay zekâ yetkileri'nden ayarlarsın. | An SSH client and server management for Windows and macOS, with the live-chart Dock on Windows and live monitoring in the macOS menu bar. Set what AI may do on each device under Devices → AI permissions. |
 | Button | Uygulamayı indir | Download the app |
 | Link | https://wecommander.app/download | https://wecommander.app/download |
 
