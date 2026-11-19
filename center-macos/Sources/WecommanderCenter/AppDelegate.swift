@@ -26,6 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private lazy var messages = MessageCenter(app: model)
     /// WECOMMANDER's scheduled tasks: the main window's page and the runner for this Mac's SSH hosts.
     private lazy var scheduled = ScheduledTasksModel(app: model, servers: servers)
+    /// This Mac as the connector for the SSH hosts shared with remote AI (Hybrid Access).
+    private lazy var connector = RemoteConnectorModel(app: model, servers: servers)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -59,6 +61,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         servers.onTutorialChange = { [weak self] step, off in self?.model.rememberTutorial(step: step, off: off) }
         servers.scheduled = scheduled
         scheduled.start()
+        servers.connector = connector
+        connector.start()
         monitorPopover.behavior = .transient
         monitorPopover.animates = true
         monitorPopover.contentViewController = monitorController()
@@ -106,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     func applicationWillTerminate(_ notification: Notification) {
         scheduled.stop()
+        connector.stop()
         monitor.stop()
         servers.stop()
         model.stopEmbeddedAgent()

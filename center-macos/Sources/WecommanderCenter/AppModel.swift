@@ -160,7 +160,7 @@ final class AppModel: ObservableObject {
                 if settings.notifications {
                     let names = Dictionary(newDevices.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
                     for item in fresh.prefix(5) {
-                        notifier.showApproval(item, device: names[item.deviceId] ?? L.t("bilinmeyen cihaz"))
+                        notifier.showApproval(item, device: item.placeName(names))
                     }
                 }
                 // Only the notification by default; the panel opens when asked
@@ -184,7 +184,7 @@ final class AppModel: ObservableObject {
         guard settings.notifications, !others.isEmpty else { return }
         let gateway = self.gateway
         for item in others.prefix(5) {
-            let device = deviceName(item.deviceId)
+            let device = placeName(item)
             let what = item.summary.isEmpty ? Texts.kindLabel(item.actionKind) : item.summary
             Task { [weak self] in
                 guard let outcome = try? await gateway.outcome(token: token, id: item.id),
@@ -507,6 +507,11 @@ final class AppModel: ObservableObject {
 
     func deviceName(_ id: String) -> String {
         devices.first { $0.id == id }?.name ?? L.t("bilinmeyen cihaz")
+    }
+
+    /// Where an approval runs: the device, or the saved SSH server shared through a computer ("web-1 · SSH").
+    func placeName(_ item: ApprovalRequest) -> String {
+        item.placeName(Dictionary(devices.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a }))
     }
 }
 

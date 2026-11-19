@@ -17,6 +17,7 @@ struct ServersView: View {
     static let hostsPage = "page:hosts"
     static let terminalsPage = "page:terminals"
     static let scheduledPage = "page:scheduled"
+    static let aiPage = "page:ai"
     static let settingsPage = "page:settings"
 
     var body: some View {
@@ -58,6 +59,7 @@ struct ServersView: View {
                 Label(L.t("Bilinen sunucular"), icon: .knownHosts, active: model.selection == "page:known").tag("page:known")
                 Label(L.t("Geçmiş"), icon: .history, active: model.selection == "page:history").tag("page:history")
                 Label(L.t("Zamanlanmış görevler"), icon: .calendar, active: model.selection == Self.scheduledPage).tag(Self.scheduledPage)
+                Label(AiAccessText.sectionTitle, icon: .ai, active: model.selection == Self.aiPage).tag(Self.aiPage)
             }
             Section {
                 Label(L.t("Ayarlar"), icon: .settings, active: model.selection == Self.settingsPage).tag(Self.settingsPage)
@@ -193,6 +195,8 @@ struct ServersView: View {
             case "page:terminals": TerminalsPage(model: model)
             case "page:scheduled":
                 if let scheduled = model.scheduled { ScheduledTasksPage(model: scheduled) }
+            case "page:ai":
+                if let connector = model.connector { AiAccessPage(model: model, connector: connector) }
             default: HostsPage(model: model, edit: { editing = EditRequest(host: $0) })
             }
         }
@@ -402,9 +406,18 @@ struct HostCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(host.label).font(.body.weight(.semibold)).lineLimit(1)
                 Text(host.target + (via.map { " ↪ \($0)" } ?? "")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                Text(host.savedSecret || (host.authKind == "key" && host.keyPath != nil)
-                     ? (host.authKind == "password" ? L.t("Parola kayıtlı") : L.t("Anahtar hazır")) : L.t("Giriş bilgisi sorulacak"))
-                    .font(.caption2).foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text(host.savedSecret || (host.authKind == "key" && host.keyPath != nil)
+                         ? (host.authKind == "password" ? L.t("Parola kayıtlı") : L.t("Anahtar hazır")) : L.t("Giriş bilgisi sorulacak"))
+                        .font(.caption2).foregroundStyle(.secondary)
+                    // Shared with remote AI (Hybrid Access): the badge of the Windows host card.
+                    if AiAccessRules.of(host).remote {
+                        Text(L.t("Uzak YZ"))
+                            .font(.caption2).foregroundStyle(.white)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 4))
+                    }
+                }
             }
             Spacer(minLength: 0)
         }

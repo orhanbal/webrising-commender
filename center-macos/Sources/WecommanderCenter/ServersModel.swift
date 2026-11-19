@@ -58,6 +58,8 @@ final class ServersModel: ObservableObject {
     @Published var showFiles = false
     /// WECOMMANDER's scheduled tasks (the "Zamanlanmış görevler" page); set by the app delegate.
     var scheduled: ScheduledTasksModel?
+    /// This Mac as the remote AI connector (the AI access page); set by the app delegate.
+    var connector: RemoteConnectorModel?
     /// Set while connecting a host for a split: it joins this terminal.
     private var splitTarget: (primary: String, vertical: Bool)?
 
@@ -384,6 +386,36 @@ final class ServersModel: ObservableObject {
     func coreCall(_ method: String, _ params: [String: Any] = [:]) async throws {
         guard let core else { throw CoreClient.Failure.stopped }
         try await core.call(method, params)
+    }
+
+    /// A core call with its raw JSON result (the remote connector, RemoteConnectorModel).
+    func coreCallRaw(_ method: String, _ params: [String: Any]) async throws -> Any? {
+        guard let core else { throw CoreClient.Failure.stopped }
+        return try await core.call(method, params)
+    }
+
+    // MARK: AI access (Hybrid Access)
+
+    /// The core can serve remote AI access (`mcp.status.remoteSupported`); nil until asked.
+    @Published private(set) var remoteAiSupported: Bool?
+
+    func refreshRemoteAiSupport() async {
+        guard let core else { return }
+        if AiAccessRules.remoteSupported(info: core.info) { remoteAiSupported = true; return }
+        let status = try? await core.call("mcp.status") as? [String: Any]
+        remoteAiSupported = AiAccessRules.remoteSupported(info: core.info, status: status)
+    }
+
+    /// Saves a host's AI access (`hosts.setAiAccess`); checks what it can first, the core decides.
+    func setAiAccess(_ host: CoreHost, _ access: AiAccess) async throws {
+        guard let core else { throw CoreClient.Failure.stopped }
+        let access = AiAccessRules.normalize(access)
+        if access.remote, remoteAiSupported == false { throw CoreClient.Failure.core(AiAccessRules.remoteNotSupported) }
+        if let invalid = AiAccessRules.validate(access, now: Date()) { throw CoreClient.Failure.core(invalid) }
+        if access.any, let first = AiAccessRules.blockers(host).first { throw CoreClient.Failure.core(AiAccessRules.code(first)) }
+        hosts = try await core.call("hosts.setAiAccess", ["id": host.id, "aiAccess": access.json], as: [CoreHost].self)
+        onChange?()
+        scheduleLibrarySync()
     }
 
     // MARK: scheduled tasks

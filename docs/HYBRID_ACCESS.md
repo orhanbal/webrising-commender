@@ -214,9 +214,20 @@ unknown local client refused until allowed.
   a host with remote AI (preset read only / with approval, sudo never / sudoers) and shows the
   connector's status. Not on Linux yet: local MCP (H2) and the E2E library sync, so hosts saved on
   another computer are not listed there.
-- **macOS:** the Mac app has no AI access editor yet (H1/H2 UI is Windows-only); it decodes the
-  new approval rows unchanged (`device_id` stays a string). Remote access for hosts on a Mac
-  needs the Mac connector loop later.
+- **macOS (H3 parity with Windows):** the Mac app runs the same connector loop
+  (`center-macos/Sources/CenterCore/RemoteConnector.swift`, an actor; started while signed in,
+  cancelled on sign-out or when the account/server changes): it publishes `mcp.remoteTargets`
+  (again when changed or after 60 s), long-polls the claim (12 s), runs each call once through
+  `mcp.remoteCall` and posts the result (network errors: two more tries). It never approves:
+  `approved` is passed through as the gateway sent it. Errors back off 5, 10, 20, 40, then 60 s;
+  a refused token waits 30 s (the app signs out). Main window → **Yapay zekâ erişimi** lists the
+  saved hosts: share with remote AI (stored with this Mac's Center id as `connector`), preset
+  (Salt okunur / Onaylı; a timed preset set elsewhere is kept and shown as local-only), sudo,
+  the blockers with their fix, the guarantees and the SSH limit (same texts as Windows), and the
+  connector's status (connected / last contact / last call / last error). Host cards show the
+  “Uzak YZ” badge. Approval notifications and the panel name SSH approvals “web-1 · SSH” and show
+  a move as `a → b` and a write by path, size and SHA-256. Local MCP (H2) has no Mac UI yet: the
+  Mac keeps a host's `local` flag as it is.
 
 ## 9. AI permissions of SSH targets (web panel)
 

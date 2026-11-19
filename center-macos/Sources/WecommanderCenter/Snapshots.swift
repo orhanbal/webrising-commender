@@ -20,7 +20,7 @@ enum Snapshots {
     }
 
     static let pages = ["page:hosts", "page:terminals", "page:keys", "page:identities", "page:snippets", "page:tunnels",
-                        "page:known", "page:history", "page:scheduled", "page:settings"]
+                        "page:known", "page:history", "page:scheduled", "page:ai", "page:settings"]
 
     static func run(servers: ServersModel, showServers: @escaping () -> NSWindow?, panel: @escaping () -> NSView?,
                     quick: @escaping () -> NSView?, windows: [(String, () -> NSWindow?)]) {

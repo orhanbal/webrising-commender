@@ -206,5 +206,15 @@
  "İş anahtarı": "Arbeitsschlüssel",
  "İşlemci: {0}": "CPU: {0}",
  "Şimdi bağlan": "Jetzt verbinden",
- "↪ {0} üzerinden": "↪ über {0}"
+ "↪ {0} üzerinden": "↪ über {0}",
+ "Bu Mac bağlayıcı olarak": "Dieser Mac als Connector",
+ "Uzak yapay zekâ erişimini açtığın sunuculara Claude.ai ve ChatGPT, bu Mac'teki WECOMMANDER üzerinden SSH ile ulaşır; sunucuya hiçbir şey kurulmaz. SSH anahtarların ve parolaların bu Mac'ten çıkmaz. Komut çalıştırma ve dosya değişiklikleri her seferinde bu uygulamanın bildiriminde ya da web panelinde onayını bekler.": "Claude.ai und ChatGPT erreichen die Server, die du für entfernte KI freigibst, per SSH über WECOMMANDER auf diesem Mac; auf dem Server wird nichts installiert. Deine SSH-Schlüssel und Passwörter verlassen diesen Mac nie. Befehle und Dateiänderungen warten jedes Mal auf deine Freigabe, in der Mitteilung dieser App oder im Web-Panel.",
+ "Bağlayıcı çalışmıyor.": "Der Connector läuft nicht.",
+ "Hiçbir sunucu uzak yapay zekâyla paylaşılmıyor; bağlayıcı bekliyor.": "Kein Server ist für entfernte KI freigegeben; der Connector wartet.",
+ "Bağlı · {0} sunucu uzak yapay zekâyla paylaşılıyor.": "Verbunden · {0} Server für entfernte KI freigegeben.",
+ "wecommander.app'e ulaşılamıyor; birazdan yeniden denenecek.": "wecommander.app ist nicht erreichbar; neuer Versuch in Kürze.",
+ "Son çağrı: {0} · {1} · {2}": "Letzter Aufruf: {0} · {1} · {2}",
+ "Son bağlantı: {0}": "Letzter Kontakt: {0}",
+ "Son hata: {0}": "Letzter Fehler: {0}",
+ "Süreli otonom yalnız bu bilgisayardaki yapay zekâlar için geçerlidir; uzak yapay zekânın komutları her seferinde onay ister.": "Zeitlich begrenzte Autonomie gilt nur für KIs auf diesem Computer; Befehle entfernter KI brauchen jedes Mal eine Freigabe."
 }

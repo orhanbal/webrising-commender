@@ -176,6 +176,8 @@ public struct CoreHost: Decodable, Identifiable, Equatable, Hashable {
     public let serial: SerialSettings?
     /// Terminals of this host are written to the logs folder.
     public let sessionLog: Bool?
+    /// Which AI may use this host (Hybrid Access); nil from an older core = all off.
+    public let aiAccess: AiAccess?
 
     /// Logs in with SSH (SSH and Mosh hosts); Telnet and serial hosts open straight away.
     public var isSsh: Bool { ["ssh", "mosh"].contains(`protocol` ?? "ssh") }
@@ -310,6 +312,7 @@ public struct ImportResult: Decodable, Equatable {
 /// Turkish texts for the core's English error prefixes.
 public enum CoreText {
     public static func turkish(_ text: String) -> String {
+        if let ai = AiAccessText.error(text) { return ai }
         if text.contains("no saved credential") { return L.t("Bu sunucu için kayıtlı giriş bilgisi yok; bir kez gir.") }
         if text.contains("authentication failed") {
             guard let r = text.range(of: "server accepts:") else { return L.t("Giriş reddedildi. Anahtarı veya parolayı kontrol et.") }
