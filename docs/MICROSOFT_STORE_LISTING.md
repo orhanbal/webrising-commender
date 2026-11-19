@@ -207,7 +207,7 @@ WECOMMANDER también conecta asistentes de IA como Claude, ChatGPT y Cursor a tu
 El cliente SSH funciona por completo sin IA y sin cuenta.
 
 **Características**
-- Terminales SSH en pestañas y divididas, servidores guardados con grupos y etiquetas
+- Terminales SSH en pestañas y divididas, servidores guardados con grupos
 - Gestor de archivos SFTP con arrastrar y soltar
 - Túneles locales, remotos y SOCKS, hosts de salto
 - Inicio de sesión con agente SSH y llaves de hardware FIDO2
