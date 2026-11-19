@@ -1,6 +1,43 @@
 {
  "releases": [
   {
+   "id": "2026-11-19-mcp-tools",
+   "date": "2026-11-19",
+   "platforms": [],
+   "items": {
+    "tr": [
+     "Yapay zekâ artık zamanlanmış görevleri listeleyebilir; oluşturma, düzenleme, silme ve hemen çalıştırma senin onayınla olur.",
+     "Yapay zekâ Docker container'larını ve loglarını görebilir; başlatma, durdurma ve yeniden başlatma her seferinde onay ister.",
+     "SSH ile eklediğin sunucularda da temizlik, süreç sonlandırma, zamanlayıcılar ve Docker araçları kullanılabilir."
+    ],
+    "en": [
+     "AI can now list your scheduled tasks; creating, editing, deleting or running one now needs your approval.",
+     "AI can see Docker containers and their logs; starting, stopping or restarting one asks for approval every time.",
+     "Servers you added over SSH now get cleanup, process signals, timers and the Docker tools too."
+    ],
+    "de": [
+     "KI kann jetzt deine geplanten Aufgaben auflisten; Anlegen, Bearbeiten, Löschen oder sofortiges Ausführen braucht deine Freigabe.",
+     "KI sieht Docker-Container und ihre Logs; Starten, Stoppen oder Neustarten fragt jedes Mal nach Freigabe.",
+     "Auch über SSH hinzugefügte Server haben jetzt Bereinigung, Prozesssignale, Timer und die Docker-Werkzeuge."
+    ],
+    "fr": [
+     "L'IA peut maintenant lister vos tâches planifiées ; les créer, modifier, supprimer ou lancer demande votre accord.",
+     "L'IA voit les conteneurs Docker et leurs journaux ; démarrer, arrêter ou redémarrer demande votre accord à chaque fois.",
+     "Les serveurs ajoutés en SSH ont aussi le nettoyage, les signaux de processus, les minuteurs et les outils Docker."
+    ],
+    "es": [
+     "La IA ya puede listar tus tareas programadas; crear, editar, borrar o ejecutar una necesita tu aprobación.",
+     "La IA ve los contenedores Docker y sus registros; iniciar, detener o reiniciar pide aprobación cada vez.",
+     "Los servidores añadidos por SSH también tienen limpieza, señales de procesos, temporizadores y las herramientas de Docker."
+    ],
+    "pt-BR": [
+     "A IA agora pode listar suas tarefas agendadas; criar, editar, excluir ou executar uma precisa da sua aprovação.",
+     "A IA vê os contêineres Docker e seus logs; iniciar, parar ou reiniciar pede aprovação toda vez.",
+     "Servidores adicionados por SSH agora também têm limpeza, sinais de processo, temporizadores e as ferramentas Docker."
+    ]
+   }
+  },
+  {
    "id": "2026-11-19-windows-language-place",
    "date": "2026-11-19",
    "platforms": ["windows"],
