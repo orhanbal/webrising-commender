@@ -1805,7 +1805,7 @@ jobs:
           if (-not (Test-Path "center-windows\publish\wecommander-core.exe")) { throw "wecommander-core.exe missing from publish output" }
           if (-not (Test-Path "center-windows\publish\webrising-commender.exe")) { throw "embedded agent missing from publish output" }
           $agentVersion = (& "center-windows\publish\webrising-commender.exe" --version) -join ' '
-          if ($agentVersion -notmatch "0\.1\.${{ github.run_number }}$") { throw "embedded agent has the wrong version: $agentVersion" }
+          if ($agentVersion -notmatch "1\.0\.${{ github.run_number }}$") { throw "embedded agent has the wrong version: $agentVersion" }
           if ((Get-Content center-windows\publish\build.txt -Raw).Trim() -ne "${{ github.run_number }}") { throw "build.txt missing or wrong" }
           if (-not (Test-Path "center-windows\publish\Assets\terminal\index.html")) { throw "terminal surface missing from publish output" }
           foreach ($asset in @("icon.ico","icon.png","tray.ico","tray-pending.ico","tray-autonomy.ico","tray-autonomy-pending.ico","wordmark-dark-text.png","wordmark-light-text.png")) {
