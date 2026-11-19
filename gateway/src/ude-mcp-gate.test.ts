@@ -15,7 +15,7 @@ test("UDE MCP is opt-in, gateway-only and read-only", () => {
   assert.ok(!defaultCoreToolNames.has("ude_capabilities"), "UDE cannot become a Core or local-Agent tool");
 
   const all = listedTools();
-  const ude = all.find(t => t.name === "ude_capabilities");
+  const ude = all.find(t => t.name === "ude_capabilities") as (typeof all[number] & { inputSchema: { required: string[]; additionalProperties: boolean } }) | undefined;
   assert.equal(all.length, tools.length + DC_TOOLS.length + 1);
   assert.ok(ude, "literal opt-in must publish the UDE tool");
   assert.deepEqual(ude?.inputSchema.required, ["device_id"]);
