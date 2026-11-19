@@ -15,6 +15,7 @@ ALLOWED_ROOT=""
 SKIP_ENROLL=0
 PAIRING_CODE_FILE=""
 CAPABILITY_ARGS=()
+ROOT_ARGS=()
 
 usage() {
   cat <<'EOF'
@@ -25,6 +26,7 @@ Options: --control-url https://wecommander.app
          --pairing-code-file FILE (one-time code from a signed-in Management Center)
          --read-only    (device refuses all file writes)
          --no-commands  (device refuses command execution, tasks and terminals)
+         --allow-root / --disallow-root (let the agent use sudo when an admin turns root on; docs/AI_PERMISSIONS.md)
 The agent uses an unprivileged Linux system account. Device approval
 happens in your ordinary browser, not on the Ubuntu server.
 EOF
@@ -37,6 +39,7 @@ while (($#)); do
     --allowed-root) ALLOWED_ROOT="${2:-}"; shift 2 ;;
     --pairing-code-file) PAIRING_CODE_FILE="${2:-}"; shift 2 ;;
     --skip-enroll) SKIP_ENROLL=1; shift ;;
+    --allow-root|--disallow-root) ROOT_ARGS+=("$1"); shift ;;
     --read-only) CAPABILITY_ARGS+=(--read-only); shift ;;
     --no-commands) CAPABILITY_ARGS+=(--no-commands); shift ;;
     -h|--help) usage; exit 0 ;;
@@ -156,6 +159,6 @@ if ((${#CAPABILITY_ARGS[@]})) && [[ -f "$CONFIG" ]]; then
   runuser -u "$SERVICE_USER" -- "$STAGED_BINARY" --config "$CONFIG" capabilities "${cap_set[@]}"
 fi
 runuser -u "$SERVICE_USER" -- "$STAGED_BINARY" --config "$CONFIG" doctor >/dev/null
-bash "$SCRIPT_DIR/install-linux.sh" "$BINARY" "$CONFIG" "$SERVICE_USER"
+bash "$SCRIPT_DIR/install-linux.sh" "$BINARY" "$CONFIG" "$SERVICE_USER" ${ROOT_ARGS[@]+"${ROOT_ARGS[@]}"}
 echo "Installed. Check: sudo systemctl is-active webrising-commender"
 echo "No inbound port required. Verify the new server in WECOMMANDER > Devices."

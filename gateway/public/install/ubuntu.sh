@@ -32,7 +32,10 @@ while (($#)); do
       # From a signed-in Management Center: pair without a browser sign-in.
       [[ -n "${2:-}" ]] || { echo "--pairing-code-file needs a file." >&2; exit 2; }
       SETUP_ARGS+=(--pairing-code-file "$2"); shift 2 ;;
-    *) echo "Usage: sudo bash install-ubuntu-online.sh [--package-only] [--control-url https://HOST] [--pairing-code-file FILE]" >&2; exit 2 ;;
+    --allow-root|--disallow-root)
+      # The machine owner's half of "run as root" (docs/AI_PERMISSIONS.md); kept on updates.
+      SETUP_ARGS+=("$1"); shift ;;
+    *) echo "Usage: sudo bash install-ubuntu-online.sh [--package-only] [--control-url https://HOST] [--pairing-code-file FILE] [--allow-root|--disallow-root]" >&2; exit 2 ;;
   esac
 done
 wecommander_banner "Agent installer for Ubuntu"

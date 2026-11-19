@@ -18,7 +18,7 @@ export const sshSubject=(t:SshPermissionTarget):PermissionDevice&{preset?:string
 type AllowEntry={id:string;pattern:string};
 
 /** What the person on a Linux machine runs once so root can be turned on. */
-export const ROOT_INSTALL_COMMAND="sudo bash install-linux.sh --allow-root";
+export const ROOT_INSTALL_COMMAND="curl -fsSL https://wecommander.app/install.sh | sh -s -- --allow-root";
 const durations:{label:string;minutes:number|null}[]=[
  {label:"1 saat",minutes:60},{label:"4 saat",minutes:240},{label:"24 saat",minutes:1440},{label:"7 gün",minutes:10080},{label:"Süre sınırı yok",minutes:null},
 ];

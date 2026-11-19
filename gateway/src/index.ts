@@ -389,7 +389,7 @@ async function auditForOrganization(
 
 /** What the person on a Linux machine runs once so an admin may turn on
  *  "run as root" for it (scripts/install-linux.sh). */
-const ROOT_INSTALL_COMMAND = "sudo bash install-linux.sh --allow-root";
+const ROOT_INSTALL_COMMAND = "curl -fsSL https://wecommander.app/install.sh | sh -s -- --allow-root";
 
 /** The signed-in user's current password, for changes that widen what an AI
  *  may do (full trust, run as root, safety net off). */

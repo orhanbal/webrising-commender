@@ -46,8 +46,9 @@ root needs **both**:
 1. **The machine owner, on the machine, once:**
 
    ```bash
-   sudo bash install-linux.sh --allow-root      # existing install or with the usual arguments
-   sudo bash install-linux.sh --disallow-root   # undo
+   curl -fsSL https://wecommander.app/install.sh | sh -s -- --allow-root   # installs or updates the agent and allows root
+   sudo bash /opt/wecommander/libexec/install-linux.sh --allow-root       # same, on an installed agent without downloading
+   sudo bash /opt/wecommander/libexec/install-linux.sh --disallow-root    # undo
    ```
 
    This writes `/etc/sudoers.d/wecommander-agent`
