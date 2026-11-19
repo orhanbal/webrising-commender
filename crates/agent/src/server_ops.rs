@@ -40,6 +40,40 @@ impl wc_server::Shell for Local {
     }
 }
 
+/// Runs Docker as an argument vector, no shell: container names and log
+/// windows from the request are separate arguments (validated in
+/// `wc_server` before this runs). Both streams are capped like the scripts'.
+#[cfg(target_os = "linux")]
+impl wc_server::Exec for Local {
+    async fn exec(&self, argv: &[String], secs: u64) -> Result<wc_server::ExecOutput, String> {
+        let (program, args) = argv.split_first().ok_or("empty command")?;
+        let child = tokio::process::Command::new(program)
+            .args(args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|e| format!("{program} could not start: {e}"))?;
+        let out = tokio::time::timeout(
+            std::time::Duration::from_secs(secs),
+            child.wait_with_output(),
+        )
+        .await
+        .map_err(|_| "Docker zamanında yanıt vermedi.".to_owned())?
+        .map_err(|e| e.to_string())?;
+        let text = |mut bytes: Vec<u8>| {
+            bytes.truncate(MAX_OUTPUT);
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        Ok(wc_server::ExecOutput {
+            code: out.status.code().unwrap_or(-1),
+            stdout: text(out.stdout),
+            stderr: text(out.stderr),
+        })
+    }
+}
+
 fn json<T: serde::Serialize>(value: T) -> Result<Value> {
     Ok(serde_json::to_value(value)?)
 }
@@ -84,6 +118,30 @@ pub async fn execute(action: AgentAction) -> Result<Value> {
         AgentAction::ServerRestartOwner { owner_kind, id } => {
             done(wc_server::restart_owner(&sh, owner_kind, id).await)
         }
+        AgentAction::DockerContainersList => json(
+            wc_server::docker_containers(&sh)
+                .await
+                .map_err(|e| anyhow!(e))?,
+        ),
+        AgentAction::DockerContainerLogs {
+            daemon,
+            container,
+            tail,
+            since,
+        } => json(
+            wc_server::container_logs(&sh, &daemon, &container, tail, since.as_deref())
+                .await
+                .map_err(|e| anyhow!(e))?,
+        ),
+        AgentAction::DockerContainerAction {
+            daemon,
+            container,
+            action,
+        } => json(
+            wc_server::container_action(&sh, &daemon, &container, &action)
+                .await
+                .map_err(|e| anyhow!(e))?,
+        ),
         other => Err(anyhow!("not a server action: {}", other.kind_name())),
     }
 }
@@ -178,6 +236,45 @@ mod tests {
         );
         let c = action(serde_json::json!({ "kind": "server_cleanup_run", "ids": ["apt-cache"] }));
         assert_eq!(c.risk(), crate::protocol::Risk::High);
+    }
+
+    #[test]
+    fn docker_actions_carry_the_gateway_field_names_and_risk() {
+        let list = action(serde_json::json!({ "kind": "docker_containers_list" }));
+        assert_eq!(list.risk(), crate::protocol::Risk::Low);
+        let logs = action(serde_json::json!({
+            "kind": "docker_container_logs", "daemon": "u1000", "container": "web", "tail": 50, "since": "10m"
+        }));
+        assert_eq!(logs.kind_name(), "docker_container_logs");
+        assert_eq!(logs.risk(), crate::protocol::Risk::Low);
+        let act = action(serde_json::json!({
+            "kind": "docker_container_action", "daemon": "system", "container": "web", "action": "restart"
+        }));
+        assert_eq!(act.risk(), crate::protocol::Risk::High);
+        assert!(
+            matches!(act, AgentAction::DockerContainerAction { ref action, .. } if action == "restart")
+        );
+    }
+
+    #[tokio::test]
+    async fn bad_docker_input_is_refused_before_anything_runs() {
+        for (json, expected) in [
+            (
+                serde_json::json!({ "kind": "docker_container_action", "daemon": "system", "container": "web;reboot", "action": "stop" }),
+                "invalid container",
+            ),
+            (
+                serde_json::json!({ "kind": "docker_container_action", "daemon": "system", "container": "web", "action": "rm" }),
+                "invalid action",
+            ),
+            (
+                serde_json::json!({ "kind": "docker_container_logs", "daemon": "system", "container": "web", "since": "$(id)" }),
+                "invalid since",
+            ),
+        ] {
+            let err = execute(action(json)).await.unwrap_err();
+            assert!(err.to_string().contains(expected), "{err}");
+        }
     }
 
     #[tokio::test]

@@ -17,6 +17,7 @@ function describe(action: ApprovalAction) {
     : typeof a.command === "string" ? a.command
     : typeof a.path === "string" ? a.path
     : typeof a.pid === "number" ? "pid " + a.pid
+    : typeof a.container === "string" && typeof a.daemon === "string" ? `${String(a.action ?? "")} ${a.container} @ ${a.daemon}`.trim()
     : typeof a.taskId === "string" ? a.taskId
     : typeof a.sessionId === "string" ? a.sessionId
     : "";

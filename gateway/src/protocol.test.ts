@@ -98,3 +98,16 @@ test("validates native bounded multi-file reads and rejects malformed batch payl
   assert.throws(() => parseAgentAction({ kind: "fs_read_multiple", paths: ["/safe/a"], maxBytes: 0 }));
   assert.throws(() => parseAgentAction({ kind: "fs_read_multiple", paths: ["/safe/a"], unexpected: true }));
 });
+
+test("validates Docker container actions strictly", () => {
+  assert.deepEqual(parseAgentAction({ kind: "docker_containers_list" }), { kind: "docker_containers_list" });
+  assert.deepEqual(
+    parseAgentAction({ kind: "docker_container_logs", daemon: "u1000", container: "relay", tail: 2000, since: "1h30m" }),
+    { kind: "docker_container_logs", daemon: "u1000", container: "relay", tail: 2000, since: "1h30m" },
+  );
+  assert.throws(() => parseAgentAction({ kind: "docker_container_logs", daemon: "system", container: "web;id" }));
+  assert.throws(() => parseAgentAction({ kind: "docker_container_logs", daemon: "system", container: "web", tail: 2001 }));
+  assert.throws(() => parseAgentAction({ kind: "docker_container_action", daemon: "system", container: "web", action: "rm" }));
+  assert.throws(() => parseAgentAction({ kind: "docker_container_action", daemon: "system", container: "-v", action: "stop" }));
+  assert.throws(() => parseAgentAction({ kind: "docker_container_action", daemon: "system", container: "web", action: "stop", force: true }));
+});

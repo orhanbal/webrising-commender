@@ -7,9 +7,9 @@ import { consumeApproval } from "./approvals.js";
 import { roleAtLeast, type Principal } from "./auth.js";
 import { db } from "./db.js";
 import { toolCallQuota } from "./billing.js";
-import { actionRisk, type AgentAction } from "./protocol.js";
+import { actionRisk, agentActionSchema, type AgentAction } from "./protocol.js";
 import type { DeviceRouter } from "./device-router.js";
-import { issueApproval, redact } from "./security.js";
+import { issueApproval, redact, redactSecrets } from "./security.js";
 import { startSearch, searchPage, listSearches, stopSearch, controlSearch } from "./search-sessions.js";
 import { annotate } from "./tool-annotations.js";
 import { recordMcpCall } from "./growth.js";
@@ -60,6 +60,18 @@ export const tools = [
   tool("server_restart_owner", "Restarts the Docker container or systemd service that a process runs in (from server_processes zombie owners); its zombies go with the old process. SSH, Docker, containerd, journald, logind, D-Bus and WECOMMANDER itself are refused. Needs a human approval for this exact call.", {
     owner_kind: { type: "string", enum: ["container", "service"] }, id: { type: "string", description: "Container id (12+ hex) or unit name ending in .service." },
   }, ["owner_kind", "id"]),
+  tool("docker_containers_list", "Linux Docker containers, read-only, per daemon: the system daemon and each user's rootless one (daemon id system or u<uid>, the same daemons as server_cleanup_scan). Each container has id, name, image, state, status, created, ports and restart count. A daemon that cannot be read carries its error instead.", {}),
+  tool("docker_container_logs", "Read-only: the last lines of one container's logs (stdout and stderr merged, timestamped, oldest first). tail 1-2000 (default 200); since limits the window (10m, 1h30m, a Unix time or an RFC 3339 time). At most 256 KiB, newest lines kept; secrets are masked.", {
+    daemon: { type: "string", description: "Daemon id from docker_containers_list: system or u<uid>." },
+    container: { type: "string", description: "Container id or name." },
+    tail: { type: "integer", minimum: 1, maximum: 2000 },
+    since: { type: "string", maxLength: 40 },
+  }, ["daemon", "container"]),
+  tool("docker_container_action", "Starts, stops or restarts one Docker container on the daemon it names (stop and restart wait 10 s before killing). Never removes containers, images or volumes. Needs a human approval for every call, also on fully trusted devices.", {
+    daemon: { type: "string", description: "Daemon id from docker_containers_list: system or u<uid>." },
+    container: { type: "string", description: "Container id or name." },
+    action: { type: "string", enum: ["start", "stop", "restart"] },
+  }, ["daemon", "container", "action"]),
   tool("log_query", "Read-only, bounded log search on a device, newest first. source 'journal' (Linux systemd journal: since_minutes window, unit, level) or 'file' (tail of a log file inside the allowed roots). Filters: level (error|warning|info|debug, default info), pattern (case-insensitive regex), limit (1-1000, default 100). Repeated messages are grouped; secrets are masked.", {
     source: { type: "string", enum: ["journal", "file"] },
     path: { type: "string", description: "Log file for source 'file'." },
@@ -281,6 +293,33 @@ function tool(name: string, description: string, properties: Record<string, unkn
   };
 }
 
+/** High-risk actions a human approves every time, even on a device its owner
+ *  set to full trust (no allowlist either). */
+export const ALWAYS_APPROVE: ReadonlySet<string> = new Set(["docker_container_action"]);
+
+/** Whether a device's full trust replaces the per-call human approval. */
+export function fullTrustSkipsApproval(kind: string, trust: string): boolean {
+  return trust === "full" && !ALWAYS_APPROVE.has(kind);
+}
+
+/** Largest container log text passed on (the agent caps it the same way). */
+export const MAX_DOCKER_LOG_CHARS = 256 * 1024;
+
+/** Container logs from the agent: secrets masked with the gateway's own
+ *  patterns (security.ts) and the text capped, newest lines kept. */
+export function redactDockerLogs(data: unknown): unknown {
+  if (!data || typeof data !== "object" || typeof (data as any).text !== "string") return data;
+  let text: string = (data as any).text;
+  let truncated = Boolean((data as any).truncated);
+  if (text.length > MAX_DOCKER_LOG_CHARS) {
+    text = text.slice(text.length - MAX_DOCKER_LOG_CHARS);
+    const newline = text.indexOf("\n");
+    if (newline >= 0) text = text.slice(newline + 1);
+    truncated = true;
+  }
+  return { ...(data as object), text: redactSecrets(text), truncated };
+}
+
 export function actionFromTool(name: string, a: any): AgentAction {
   switch (name) {
     case "system_info": return { kind: "system_info" };
@@ -306,6 +345,16 @@ export function actionFromTool(name: string, a: any): AgentAction {
       ...(a.confirm_database !== undefined ? { confirmDatabase: Boolean(a.confirm_database) } : {}),
     };
     case "server_restart_owner": return { kind: "server_restart_owner", ownerKind: String(a.owner_kind) as "container" | "service", id: String(a.id) };
+    case "docker_containers_list": return { kind: "docker_containers_list" };
+    case "docker_container_logs": return {
+      kind: "docker_container_logs", daemon: String(a.daemon), container: String(a.container),
+      ...(a.tail !== undefined ? { tail: Number(a.tail) } : {}),
+      ...(a.since !== undefined ? { since: String(a.since) } : {}),
+    };
+    case "docker_container_action": return {
+      kind: "docker_container_action", daemon: String(a.daemon), container: String(a.container),
+      action: String(a.action) as "start" | "stop" | "restart",
+    };
     case "fs_list": return { kind: "fs_list", path: String(a.path) };
     case "fs_stat": return { kind: "fs_stat", path: String(a.path) };
     case "fs_read": return { kind: "fs_read", path: String(a.path), ...(a.max_bytes ? { maxBytes: Number(a.max_bytes) } : {}) };
@@ -620,6 +669,11 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
     return ok(request.id, toolResult({ error: "unknown_tool" }, true));
   }
 
+  // Docker tools: strict ids and names before anything reaches a device.
+  if (action.kind.startsWith("docker_") && !agentActionSchema.safeParse(action).success) {
+    return ok(request.id, toolResult({ error: "invalid_arguments", tool: name }, true));
+  }
+
   const risk = actionRisk(action.kind);
   const requiredRole = risk === "low" ? "viewer" : "operator";
   if (!roleAtLeast(principal, requiredRole)) {
@@ -653,7 +707,7 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
         );
         return ok(request.id, toolResult({ error: "approval_required", action: action.kind }, true));
       }
-    } else if (device.rows[0]!.trust === "full") {
+    } else if (fullTrustSkipsApproval(action.kind, device.rows[0]!.trust)) {
       // Owner chose Desktop Commander-style trust for this device: no
       // per-call approval. Device-local capabilities still apply on the Agent.
       approvalToken = issueApproval(deviceId, action, 60).token;
@@ -727,7 +781,7 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
       undefined, undefined, undefined, undefined,
       { organizationId: orgId, actor: principal.actor });
     await audit(orgId, principal.actor, deviceId, name, risk, "success", redact({ kind: action.kind }));
-    return ok(request.id, toolResult(data));
+    return ok(request.id, toolResult(action.kind === "docker_container_logs" ? redactDockerLogs(data) : data));
   } catch (error) {
     await audit(orgId, principal.actor, deviceId, name, risk, "error", redact(error instanceof Error ? error.message : error));
     const message = error instanceof Error ? error.message : "request_failed";

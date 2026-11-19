@@ -173,7 +173,7 @@ echo @@dangling.{id}; dk '{h}' images -f dangling=true --format '{{{{.Size}}}}' 
 }
 
 /// A daemon's answer that is an error, as the person should read it.
-fn explain(output: &str, code: &str) -> String {
+pub(crate) fn explain(output: &str, code: &str) -> String {
     let text = output.trim();
     let lower = text.to_ascii_lowercase();
     if code == "124" || lower.contains("timeout") || lower.contains("timed out") {

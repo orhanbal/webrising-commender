@@ -41,6 +41,7 @@ pub fn enforce_capabilities(capabilities: DeviceCapabilities, action: &AgentActi
             | AgentAction::ServerCleanupRun { .. }
             | AgentAction::ServerProcessSignal { .. }
             | AgentAction::ServerRestartOwner { .. }
+            | AgentAction::DockerContainerAction { .. }
     );
     let needs_writes = matches!(
         action,
@@ -53,7 +54,8 @@ pub fn enforce_capabilities(capabilities: DeviceCapabilities, action: &AgentActi
             | AgentAction::FsUndo { .. }
             | AgentAction::XlsxWriteCells { .. }
     );
-    if matches!(action, AgentAction::LogQuery { source, .. } if source == "journal")
+    if (matches!(action, AgentAction::LogQuery { source, .. } if source == "journal")
+        || matches!(action, AgentAction::DockerContainerLogs { .. }))
         && !capabilities.system_logs
     {
         return Err(anyhow!(
@@ -83,6 +85,7 @@ fn output_is_redacted(action: &AgentAction) -> bool {
             | AgentAction::LogQuery { .. }
             | AgentAction::ServerProcesses
             | AgentAction::ServerTimersList
+            | AgentAction::DockerContainerLogs { .. }
             | AgentAction::TaskStatus { .. }
             | AgentAction::TerminalRead { .. }
             | AgentAction::TerminalReadPage { .. }
@@ -172,7 +175,10 @@ async fn execute_unredacted(context: ExecutionContext<'_>, action: AgentAction) 
         | AgentAction::ServerProcesses
         | AgentAction::ServerTimersList
         | AgentAction::ServerProcessSignal { .. }
-        | AgentAction::ServerRestartOwner { .. } => crate::server_ops::execute(action).await,
+        | AgentAction::ServerRestartOwner { .. }
+        | AgentAction::DockerContainersList
+        | AgentAction::DockerContainerLogs { .. }
+        | AgentAction::DockerContainerAction { .. } => crate::server_ops::execute(action).await,
         AgentAction::PolicyInfo => Ok(serde_json::json!({
             "allowedRoots": policy.roots().iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>(),
             "agentMode": if !capabilities.commands && !capabilities.file_writes { "read_only" } else { "restricted" },

@@ -76,6 +76,19 @@ pub enum AgentAction {
         owner_kind: String,
         id: String,
     },
+    /// Docker containers (Linux): every daemon, as `wc_server` finds them.
+    DockerContainersList,
+    DockerContainerLogs {
+        daemon: String,
+        container: String,
+        tail: Option<usize>,
+        since: Option<String>,
+    },
+    DockerContainerAction {
+        daemon: String,
+        container: String,
+        action: String,
+    },
     LogQuery {
         source: String,
         path: Option<String>,
@@ -329,6 +342,9 @@ impl AgentAction {
             Self::ServerTimersList => "server_timers_list",
             Self::ServerProcessSignal { .. } => "server_process_signal",
             Self::ServerRestartOwner { .. } => "server_restart_owner",
+            Self::DockerContainersList => "docker_containers_list",
+            Self::DockerContainerLogs { .. } => "docker_container_logs",
+            Self::DockerContainerAction { .. } => "docker_container_action",
             Self::LogQuery { .. } => "log_query",
             Self::PolicyInfo => "policy_info",
             Self::FsList { .. } => "fs_list",
@@ -382,6 +398,8 @@ impl AgentAction {
             | Self::ServerCleanupScan
             | Self::ServerProcesses
             | Self::ServerTimersList
+            | Self::DockerContainersList
+            | Self::DockerContainerLogs { .. }
             | Self::LogQuery { .. }
             | Self::PolicyInfo
             | Self::FsList { .. }
@@ -420,11 +438,13 @@ impl AgentAction {
             // Typing into a live shell runs whatever is typed: it needs the
             // same exact-payload approval as process_exec, checked here so a
             // request that skipped the gateway is refused too.
-            // Server cleanup, signals and restarts run fixed commands as root.
+            // Server cleanup, signals and restarts run fixed commands as root;
+            // starting, stopping or restarting a container too.
             Self::TerminalInput { .. }
             | Self::ServerCleanupRun { .. }
             | Self::ServerProcessSignal { .. }
             | Self::ServerRestartOwner { .. }
+            | Self::DockerContainerAction { .. }
             | Self::FsDelete { .. }
             | Self::ProcessExec { .. }
             | Self::ProcessKill { .. }

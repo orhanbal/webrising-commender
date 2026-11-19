@@ -240,6 +240,102 @@
   }
  },
  {
+  "name": "docker_containers_list",
+  "title": "List Docker containers",
+  "description": "Linux Docker containers, read-only, per daemon: the system daemon and each user's rootless one (daemon id system or u<uid>, the same daemons as server_cleanup_scan). Each container has id, name, image, state, status, created, ports and restart count. A daemon that cannot be read carries its error instead.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "required": [],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "title": "List Docker containers",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "docker_container_logs",
+  "title": "Read container logs",
+  "description": "Read-only: the last lines of one container's logs (stdout and stderr merged, timestamped, oldest first). tail 1-2000 (default 200); since limits the window (10m, 1h30m, a Unix time or an RFC 3339 time). At most 256 KiB, newest lines kept; secrets are masked.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "daemon": {
+     "type": "string",
+     "description": "Daemon id from docker_containers_list: system or u<uid>."
+    },
+    "container": {
+     "type": "string",
+     "description": "Container id or name."
+    },
+    "tail": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 2000
+    },
+    "since": {
+     "type": "string",
+     "maxLength": 40
+    }
+   },
+   "required": [
+    "daemon",
+    "container"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "title": "Read container logs",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
+  "name": "docker_container_action",
+  "title": "Start, stop or restart a container",
+  "description": "Starts, stops or restarts one Docker container on the daemon it names (stop and restart wait 10 s before killing). Never removes containers, images or volumes. Needs a human approval for every call, also on fully trusted devices.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "daemon": {
+     "type": "string",
+     "description": "Daemon id from docker_containers_list: system or u<uid>."
+    },
+    "container": {
+     "type": "string",
+     "description": "Container id or name."
+    },
+    "action": {
+     "type": "string",
+     "enum": [
+      "start",
+      "stop",
+      "restart"
+     ]
+    }
+   },
+   "required": [
+    "daemon",
+    "container",
+    "action"
+   ],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "title": "Start, stop or restart a container",
+   "readOnlyHint": false,
+   "destructiveHint": true,
+   "idempotentHint": false,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "log_query",
   "title": "Search logs",
   "description": "Read-only, bounded log search on a device, newest first. source 'journal' (Linux systemd journal: since_minutes window, unit, level) or 'file' (tail of a log file inside the allowed roots). Filters: level (error|warning|info|debug, default info), pattern (case-insensitive regex), limit (1-1000, default 100). Repeated messages are grouped; secrets are masked.",

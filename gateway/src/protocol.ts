@@ -14,6 +14,9 @@ export type AgentAction =
   | { kind: "server_timers_list" }
   | { kind: "server_process_signal"; pid: number; name: string; action: "reap" | "term" | "kill"; confirmDatabase?: boolean }
   | { kind: "server_restart_owner"; ownerKind: "container" | "service"; id: string }
+  | { kind: "docker_containers_list" }
+  | { kind: "docker_container_logs"; daemon: string; container: string; tail?: number; since?: string }
+  | { kind: "docker_container_action"; daemon: string; container: string; action: "start" | "stop" | "restart" }
   | { kind: "log_query"; source: "journal" | "file"; path?: string; unit?: string; sinceMinutes?: number; level?: "error" | "warning" | "info" | "debug"; pattern?: string; limit?: number }
   | { kind: "policy_info" }
   | { kind: "fs_list"; path: string }
@@ -65,6 +68,16 @@ const searchQuerySchema = (maxBytes: number) =>
     "search query exceeds UTF-8 byte budget",
   );
 const sessionIdSchema = z.string().uuid();
+// Docker daemons and containers, as crates/wc-server/src/containers.rs
+// validates them: `system` or `u<uid>`; a container id or name that can never
+// be read as an option or shell text.
+export const dockerDaemonSchema = z.string().regex(/^(system|u[0-9]{1,10})$/);
+export const dockerContainerSchema = z.string().min(1).max(128).regex(/^[A-Za-z0-9][A-Za-z0-9_.-]*$/);
+// docker logs --since: a duration (10m, 1h30m), a Unix time or an RFC 3339 date/time.
+export const dockerSinceSchema = z.string().min(1).max(40).regex(
+  /^(?:(?:[0-9]{1,6}(?:ns|us|ms|h|m|s)){1,4}|[0-9]{1,10}(?:\.[0-9]{1,9})?|[0-9]{4}-[0-9]{2}-[0-9]{2}(?:T[0-9]{2}:[0-9]{2}(?::[0-9]{2}(?:\.[0-9]{1,9})?)?(?:Z|[+-][0-9]{2}:[0-9]{2})?)?)$/,
+);
+export const DOCKER_LOG_LINES_MAX = 2000;
 const timeoutSchema = z.number().int().min(100).max(24 * 60 * 60 * 1000);
 
 export const agentActionSchema = z.discriminatedUnion("kind", [
@@ -81,6 +94,15 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     name: z.string().min(1).max(64).regex(/^[^\n\0]+$/), action: z.enum(["reap", "term", "kill"]), confirmDatabase: z.boolean().optional(),
   }).strict(),
   z.object({ kind: z.literal("server_restart_owner"), ownerKind: z.enum(["container", "service"]), id: z.string().min(1).max(256).regex(/^[A-Za-z0-9@._-]+$/) }).strict(),
+  z.object({ kind: z.literal("docker_containers_list") }).strict(),
+  z.object({
+    kind: z.literal("docker_container_logs"), daemon: dockerDaemonSchema, container: dockerContainerSchema,
+    tail: z.number().int().min(1).max(DOCKER_LOG_LINES_MAX).optional(), since: dockerSinceSchema.optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal("docker_container_action"), daemon: dockerDaemonSchema, container: dockerContainerSchema,
+    action: z.enum(["start", "stop", "restart"]),
+  }).strict(),
   z.object({
     kind: z.literal("log_query"), source: z.enum(["journal", "file"]), path: pathSchema.optional(),
     unit: z.string().min(1).max(256).regex(/^[A-Za-z0-9@._:\\-]+$/).optional(),
@@ -331,6 +353,8 @@ export function actionRisk(kind: AgentAction["kind"] | string): Risk {
     case "server_cleanup_scan":
     case "server_processes":
     case "server_timers_list":
+    case "docker_containers_list":
+    case "docker_container_logs":
     case "log_query":
     case "policy_info":
     case "fs_list":
@@ -374,6 +398,9 @@ export function actionRisk(kind: AgentAction["kind"] | string): Risk {
     case "server_cleanup_run":
     case "server_process_signal":
     case "server_restart_owner":
+    // Starting, stopping or restarting a container: approval every time
+    // (mcp.ts ALWAYS_APPROVE skips the full-trust shortcut for it).
+    case "docker_container_action":
     case "fs_delete":
     case "process_exec":
     case "process_kill":

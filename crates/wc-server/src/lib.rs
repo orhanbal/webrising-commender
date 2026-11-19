@@ -17,6 +17,13 @@ mod docker;
 pub use docker::{
     environments as docker_environments, stores as docker_stores, DockerEnv, DockerStore,
 };
+mod containers;
+pub use containers::{
+    container_action, container_logs, containers as docker_containers, parse_ps_json,
+    valid_container_ref, valid_daemon_id, valid_since, Container, ContainerActionResult,
+    ContainerList, ContainerLogs, DaemonContainers, Exec, ExecOutput, CONTAINER_ACTIONS,
+    DEFAULT_LOG_LINES, MAX_LOG_BYTES, MAX_LOG_LINES,
+};
 mod timers;
 pub use timers::{
     action_command, cron_unreadable, delete_command, timer_action, timer_create, timer_delete,
