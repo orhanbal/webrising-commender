@@ -76,6 +76,28 @@ impl Shell for Ssh {
     }
 }
 
+/// Runs one program over SSH as a command line of single-quoted arguments
+/// (`wc_server::argv_command`, through `sh` whatever the login shell is):
+/// nothing in an argument is read by a shell. stdout and stderr stay apart.
+impl wc_server::Exec for Ssh {
+    async fn exec(&self, argv: &[String], secs: u64) -> Result<wc_server::ExecOutput, String> {
+        if argv.is_empty() {
+            return Err("empty command".into());
+        }
+        let command = format!("sh -c {}", quote(&wc_server::argv_command(argv)));
+        let out =
+            tokio::time::timeout(Duration::from_secs(secs), self.0.exec(&command, MAX_OUTPUT))
+                .await
+                .map_err(|_| "Sunucu zamanında yanıt vermedi.".to_owned())?
+                .map_err(|e| e.to_string())?;
+        Ok(wc_server::ExecOutput {
+            code: out.exit_status.map_or(-1, |c| c as i32),
+            stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+        })
+    }
+}
+
 fn shell(state: &AppState, session_id: &str) -> Result<Ssh, String> {
     Ok(Ssh(connection(state, session_id)?))
 }

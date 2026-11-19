@@ -143,3 +143,38 @@ test("docker_container_logs output is redacted on the way to the AI", async () =
     database.restore();
   }
 });
+
+test("container and daemon follow one schema: ref@u<uid> or daemon, system by default", () => {
+  assert.deepEqual(actionFromTool("docker_container_logs", { device_id: DEVICE, container: "web" }),
+    { kind: "docker_container_logs", daemon: "system", container: "web" });
+  assert.deepEqual(parseAgentAction(actionFromTool("docker_container_action", { device_id: DEVICE, container: "/web@u1000", action: "stop" })),
+    { kind: "docker_container_action", daemon: "u1000", container: "web", action: "stop" });
+  assert.deepEqual(parseAgentAction(actionFromTool("docker_container_action", { container: "web@u1000", daemon: "u1000", action: "start" })),
+    { kind: "docker_container_action", daemon: "u1000", container: "web", action: "start" });
+  assert.throws(() => parseAgentAction(actionFromTool("docker_container_action", { container: "web@u1000", daemon: "system", action: "stop" })));
+  assert.throws(() => parseAgentAction(actionFromTool("docker_container_logs", { container: "web@u0" })));
+  assert.deepEqual(parseAgentAction(actionFromTool("docker_containers_list", { daemon: "u1000" })), { kind: "docker_containers_list", daemon: "u1000" });
+  assert.throws(() => parseAgentAction(actionFromTool("docker_containers_list", { daemon: "u01" })));
+});
+
+test("tools/list shows every new tool once, for agent devices and SSH targets", async () => {
+  const { listedTools } = await import("./mcp.js");
+  const listed = listedTools() as any[];
+  const names = listed.map((t) => t.name);
+  for (const name of ["docker_containers_list", "docker_container_logs", "docker_container_action", "server_timers_list",
+    "server_cleanup_scan", "server_cleanup_run", "server_process_signal",
+    "scheduled_tasks_list", "scheduled_task_create", "scheduled_task_update", "scheduled_task_delete", "scheduled_task_run_now"]) {
+    assert.equal(names.filter((n) => n === name).length, 1, name);
+  }
+  const byName = new Map(listed.map((t) => [t.name, t]));
+  for (const name of ["docker_containers_list", "docker_container_logs", "docker_container_action", "server_timers_list", "server_cleanup_run", "server_process_signal"]) {
+    const schema = byName.get(name).inputSchema;
+    assert.ok(schema.properties.target && schema.properties.device_id, name);
+    assert.ok(!schema.required.includes("device_id") && !schema.required.includes("daemon"), name);
+  }
+  const logs = byName.get("docker_container_logs").inputSchema;
+  assert.deepEqual(logs.required, ["container"]);
+  assert.deepEqual([logs.properties.tail.minimum, logs.properties.tail.maximum], [1, 2000]);
+  assert.ok(logs.properties.since && logs.properties.daemon);
+  assert.deepEqual(byName.get("docker_container_action").inputSchema.properties.action.enum, ["start", "stop", "restart"]);
+});

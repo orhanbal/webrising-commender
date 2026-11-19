@@ -176,7 +176,7 @@ async fn execute_unredacted(context: ExecutionContext<'_>, action: AgentAction) 
         | AgentAction::ServerTimersList
         | AgentAction::ServerProcessSignal { .. }
         | AgentAction::ServerRestartOwner { .. }
-        | AgentAction::DockerContainersList
+        | AgentAction::DockerContainersList { .. }
         | AgentAction::DockerContainerLogs { .. }
         | AgentAction::DockerContainerAction { .. } => crate::server_ops::execute(action).await,
         AgentAction::PolicyInfo => Ok(serde_json::json!({

@@ -77,15 +77,20 @@ pub enum AgentAction {
         id: String,
     },
     /// Docker containers (Linux): every daemon, as `wc_server` finds them.
-    DockerContainersList,
+    DockerContainersList {
+        daemon: Option<String>,
+    },
+    /// `container` is an id or name (or `ref@u<uid>`); `daemon` defaults
+    /// to the one the container names, else `system` (see
+    /// `wc_server::container_target`).
     DockerContainerLogs {
-        daemon: String,
+        daemon: Option<String>,
         container: String,
         tail: Option<usize>,
         since: Option<String>,
     },
     DockerContainerAction {
-        daemon: String,
+        daemon: Option<String>,
         container: String,
         action: String,
     },
@@ -342,7 +347,7 @@ impl AgentAction {
             Self::ServerTimersList => "server_timers_list",
             Self::ServerProcessSignal { .. } => "server_process_signal",
             Self::ServerRestartOwner { .. } => "server_restart_owner",
-            Self::DockerContainersList => "docker_containers_list",
+            Self::DockerContainersList { .. } => "docker_containers_list",
             Self::DockerContainerLogs { .. } => "docker_container_logs",
             Self::DockerContainerAction { .. } => "docker_container_action",
             Self::LogQuery { .. } => "log_query",
@@ -398,7 +403,7 @@ impl AgentAction {
             | Self::ServerCleanupScan
             | Self::ServerProcesses
             | Self::ServerTimersList
-            | Self::DockerContainersList
+            | Self::DockerContainersList { .. }
             | Self::DockerContainerLogs { .. }
             | Self::LogQuery { .. }
             | Self::PolicyInfo

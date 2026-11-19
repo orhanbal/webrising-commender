@@ -421,7 +421,7 @@ mod tests {
         let client = request["id"].as_str().unwrap().to_owned();
         // The tool list needs no decision.
         let list = c.call("tools/list", json!({})).await;
-        assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 12);
+        assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 19);
         // A call waits for the person; allowing releases it.
         let pending = c
             .send(

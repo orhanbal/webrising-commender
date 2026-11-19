@@ -7,10 +7,19 @@
 //! with `-H` as root when this machine allows it).
 //!
 //! Only the discovery is a fixed `sh` script. Every Docker call is an
-//! argument vector run without a shell ([`Exec`]): the container reference,
-//! the log window and the daemon's socket are separate arguments, and they
-//! are validated before anything runs. Nothing here removes a container,
-//! prunes, or touches volumes and images.
+//! argument vector ([`Exec`]): on the agent it runs without a shell; over
+//! SSH (wc-app-core) every argument is quoted with [`crate::quote`]
+//! ([`argv_command`]). The container reference, the log window and the
+//! daemon's socket are separate arguments, validated before anything runs;
+//! the socket is rebuilt from the daemon's uid, never taken from the caller.
+//!
+//! A container is named by `container` (an id or name, or `<ref>@u<uid>` for
+//! a rootless daemon) and an optional `daemon` (`system` or `u<uid>`), see
+//! [`container_target`]. Logs and actions first resolve the reference to the
+//! full id Docker reports and then act on that id only. WECOMMANDER's own
+//! containers (name starting with `wecommander`) are never stopped or
+//! restarted from here. Nothing here removes a container, prunes, or touches
+//! volumes and images.
 
 use std::future::Future;
 
@@ -19,13 +28,23 @@ use serde::Serialize;
 use crate::docker::{self, Found};
 use crate::{first, run, sections, Shell};
 
-/// Runs a program with arguments directly (no shell between).
+/// Runs a program with arguments: directly on the agent (no shell between),
+/// as an [`argv_command`] over SSH.
 pub trait Exec: Sync {
     fn exec(
         &self,
         argv: &[String],
         secs: u64,
     ) -> impl Future<Output = Result<ExecOutput, String>> + Send;
+}
+
+/// `argv` as one `sh` command line, every argument single-quoted with
+/// [`crate::quote`]: for runners that can only send a command line (SSH).
+pub fn argv_command(argv: &[String]) -> String {
+    argv.iter()
+        .map(|a| crate::quote(a))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -91,7 +110,9 @@ pub struct ContainerList {
 #[serde(rename_all = "camelCase")]
 pub struct ContainerLogs {
     pub daemon: String,
+    /// The full id Docker resolved the reference to.
     pub container: String,
+    pub name: String,
     /// Oldest first; each line starts with Docker's timestamp, and lines the
     /// container wrote to stderr carry `[stderr]` after it.
     pub text: String,
@@ -105,7 +126,9 @@ pub struct ContainerLogs {
 pub struct ContainerActionResult {
     pub ok: bool,
     pub daemon: String,
+    /// The full id the action ran on.
     pub container: String,
+    pub name: String,
     pub action: String,
     pub state: String,
 }
@@ -120,12 +143,54 @@ pub fn valid_container_ref(s: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || "_.-".contains(c))
 }
 
-/// `system`, or `u<uid>` for a rootless daemon.
+/// `system`, or `u<uid>` for a rootless daemon (a positive uid, no leading
+/// zero; root's daemon is `system`).
 pub fn valid_daemon_id(s: &str) -> bool {
-    s == "system"
-        || s.strip_prefix('u').is_some_and(|n| {
-            !n.is_empty() && n.len() <= 10 && n.chars().all(|c| c.is_ascii_digit())
-        })
+    if s == "system" {
+        return true;
+    }
+    s.strip_prefix('u').is_some_and(|n| {
+        n.chars().all(|c| c.is_ascii_digit())
+            && n.parse::<u32>()
+                .is_ok_and(|uid| uid > 0 && uid.to_string() == n)
+    })
+}
+
+/// Splits `container` (`ref` or `ref@u<uid>`, a leading `/` allowed) and an
+/// optional separate `daemon` into `(daemon, ref)`: the system daemon when
+/// neither names one. Both naming different daemons is refused.
+pub fn container_target(container: &str, daemon: Option<&str>) -> Result<(String, String), String> {
+    let c = container.trim();
+    let c = c.strip_prefix('/').unwrap_or(c);
+    let (r, suffix) = match c.split_once('@') {
+        Some((r, d)) => (r, Some(d)),
+        None => (c, None),
+    };
+    let daemon = daemon.map(str::trim).filter(|d| !d.is_empty());
+    let chosen = match (suffix, daemon) {
+        (Some(a), Some(b)) if a != b => {
+            return Err(format!(
+                "invalid daemon: container names {a}, daemon names {b}"
+            ))
+        }
+        (Some(a), _) => a,
+        (None, Some(b)) => b,
+        (None, None) => "system",
+    };
+    if !valid_container_ref(r) {
+        return Err(format!("invalid container id or name: {container}"));
+    }
+    if !valid_daemon_id(chosen) {
+        return Err(format!("invalid daemon: {chosen} (system or u<uid>)"));
+    }
+    Ok((chosen.to_owned(), r.to_owned()))
+}
+
+/// WECOMMANDER's own containers: never stopped or restarted from MCP.
+pub fn is_protected_container(name: &str) -> bool {
+    name.trim_start_matches('/')
+        .to_ascii_lowercase()
+        .starts_with("wecommander")
 }
 
 /// A `docker logs --since` value: a duration (`10m`, `1h30m`), a Unix time
@@ -364,16 +429,27 @@ async fn daemon_view<E: Exec>(ex: &E, f: &Found) -> DaemonContainers {
     }
 }
 
-/// Every daemon's containers, the system daemon first. A daemon that can not
-/// be read carries its error; the others are still listed.
-pub async fn containers<S: Shell + Exec>(sh: &S) -> Result<ContainerList, String> {
-    containers_in(sh, docker::RUN_USER).await
+/// Every daemon's containers, the system daemon first, or only the daemon
+/// `only` names. A daemon that can not be read carries its error; the others
+/// are still listed.
+pub async fn containers<S: Shell + Exec>(
+    sh: &S,
+    only: Option<&str>,
+) -> Result<ContainerList, String> {
+    containers_in(sh, docker::RUN_USER, only).await
 }
 
 pub(crate) async fn containers_in<S: Shell + Exec>(
     sh: &S,
     run_user: &str,
+    only: Option<&str>,
 ) -> Result<ContainerList, String> {
+    let only = only.map(str::trim).filter(|d| !d.is_empty());
+    if let Some(id) = only {
+        if !valid_daemon_id(id) {
+            return Err(format!("invalid daemon: {id} (system or u<uid>)"));
+        }
+    }
     let d = discover(sh, run_user).await?;
     let mut list = ContainerList {
         docker_installed: d.has_docker,
@@ -382,7 +458,14 @@ pub(crate) async fn containers_in<S: Shell + Exec>(
     if !d.has_docker {
         return Ok(list);
     }
-    for f in &d.found {
+    if let Some(id) = only {
+        if !d.found.iter().any(|f| f.id == id) {
+            return Err(format!(
+                "No Docker daemon {id} on this machine (see docker_containers_list)."
+            ));
+        }
+    }
+    for f in d.found.iter().filter(|f| only.is_none_or(|id| f.id == id)) {
         let mut view = daemon_view(sh, f).await;
         let ps = sh
             .exec(
@@ -455,6 +538,43 @@ async fn find_daemon<S: Shell>(
         format!("No Docker daemon {id} on this machine (see docker_containers_list).")
     })?;
     Ok((d.privilege, found))
+}
+
+/// The full id and name of the container `r` on a daemon (`docker container
+/// inspect`, so an image of that name is never matched).
+async fn resolve<E: Exec>(
+    ex: &E,
+    privilege: &str,
+    socket: &str,
+    r: &str,
+) -> Result<(String, String), String> {
+    let out = ex
+        .exec(
+            &docker_argv(
+                privilege,
+                socket,
+                30,
+                &["container", "inspect", "--format", "{{.Id}}\t{{.Name}}", r],
+            ),
+            40,
+        )
+        .await?;
+    if out.code != 0 {
+        return Err(not_found_or(&out, r));
+    }
+    let line = out.stdout.lines().next().unwrap_or("").trim();
+    let (id, name) = line.split_once('\t').unwrap_or((line, ""));
+    if !is_full_id(id) {
+        return Err(format!("No such container on this daemon: {r}"));
+    }
+    let name: String = name
+        .trim()
+        .trim_start_matches('/')
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(256)
+        .collect();
+    Ok((id.to_ascii_lowercase(), name))
 }
 
 /// One timestamped log line from either stream.
@@ -533,27 +653,27 @@ pub fn merge_logs(stdout: &str, stderr: &str, tail: usize) -> (String, usize, bo
 }
 
 /// The last `tail` lines (default 200, at most 2000) of one container's logs.
+/// `container` and `daemon` as [`container_target`] takes them.
 pub async fn container_logs<S: Shell + Exec>(
     sh: &S,
-    daemon: &str,
     container: &str,
+    daemon: Option<&str>,
     tail: Option<usize>,
     since: Option<&str>,
 ) -> Result<ContainerLogs, String> {
-    container_logs_in(sh, docker::RUN_USER, daemon, container, tail, since).await
+    container_logs_in(sh, docker::RUN_USER, container, daemon, tail, since).await
 }
 
 pub(crate) async fn container_logs_in<S: Shell + Exec>(
     sh: &S,
     run_user: &str,
-    daemon: &str,
     container: &str,
+    daemon: Option<&str>,
     tail: Option<usize>,
     since: Option<&str>,
 ) -> Result<ContainerLogs, String> {
-    if !valid_container_ref(container) {
-        return Err(format!("invalid container id or name: {container}"));
-    }
+    let (daemon, container) = container_target(container, daemon)?;
+    let (daemon, container) = (daemon.as_str(), container.as_str());
     if let Some(s) = since {
         if !valid_since(s) {
             return Err(format!(
@@ -563,12 +683,13 @@ pub(crate) async fn container_logs_in<S: Shell + Exec>(
     }
     let tail = tail.unwrap_or(DEFAULT_LOG_LINES).clamp(1, MAX_LOG_LINES);
     let (privilege, found) = find_daemon(sh, run_user, daemon).await?;
+    let (id, name) = resolve(sh, &privilege, &found.socket, container).await?;
     let tail_text = tail.to_string();
     let mut args = vec!["logs", "--timestamps", "--tail", tail_text.as_str()];
     if let Some(s) = since {
         args.extend(["--since", s]);
     }
-    args.push(container);
+    args.push(id.as_str());
     let out = sh
         .exec(&docker_argv(&privilege, &found.socket, 60, &args), 70)
         .await?;
@@ -578,7 +699,8 @@ pub(crate) async fn container_logs_in<S: Shell + Exec>(
     let (text, lines, truncated) = merge_logs(&out.stdout, &out.stderr, tail);
     Ok(ContainerLogs {
         daemon: daemon.to_owned(),
-        container: container.to_owned(),
+        container: id,
+        name,
         text,
         lines,
         truncated,
@@ -599,35 +721,41 @@ fn not_found_or(out: &ExecOutput, container: &str) -> String {
 
 pub const CONTAINER_ACTIONS: &[&str] = &["start", "stop", "restart"];
 
-/// Starts, stops or restarts one container. Nothing else: no `rm`, no
-/// prune, no volumes or images.
+/// Starts, stops or restarts one container, on the full id its reference
+/// resolves to. Nothing else: no `rm`, no prune, no volumes or images.
+/// WECOMMANDER's own containers are not stopped or restarted.
 pub async fn container_action<S: Shell + Exec>(
     sh: &S,
-    daemon: &str,
     container: &str,
+    daemon: Option<&str>,
     action: &str,
 ) -> Result<ContainerActionResult, String> {
-    container_action_in(sh, docker::RUN_USER, daemon, container, action).await
+    container_action_in(sh, docker::RUN_USER, container, daemon, action).await
 }
 
 pub(crate) async fn container_action_in<S: Shell + Exec>(
     sh: &S,
     run_user: &str,
-    daemon: &str,
     container: &str,
+    daemon: Option<&str>,
     action: &str,
 ) -> Result<ContainerActionResult, String> {
     let Some(action) = CONTAINER_ACTIONS.iter().copied().find(|a| *a == action) else {
         return Err(format!("invalid action: {action} (start, stop or restart)"));
     };
-    if !valid_container_ref(container) {
-        return Err(format!("invalid container id or name: {container}"));
-    }
+    let (daemon, container) = container_target(container, daemon)?;
+    let (daemon, container) = (daemon.as_str(), container.as_str());
     let (privilege, found) = find_daemon(sh, run_user, daemon).await?;
+    let (id, name) = resolve(sh, &privilege, &found.socket, container).await?;
+    if action != "start" && is_protected_container(&name) {
+        return Err(format!(
+            "WECOMMANDER's own containers are not stopped or restarted from here: {name}"
+        ));
+    }
     // `stop` and `restart` wait 10 s for the container before killing it.
     let out = sh
         .exec(
-            &docker_argv(&privilege, &found.socket, 180, &[action, container]),
+            &docker_argv(&privilege, &found.socket, 180, &[action, id.as_str()]),
             200,
         )
         .await?;
@@ -640,7 +768,7 @@ pub(crate) async fn container_action_in<S: Shell + Exec>(
                 &privilege,
                 &found.socket,
                 30,
-                &["inspect", "--format", "{{.State.Status}}", container],
+                &["inspect", "--format", "{{.State.Status}}", id.as_str()],
             ),
             40,
         )
@@ -650,7 +778,8 @@ pub(crate) async fn container_action_in<S: Shell + Exec>(
     Ok(ContainerActionResult {
         ok: true,
         daemon: daemon.to_owned(),
-        container: container.to_owned(),
+        container: id,
+        name,
         action: action.to_owned(),
         state,
     })
@@ -775,12 +904,15 @@ mod tests {
         ] {
             assert!(!valid_container_ref(bad), "{bad:?}");
         }
-        for good in ["system", "u1000", "u0"] {
+        for good in ["system", "u1000", "u1", "u4294967295"] {
             assert!(valid_daemon_id(good), "{good}");
         }
         for bad in [
             "",
             "u",
+            "u0",
+            "u01",
+            "u4294967296",
             "uabc",
             "u1000;x",
             "root",
@@ -873,7 +1005,7 @@ mod tests {
             ok("")
         }
         let fake = Fake::new(TWO_DAEMONS, answer);
-        let list = block_on(containers_in(&fake, "/run/user")).unwrap();
+        let list = block_on(containers_in(&fake, "/run/user", None)).unwrap();
         assert!(list.docker_installed);
         assert_eq!(list.daemons.len(), 2);
         let system = &list.daemons[0];
@@ -905,7 +1037,7 @@ mod tests {
     #[test]
     fn no_docker_lists_nothing() {
         let fake = Fake::new("@@hasdocker\n\n@@system\n\n@@rootless\n", |_| ok(""));
-        let list = block_on(containers_in(&fake, "/run/user")).unwrap();
+        let list = block_on(containers_in(&fake, "/run/user", None)).unwrap();
         assert!(!list.docker_installed && list.daemons.is_empty());
         assert!(fake.calls().is_empty());
     }
@@ -941,9 +1073,117 @@ mod tests {
         assert_eq!(merge_logs(&many, "", 9999).1, MAX_LOG_LINES);
     }
 
+    /// `docker container inspect` answers: `web`, `relay` and the short id
+    /// of ID_A are ID_A; `wecommander-agent` is ID_B; anything else is not
+    /// there.
+    fn inspect(argv: &[String]) -> Option<ExecOutput> {
+        let at = argv.iter().position(|a| a == "container")?;
+        if argv.get(at + 1).map(String::as_str) != Some("inspect") {
+            return None;
+        }
+        Some(match argv.last().map(String::as_str) {
+            Some("web" | "relay" | "aaaaaaaaaaaa") => ok(&format!("{ID_A}\t/web\n")),
+            Some("wecommander-agent") => ok(&format!("{ID_B}\t/wecommander-agent\n")),
+            Some(other) => ExecOutput {
+                code: 1,
+                stdout: String::new(),
+                stderr: format!("Error response from daemon: No such container: {other}"),
+            },
+            None => ok(""),
+        })
+    }
+
     #[test]
-    fn logs_run_on_the_named_daemon_with_a_bounded_tail() {
+    fn a_container_names_its_daemon_once() {
+        let t = |c: &str, d: Option<&str>| container_target(c, d);
+        assert_eq!(t("web", None).unwrap(), ("system".into(), "web".into()));
+        assert_eq!(t("/web", None).unwrap(), ("system".into(), "web".into()));
+        assert_eq!(
+            t("0123456789ab@u1000", None).unwrap(),
+            ("u1000".into(), "0123456789ab".into())
+        );
+        assert_eq!(
+            t("web", Some("u1000")).unwrap(),
+            ("u1000".into(), "web".into())
+        );
+        assert_eq!(
+            t("web@u1000", Some("u1000")).unwrap(),
+            ("u1000".into(), "web".into())
+        );
+        assert_eq!(
+            t("web", Some(" ")).unwrap(),
+            ("system".into(), "web".into())
+        );
+        let err = t("web@u1000", Some("system")).unwrap_err();
+        assert!(err.contains("invalid daemon"), "{err}");
+        for (c, d) in [
+            ("web@u0", None),
+            ("web@x@y", None),
+            ("web", Some("../x")),
+            ("web", Some("root")),
+        ] {
+            let err = t(c, d).unwrap_err();
+            assert!(err.contains("invalid"), "{c} {d:?}: {err}");
+        }
+        for c in ["web;id", "", "-f", "@u1000"] {
+            let err = t(c, None).unwrap_err();
+            assert!(err.contains("invalid container"), "{c}: {err}");
+        }
+    }
+
+    #[test]
+    fn argv_commands_quote_every_argument() {
+        let argv: Vec<String> = ["docker", "logs", "--since", "10m", "it's; id"]
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect();
+        assert_eq!(
+            argv_command(&argv),
+            r#"'docker' 'logs' '--since' '10m' 'it'\''s; id'"#
+        );
+    }
+
+    #[test]
+    fn wecommander_containers_are_protected() {
+        for name in ["wecommander", "/wecommander-agent", "WECOMMANDER_db"] {
+            assert!(is_protected_container(name), "{name}");
+        }
+        for name in ["web", "my-wecommander", ""] {
+            assert!(!is_protected_container(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn one_daemon_can_be_listed_alone() {
         fn answer(argv: &[String]) -> ExecOutput {
+            if argv.contains(&"ps".to_owned()) {
+                return ok(&format!("{{\"ID\":\"{ID_A}\",\"Names\":\"relay\",\"State\":\"running\",\"Status\":\"Up\"}}\n"));
+            }
+            ok("")
+        }
+        let fake = Fake::new(TWO_DAEMONS, answer);
+        let list = block_on(containers_in(&fake, "/run/user", Some("u1000"))).unwrap();
+        assert_eq!(list.daemons.len(), 1);
+        assert_eq!(list.daemons[0].daemon, "u1000");
+        assert!(fake
+            .calls()
+            .iter()
+            .filter(|c| c.contains(&"ps".to_owned()))
+            .all(|c| c.contains(&"unix:///run/user/1000/docker.sock".to_owned())));
+        let err = block_on(containers_in(&fake, "/run/user", Some("u2000"))).unwrap_err();
+        assert!(err.contains("No Docker daemon u2000"), "{err}");
+        let fake = Fake::new(TWO_DAEMONS, answer);
+        let err = block_on(containers_in(&fake, "/run/user", Some("x;id"))).unwrap_err();
+        assert!(err.contains("invalid daemon"), "{err}");
+        assert!(fake.scripts.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn logs_run_on_the_resolved_id_of_the_named_daemon_with_a_bounded_tail() {
+        fn answer(argv: &[String]) -> ExecOutput {
+            if let Some(out) = inspect(argv) {
+                return out;
+            }
             if argv.contains(&"logs".to_owned()) {
                 ExecOutput {
                     code: 0,
@@ -958,17 +1198,36 @@ mod tests {
         let logs = block_on(container_logs_in(
             &fake,
             "/run/user",
-            "u1000",
-            "relay",
+            "relay@u1000",
+            None,
             Some(99_999),
             Some("10m"),
         ))
         .unwrap();
         assert_eq!(logs.lines, 2);
-        assert!(logs.text.contains("[stderr] oops"));
-        let call = fake.calls().pop().unwrap();
         assert_eq!(
-            call[4..],
+            (logs.daemon.as_str(), logs.container.as_str()),
+            ("u1000", ID_A)
+        );
+        assert_eq!(logs.name, "web");
+        assert!(logs.text.contains("[stderr] oops"));
+        let calls = fake.calls();
+        assert_eq!(
+            calls[0][4..],
+            [
+                "docker",
+                "-H",
+                "unix:///run/user/1000/docker.sock",
+                "container",
+                "inspect",
+                "--format",
+                "{{.Id}}\t{{.Name}}",
+                "relay"
+            ]
+        );
+        // The logs are read from the full id Docker resolved.
+        assert_eq!(
+            calls.last().unwrap()[4..],
             [
                 "docker",
                 "-H",
@@ -979,53 +1238,63 @@ mod tests {
                 "2000",
                 "--since",
                 "10m",
-                "relay"
+                ID_A
             ]
         );
         // Bad input is refused before anything runs.
         let fake = Fake::new(TWO_DAEMONS, answer);
-        for (daemon, container, since) in [
-            ("system", "web; reboot", None),
-            ("system", "-f", None),
-            ("system", "web", Some("1h; id")),
-            ("root", "web", None),
+        for (container, daemon, since) in [
+            ("web; reboot", None, None),
+            ("-f", None, None),
+            ("web", None, Some("1h; id")),
+            ("web", Some("root"), None),
+            ("web@u1000", Some("system"), None),
         ] {
             assert!(block_on(container_logs_in(
                 &fake,
                 "/run/user",
-                daemon,
                 container,
+                daemon,
                 None,
                 since
             ))
             .is_err());
         }
         assert!(fake.calls().is_empty());
+        assert!(fake.scripts.lock().unwrap().is_empty());
         // A daemon that is not there is refused.
         let err = block_on(container_logs_in(
             &fake,
             "/run/user",
-            "u2000",
             "web",
+            Some("u2000"),
             None,
             None,
         ))
         .unwrap_err();
         assert!(err.contains("No Docker daemon u2000"), "{err}");
         assert!(fake.calls().is_empty());
+        // A container that is not there.
+        let err = block_on(container_logs_in(
+            &fake,
+            "/run/user",
+            "ghost",
+            None,
+            None,
+            None,
+        ))
+        .unwrap_err();
+        assert!(err.contains("No such container"), "{err}");
+        assert!(!fake.calls().iter().any(|c| c.contains(&"logs".to_owned())));
     }
 
     #[test]
-    fn actions_are_start_stop_restart_only() {
+    fn actions_are_start_stop_restart_only_on_the_resolved_id() {
         fn answer(argv: &[String]) -> ExecOutput {
-            if argv.contains(&"inspect".to_owned()) {
+            if let Some(out) = inspect(argv) {
+                out
+            } else if argv.contains(&"inspect".to_owned()) {
                 ok("running\n")
-            } else if argv.contains(&"ghost".to_owned()) {
-                ExecOutput {
-                    code: 1,
-                    stdout: String::new(),
-                    stderr: "Error response from daemon: No such container: ghost".into(),
-                }
             } else {
                 ok("web\n")
             }
@@ -1034,16 +1303,17 @@ mod tests {
         let r = block_on(container_action_in(
             &fake,
             "/run/user",
-            "system",
             "web",
+            Some("system"),
             "restart",
         ))
         .unwrap();
         assert!(r.ok);
         assert_eq!(r.state, "running");
+        assert_eq!((r.container.as_str(), r.name.as_str()), (ID_A, "web"));
         let calls = fake.calls();
         assert_eq!(
-            calls[0],
+            calls[1],
             [
                 "sudo",
                 "-n",
@@ -1053,36 +1323,52 @@ mod tests {
                 "-H",
                 "unix:///var/run/docker.sock",
                 "restart",
-                "web"
+                ID_A
             ]
         );
         for bad in ["rm", "kill", "prune", "start web", "", "pause"] {
             assert!(
-                block_on(container_action_in(
-                    &fake,
-                    "/run/user",
-                    "system",
-                    "web",
-                    bad
-                ))
-                .is_err(),
+                block_on(container_action_in(&fake, "/run/user", "web", None, bad)).is_err(),
                 "{bad}"
             );
         }
         let err = block_on(container_action_in(
             &fake,
             "/run/user",
-            "system",
             "ghost",
+            None,
             "stop",
         ))
         .unwrap_err();
         assert!(err.contains("No such container"), "{err}");
+        // WECOMMANDER's own containers: started, never stopped or restarted.
+        for action in ["stop", "restart"] {
+            let err = block_on(container_action_in(
+                &fake,
+                "/run/user",
+                "wecommander-agent",
+                None,
+                action,
+            ))
+            .unwrap_err();
+            assert!(err.contains("WECOMMANDER"), "{err}");
+        }
+        assert!(block_on(container_action_in(
+            &fake,
+            "/run/user",
+            "wecommander-agent",
+            None,
+            "start",
+        ))
+        .is_ok());
+        let calls = fake.calls();
+        assert!(!calls.iter().any(|c| c.contains(&ID_B.to_owned())
+            && (c.contains(&"stop".to_owned()) || c.contains(&"restart".to_owned()))));
         // Nothing but start/stop/restart and inspect ever reached Docker.
-        for c in fake.calls() {
+        for c in calls {
             let verb = &c[c.iter().position(|a| a == "docker").unwrap() + 3];
             assert!(
-                ["start", "stop", "restart", "inspect"].contains(&verb.as_str()),
+                ["start", "stop", "restart", "inspect", "container"].contains(&verb.as_str()),
                 "{c:?}"
             );
         }

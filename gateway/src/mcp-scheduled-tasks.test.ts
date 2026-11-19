@@ -326,7 +326,9 @@ test("MCP tool list: scheduled task tools are workspace tools; server_timers_lis
   }
   assert.deepEqual(byName.get("scheduled_task_create").inputSchema.required, ["device_id", "name", "command", "schedule"]);
   assert.ok(!("approval_token" in byName.get("scheduled_task_delete").inputSchema.properties), "no self-issued approvals");
-  assert.deepEqual(byName.get("server_timers_list").inputSchema.required, ["device_id"]);
+  // Agent devices and SSH targets: device_id or target.
+  assert.deepEqual(byName.get("server_timers_list").inputSchema.required, []);
+  assert.ok(byName.get("server_timers_list").inputSchema.properties.target);
 
   const list = toolAnnotations("scheduled_tasks_list");
   assert.deepEqual([list.readOnlyHint, list.destructiveHint], [true, false]);

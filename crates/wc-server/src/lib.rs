@@ -19,10 +19,11 @@ pub use docker::{
 };
 mod containers;
 pub use containers::{
-    container_action, container_logs, containers as docker_containers, parse_ps_json,
-    valid_container_ref, valid_daemon_id, valid_since, Container, ContainerActionResult,
-    ContainerList, ContainerLogs, DaemonContainers, Exec, ExecOutput, CONTAINER_ACTIONS,
-    DEFAULT_LOG_LINES, MAX_LOG_BYTES, MAX_LOG_LINES,
+    argv_command, container_action, container_logs, container_target,
+    containers as docker_containers, is_protected_container, parse_ps_json, valid_container_ref,
+    valid_daemon_id, valid_since, Container, ContainerActionResult, ContainerList, ContainerLogs,
+    DaemonContainers, Exec, ExecOutput, CONTAINER_ACTIONS, DEFAULT_LOG_LINES, MAX_CONTAINERS,
+    MAX_LOG_BYTES, MAX_LOG_LINES,
 };
 mod timers;
 pub use timers::{

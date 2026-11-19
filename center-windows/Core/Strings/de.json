@@ -1370,5 +1370,9 @@
  "Öğretici": "Tutorial",
  "Öğreticiyi göster": "Tutorial anzeigen",
  "Baştan başlat": "Neu starten",
- "Bu bilgisayardaki ajan durdu ve şimdilik yeniden başlatılamadı; WECOMMANDER her 5 dakikada bir yeniden deniyor. O sırada yapay zekâ bu bilgisayara erişemez.": "Der Agent auf diesem Computer wurde beendet und konnte noch nicht neu gestartet werden; WECOMMANDER versucht es alle 5 Minuten erneut. Bis dahin kann die KI diesen Computer nicht erreichen."
+ "Bu bilgisayardaki ajan durdu ve şimdilik yeniden başlatılamadı; WECOMMANDER her 5 dakikada bir yeniden deniyor. O sırada yapay zekâ bu bilgisayara erişemez.": "Der Agent auf diesem Computer wurde beendet und konnte noch nicht neu gestartet werden; WECOMMANDER versucht es alle 5 Minuten erneut. Bis dahin kann die KI diesen Computer nicht erreichen.",
+ "Konteyneri başlat veya durdur": "Container starten oder stoppen",
+ "Zamanlanmış görev oluştur": "Geplante Aufgabe erstellen",
+ "Zamanlanmış görevi sil": "Geplante Aufgabe löschen",
+ "Zamanlanmış görevi şimdi çalıştır": "Geplante Aufgabe jetzt ausführen"
 }

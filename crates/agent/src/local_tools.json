@@ -242,10 +242,15 @@
  {
   "name": "docker_containers_list",
   "title": "List Docker containers",
-  "description": "Linux Docker containers, read-only, per daemon: the system daemon and each user's rootless one (daemon id system or u<uid>, the same daemons as server_cleanup_scan). Each container has id, name, image, state, status, created, ports and restart count. A daemon that cannot be read carries its error instead.",
+  "description": "Linux Docker containers, read-only, per daemon: the system daemon and each user's rootless one (daemon id system or u<uid>, the same daemons as server_cleanup_scan). Each container has id (the full 64-hex id), name, image, state, status, created, ports and restart count. A daemon that cannot be read carries its error instead. daemon limits the list to one daemon. Works on agent devices and SSH targets.",
   "inputSchema": {
    "type": "object",
-   "properties": {},
+   "properties": {
+    "daemon": {
+     "type": "string",
+     "description": "Docker daemon from docker_containers_list: system (default) or u<uid> for a user's rootless one."
+    }
+   },
    "required": [],
    "additionalProperties": false
   },
@@ -260,22 +265,23 @@
  {
   "name": "docker_container_logs",
   "title": "Read container logs",
-  "description": "Read-only: the last lines of one container's logs (stdout and stderr merged, timestamped, oldest first). tail 1-2000 (default 200); since limits the window (10m, 1h30m, a Unix time or an RFC 3339 time). At most 256 KiB, newest lines kept; secrets are masked.",
+  "description": "Read-only: the last lines of one container's logs (stdout and stderr merged, timestamped, oldest first). tail 1-2000 (default 200); since limits the window (10m, 1h30m, a Unix time or an RFC 3339 time). At most 256 KiB, newest lines kept; secrets are masked. Works on agent devices and SSH targets.",
   "inputSchema": {
    "type": "object",
    "properties": {
-    "daemon": {
-     "type": "string",
-     "description": "Daemon id from docker_containers_list: system or u<uid>."
-    },
     "container": {
      "type": "string",
-     "description": "Container id or name."
+     "description": "Container id or name from docker_containers_list; ref@u<uid> names a rootless daemon."
+    },
+    "daemon": {
+     "type": "string",
+     "description": "Docker daemon from docker_containers_list: system (default) or u<uid> for a user's rootless one."
     },
     "tail": {
      "type": "integer",
      "minimum": 1,
-     "maximum": 2000
+     "maximum": 2000,
+     "description": "Lines from the end (default 200)."
     },
     "since": {
      "type": "string",
@@ -283,7 +289,6 @@
     }
    },
    "required": [
-    "daemon",
     "container"
    ],
    "additionalProperties": false
@@ -299,17 +304,17 @@
  {
   "name": "docker_container_action",
   "title": "Start, stop or restart a container",
-  "description": "Starts, stops or restarts one Docker container on the daemon it names (stop and restart wait 10 s before killing). Never removes containers, images or volumes. Needs a human approval for every call, also on fully trusted devices.",
+  "description": "Starts, stops or restarts one Docker container on the daemon it names (stop and restart wait 10 s before killing); the action runs on the full id Docker resolves the reference to. Never removes containers, images or volumes; WECOMMANDER's own containers are never stopped or restarted. Needs a human approval for every call, also on fully trusted devices; refused on read-only SSH targets.",
   "inputSchema": {
    "type": "object",
    "properties": {
-    "daemon": {
-     "type": "string",
-     "description": "Daemon id from docker_containers_list: system or u<uid>."
-    },
     "container": {
      "type": "string",
-     "description": "Container id or name."
+     "description": "Container id or name from docker_containers_list; ref@u<uid> names a rootless daemon."
+    },
+    "daemon": {
+     "type": "string",
+     "description": "Docker daemon from docker_containers_list: system (default) or u<uid> for a user's rootless one."
     },
     "action": {
      "type": "string",
@@ -321,7 +326,6 @@
     }
    },
    "required": [
-    "daemon",
     "container",
     "action"
    ],

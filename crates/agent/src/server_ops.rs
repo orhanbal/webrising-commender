@@ -118,8 +118,8 @@ pub async fn execute(action: AgentAction) -> Result<Value> {
         AgentAction::ServerRestartOwner { owner_kind, id } => {
             done(wc_server::restart_owner(&sh, owner_kind, id).await)
         }
-        AgentAction::DockerContainersList => json(
-            wc_server::docker_containers(&sh)
+        AgentAction::DockerContainersList { daemon } => json(
+            wc_server::docker_containers(&sh, daemon.as_deref())
                 .await
                 .map_err(|e| anyhow!(e))?,
         ),
@@ -129,7 +129,7 @@ pub async fn execute(action: AgentAction) -> Result<Value> {
             tail,
             since,
         } => json(
-            wc_server::container_logs(&sh, &daemon, &container, tail, since.as_deref())
+            wc_server::container_logs(&sh, &container, daemon.as_deref(), tail, since.as_deref())
                 .await
                 .map_err(|e| anyhow!(e))?,
         ),
@@ -138,7 +138,7 @@ pub async fn execute(action: AgentAction) -> Result<Value> {
             container,
             action,
         } => json(
-            wc_server::container_action(&sh, &daemon, &container, &action)
+            wc_server::container_action(&sh, &container, daemon.as_deref(), &action)
                 .await
                 .map_err(|e| anyhow!(e))?,
         ),
@@ -254,6 +254,20 @@ mod tests {
         assert!(
             matches!(act, AgentAction::DockerContainerAction { ref action, .. } if action == "restart")
         );
+        // Local stdio mode passes the MCP arguments as they are: the daemon
+        // may be left out or named by the container (`ref@u<uid>`).
+        let rootless = action(serde_json::json!({
+            "kind": "docker_container_action", "container": "web@u1000", "action": "stop"
+        }));
+        assert!(matches!(
+            rootless,
+            AgentAction::DockerContainerAction { daemon: None, ref container, .. } if container == "web@u1000"
+        ));
+        let one =
+            action(serde_json::json!({ "kind": "docker_containers_list", "daemon": "u1000" }));
+        assert!(
+            matches!(one, AgentAction::DockerContainersList { daemon: Some(ref d) } if d == "u1000")
+        );
     }
 
     #[tokio::test]
@@ -270,6 +284,14 @@ mod tests {
             (
                 serde_json::json!({ "kind": "docker_container_logs", "daemon": "system", "container": "web", "since": "$(id)" }),
                 "invalid since",
+            ),
+            (
+                serde_json::json!({ "kind": "docker_container_logs", "daemon": "system", "container": "web@u1000" }),
+                "invalid daemon",
+            ),
+            (
+                serde_json::json!({ "kind": "docker_containers_list", "daemon": "u0" }),
+                "invalid daemon",
             ),
         ] {
             let err = execute(action(json)).await.unwrap_err();

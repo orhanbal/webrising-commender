@@ -26,6 +26,9 @@ type JsonRpcRequest = { jsonrpc?: string; id?: string | number | null; method?: 
 // the corresponding padded base64 bound before relaying to a device.
 const MAX_TERMINAL_INPUT_BASE64_BYTES = Math.ceil((256 * 1024) / 3) * 4;
 
+const DOCKER_DAEMON_ARG = { type: "string", description: "Docker daemon from docker_containers_list: system (default) or u<uid> for a user's rootless one." };
+const DOCKER_CONTAINER_ARG = { type: "string", description: "Container id or name from docker_containers_list; ref@u<uid> names a rootless daemon." };
+
 export const tools = [
   {
     name: "devices_list",
@@ -60,18 +63,20 @@ export const tools = [
   tool("server_restart_owner", "Restarts the Docker container or systemd service that a process runs in (from server_processes zombie owners); its zombies go with the old process. SSH, Docker, containerd, journald, logind, D-Bus and WECOMMANDER itself are refused. Needs a human approval for this exact call.", {
     owner_kind: { type: "string", enum: ["container", "service"] }, id: { type: "string", description: "Container id (12+ hex) or unit name ending in .service." },
   }, ["owner_kind", "id"]),
-  tool("docker_containers_list", "Linux Docker containers, read-only, per daemon: the system daemon and each user's rootless one (daemon id system or u<uid>, the same daemons as server_cleanup_scan). Each container has id, name, image, state, status, created, ports and restart count. A daemon that cannot be read carries its error instead.", {}),
-  tool("docker_container_logs", "Read-only: the last lines of one container's logs (stdout and stderr merged, timestamped, oldest first). tail 1-2000 (default 200); since limits the window (10m, 1h30m, a Unix time or an RFC 3339 time). At most 256 KiB, newest lines kept; secrets are masked.", {
-    daemon: { type: "string", description: "Daemon id from docker_containers_list: system or u<uid>." },
-    container: { type: "string", description: "Container id or name." },
-    tail: { type: "integer", minimum: 1, maximum: 2000 },
+  tool("docker_containers_list", "Linux Docker containers, read-only, per daemon: the system daemon and each user's rootless one (daemon id system or u<uid>, the same daemons as server_cleanup_scan). Each container has id (the full 64-hex id), name, image, state, status, created, ports and restart count. A daemon that cannot be read carries its error instead. daemon limits the list to one daemon. Works on agent devices and SSH targets.", {
+    daemon: DOCKER_DAEMON_ARG,
+  }),
+  tool("docker_container_logs", "Read-only: the last lines of one container's logs (stdout and stderr merged, timestamped, oldest first). tail 1-2000 (default 200); since limits the window (10m, 1h30m, a Unix time or an RFC 3339 time). At most 256 KiB, newest lines kept; secrets are masked. Works on agent devices and SSH targets.", {
+    container: DOCKER_CONTAINER_ARG,
+    daemon: DOCKER_DAEMON_ARG,
+    tail: { type: "integer", minimum: 1, maximum: 2000, description: "Lines from the end (default 200)." },
     since: { type: "string", maxLength: 40 },
-  }, ["daemon", "container"]),
-  tool("docker_container_action", "Starts, stops or restarts one Docker container on the daemon it names (stop and restart wait 10 s before killing). Never removes containers, images or volumes. Needs a human approval for every call, also on fully trusted devices.", {
-    daemon: { type: "string", description: "Daemon id from docker_containers_list: system or u<uid>." },
-    container: { type: "string", description: "Container id or name." },
+  }, ["container"]),
+  tool("docker_container_action", "Starts, stops or restarts one Docker container on the daemon it names (stop and restart wait 10 s before killing); the action runs on the full id Docker resolves the reference to. Never removes containers, images or volumes; WECOMMANDER's own containers are never stopped or restarted. Needs a human approval for every call, also on fully trusted devices; refused on read-only SSH targets.", {
+    container: DOCKER_CONTAINER_ARG,
+    daemon: DOCKER_DAEMON_ARG,
     action: { type: "string", enum: ["start", "stop", "restart"] },
-  }, ["daemon", "container", "action"]),
+  }, ["container", "action"]),
   tool("log_query", "Read-only, bounded log search on a device, newest first. source 'journal' (Linux systemd journal: since_minutes window, unit, level) or 'file' (tail of a log file inside the allowed roots). Filters: level (error|warning|info|debug, default info), pattern (case-insensitive regex), limit (1-1000, default 100). Repeated messages are grouped; secrets are masked.", {
     source: { type: "string", enum: ["journal", "file"] },
     path: { type: "string", description: "Log file for source 'file'." },
@@ -320,6 +325,21 @@ export function redactDockerLogs(data: unknown): unknown {
   return { ...(data as object), text: redactSecrets(text), truncated };
 }
 
+/** `container` (ref, /ref or ref@u<uid>) and `daemon` (optional) as one
+ *  daemon and one ref, as wc_server::container_target splits them. Daemons
+ *  that disagree are left in `container` so the strict schema refuses it. */
+export function dockerTarget(a: any): { daemon: string; container: string } {
+  const container = String(a.container ?? "").trim().replace(/^\//, "");
+  const given = a.daemon === undefined || a.daemon === null || String(a.daemon).trim() === "" ? null : String(a.daemon).trim();
+  const at = container.indexOf("@");
+  if (at >= 0) {
+    const suffix = container.slice(at + 1);
+    if (given !== null && given !== suffix) return { daemon: given, container };
+    return { daemon: suffix, container: container.slice(0, at) };
+  }
+  return { daemon: given ?? "system", container };
+}
+
 export function actionFromTool(name: string, a: any): AgentAction {
   switch (name) {
     case "system_info": return { kind: "system_info" };
@@ -345,14 +365,16 @@ export function actionFromTool(name: string, a: any): AgentAction {
       ...(a.confirm_database !== undefined ? { confirmDatabase: Boolean(a.confirm_database) } : {}),
     };
     case "server_restart_owner": return { kind: "server_restart_owner", ownerKind: String(a.owner_kind) as "container" | "service", id: String(a.id) };
-    case "docker_containers_list": return { kind: "docker_containers_list" };
+    case "docker_containers_list": return {
+      kind: "docker_containers_list", ...(a.daemon !== undefined && a.daemon !== null && a.daemon !== "" ? { daemon: String(a.daemon) } : {}),
+    };
     case "docker_container_logs": return {
-      kind: "docker_container_logs", daemon: String(a.daemon), container: String(a.container),
+      kind: "docker_container_logs", ...dockerTarget(a),
       ...(a.tail !== undefined ? { tail: Number(a.tail) } : {}),
       ...(a.since !== undefined ? { since: String(a.since) } : {}),
     };
     case "docker_container_action": return {
-      kind: "docker_container_action", daemon: String(a.daemon), container: String(a.container),
+      kind: "docker_container_action", ...dockerTarget(a),
       action: String(a.action) as "start" | "stop" | "restart",
     };
     case "fs_list": return { kind: "fs_list", path: String(a.path) };

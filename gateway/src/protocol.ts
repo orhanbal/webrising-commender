@@ -14,7 +14,7 @@ export type AgentAction =
   | { kind: "server_timers_list" }
   | { kind: "server_process_signal"; pid: number; name: string; action: "reap" | "term" | "kill"; confirmDatabase?: boolean }
   | { kind: "server_restart_owner"; ownerKind: "container" | "service"; id: string }
-  | { kind: "docker_containers_list" }
+  | { kind: "docker_containers_list"; daemon?: string }
   | { kind: "docker_container_logs"; daemon: string; container: string; tail?: number; since?: string }
   | { kind: "docker_container_action"; daemon: string; container: string; action: "start" | "stop" | "restart" }
   | { kind: "log_query"; source: "journal" | "file"; path?: string; unit?: string; sinceMinutes?: number; level?: "error" | "warning" | "info" | "debug"; pattern?: string; limit?: number }
@@ -71,7 +71,7 @@ const sessionIdSchema = z.string().uuid();
 // Docker daemons and containers, as crates/wc-server/src/containers.rs
 // validates them: `system` or `u<uid>`; a container id or name that can never
 // be read as an option or shell text.
-export const dockerDaemonSchema = z.string().regex(/^(system|u[0-9]{1,10})$/);
+export const dockerDaemonSchema = z.string().regex(/^(system|u[1-9][0-9]{0,9})$/);
 export const dockerContainerSchema = z.string().min(1).max(128).regex(/^[A-Za-z0-9][A-Za-z0-9_.-]*$/);
 // docker logs --since: a duration (10m, 1h30m), a Unix time or an RFC 3339 date/time.
 export const dockerSinceSchema = z.string().min(1).max(40).regex(
@@ -94,7 +94,7 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
     name: z.string().min(1).max(64).regex(/^[^\n\0]+$/), action: z.enum(["reap", "term", "kill"]), confirmDatabase: z.boolean().optional(),
   }).strict(),
   z.object({ kind: z.literal("server_restart_owner"), ownerKind: z.enum(["container", "service"]), id: z.string().min(1).max(256).regex(/^[A-Za-z0-9@._-]+$/) }).strict(),
-  z.object({ kind: z.literal("docker_containers_list") }).strict(),
+  z.object({ kind: z.literal("docker_containers_list"), daemon: dockerDaemonSchema.optional() }).strict(),
   z.object({
     kind: z.literal("docker_container_logs"), daemon: dockerDaemonSchema, container: dockerContainerSchema,
     tail: z.number().int().min(1).max(DOCKER_LOG_LINES_MAX).optional(), since: dockerSinceSchema.optional(),
