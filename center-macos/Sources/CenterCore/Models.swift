@@ -54,12 +54,17 @@ public struct Device: Decodable, Identifiable, Equatable {
     public let trustLevel: String?
     public let trustFullUntil: Date?
     public let revokedAt: Date?
+    /// "user" or "root": who the AI's commands run as (changed in the web panel).
+    public let runAs: String?
+    public let safetyNet: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id, name, platform, online
         case trustLevel = "trust_level"
         case trustFullUntil = "trust_full_until"
         case revokedAt = "revoked_at"
+        case runAs = "run_as"
+        case safetyNet = "safety_net"
     }
 
     public init(from decoder: Decoder) throws {
@@ -71,6 +76,8 @@ public struct Device: Decodable, Identifiable, Equatable {
         trustLevel = try c.decodeIfPresent(String.self, forKey: .trustLevel)
         trustFullUntil = try c.decodeIfPresent(Date.self, forKey: .trustFullUntil)
         revokedAt = try c.decodeIfPresent(Date.self, forKey: .revokedAt)
+        runAs = try c.decodeIfPresent(String.self, forKey: .runAs)
+        safetyNet = try c.decodeIfPresent(Bool.self, forKey: .safetyNet)
     }
 }
 

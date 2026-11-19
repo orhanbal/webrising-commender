@@ -370,11 +370,15 @@ private struct DevicesView: View {
                     Circle().fill(d.online ? Color.green : Color.secondary.opacity(0.4)).frame(width: 8, height: 8)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(d.name).font(.callout.weight(.medium))
-                        Text([d.platform ?? "", d.online ? L.t("çevrimiçi") : L.t("çevrimdışı"), Texts.trustLabel(d.trustLevel)]
+                        Text([d.platform ?? "", d.online ? L.t("çevrimiçi") : L.t("çevrimdışı"), Texts.trustLabel(d.trustLevel),
+                              d.runAs == "root" ? "root" : "", d.safetyNet == false ? L.t("güvenlik ağı kapalı") : ""]
                                 .filter { !$0.isEmpty }.joined(separator: " · "))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
+                    // AI permissions (trust, run as root, safety net) are changed in the web panel.
+                    Button(L.t("Yapay zekâ yetkileri")) { model.openDevicePermissions(d.id) }
+                        .buttonStyle(.link).font(.caption)
                 }
                 .padding(8)
                 .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))

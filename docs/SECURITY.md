@@ -214,6 +214,7 @@ verification, so even a valid human approval cannot override them.
 |---|---|---|
 | `capabilities.commands = false` | `--no-commands` | `process_exec`, `process_kill`, `task_start`, `terminal_start`, `terminal_input` |
 | `capabilities.fileWrites = false` | `--read-only` | `fs_write`, `fs_append`, `fs_mkdir`, `fs_delete`, `fs_move`, `fs_replace`, `fs_undo`, `xlsx_write_cells` |
+| `capabilities.allowRoot = false` (default) | `install-linux.sh --allow-root` sets it | any action the gateway sends with `runAs: "root"` |
 
 - **Change later:** on the device run
   `webrising-commender --config <path> capabilities --commands on|off --file-writes on|off`,
@@ -225,6 +226,20 @@ verification, so even a valid human approval cannot override them.
   off), `commandExecution` and `fileWrites`.
 - **Defaults:** configs written before this feature keep both enabled.
 - **Tests:** `gateway/test/device-capabilities-e2e.mjs`.
+
+### AI permissions: trust, run as root, safety net
+
+Per device, in the web panel (Devices > AI permissions); full description in
+[AI_PERMISSIONS.md](AI_PERMISSIONS.md). The agent runs as a normal user by
+default. Root needs two keys: the machine owner allows it on the machine
+(`install-linux.sh --allow-root`: sudoers drop-in + `capabilities.allowRoot`)
+and an admin turns "run as root" on for the device (browser session, current
+password, audited, e-mailed). The agent refuses a root action without its own
+ceiling and a signed approval of that root action. Full trust skips per-call
+approval for every high-risk tool on the device, Docker container actions and
+the device's scheduled-task changes included. The safety net (on by default)
+refuses a short catastrophic command list on every trust level; switching it
+off needs the password.
 
 ### Autonomous mode
 

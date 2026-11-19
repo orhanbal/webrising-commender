@@ -1374,5 +1374,7 @@
  "Konteyneri başlat veya durdur": "Start or stop a container",
  "Zamanlanmış görev oluştur": "Create scheduled task",
  "Zamanlanmış görevi sil": "Delete scheduled task",
- "Zamanlanmış görevi şimdi çalıştır": "Run scheduled task now"
+ "Zamanlanmış görevi şimdi çalıştır": "Run scheduled task now",
+ "güvenlik ağı kapalı": "safety net off",
+ "Yapay zekâ yetkileri": "AI permissions"
 }

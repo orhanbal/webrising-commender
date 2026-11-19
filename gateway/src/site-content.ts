@@ -53,7 +53,7 @@ const facts: string[] = [
   "One MCP URL for all your machines: https://wecommander.app/mcp (OAuth sign-in from Claude, ChatGPT and other MCP clients).",
   "A small agent runs on each machine (Windows, macOS, Linux) and keeps one outbound encrypted connection; no inbound ports, VPN or SSH keys are needed.",
   "Hybrid Access: SSH servers without an agent can be shared with AI from the Windows desktop app (macOS not yet). The connection runs through WECOMMANDER on your own computer, so SSH keys never leave it; you choose which servers are shared, reads run directly, and commands and file changes (SFTP write, move, delete) need a one-time approval every time.",
-  "The agent runs as a normal user (not root/SYSTEM) and only inside the folders you allow.",
+  "The agent runs as a normal user (not root/SYSTEM) by default and only inside the folders you allow. Root is possible only if the machine's owner allows it on the machine and an admin then turns it on for that device.",
   "High-risk actions (running commands, deleting or moving files, killing processes, opening terminals) wait for a human approval of that exact action, unless you allow a command pattern or switch a device to autonomous mode for a set time.",
   "Approvals arrive in the web dashboard, by e-mail and in the Management Center desktop app as Windows notifications with Approve / Deny buttons.",
   "Secrets in command and terminal output (tokens, passwords, keys) are masked on the device before the result reaches the AI.",
@@ -152,7 +152,7 @@ export const publicPages: PublicPage[] = [
     intro: "Three parts: the agent on your machines, the gateway, and your AI client.",
     blocks: [
       { h2: "Agent" },
-      { p: "A single binary on Windows, macOS or Linux. It runs as a normal user, connects out to the gateway over TLS, and enforces the allowed folders, read-only and no-command switches and secret masking on the device itself." },
+      { p: "A single binary on Windows, macOS or Linux. It runs as a normal user by default (root only if the machine's owner allows it on the machine and an admin turns it on), connects out to the gateway over TLS, and enforces the allowed folders, read-only and no-command switches and secret masking on the device itself." },
       { h2: "Gateway" },
       { p: "Signs in AI clients with OAuth, routes each tool call to the right machine, holds approval requests, records the audit log, and serves the dashboard. No inbound port is opened on your machines." },
       { h2: "AI client" },
@@ -231,7 +231,7 @@ export const publicPages: PublicPage[] = [
     blocks: [
       { ul: [
         "Outbound-only: the agent connects out over TLS; no listening port, no SSH key on the machine.",
-        "Least privilege: the agent runs as a normal user, inside allowed folders only; writes and commands can be switched off per device, on the device.",
+        "Least privilege: the agent runs as a normal user by default, inside allowed folders only; writes and commands can be switched off per device, on the device. Root needs two keys: the machine owner allows it on the machine, then an admin turns it on with their password.",
         "Approvals: high-risk actions need a single-use approval bound to the exact action and device.",
         "AI clients cannot change their own limits: trust levels, autonomous mode and allowed commands are changed only by an admin in a browser session or the Management Center.",
         "Secret masking: tokens, passwords and private keys in command output are masked before they leave the device.",
@@ -253,7 +253,7 @@ export const publicPages: PublicPage[] = [
       { q: "Which AI assistants work with it?", a: "Any client that supports remote MCP servers: Claude (web, desktop, Claude Code), ChatGPT connectors, Cursor and others. Local mode also works with stdio-only clients." },
       { q: "Which operating systems are supported?", a: "Windows 10 and 11, macOS 13 or later, and Linux (Ubuntu and Debian packages; other distributions with the binary)." },
       { q: "Do I need to open a port or set up a VPN?", a: "No. The agent makes an outbound TLS connection to the gateway; nothing listens on your machine." },
-      { q: "Can the AI run any command on my server?", a: "Only inside the folders you allow, as a normal user, and every command waits for your approval unless you allowed that command pattern or turned on autonomous mode for the device." },
+      { q: "Can the AI run any command on my server?", a: "Only inside the folders you allow, as a normal user unless the machine's owner allowed root and an admin turned it on, and every command waits for your approval unless you allowed that command pattern or turned on autonomous mode for the device. A safety net blocks commands like rm -rf / or reboot unless you switch it off." },
       { q: "How do I approve actions quickly?", a: "In the dashboard, from the approval e-mail, or with the Management Center desktop app on Windows, which shows each request as a notification with Approve and Deny buttons." },
       { q: "Does the AI see my passwords or API keys?", a: "Common secrets in command and terminal output are masked on the device before the result is sent. File reads are exact, so keep secret files outside the allowed folders." },
       { q: "Can I undo a change the AI made?", a: "File edits keep undo snapshots; the AI or you can restore the previous content if the file has not changed since." },

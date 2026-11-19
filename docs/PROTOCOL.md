@@ -47,6 +47,7 @@ Transport: JSON messages over authenticated WebSocket.
 - `task_cancel`
 - `task_list`
 - `terminal_start`
+- `runAs: "root"` — optional on `process_exec`, `task_start`, `terminal_start` and `fs_write`, set only by the gateway when the device's run_as is root (docs/AI_PERMISSIONS.md). The agent refuses it unless its config has `capabilities.allowRoot` (or it already runs as root) and a signed approval of that exact action is attached, whatever the risk level; it then runs through `sudo -n`. Hello carries `rootCapable` and `agentRoot`.
 - `terminal_input` — HIGH risk: whatever is typed runs in the shell, so each exact input (session id and bytes) needs its own approval, or autonomous mode (`full` trust) on the device.
 - `terminal_read`
 - `terminal_resize`

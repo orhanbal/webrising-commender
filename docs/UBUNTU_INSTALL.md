@@ -84,7 +84,8 @@ The agent automatically reconnects on transient network failures. Verify this an
 ## Update and removal
 
 - The same script recognizes an existing `agent.json` and uses it rather than creating a new identity. Update the verified binary with the same command. systemd restarts against the new binary.
-- `sudo bash ./uninstall-linux.sh` removes the service only; the executable and device config are intentionally preserved until you explicitly revoke the device in the WECOMMANDER dashboard.
+- `sudo bash ./uninstall-linux.sh` removes the service only (and the "run as root" sudoers rule, if any); the executable and device config are intentionally preserved until you explicitly revoke the device in the WECOMMANDER dashboard.
+- Optional, run as root: `sudo bash ./install-linux.sh --allow-root` (on the existing install) lets an admin turn on "run as root" for this device in the web panel; `--disallow-root` takes it back. The agent itself keeps running as `wecommander`. See [AI_PERMISSIONS.md](AI_PERMISSIONS.md).
 - For sensitive hosts, back up the device authorization file securely. Never paste its contents into a chat or terminal log.
 
 ## Windows and macOS terminal installation

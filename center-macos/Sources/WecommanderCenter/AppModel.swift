@@ -495,6 +495,12 @@ final class AppModel: ObservableObject {
 
     func openDashboard() { openURL(settings.server + "/approvals") }
 
+    /// The web panel's AI permissions for one device (trust, run as, safety net).
+    func openDevicePermissions(_ id: String) {
+        let escaped = id.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? id
+        openURL(settings.server + "/devices?permissions=" + escaped)
+    }
+
     func openURL(_ text: String) {
         if let url = URL(string: text) { NSWorkspace.shared.open(url) }
     }
