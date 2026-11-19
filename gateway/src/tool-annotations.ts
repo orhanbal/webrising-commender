@@ -30,6 +30,7 @@ const KINDS: Record<string, [Kind, string]> = {
   app_errors: ["read", "Recent app errors"],
   system_info: ["read", "System information"],
   health_snapshot: ["read", "Health snapshot"],
+  ude_capabilities: ["read", "UDE capability inventory"],
   server_overview: ["read", "Server overview"],
   server_disk_usage: ["read", "Disk usage"],
   server_cleanup_scan: ["read", "Find what can be cleaned"],
