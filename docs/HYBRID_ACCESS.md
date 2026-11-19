@@ -205,6 +205,15 @@ unknown local client refused until allowed.
 - **Limits.** Remote reads ≤ 1 MiB and writes ≤ 1 MiB (gateway body limit); local reads and writes
   ≤ 4 MiB. Writes refuse a symbolic link as the path, deletes never follow links, refuse `/` and the
   home folder and more than 10 000 entries.
+- **Linux:** the Management Center (`tray/`) holds the app core (`wc-app-core`) in process, with its
+  own host store in `<config dir>/core` (keyring service `app.wecommander`). The connector loop is
+  `wc_app_core::mcp::connector` (same behaviour as the Windows `RemoteConnector`: publish on change
+  and every minute, long-poll claim, `remote::call`, post with retries, never approves; backoff
+  5 s doubling to 60 s, 30 s on a refused token; stops on sign-out). Its "SSH sunucuları" tab imports
+  `~/.ssh/config` or adds a server, connects once to verify the login and trust the host key, shares
+  a host with remote AI (preset read only / with approval, sudo never / sudoers) and shows the
+  connector's status. Not on Linux yet: local MCP (H2) and the E2E library sync, so hosts saved on
+  another computer are not listed there.
 - **macOS:** the Mac app has no AI access editor yet (H1/H2 UI is Windows-only); it decodes the
   new approval rows unchanged (`device_id` stays a string). Remote access for hosts on a Mac
   needs the Mac connector loop later.
