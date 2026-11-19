@@ -1,6 +1,6 @@
-# Launch email and in-app message — WECOMMANDER 1.0 (2026-11-23)
+# Launch email and in-app message — WECOMMANDER 1.0 (2026-11-20)
 
-Drafts for the launch on **2026-11-23**. Nothing here is sent automatically:
+Drafts for the launch on **2026-11-20**. Nothing here is sent automatically:
 paste the texts into the super admin console and send or publish them on the
 day.
 
@@ -120,7 +120,7 @@ account, so that is fine here (the public posts link the home page instead).
 
 ## In-app message (Console → Pazarlama)
 
-Kind `announcement`, start 2026-11-23, end 2026-12-07 (two weeks).
+Kind `announcement`, start 2026-11-20, end 2026-12-04 (two weeks).
 
 ### Desktop apps (audience: Windows, macOS)
 

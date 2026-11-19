@@ -1,4 +1,4 @@
-# AI directory listings: v1.0 launch kit (23 November 2026)
+# AI directory listings: v1.0 launch kit (20 November 2026)
 
 WECOMMANDER is a remote MCP server (`https://wecommander.app/mcp`, OAuth
 sign-in). This page has everything the directories ask for, so each
@@ -41,7 +41,7 @@ sayfasındaki "Submit" / "Add server" düğmesini kullan.
 | Authentication | OAuth 2.1 with dynamic client registration (no API key). Discovery: `https://wecommander.app/.well-known/oauth-protected-resource`, `https://wecommander.app/.well-known/oauth-authorization-server`. Scope: `mcp:tools` |
 | MCP Registry name | `app.wecommander/wecommander` |
 | server.json | `https://wecommander.app/server.json` (same file: `server.json` at the repository root) |
-| Version | 1.0.0 (v1.0 launch: 23 November 2026) |
+| Version | 1.0.0 (v1.0 launch: 20 November 2026) |
 | Website | https://wecommander.app |
 | Documentation | https://wecommander.app/docs |
 | Install the agent | https://wecommander.app/install |
