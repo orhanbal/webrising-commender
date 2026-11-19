@@ -54,13 +54,15 @@ public sealed class MainWindow : Window
         };
         Activated += (_, e) =>
         {
+            // Quit (a language change builds a new panel): this window is going away, touch nothing.
+            if (_quitting) return;
             if (e.WindowActivationState != WindowActivationState.Deactivated || _panel.DialogOpen || !AppWindow.IsVisible || Docked) return;
             // Opened from another window: that window takes the focus back as
             // its click ends. Stay open and take it again instead of closing
             // the moment it appeared.
             if (DateTime.UtcNow - _shownAt < TimeSpan.FromMilliseconds(800))
             {
-                DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => Activate());
+                DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => { try { if (!_quitting) Activate(); } catch (Exception) { } });
                 return;
             }
             HidePanel();
@@ -125,7 +127,7 @@ public sealed class MainWindow : Window
             AppWindow.Show(false); // the main window keeps the focus
             _panel.Refresh();
             // Its own borders are known only once it is on screen: place it again.
-            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => { if (_owner is { } o && AppWindow.IsVisible) ShowDocked(o); });
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => { try { if (!_quitting && _owner is { } o && AppWindow.IsVisible) ShowDocked(o); } catch (Exception) { } });
         }
     }
 

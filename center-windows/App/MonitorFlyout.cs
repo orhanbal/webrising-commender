@@ -46,16 +46,17 @@ public sealed class MonitorFlyout : Window
             p.SetBorderAndTitleBar(true, false);
         }
         AppWindow.Closing += (_, e) => { e.Cancel = true; Hide(); };
+        Closed += (_, _) => _retired = true;
         Activated += (_, e) =>
         {
             App.DebugLayout($"monitor panel: activation {e.WindowActivationState} visible={AppWindow.IsVisible}");
-            if (e.WindowActivationState != WindowActivationState.Deactivated || !AppWindow.IsVisible) return;
+            if (_retired || e.WindowActivationState != WindowActivationState.Deactivated || !AppWindow.IsVisible) return;
             // Opened from the server box: Windows activates the clicked box as the
             // click ends, a few ms after the panel appeared (it then closed at once).
             // Take the focus back instead of closing.
             if (DateTime.UtcNow - _shownAt < TimeSpan.FromMilliseconds(800))
             {
-                DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => Activate());
+                DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => { try { if (!_retired) Activate(); } catch (Exception) { } });
                 return;
             }
             Hide();
@@ -145,8 +146,22 @@ public sealed class MonitorFlyout : Window
         Present(side == DockEdge.Bottom ? -40 : side == DockEdge.Top ? 40 : 0);
     }
 
+    /// <summary>
+    /// The language changed (or the panel is rebuilt): hidden and left alone, never Close()d.
+    /// Closing it let its own deactivation handler touch a destroyed window, and
+    /// Microsoft.UI.Windowing ends the whole app for that (no exception to catch).
+    /// </summary>
+    public void Retire()
+    {
+        _retired = true;
+        try { if (AppWindow.IsVisible) AppWindow.Hide(); } catch (Exception) { }
+    }
+
+    private bool _retired;
+
     public void Hide()
     {
+        if (_retired) return;
         App.DebugLayout("monitor panel: hide");
         _hiddenAt = DateTime.UtcNow;
         AppWindow.Hide();

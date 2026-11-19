@@ -278,6 +278,7 @@ public partial class App : Application
             LocalStore.AutostartEnabled = true; // first start: come back after each sign-in
         }
         Token = LocalStore.LoadToken(Settings.Server);
+        StartCrashGuard();
 
         RegisterNotificationIdentity();
         RefreshNotificationSetting();

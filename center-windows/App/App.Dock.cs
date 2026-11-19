@@ -127,9 +127,9 @@ public partial class App
         }
         catch (Exception e) { LogCrash(e); }
         try { _dock?.RebuildTexts(); } catch (Exception e) { LogCrash(e); }
-        try { _monitorFlyout?.Close(); } catch (Exception) { }
+        try { _monitorFlyout?.Retire(); } catch (Exception) { }
         _monitorFlyout = null;
-        try { _quickPanel?.Close(); } catch (Exception) { }
+        try { _quickPanel?.Retire(); } catch (Exception) { }
         _quickPanel = null;
         try { ForgetDockPanels(); } catch (Exception e) { LogCrash(e); }
         try

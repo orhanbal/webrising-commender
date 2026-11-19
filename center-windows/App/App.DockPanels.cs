@@ -110,7 +110,7 @@ public partial class App
         try { _serverView?.Stop(); } catch (Exception) { }
         foreach (var p in _dockPanels.Values)
         {
-            try { p.Close(); } catch (Exception) { }
+            try { p.Retire(); } catch (Exception) { }
         }
         _dockPanels.Clear();
         _taskManagerView = null;

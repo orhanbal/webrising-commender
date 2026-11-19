@@ -58,13 +58,14 @@ public sealed class QuickPanel : Window
             p.SetBorderAndTitleBar(true, false);
         }
         AppWindow.Closing += (_, e) => { e.Cancel = true; Hide(); };
+        Closed += (_, _) => _retired = true;
         Activated += (_, e) =>
         {
-            if (e.WindowActivationState != WindowActivationState.Deactivated || !AppWindow.IsVisible) return;
+            if (_retired || e.WindowActivationState != WindowActivationState.Deactivated || !AppWindow.IsVisible) return;
             // The click that opened it can activate the Dock a moment later: take the focus back.
             if (DateTime.UtcNow - _shownAt < TimeSpan.FromMilliseconds(800))
             {
-                DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => Activate());
+                DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => { try { if (!_retired) Activate(); } catch (Exception) { } });
                 return;
             }
             Hide();
@@ -324,8 +325,22 @@ public sealed class QuickPanel : Window
         });
     }
 
+    /// <summary>
+    /// The language changed (or the panel is rebuilt): hidden and left alone, never Close()d.
+    /// Closing it let its own deactivation handler touch a destroyed window, and
+    /// Microsoft.UI.Windowing ends the whole app for that (no exception to catch).
+    /// </summary>
+    public void Retire()
+    {
+        _retired = true;
+        try { if (AppWindow.IsVisible) AppWindow.Hide(); } catch (Exception) { }
+    }
+
+    private bool _retired;
+
     public void Hide()
     {
+        if (_retired) return;
         _hiddenAt = DateTime.UtcNow;
         AppWindow.Hide();
     }
