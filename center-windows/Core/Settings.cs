@@ -120,8 +120,29 @@ public sealed class SettingsStore(string directory)
     public void Save(Settings settings)
     {
         Directory.CreateDirectory(directory);
-        var tmp = FilePath + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
-        File.Move(tmp, FilePath, overwrite: true);
+        var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
+        // Another program (antivirus, backup, search indexer, a test reading the
+        // file) can hold settings.json open for a moment: the replace then fails
+        // with "access denied". Retry briefly; never lose the change.
+        Exception? last = null;
+        for (var attempt = 0; attempt < 6; attempt++)
+        {
+            var tmp = FilePath + "." + Environment.ProcessId + "." + attempt + ".tmp";
+            try
+            {
+                File.WriteAllText(tmp, json);
+                File.Move(tmp, FilePath, overwrite: true);
+                return;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                last = e;
+                try { File.Delete(tmp); } catch (Exception) { }
+                Thread.Sleep(40 * (attempt + 1));
+            }
+        }
+        // Last resort: write in place (not atomic, but the setting is kept).
+        try { File.WriteAllText(FilePath, json); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { throw last ?? e; }
     }
 }
