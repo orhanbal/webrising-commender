@@ -13,6 +13,7 @@ import { issueApproval, redact } from "./security.js";
 import { startSearch, searchPage, listSearches, stopSearch, controlSearch } from "./search-sessions.js";
 import { annotate } from "./tool-annotations.js";
 import { recordMcpCall } from "./growth.js";
+import { buildUdeCapabilities, udeEnabled } from "./ude-capabilities.js";
 import { isSshTargetId, listSshTargets, SSH_TARGET_TOOLS, sshTargetCall, targetView } from "./ssh-connector.js";
 
 const SSH_CAPABLE = new Set<string>(SSH_TARGET_TOOLS);
@@ -251,10 +252,12 @@ export const tools = [
   };
 });
 
+const UDE_TOOLS = [tool("ude_capabilities", "Read-only UDE host capability inventory and missing prerequisites. Never installs, executes commands or declares provisioning ready; requires UDE opt-in.", { device_id: str() }, ["device_id"])];
+
 let listed: ReturnType<typeof annotate>[] | undefined;
 /** What tools/list returns: every tool with its MCP annotations (read-only, destructive, ...). */
 export function listedTools() {
-  return (listed ??= [...tools, ...DC_TOOLS].map(annotate));
+  return (listed ??= [...tools, ...(udeEnabled(process.env.WECOMMANDER_UDE_ENABLED) ? UDE_TOOLS : []), ...DC_TOOLS].map(annotate));
 }
 
 function str() {
@@ -423,6 +426,13 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
   }
   const alias = DC_ALIAS_NAMES.has(name) ? translateAlias(name, args) : null;
   if (alias) { name = alias.name; args = alias.args; }
+  // UDE is an optional agent-device feature, never an SSH command or a Core requirement.
+  if (name === "ude_capabilities" && !udeEnabled(process.env.WECOMMANDER_UDE_ENABLED)) {
+    return ok(request.id, toolResult({ error: "unknown_tool" }, true));
+  }
+  if (name === "ude_capabilities" && isSshTargetId(args.device_id)) {
+    return ok(request.id, toolResult({ error: "ude_agent_device_required" }, true));
+  }
   // SSH targets run on the person's computer (ssh-connector.ts).
   if (isSshTargetId(args.device_id) && name !== "targets_list") {
     const { device_id: target, target: _alias, approval_token: _token, ...rest } = args;
@@ -432,7 +442,8 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
   }
   // Reject unknown MCP tools before attempting device/tenant database access.
   // This also avoids reporting a misleading missing-device error for typos.
-  if (!tools.some((entry) => entry.name === name)) {
+  if (!tools.some((entry) => entry.name === name) &&
+      !(udeEnabled(process.env.WECOMMANDER_UDE_ENABLED) && name === "ude_capabilities")) {
     return ok(request.id, toolResult({ error: "unknown_tool" }, true));
   }
   const orgId = principal.organizationId;
@@ -498,6 +509,28 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
   );
   if (!device.rowCount) {
     return ok(request.id, toolResult({ error: "device_not_found" }, true));
+  }
+
+  if (name === "ude_capabilities") {
+    if (!roleAtLeast(principal, "viewer")) {
+      await audit(orgId, principal.actor, deviceId, name, "low", "denied", "role_viewer_required");
+      return ok(request.id, toolResult({ error: "forbidden", required_role: "viewer" }, true));
+    }
+    try {
+      // Reuse existing read-only Agent protocol. No shell, writes, runtime install,
+      // access to allowlisted file contents, or new Rust Agent dependency.
+      const [systemInfo, healthSnapshot, policyInfo] = await Promise.all([
+        router.request(deviceId, { kind: "system_info" }),
+        router.request(deviceId, { kind: "health_snapshot", top: 1 }),
+        router.request(deviceId, { kind: "policy_info" }),
+      ]);
+      const result = buildUdeCapabilities(systemInfo, healthSnapshot, policyInfo);
+      await audit(orgId, principal.actor, deviceId, name, "low", "success", "inventory_only_no_runtime_probe");
+      return ok(request.id, toolResult(result));
+    } catch {
+      await audit(orgId, principal.actor, deviceId, name, "low", "error", "preflight_failed");
+      return ok(request.id, toolResult({ error: "ude_preflight_unavailable" }, true));
+    }
   }
 
   if (name === "get_recent_tool_calls" || name === "get_usage_stats") {
