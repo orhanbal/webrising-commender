@@ -691,11 +691,6 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
     return ok(request.id, toolResult({ error: "unknown_tool" }, true));
   }
 
-  // Docker tools: strict ids and names before anything reaches a device.
-  if (action.kind.startsWith("docker_") && !agentActionSchema.safeParse(action).success) {
-    return ok(request.id, toolResult({ error: "invalid_arguments", tool: name }, true));
-  }
-
   const risk = actionRisk(action.kind);
   const requiredRole = risk === "low" ? "viewer" : "operator";
   if (!roleAtLeast(principal, requiredRole)) {
@@ -703,6 +698,11 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
     // security-relevant event, not just a client error.
     await audit(orgId, principal.actor, deviceId, name, risk, "denied", `role_${requiredRole}_required`);
     return ok(request.id, toolResult({ error: "forbidden", required_role: requiredRole }, true));
+  }
+
+  // Docker tools: strict ids and names before anything reaches a device (after the role check).
+  if (action.kind.startsWith("docker_") && !agentActionSchema.safeParse(action).success) {
+    return ok(request.id, toolResult({ error: "invalid_arguments", tool: name }, true));
   }
 
   if (name === "terminal_input" &&
