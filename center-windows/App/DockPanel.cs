@@ -68,14 +68,18 @@ public sealed class DockPanel : Window
             p.IsAlwaysOnTop = true;
             p.SetBorderAndTitleBar(true, false);
         }
-        AppWindow.Closing += (_, e) => { e.Cancel = true; Hide(); };
+        AppWindow.Closing += (_, e) => { e.Cancel = true; try { Hide(); } catch (Exception ex) { App.LogCrash(ex); } };
         Closed += (_, _) => _retired = true;
         // The person resized it (the terminal): that size is kept while the app runs.
         AppWindow.Changed += (_, e) =>
         {
-            if (!_resizable || _placing || !e.DidSizeChange || !AppWindow.IsVisible) return;
-            var scale = Scale;
-            _resized = ((int)Math.Round(AppWindow.Size.Width / scale), (int)Math.Round(AppWindow.Size.Height / scale));
+            try
+            {
+                if (_retired || !_resizable || _placing || !e.DidSizeChange || !AppWindow.IsVisible) return;
+                var scale = Scale;
+                _resized = ((int)Math.Round(AppWindow.Size.Width / scale), (int)Math.Round(AppWindow.Size.Height / scale));
+            }
+            catch (Exception ex) { App.LogCrash(ex); }
         };
         Activated += (_, e) =>
         {

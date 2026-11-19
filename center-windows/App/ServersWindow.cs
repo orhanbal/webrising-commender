@@ -344,9 +344,16 @@ public sealed partial class ServersWindow : Window
         App.Current.Changed += RenderAccount;
         RenderAccount();
         // The panel window follows this one: moved, resized, minimized, hidden.
+        // Guarded: an exception that leaves a Microsoft.UI.Windowing callback ends the
+        // process (fail-fast in Microsoft.UI.Windowing.dll), e.g. while this window or
+        // the panel window is being closed.
         AppWindow.Changed += (_, e) =>
         {
-            if (e.DidPositionChange || e.DidSizeChange || e.DidPresenterChange || e.DidVisibilityChange) SyncPanel();
+            try
+            {
+                if (e.DidPositionChange || e.DidSizeChange || e.DidPresenterChange || e.DidVisibilityChange) SyncPanel();
+            }
+            catch (Exception ex) { App.LogCrash(ex); }
         };
         return root;
     }
