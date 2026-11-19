@@ -771,6 +771,70 @@ pub async fn timers<S: Shell>(sh: &S) -> Result<Timers, String> {
     Ok(out)
 }
 
+/// Something [`timers`] could not read or does not read, so a short list is
+/// not taken for a complete one.
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Unreadable {
+    /// `crontab -l`, `/etc/cron.d/backup`, `systemd`, `other users`.
+    pub source: String,
+    pub reason: String,
+}
+
+/// A file in /etc/cron.d the login user may not read: [`timers`] lists it
+/// with its path only.
+pub fn cron_unreadable(entry: &CronEntry) -> bool {
+    entry.schedule.is_empty() && entry.command.is_empty()
+}
+
+/// What [`timers`] left out: no systemd, the login user's crontab when it
+/// cannot be read, unreadable cron files, and the scopes it never reads.
+pub fn unreadable(t: &Timers) -> Vec<Unreadable> {
+    let item = |source: &str, reason: String| Unreadable {
+        source: source.to_owned(),
+        reason,
+    };
+    let mut out = Vec::new();
+    if !t.systemd {
+        out.push(item(
+            "systemd",
+            "systemctl is not available: no systemd timers are listed".into(),
+        ));
+    }
+    match t.crontab.as_str() {
+        "missing" => out.push(item(
+            "crontab -l",
+            "the crontab command is not installed".into(),
+        )),
+        "not-readable" => out.push(item(
+            "crontab -l",
+            if t.crontab_message.is_empty() {
+                "not readable".into()
+            } else {
+                t.crontab_message.clone()
+            },
+        )),
+        _ => {}
+    }
+    for entry in t.cron.iter().filter(|e| cron_unreadable(e)) {
+        out.push(item(
+            &entry.source,
+            format!("not readable by {}", t.login_user),
+        ));
+    }
+    if t.systemd && t.login_user == "root" {
+        out.push(item(
+            "systemctl --user",
+            "user timers are not read when running as root".into(),
+        ));
+    }
+    out.push(item(
+        "other users",
+        "other users' crontabs (/var/spool/cron) and systemctl --user timers are not read".into(),
+    ));
+    out
+}
+
 // ---- changes ----------------------------------------------------------------
 
 /// One step of a change: what is shown and what runs (as root).
@@ -1503,6 +1567,33 @@ FragmentPath=/etc/systemd/system/devagent-local-ci.service";
         let scripts = sh.scripts();
         assert!(scripts[1].contains("TZ=UTC systemctl show 'apport-autoreport.timer' 'devagent-local-ci.timer' 'logrotate.timer' 'maxiom-api-alias-sync.timer' 'nightly.timer' 'sysstat-collect.timer' -p Id,Description,UnitFileState"), "{}", scripts[1]);
         assert!(scripts[2].contains("systemctl show 'devagent-local-ci.service' 'logrotate.service' 'nightly.service' -p Id,Description,ExecStart"));
+    }
+
+    #[test]
+    fn unreadable_lists_what_the_reader_could_not_see() {
+        let discover = "@@priv\n\n@@me\nwecommander\n@@systemd\n\n@@crontab\nfopen: Permission denied\n@@crontabrc\n1\n@@crondx /etc/cron.d/secret\n@@crond /etc/cron.d/ok\n5 * * * * root /bin/true\n";
+        let sh = Canned::new(&[discover]);
+        let t = block_on(timers(&sh)).unwrap();
+        let u = unreadable(&t);
+        let sources: Vec<&str> = u.iter().map(|u| u.source.as_str()).collect();
+        assert_eq!(
+            sources,
+            ["systemd", "crontab -l", "/etc/cron.d/secret", "other users"]
+        );
+        assert_eq!(u[1].reason, "fopen: Permission denied");
+        assert_eq!(u[2].reason, "not readable by wecommander");
+        let readable: Vec<&CronEntry> = t.cron.iter().filter(|e| !cron_unreadable(e)).collect();
+        assert_eq!(readable.len(), 1);
+        assert_eq!(readable[0].command, "/bin/true");
+
+        let root = Timers {
+            systemd: true,
+            login_user: "root".into(),
+            crontab: "ok".into(),
+            ..Default::default()
+        };
+        let sources: Vec<String> = unreadable(&root).into_iter().map(|u| u.source).collect();
+        assert_eq!(sources, ["systemctl --user", "other users"]);
     }
 
     #[test]

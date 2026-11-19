@@ -19,9 +19,9 @@ pub use docker::{
 };
 mod timers;
 pub use timers::{
-    action_command, delete_command, timer_action, timer_create, timer_delete, timer_edit,
-    timer_logs, timers, write_command, CronEntry, ManagedTimer, Timer, TimerLogs, TimerResult,
-    TimerSpec, Timers, MANAGED_MARK,
+    action_command, cron_unreadable, delete_command, timer_action, timer_create, timer_delete,
+    timer_edit, timer_logs, timers, unreadable as timers_unreadable, write_command, CronEntry,
+    ManagedTimer, Timer, TimerLogs, TimerResult, TimerSpec, Timers, Unreadable, MANAGED_MARK,
 };
 
 pub const NEEDS_ROOT: &str = "Bu işlem için sunucuda root ya da parolasız sudo gerekir.";

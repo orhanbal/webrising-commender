@@ -81,6 +81,25 @@ Rules:
   (`scheduled_task.create|update|delete|run_now`, risk `high`, with the exact
   command, secrets masked). Changes from the app carry `via: {center, centerId}`.
 
+## MCP (remote AI)
+
+`gateway/src/mcp-scheduled-tasks.ts` runs these routes for MCP clients, so
+roles, workspace checks, validation and plan limits are the same:
+
+- `scheduled_tasks_list` (viewer, read-only): id, name, target, command
+  (secrets masked), schedule, time zone, enabled, next run and the last run's
+  status, exit code and error (no output).
+- `scheduled_task_create` (agent device targets only), `scheduled_task_update`,
+  `scheduled_task_delete`, `scheduled_task_run_now` (admin): high risk, never
+  automatic (device trust level and command allowlists do not apply). The call
+  is first checked as a dry run of the route; only a change that would succeed
+  becomes an approval request (`action_kind` `scheduled_task_<op>`, bound to
+  the requester, the task's device (null for SSH tasks), the exact change and
+  the command the task runs afterwards, labelled `Scheduled task: <name>`). The
+  tool answers `approval_required` with `approval_request_id`; once an admin
+  or owner approves, the same call makes the change. A refused change gives the
+  approval back.
+
 ## Desktop app (SSH targets)
 
 | Method | Path | Body | Answer |

@@ -13,6 +13,8 @@ import { issueApproval, redact } from "./security.js";
 import { startSearch, searchPage, listSearches, stopSearch, controlSearch } from "./search-sessions.js";
 import { annotate } from "./tool-annotations.js";
 import { recordMcpCall } from "./growth.js";
+import { SCHEDULED_TASK_TOOL_NAMES, SCHEDULED_TASK_TOOLS, scheduledTaskTool } from "./mcp-scheduled-tasks.js";
+import type { ScheduledTasksContext } from "./scheduled-tasks-api.js";
 import { isSshTargetId, listSshTargets, SSH_TARGET_TOOLS, sshTargetCall, targetView } from "./ssh-connector.js";
 
 const SSH_CAPABLE = new Set<string>(SSH_TARGET_TOOLS);
@@ -50,6 +52,7 @@ export const tools = [
   tool("server_cleanup_scan", "Read-only: what can be safely freed on a Linux server, by category (apt cache, journal older than 7 days, rotated logs, old temp files, crash dumps) and, for every Docker daemon separately (the system one and each user's rootless one, listed in dockers with storage folder, running containers and any error), its build cache and unused images, with the size and the exact command each cleanup runs. Ids of a rootless daemon end in @u<uid>. Use the ids with server_cleanup_run.", {}),
   tool("server_cleanup_run", "Frees disk space on a Linux server: runs the fixed cleanup commands of the given categories (ids from server_cleanup_scan) as root; a Docker id goes to the daemon it names, through Docker's own prune. Only known, re-creatable files; application data, databases, containers and Docker volumes are never touched. Needs a human approval for this exact call.", { ids: { type: "array", items: { type: "string" }, description: "Category ids from server_cleanup_scan, e.g. [\"apt-cache\",\"journal\"]." } }, ["ids"]),
   tool("server_processes", "Linux processes, read-only: every process (pid, parent, user, state, CPU, memory, run time, command) and the zombie processes grouped by parent, with the container or systemd service that owns the parent and whether that parent is protected (the processes that keep the server reachable).", {}),
+  tool("server_timers_list", "Scheduled jobs on a Linux server, read-only and without root: systemd timers (system, and the agent user's own) with schedule, next and last run, the service and command they start and its last result, plus cron entries (the user's crontab, /etc/crontab, /etc/cron.d, /etc/cron.hourly to monthly). unreadable lists what could not be read or is never read (other users' crontabs).", {}),
   tool("server_process_signal", "Sends a signal to one Linux process: action 'reap' asks a parent to collect its zombies (SIGCHLD, harmless), 'term' asks it to stop, 'kill' stops it at once. name must still match the process (a PID reused by another program is refused); the processes that keep the server reachable are refused; a database needs confirm_database. Needs a human approval for this exact call.", {
     pid: integer(), name: { type: "string", description: "The process name from server_processes." },
     action: { type: "string", enum: ["reap", "term", "kill"] }, confirm_database: bool(),
@@ -228,8 +231,11 @@ export const tools = [
     "List persistent PTY sessions, process ids and retained output sizes.",
     {},
   ),
+  // Workspace tools: no device_id (mcp-scheduled-tasks.ts).
+  ...SCHEDULED_TASK_TOOLS,
 ].map((entry) => {
-  if (entry.name === "devices_list" || entry.name === "app_errors" || entry.name === "targets_list") return entry;
+  if (entry.name === "devices_list" || entry.name === "app_errors" || entry.name === "targets_list" ||
+      SCHEDULED_TASK_TOOL_NAMES.has(entry.name)) return entry;
   if (SSH_CAPABLE.has(entry.name)) {
     // Agent devices and SSH targets: device_id or target (one of them).
     return {
@@ -294,6 +300,7 @@ export function actionFromTool(name: string, a: any): AgentAction {
     case "server_cleanup_scan": return { kind: "server_cleanup_scan" };
     case "server_cleanup_run": return { kind: "server_cleanup_run", ids: Array.isArray(a.ids) ? a.ids.map(String) : [] };
     case "server_processes": return { kind: "server_processes" };
+    case "server_timers_list": return { kind: "server_timers_list" };
     case "server_process_signal": return {
       kind: "server_process_signal", pid: Number(a.pid), name: String(a.name), action: String(a.action) as "reap" | "term" | "kill",
       ...(a.confirm_database !== undefined ? { confirmDatabase: Boolean(a.confirm_database) } : {}),
@@ -355,7 +362,10 @@ function toolResult(data: unknown, isError = false) {
   };
 }
 
-export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, principal: Principal) {
+/** Gateway services some tools use (index.ts builds them per request). */
+export type McpServices = { scheduledTasks?: ScheduledTasksContext };
+
+export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, principal: Principal, services: McpServices = {}) {
   if (request.method === "initialize") {
     return ok(request.id, {
       protocolVersion: "2025-06-18",
@@ -408,6 +418,18 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
       await audit(orgIdEarly, principal.actor, null, name, "low", "error", code.slice(0, 200));
       return ok(request.id, toolResult({ error: code }, true));
     }
+  }
+  // WECOMMANDER scheduled tasks: workspace tools on the REST API's rules;
+  // changes always need a human approval (never trust level or allowlist).
+  if (SCHEDULED_TASK_TOOL_NAMES.has(name)) {
+    if (!services.scheduledTasks) return ok(request.id, toolResult({ error: "scheduled_tasks_unavailable" }, true));
+    const outcome = await scheduledTaskTool(name, args, principal, services.scheduledTasks, {
+      consume: consumeApprovedRequest,
+      ensure: ensureApprovalRequest,
+      restore: restoreUndeliveredApproval,
+      notify: notifyApprovers,
+    }, (deviceId, tool, risk, result, detail) => audit(orgIdEarly, principal.actor, deviceId, tool, risk, result, detail));
+    return ok(request.id, toolResult(outcome.data, outcome.isError));
   }
   if (DC_ALIAS_NAMES.has(name) && !args.device_id) {
     const devices = await db.query("select id from devices where organization_id=$1 and revoked_at is null", [orgIdEarly]);

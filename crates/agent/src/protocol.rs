@@ -64,6 +64,8 @@ pub enum AgentAction {
         ids: Vec<String>,
     },
     ServerProcesses,
+    /// Systemd timers (system and the login user's) and cron entries, read-only.
+    ServerTimersList,
     ServerProcessSignal {
         pid: u32,
         name: String,
@@ -324,6 +326,7 @@ impl AgentAction {
             Self::ServerCleanupScan => "server_cleanup_scan",
             Self::ServerCleanupRun { .. } => "server_cleanup_run",
             Self::ServerProcesses => "server_processes",
+            Self::ServerTimersList => "server_timers_list",
             Self::ServerProcessSignal { .. } => "server_process_signal",
             Self::ServerRestartOwner { .. } => "server_restart_owner",
             Self::LogQuery { .. } => "log_query",
@@ -378,6 +381,7 @@ impl AgentAction {
             | Self::ServerDiskUsage { .. }
             | Self::ServerCleanupScan
             | Self::ServerProcesses
+            | Self::ServerTimersList
             | Self::LogQuery { .. }
             | Self::PolicyInfo
             | Self::FsList { .. }

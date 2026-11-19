@@ -148,6 +148,24 @@
   }
  },
  {
+  "name": "server_timers_list",
+  "title": "Server timers and cron",
+  "description": "Scheduled jobs on a Linux server, read-only and without root: systemd timers (system, and the agent user's own) with schedule, next and last run, the service and command they start and its last result, plus cron entries (the user's crontab, /etc/crontab, /etc/cron.d, /etc/cron.hourly to monthly). unreadable lists what could not be read or is never read (other users' crontabs).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "required": [],
+   "additionalProperties": false
+  },
+  "annotations": {
+   "title": "Server timers and cron",
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  }
+ },
+ {
   "name": "server_process_signal",
   "title": "Signal a process",
   "description": "Sends a signal to one Linux process: action 'reap' asks a parent to collect its zombies (SIGCHLD, harmless), 'term' asks it to stop, 'kill' stops it at once. name must still match the process (a PID reused by another program is refused); the processes that keep the server reachable are refused; a database needs confirm_database. Needs a human approval for this exact call.",

@@ -11,6 +11,7 @@ export type AgentAction =
   | { kind: "server_cleanup_scan" }
   | { kind: "server_cleanup_run"; ids: string[] }
   | { kind: "server_processes" }
+  | { kind: "server_timers_list" }
   | { kind: "server_process_signal"; pid: number; name: string; action: "reap" | "term" | "kill"; confirmDatabase?: boolean }
   | { kind: "server_restart_owner"; ownerKind: "container" | "service"; id: string }
   | { kind: "log_query"; source: "journal" | "file"; path?: string; unit?: string; sinceMinutes?: number; level?: "error" | "warning" | "info" | "debug"; pattern?: string; limit?: number }
@@ -74,6 +75,7 @@ export const agentActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("server_cleanup_scan") }).strict(),
   z.object({ kind: z.literal("server_cleanup_run"), ids: z.array(z.string().regex(/^[a-z-]{2,40}(@u[0-9]{1,10})?$/)).min(1).max(20) }).strict(),
   z.object({ kind: z.literal("server_processes") }).strict(),
+  z.object({ kind: z.literal("server_timers_list") }).strict(),
   z.object({
     kind: z.literal("server_process_signal"), pid: z.number().int().min(2).max(4194304),
     name: z.string().min(1).max(64).regex(/^[^\n\0]+$/), action: z.enum(["reap", "term", "kill"]), confirmDatabase: z.boolean().optional(),
@@ -328,6 +330,7 @@ export function actionRisk(kind: AgentAction["kind"] | string): Risk {
     case "server_disk_usage":
     case "server_cleanup_scan":
     case "server_processes":
+    case "server_timers_list":
     case "log_query":
     case "policy_info":
     case "fs_list":

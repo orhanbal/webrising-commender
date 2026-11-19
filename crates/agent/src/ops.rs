@@ -82,6 +82,7 @@ fn output_is_redacted(action: &AgentAction) -> bool {
             | AgentAction::ProcessList
             | AgentAction::LogQuery { .. }
             | AgentAction::ServerProcesses
+            | AgentAction::ServerTimersList
             | AgentAction::TaskStatus { .. }
             | AgentAction::TerminalRead { .. }
             | AgentAction::TerminalReadPage { .. }
@@ -169,6 +170,7 @@ async fn execute_unredacted(context: ExecutionContext<'_>, action: AgentAction) 
         | AgentAction::ServerCleanupScan
         | AgentAction::ServerCleanupRun { .. }
         | AgentAction::ServerProcesses
+        | AgentAction::ServerTimersList
         | AgentAction::ServerProcessSignal { .. }
         | AgentAction::ServerRestartOwner { .. } => crate::server_ops::execute(action).await,
         AgentAction::PolicyInfo => Ok(serde_json::json!({

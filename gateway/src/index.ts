@@ -71,7 +71,7 @@ import {
 import { deviceApprovalKeyForAgent, issueApproval, randomToken, redact, sha256 } from "./security.js";
 import { runMail, ScheduledTaskStore } from "./scheduled-tasks.js";
 import { ScheduledTaskRunner } from "./scheduled-task-runner.js";
-import { handleScheduledTasks } from "./scheduled-tasks-api.js";
+import { handleScheduledTasks, type ScheduledTasksContext } from "./scheduled-tasks-api.js";
 
 const host = process.env.HOST || "0.0.0.0";
 const port = Number(process.env.PORT || 8787);
@@ -209,6 +209,21 @@ const scheduledTaskRunner = new ScheduledTaskRunner({
   },
 });
 const scheduledTaskRunLimit = new FixedWindowRateLimiter();
+/** What the scheduled-task routes need, for the REST API and the MCP tools alike. */
+function scheduledTasksContext(principal: Principal): ScheduledTasksContext {
+  return {
+    store: scheduledTaskStore,
+    runner: scheduledTaskRunner,
+    taskLimit: async (organizationId) => {
+      const snapshot = await billingSnapshot(organizationId);
+      return { limit: scheduledTaskLimit(snapshot), entitled: snapshot.entitled };
+    },
+    audit: (who, deviceId, tool, risk, outcome, detail) =>
+      auditForOrganization(who, who.organizationId, deviceId, tool, risk, outcome, detail),
+    allow: (key, limit, windowMs) =>
+      scheduledTaskRunLimit.hit(`${principal.organizationId}:${key}`, limit, windowMs).allowed,
+  };
+}
 if (process.env.SCHEDULED_TASKS_DISABLED !== "true") {
   scheduledTaskRunner.start(Math.max(1_000, Number(process.env.SCHEDULED_TASKS_INTERVAL_MS || 30_000)));
 }
@@ -4221,18 +4236,8 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     }
 
     if (url.pathname.startsWith("/api/scheduled-tasks") || url.pathname.startsWith("/api/center/scheduled-runs")) {
-      const reply = await handleScheduledTasks(req.method || "GET", url, principal!, () => readJson(req), {
-        store: scheduledTaskStore,
-        runner: scheduledTaskRunner,
-        taskLimit: async (organizationId) => {
-          const snapshot = await billingSnapshot(organizationId);
-          return { limit: scheduledTaskLimit(snapshot), entitled: snapshot.entitled };
-        },
-        audit: (who, deviceId, tool, risk, outcome, detail) =>
-          auditForOrganization(who, who.organizationId, deviceId, tool, risk, outcome, detail),
-        allow: (key, limit, windowMs) =>
-          scheduledTaskRunLimit.hit(`${principal!.organizationId}:${key}`, limit, windowMs).allowed,
-      });
+      const reply = await handleScheduledTasks(req.method || "GET", url, principal!, () => readJson(req),
+        scheduledTasksContext(principal!));
       if (reply) return void json(res, reply.status, reply.body);
     }
 
@@ -4748,10 +4753,10 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const payload = await readJson(req);
       if (Array.isArray(payload)) {
-        const results = (await Promise.all(payload.map((item) => handleMcp(item, deviceRouter, principal!)))).filter(Boolean);
+        const results = (await Promise.all(payload.map((item) => handleMcp(item, deviceRouter, principal!, { scheduledTasks: scheduledTasksContext(principal!) })))).filter(Boolean);
         return void json(res, 200, results);
       }
-      const result = await handleMcp(payload, deviceRouter, principal!);
+      const result = await handleMcp(payload, deviceRouter, principal!, { scheduledTasks: scheduledTasksContext(principal!) });
       if (result === null) {
         res.writeHead(202);
         res.end();

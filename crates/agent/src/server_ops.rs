@@ -71,6 +71,7 @@ pub async fn execute(action: AgentAction) -> Result<Value> {
         AgentAction::ServerProcesses => {
             json(wc_server::processes(&sh).await.map_err(|e| anyhow!(e))?)
         }
+        AgentAction::ServerTimersList => timers_list(&sh).await,
         AgentAction::ServerProcessSignal {
             pid,
             name,
@@ -85,6 +86,24 @@ pub async fn execute(action: AgentAction) -> Result<Value> {
         }
         other => Err(anyhow!("not a server action: {}", other.kind_name())),
     }
+}
+
+/// Timers and cron entries as the agent's user sees them (no root needed),
+/// with `unreadable`: what could not be read or is never read, so a short
+/// list is not mistaken for a complete one. Unreadable cron files are listed
+/// there instead of as empty entries.
+#[cfg(target_os = "linux")]
+async fn timers_list<S: wc_server::Shell>(sh: &S) -> Result<Value> {
+    let mut timers = wc_server::timers(sh).await.map_err(|e| anyhow!(e))?;
+    let unreadable = wc_server::timers_unreadable(&timers);
+    timers
+        .cron
+        .retain(|entry| !wc_server::cron_unreadable(entry));
+    let mut value = json(&timers)?;
+    if let Some(object) = value.as_object_mut() {
+        object.insert("unreadable".into(), json(unreadable)?);
+    }
+    Ok(value)
 }
 
 /// The scripts are written for Linux (procfs, systemd, GNU find).
@@ -131,6 +150,17 @@ mod tests {
             .unwrap()
             .iter()
             .any(|p| p["pid"].as_u64() == Some(me)));
+
+        let timers = execute(action(serde_json::json!({ "kind": "server_timers_list" })))
+            .await
+            .unwrap();
+        assert!(timers["timers"].is_array(), "{timers}");
+        assert!(timers["cron"].is_array());
+        assert!(timers["unreadable"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|u| u["source"] == "other users"));
     }
 
     #[test]
