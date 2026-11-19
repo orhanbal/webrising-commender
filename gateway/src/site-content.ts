@@ -49,7 +49,7 @@ export const productSummary =
   "WECOMMANDER is a desktop SSH client and server management app for Windows and macOS (SSH, SFTP, tunnels, snippets, disk cleanup, live monitoring, scheduled tasks, end-to-end encrypted sync) and a remote MCP (Model Context Protocol) server that lets AI assistants such as Claude, ChatGPT and Cursor use the terminals and files of your own Windows, macOS and Linux machines through one MCP URL, with human approval for risky actions, per-device limits and a full audit log.";
 
 const facts: string[] = [
-  "Desktop app for Windows 10/11 and macOS (Linux preview): saved hosts with groups and tags, tabbed and split terminals, SFTP file manager, local/remote/SOCKS tunnels, jump hosts, Telnet, serial ports and Mosh, snippets, autocomplete, broadcast typing, session logs and themes.",
+  "Desktop app for Windows 10/11 and macOS (Linux preview): saved hosts with groups, tabbed and split terminals, SFTP file manager, local/remote/SOCKS tunnels, jump hosts, Telnet, serial ports and Mosh, snippets, autocomplete, broadcast typing, session logs and themes.",
   "Server management without installing anything on the server: overview, what fills the disk, safe cleanup (old logs, package caches, Docker build cache and unused images, per Docker daemon including rootless Docker), processes and zombie fixes.",
   "Two app modes on Windows: Dock mode puts the WECOMMANDER Dock on a screen edge, looking like the Windows taskbar, with live CPU, memory and disk charts for a server; Task Manager, Tasks, Terminal, approvals and settings open as drop-down panels from it. Classic mode runs the app in its windows without a Dock.",
   "The Dock is dragged like the taskbar to a screen edge or left floating, can be locked in place, and its app icon opens a Start-like panel with server search, shortcuts, account and settings. The Windows notification area keeps only the Management Center icon. On macOS, live server monitoring is in the menu bar.",
@@ -65,7 +65,7 @@ const facts: string[] = [
   "AI permissions per device and per SSH server, set by an admin in the web dashboard (Devices → AI permissions), never by an AI client: trust level strict, standard or full, with full for a set time or with no limit.",
   "The agent runs as a normal user (not root/SYSTEM) by default and only inside the folders you allow. Running as root is possible on Linux only, with two keys: the machine's owner runs the installer with --allow-root on the machine, then an admin turns it on for that device with their password. Not available on Windows or macOS agents.",
   "A safety net, on by default, blocks irreversible commands (wiping disks, rm -rf /, shutdown and reboot, stopping the agent itself) on every trust level, even as root with full trust; turning it off needs the admin's password.",
-  "High-risk actions (running commands, deleting or moving files, killing processes, opening terminals, starting, stopping or restarting containers, changing scheduled tasks) wait for a human approval of that exact action, unless you allow a command pattern or put the device or SSH server on full trust (for a set time or with no limit).",
+  "High-risk actions (running commands, deleting files, killing processes, opening terminals, starting, stopping or restarting containers, changing scheduled tasks) wait for a human approval of that exact action, unless you allow a command pattern or put the device or SSH server on full trust (for a set time or with no limit).",
   "Approvals arrive in the web dashboard, by e-mail and in the Management Center desktop app as Windows notifications with Approve / Deny buttons.",
   "Secrets in command and terminal output (tokens, passwords, keys) are masked on the device before the result reaches the AI.",
   "Every action is recorded in an audit log; file edits keep undo snapshots.",
@@ -115,7 +115,7 @@ export const publicPages: PublicPage[] = [
       { h2: "Desktop app (SSH client)" },
       {
         ul: [
-          "Saved hosts with groups and tags, import from ~/.ssh/config; tabbed and split terminals; SFTP file manager.",
+          "Saved hosts with groups, import from ~/.ssh/config; tabbed and split terminals; SFTP file manager.",
           "Local, remote and SOCKS tunnels, jump hosts, SSH agent and FIDO2 keys; Telnet, serial ports and Mosh.",
           "Snippets, autocomplete from history, typing into every tab at once, session logs and terminal themes.",
           "End-to-end encrypted sync of hosts, keys and snippets; team library and live shared terminals.",
@@ -345,7 +345,7 @@ export const publicPages: PublicPage[] = [
         "In PowerShell: irm https://wecommander.app/install.ps1 | iex. The WECOMMANDER app opens your browser to sign in and connects this PC by itself; the folder it shares is C:\\Users\\you\\WECOMMANDER.",
         "In ChatGPT: Settings → Connectors → create a custom connector with https://wecommander.app/mcp (OAuth).",
         "Ask ChatGPT to summarise, search or edit documents in that folder; Word, Excel and PDF files can be read too.",
-        "Deleting or moving files and running commands wait for your approval; edits keep undo snapshots.",
+        "Deleting files and running commands wait for your approval; writing, editing and moving files run directly and edits keep undo snapshots.",
       ] },
     ],
   },
