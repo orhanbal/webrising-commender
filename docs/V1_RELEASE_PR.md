@@ -1,7 +1,7 @@
 # v1.0 release PR notes (branch `v1-release-prep`)
 
-Prepared for the WECOMMANDER 1.0 launch on **2026-11-20**. This branch is not
-merged, pushed, tagged or deployed. Merging it to `main` ships the apps as
+Prepared for the WECOMMANDER 1.0 launch on **2026-11-20**. Do not merge before the
+owner's acceptance and purchase tests pass. Merging it to `main` ships the apps as
 `1.0.N` (see "Release day" below), so merge it on the day, not before.
 
 ## What is in this branch
@@ -25,7 +25,8 @@ merged, pushed, tagged or deployed. Merging it to `main` ships the apps as
    server tools for SSH targets, per-device AI permissions (trust levels
    including no time limit, root on Linux with two keys, the safety net) and
    the two ways to connect a server for AI (agent, or SSH with nothing
-   installed in the Windows app).
+   installed, in the Windows, macOS and Linux apps, with per-server AI
+   permissions).
 
 ## Checks run
 
