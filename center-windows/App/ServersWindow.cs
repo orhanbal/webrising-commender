@@ -929,6 +929,48 @@ public sealed partial class ServersWindow : Window
         catch (Exception e) { App.LogCrash(e); }
     }
 
+    private ScrollViewer? _settingsScroll;
+    private UIElement? _settingsPage;
+
+    /// <summary>Where the window was when the language changed: the new window opens there.</summary>
+    public sealed record LanguagePlace(Windows.Graphics.RectInt32 Bounds, bool Visible, bool Maximized, bool OnSettings, double Offset);
+
+    public LanguagePlace CaptureForLanguage()
+    {
+        var onSettings = _settingsPage is not null && ReferenceEquals(_transientPage, _settingsPage);
+        return new LanguagePlace(
+            new Windows.Graphics.RectInt32(AppWindow.Position.X, AppWindow.Position.Y, AppWindow.Size.Width, AppWindow.Size.Height),
+            AppWindow.IsVisible,
+            AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter { State: Microsoft.UI.Windowing.OverlappedPresenterState.Maximized },
+            onSettings,
+            onSettings ? _settingsScroll?.VerticalOffset ?? 0 : 0);
+    }
+
+    /// <summary>Before it is shown: the old window's place and size.</summary>
+    public void PlaceForLanguage(LanguagePlace place)
+    {
+        try
+        {
+            if (place.Bounds.Width > 200 && place.Bounds.Height > 200) AppWindow.MoveAndResize(place.Bounds);
+            if (place.Maximized && AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter p) p.Maximize();
+        }
+        catch (Exception e) { App.LogCrash(e); }
+    }
+
+    /// <summary>After it is shown: the settings page where the person was (the language list in view).</summary>
+    public void ReturnAfterLanguage(LanguagePlace place)
+    {
+        _nav.SelectedItem = null;
+        _settingsAtDock = false;
+        ShowSettings();
+        if (_settingsScroll is not { } scroll) return;
+        var offset = place.OnSettings ? place.Offset : 0;
+        void Scroll() { try { scroll.ChangeView(null, offset, null, disableAnimation: true); } catch (Exception) { } }
+        scroll.Loaded += (_, _) => Scroll();
+        // The sync and team sections fill in a moment later and change the height.
+        DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, async () => { await Task.Delay(250); Scroll(); await Task.Delay(600); Scroll(); });
+    }
+
     /// <summary>Closes the window for real so a new one is built in the new language.</summary>
     public void CloseForLanguage()
     {
@@ -1015,7 +1057,9 @@ public sealed partial class ServersWindow : Window
         foreach (var e in new UIElement[] { language, font, theme, keys, logsButton, dock, syncTitle, syncPanel, teamTitle, teamPanel, backupTitle, backupHelp, backupRow, ai, center, whatsNew }) body.Children.Add(e);
         foreach (var e in TutorialSettings()) body.Children.Add(e);
         var scroll = new ScrollViewer { Content = body };
-        SetPage(Page(L.T("Ayarlar"), L.T("Terminal görünümü ve Dock; değişiklikler hemen uygulanır."), scroll));
+        _settingsScroll = scroll;
+        _settingsPage = Page(L.T("Ayarlar"), L.T("Terminal görünümü ve Dock; değişiklikler hemen uygulanır."), scroll);
+        SetPage(_settingsPage);
         if (_settingsAtDock)
         {
             _settingsAtDock = false;
