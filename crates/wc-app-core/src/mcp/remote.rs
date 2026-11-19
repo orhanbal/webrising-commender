@@ -9,13 +9,16 @@
 //!   the SSH keys and passwords stay on this computer, the connection to the
 //!   server is made from here.
 //!
-//! The gateway is the approval authority for remote calls: every command
-//! and file change needs the person's one-time approval there, bound to the
-//! client, target and exact arguments, before it is queued with
-//! `approved: true`. This side still checks everything it can on its own:
-//! the host is shared remotely through this computer, the host key is
-//! trusted, readonly refuses changes, the sudo guard, limits, and each call
-//! id runs only once.
+//! The gateway is the approval authority for remote calls: a command or
+//! file change is queued with `approved: true` only after the person's
+//! one-time approval there (bound to the client, target and exact
+//! arguments), or because the person gave that SSH target full trust (or
+//! standard trust with the command on its allowlist) in the web panel
+//! (docs/AI_PERMISSIONS.md). This side still checks everything it can on its
+//! own: the host is shared remotely through this computer, the host key is
+//! trusted, readonly refuses changes whatever the gateway says, the sudo
+//! guard, run as root only with this computer's sudo setting for the host,
+//! limits, and each call id runs only once.
 use std::sync::Arc;
 
 use serde::Deserialize;
@@ -52,7 +55,8 @@ pub struct RemoteCall {
     /// The tool's arguments; `target` is the host id.
     #[serde(default)]
     pub args: Map<String, Value>,
-    /// The gateway holds the person's approval of exactly this call.
+    /// The gateway holds the person's approval of exactly this call, or the
+    /// target's trust (full, or an allowlisted command) stands in for it.
     #[serde(default)]
     pub approved: bool,
 }
@@ -240,6 +244,11 @@ mod tests {
         // Readonly: commands and file changes refused even when "approved".
         for (i, (tool, args)) in [
             ("process_exec", json!({"target": web, "command": "uptime"})),
+            // Readonly wins over run as root too.
+            (
+                "process_exec",
+                json!({"target": web, "command": "id", "run_as": "root"}),
+            ),
             (
                 "fs_write",
                 json!({"target": web, "path": "/tmp/x", "content_base64": "eA=="}),
@@ -299,6 +308,24 @@ mod tests {
         )
         .await;
         assert_eq!(code(&r), "sudo_not_allowed");
+        // Run as root (web panel) without this computer's sudo setting for
+        // the host: refused before connecting, even approved, never as the user.
+        for (i, (tool, args)) in [
+            (
+                "process_exec",
+                json!({"target": web, "command": "id", "run_as": "root"}),
+            ),
+            (
+                "fs_write",
+                json!({"target": web, "path": "/etc/x", "content_base64": "eA==", "run_as": "root"}),
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let r = call(&state, remote_call(&format!("root{i}"), tool, args, true)).await;
+            assert_eq!(code(&r), "run_as_root_unavailable", "{tool}");
+        }
         // A call id runs once.
         let r = call(&state, remote_call("e2", "targets_list", json!({}), false)).await;
         assert_eq!(code(&r), "duplicate_call");

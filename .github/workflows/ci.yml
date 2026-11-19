@@ -311,6 +311,8 @@ jobs:
         run: node test/scheduled-tasks-e2e.mjs
       - name: Remote MCP to SSH hosts through the app (Hybrid Access H3/H4, fake app connector)
         run: node test/ssh-connector-e2e.mjs
+      - name: AI permissions of SSH targets (trust, run as root with the computer's sudo, safety net, allowlist)
+        run: node test/ssh-permissions-e2e.mjs
       - name: Verify backup restore in disposable CI database
         working-directory: .
         run: bash scripts/ci-postgres-restore.sh

@@ -1215,5 +1215,18 @@ export const table:Record<string,string> = {
  "Yapay zekâ komutları, Docker işlemlerini ve zamanlanmış görev değişikliklerini onay beklemeden yapar.": "Die KI führt Befehle, Docker-Aktionen und Änderungen an geplanten Aufgaben ohne Freigabe aus.",
  "Mevcut şifre doğrulanamadı.": "Dein aktuelles Passwort konnte nicht bestätigt werden.",
  "Bu ayar yalnızca tarayıcı oturumundan değiştirilebilir.": "Diese Einstellung kann nur in einer Browsersitzung geändert werden.",
- "Bu cihazda root kapalı. Önce makinede install-linux.sh --allow-root çalıştırılmalı.": "Root ist auf diesem Gerät aus. Führe zuerst install-linux.sh --allow-root auf dem Rechner aus."
+ "Bu cihazda root kapalı. Önce makinede install-linux.sh --allow-root çalıştırılmalı.": "Root ist auf diesem Gerät aus. Führe zuerst install-linux.sh --allow-root auf dem Rechner aus.",
+ "Yapay zekânın bu SSH sunucusunda ne yapabileceğini seç. Sunucuya bu bilgisayar üzerinden erişilir:": "Lege fest, was die KI auf diesem SSH-Server darf. Er wird über diesen Computer erreicht:",
+ "Bu ayarları yapay zekâ istemcileri değiştiremez.": "KI-Clients können diese Einstellungen nicht ändern.",
+ "Bu sunucu salt okunur paylaşılıyor": "Dieser Server ist schreibgeschützt freigegeben",
+ "O bilgisayarda salt okunur seçildiği için güven seviyesi ne olursa olsun yapay zekâ bu sunucuda komut çalıştıramaz ve değişiklik yapamaz.": "Auf diesem Computer ist „nur lesen“ gewählt, daher kann die KI auf diesem Server unabhängig von der Vertrauensstufe keine Befehle ausführen und nichts ändern.",
+ "Komutlar ve dosya yazmaları SSH kullanıcısıyla çalışır (önerilen).": "Befehle und Dateischreibvorgänge laufen als SSH-Benutzer (empfohlen).",
+ "Komutlar ve dosya yazmaları sunucuda sudo -n ile root olarak çalışır.": "Befehle und Dateischreibvorgänge laufen auf dem Server über sudo -n als root.",
+ "Bu sunucuda sudo kapalı": "Sudo ist für diesen Server aus",
+ "Root için önce o bilgisayarda izin verilmeli; web panelinden tek başına açılamaz. O bilgisayarda: WECOMMANDER → sunucu → Yapay zekâ erişimi → sudo: izinli (sudoers).": "Root muss zuerst auf diesem Computer erlaubt werden; das Webpanel allein kann es nicht einschalten. Auf diesem Computer: WECOMMANDER → Server → KI-Zugriff → sudo: erlaubt (sudoers).",
+ "Bu sunucuda izinli komut yok.": "Keine erlaubten Befehle auf diesem Server.",
+ "SSH sunucuları": "SSH-Server",
+ "Bilgisayarındaki WECOMMANDER üzerinden uzak yapay zekâyla paylaştığın kayıtlı sunucular. Yalnızca sen görürsün.": "Gespeicherte Server, die du über WECOMMANDER auf deinem Computer mit entfernter KI teilst. Nur du siehst sie.",
+ "Değişikliğe açık": "Änderungen erlaubt",
+ "Yapay zekâ bu sunucuda komutları, dosya, Docker ve sunucu değişikliklerini onay beklemeden yapar.": "Die KI führt auf diesem Server Befehle sowie Datei-, Docker- und Serveränderungen ohne Freigabe aus."
 };

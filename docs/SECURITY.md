@@ -386,12 +386,16 @@ What it guarantees:
   principals acting for the user who owns that computer (OAuth/session user,
   or the creator of an API token); approval requests for them are listed to
   and decided only by that user (`approval_owner_only` otherwise).
-- **Approvals on the server, always.** Every `process_exec`, `fs_write`,
+- **Approvals on the server.** Every `process_exec`, `fs_write`,
   `fs_mkdir`, `fs_move` and `fs_delete` on an SSH target needs a one-time
   approval request bound to (client, target, exact arguments: command,
   folder, timeout; a write by path, size and SHA-256 of the content), 5
-  minutes, single use; a changed byte or another client needs a new one.
-  A timed (autonomous) period never applies remotely. `readonly` targets
+  minutes, single use; a changed byte or another client needs a new one —
+  unless the computer's owner gave that target full trust, or standard trust
+  with the command on its allowlist, in the web panel (password, audited,
+  mailed; docs/AI_PERMISSIONS.md). The safety net applies to SSH commands;
+  run as root needs the computer's own sudo setting for the host as well.
+  The computer's timed (autonomous) period never applies remotely. `readonly` targets
   refuse commands and changes before anything is queued. The core refuses
   any change the gateway did not mark approved, re-checks preset, sudo guard,
   host key and exposure itself, and runs each call id once.

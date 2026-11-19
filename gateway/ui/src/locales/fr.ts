@@ -1215,5 +1215,18 @@ export const table:Record<string,string> = {
  "Yapay zekâ komutları, Docker işlemlerini ve zamanlanmış görev değişikliklerini onay beklemeden yapar.": "L'IA exécute les commandes, les actions Docker et les modifications de tâches planifiées sans attendre d'approbation.",
  "Mevcut şifre doğrulanamadı.": "Votre mot de passe actuel n'a pas pu être vérifié.",
  "Bu ayar yalnızca tarayıcı oturumundan değiştirilebilir.": "Ce réglage ne peut être modifié que depuis une session de navigateur.",
- "Bu cihazda root kapalı. Önce makinede install-linux.sh --allow-root çalıştırılmalı.": "Root est désactivé sur cet appareil. Exécutez d'abord install-linux.sh --allow-root sur la machine."
+ "Bu cihazda root kapalı. Önce makinede install-linux.sh --allow-root çalıştırılmalı.": "Root est désactivé sur cet appareil. Exécutez d'abord install-linux.sh --allow-root sur la machine.",
+ "Yapay zekânın bu SSH sunucusunda ne yapabileceğini seç. Sunucuya bu bilgisayar üzerinden erişilir:": "Choisissez ce que l’IA peut faire sur ce serveur SSH. Il est joint via cet ordinateur :",
+ "Bu ayarları yapay zekâ istemcileri değiştiremez.": "Les clients IA ne peuvent pas modifier ces réglages.",
+ "Bu sunucu salt okunur paylaşılıyor": "Ce serveur est partagé en lecture seule",
+ "O bilgisayarda salt okunur seçildiği için güven seviyesi ne olursa olsun yapay zekâ bu sunucuda komut çalıştıramaz ve değişiklik yapamaz.": "La lecture seule est choisie sur cet ordinateur : quel que soit le niveau de confiance, l’IA ne peut ni exécuter de commandes ni faire de modifications sur ce serveur.",
+ "Komutlar ve dosya yazmaları SSH kullanıcısıyla çalışır (önerilen).": "Les commandes et les écritures de fichiers s’exécutent avec l’utilisateur SSH (recommandé).",
+ "Komutlar ve dosya yazmaları sunucuda sudo -n ile root olarak çalışır.": "Les commandes et les écritures de fichiers s’exécutent en root sur le serveur via sudo -n.",
+ "Bu sunucuda sudo kapalı": "Sudo est désactivé pour ce serveur",
+ "Root için önce o bilgisayarda izin verilmeli; web panelinden tek başına açılamaz. O bilgisayarda: WECOMMANDER → sunucu → Yapay zekâ erişimi → sudo: izinli (sudoers).": "Root doit d’abord être autorisé sur cet ordinateur ; le panneau web seul ne peut pas l’activer. Sur cet ordinateur : WECOMMANDER → serveur → accès IA → sudo : autorisé (sudoers).",
+ "Bu sunucuda izinli komut yok.": "Aucune commande autorisée sur ce serveur.",
+ "SSH sunucuları": "Serveurs SSH",
+ "Bilgisayarındaki WECOMMANDER üzerinden uzak yapay zekâyla paylaştığın kayıtlı sunucular. Yalnızca sen görürsün.": "Serveurs enregistrés que vous partagez avec l’IA distante via WECOMMANDER sur votre ordinateur. Vous seul les voyez.",
+ "Değişikliğe açık": "Modifications autorisées",
+ "Yapay zekâ bu sunucuda komutları, dosya, Docker ve sunucu değişikliklerini onay beklemeden yapar.": "L’IA exécute les commandes et les modifications de fichiers, Docker et serveur sur ce serveur sans attendre d’approbation."
 };

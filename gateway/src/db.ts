@@ -460,6 +460,34 @@ export async function migrate() {
       references management_centers(id) on delete cascade;
     alter table approval_requests add column if not exists target_id text;
     alter table approval_requests add column if not exists target_label text;
+    -- AI permissions of SSH targets (docs/AI_PERMISSIONS.md), per computer
+    -- and host like the target itself: unsharing a host drops them, sharing
+    -- it again starts at standard / user / safety net on. run_as=root only
+    -- while the computer reports sudo 'sudoers' for that host.
+    alter table connector_targets add column if not exists trust_level text not null default 'standard';
+    alter table connector_targets add column if not exists trust_full_until timestamptz;
+    alter table connector_targets add column if not exists run_as text not null default 'user';
+    alter table connector_targets add column if not exists safety_net boolean not null default true;
+    alter table connector_targets add column if not exists safety_net_allow_power boolean not null default false;
+    do $$ begin
+      if not exists (select 1 from pg_constraint where conname='connector_targets_trust_level_check') then
+        alter table connector_targets add constraint connector_targets_trust_level_check check (trust_level in ('strict','standard','full'));
+      end if;
+      if not exists (select 1 from pg_constraint where conname='connector_targets_run_as_check') then
+        alter table connector_targets add constraint connector_targets_run_as_check check (run_as in ('user','root'));
+      end if;
+    end $$;
+    create table if not exists connector_target_command_allowlist (
+      id uuid primary key default gen_random_uuid(),
+      organization_id uuid not null references organizations(id) on delete cascade,
+      center_id uuid not null,
+      host_id text not null,
+      pattern text not null check (length(pattern) between 1 and 512),
+      created_by text not null,
+      created_at timestamptz not null default now(),
+      unique (center_id, host_id, pattern),
+      foreign key (center_id, host_id) references connector_targets(center_id, host_id) on delete cascade
+    );
     create table if not exists device_command_allowlist (
       id uuid primary key default gen_random_uuid(),
       organization_id uuid not null references organizations(id) on delete cascade,

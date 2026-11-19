@@ -19,7 +19,7 @@ import type { ScheduledTasksContext } from "./scheduled-tasks-api.js";
 import { isSshTargetId, listSshTargets, SSH_TARGET_TOOLS, sshTargetCall, targetView } from "./ssh-connector.js";
 
 const SSH_CAPABLE = new Set<string>(SSH_TARGET_TOOLS);
-const TARGET_HELP = "Where to run: a target_id from targets_list, either an agent device (same as device_id) or a saved SSH server shared through the person's own computer (runs over SSH/SFTP from there; commands and file changes need the person's approval every time).";
+const TARGET_HELP = "Where to run: a target_id from targets_list, either an agent device (same as device_id) or a saved SSH server shared through the person's own computer (runs over SSH/SFTP from there; commands and file changes need the person's approval unless that server's trust is full or the command is on its allowlist; targets_list shows its trust, run_as and safety_net).";
 
 type JsonRpcRequest = { jsonrpc?: string; id?: string | number | null; method?: string; params?: any };
 
@@ -28,6 +28,8 @@ type JsonRpcRequest = { jsonrpc?: string; id?: string | number | null; method?: 
 const MAX_TERMINAL_INPUT_BASE64_BYTES = Math.ceil((256 * 1024) / 3) * 4;
 
 export const RUN_AS_HELP = " Runs as the agent's service user, or as root when the device's run_as is root (targets_list shows run_as, trust and safety_net per device); with the safety net on, a short list of catastrophic commands (rm -rf /, mkfs/dd on disks, fork bombs, reboot/shutdown, removing the agent) is refused even with an approval.";
+/** process_exec and fs_write on an SSH target (ssh-connector.ts). */
+export const SSH_RUN_AS_HELP = " On an SSH target it runs as the SSH user, or through sudo -n as root when that target's run_as is root (only while the person's computer allows sudo for AI on that server); the safety net applies to SSH commands too.";
 export const FS_WRITE_ROOT_HELP = " When the device's run_as is root, a file the service user cannot write is written as root (still only inside the allowed folders; no undo snapshot then).";
 
 const DOCKER_DAEMON_ARG = { type: "string", description: "Docker daemon from docker_containers_list: system (default) or u<uid> for a user's rootless one." };
@@ -42,7 +44,7 @@ export const tools = [
   },
   {
     name: "targets_list",
-    description: "List every place this account's AI tools can act on: agent devices (kind \"agent\", folder limits enforced by the agent) and the person's saved SSH servers shared with remote AI through WECOMMANDER on their own computer (kind \"ssh\", path_policy \"none\": a command reaches everything the SSH user can). Each has target_id, name, kind, online, capabilities and, for SSH, preset (readonly or approval) and the tools it supports. Agent targets also carry trust (strict, standard, full), run_as (user or root: whether commands, tasks, terminals and file writes run as root), root_capable and safety_net. Pass target_id as `target` to the tools. SSH servers answer only while that computer is on and WECOMMANDER runs there; every command and file change on them needs the person's one-time approval. Read-only.",
+    description: "List every place this account's AI tools can act on: agent devices (kind \"agent\", folder limits enforced by the agent) and the person's saved SSH servers shared with remote AI through WECOMMANDER on their own computer (kind \"ssh\", path_policy \"none\": a command reaches everything the SSH user can). Each has target_id, name, kind, online, capabilities and, for SSH, preset (readonly or approval), sudo (never or sudoers: the computer's own setting) and the tools it supports. Every target carries trust (strict, standard, full), run_as (user or root: on agents whether commands, tasks, terminals and file writes run as root; on SSH targets whether process_exec and fs_write run through sudo -n as root), root_capable and safety_net. Pass target_id as `target` to the tools. SSH servers answer only while that computer is on and WECOMMANDER runs there; a command or change on them needs the person's one-time approval unless their trust is full (or standard with the command on the server's allowlist), and a readonly SSH target refuses every change whatever its trust. Read-only.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     ...(process.env.MCP_OAUTH_ENABLED === "true" ? { securitySchemes: [{ type: "oauth2", scopes: ["mcp:tools"] }] } : {}),
   },
@@ -76,7 +78,7 @@ export const tools = [
     tail: { type: "integer", minimum: 1, maximum: 2000, description: "Lines from the end (default 200)." },
     since: { type: "string", maxLength: 40 },
   }, ["container"]),
-  tool("docker_container_action", "Starts, stops or restarts one Docker container on the daemon it names (stop and restart wait 10 s before killing); the action runs on the full id Docker resolves the reference to. Never removes containers, images or volumes; WECOMMANDER's own containers are never stopped or restarted. Needs a human approval for every call unless the device's trust is full; refused on read-only SSH targets.", {
+  tool("docker_container_action", "Starts, stops or restarts one Docker container on the daemon it names (stop and restart wait 10 s before killing); the action runs on the full id Docker resolves the reference to. Never removes containers, images or volumes; WECOMMANDER's own containers are never stopped or restarted. Needs a human approval for every call unless the device's or SSH target's trust is full; refused on read-only SSH targets.", {
     container: DOCKER_CONTAINER_ARG,
     daemon: DOCKER_DAEMON_ARG,
     action: { type: "string", enum: ["start", "stop", "restart"] },
@@ -124,7 +126,7 @@ export const tools = [
   ),
   tool(
     "fs_write",
-    "Write base64-encoded bytes to an allowlisted file. Optional expected_sha256 rejects stale content; with_undo snapshots an existing regular file (max 4 MiB) for guarded restoration." + FS_WRITE_ROOT_HELP,
+    "Write base64-encoded bytes to an allowlisted file. Optional expected_sha256 rejects stale content; with_undo snapshots an existing regular file (max 4 MiB) for guarded restoration." + FS_WRITE_ROOT_HELP + SSH_RUN_AS_HELP,
     { path: str(), content_base64: str(), create_parents: bool(), expected_sha256: str(), with_undo: bool() },
     ["path", "content_base64"],
   ),
@@ -192,7 +194,7 @@ export const tools = [
   tool("fs_undo", "Restore a prior fs_replace snapshot only when the current SHA-256 matches. Consumes the snapshot on success.", { path: str(), undo_id: str(), expected_sha256: str() }, ["path", "undo_id", "expected_sha256"]),
   tool(
     "process_exec",
-    "Execute a shell command. HIGH risk. Omit approval_token to create a human approval request, then retry after approval." + RUN_AS_HELP,
+    "Execute a shell command. HIGH risk. Omit approval_token to create a human approval request, then retry after approval." + RUN_AS_HELP + SSH_RUN_AS_HELP,
     { command: str(), cwd: str(), timeout_ms: integer(), approval_token: str() },
     ["command"],
   ),
@@ -618,7 +620,7 @@ export async function handleMcp(request: JsonRpcRequest, router: DeviceRouter, p
         })),
         ...ssh.map(targetView),
       ],
-      note: "Pass target_id as `target`. SSH targets have no folder boundary (path_policy none); commands and file changes on them need the person's approval every time.",
+      note: "Pass target_id as `target`. SSH targets have no folder boundary (path_policy none); commands and file changes on them need the person's approval unless their trust is full or the command is on their allowlist (standard); readonly SSH targets refuse changes. run_as root on an SSH target runs process_exec and fs_write through sudo -n.",
     }));
   }
 

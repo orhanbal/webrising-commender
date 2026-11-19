@@ -1215,5 +1215,18 @@ export const table:Record<string,string> = {
  "Yapay zekâ komutları, Docker işlemlerini ve zamanlanmış görev değişikliklerini onay beklemeden yapar.": "La IA ejecuta comandos, acciones de Docker y cambios de tareas programadas sin esperar aprobación.",
  "Mevcut şifre doğrulanamadı.": "No se pudo verificar tu contraseña actual.",
  "Bu ayar yalnızca tarayıcı oturumundan değiştirilebilir.": "Este ajuste solo se puede cambiar desde una sesión del navegador.",
- "Bu cihazda root kapalı. Önce makinede install-linux.sh --allow-root çalıştırılmalı.": "Root está desactivado en este dispositivo. Ejecuta primero install-linux.sh --allow-root en la máquina."
+ "Bu cihazda root kapalı. Önce makinede install-linux.sh --allow-root çalıştırılmalı.": "Root está desactivado en este dispositivo. Ejecuta primero install-linux.sh --allow-root en la máquina.",
+ "Yapay zekânın bu SSH sunucusunda ne yapabileceğini seç. Sunucuya bu bilgisayar üzerinden erişilir:": "Elige qué puede hacer la IA en este servidor SSH. Se accede a él a través de este equipo:",
+ "Bu ayarları yapay zekâ istemcileri değiştiremez.": "Los clientes de IA no pueden cambiar estos ajustes.",
+ "Bu sunucu salt okunur paylaşılıyor": "Este servidor se comparte en solo lectura",
+ "O bilgisayarda salt okunur seçildiği için güven seviyesi ne olursa olsun yapay zekâ bu sunucuda komut çalıştıramaz ve değişiklik yapamaz.": "En ese equipo se eligió solo lectura, así que, sea cual sea el nivel de confianza, la IA no puede ejecutar comandos ni hacer cambios en este servidor.",
+ "Komutlar ve dosya yazmaları SSH kullanıcısıyla çalışır (önerilen).": "Los comandos y las escrituras de archivos se ejecutan como el usuario SSH (recomendado).",
+ "Komutlar ve dosya yazmaları sunucuda sudo -n ile root olarak çalışır.": "Los comandos y las escrituras de archivos se ejecutan como root en el servidor mediante sudo -n.",
+ "Bu sunucuda sudo kapalı": "Sudo está desactivado para este servidor",
+ "Root için önce o bilgisayarda izin verilmeli; web panelinden tek başına açılamaz. O bilgisayarda: WECOMMANDER → sunucu → Yapay zekâ erişimi → sudo: izinli (sudoers).": "Root debe permitirse primero en ese equipo; el panel web por sí solo no puede activarlo. En ese equipo: WECOMMANDER → servidor → acceso de IA → sudo: permitido (sudoers).",
+ "Bu sunucuda izinli komut yok.": "No hay comandos permitidos en este servidor.",
+ "SSH sunucuları": "Servidores SSH",
+ "Bilgisayarındaki WECOMMANDER üzerinden uzak yapay zekâyla paylaştığın kayıtlı sunucular. Yalnızca sen görürsün.": "Servidores guardados que compartes con IA remota mediante WECOMMANDER en tu equipo. Solo tú los ves.",
+ "Değişikliğe açık": "Cambios permitidos",
+ "Yapay zekâ bu sunucuda komutları, dosya, Docker ve sunucu değişikliklerini onay beklemeden yapar.": "La IA ejecuta comandos y cambios de archivos, Docker y servidor en este servidor sin esperar aprobación."
 };

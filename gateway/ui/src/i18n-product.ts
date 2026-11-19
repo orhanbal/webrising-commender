@@ -551,5 +551,18 @@ export const productEnglish:Record<string,string> = {
   "Yapay zekâ komutları, Docker işlemlerini ve zamanlanmış görev değişikliklerini onay beklemeden yapar.": "The AI runs commands, Docker actions and scheduled-task changes without waiting for approval.",
   "Mevcut şifre doğrulanamadı.": "Your current password could not be verified.",
   "Bu ayar yalnızca tarayıcı oturumundan değiştirilebilir.": "This setting can only be changed from a browser session.",
-  "Bu cihazda root kapalı. Önce makinede install-linux.sh --allow-root çalıştırılmalı.": "Root is off on this device. Run install-linux.sh --allow-root on the machine first."
+  "Bu cihazda root kapalı. Önce makinede install-linux.sh --allow-root çalıştırılmalı.": "Root is off on this device. Run install-linux.sh --allow-root on the machine first.",
+  "Yapay zekânın bu SSH sunucusunda ne yapabileceğini seç. Sunucuya bu bilgisayar üzerinden erişilir:": "Choose what the AI may do on this SSH server. It is reached through this computer:",
+  "Bu ayarları yapay zekâ istemcileri değiştiremez.": "AI clients cannot change these settings.",
+  "Bu sunucu salt okunur paylaşılıyor": "This server is shared read-only",
+  "O bilgisayarda salt okunur seçildiği için güven seviyesi ne olursa olsun yapay zekâ bu sunucuda komut çalıştıramaz ve değişiklik yapamaz.": "Read-only is chosen on that computer, so whatever the trust level the AI cannot run commands or make changes on this server.",
+  "Komutlar ve dosya yazmaları SSH kullanıcısıyla çalışır (önerilen).": "Commands and file writes run as the SSH user (recommended).",
+  "Komutlar ve dosya yazmaları sunucuda sudo -n ile root olarak çalışır.": "Commands and file writes run as root on the server through sudo -n.",
+  "Bu sunucuda sudo kapalı": "Sudo is off for this server",
+  "Root için önce o bilgisayarda izin verilmeli; web panelinden tek başına açılamaz. O bilgisayarda: WECOMMANDER → sunucu → Yapay zekâ erişimi → sudo: izinli (sudoers).": "Root must first be allowed on that computer; the web panel alone cannot turn it on. On that computer: WECOMMANDER → server → AI access → sudo: allowed (sudoers).",
+  "Bu sunucuda izinli komut yok.": "No allowed commands on this server.",
+  "SSH sunucuları": "SSH servers",
+  "Bilgisayarındaki WECOMMANDER üzerinden uzak yapay zekâyla paylaştığın kayıtlı sunucular. Yalnızca sen görürsün.": "Saved servers you share with remote AI through WECOMMANDER on your computer. Only you see them.",
+  "Değişikliğe açık": "Changes allowed",
+  "Yapay zekâ bu sunucuda komutları, dosya, Docker ve sunucu değişikliklerini onay beklemeden yapar.": "The AI runs commands, file, Docker and server changes on this server without waiting for approval."
 };

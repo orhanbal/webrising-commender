@@ -15,6 +15,13 @@
 //! approval (one-time, bound to the exact call: asked in this app for local
 //! clients, already enforced by the gateway for remote ones) → silent SSH
 //! login (never trust-on-first-use) → run → redact → audit.
+//!
+//! Run as root (remote only, docs/AI_PERMISSIONS.md): the gateway sends
+//! `run_as: "root"` with `process_exec` and `fs_write` when the person set
+//! that SSH target to root in the web panel. This side is the second key:
+//! it escalates (`sudo -n`) only when its own `sudo` setting for the host is
+//! `sudoers`, and refuses the call otherwise (never runs it as the user
+//! instead). Local clients cannot ask for it.
 use std::sync::Arc;
 
 use base64::Engine;
@@ -140,7 +147,8 @@ pub enum Origin {
     Local,
     /// A remote AI client through wecommander.app (H3); this computer is
     /// the connector `center_id`. `approved`: the gateway holds the
-    /// person's one-time approval of exactly this call.
+    /// person's one-time approval of exactly this call, or the target's
+    /// trust set in the web panel stands in for it (readonly still wins).
     Remote { center_id: String, approved: bool },
 }
 
@@ -430,6 +438,108 @@ fn targets_list(
     }
 }
 
+/// Whether a call runs as root: `run_as` from the gateway (`"root"` or
+/// `"user"`, absent means user). Root needs a remote origin and the host's
+/// `sudo` setting `sudoers` on this computer; otherwise it is refused, never
+/// run as the SSH user instead. Only `process_exec` and `fs_write` escalate.
+pub fn check_run_as(
+    origin: &Origin,
+    ai: &AiAccess,
+    tool: &str,
+    args: &Map<String, Value>,
+) -> Result<bool, Fail> {
+    let root = match args.get("run_as") {
+        None | Some(Value::Null) => false,
+        Some(Value::String(s)) if s == "user" => false,
+        Some(Value::String(s)) if s == "root" => true,
+        Some(_) => return Err(invalid("run_as must be user or root")),
+    };
+    if !root || !ROOT_TOOLS.contains(&tool) {
+        return Ok(false);
+    }
+    if *origin == Origin::Local {
+        return Err(Fail::new(
+            "run_as_root_unavailable",
+            "run as root is set per server in the WECOMMANDER web panel for remote AI clients only",
+        ));
+    }
+    if ai.sudo != "sudoers" {
+        return Err(Fail::new(
+            "run_as_root_unavailable",
+            "this computer does not allow sudo for AI on this server (WECOMMANDER → server → AI access → sudo), so nothing runs as root here",
+        ));
+    }
+    Ok(true)
+}
+
+/// Tools that run as root when the gateway asks for it (and sudo is allowed).
+pub const ROOT_TOOLS: [&str; 2] = ["process_exec", "fs_write"];
+
+/// A command line as root: `sudo -n` (never asks for a password) runs it in
+/// `sh -c`.
+pub fn as_root(line: &str) -> String {
+    format!("sudo -n -- sh -c {}", wc_server::quote(line))
+}
+
+/// `fs_write` as root: one `sh` under `sudo -n` checks the path (no link,
+/// a regular file, `expected_sha256`, the folder) and writes standard input
+/// over it in place (an existing file keeps its owner and mode). Exit codes
+/// 90-96 are mapped by [`root_write_fail`].
+const ROOT_WRITE: &str = r#"p=$1; e=$2; c=$3
+if [ -L "$p" ]; then exit 90; fi
+if [ -e "$p" ]; then
+  [ -f "$p" ] || exit 91
+  if [ -n "$e" ]; then s=$(sha256sum -- "$p" | cut -d' ' -f1); [ "$s" = "$e" ] || exit 93; fi
+else
+  [ -z "$e" ] || exit 93
+  d=$(dirname -- "$p")
+  if [ "$c" = 1 ]; then mkdir -p -- "$d" || exit 94; elif [ ! -d "$d" ]; then exit 95; fi
+fi
+cat > "$p" || exit 96
+"#;
+
+/// The command of a root `fs_write` (the content goes to standard input).
+pub fn root_write_command(path: &str, expected: Option<&str>, create_parents: bool) -> String {
+    format!(
+        "sudo -n -- sh -c {} wc-write {} {} {}",
+        wc_server::quote(ROOT_WRITE),
+        wc_server::quote(path),
+        wc_server::quote(expected.unwrap_or("")),
+        if create_parents { "1" } else { "0" }
+    )
+}
+
+/// The failure of a root `fs_write` from its exit status and error text.
+pub fn root_write_fail(status: Option<u32>, stderr: &str) -> Option<Fail> {
+    let text = stderr.trim();
+    Some(match status {
+        Some(0) => return None,
+        Some(90) => Fail::new(
+            "symlink_refused",
+            "the path is a symbolic link; write to the file it points to instead (links are never followed)",
+        ),
+        Some(91) => Fail::new("fs_error", "the path is not a regular file"),
+        Some(93) => stale(),
+        Some(94) => Fail::new("fs_error", "the missing folders could not be created"),
+        Some(95) => Fail::new(
+            "fs_error",
+            "the folder does not exist (pass create_parents to create it)",
+        ),
+        _ if text.starts_with("sudo:") => Fail::new(
+            "sudo_failed",
+            format!("sudo -n did not run on the server (the SSH user needs passwordless sudo): {text}"),
+        ),
+        _ => Fail::new(
+            "fs_error",
+            if text.is_empty() {
+                "the file could not be written as root".to_owned()
+            } else {
+                text.chars().take(300).collect()
+            },
+        ),
+    })
+}
+
 fn readonly_fail(what: &str) -> Fail {
     Fail::new(
         "readonly_preset",
@@ -529,7 +639,7 @@ fn size_text(n: usize) -> String {
 
 /// The checks before a file change connects: preset, arguments and limits.
 /// Returns the change and whether it needs an approval (not in a timed
-/// period; the caller makes remote changes always need one).
+/// period; remote changes are decided by the gateway: approval or the target's trust).
 pub fn check_change(
     ai: &AiAccess,
     tool: &str,
@@ -837,6 +947,8 @@ async fn run(
     let remote = matches!(origin, Origin::Remote { .. });
     if name == "process_exec" {
         let (command, cwd, timeout_ms, needs_approval) = check_exec(ai, args, now)?;
+        // After the preset: a readonly server refuses before anything else.
+        let root = check_run_as(origin, ai, name, args)?;
         if needs_approval || remote {
             let ask = Ask {
                 tool: "process_exec",
@@ -852,6 +964,7 @@ async fn run(
             Some(c) => format!("cd {} && {command}", wc_server::quote(c)),
             None => command.clone(),
         };
+        let line = if root { as_root(&line) } else { line };
         let out = conn
             .exec_tail(
                 &line,
@@ -866,6 +979,7 @@ async fn run(
             redact::redact_text(&crate::exec::tail_text(&out.output, out.truncated));
         return Ok(json!({
             "exitCode": out.exit_status,
+            "runAs": if root { "root" } else { "user" },
             "output": output,
             "timedOut": out.timed_out,
             "truncated": out.truncated,
@@ -889,6 +1003,7 @@ async fn run(
     }
     if CHANGE_TOOLS.contains(&name) {
         let (change, needs_approval) = check_change(ai, name, args, now)?;
+        let root = check_run_as(origin, ai, name, args)?;
         if needs_approval || remote {
             let ask = Ask {
                 tool: change.tool,
@@ -905,6 +1020,11 @@ async fn run(
             .await
             .map_err(|e| Fail::new("sftp_failed", e.to_string()));
         let result = match sftp {
+            Ok(sftp) if root => {
+                let r = root_write(&conn, &sftp, &change).await;
+                let _ = sftp.close().await;
+                r
+            }
             Ok(sftp) => {
                 let r = sftp_change(&sftp, &change).await;
                 let _ = sftp.close().await;
@@ -1239,6 +1359,30 @@ async fn sftp_change(sftp: &Sftp, change: &Change) -> Result<Value, Fail> {
             Ok(json!({ "path": path, "deleted": tree.len() + 1 }))
         }
     }
+}
+
+/// `fs_write` as root (see [`ROOT_WRITE`]); `~` is the SSH user's home.
+async fn root_write(conn: &Connection, sftp: &Sftp, change: &Change) -> Result<Value, Fail> {
+    let b = &change.bound;
+    let path = remote_path(sftp, b["path"].as_str().unwrap_or("")).await?;
+    let command = root_write_command(
+        &path,
+        b["expectedSha256"].as_str(),
+        b["createParents"].as_bool() == Some(true),
+    );
+    let out = conn
+        .exec_input(&command, &change.content, 4096)
+        .await
+        .map_err(|e| Fail::new("exec_failed", e.to_string()))?;
+    if let Some(fail) = root_write_fail(out.exit_status, &String::from_utf8_lossy(&out.stderr)) {
+        return Err(fail);
+    }
+    Ok(json!({
+        "path": path,
+        "size": change.content.len(),
+        "sha256": b["sha256"].as_str().unwrap_or(""),
+        "runAs": "root",
+    }))
 }
 
 /// A `PRELUDE` without sudo: privileged steps run only when the SSH user is
@@ -1879,5 +2023,135 @@ mod tests {
         assert!(guarded.starts_with(NO_SUDO_PRELUDE));
         assert!(valid_cleanup_id("docker-unused@u1000") && valid_cleanup_id("journal"));
         assert!(!valid_cleanup_id("journal@x") && !valid_cleanup_id("a"));
+    }
+
+    #[test]
+    fn run_as_root_needs_remote_and_the_hosts_sudo_setting() {
+        let remote = Origin::Remote {
+            center_id: "c".into(),
+            approved: true,
+        };
+        let mut ai = AiAccess {
+            remote: true,
+            ..Default::default()
+        };
+        let root = args(json!({"command": "id", "run_as": "root"}));
+        // sudo: never on this computer → refused, never run as the user.
+        assert_eq!(
+            check_run_as(&remote, &ai, "process_exec", &root)
+                .unwrap_err()
+                .code,
+            "run_as_root_unavailable"
+        );
+        ai.sudo = "sudoers".into();
+        assert!(check_run_as(&remote, &ai, "process_exec", &root).unwrap());
+        assert!(check_run_as(&remote, &ai, "fs_write", &root).unwrap());
+        // Only commands and file writes escalate; other tools stay the SSH user.
+        for tool in ["fs_mkdir", "fs_delete", "fs_move", "server_cleanup_run"] {
+            assert!(!check_run_as(&remote, &ai, tool, &root).unwrap(), "{tool}");
+        }
+        // Local AI clients cannot ask for root.
+        assert_eq!(
+            check_run_as(&Origin::Local, &ai, "process_exec", &root)
+                .unwrap_err()
+                .code,
+            "run_as_root_unavailable"
+        );
+        for (v, ok) in [
+            (json!({}), Some(false)),
+            (json!({"run_as": "user"}), Some(false)),
+            (json!({"run_as": null}), Some(false)),
+            (json!({"run_as": "admin"}), None),
+            (json!({"run_as": true}), None),
+        ] {
+            let r = check_run_as(&remote, &ai, "process_exec", &args(v.clone()));
+            match ok {
+                Some(want) => assert_eq!(r.unwrap(), want, "{v}"),
+                None => assert_eq!(r.unwrap_err().code, "invalid_arguments", "{v}"),
+            }
+        }
+    }
+
+    #[test]
+    fn root_command_lines_quote_everything() {
+        assert_eq!(
+            as_root("cd '/srv' && echo 'a' > /etc/x"),
+            r#"sudo -n -- sh -c 'cd '\''/srv'\'' && echo '\''a'\'' > /etc/x'"#
+        );
+        let cmd = root_write_command("/etc/it's", None, true);
+        assert!(cmd.starts_with("sudo -n -- sh -c '"), "{cmd}");
+        assert!(cmd.ends_with(r#" wc-write '/etc/it'\''s' '' 1"#), "{cmd}");
+        assert!(root_write_command("/a", Some("ab"), false).ends_with(" '/a' 'ab' 0"));
+        assert_eq!(root_write_fail(Some(0), ""), None);
+        for (code, want) in [
+            (90, "symlink_refused"),
+            (91, "fs_error"),
+            (93, "stale_content"),
+            (95, "fs_error"),
+        ] {
+            assert_eq!(root_write_fail(Some(code), "").unwrap().code, want);
+        }
+        assert_eq!(
+            root_write_fail(Some(1), "sudo: a password is required\n")
+                .unwrap()
+                .code,
+            "sudo_failed"
+        );
+        assert_eq!(root_write_fail(None, "").unwrap().code, "fs_error");
+    }
+
+    /// The root write script itself, run with the local `sh` (without sudo):
+    /// links refused, stale content refused, owner and mode kept, folders.
+    #[cfg(unix)]
+    #[test]
+    fn root_write_script_checks_before_writing() {
+        use std::io::Write;
+        use std::os::unix::fs::PermissionsExt;
+        use std::process::{Command, Stdio};
+        let dir = std::env::temp_dir().join(format!("wc-root-write-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let run = |path: &std::path::Path, expected: &str, parents: &str, input: &[u8]| {
+            let mut child = Command::new("sh")
+                .arg("-c")
+                .arg(ROOT_WRITE)
+                .arg("wc-write")
+                .arg(path)
+                .arg(expected)
+                .arg(parents)
+                .stdin(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap();
+            child.stdin.take().unwrap().write_all(input).unwrap();
+            child.wait().unwrap().code()
+        };
+        let file = dir.join("f.conf");
+        std::fs::write(&file, b"old").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o640)).unwrap();
+        // Stale: expected hash does not match → nothing written.
+        assert_eq!(run(&file, &"0".repeat(64), "0", b"new"), Some(93));
+        assert_eq!(std::fs::read(&file).unwrap(), b"old");
+        // Matching hash → written in place, mode kept.
+        assert_eq!(run(&file, &sha256_hex(b"old"), "0", b"new"), Some(0));
+        assert_eq!(std::fs::read(&file).unwrap(), b"new");
+        assert_eq!(
+            std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
+        // A link is never followed.
+        let link = dir.join("l");
+        std::os::unix::fs::symlink(&file, &link).unwrap();
+        assert_eq!(run(&link, "", "0", b"x"), Some(90));
+        assert_eq!(std::fs::read(&file).unwrap(), b"new");
+        // A folder is not a file; a missing folder needs create_parents.
+        assert_eq!(run(&dir, "", "0", b"x"), Some(91));
+        let deep = dir.join("a/b/c.txt");
+        assert_eq!(run(&deep, "", "0", b"x"), Some(95));
+        assert_eq!(run(&deep, "", "1", b"x"), Some(0));
+        assert_eq!(std::fs::read(&deep).unwrap(), b"x");
+        // A new file with expected_sha256 is stale (it was expected to exist).
+        assert_eq!(run(&dir.join("new"), &sha256_hex(b""), "0", b"x"), Some(93));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
