@@ -58,7 +58,7 @@ export const landingCopySections = [
       "Yanında yapay zekâ.",
       "Bir SSH istemcisinden beklediğin her şey, sunucu bakımını kolaylaştıran araçlar ve sınırlarını senin çizdiğin bir yapay zekâ.",
       "SSH, SFTP ve tüneller",
-      "Kayıtlı sunucular, gruplar ve etiketler; sekmeli ve bölünmüş terminaller; sürükle-bırak SFTP; yerel, uzak ve SOCKS tüneller, jump host. SSH agent ve FIDO2 donanım anahtarlarıyla giriş. Telnet, seri port ve Mosh da dahil. Parçacıklar, otomatik tamamlama, oturum kayıtları, terminal temaları ve yedek dışa/içe aktarma.",
+      "Kayıtlı sunucular ve gruplar; sekmeli ve bölünmüş terminaller; sürükle-bırak SFTP; yerel, uzak ve SOCKS tüneller, jump host. SSH agent ve FIDO2 donanım anahtarlarıyla giriş. Telnet, seri port ve Mosh da dahil. Parçacıklar, otomatik tamamlama, oturum kayıtları, terminal temaları ve yedek dışa/içe aktarma.",
       "Sunucu yönetimi",
       "Diski ne dolduruyor gör, güvenle temizle: eski loglar, paket önbelleği, Docker build önbelleği ve kullanılmayan imajlar (rootless Docker dahil). Süreçler ve zombi düzeltme. Sunucuya hiçbir şey kurmadan.",
       "Canlı izleme ve Dock",
