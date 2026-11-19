@@ -6,6 +6,7 @@
 **Kapsam:** WECOMMANDER'ın Desktop Commander işlevsel eşdeğerlik kabulünden *sonraki* farklılaştırıcı yetenekleri.
 **Sürümlere bağlanması:** [v1.2+ yol haritası](V1_2_PLUS_ROADMAP.md) (2026-11-05): AD1 maddeleri v1.2 / v1.3 / v1.4 / v2.x teslimlerine bölündü.
 **Kanonik mevcut öncelik:** [Desktop Commander Eşdeğerlik Planı](DESKTOP_COMMANDER_PARITY_PLAN.md). Bu belge, mevcut P0/P1/P2 işlerini veya saatlik görev kuyruğunu değiştirmez; yeni fikirler yalnız ileri geliştirme havuzuna dahil edilmiştir.
+**Yeni bağımsız modül planı (19 Kasım 2026):** [UDE — Universal Development Environment](UDE_UNIVERSAL_DEVELOPMENT_ENVIRONMENT_PLAN.md). UDE, **isteğe bağlı Workspaces modülüdür**; Core'un tek başına kullanımı, Agent/User modları ve mevcut Core öncelikleri değişmez. UDE planı uygulanmış özellik veya mevcut işlerin önüne geçen yeni sürüm taahhüdü değildir.
 
 ## 1. Ürün konumu — üzerinde anlaşılan temel ilke
 
