@@ -1,6 +1,31 @@
 {
  "releases": [
   {
+   "id": "2026-11-19-windows",
+   "date": "2026-11-19",
+   "platforms": ["windows"],
+   "items": {
+    "tr": [
+     "Dil değiştirince uygulamanın kapanması düzeltildi. Uygulama beklenmedik şekilde kapanırsa Windows onu kendiliğinden yeniden açar ve bir sonraki açılışta hata raporu gönderilir."
+    ],
+    "en": [
+     "Changing the language no longer closes the app. If the app ever closes unexpectedly, Windows opens it again by itself and the next start sends an error report."
+    ],
+    "de": [
+     "Ein Sprachwechsel schließt die App nicht mehr. Wird die App doch einmal unerwartet beendet, öffnet Windows sie selbst wieder, und beim nächsten Start wird ein Fehlerbericht gesendet."
+    ],
+    "fr": [
+     "Changer de langue ne ferme plus l'application. Si elle se ferme un jour de façon inattendue, Windows la rouvre tout seul et le démarrage suivant envoie un rapport d'erreur."
+    ],
+    "es": [
+     "Cambiar el idioma ya no cierra la app. Si alguna vez se cierra de forma inesperada, Windows la vuelve a abrir solo y el siguiente inicio envía un informe de error."
+    ],
+    "pt-BR": [
+     "Trocar o idioma não fecha mais o app. Se ele fechar inesperadamente, o Windows o abre de novo sozinho e a próxima abertura envia um relatório de erro."
+    ]
+   }
+  },
+  {
    "id": "2026-11-18-windows-tutorial",
    "date": "2026-11-18",
    "platforms": ["windows"],

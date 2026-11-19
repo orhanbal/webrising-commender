@@ -69,6 +69,7 @@ public sealed class DockPanel : Window
             p.SetBorderAndTitleBar(true, false);
         }
         AppWindow.Closing += (_, e) => { e.Cancel = true; Hide(); };
+        Closed += (_, _) => _retired = true;
         // The person resized it (the terminal): that size is kept while the app runs.
         AppWindow.Changed += (_, e) =>
         {
@@ -80,12 +81,12 @@ public sealed class DockPanel : Window
         {
             try
             {
-                if (e.WindowActivationState != WindowActivationState.Deactivated || !AppWindow.IsVisible) return;
+                if (_retired || e.WindowActivationState != WindowActivationState.Deactivated || !AppWindow.IsVisible) return;
                 if (KeepOpen?.Invoke() == true) return;
                 // The click that opened it can activate the Dock a moment later: take the focus back.
                 if (DateTime.UtcNow - _shownAt < TimeSpan.FromMilliseconds(800))
                 {
-                    DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () => { try { if (AppWindow.IsVisible) Activate(); } catch (Exception) { } });
+                    DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () => { try { if (!_retired && AppWindow.IsVisible) Activate(); } catch (Exception) { } });
                     return;
                 }
                 Hide();
@@ -212,9 +213,22 @@ public sealed class DockPanel : Window
             });
     }
 
+    /// <summary>
+    /// The language changed (or the panel is rebuilt): hidden and left alone, never Close()d.
+    /// Closing it let its own deactivation handler touch a destroyed window, and
+    /// Microsoft.UI.Windowing ends the whole app for that (no exception to catch).
+    /// </summary>
+    public void Retire()
+    {
+        _retired = true;
+        try { if (AppWindow.IsVisible) AppWindow.Hide(); } catch (Exception) { }
+    }
+
+    private bool _retired;
+
     public void Hide()
     {
-        if (!AppWindow.IsVisible) return;
+        if (_retired || !AppWindow.IsVisible) return;
         _hiddenAt = DateTime.UtcNow;
         AppWindow.Hide();
         App.DebugLayout($"dock panel {Kind}: closed");
