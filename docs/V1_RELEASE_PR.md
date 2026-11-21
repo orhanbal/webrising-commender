@@ -1,6 +1,6 @@
 # v1.0 release PR notes (branch `v1-release-prep`)
 
-Prepared for the WECOMMANDER 1.0 launch on **2026-11-20**. Do not merge before the
+Prepared for the WECOMMANDER 1.0 launch on **2026-11-21**. Do not merge before the
 owner's acceptance and purchase tests pass. Merging it to `main` ships the apps as
 `1.0.N` (see "Release day" below), so merge it on the day, not before.
 
@@ -11,7 +11,7 @@ owner's acceptance and purchase tests pass. Merging it to `main` ships the apps 
    the apps format versions through one constant (`AppVersion` in
    `center-windows/Core` and `center-macos` CenterCore). Updates still compare
    only the build number, so 0.1.N installs update to 1.0.M.
-2. **Release texts:** the "Yenilikler" entry `2026-11-20-v1` (Windows and
+2. **Release texts:** the "Yenilikler" entry `2026-11-21-v1` (Windows and
    macOS, six languages), the 1.0.0 section of `CHANGELOG.md`,
    `docs/LAUNCH_EMAIL.md` (sign-up mail and in-app messages) and
    `docs/LAUNCH_POSTS.md` (X, LinkedIn, Product Hunt, Show HN).
@@ -36,11 +36,11 @@ owner's acceptance and purchase tests pass. Merging it to `main` ships the apps 
 - `cargo test -p webrising-commender-agent` was not needed: the Rust changes
   are comments only.
 
-## Release day (2026-11-20)
+## Release day (2026-11-21)
 
 1. If the launch date moves, change it **before the first merge**: the entry
-   id and date `2026-11-20-v1` in `release-notes/notes.json` (then
-   `python3 scripts/gen-release-notes.py`), the `## 1.0.0 — 2026-11-20`
+   id and date `2026-11-21-v1` in `release-notes/notes.json` (then
+   `python3 scripts/gen-release-notes.py`), the `## 1.0.0 — 2026-11-21`
    heading in `CHANGELOG.md`, and the dates in `docs/LAUNCH_EMAIL.md`,
    `docs/LAUNCH_POSTS.md` and `docs/DIRECTORY_SUBMISSIONS.md`. Once an app has
    shown the note, its id must not change.
@@ -66,7 +66,7 @@ owner's acceptance and purchase tests pass. Merging it to `main` ships the apps 
 ## TODO before release (not in the texts yet, do not claim until shipped)
 
 > **Done (landed on `main` in #203 and #202, now in the texts).** Earlier note: When one of
-> these lands on `main` before the launch, add it to the `2026-11-20-v1`
+> these lands on `main` before the launch, add it to the `2026-11-21-v1`
 > entry (six languages), the 1.0.0 section of `CHANGELOG.md`, the launch
 > mail and posts and `docs/DIRECTORY_SUBMISSIONS.md`, and remove the
 > matching "not yet" wording ("macOS does not have it yet", "Windows only",

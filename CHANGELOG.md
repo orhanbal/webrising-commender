@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0 — 2026-11-20
+## 1.0.0 — 2026-11-21
 
 WECOMMANDER 1.0 is one desktop app (Windows 10/11, macOS 13 or newer) plus an agent (Linux, Windows, macOS) that runs as a normal user by default, and the hosted service at wecommander.app (account, approvals, the MCP endpoint). The SSH client works fully without AI and without an account.
 

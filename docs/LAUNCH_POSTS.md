@@ -1,4 +1,4 @@
-# Launch posts — WECOMMANDER 1.0 (2026-11-20)
+# Launch posts — WECOMMANDER 1.0 (2026-11-21)
 
 Drafts for launch day. Nothing here is posted automatically. Facts follow
 `gateway/src/site-content.ts` and `docs/AI_PERMISSIONS.md`: Hybrid Access

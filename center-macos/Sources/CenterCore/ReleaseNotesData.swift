@@ -5,8 +5,8 @@ enum ReleaseNotesData {
 {
  "releases": [
   {
-   "id": "2026-11-20-v1",
-   "date": "2026-11-20",
+   "id": "2026-11-21-v1",
+   "date": "2026-11-21",
    "platforms": [
     "windows",
     "macos"

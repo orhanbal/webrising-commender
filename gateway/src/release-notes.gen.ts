@@ -4,8 +4,8 @@ export type ReleaseNote = { id: string; date: string; platforms: ("windows" | "m
 /** Newest first; platforms empty: both apps. */
 export const releaseNotes: ReleaseNote[] = [
  {
-  "id": "2026-11-20-v1",
-  "date": "2026-11-20",
+  "id": "2026-11-21-v1",
+  "date": "2026-11-21",
   "platforms": [
    "windows",
    "macos"
