@@ -486,10 +486,8 @@ mod tests {
 
     #[test]
     fn xlsx_write_roundtrip_preserves_original_and_types() {
-        let root = std::env::temp_dir().join(format!(
-            "commander-xlsx-write-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("commander-xlsx-write-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
         let input = root.join("source.xlsx");
         let output = root.join("updated.xlsx");
@@ -532,20 +530,30 @@ mod tests {
         assert!(output.is_file(), "new XLSX was not published");
         let mut reader = calamine::open_workbook_auto(&output).unwrap();
         let range = reader.worksheet_range("Sheet1").unwrap();
-        assert!(matches!(range.get_value((0, 0)), Some(Data::String(v)) if v == "0007"),
-            "text with leading zeroes must remain text");
-        assert!(matches!(range.get_value((1, 1)), Some(Data::Float(v)) if (*v - 42.5).abs() < 0.0001),
-            "numbers must remain numeric");
-        assert!(matches!(range.get_value((2, 2)), Some(Data::Bool(true))),
-            "booleans must remain booleans");
-        assert!(write_cells(
-            &policy,
-            input.to_str().unwrap(),
-            output.to_str().unwrap(),
-            "Sheet1",
-            &edits,
-            None,
-        ).is_err(), "published XLSX must not be overwritten");
+        assert!(
+            matches!(range.get_value((0, 0)), Some(Data::String(v)) if v == "0007"),
+            "text with leading zeroes must remain text"
+        );
+        assert!(
+            matches!(range.get_value((1, 1)), Some(Data::Float(v)) if (*v - 42.5).abs() < 0.0001),
+            "numbers must remain numeric"
+        );
+        assert!(
+            matches!(range.get_value((2, 2)), Some(Data::Bool(true))),
+            "booleans must remain booleans"
+        );
+        assert!(
+            write_cells(
+                &policy,
+                input.to_str().unwrap(),
+                output.to_str().unwrap(),
+                "Sheet1",
+                &edits,
+                None,
+            )
+            .is_err(),
+            "published XLSX must not be overwritten"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
