@@ -2072,7 +2072,8 @@ jobs:
         id: secrets
         continue-on-error: true
         run: |
-          docker run --rm -v "$PWD:/repo:ro" -w /repo ghcr.io/gitleaks/gitleaks:v8.30.1 dir --redact --verbose /repo
+          node scripts/security-gate-verify-exceptions.mjs
+          docker run --rm -v "$PWD:/repo:ro" -w /repo ghcr.io/gitleaks/gitleaks:v8.30.1 dir --config /repo/.gitleaks.toml --redact /repo
       - name: SG-08 Gateway runtime dependency vulnerabilities
         id: gateway_audit
         continue-on-error: true
