@@ -154,12 +154,12 @@ mod tests {
             masked(&format!("token ghp_{}", "a".repeat(36))),
             "token [REDACTED]"
         );
-        assert_eq!(masked("AKIAABCDEFGHIJKLMNOP"), "[REDACTED]");
+        assert_eq!(masked("AKIAABCDEFGHIJKLMNOP"), "[REDACTED]"); // gitleaks:allow -- synthetic secret-redaction test vector
         assert_eq!(
             masked(&format!("key sk-ant-{}", "x".repeat(30))),
             "key [REDACTED]"
         );
-        let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U";
+        let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"; // gitleaks:allow -- synthetic JWT test vector
         assert_eq!(masked(jwt), "[REDACTED]");
         let pem = "a\n-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk\n-----END OPENSSH PRIVATE KEY-----\nz";
         assert_eq!(masked(pem), "a\n[REDACTED]\nz");

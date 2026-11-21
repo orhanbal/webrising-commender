@@ -36,6 +36,8 @@ export const REQUIRED_CI_JOBS = Object.freeze([
   "gateway",
   "integration",
   "agent-e2e",
+  "security-gate",
+  "security-dependencies",
   "relay-e2e",
   "tls-smoke",
   "compose-smoke",
