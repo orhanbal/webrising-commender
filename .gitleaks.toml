@@ -1,0 +1,14 @@
+title = "WECOMMANDER vendor-artifact secret-scan exceptions"
+
+[extend]
+useDefault = true
+
+# Only the two known, byte-identical upstream terminal bundles are exempt.
+# scripts/security-gate-verify-exceptions.mjs fails closed if either bundle
+# changes, is replaced or any new inline suppression appears.
+[allowlist]
+description = "Pinned xterm.js vendor bundles with independently checked Git object IDs"
+paths = [
+  '''(^|/)center-windows/App/Assets/terminal/xterm\.js$''',
+  '''(^|/)desktop/ui/vendor/xterm/xterm\.js$''',
+]
