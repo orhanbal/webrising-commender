@@ -333,7 +333,14 @@ pub fn write_cells(
         )?;
         // Publish without replacement: hard_link is atomic and fails if a
         // concurrent writer has already created the output path.
-        fs::File::open(&temporary)?.sync_all()?;
+        // Windows requires a write-capable handle for FlushFileBuffers.
+        // File::open() is read-only and can fail with ERROR_ACCESS_DENIED.
+        // Do not create/truncate: the writer already produced the temp XLSX.
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&temporary)?
+            .sync_all()
+            .context("sync staged spreadsheet output failed")?;
         let output_bytes = fs::read(&temporary)?;
         // Serialization may take time. A concurrent source edit during writing
         // must not publish a stale derived workbook.
@@ -554,6 +561,8 @@ mod tests {
             .is_err(),
             "published XLSX must not be overwritten"
         );
+        // calamine retains the workbook file handle on Windows until dropped.
+        drop(reader);
         fs::remove_dir_all(root).unwrap();
     }
 
