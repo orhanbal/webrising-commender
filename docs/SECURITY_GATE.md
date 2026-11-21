@@ -10,7 +10,7 @@ Every pull request and push to `main` executes these two CI jobs:
 
 | Required CI job | Gate | Tests / commands |
 | --- | --- | --- |
-| `security-gate` | SG-01–SG-06 | Cross-tenant REST/MCP negative assertions, fake tokens, forged/mismatched approvals, owner API token restrictions, CSRF, RBAC, root/trust/autonomy controls, OAuth acceptance |
+| `security-gate` | SG-01–SG-06 | Isolated tenant checks, RBAC, signed approvals, CSRF, root/trust/autonomy restrictions, OAuth acceptance |
 | `security-dependencies` | SG-07–SG-10 | Gitleaks on checked-out source, npm runtime dependency audit for gateway and UI, RustSec advisory audit of Cargo.lock |
 
 Both job names are included in
