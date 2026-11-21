@@ -6,7 +6,7 @@ namespace Wecommander.Center.Core;
 /// <summary>
 /// Is a newer agent published? The "Ajanı güncelle" installer picks the newest
 /// platform preview release (ubuntu-preview-N with the Windows setup), and the
-/// agent it installs reports version 0.1.N, so N is compared directly.
+/// agent it installs reports version 1.0.N (0.1.N before v1.0), so only N is compared.
 /// </summary>
 public static partial class AgentUpdate
 {
@@ -42,7 +42,7 @@ public static partial class AgentUpdate
         catch (JsonException) { return null; }
     }
 
-    /// <summary>"0.1.1725" -> 1725.</summary>
+    /// <summary>"1.0.1725" (or "0.1.1725") -> 1725.</summary>
     public static int? Build(string? version)
     {
         var m = VersionBuild().Match(version ?? "");

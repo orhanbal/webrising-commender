@@ -37,7 +37,7 @@ public sealed class UpdateWindow : Window
         // Closing it would not stop the update; it closes by itself.
         AppWindow.Closing += (_, e) => { if (!_done) e.Cancel = true; };
 
-        var title = new TextBlock { Text = $"WECOMMANDER 0.1.{build} kuruluyor", Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"] };
+        var title = new TextBlock { Text = $"WECOMMANDER {AppVersion.Of(build)} kuruluyor", Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"] };
         var row = new Grid();
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });

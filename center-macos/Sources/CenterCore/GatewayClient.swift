@@ -116,7 +116,7 @@ public struct GatewayClient: Sendable {
                                                  body: ["requestId": id, "requestSecret": secret]))
     }
 
-    /// `version` (this app's 0.1.N, "dev" in a developer build) and the interface language go along for the console's usage breakdown.
+    /// `version` (this app's 1.0.N, "dev" in a developer build) and the interface language go along for the console's usage breakdown.
     public func me(token: String, version: String? = nil) async throws -> CenterMe {
         let path = Self.mePath(version: version ?? Self.appVersion, language: L.current)
         return try decode(CenterMe.self, try await send("GET", path, token: token, body: nil))

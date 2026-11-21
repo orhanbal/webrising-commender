@@ -20,7 +20,7 @@ SmartScreen warning for the app.
 ## One app, agent inside
 
 The publish folder carries `webrising-commender.exe` (the agent) and
-`build.txt` (the CI run number N; the agent reports 0.1.N).
+`build.txt` (the CI run number N; the agent reports 1.0.N).
 
 - After the browser sign-in the app asks the gateway for a one-time pairing
   code and runs `webrising-commender --config %APPDATA%\webrising-commender\agent.json

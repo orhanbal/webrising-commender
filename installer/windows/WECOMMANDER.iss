@@ -1,7 +1,7 @@
 ; WECOMMANDER Windows Setup — packaged on a Windows GitHub runner with Inno Setup
 #define AppName "WECOMMANDER"
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "1.0.0"
 #endif
 [Setup]
 AppId={{A4B3727B-DC86-4350-9287-27A6DAE1109D}

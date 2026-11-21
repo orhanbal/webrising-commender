@@ -377,7 +377,7 @@ private struct DevicesView: View {
                     }
                     Spacer()
                     // AI permissions (trust, run as root, safety net) are changed in the web panel.
-                    Button(L.t("Yapay zekâ yetkileri")) { model.openDevicePermissions(d.id) }
+                    Button(L.t("Agent Yetkilendirme")) { model.openDevicePermissions(d.id) }
                         .buttonStyle(.link).font(.caption)
                 }
                 .padding(8)
@@ -430,8 +430,8 @@ private struct AgentCard: View {
                             .disabled(model.updating)
                     }
                     if model.updating { ProgressView().controlSize(.small) }
-                    Text(L.t("Sürüm: ") + (model.appBuild.map { "0.1.\($0)" } ?? model.agentVersion ?? L.t("geliştirici sürümü"))
-                         + (model.agentUpdateAvailable ? L.f(" · yeni: 0.1.{0}", model.latestApp?.build ?? 0) : model.latestApp != nil ? L.t(" · güncel") : ""))
+                    Text(L.t("Sürüm: ") + (model.appBuild.map(AppVersion.of) ?? model.agentVersion ?? L.t("geliştirici sürümü"))
+                         + (model.agentUpdateAvailable ? L.f(" · yeni: {0}", AppVersion.of(model.latestApp?.build ?? 0)) : model.latestApp != nil ? L.t(" · güncel") : ""))
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 // A real bar while the update runs: the percent while it downloads, moving while it waits.
@@ -452,7 +452,7 @@ private struct AgentCard: View {
                         .disabled(model.agentBusy)
                 }
                 if let version = model.agentVersion {
-                    Text(L.f("Kurulu sürüm: {0}", version) + (model.agentUpdateAvailable ? L.f(" · yeni: 0.1.{0}", model.latestAgentBuild ?? 0) : model.latestAgentBuild != nil ? L.t(" · güncel") : ""))
+                    Text(L.f("Kurulu sürüm: {0}", version) + (model.agentUpdateAvailable ? L.f(" · yeni: {0}", AppVersion.of(model.latestAgentBuild ?? 0)) : model.latestAgentBuild != nil ? L.t(" · güncel") : ""))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

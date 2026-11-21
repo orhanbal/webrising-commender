@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createPublicKey, verify } from "node:crypto";
-import { namespaceFor, publishToRegistry, registryAuthRecord, registryKey, registryServerJson, signedLogin, REGISTRY_URL } from "./mcp-registry.js";
+import { readFileSync } from "node:fs";
+import { llmsTxt } from "./site-content.js";
+import { namespaceFor, publishToRegistry, registryAuthRecord, registryKey, registryServerJson, serverJsonText, signedLogin, REGISTRY_URL, SERVER_JSON_PATH } from "./mcp-registry.js";
 
 const secret = "z".repeat(40);
 
@@ -55,4 +57,24 @@ test("publishing logs in, then posts the listing with the token; failures never 
   assert.equal(refused.ok, false);
   const offline = await publishToRegistry("https://wecommander.app", secret, (async () => { throw new Error("offline"); }) as typeof fetch);
   assert.deepEqual([offline.ok, offline.detail], [false, "offline"]);
+});
+
+test("/server.json serves the listing, and the committed server.json matches it", () => {
+  assert.equal(SERVER_JSON_PATH, "/server.json");
+  const text = serverJsonText("https://wecommander.app");
+  const json = JSON.parse(text);
+  assert.deepEqual(json, registryServerJson("https://wecommander.app"));
+  assert.equal(json.version, "1.0.0");
+  assert.match(json.$schema, /^https:\/\/static\.modelcontextprotocol\.io\/schemas\/\d{4}-\d{2}-\d{2}\/server\.schema\.json$/);
+  // The repository root copy is what `mcp-publisher publish` reads for a manual publish.
+  const committed = readFileSync(new URL("../../server.json", import.meta.url), "utf8");
+  assert.equal(committed, text, "regenerate server.json at the repository root from registryServerJson()");
+});
+
+test("llms.txt names the MCP URL, the registry listing and the 1.0 release", () => {
+  const text = llmsTxt("https://wecommander.app");
+  assert.ok(text.includes("Remote MCP server: https://wecommander.app/mcp"));
+  assert.ok(text.includes(`MCP Registry name: ${registryServerJson("https://wecommander.app").name}`));
+  assert.ok(text.includes("https://wecommander.app/server.json"));
+  assert.match(text, /WECOMMANDER 1\.0/);
 });

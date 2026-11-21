@@ -71,7 +71,7 @@ struct AppInfo {
 #[tauri::command]
 fn app_info(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> AppInfo {
     AppInfo {
-        // The installer version (0.1.<CI run>), not the crate version.
+        // The installer version (1.0.<CI run>), not the crate version.
         version: app.package_info().version.to_string(),
         vault_backend: state.vault.backend().label(),
         vault_persistent: state.vault_persistent,

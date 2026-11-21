@@ -243,7 +243,7 @@ public struct LegacyAgentCleanup {
 /// Updates the whole app (which carries the agent): the newest
 /// macos-preview-N with the app zip, checked against SHA256SUMS.txt, is
 /// unpacked and swapped in by a small helper after the app quits. The app's
-/// own build is the N of its version 0.1.N.
+/// own build is the N of its version 1.0.N.
 public enum AppUpdate {
     public static let zipAsset = "WECOMMANDER-Center-macos.zip"
     public static let sumsAsset = "SHA256SUMS.txt"

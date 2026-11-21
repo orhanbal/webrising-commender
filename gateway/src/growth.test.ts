@@ -93,6 +93,7 @@ test("only public page paths and clean utm values become counter keys", () => {
   assert.equal(cleanUtm("a".repeat(100))?.length, 64);
   assert.equal(crawlerPathKey("/llms.txt"), "/llms.txt");
   assert.equal(crawlerPathKey("/sitemap.xml"), "/sitemap.xml");
+  assert.equal(crawlerPathKey("/server.json"), "/server.json");
   assert.equal(crawlerPathKey("/.well-known/oauth-authorization-server"), "/.well-known/*");
   assert.equal(crawlerPathKey("/pricing"), "/pricing");
   assert.equal(crawlerPathKey("/dashboard"), "other");

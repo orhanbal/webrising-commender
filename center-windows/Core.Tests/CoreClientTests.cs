@@ -356,5 +356,19 @@ public class AgentUpdateTests
         Assert.False(AgentUpdate.IsNewer(null, "0.1.1"));
         Assert.False(AgentUpdate.IsNewer(1765, null));
         Assert.Equal(1725, AgentUpdate.Build("0.1.1725"));
+        // v1.0 changed only the prefix: an old 0.1.N install still updates to 1.0.M by N.
+        Assert.Equal(1725, AgentUpdate.Build("1.0.1725"));
+        Assert.True(AgentUpdate.IsNewer(1766, "0.1.1765"));
+        Assert.True(AgentUpdate.IsNewer(1766, "1.0.1765"));
+        Assert.False(AgentUpdate.IsNewer(1765, "1.0.1765"));
+    }
+
+    [Fact]
+    public void AppVersionIsPrefixDotBuild()
+    {
+        Assert.Equal("1.0.1888", AppVersion.Of(1888));
+        Assert.Equal("1.0.1888", AppVersion.Of((int?)1888));
+        Assert.Null(AppVersion.Of((int?)null));
+        Assert.Equal(1888, AgentUpdate.Build(AppVersion.Of(1888)));
     }
 }

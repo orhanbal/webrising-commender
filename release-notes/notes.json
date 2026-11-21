@@ -1,6 +1,73 @@
 {
  "releases": [
   {
+   "id": "2026-11-21-v1",
+   "date": "2026-11-21",
+   "platforms": ["windows", "macos"],
+   "items": {
+    "tr": [
+     "WECOMMANDER 1.0 çıktı. SSH istemcisi tam: sekmeli ve bölünmüş terminaller, sürükle-bırak SFTP, tüneller ve jump host; yapay zekâ ve hesap olmadan da çalışır.",
+     "Sunucu yönetimi: diski neyin doldurduğunu gör; eski günlükleri, paket önbelleklerini ve Docker artıklarını güvenle temizle. Süreçler ve zamanlanmış görevler de burada.",
+     "Windows'ta Dock görev çubuğu gibi ekranın kenarında durur, sunucunun canlı grafiklerini gösterir; Görev Yöneticisi, Görevler ve Terminal ondan açılır. Terminal panelinde her biri ayrı bir sunucuya bağlanan sekmeler açabilirsin. macOS'ta canlı izleme menü çubuğunda.",
+     "İlk açılışta kısa bir öğretici ilk sunucunu eklemeyi, ona bağlanmayı ve canlı durumunu adım adım gösterir; Ayarlar'dan kapatıp yeniden açabilirsin.",
+     "Claude, ChatGPT ve Cursor tek MCP adresiyle makinelerinde çalışır: sunucuya kurulan ajanla ya da sunucuya hiçbir şey kurmadan SSH ile (Windows, macOS ve Linux uygulamalarında). Zamanlanmış görevler ve Docker container'ları da yapay zekânın elinde; riskli adımlar, cihaza tam güven vermedikçe onayını bekler ve hepsi denetim kaydına yazılır.",
+     "Yapay zekânın her cihazda ve her SSH sunucusunda neler yapabileceğine sen karar verirsin: güven seviyesi ve süresi (sınırsız da olabilir), Linux'ta iki anahtarla root ve diski silmek gibi geri dönüşü olmayan komutları engelleyen güvenlik ağı.",
+     "Sunucuların, anahtarların ve parçacıkların cihazlar arasında uçtan uca şifreli eşitlenir.",
+     "Uygulama altı dilde: Türkçe, İngilizce, Almanca, Fransızca, İspanyolca ve Portekizce (Brezilya). Windows'ta dil değiştirince pencere yerinde ve Ayarlar'da kaldığın noktada kalır."
+    ],
+    "en": [
+     "WECOMMANDER 1.0 is here. A complete SSH client: tabbed and split terminals, drag-and-drop SFTP, tunnels and jump hosts; it works without AI and without an account.",
+     "Server management: see what fills the disk and safely clean old logs, package caches and Docker leftovers. Processes and scheduled tasks are here too.",
+     "On Windows, the Dock sits on a screen edge like the taskbar with live charts for your server; Task Manager, Tasks and Terminal open from it. The Terminal panel holds several tabs, each connected to its own server. On macOS, live monitoring is in the menu bar.",
+     "A short tutorial on first launch walks you through adding your first server, connecting to it and its live status; turn it off or back on in Settings.",
+     "Claude, ChatGPT and Cursor work on your machines through one MCP address: with the agent installed on the server, or over SSH with nothing installed (Windows, macOS and Linux apps). They can work with scheduled tasks and Docker containers too; risky steps wait for your approval unless you give the device full trust, and everything is written to the audit log.",
+     "You decide per device and per SSH server what AI may do: trust level and duration (no limit allowed), running as root on Linux with two keys, and a safety net that blocks irreversible commands such as wiping a disk.",
+     "Your servers, keys and snippets sync across your devices with end-to-end encryption.",
+     "The app speaks six languages: English, Turkish, German, French, Spanish and Brazilian Portuguese. On Windows, changing the language keeps the window and your place in Settings."
+    ],
+    "de": [
+     "WECOMMANDER 1.0 ist da. Ein vollständiger SSH-Client: Terminals in Tabs und geteilter Ansicht, SFTP per Drag-and-drop, Tunnel und Jump-Hosts; er funktioniert auch ohne KI und ohne Konto.",
+     "Serververwaltung: Sieh, was die Festplatte füllt, und räume alte Logs, Paket-Caches und Docker-Reste sicher auf. Prozesse und geplante Aufgaben findest du auch hier.",
+     "Unter Windows sitzt das Dock wie die Taskleiste am Bildschirmrand und zeigt Live-Diagramme deines Servers; Task-Manager, Aufgaben und Terminal öffnen sich daraus. Das Terminal-Panel hat mehrere Tabs, jeder mit seinem eigenen Server. Unter macOS ist die Live-Überwachung in der Menüleiste.",
+     "Ein kurzes Tutorial beim ersten Start führt dich durch deinen ersten Server: hinzufügen, verbinden und sein Live-Status; in den Einstellungen schaltest du es aus oder wieder ein.",
+     "Claude, ChatGPT und Cursor arbeiten über eine einzige MCP-Adresse auf deinen Rechnern: mit dem Agenten auf dem Server oder per SSH, ohne etwas zu installieren (Apps für Windows, macOS und Linux). Auch geplante Aufgaben und Docker-Container gehören dazu; riskante Schritte warten auf deine Freigabe, solange du dem Gerät nicht voll vertraust, und alles landet im Audit-Log.",
+     "Du legst pro Gerät und pro SSH-Server fest, was die KI darf: Vertrauensstufe und Dauer (auch unbegrenzt), Ausführen als root unter Linux mit zwei Schlüsseln und ein Sicherheitsnetz, das unumkehrbare Befehle wie das Löschen einer Festplatte blockiert.",
+     "Deine Server, Schlüssel und Snippets werden Ende-zu-Ende-verschlüsselt zwischen deinen Geräten synchronisiert.",
+     "Die App spricht sechs Sprachen: Englisch, Türkisch, Deutsch, Französisch, Spanisch und brasilianisches Portugiesisch. Unter Windows bleiben beim Sprachwechsel das Fenster und deine Stelle in den Einstellungen erhalten."
+    ],
+    "fr": [
+     "WECOMMANDER 1.0 est là. Un client SSH complet : terminaux en onglets et en vue partagée, SFTP par glisser-déposer, tunnels et hôtes de rebond ; il fonctionne sans IA et sans compte.",
+     "Gestion des serveurs : vois ce qui remplit le disque et nettoie en toute sécurité les anciens journaux, les caches de paquets et les restes de Docker. Les processus et les tâches planifiées sont là aussi.",
+     "Sous Windows, le Dock se place sur un bord de l'écran comme la barre des tâches, avec les graphiques en direct de ton serveur ; le Gestionnaire des tâches, les Tâches et le Terminal s'ouvrent depuis lui. Le panneau Terminal accueille plusieurs onglets, chacun relié à son propre serveur. Sous macOS, la surveillance en direct est dans la barre des menus.",
+     "Un court tutoriel au premier lancement te guide pour ajouter ton premier serveur, t'y connecter et suivre son état en direct ; tu peux le désactiver ou le réactiver dans les Réglages.",
+     "Claude, ChatGPT et Cursor travaillent sur tes machines avec une seule adresse MCP : avec l'agent installé sur le serveur, ou en SSH sans rien installer (applications Windows, macOS et Linux). Ils gèrent aussi les tâches planifiées et les conteneurs Docker ; les étapes risquées attendent ton approbation tant que tu n'accordes pas la confiance totale à l'appareil, et tout est inscrit dans le journal d'audit.",
+     "Tu décides par appareil et par serveur SSH ce que l'IA peut faire : niveau de confiance et durée (illimitée possible), exécution en root sous Linux avec deux clés, et un filet de sécurité qui bloque les commandes irréversibles comme l'effacement d'un disque.",
+     "Tes serveurs, clés et extraits se synchronisent entre tes appareils avec un chiffrement de bout en bout.",
+     "L'application parle six langues : anglais, turc, allemand, français, espagnol et portugais du Brésil. Sous Windows, changer de langue garde la fenêtre et ta place dans les Réglages."
+    ],
+    "es": [
+     "Ya está aquí WECOMMANDER 1.0. Un cliente SSH completo: terminales en pestañas y en vista dividida, SFTP con arrastrar y soltar, túneles y hosts de salto; funciona sin IA y sin cuenta.",
+     "Gestión de servidores: mira qué llena el disco y limpia con seguridad registros antiguos, cachés de paquetes y restos de Docker. Los procesos y las tareas programadas también están aquí.",
+     "En Windows, el Dock se coloca en un borde de la pantalla como la barra de tareas, con gráficos en vivo de tu servidor; el Administrador de tareas, las Tareas y el Terminal se abren desde él. El panel Terminal admite varias pestañas, cada una conectada a su propio servidor. En macOS, la supervisión en vivo está en la barra de menús.",
+     "Un breve tutorial al abrir por primera vez te guía para añadir tu primer servidor, conectarte a él y ver su estado en vivo; puedes desactivarlo o reactivarlo en Ajustes.",
+     "Claude, ChatGPT y Cursor trabajan en tus equipos con una sola dirección MCP: con el agente instalado en el servidor o por SSH sin instalar nada (apps de Windows, macOS y Linux). También pueden trabajar con tareas programadas y contenedores Docker; los pasos arriesgados esperan tu aprobación salvo que des confianza total al dispositivo, y todo queda en el registro de auditoría.",
+     "Tú decides por dispositivo y por servidor SSH qué puede hacer la IA: nivel de confianza y duración (también sin límite), ejecutar como root en Linux con dos llaves y una red de seguridad que bloquea comandos irreversibles como borrar un disco.",
+     "Tus servidores, claves y fragmentos se sincronizan entre tus dispositivos con cifrado de extremo a extremo.",
+     "La aplicación habla seis idiomas: inglés, turco, alemán, francés, español y portugués de Brasil. En Windows, al cambiar el idioma se mantienen la ventana y tu punto en Ajustes."
+    ],
+    "pt-BR": [
+     "O WECOMMANDER 1.0 chegou. Um cliente SSH completo: terminais em abas e em tela dividida, SFTP com arrastar e soltar, túneis e jump hosts; funciona sem IA e sem conta.",
+     "Gerenciamento de servidores: veja o que enche o disco e limpe com segurança logs antigos, caches de pacotes e sobras do Docker. Processos e tarefas agendadas também estão aqui.",
+     "No Windows, o Dock fica na borda da tela como a barra de tarefas, com gráficos ao vivo do seu servidor; o Gerenciador de Tarefas, as Tarefas e o Terminal abrem a partir dele. O painel Terminal tem várias abas, cada uma conectada ao seu próprio servidor. No macOS, o monitoramento ao vivo fica na barra de menus.",
+     "Um tutorial curto na primeira abertura mostra como adicionar seu primeiro servidor, conectar-se a ele e ver o status ao vivo; desligue ou ligue de novo nas Configurações.",
+     "Claude, ChatGPT e Cursor trabalham nas suas máquinas com um único endereço MCP: com o agente instalado no servidor ou por SSH sem instalar nada (apps para Windows, macOS e Linux). Eles também trabalham com tarefas agendadas e contêineres Docker; passos arriscados esperam a sua aprovação, a menos que você dê confiança total ao dispositivo, e tudo vai para o log de auditoria.",
+     "Você decide por dispositivo e por servidor SSH o que a IA pode fazer: nível de confiança e duração (inclusive sem limite), executar como root no Linux com duas chaves e uma rede de segurança que bloqueia comandos irreversíveis, como apagar um disco.",
+     "Seus servidores, chaves e snippets são sincronizados entre os seus dispositivos com criptografia de ponta a ponta.",
+     "O app fala seis idiomas: inglês, turco, alemão, francês, espanhol e português do Brasil. No Windows, trocar o idioma mantém a janela e o seu ponto nas Configurações."
+    ]
+   }
+  },
+  {
    "id": "2026-11-19-windows-window-crash",
    "date": "2026-11-19",
    "platforms": ["windows"],

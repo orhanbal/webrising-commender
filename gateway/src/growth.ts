@@ -178,6 +178,7 @@ export const directoryCatalog = [
   { key: "mcp_so", name: "mcp.so", url: "https://mcp.so" },
   { key: "glama", name: "Glama", url: "https://glama.ai/mcp/servers" },
   { key: "pulsemcp", name: "PulseMCP", url: "https://www.pulsemcp.com/servers" },
+  { key: "mcp_market", name: "MCP Market", url: "https://mcpmarket.com" },
   { key: "lobehub", name: "LobeHub MCP market", url: "https://lobehub.com/mcp" },
   { key: "cursor_directory", name: "Cursor directory", url: "https://cursor.directory/mcp" },
   { key: "vscode_gallery", name: "VS Code / GitHub Copilot MCP gallery", url: "https://github.com/mcp" },

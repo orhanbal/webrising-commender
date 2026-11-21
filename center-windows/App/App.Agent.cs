@@ -39,7 +39,7 @@ public partial class App
 
     /// <summary>This app carries the agent and runs it itself.</summary>
     public bool Embedded => _embedded.Available;
-    /// <summary>This app's build (the N of 0.1.N), or null in a developer build.</summary>
+    /// <summary>This app's build (the N of its version 1.0.N), or null in a developer build.</summary>
     public int? AppBuild { get; } = Core.AppUpdate.CurrentBuild();
     public bool AppUpdateAvailable => Core.AppUpdate.IsNewer(_latestApp, AppBuild);
     public int? LatestAppBuild => _latestApp?.Build;
@@ -65,7 +65,7 @@ public partial class App
                 Error = L.T("Güncelleme tamamlanamadı: ") + (why.Length > 0 ? why : L.T("dosyalar değiştirilemedi")) + L.T(". Paneldeki indirme dosyasıyla yeniden kurabilirsin.");
                 Toast(L.T("Güncelleme tamamlanamadı; ayrıntı panelde."));
             }
-            else if (AppBuild is { } b) Toast(L.F("WECOMMANDER 0.1.{0} sürümüne güncellendi.", b));
+            else if (AppBuild is { } b) Toast(L.F("WECOMMANDER {0} sürümüne güncellendi.", AppVersion.Of(b)));
         }
         catch (Exception) { }
     }
@@ -192,7 +192,7 @@ public partial class App
             if (AppUpdateAvailable && _announcedApp != _latestApp!.Build)
             {
                 _announcedApp = _latestApp.Build;
-                Toast(L.F("WECOMMANDER için yeni sürüm var (0.1.{0}). Uygulamada \"Güncelle\"ye bas; bir dakikadan kısa sürer.", _latestApp.Build));
+                Toast(L.F("WECOMMANDER için yeni sürüm var ({0}). Uygulamada \"Güncelle\"ye bas; bir dakikadan kısa sürer.", AppVersion.Of(_latestApp.Build)));
             }
         }
         if (changed) Publish();
@@ -248,7 +248,7 @@ public partial class App
             LastReleaseRead = DateTime.Now;
             if (AppBuild is { } current && latest.Build <= current)
             {
-                AddInstallerLine(L.F("Uygulama güncel (0.1.{0}).", current));
+                AddInstallerLine(L.F("Uygulama güncel ({0}).", AppVersion.Of(current)));
                 InstallerSucceeded = true;
                 return;
             }
@@ -258,7 +258,7 @@ public partial class App
             _updateWindow.ShowCentered();
             // Download 0–85 %, check 85–90 %, unpack 90–98 %; the swap window carries on from there.
             UpdatePercent = 0;
-            AddInstallerLine($"0.1.{latest.Build} indiriliyor…");
+            AddInstallerLine($"{AppVersion.Of(latest.Build)} indiriliyor…");
             Publish();
             var zip = Path.Combine(temp, Core.AppUpdate.ZipAsset);
             using (var download = await Http.GetAsync(latest.ZipUrl, HttpCompletionOption.ResponseHeadersRead))
@@ -281,7 +281,7 @@ public partial class App
                     if (mark == shown) continue;
                     shown = mark;
                     if (percent >= 0) UpdatePercent = percent * 0.85;
-                    ReplaceInstallerLine($"0.1.{latest.Build} indiriliyor… "
+                    ReplaceInstallerLine($"{AppVersion.Of(latest.Build)} indiriliyor… "
                         + (percent >= 0 ? $"%{percent} ({Megabytes(done)} / {Megabytes(total!.Value)})" : Megabytes(done)));
                     Publish();
                 }

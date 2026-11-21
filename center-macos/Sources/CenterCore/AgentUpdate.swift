@@ -2,7 +2,7 @@ import Foundation
 
 /// Is a newer agent published? "Ajanı güncelle" installs the newest
 /// macos-preview-N release with the universal PKG, whose agent reports
-/// version 0.1.N, so N is compared directly.
+/// version 1.0.N (0.1.N before v1.0), so only N is compared.
 public enum AgentUpdate {
     public static let releasesURL = URL(string: "https://api.github.com/repos/orhanbal/webrising-commender/releases?per_page=30")!
     public static let macAsset = "WECOMMANDER-macos-universal.pkg"
@@ -21,7 +21,7 @@ public enum AgentUpdate {
         return best
     }
 
-    /// "0.1.1725" -> 1725.
+    /// "1.0.1725" (or "0.1.1725") -> 1725.
     public static func build(_ version: String?) -> Int? {
         guard let parts = version?.split(separator: "."), parts.count >= 3 else { return nil }
         return Int(parts[2].prefix { $0.isNumber })
@@ -31,4 +31,14 @@ public enum AgentUpdate {
         guard let latest, let current = build(installed) else { return false }
         return latest > current
     }
+}
+
+/// The version shown for a build: prefix.N, where N is the CI run number
+/// (the macos-preview-N tag). Updates compare only N, so the prefix can
+/// change without breaking them.
+public enum AppVersion {
+    public static let prefix = "1.0"
+
+    /// 58 -> "1.0.58".
+    public static func of(_ build: Int) -> String { "\(prefix).\(build)" }
 }

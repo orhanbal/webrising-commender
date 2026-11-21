@@ -746,15 +746,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Build release agent
         env:
-          WECOMMANDER_VERSION: 0.1.${{ github.run_number }}
+          WECOMMANDER_VERSION: 1.0.${{ github.run_number }}
         run: cargo build --release -p webrising-commender-agent
       - name: Package Linux acceptance bundle
         run: |
           mkdir -p dist
           cp target/release/webrising-commender dist/webrising-commender
-          bash scripts/build-ubuntu-deb.sh target/release/webrising-commender "0.1.${GITHUB_RUN_NUMBER}" dist
-          dpkg-deb --field "dist/wecommander-agent_0.1.${GITHUB_RUN_NUMBER}_amd64.deb" Package Version Architecture
-          sudo apt-get install -y "./dist/wecommander-agent_0.1.${GITHUB_RUN_NUMBER}_amd64.deb"
+          bash scripts/build-ubuntu-deb.sh target/release/webrising-commender "1.0.${GITHUB_RUN_NUMBER}" dist
+          dpkg-deb --field "dist/wecommander-agent_1.0.${GITHUB_RUN_NUMBER}_amd64.deb" Package Version Architecture
+          sudo apt-get install -y "./dist/wecommander-agent_1.0.${GITHUB_RUN_NUMBER}_amd64.deb"
           sudo wecommander-setup --help >/dev/null
           test -x /opt/wecommander/bin/webrising-commender
           test -x /usr/bin/wecommander-setup
@@ -779,7 +779,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Build release agent
         env:
-          WECOMMANDER_VERSION: 0.1.${{ github.run_number }}
+          WECOMMANDER_VERSION: 1.0.${{ github.run_number }}
         run: cargo build --release -p webrising-commender-agent
       - name: Package Windows acceptance bundle
         shell: pwsh
@@ -809,7 +809,7 @@ jobs:
           if (-not (Test-Path $compiler)) { throw "Inno Setup compiler missing: $compiler" }
           Push-Location dist
           try {
-            & $compiler "/DAppVersion=0.1.0" "WECOMMANDER.iss"
+            & $compiler "/DAppVersion=1.0.${{ github.run_number }}" "WECOMMANDER.iss"
             if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed" }
           } finally { Pop-Location }
           Copy-Item "dist\output\WECOMMANDER-Setup-windows-x64.exe" "dist\WECOMMANDER-Setup-windows-x64.exe"
@@ -880,7 +880,7 @@ jobs:
         shell: bash
         env:
           BUNDLES: ${{ runner.os == 'Linux' && 'deb' || 'nsis' }}
-          VERSION: 0.1.${{ github.run_number }}
+          VERSION: 1.0.${{ github.run_number }}
         run: |
           npx -y @tauri-apps/cli@2.12.4 build --ci --bundles "$BUNDLES" --config "{\"version\":\"$VERSION\"}"
           mkdir -p dist
@@ -967,14 +967,14 @@ jobs:
       - name: Build release tray app
         working-directory: tray
         env:
-          WECOMMANDER_VERSION: 0.1.${{ github.run_number }}
+          WECOMMANDER_VERSION: 1.0.${{ github.run_number }}
         run: cargo build --release --locked
       - name: Build the agent the app carries and runs itself
         env:
-          WECOMMANDER_VERSION: 0.1.${{ github.run_number }}
+          WECOMMANDER_VERSION: 1.0.${{ github.run_number }}
         run: cargo build --release --locked -p webrising-commender-agent
       - name: Package
-        run: bash scripts/build-center-linux.sh "0.1.${{ github.run_number }}" tray/dist
+        run: bash scripts/build-center-linux.sh "1.0.${{ github.run_number }}" tray/dist
       - name: Install and start from the package (headless desktop session)
         run: |
           sudo apt-get install -y xvfb dbus-x11
@@ -982,7 +982,7 @@ jobs:
           cmp scripts/install-center-macos-online.sh gateway/public/install/center-macos.sh
           mkdir -p /tmp/center-home && tar -xzf tray/dist/WECOMMANDER-Center-linux-x86_64.tar.gz -C /tmp/center-home
           test -x /tmp/center-home/wecommander-center/wecommander-center
-          /tmp/center-home/wecommander-center/webrising-commender --version | grep -q "0.1.${{ github.run_number }}$"
+          /tmp/center-home/wecommander-center/webrising-commender --version | grep -q "1.0.${{ github.run_number }}$"
           grep -q '^Exec=wecommander-center$' /tmp/center-home/wecommander-center/wecommander-center.desktop
           # The app must start and keep running under a real X display and
           # session bus (tray, webview, notification plugin) for a few seconds.
@@ -1019,7 +1019,7 @@ jobs:
         run: cargo build --locked --release -p wc-core-service
       - name: Build the agent the app carries and runs itself
         env:
-          WECOMMANDER_VERSION: 0.1.${{ github.run_number }}
+          WECOMMANDER_VERSION: 1.0.${{ github.run_number }}
         run: cargo build --locked --release -p webrising-commender-agent
       - name: Icon outlines are up to date (Vuesax icons, scripts/gen-icons.py)
         run: python scripts/gen-icons.py --check
@@ -1805,7 +1805,7 @@ jobs:
           if (-not (Test-Path "center-windows\publish\wecommander-core.exe")) { throw "wecommander-core.exe missing from publish output" }
           if (-not (Test-Path "center-windows\publish\webrising-commender.exe")) { throw "embedded agent missing from publish output" }
           $agentVersion = (& "center-windows\publish\webrising-commender.exe" --version) -join ' '
-          if ($agentVersion -notmatch "0\.1\.${{ github.run_number }}$") { throw "embedded agent has the wrong version: $agentVersion" }
+          if ($agentVersion -notmatch "1\.0\.${{ github.run_number }}$") { throw "embedded agent has the wrong version: $agentVersion" }
           if ((Get-Content center-windows\publish\build.txt -Raw).Trim() -ne "${{ github.run_number }}") { throw "build.txt missing or wrong" }
           if (-not (Test-Path "center-windows\publish\Assets\terminal\index.html")) { throw "terminal surface missing from publish output" }
           foreach ($asset in @("icon.ico","icon.png","tray.ico","tray-pending.ico","tray-autonomy.ico","tray-autonomy-pending.ico","wordmark-dark-text.png","wordmark-light-text.png")) {
@@ -1838,7 +1838,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Build wecommander-core and the agent the app carries
         env:
-          WECOMMANDER_VERSION: 0.1.${{ github.run_number }}
+          WECOMMANDER_VERSION: 1.0.${{ github.run_number }}
         run: cargo build --locked --release -p wc-core-service -p webrising-commender-agent
       - name: Build the Store package
         shell: pwsh

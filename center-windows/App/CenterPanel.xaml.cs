@@ -84,7 +84,7 @@ public sealed partial class CenterPanel : UserControl
         UpdateBar.Title = running ? L.T("Güncelleniyor") : L.T("Yeni sürüm var");
         UpdateBar.Message = running
             ? (Center.InstallerLog.Count > 0 ? Center.InstallerLog[^1] : "")
-            : L.F("WECOMMANDER 0.1.{0} yayımlandı (sendeki: 0.1.{1}). Güncelleme bir dakikadan kısa sürer; uygulama kendiliğinden yeniden açılır.", Center.LatestAppBuild, Center.AppBuild);
+            : L.F("WECOMMANDER {0} yayımlandı (sendeki: {1}). Güncelleme bir dakikadan kısa sürer; uygulama kendiliğinden yeniden açılır.", AppVersion.Of(Center.LatestAppBuild), AppVersion.Of(Center.AppBuild));
         UpdateBarButton.Visibility = running ? Visibility.Collapsed : Visibility.Visible;
         UpdateBarProgress.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
         if (Center.UpdatePercent is { } percent) UpdateBarProgress.Value = percent;
@@ -127,7 +127,7 @@ public sealed partial class CenterPanel : UserControl
                 NotifySwitch.IsOn = Center.Settings.Notifications;
                 OpenSwitch.IsOn = Center.Settings.OpenOnRequest;
                 AutostartSwitch.IsOn = LocalStore.AutostartEnabled;
-                AboutText.Text = L.F("Sürüm {0}", typeof(App).Assembly.GetName().Version?.ToString(3)) +
+                AboutText.Text = L.F("Sürüm {0}", AppVersion.Of(Center.AppBuild) ?? typeof(App).Assembly.GetName().Version?.ToString(3)) +
                                  (Center.Me is { } m ? L.F(" · bu merkez: {0}", m.Name) : "") + $" · {Center.Settings.Server}";
                 ApprovalsTab.Text = Center.Pending.Count > 0 ? L.F("Onaylar ({0})", Center.Pending.Count) : L.T("Onaylar");
             }
@@ -163,8 +163,8 @@ public sealed partial class CenterPanel : UserControl
         if (Center.Embedded)
         {
             // The agent ships with the app: one version, one update button.
-            var current = Center.AppBuild is { } b ? "0.1." + b : Center.AgentVersion ?? L.T("geliştirici sürümü");
-            AgentVersionText.Text = L.T("Sürüm: ") + current + (update ? L.F(" · yeni sürüm: 0.1.{0}", Center.LatestAppBuild) : Center.LatestAppBuild is not null ? L.T(" · güncel") + (Center.LastReleaseRead is { } read ? $" (son denetim {read:HH:mm})" : "") : "");
+            var current = Center.AppBuild is { } b ? AppVersion.Of(b) : Center.AgentVersion ?? L.T("geliştirici sürümü");
+            AgentVersionText.Text = L.T("Sürüm: ") + current + (update ? L.F(" · yeni sürüm: {0}", AppVersion.Of(Center.LatestAppBuild)) : Center.LatestAppBuild is not null ? L.T(" · güncel") + (Center.LastReleaseRead is { } read ? $" (son denetim {read:HH:mm})" : "") : "");
             AgentUpdateButton.Content = update ? L.T("Yeni sürüm var — Uygulamayı güncelle") : L.T("Güncellemeleri denetle");
             if (Packaging.IsPackaged)
             {
@@ -176,7 +176,7 @@ public sealed partial class CenterPanel : UserControl
         else
         {
             AgentVersionText.Text = Center.AgentVersion is { } v
-                ? L.T("Kurulu sürüm: ") + v + (update ? L.F(" · yeni sürüm: 0.1.{0}", Center.LatestAgentBuild) : Center.LatestAgentBuild is not null ? L.T(" · güncel") : "")
+                ? L.T("Kurulu sürüm: ") + v + (update ? L.F(" · yeni sürüm: {0}", AppVersion.Of(Center.LatestAgentBuild)) : Center.LatestAgentBuild is not null ? L.T(" · güncel") : "")
                 : "";
             AgentUpdateButton.Content = agent is { State: AgentRunState.NotInstalled } ? L.T("Ajanı kur")
                 : update ? L.T("Yeni sürüm var — Ajanı güncelle") : L.T("Ajanı güncelle");
@@ -395,7 +395,7 @@ public sealed partial class CenterPanel : UserControl
             row.Children.Add(text);
             // AI permissions (trust, run as root, safety net) are changed in the web panel.
             var id = d.Id;
-            var permissions = new HyperlinkButton { Content = L.T("Yapay zekâ yetkileri"), VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(6, 2, 6, 2) };
+            var permissions = new HyperlinkButton { Content = L.T("Agent Yetkilendirme"), VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(6, 2, 6, 2) };
             permissions.Click += (_, _) => App.OpenUrl(Center.Settings.Server + "/devices?permissions=" + Uri.EscapeDataString(id));
             row.Children.Add(permissions);
             DevicesPanel.Children.Add(new Border

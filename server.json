@@ -1,0 +1,14 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "app.wecommander/wecommander",
+  "title": "WECOMMANDER",
+  "description": "SSH client, server management and one remote MCP URL for your machines, with human approvals.",
+  "version": "1.0.0",
+  "websiteUrl": "https://wecommander.app/",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://wecommander.app/mcp"
+    }
+  ]
+}

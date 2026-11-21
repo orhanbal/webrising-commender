@@ -167,7 +167,7 @@ jobs:
           targets: x86_64-apple-darwin,aarch64-apple-darwin
       - name: Build universal release agent
         env:
-          WECOMMANDER_VERSION: 0.1.${{ github.run_number }}
+          WECOMMANDER_VERSION: 1.0.${{ github.run_number }}
         run: |
           cargo build --release -p webrising-commender-agent --target x86_64-apple-darwin
           cargo build --release -p webrising-commender-agent --target aarch64-apple-darwin
@@ -177,7 +177,7 @@ jobs:
             target/aarch64-apple-darwin/release/webrising-commender \
             -output dist/webrising-commender
           lipo -info dist/webrising-commender
-          bash scripts/build-macos-pkg.sh dist/webrising-commender "0.1.${GITHUB_RUN_NUMBER}" dist
+          bash scripts/build-macos-pkg.sh dist/webrising-commender "1.0.${GITHUB_RUN_NUMBER}" dist
           pkgutil --payload-files "dist/WECOMMANDER-macos-universal.pkg" | grep -q 'wecommander-setup'
           bash scripts/setup-macos.sh --help >/dev/null
       - name: Package macOS acceptance bundle
@@ -211,13 +211,13 @@ jobs:
           lipo -archs center-macos/core/wecommander-core
       - name: Build the agent the app carries and runs itself (universal)
         env:
-          WECOMMANDER_VERSION: 0.1.${{ github.run_number }}
+          WECOMMANDER_VERSION: 1.0.${{ github.run_number }}
         run: |
           cargo build --locked --release -p webrising-commender-agent --target aarch64-apple-darwin
           cargo build --locked --release -p webrising-commender-agent --target x86_64-apple-darwin
           lipo -create -output center-macos/core/webrising-commender \
             target/aarch64-apple-darwin/release/webrising-commender target/x86_64-apple-darwin/release/webrising-commender
-          center-macos/core/webrising-commender --version | grep -q "0.1.${{ github.run_number }}$"
+          center-macos/core/webrising-commender --version | grep -q "1.0.${{ github.run_number }}$"
       - name: Translation table is up to date
         run: python3 scripts/gen-macos-strings.py --check
       - name: Icon outlines are up to date (Vuesax icons, scripts/gen-icons.py)
@@ -229,7 +229,7 @@ jobs:
           WECOMMANDER_CORE_BIN: ${{ github.workspace }}/center-macos/core/wecommander-core
         run: swift test --package-path center-macos
       - name: Build universal app bundle (ad-hoc signed) and zip
-        run: bash scripts/build-center-macos.sh "0.1.${{ github.run_number }}" center-macos/dist
+        run: bash scripts/build-center-macos.sh "1.0.${{ github.run_number }}" center-macos/dist
       - name: UI snapshots (every page drawn by the app itself, in Turkish and English)
         run: |
           # The app opens each sidebar page and the panel, saves what it draws and
@@ -301,7 +301,7 @@ jobs:
       - name: Desktop app bundle (A04, ad-hoc signed)
         working-directory: desktop
         run: |
-          npx -y @tauri-apps/cli@2.12.4 build --ci --bundles app --config "{\"version\":\"0.1.${{ github.run_number }}\"}"
+          npx -y @tauri-apps/cli@2.12.4 build --ci --bundles app --config "{\"version\":\"1.0.${{ github.run_number }}\"}"
           mkdir -p dist
           ditto -c -k --keepParent target/release/bundle/macos/WECOMMANDER.app dist/WECOMMANDER-Desktop-macos.zip
           ls -la dist
