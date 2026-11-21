@@ -1,0 +1,65 @@
+name: rust-remediation-probe
+
+# One-branch migration workbench. Never runs on main or production.
+# Remove this file after the migration is resolved and reviewed.
+on:
+  push:
+    branches:
+      - feat/security-gate-20261121
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rust-remediation-probe
+  cancel-in-progress: true
+
+jobs:
+  migrate-lockfile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout exactly the migration branch
+        uses: actions/checkout@v5
+        with:
+          ref: feat/security-gate-20261121
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Verify this is a disposable migration PR, never the release branch
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "orhanbal/webrising-commender"
+          test "$GITHUB_REF" = "refs/heads/feat/security-gate-20261121"
+          grep -F 'calamine = "=0.38.0"' crates/agent/Cargo.toml
+          grep -F 'umya-spreadsheet = "=4.0.0-beta.1"' crates/agent/Cargo.toml
+          grep -F 'zip = { version = "=9.0.5"' crates/agent/Cargo.toml
+      - name: Resolve only necessary lockfile updates
+        run: cargo update --workspace
+      - name: Reject vulnerable spreadsheet dependency families in resolved lock
+        run: |
+          set -euo pipefail
+          cargo tree -p webrising-commender-agent -i zip || true
+          cargo tree -p webrising-commender-agent -i quick-xml || true
+          if grep -q 'version = "2.6.1"' Cargo.lock && grep -q 'name = "zip"' Cargo.lock; then
+            echo "Old zip may remain; cargo audit will classify actual paths."
+          fi
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Compile and typecheck all native Rust targets
+        run: cargo check --workspace --all-targets --locked
+      - name: Run full Rust regression suite
+        run: cargo test --workspace --locked
+      - name: Commit verified dependency lockfile back to migration branch
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- Cargo.lock
+          if git diff --cached --quiet; then
+            echo "Lockfile already matches manifest."
+          else
+            git commit -m "build(rust): resolve verified patched spreadsheet dependency graph"
+            git push origin HEAD:refs/heads/feat/security-gate-20261121
+          fi
