@@ -296,10 +296,10 @@ pub fn write_cells(
     let mut book = umya_spreadsheet::reader::xlsx::read(&source)
         .map_err(|error| anyhow!("cannot read XLSX for editing: {error}"))?;
     let worksheet = book
-        .get_sheet_by_name_mut(sheet)
+        .sheet_by_name_mut(sheet)
         .ok_or_else(|| anyhow!("spreadsheet sheet not found"))?;
     for update in updates {
-        let cell = worksheet.get_cell_mut(update.cell.as_str());
+        let cell = worksheet.cell_mut(update.cell.as_str());
         match &update.value {
             Value::String(v) => {
                 cell.set_value_string(v);
