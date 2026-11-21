@@ -62,6 +62,8 @@ jobs:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo check -p webrising-commender-agent
+      - name: Security Gate XLSX roundtrip with patched ZIP and OOXML stack
+        run: cargo test -p webrising-commender-agent spreadsheet_ops::tests::xlsx_write_roundtrip_preserves_original_and_types -- --exact --nocapture
       - name: Native PTY master reader/writer pre-spawn acquisition
         run: cargo test -p webrising-commender-agent terminal::tests::pty_master_handles_are_available_before_child_spawn -- --nocapture
       - name: Native post-acquisition undo quota lock inode and hardlink race

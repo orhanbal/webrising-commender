@@ -22,6 +22,9 @@ Do not remove a failing job from the list to force a release.
 
 The existing mandatory jobs supply additional device-side validation:
 
+- The patched Excel/OOXML writer is validated by a real XLSX roundtrip (preserved source, cell types, and no overwrite) on **Linux, Windows and macOS**. The Windows check is a mandatory `rust-platforms` job; macOS runs in its dedicated `macos` workflow (not part of the Linux production release gate). The current XLSX writer is `umya-spreadsheet 4.0.0-beta.1`, so a production rollout requires explicit reviewer awareness and targeted canary checks.
+
+
 - `agent-e2e`: live Rust agent + gateway integration, local capability
   ceilings (`--read-only`, `--no-commands`), signed approvals and real
   command behavior.
