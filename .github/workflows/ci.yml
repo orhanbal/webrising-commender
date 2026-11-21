@@ -238,7 +238,7 @@ jobs:
     env:
       DATABASE_URL: postgres://commender:commender-test@127.0.0.1:5432/commender
       CONTROL_API_KEY: ci-control-key-0123456789-0123456789
-      APPROVAL_SIGNING_SECRET: ci-approval-secret-0123456789-012345
+      APPROVAL_SIGNING_SECRET: ci-approval-secret-0123456789-012345 # gitleaks:allow -- synthetic CI value
       PUBLIC_BASE_URL: http://127.0.0.1:8787
       HOST: 127.0.0.1
       PORT: 8787
@@ -250,8 +250,8 @@ jobs:
       SMTP_SECURITY: none
       SMTP_HELO_NAME: commender-ci
       SMTP_FROM: WECOMMANDER <commender@example.test>
-      PADDLE_WEBHOOK_SECRET: ci-test-secret-paddle-signatures-2026
-      MAIL_OUTBOX_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      PADDLE_WEBHOOK_SECRET: ci-test-secret-paddle-signatures-2026 # gitleaks:allow -- synthetic CI value
+      MAIL_OUTBOX_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef # gitleaks:allow -- synthetic CI value
       MAIL_DELIVERY_INTERVAL_MS: 250
       MAIL_DELIVERY_BATCH: 20
       TRUST_EXPIRY_INTERVAL_MS: 500
@@ -349,7 +349,7 @@ jobs:
     env:
       DATABASE_URL: postgres://commender:commender-test@127.0.0.1:5432/commender
       CONTROL_API_KEY: ci-control-key-0123456789-0123456789
-      APPROVAL_SIGNING_SECRET: ci-approval-secret-0123456789-012345
+      APPROVAL_SIGNING_SECRET: ci-approval-secret-0123456789-012345 # gitleaks:allow -- synthetic CI value
       PUBLIC_BASE_URL: http://127.0.0.1:8787
       HOST: 127.0.0.1
       PORT: 8787
@@ -434,7 +434,7 @@ jobs:
     env:
       DATABASE_URL: postgres://commender:commender-test@127.0.0.1:5432/commender
       CONTROL_API_KEY: ci-control-key-0123456789-0123456789
-      APPROVAL_SIGNING_SECRET: ci-approval-secret-0123456789-012345
+      APPROVAL_SIGNING_SECRET: ci-approval-secret-0123456789-012345 # gitleaks:allow -- synthetic CI value
       DEPLOYMENT_MODE: self_hosted
       REGIONAL_RELAY_ENABLED: true
       RELAY_CLUSTER_SECRET: ci-relay-cluster-secret-0123456789-0123456789
@@ -550,7 +550,7 @@ jobs:
     env:
       DATABASE_URL: postgres://commender:commender-test@127.0.0.1:5432/commender
       CONTROL_API_KEY: ci-control-key-0123456789-0123456789
-      APPROVAL_SIGNING_SECRET: ci-approval-secret-0123456789-012345
+      APPROVAL_SIGNING_SECRET: ci-approval-secret-0123456789-012345 # gitleaks:allow -- synthetic CI value
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -635,7 +635,7 @@ jobs:
     env:
       POSTGRES_PASSWORD: ci-compose-postgres-password
       CONTROL_API_KEY: ci-compose-control-key-012345678901234567890
-      APPROVAL_SIGNING_SECRET: ci-compose-approval-secret-0123456789012345
+      APPROVAL_SIGNING_SECRET: ci-compose-approval-secret-0123456789012345 # gitleaks:allow -- synthetic CI value
       PUBLIC_BASE_URL: http://127.0.0.1:8787
     steps:
       - uses: actions/checkout@v5
@@ -1992,7 +1992,7 @@ jobs:
       TEST_BASE_URL: http://127.0.0.1:8787
       DATABASE_URL: postgres://commender:commender-test@127.0.0.1:5432/commender
       CONTROL_API_KEY: ci-control-key-0123456789-0123456789
-      APPROVAL_SIGNING_SECRET: ci-approval-secret-0123456789-012345
+      APPROVAL_SIGNING_SECRET: ci-approval-secret-0123456789-012345 # gitleaks:allow -- synthetic CI value
       PUBLIC_BASE_URL: http://127.0.0.1:8787
       HOST: 127.0.0.1
       PORT: 8787
@@ -2004,7 +2004,7 @@ jobs:
       SMTP_SECURITY: none
       SMTP_HELO_NAME: commender-security-gate
       SMTP_FROM: WECOMMANDER <commender@example.test>
-      MAIL_OUTBOX_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      MAIL_OUTBOX_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef # gitleaks:allow -- synthetic CI value
       MAIL_DELIVERY_INTERVAL_MS: 250
       MAIL_DELIVERY_BATCH: 20
       TRUST_EXPIRY_INTERVAL_MS: 500
