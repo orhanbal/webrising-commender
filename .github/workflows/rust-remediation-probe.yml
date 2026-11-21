@@ -35,8 +35,11 @@ jobs:
           grep -F 'calamine = "=0.38.0"' crates/agent/Cargo.toml
           grep -F 'umya-spreadsheet = "=4.0.0-beta.1"' crates/agent/Cargo.toml
           grep -F 'zip = { version = "=9.0.5"' crates/agent/Cargo.toml
-      - name: Resolve only necessary lockfile updates
-        run: cargo update --workspace
+      - name: Resolve patched lockfile graph and stable RSA
+        run: |
+          cargo update --workspace
+          cargo update -p russh --precise 0.65.2
+          cargo update -p rsa --precise 0.10.0
       - name: Reject vulnerable spreadsheet dependency families in resolved lock
         run: |
           set -euo pipefail

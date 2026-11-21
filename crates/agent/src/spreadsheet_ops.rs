@@ -297,7 +297,7 @@ pub fn write_cells(
         .map_err(|error| anyhow!("cannot read XLSX for editing: {error}"))?;
     let worksheet = book
         .sheet_by_name_mut(sheet)
-        .ok_or_else(|| anyhow!("spreadsheet sheet not found"))?;
+        .map_err(|error| anyhow!("spreadsheet sheet not found: {error}"))?;
     for update in updates {
         let cell = worksheet.cell_mut(update.cell.as_str());
         match &update.value {
@@ -361,7 +361,7 @@ fn reject_complex_edit_parts(path: &std::path::Path) -> Result<()> {
     let mut archive = zip::ZipArchive::new(fs::File::open(path)?)?;
     for index in 0..archive.len() {
         let entry = archive.by_index(index)?;
-        let name = entry.name().to_ascii_lowercase();
+        let name = entry.name()?.to_ascii_lowercase();
         if is_unsafe_edit_part(&name) {
             return Err(anyhow!(
                 "complex workbook features require read-only access"
