@@ -366,6 +366,42 @@ async fn coolify_api(
     ))
 }
 
+/// PHP run by `php artisan tinker` inside the `coolify` container: creates
+/// an API token (read, write, deploy) for an owner or admin of the team that
+/// owns app `uuid`, turning Coolify's API on if it is off. The plain token is
+/// printed once after `@@token`; Coolify stores only its hash.
+fn coolify_token_php(uuid: &str) -> String {
+    format!(
+        r#"$a = \App\Models\Application::where('uuid', '{uuid}')->first();
+if (!$a) {{ echo "@@none\n"; return; }}
+$team = $a->environment->project->team;
+$u = $team->members()->wherePivotIn('role', ['owner', 'admin'])->orderBy('users.id')->first();
+if (!$u) {{ echo "@@nouser\n"; return; }}
+$s = \App\Models\InstanceSettings::get();
+if (!$s->is_api_enabled) {{ $s->is_api_enabled = true; $s->save(); echo "@@apienabled\n"; }}
+$plain = \Illuminate\Support\Str::random(40);
+$t = $u->tokens()->create(['name' => 'WECOMMANDER (zombie fix)', 'token' => hash('sha256', $plain), 'abilities' => ['read', 'write', 'deploy'], 'team_id' => (string) $team->id]);
+echo "@@token\n" . $t->id . '|' . $plain . "\n";"#
+    )
+}
+
+/// Creates a Coolify API token on the server itself (root, over this SSH
+/// connection), so the user does not have to make one in Coolify's UI.
+/// Returns the token and whether Coolify's API had to be turned on; `None`
+/// when that is not possible (old Coolify, no tinker, no owner).
+async fn coolify_auto_token(conn: &Connection, uuid: &str) -> Option<(String, bool)> {
+    let script = format!(
+        "[ \"$R\" ] || exit 0\nr docker exec coolify php artisan tinker --execute={} 2>/dev/null\n",
+        quote(&coolify_token_php(uuid))
+    );
+    let s = sections(&run(conn, &script, 90).await.ok()?);
+    let token = first(&s, "token").trim().to_owned();
+    let valid = token.split_once('|').is_some_and(|(id, plain)| {
+        !id.is_empty() && id.chars().all(|c| c.is_ascii_digit()) && plain.len() == 40
+    });
+    valid.then(|| (token, s.contains_key("apienabled")))
+}
+
 /// Adds `--init` to the Coolify app that runs `container_id` and redeploys
 /// it: the app then starts under a small init that collects zombies.
 pub async fn coolify_init(
@@ -401,7 +437,15 @@ pub async fn coolify_init(
         .unwrap_or(8000);
     let base = format!("http://127.0.0.1:{port}");
     let key = token_key(&conn);
-    let given = token.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
+    let mut given = token.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
+    let mut api_enabled = false;
+    if given.is_none() && state.vault.get(&key).ok().flatten().is_none() {
+        // No key yet: make one on the server instead of asking for it.
+        if let Some((made, enabled)) = coolify_auto_token(&conn, &uuid).await {
+            given = Some(made);
+            api_enabled = enabled;
+        }
+    }
     let Some(token) = given
         .clone()
         .or_else(|| state.vault.get(&key).ok().flatten())
@@ -476,12 +520,27 @@ pub async fn coolify_init(
             reply["message"].as_str().unwrap_or("")
         ));
     }
-    Ok(fix(status, &app_name, ""))
+    let note = if api_enabled {
+        "Coolify API erişimi kapalıydı; WECOMMANDER bu düzeltme için açtı ve kendine bir anahtar oluşturdu (Coolify > Keys & Tokens'ta \"WECOMMANDER\" adıyla görünür)."
+    } else {
+        ""
+    };
+    Ok(fix(status, &app_name, note))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_token_script_is_scoped_to_one_app_and_prints_the_token_once() {
+        let php = coolify_token_php("abc123");
+        assert!(php.contains("where('uuid', 'abc123')"));
+        assert!(php.contains("['read', 'write', 'deploy']"));
+        assert!(php.contains("wherePivotIn('role', ['owner', 'admin'])"));
+        assert_eq!(php.matches("@@token").count(), 1);
+        assert!(!php.contains("'*'"), "never a root-ability token");
+    }
 
     #[test]
     fn coolify_apps_are_found_from_the_container_name() {

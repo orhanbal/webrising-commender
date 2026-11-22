@@ -4,6 +4,34 @@ export type ReleaseNote = { id: string; date: string; platforms: ("windows" | "m
 /** Newest first; platforms empty: both apps. */
 export const releaseNotes: ReleaseNote[] = [
  {
+  "id": "2026-11-22-coolify-zombie-fix-no-key",
+  "date": "2026-11-22",
+  "platforms": [
+   "windows",
+   "macos"
+  ],
+  "items": {
+   "tr": [
+    "Sunucu yönetiminde zombi süreçler için \"Öneriyi uygula\" artık Coolify API anahtarı istemiyor: WECOMMANDER anahtarı sunucuda Coolify'ın içinde kendisi oluşturur ve bu bilgisayarın anahtar zincirinde saklar."
+   ],
+   "en": [
+    "In server management, \"Apply suggestion\" for zombie processes no longer asks for a Coolify API key: WECOMMANDER creates one inside Coolify on the server and keeps it in this computer's keychain."
+   ],
+   "de": [
+    "In der Serververwaltung fragt „Vorschlag anwenden“ bei Zombie-Prozessen nicht mehr nach einem Coolify-API-Schlüssel: WECOMMANDER erstellt ihn auf dem Server in Coolify und speichert ihn im Schlüsselbund dieses Computers."
+   ],
+   "fr": [
+    "Dans la gestion de serveur, « Appliquer la suggestion » pour les processus zombies ne demande plus de clé API Coolify : WECOMMANDER la crée dans Coolify sur le serveur et la garde dans le trousseau de cet ordinateur."
+   ],
+   "es": [
+    "En la gestión de servidores, «Aplicar sugerencia» para procesos zombi ya no pide una clave API de Coolify: WECOMMANDER la crea dentro de Coolify en el servidor y la guarda en el llavero de este equipo."
+   ],
+   "pt-BR": [
+    "No gerenciamento de servidores, \"Aplicar sugestão\" para processos zumbis não pede mais uma chave de API do Coolify: o WECOMMANDER a cria dentro do Coolify no servidor e a guarda no chaveiro deste computador."
+   ]
+  }
+ },
+ {
   "id": "2026-11-22-agent-permissions-in-app",
   "date": "2026-11-22",
   "platforms": [
