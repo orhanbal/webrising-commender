@@ -1,3 +1,4 @@
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Dispatching;
 using Wecommander.Center.Core;
 
@@ -100,6 +101,7 @@ public sealed class ServerMonitor
 
     private void RefreshLabels()
     {
+        if (Application.Current is not App) return; // queued while the app was closing
         var gone = new List<WatchedServer>();
         foreach (var s in Servers)
         {

@@ -766,7 +766,9 @@ public sealed class DockWindow : Window
     {
         var servers = _monitor.Servers;
         if (servers.Count == 0) return null;
-        var chosen = App.Current.Settings.DockServer;
+        // Application.Current is gone once the app is shutting down; a late
+        // monitor change must not throw then.
+        var chosen = (Application.Current as App)?.Settings.DockServer;
         return servers.FirstOrDefault(x => x.HostId == chosen)
             ?? servers.Where(x => x.Live).OrderByDescending(x => x.Worst).FirstOrDefault()
             ?? servers[0];
