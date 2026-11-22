@@ -505,15 +505,12 @@ pub async fn coolify_init(
         }
         None => "already",
     };
-    let (code, reply) = coolify_api(
-        &conn,
-        &base,
-        "GET",
-        &format!("/api/v1/deploy?uuid={uuid}"),
-        None,
-        &token,
-    )
-    .await?;
+    // Newer Coolify takes the deploy as POST (GET answers 405); older ones only as GET.
+    let deploy = format!("/api/v1/deploy?uuid={uuid}");
+    let (mut code, mut reply) = coolify_api(&conn, &base, "POST", &deploy, None, &token).await?;
+    if code == 405 || code == 404 {
+        (code, reply) = coolify_api(&conn, &base, "GET", &deploy, None, &token).await?;
+    }
     if code != 200 && code != 201 {
         return Err(format!(
             "Ayar kaydedildi ama yeniden dağıtım başlamadı ({code}): {}. Coolify'dan Redeploy'a bas.",
