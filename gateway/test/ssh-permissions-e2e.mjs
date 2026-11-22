@@ -134,6 +134,15 @@ try {
     "browser_session_required", "an AI client cannot widen its own permissions");
   assert.equal((await http({ Cookie: ownerSession.Cookie }, "PUT", route(web, "trust"), { level: "full", currentPassword: password })).status, 403, "CSRF");
   assert.equal((await http(otherSession, "PUT", route(web, "trust"), { level: "full", currentPassword: password })).status, 404, "not their computer");
+  // The signed-in desktop app may change trust too, but every raise needs the
+  // password there (its stored token alone must never widen AI's room), and
+  // the command allowlist stays browser-only.
+  assert.equal((await http(pc.token, "PUT", route(web, "trust"), { level: "strict" })).status, 200, "app: narrowing needs no password");
+  assert.equal((await http(pc.token, "PUT", route(web, "trust"), { level: "standard" })).body.error, "reauthentication_failed",
+    "app: strict → standard needs the password");
+  assert.equal((await http(pc.token, "PUT", route(web, "trust"), { level: "standard", currentPassword: password })).status, 200);
+  assert.equal((await http(pc.token, "PUT", route(web, "run-as"), { runAs: "user" })).status, 200, "app: back to user needs no password");
+  assert.equal((await http(pc.token, "POST", route(web, "command-allowlist"), { pattern: "df -h" })).body.error, "browser_session_required");
   // Re-authentication to widen.
   assert.equal((await http(ownerSession, "PUT", route(web, "trust"), { level: "full" })).body.error, "reauthentication_failed");
   assert.equal((await http(ownerSession, "PUT", route(web, "trust"), { level: "full", currentPassword: "wrong-password-123" })).body.error, "reauthentication_failed");

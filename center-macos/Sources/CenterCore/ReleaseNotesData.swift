@@ -5,6 +5,34 @@ enum ReleaseNotesData {
 {
  "releases": [
   {
+   "id": "2026-11-22-agent-permissions-in-app",
+   "date": "2026-11-22",
+   "platforms": [
+    "windows",
+    "macos"
+   ],
+   "items": {
+    "tr": [
+     "Agent Yetkilendirme artık doğrudan uygulamada: Cihazlar'da bir cihazın onay düzeyini, otonom süresini, root ile çalışmayı ve güvenlik ağını tarayıcı açmadan değiştir. Yetkiyi genişletmek her zaman hesap şifreni ister."
+    ],
+    "en": [
+     "Agent authorization now lives in the app: under Devices, change a device's approval level, autonomous duration, running as root and safety net without opening the browser. Widening permissions always asks for your account password."
+    ],
+    "de": [
+     "Die Agent-Berechtigung ist jetzt direkt in der App: Unter Geräte änderst du Freigabestufe, Autonomie-Dauer, Ausführen als root und Sicherheitsnetz eines Geräts, ohne den Browser zu öffnen. Das Erweitern von Rechten fragt immer nach deinem Kontopasswort."
+    ],
+    "fr": [
+     "L'autorisation de l'agent est désormais dans l'application : dans Appareils, modifiez le niveau d'approbation, la durée autonome, l'exécution en root et le filet de sécurité d'un appareil sans ouvrir le navigateur. Élargir les droits demande toujours le mot de passe du compte."
+    ],
+    "es": [
+     "La autorización del agente ya está en la app: en Dispositivos, cambia el nivel de aprobación, la duración autónoma, la ejecución como root y la red de seguridad de un dispositivo sin abrir el navegador. Ampliar permisos siempre pide la contraseña de tu cuenta."
+    ],
+    "pt-BR": [
+     "A autorização do agente agora fica no app: em Dispositivos, altere o nível de aprovação, a duração autônoma, a execução como root e a rede de segurança de um dispositivo sem abrir o navegador. Ampliar permissões sempre pede a senha da sua conta."
+    ]
+   }
+  },
+  {
    "id": "2026-11-22-windows-stability",
    "date": "2026-11-22",
    "platforms": [

@@ -1,9 +1,15 @@
 # AI permissions per device and SSH target
 
-What an AI client may do on an agent device over MCP is set per device, in the
-web panel under **Devices > AI permissions** (admins only, browser session).
-The Windows and macOS apps show the current state and open that page. AI
-clients (API tokens, OAuth) can never change any of these settings.
+What an AI client may do on an agent device over MCP is set per device by an
+admin: in the Windows or macOS app (**Devices > Agent authorization**) or in
+the web panel under **Devices > AI permissions** (browser session). AI clients
+(API tokens, OAuth) can never change any of these settings.
+
+The desktop app signs in with its own center token. With it an admin may
+narrow any setting freely; every widening (a higher trust level, `full`, root,
+safety net off) needs the account password, even strict → standard, which in
+a browser session needs none. The command allowlist of SSH servers stays in
+the web panel.
 
 | Setting | Values | Default | Widening needs |
 |---|---|---|---|
@@ -159,8 +165,8 @@ trust (strict / standard / full, with 1 h … 7 days or no time limit), run as
 user / root, safety net and shutdown/reboot allowance, plus an allowlist of
 routine commands per server.
 
-- **Same rules:** browser session only (an AI client or API token gets
-  `browser_session_required`), admin role, current password to widen, audited
+- **Same rules:** browser session or the desktop app (an AI client or API
+  token gets `browser_session_required`; the allowlist is browser only), admin role, current password to widen, audited
   (`ssh_target.trust_level`, `ssh_target.run_as`, `ssh_target.safety_net`,
   `ssh_command_allowlist.add|remove`), widening e-mailed to admins and owners;
   an expired full trust returns to standard (audited, actor `system`).

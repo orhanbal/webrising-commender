@@ -108,6 +108,10 @@ public enum Texts {
         case "approval_request_not_found": return L.t("Onay isteği bulunamadı.")
         case "forbidden": return L.t("Bu işlem için yönetici ya da sahip rolü gerekiyor.")
         case "center_scope": return L.t("Yönetim Merkezi bu işlemi yapamaz.")
+        case "device_not_root_capable":
+            return L.t("Bu bilgisayarda root izni verilmemiş. Önce o makinede ajan root izniyle kurulmalı.")
+        case "device_not_found": return L.t("Cihaz bulunamadı.")
+        case "browser_session_required": return L.t("Bu ayar yalnız web panelinden değiştirilebilir.")
         case "rate_limited": return L.t("Çok fazla deneme. Biraz sonra yeniden dene.")
         case "invalid_request", "validation_error": return L.t("İstek geçersiz.")
         case "": return L.f("Sunucu hatası (HTTP {0}).", status)

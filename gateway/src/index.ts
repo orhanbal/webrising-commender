@@ -393,6 +393,21 @@ const ROOT_INSTALL_COMMAND = "curl -fsSL https://wecommander.app/install.sh | sh
 
 /** The signed-in user's current password, for changes that widen what an AI
  *  may do (full trust, run as root, safety net off). */
+/** Who may change AI permissions: an admin in a browser session, or in the
+ *  signed-in desktop app (Management Center). Never an MCP client or API key. */
+function canChangePermissions(principal: Principal) {
+  return (principal.authKind === "session" || principal.authKind === "center") && Boolean(principal.userId);
+}
+
+const TRUST_ORDER = { strict: 0, standard: 1, full: 2 } as const;
+
+/** Widening trust needs the current password. "full" always does; from the
+ *  desktop app every raise does (strict → standard too), because the app's
+ *  stored token alone must never be enough to give AI more room. */
+function trustRaiseNeedsPassword(principal: Principal, from: keyof typeof TRUST_ORDER, to: keyof typeof TRUST_ORDER) {
+  return to === "full" || (principal.authKind === "center" && TRUST_ORDER[to] > TRUST_ORDER[from]);
+}
+
 async function reauthenticated(userId: string, password: string | undefined) {
   if (!password) return false;
   const me = await db.query<{ password_hash: string }>(
@@ -4332,7 +4347,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     const trustMatch = url.pathname.match(/^\/api\/devices\/([0-9a-f-]{36})\/trust$/i);
     if (req.method === "PUT" && trustMatch) {
       if (!requireRole(principal!, "admin", res)) return;
-      if (principal!.authKind !== "session" || !principal!.userId) {
+      if (!canChangePermissions(principal!)) {
         return void json(res, 403, { error: "browser_session_required" });
       }
       const body = z.object({
@@ -4340,12 +4355,15 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
         minutes: z.number().int().min(5).max(7 * 24 * 60).optional(),
         currentPassword: z.string().min(1).max(256).optional(),
       }).parse(await readJson(req));
-      if (body.level === "full") {
-        const me = await db.query<{ password_hash: string }>(
-          "select password_hash from users where id=$1 and disabled_at is null", [principal!.userId]);
-        if (!body.currentPassword || !me.rows[0] || !(await verifyPassword(body.currentPassword, me.rows[0].password_hash))) {
-          return void json(res, 403, { error: "reauthentication_failed" });
-        }
+      const currentTrust = await db.query<{ trust_level: keyof typeof TRUST_ORDER }>(
+        `select case when trust_level='full' and trust_full_until is not null and trust_full_until<=now()
+                     then 'standard' else trust_level end as trust_level
+           from devices where id=$1 and organization_id=$2 and revoked_at is null`,
+        [trustMatch[1], principal!.organizationId]);
+      if (!currentTrust.rowCount) return void json(res, 404, { error: "device_not_found" });
+      if (trustRaiseNeedsPassword(principal!, currentTrust.rows[0]!.trust_level, body.level)
+        && !(await reauthenticated(principal!.userId!, body.currentPassword))) {
+        return void json(res, 403, { error: "reauthentication_failed" });
       }
       const updated = await db.query<{ name: string; trust_level: string; trust_full_until: Date | null; run_as: "user" | "root" }>(
         `update devices set trust_level=$3,
@@ -4373,14 +4391,14 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     const runAsMatch = url.pathname.match(/^\/api\/devices\/([0-9a-f-]{36})\/run-as$/i);
     if (req.method === "PUT" && runAsMatch) {
       if (!requireRole(principal!, "admin", res)) return;
-      if (principal!.authKind !== "session" || !principal!.userId) {
+      if (!canChangePermissions(principal!)) {
         return void json(res, 403, { error: "browser_session_required" });
       }
       const body = z.object({
         runAs: z.enum(["user", "root"]),
         currentPassword: z.string().min(1).max(256).optional(),
       }).parse(await readJson(req));
-      if (body.runAs === "root" && !(await reauthenticated(principal!.userId, body.currentPassword))) {
+      if (body.runAs === "root" && !(await reauthenticated(principal!.userId!, body.currentPassword))) {
         return void json(res, 403, { error: "reauthentication_failed" });
       }
       const current = await db.query<{ root_capable: boolean }>(
@@ -4419,7 +4437,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
     const safetyMatch = url.pathname.match(/^\/api\/devices\/([0-9a-f-]{36})\/safety-net$/i);
     if (req.method === "PUT" && safetyMatch) {
       if (!requireRole(principal!, "admin", res)) return;
-      if (principal!.authKind !== "session" || !principal!.userId) {
+      if (!canChangePermissions(principal!)) {
         return void json(res, 403, { error: "browser_session_required" });
       }
       const body = z.object({
@@ -4434,7 +4452,7 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       const before = current.rows[0]!;
       const allowPower = body.allowPower ?? before.safety_net_allow_power;
       const weakens = (!body.enabled && before.safety_net) || (allowPower && !before.safety_net_allow_power);
-      if (weakens && !(await reauthenticated(principal!.userId, body.currentPassword))) {
+      if (weakens && !(await reauthenticated(principal!.userId!, body.currentPassword))) {
         return void json(res, 403, { error: "reauthentication_failed" });
       }
       const updated = await db.query<{ name: string; safety_net: boolean; safety_net_allow_power: boolean }>(
@@ -4474,9 +4492,14 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
       const targetId = sshTargetMatch[1]!;
       const what = sshTargetMatch[2]!;
       const entryId = sshTargetMatch[3];
-      // Changes: a browser session only, so no AI client or token can widen them.
-      if (req.method !== "GET" && (principal!.authKind !== "session" || !principal!.userId)) {
-        return void json(res, 403, { error: "browser_session_required" });
+      // Changes: a browser session, or the signed-in desktop app for trust,
+      // run as and the safety net (widening always needs the password there).
+      // The command allowlist stays browser-only. No AI client or API key.
+      if (req.method !== "GET") {
+        const allowed = what === "command-allowlist"
+          ? principal!.authKind === "session" && Boolean(principal!.userId)
+          : canChangePermissions(principal!);
+        if (!allowed) return void json(res, 403, { error: "browser_session_required" });
       }
       const target = (await ownSshTargets(principal!)).find((t) => t.target_id === targetId);
       if (!target) return void json(res, 404, { error: "target_not_found" });
@@ -4527,7 +4550,8 @@ const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
           minutes: z.number().int().min(5).max(7 * 24 * 60).optional(),
           currentPassword: z.string().min(1).max(256).optional(),
         }).parse(await readJson(req));
-        if (body.level === "full" && !(await reauthenticated(userId, body.currentPassword))) {
+        const fromLevel = (target.trust_level ?? "strict") as keyof typeof TRUST_ORDER;
+        if (trustRaiseNeedsPassword(principal!, fromLevel, body.level) && !(await reauthenticated(userId, body.currentPassword))) {
           return void json(res, 403, { error: "reauthentication_failed" });
         }
         const updated = await db.query<{ trust_level: string; trust_full_until: Date | null; run_as: "user" | "root" }>(
