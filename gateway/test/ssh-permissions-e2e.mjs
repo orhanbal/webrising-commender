@@ -142,7 +142,8 @@ try {
     "app: strict → standard needs the password");
   assert.equal((await http(pc.token, "PUT", route(web, "trust"), { level: "standard", currentPassword: password })).status, 200);
   assert.equal((await http(pc.token, "PUT", route(web, "run-as"), { runAs: "user" })).status, 200, "app: back to user needs no password");
-  assert.equal((await http(pc.token, "POST", route(web, "command-allowlist"), { pattern: "df -h" })).body.error, "browser_session_required");
+  assert.equal((await http(pc.token, "POST", route(web, "command-allowlist"), { pattern: "df -h" })).body.error, "center_scope",
+    "app: the command allowlist stays in the browser");
   // Re-authentication to widen.
   assert.equal((await http(ownerSession, "PUT", route(web, "trust"), { level: "full" })).body.error, "reauthentication_failed");
   assert.equal((await http(ownerSession, "PUT", route(web, "trust"), { level: "full", currentPassword: "wrong-password-123" })).body.error, "reauthentication_failed");
