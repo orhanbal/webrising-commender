@@ -576,7 +576,8 @@ final class ServerManagementModel: ObservableObject {
                 tokenRequest = TokenRequest(why: r.message, zombie: z)
             case "applied", "already":
                 show(L.f("{0}: --init {1}, yeniden dağıtım başladı. Birkaç dakika sonra Yenile'ye bas; zombiler gitmiş olmalı.",
-                         r.app, r.status == "already" ? L.t("zaten açıktı") : L.t("eklendi")), .success)
+                         r.app, r.status == "already" ? L.t("zaten açıktı") : L.t("eklendi"))
+                         + (r.message.isEmpty ? "" : " " + r.message), .success)
             default:
                 show(r.message, .info)
             }

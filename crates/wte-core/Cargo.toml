@@ -1,0 +1,11 @@
+[package]
+name = "wte-core"
+description = "WTE2 terminal core: VT parser, grid and scrollback shared by the WECOMMANDER apps"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+unicode-width = "0.2"

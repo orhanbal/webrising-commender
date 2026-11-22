@@ -9,7 +9,7 @@ impressions.
 | # | Step | What changes | Done when |
 |---|---|---|---|
 | 0 | **Measurement** (this PR) | `crates/wte-bench`: fixed workloads; today's path measured stage by stage, with xterm.js as the baseline | Linux, Windows and macOS numbers recorded below |
-| 1 | **Rust core** (`wte-core`) | VT parser, grid and scrollback in Rust, shared by all apps (replaces the xterm.js and SwiftTerm parsers) | Passes vttest/esctest conformance; at least 10× xterm.js on every workload |
+| 1 | **Rust core** (`wte-core`, in progress) | VT parser, grid and scrollback in Rust, shared by all apps (replaces the xterm.js and SwiftTerm parsers) | Passes vttest/esctest conformance; at least 10× xterm.js on every workload |
 | 2 | **SIMD parser** | Printable runs and UTF-8 checks with SIMD (SSE2/AVX2, NEON); the state machine runs only at control bytes | ascii ≥ 1 GiB/s and sgr/tui ≥ 400 MiB/s on the test machines |
 | 3 | **GPU rendering** | wgpu (D3D12 / Metal), glyph atlas, only changed rows redrawn, frames paced to the display | A full frame on a 4K, 120 Hz display within one refresh; idle uses no GPU |
 | 4 | **Short input path** | Keys go straight to the core; no JSON or WebView hops | Keypress-to-screen latency measured on real hardware and below today's |
@@ -81,6 +81,37 @@ The transport sends 1.34 bytes on stdout for every terminal byte.
 4. **The transport is waste, not a limit.** Base64 inflates the data by a
    third and costs CPU. Once the core renders in-process (steps 1 and 6),
    terminal bytes never leave Rust.
+
+## Step 1 progress: wte-core
+
+`crates/wte-core` holds the following:
+
+- its own VT parser. Printable ASCII goes to the grid as whole runs, and UTF-8 is decoded run by run.
+- a grid whose full-screen scroll is a ring-buffer move and whose rows are cleared lazily
+- the alternate screen and scroll regions
+- insert and delete of lines and characters
+- SGR in 16, 256 and true colour, including the colon form
+- wide characters, tabs, saved cursor, modes, title, status replies and per-row damage
+
+Its 25 tests include random-byte input that must never panic. `wte-bench` measures it as the `wte-core` column, using the same 120×40 terminal with 1,000 lines of scrollback as the xterm.js baseline. The machine is the same as above, measured on 22 Nov 2026.
+
+| workload | wte-core MiB/s | xterm.js MiB/s | speedup |
+|---|---:|---:|---:|
+| ascii | 352 | 68.9 | 5.1× |
+| sgr | 173 | 51.2 | 3.4× |
+| unicode | 143 | 38.6 | 3.7× |
+| tui-redraw | 201 | 73.2 | 2.7× |
+| scroll | 117 | 8.8 | 13× |
+
+The 10× target is reached only for scrolling so far. The remaining cost is
+per escape sequence and per short run (CSI parsing, SGR, row lookup), which
+is the work of step 2: a table-driven parser with a SIMD scan. Still to do
+before the apps can use wte-core:
+
+- vttest and esctest conformance runs
+- reflow on resize
+- grapheme clusters
+- the FFI for the C# and Swift apps
 
 ## Baseline: Windows and macOS
 

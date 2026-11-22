@@ -72,8 +72,8 @@ fn main() {
     let size = a.mb * 1024 * 1024;
     let mut rows = Vec::new();
     println!(
-        "{:<11} {:>10} {:>12} {:>11} {:>11} {:>11} {:>8}",
-        "workload", "MiB", "transport", "base64", "vte parse", "scan", "wire x"
+        "{:<11} {:>10} {:>12} {:>11} {:>11} {:>11} {:>11} {:>8}",
+        "workload", "MiB", "transport", "base64", "vte parse", "wte-core", "scan", "wire x"
     );
     for w in Workload::ALL {
         let input = w.generate(size);
@@ -88,22 +88,24 @@ fn main() {
             let c = stages::parse(&input);
             (c.printed + c.executed + c.csi) as usize
         });
+        let core = best_mbps(input.len(), a.runs, || stages::wte_core(&input));
         let scan = best_mbps(input.len(), a.runs, || stages::scan(&input) + 1);
         let inflation = wire as f64 / input.len() as f64;
         println!(
-            "{:<11} {:>10.1} {:>10.0}/s {:>9.0}/s {:>9.0}/s {:>9.0}/s {:>8.2}",
+            "{:<11} {:>10.1} {:>10.0}/s {:>9.0}/s {:>9.0}/s {:>9.0}/s {:>9.0}/s {:>8.2}",
             w.name(),
             input.len() as f64 / 1048576.0,
             transport,
             base64,
             parse,
+            core,
             scan,
             inflation
         );
         rows.push(serde_json::json!({
             "workload": w.name(), "bytes": input.len(),
             "transport_mibps": transport, "base64_mibps": base64,
-            "vte_parse_mibps": parse, "scan_mibps": scan, "wire_inflation": inflation,
+            "vte_parse_mibps": parse, "wte_core_mibps": core, "scan_mibps": scan, "wire_inflation": inflation,
         }));
     }
     println!(

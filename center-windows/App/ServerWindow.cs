@@ -1023,7 +1023,8 @@ public sealed class ServerManagementView : UserControl
                     break;
                 case "applied":
                 case "already":
-                    Show(L.F("{0}: --init {1}, yeniden dağıtım başladı. Birkaç dakika sonra Yenile'ye bas; zombiler gitmiş olmalı.", r.App, r.Status == "already" ? L.T("zaten açıktı") : L.T("eklendi")), InfoBarSeverity.Success);
+                    Show(L.F("{0}: --init {1}, yeniden dağıtım başladı. Birkaç dakika sonra Yenile'ye bas; zombiler gitmiş olmalı.", r.App, r.Status == "already" ? L.T("zaten açıktı") : L.T("eklendi"))
+                        + (string.IsNullOrEmpty(r.Message) ? "" : " " + r.Message), InfoBarSeverity.Success);
                     break;
                 default:
                     Show(r.Message, InfoBarSeverity.Informational);
