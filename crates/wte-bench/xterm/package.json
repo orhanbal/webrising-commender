@@ -1,0 +1,8 @@
+{
+  "name": "wte-bench-xterm",
+  "private": true,
+  "description": "Baseline: xterm.js 5 (the terminal of today's apps) parsing the wte-bench workloads",
+  "type": "module",
+  "scripts": { "bench": "node bench.mjs" },
+  "dependencies": { "@xterm/headless": "5.5.0" }
+}

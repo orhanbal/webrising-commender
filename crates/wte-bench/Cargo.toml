@@ -1,0 +1,14 @@
+[package]
+name = "wte-bench"
+description = "WTE2 phase 0: repeatable terminal workloads and throughput measurements of today's terminal path"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+vte = "0.15"
