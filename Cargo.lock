@@ -5068,6 +5068,14 @@ dependencies = [
  "serde",
  "serde_json",
  "vte",
+ "wte-core",
+]
+
+[[package]]
+name = "wte-core"
+version = "0.1.0"
+dependencies = [
+ "unicode-width",
 ]
 
 [[package]]

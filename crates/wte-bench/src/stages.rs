@@ -120,6 +120,16 @@ pub fn parse(input: &[u8]) -> Counts {
     counts
 }
 
+/// The WTE2 core: parse and update a 120x40 grid with 1000 lines of
+/// scrollback (what xterm.js does in the app). Returns the history length.
+pub fn wte_core(input: &[u8]) -> usize {
+    let mut term = wte_core::Terminal::new(120, 40, 1000);
+    for chunk in input.chunks(CHUNK) {
+        term.advance(chunk);
+    }
+    term.history_len() + term.cursor().0 + 1
+}
+
 /// One plain pass that finds control bytes (what a SIMD fast path does before
 /// handing plain text runs to the grid), without hand-written SIMD.
 pub fn scan(input: &[u8]) -> usize {
