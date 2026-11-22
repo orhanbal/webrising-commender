@@ -34,8 +34,10 @@ public sealed class Device
     [JsonPropertyName("trust_level")] public string? TrustLevel { get; set; }
     [JsonPropertyName("trust_full_until")] public DateTimeOffset? TrustFullUntil { get; set; }
     [JsonPropertyName("revoked_at")] public DateTimeOffset? RevokedAt { get; set; }
-    /// <summary>"user" or "root": who the AI's commands run as (changed in the web panel).</summary>
+    /// <summary>"user" or "root": who the AI's commands run as.</summary>
     [JsonPropertyName("run_as")] public string? RunAs { get; set; }
+    /// <summary>The machine owner allowed root when installing the agent.</summary>
+    [JsonPropertyName("root_capable")] public bool? RootCapable { get; set; }
     [JsonPropertyName("safety_net")] public bool? SafetyNet { get; set; }
 }
 

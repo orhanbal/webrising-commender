@@ -357,6 +357,7 @@ private struct AutonomyView: View {
 
 private struct DevicesView: View {
     @ObservedObject var model: AppModel
+    @State private var editing: Device?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -376,13 +377,123 @@ private struct DevicesView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    // AI permissions (trust, run as root, safety net) are changed in the web panel.
-                    Button(L.t("Agent Yetkilendirme")) { model.openDevicePermissions(d.id) }
+                    // AI permissions (trust, run as root, safety net) are changed right here; widening asks for the password.
+                    Button(L.t("Agent Yetkilendirme")) { editing = d }
                         .buttonStyle(.link).font(.caption)
                 }
                 .padding(8)
                 .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
             }
+        }
+        .sheet(item: $editing) { device in
+            DevicePermissionsView(model: model, device: device) { editing = nil }
+        }
+    }
+}
+
+/// Agent permissions of one device, edited in the app (docs/AI_PERMISSIONS.md).
+private struct DevicePermissionsView: View {
+    @ObservedObject var model: AppModel
+    let device: Device
+    let close: () -> Void
+
+    private static let order = ["strict": 0, "standard": 1, "full": 2]
+    private static let durations: [Int?] = [60, 8 * 60, 24 * 60, 7 * 24 * 60, nil]
+
+    @State private var level = "standard"
+    @State private var duration: Int? = 60
+    @State private var durationTouched = false
+    @State private var root = false
+    @State private var safetyNet = true
+    @State private var password = ""
+    @State private var working = false
+    @State private var failure: String?
+
+    private var currentLevel: String {
+        if device.trustLevel == "full", let until = device.trustFullUntil, until <= Date() { return "standard" }
+        return device.trustLevel == "strict" || device.trustLevel == "full" ? device.trustLevel! : "standard"
+    }
+    private var wasRoot: Bool { device.runAs == "root" }
+    private var hadNet: Bool { device.safetyNet != false }
+    private var trustChanged: Bool { level != currentLevel || (level == "full" && durationTouched) }
+    private var widens: Bool {
+        (trustChanged && (level == "full" || (Self.order[level] ?? 1) > (Self.order[currentLevel] ?? 1)))
+            || (!wasRoot && root) || (hadNet && !safetyNet)
+    }
+    private var changed: Bool { trustChanged || root != wasRoot || safetyNet != hadNet }
+
+    private static func label(_ minutes: Int?) -> String {
+        switch minutes {
+        case 60: return L.t("1 saat")
+        case 480: return L.t("8 saat")
+        case 1440: return L.t("24 saat")
+        case 10080: return L.t("7 gün")
+        default: return L.t("Süresiz")
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("\(L.t("Agent Yetkilendirme")) · \(device.name)").font(.headline)
+            Picker(L.t("Onay düzeyi"), selection: $level) {
+                Text(L.t("Sıkı: okuma dahil her işlem onay ister")).tag("strict")
+                Text(L.t("Standart: okuma serbest, değişiklikler onay ister")).tag("standard")
+                Text(L.t("Otonom: onay istenmez")).tag("full")
+            }
+            .pickerStyle(.radioGroup)
+            if level == "full" {
+                Picker(L.t("Otonom süresi"), selection: Binding(get: { duration }, set: { duration = $0; durationTouched = true })) {
+                    ForEach(Self.durations, id: \.self) { m in Text(Self.label(m)).tag(m) }
+                }
+                .frame(maxWidth: 260)
+            }
+            Toggle(L.t("Komutları root olarak çalıştır"), isOn: $root)
+                .disabled(!wasRoot && device.rootCapable != true)
+            if !wasRoot && device.rootCapable != true {
+                Text(L.t("Bu bilgisayarda root izni verilmemiş. Önce o makinede ajan root izniyle kurulmalı."))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Toggle(L.t("Güvenlik ağı (yıkıcı komutları her zaman engeller)"), isOn: $safetyNet)
+            if widens {
+                SecureField(L.t("Hesap şifren (yetkiyi genişletmek için)"), text: $password)
+                    .textFieldStyle(.roundedBorder)
+            }
+            if let failure {
+                Text(failure).font(.callout).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                Button(L.t("Web panelinde aç")) { model.openDevicePermissions(device.id) }
+                    .buttonStyle(.link)
+                Spacer()
+                Button(L.t("Vazgeç"), action: close).keyboardShortcut(.cancelAction)
+                Button(L.t("Kaydet")) { save() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(working || !changed || (widens && password.isEmpty))
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
+        .onAppear {
+            level = currentLevel
+            root = wasRoot
+            safetyNet = hadNet
+        }
+        .onChange(of: password) { _ in failure = nil }
+    }
+
+    private func save() {
+        working = true
+        failure = nil
+        let lvl = trustChanged ? level : nil
+        let pw = widens ? password : nil
+        Task {
+            do {
+                try await model.setDevicePermissions(device, level: lvl, minutes: duration, root: root, safetyNet: safetyNet, password: pw)
+                close()
+            } catch {
+                failure = error.localizedDescription
+            }
+            working = false
         }
     }
 }

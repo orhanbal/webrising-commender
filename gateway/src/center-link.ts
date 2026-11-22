@@ -132,6 +132,13 @@ export function centerMayAccess(method: string, pathname: string) {
   if (method === "PUT" && pathname === "/api/center/connector/targets") return true;
   if (method === "GET" && pathname === "/api/center/connector/claim") return true;
   if (method === "POST" && /^\/api\/center\/connector\/calls\/[0-9a-f-]{36}\/result$/i.test(pathname)) return true;
+  // AI permissions from the app (docs/AI_PERMISSIONS.md): trust, run as and the
+  // safety net of the user's devices and own SSH targets. The handlers ask
+  // for the current password on every widening from a Center; the command
+  // allowlists stay browser-only.
+  if (method === "GET" && pathname === "/api/ssh-targets") return true;
+  if (method === "PUT" && /^\/api\/devices\/[0-9a-f-]{36}\/(trust|run-as|safety-net)$/i.test(pathname)) return true;
+  if (method === "PUT" && /^\/api\/ssh-targets\/ssh-[0-9a-f]{24}\/(trust|run-as|safety-net)$/.test(pathname)) return true;
   // WECOMMANDER scheduled tasks: managed from the app, SSH runs claimed and reported by it.
   if (centerMayUseScheduledTasks(method, pathname)) return true;
   return false;

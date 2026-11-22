@@ -194,6 +194,33 @@ public struct GatewayClient: Sendable {
         _ = try await send("POST", "/api/trust/autonomy", token: token, body: body)
     }
 
+    /// Agent permissions of one device (docs/AI_PERMISSIONS.md). Widening needs the account password.
+    public func setTrust(token: String, deviceId: String, level: String, minutes: Int?, password: String?) async throws {
+        var body: [String: Any] = ["level": level]
+        if let minutes { body["minutes"] = minutes }
+        if let password, !password.isEmpty { body["currentPassword"] = password }
+        _ = try await send("PUT", "/api/devices/\(try deviceUUID(deviceId))/trust", token: token, body: body)
+    }
+
+    public func setRunAs(token: String, deviceId: String, root: Bool, password: String?) async throws {
+        var body: [String: Any] = ["runAs": root ? "root" : "user"]
+        if let password, !password.isEmpty { body["currentPassword"] = password }
+        _ = try await send("PUT", "/api/devices/\(try deviceUUID(deviceId))/run-as", token: token, body: body)
+    }
+
+    public func setSafetyNet(token: String, deviceId: String, enabled: Bool, password: String?) async throws {
+        var body: [String: Any] = ["enabled": enabled]
+        if let password, !password.isEmpty { body["currentPassword"] = password }
+        _ = try await send("PUT", "/api/devices/\(try deviceUUID(deviceId))/safety-net", token: token, body: body)
+    }
+
+    private func deviceUUID(_ id: String) throws -> String {
+        guard let uuid = UUID(uuidString: id) else {
+            throw GatewayError(.http, 400, "invalid_request", Texts.forErrorCode("invalid_request", status: 400))
+        }
+        return uuid.uuidString.lowercased()
+    }
+
     /// One-time pairing code (5 minutes) for the agent installer on this Mac.
     public func pairingCode(token: String) async throws -> String {
         let json = try await send("POST", "/api/center/pairing-code", token: token, body: [:]) as? [String: Any]

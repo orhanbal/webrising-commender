@@ -130,6 +130,33 @@ public sealed class GatewayClient(HttpClient http, string baseUrl)
         await SendAsync(HttpMethod.Post, "/api/trust/autonomy", token, body, ct).ConfigureAwait(false);
     }
 
+    /// <summary>Agent permissions of one device (docs/AI_PERMISSIONS.md). Widening needs the account password.</summary>
+    public async Task SetTrustAsync(string token, string deviceId, string level, int? minutes, string? password, CancellationToken ct = default)
+    {
+        var body = new JsonObject { ["level"] = level };
+        if (minutes is not null) body["minutes"] = minutes;
+        if (!string.IsNullOrEmpty(password)) body["currentPassword"] = password;
+        await SendAsync(HttpMethod.Put, $"/api/devices/{DeviceGuid(deviceId):D}/trust", token, body, ct).ConfigureAwait(false);
+    }
+
+    public async Task SetRunAsAsync(string token, string deviceId, bool root, string? password, CancellationToken ct = default)
+    {
+        var body = new JsonObject { ["runAs"] = root ? "root" : "user" };
+        if (!string.IsNullOrEmpty(password)) body["currentPassword"] = password;
+        await SendAsync(HttpMethod.Put, $"/api/devices/{DeviceGuid(deviceId):D}/run-as", token, body, ct).ConfigureAwait(false);
+    }
+
+    public async Task SetSafetyNetAsync(string token, string deviceId, bool enabled, string? password, CancellationToken ct = default)
+    {
+        var body = new JsonObject { ["enabled"] = enabled };
+        if (!string.IsNullOrEmpty(password)) body["currentPassword"] = password;
+        await SendAsync(HttpMethod.Put, $"/api/devices/{DeviceGuid(deviceId):D}/safety-net", token, body, ct).ConfigureAwait(false);
+    }
+
+    private static Guid DeviceGuid(string id) => Guid.TryParse(id, out var guid)
+        ? guid
+        : throw new GatewayException(GatewayErrorKind.Http, 400, "invalid_request", Texts.ForErrorCode("invalid_request", 400));
+
     /// <summary>One-time pairing code (5 minutes) for the agent installer on this computer.</summary>
     public async Task<string> PairingCodeAsync(string token, CancellationToken ct = default)
     {

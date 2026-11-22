@@ -65,8 +65,10 @@ public struct Device: Decodable, Identifiable, Equatable {
     public let trustLevel: String?
     public let trustFullUntil: Date?
     public let revokedAt: Date?
-    /// "user" or "root": who the AI's commands run as (changed in the web panel).
+    /// "user" or "root": who the AI's commands run as.
     public let runAs: String?
+    /// The machine owner allowed root when installing the agent.
+    public let rootCapable: Bool?
     public let safetyNet: Bool?
 
     enum CodingKeys: String, CodingKey {
@@ -75,6 +77,7 @@ public struct Device: Decodable, Identifiable, Equatable {
         case trustFullUntil = "trust_full_until"
         case revokedAt = "revoked_at"
         case runAs = "run_as"
+        case rootCapable = "root_capable"
         case safetyNet = "safety_net"
     }
 
@@ -88,6 +91,7 @@ public struct Device: Decodable, Identifiable, Equatable {
         trustFullUntil = try c.decodeIfPresent(Date.self, forKey: .trustFullUntil)
         revokedAt = try c.decodeIfPresent(Date.self, forKey: .revokedAt)
         runAs = try c.decodeIfPresent(String.self, forKey: .runAs)
+        rootCapable = try c.decodeIfPresent(Bool.self, forKey: .rootCapable)
         safetyNet = try c.decodeIfPresent(Bool.self, forKey: .safetyNet)
     }
 }

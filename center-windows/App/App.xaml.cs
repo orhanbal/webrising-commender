@@ -868,6 +868,27 @@ public partial class App : Application
         await SyncAsync();
     }
 
+    /// <summary>Applies the changed agent permissions of one device (level null = trust unchanged), narrowing first, then syncs.</summary>
+    public async Task SetDevicePermissionsAsync(Device device, string? level, int? minutes, bool root, bool safetyNet, string? password)
+    {
+        if (Token is not { } token) throw new GatewayException(GatewayErrorKind.Unauthorized, 401, "", L.T("Önce oturum aç."));
+        try
+        {
+            var wasRoot = device.RunAs == "root";
+            var hadNet = device.SafetyNet != false;
+            if (wasRoot && !root) await Gateway.SetRunAsAsync(token, device.Id, false, null);
+            if (!hadNet && safetyNet) await Gateway.SetSafetyNetAsync(token, device.Id, true, null);
+            if (level is not null)
+                await Gateway.SetTrustAsync(token, device.Id, level, level == "full" ? minutes : null, password);
+            if (!wasRoot && root) await Gateway.SetRunAsAsync(token, device.Id, true, password);
+            if (hadNet && !safetyNet) await Gateway.SetSafetyNetAsync(token, device.Id, false, password);
+        }
+        finally
+        {
+            await SyncAsync();
+        }
+    }
+
     public async Task StopAutonomyAsync()
     {
         if (Token is not { } token) return;

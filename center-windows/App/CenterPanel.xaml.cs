@@ -370,9 +370,9 @@ public sealed partial class CenterPanel : UserControl
             var platform = d.Platform switch { "windows" => "Windows", "macos" => "macOS", "linux" => "Linux", var p => p ?? "" };
             var trust = d.TrustLevel switch
             {
-                "full" => $"otonom ({Texts.Until(d.TrustFullUntil)})",
+                "full" => $"{L.T("otonom")} ({Texts.Until(d.TrustFullUntil)})",
                 "strict" => L.T("sıkı"),
-                _ => "standart",
+                _ => L.T("standart"),
             };
             if (d.RunAs == "root") trust += " · root";
             if (d.SafetyNet == false) trust += " · " + L.T("güvenlik ağı kapalı");
@@ -393,10 +393,10 @@ public sealed partial class CenterPanel : UserControl
                 Foreground = ThemeBrush("TextFillColorSecondaryBrush"),
             });
             row.Children.Add(text);
-            // AI permissions (trust, run as root, safety net) are changed in the web panel.
-            var id = d.Id;
+            // AI permissions (trust, run as root, safety net) are changed right here; widening asks for the password.
+            var device = d;
             var permissions = new HyperlinkButton { Content = L.T("Agent Yetkilendirme"), VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(6, 2, 6, 2) };
-            permissions.Click += (_, _) => App.OpenUrl(Center.Settings.Server + "/devices?permissions=" + Uri.EscapeDataString(id));
+            permissions.Click += async (_, _) => await EditPermissionsAsync(device);
             row.Children.Add(permissions);
             DevicesPanel.Children.Add(new Border
             {
@@ -408,6 +408,122 @@ public sealed partial class CenterPanel : UserControl
                 Child = row,
             });
         }
+    }
+
+    private static readonly int?[] TrustDurations = [60, 8 * 60, 24 * 60, 7 * 24 * 60, null];
+
+    private static string DurationLabel(int? minutes) => minutes switch
+    {
+        60 => L.T("1 saat"),
+        480 => L.T("8 saat"),
+        1440 => L.T("24 saat"),
+        10080 => L.T("7 gün"),
+        _ => L.T("Süresiz"),
+    };
+
+    /// <summary>Agent permissions of one device, edited in the app (docs/AI_PERMISSIONS.md).</summary>
+    private async Task EditPermissionsAsync(Device device)
+    {
+        if (_dialogOpen) return;
+        var order = new Dictionary<string, int> { ["strict"] = 0, ["standard"] = 1, ["full"] = 2 };
+        var currentLevel = device.TrustLevel is "full" && device.TrustFullUntil is { } until && until <= DateTimeOffset.UtcNow
+            ? "standard"
+            : device.TrustLevel is "strict" or "full" ? device.TrustLevel : "standard";
+        var wasRoot = device.RunAs == "root";
+        var hadNet = device.SafetyNet != false;
+
+        var levels = new RadioButtons { Header = L.T("Onay düzeyi") };
+        levels.Items.Add(new RadioButton { Content = L.T("Sıkı: okuma dahil her işlem onay ister"), Tag = "strict" });
+        levels.Items.Add(new RadioButton { Content = L.T("Standart: okuma serbest, değişiklikler onay ister"), Tag = "standard" });
+        levels.Items.Add(new RadioButton { Content = L.T("Otonom: onay istenmez"), Tag = "full" });
+        levels.SelectedIndex = order[currentLevel];
+        var duration = new ComboBox { Header = L.T("Otonom süresi"), MinWidth = 200 };
+        foreach (var m in TrustDurations) duration.Items.Add(new ComboBoxItem { Content = DurationLabel(m), Tag = m });
+        duration.SelectedIndex = 0;
+        var root = new ToggleSwitch
+        {
+            Header = L.T("Komutları root olarak çalıştır"),
+            IsOn = wasRoot,
+            IsEnabled = wasRoot || device.RootCapable == true,
+        };
+        var rootNote = new TextBlock
+        {
+            Text = L.T("Bu bilgisayarda root izni verilmemiş. Önce o makinede ajan root izniyle kurulmalı."),
+            TextWrapping = TextWrapping.Wrap,
+            Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
+            Foreground = ThemeBrush("TextFillColorSecondaryBrush"),
+            Visibility = root.IsEnabled ? Visibility.Collapsed : Visibility.Visible,
+        };
+        var net = new ToggleSwitch { Header = L.T("Güvenlik ağı (yıkıcı komutları her zaman engeller)"), IsOn = hadNet };
+        var password = new PasswordBox { Header = L.T("Hesap şifren (yetkiyi genişletmek için)"), Visibility = Visibility.Collapsed };
+        var error = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = ThemeBrush("SystemFillColorCriticalBrush"), Visibility = Visibility.Collapsed };
+        var web = new HyperlinkButton { Content = L.T("Web panelinde aç"), Padding = new Thickness(0) };
+        web.Click += (_, _) => App.OpenUrl(Center.Settings.Server + "/devices?permissions=" + Uri.EscapeDataString(device.Id));
+
+        string SelectedLevel() => (levels.SelectedItem as RadioButton)?.Tag as string ?? currentLevel;
+        var durationTouched = false;
+        bool TrustChanged() => SelectedLevel() != currentLevel || (SelectedLevel() == "full" && durationTouched);
+        bool Widens()
+        {
+            var level = SelectedLevel();
+            return (TrustChanged() && (level == "full" || order[level] > order[currentLevel]))
+                || (!wasRoot && root.IsOn) || (hadNet && !net.IsOn);
+        }
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Root.XamlRoot,
+            Title = $"{L.T("Agent Yetkilendirme")} · {device.Name}",
+            PrimaryButtonText = L.T("Kaydet"),
+            CloseButtonText = L.T("Vazgeç"),
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        void Update()
+        {
+            duration.Visibility = SelectedLevel() == "full" ? Visibility.Visible : Visibility.Collapsed;
+            password.Visibility = Widens() ? Visibility.Visible : Visibility.Collapsed;
+            var changed = TrustChanged() || root.IsOn != wasRoot || net.IsOn != hadNet;
+            dialog.IsPrimaryButtonEnabled = changed && (!Widens() || password.Password.Length > 0);
+        }
+        levels.SelectionChanged += (_, _) => Update();
+        duration.SelectionChanged += (_, _) => { durationTouched = true; Update(); };
+        root.Toggled += (_, _) => Update();
+        net.Toggled += (_, _) => Update();
+        password.PasswordChanged += (_, _) => { error.Visibility = Visibility.Collapsed; Update(); };
+
+        var body = new StackPanel { Spacing = 12, MinWidth = 380 };
+        body.Children.Add(levels);
+        body.Children.Add(duration);
+        body.Children.Add(root);
+        body.Children.Add(rootNote);
+        body.Children.Add(net);
+        body.Children.Add(password);
+        body.Children.Add(error);
+        body.Children.Add(web);
+        dialog.Content = new ScrollViewer { Content = body };
+        Update();
+
+        dialog.PrimaryButtonClick += async (_, args) =>
+        {
+            var deferral = args.GetDeferral();
+            try
+            {
+                var level = TrustChanged() ? SelectedLevel() : null;
+                var minutes = (duration.SelectedItem as ComboBoxItem)?.Tag as int?;
+                await Center.SetDevicePermissionsAsync(device, level, minutes, root.IsOn, net.IsOn,
+                    Widens() ? password.Password : null);
+            }
+            catch (GatewayException e)
+            {
+                error.Text = e.Message;
+                error.Visibility = Visibility.Visible;
+                args.Cancel = true;
+            }
+            finally { deferral.Complete(); }
+        };
+        _dialogOpen = true;
+        try { await dialog.ShowAsync(); }
+        finally { _dialogOpen = false; }
     }
 
     // ---- actions ----

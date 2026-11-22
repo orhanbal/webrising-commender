@@ -314,6 +314,22 @@ final class AppModel: ObservableObject {
         requestSync()
     }
 
+    /// Applies the changed agent permissions of one device (level nil = trust unchanged), narrowing first.
+    func setDevicePermissions(_ device: Device, level: String?, minutes: Int?, root: Bool, safetyNet: Bool, password: String?) async throws {
+        guard let token else { throw GatewayError(.unauthorized, 401, "", L.t("Önce oturum aç.")) }
+        defer { requestSync() }
+        let wasRoot = device.runAs == "root"
+        let hadNet = device.safetyNet != false
+        if wasRoot && !root { try await gateway.setRunAs(token: token, deviceId: device.id, root: false, password: nil) }
+        if !hadNet && safetyNet { try await gateway.setSafetyNet(token: token, deviceId: device.id, enabled: true, password: nil) }
+        if let level {
+            try await gateway.setTrust(token: token, deviceId: device.id, level: level,
+                                       minutes: level == "full" ? minutes : nil, password: password)
+        }
+        if !wasRoot && root { try await gateway.setRunAs(token: token, deviceId: device.id, root: true, password: password) }
+        if hadNet && !safetyNet { try await gateway.setSafetyNet(token: token, deviceId: device.id, enabled: false, password: password) }
+    }
+
     private func decideFromNotification(id: String, device: String, approve: Bool) async {
         do {
             try await decide(id: id, approve: approve)
