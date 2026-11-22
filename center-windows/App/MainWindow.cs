@@ -21,6 +21,8 @@ public sealed class MainWindow : Window
     private DateTime _hiddenAt = DateTime.MinValue;
     private DateTime _shownAt;
     private bool _quitting;
+    /// <summary>The window was closed; its AppWindow is gone and must not be touched.</summary>
+    private bool _closed;
     /// <summary>Width of the docked panel and the gap to the main window (in 96-dpi pixels).</summary>
     public const int DockedWidth = 400, DockGap = 8;
     private Window? _owner;
@@ -31,6 +33,7 @@ public sealed class MainWindow : Window
         Title = L.T("WECOMMANDER Yönetim Merkezi");
         SystemBackdrop = new DesktopAcrylicBackdrop();
         Content = _panel;
+        Closed += (_, _) => _closed = true;
         AppWindow.Title = L.T("WECOMMANDER Yönetim Merkezi");
         AppWindow.SetIcon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "icon.ico"));
         AppWindow.IsShownInSwitchers = false;
@@ -109,6 +112,7 @@ public sealed class MainWindow : Window
     /// <summary>Beside the main window: same top and height, a small gap; on its left when the screen has no room on its right.</summary>
     public void ShowDocked(Window owner)
     {
+        if (_closed || AppWindow is null) return;
         if (!ReferenceEquals(_owner, owner)) SetOwner(owner);
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         var scale = GetDpiForWindow(hwnd) / 96.0;
@@ -162,6 +166,9 @@ public sealed class MainWindow : Window
 
     public void HideDocked()
     {
+        // A panel window that was already closed (a language change builds a new
+        // one) has no AppWindow any more: there is nothing to hide.
+        if (_closed || AppWindow is null) return;
         App.DebugLayout($"hide docked: docked={Docked} visible={AppWindow.IsVisible}");
         if (Docked && AppWindow.IsVisible) AppWindow.Hide();
     }
