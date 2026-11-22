@@ -1,6 +1,19 @@
 {
  "releases": [
   {
+   "id": "2026-11-22-windows-stability",
+   "date": "2026-11-22",
+   "platforms": ["windows"],
+   "items": {
+    "tr": ["Windows'ta uygulama, onay paneli kapanırken ya da dil değişiminden sonra artık hata vermiyor; ayrıca Windows'un pencere ve fare bileşenleri en son düzeltmeleri içeren sürüme güncellendi."],
+    "en": ["On Windows, the app no longer reports an error while the approval panel closes or after a language change, and Windows' window and pointer components are updated to the release with the latest fixes."],
+    "de": ["Unter Windows meldet die App keinen Fehler mehr, wenn das Freigabe-Panel geschlossen wird oder nach einem Sprachwechsel; außerdem wurden die Fenster- und Zeigerkomponenten von Windows auf die Version mit den neuesten Korrekturen aktualisiert."],
+    "fr": ["Sous Windows, l'application ne signale plus d'erreur à la fermeture du panneau d'approbation ou après un changement de langue, et les composants de fenêtre et de pointeur de Windows passent à la version avec les derniers correctifs."],
+    "es": ["En Windows, la app ya no muestra un error al cerrarse el panel de aprobaciones ni tras un cambio de idioma, y los componentes de ventana y puntero de Windows se actualizan a la versión con las últimas correcciones."],
+    "pt-BR": ["No Windows, o app não informa mais um erro quando o painel de aprovações fecha ou após uma troca de idioma, e os componentes de janela e ponteiro do Windows foram atualizados para a versão com as correções mais recentes."]
+   }
+  },
+  {
    "id": "2026-11-21-v1",
    "date": "2026-11-21",
    "platforms": ["windows", "macos"],
