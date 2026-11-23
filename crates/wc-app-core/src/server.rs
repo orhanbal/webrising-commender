@@ -288,11 +288,14 @@ fn fix(status: &str, app: &str, message: &str) -> InitFix {
     }
 }
 
-/// Coolify names an app's container `<app uuid>-<deploy time>`.
+/// Coolify names an app's container `<app uuid>-<deploy time>`; the time is
+/// digits (`174020068578`) or a date and time (`20261024T181211`).
 fn coolify_uuid(container_name: &str) -> Option<String> {
     let name = container_name.trim_start_matches('/');
     let (uuid, stamp) = name.rsplit_once('-')?;
-    (stamp.chars().all(|c| c.is_ascii_digit())
+    (!stamp.is_empty()
+        && stamp.chars().any(|c| c.is_ascii_digit())
+        && stamp.chars().all(|c| c.is_ascii_digit() || c == 'T')
         && !uuid.is_empty()
         && uuid.len() <= 64
         && uuid.chars().all(|c| c.is_ascii_alphanumeric()))
@@ -545,7 +548,12 @@ mod tests {
             coolify_uuid("/sbniis4s6edpjklxoldkozem-174020068578").as_deref(),
             Some("sbniis4s6edpjklxoldkozem")
         );
+        assert_eq!(
+            coolify_uuid("/boyhestabkyuifjsprikot7y-20261024T181211").as_deref(),
+            Some("boyhestabkyuifjsprikot7y")
+        );
         assert_eq!(coolify_uuid("web-app"), None);
+        assert_eq!(coolify_uuid("web-T"), None);
         assert_eq!(coolify_uuid("a;b-123"), None);
         assert_eq!(with_init("").as_deref(), Some("--init"));
         assert_eq!(
