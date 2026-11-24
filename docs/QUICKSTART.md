@@ -292,7 +292,7 @@ Each relay node runs the same gateway build against the same private PostgreSQL 
 ```env
 REGIONAL_RELAY_ENABLED=true
 CLUSTER_NODE_ID=relay-eu-1
-RELAY_CLUSTER_SECRET=<same cluster secret>
+RELAY_CLUSTER_SECRET=<same cluster secret> # gitleaks:allow -- placeholder, not a real credential
 RELAY_REGION=eu-central
 RELAY_PUBLIC_WS_URL=wss://relay-eu-1.example.com/agent
 RELAY_INTERNAL_BASE_URL=https://10.0.20.11:8787

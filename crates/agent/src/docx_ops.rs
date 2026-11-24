@@ -52,7 +52,7 @@ fn read_xml(policy: &PathPolicy, raw: &str) -> Result<(PathBuf, String)> {
         if expanded > MAX_EXPANDED_BYTES {
             return Err(anyhow!("DOCX exceeds the 64 MiB expanded archive limit"));
         }
-        if entry.name() == "word/document.xml" {
+        if entry.name()?.as_ref() == "word/document.xml" {
             document_count += 1;
             if entry.size() > MAX_DOCUMENT_XML_BYTES {
                 return Err(anyhow!("DOCX document XML exceeds the 8 MiB limit"));

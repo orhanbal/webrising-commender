@@ -296,10 +296,10 @@ pub fn write_cells(
     let mut book = umya_spreadsheet::reader::xlsx::read(&source)
         .map_err(|error| anyhow!("cannot read XLSX for editing: {error}"))?;
     let worksheet = book
-        .get_sheet_by_name_mut(sheet)
-        .ok_or_else(|| anyhow!("spreadsheet sheet not found"))?;
+        .sheet_by_name_mut(sheet)
+        .map_err(|error| anyhow!("spreadsheet sheet not found: {error}"))?;
     for update in updates {
-        let cell = worksheet.get_cell_mut(update.cell.as_str());
+        let cell = worksheet.cell_mut(update.cell.as_str());
         match &update.value {
             Value::String(v) => {
                 cell.set_value_string(v);
@@ -333,7 +333,14 @@ pub fn write_cells(
         )?;
         // Publish without replacement: hard_link is atomic and fails if a
         // concurrent writer has already created the output path.
-        fs::File::open(&temporary)?.sync_all()?;
+        // Windows requires a write-capable handle for FlushFileBuffers.
+        // File::open() is read-only and can fail with ERROR_ACCESS_DENIED.
+        // Do not create/truncate: the writer already produced the temp XLSX.
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&temporary)?
+            .sync_all()
+            .context("sync staged spreadsheet output failed")?;
         let output_bytes = fs::read(&temporary)?;
         // Serialization may take time. A concurrent source edit during writing
         // must not publish a stale derived workbook.
@@ -361,7 +368,7 @@ fn reject_complex_edit_parts(path: &std::path::Path) -> Result<()> {
     let mut archive = zip::ZipArchive::new(fs::File::open(path)?)?;
     for index in 0..archive.len() {
         let entry = archive.by_index(index)?;
-        let name = entry.name().to_ascii_lowercase();
+        let name = entry.name()?.to_ascii_lowercase();
         if is_unsafe_edit_part(&name) {
             return Err(anyhow!(
                 "complex workbook features require read-only access"
@@ -482,6 +489,81 @@ mod tests {
         assert!(preview.len() <= MAX_SEARCH_PREVIEW_BYTES);
         assert_eq!(preview, "a".repeat(MAX_SEARCH_PREVIEW_BYTES - 1));
         assert!(oversized.contains("needle"));
+    }
+
+    #[test]
+    fn xlsx_write_roundtrip_preserves_original_and_types() {
+        let root =
+            std::env::temp_dir().join(format!("commander-xlsx-write-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let input = root.join("source.xlsx");
+        let output = root.join("updated.xlsx");
+
+        // Use the real OOXML writer and parser; this is a regression gate for
+        // the ZIP 9 / Umya 4 beta migration, not an in-memory mock.
+        let mut book = umya_spreadsheet::new_file();
+        book.sheet_by_name_mut("Sheet1")
+            .unwrap()
+            .cell_mut("A1")
+            .set_value_string("original");
+        umya_spreadsheet::writer::xlsx::write(&book, &input).unwrap();
+        let original = fs::read(&input).unwrap();
+        let policy = PathPolicy::new(std::slice::from_ref(&root)).unwrap();
+        let edits = [
+            crate::protocol::SpreadsheetCellUpdate {
+                cell: "A1".into(),
+                value: json!("0007"),
+            },
+            crate::protocol::SpreadsheetCellUpdate {
+                cell: "B2".into(),
+                value: json!(42.5),
+            },
+            crate::protocol::SpreadsheetCellUpdate {
+                cell: "C3".into(),
+                value: json!(true),
+            },
+        ];
+        let result = write_cells(
+            &policy,
+            input.to_str().unwrap(),
+            output.to_str().unwrap(),
+            "Sheet1",
+            &edits,
+            None,
+        )
+        .unwrap();
+        assert_eq!(result["ok"], true);
+        assert_eq!(fs::read(&input).unwrap(), original, "source modified");
+        assert!(output.is_file(), "new XLSX was not published");
+        let mut reader = calamine::open_workbook_auto(&output).unwrap();
+        let range = reader.worksheet_range("Sheet1").unwrap();
+        assert!(
+            matches!(range.get_value((0, 0)), Some(Data::String(v)) if v == "0007"),
+            "text with leading zeroes must remain text"
+        );
+        assert!(
+            matches!(range.get_value((1, 1)), Some(Data::Float(v)) if (*v - 42.5).abs() < 0.0001),
+            "numbers must remain numeric"
+        );
+        assert!(
+            matches!(range.get_value((2, 2)), Some(Data::Bool(true))),
+            "booleans must remain booleans"
+        );
+        assert!(
+            write_cells(
+                &policy,
+                input.to_str().unwrap(),
+                output.to_str().unwrap(),
+                "Sheet1",
+                &edits,
+                None,
+            )
+            .is_err(),
+            "published XLSX must not be overwritten"
+        );
+        // calamine retains the workbook file handle on Windows until dropped.
+        drop(reader);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
